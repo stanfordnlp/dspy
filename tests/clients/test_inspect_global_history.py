@@ -75,3 +75,56 @@ def test_inspect_history_n_larger_than_history(capsys):
     dspy.inspect_history(n=5)
     history = GLOBAL_HISTORY
     assert len(history) == 2  # Should return all available entries
+
+
+def test_pretty_print_history_handles_tool_calls_only_output(capsys):
+    """LM outputs that carry only tool calls have `text` set to None
+    (the normalized shape produced by both `_process_completion` and
+    `_process_response`). `pretty_print_history` must skip the Response
+    section in that case and still print the tool calls."""
+    from dspy.utils.inspect_history import pretty_print_history
+
+    entry = {
+        "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
+        "outputs": [
+            {
+                "text": None,
+                "tool_calls": [
+                    dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
+                ],
+            }
+        ],
+        "timestamp": "now",
+    }
+
+    pretty_print_history([entry], n=1)
+    out, _ = capsys.readouterr()
+    assert "Tool calls:" in out
+    assert "get_weather" in out
+    assert "Response:" not in out  # text is None => no Response section
+
+
+def test_pretty_print_history_displays_tool_role_messages(capsys):
+    """Messages with role='tool' (tool results in multi-turn loops) should
+    display the tool name, call id, and content."""
+    from dspy.utils.inspect_history import pretty_print_history
+
+    entry = {
+        "messages": [
+            {"role": "user", "content": "What's the weather?"},
+            {"role": "assistant", "content": None, "tool_calls": [
+                {"type": "function", "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'}, "id": "call_1"},
+            ]},
+            {"role": "tool", "name": "get_weather", "tool_call_id": "call_1", "content": "22°C, sunny"},
+        ],
+        "outputs": [{"text": "It's 22°C and sunny in Paris."}],
+        "timestamp": "now",
+    }
+
+    pretty_print_history([entry], n=1)
+    out, _ = capsys.readouterr()
+    assert "Tool message:" in out
+    assert "get_weather" in out
+    assert "call_1" in out
+    assert "22°C, sunny" in out
+    assert "Assistant message:" in out

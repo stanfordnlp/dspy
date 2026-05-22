@@ -1,7 +1,10 @@
 import asyncio
 import inspect
+import json
+import re
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -71,6 +74,7 @@ class Tool(Type):
         """
         super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
         self._parse_function(func, arg_desc)
+        self.name = _sanitize_tool_name(self.name)
 
     def _parse_function(self, func: Callable, arg_desc: dict[str, str] | None = None):
         """Helper method that parses a function to extract the name, description, and args.
@@ -148,19 +152,26 @@ class Tool(Type):
     def format(self):
         return str(self)
 
-    def format_as_litellm_function_call(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.desc,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.args,
-                    "required": list(self.args.keys()),
-                },
+    # TODO: return LMToolSpec instead of dict; wire-format serialization moves to the LM.
+    def to_lm_tool_spec(self, model_type: str) -> dict[str, Any]:
+        """Serialize this tool definition for the LiteLLM `tools=` payload.
+
+        `model_type` must be `"chat"` or `"responses"`.
+        """
+        fn = {
+            "name": self.name,
+            "description": self.desc,
+            "parameters": {
+                "type": "object",
+                "properties": self.args,
+                "required": list(self.args.keys()),
             },
         }
+        if model_type == "responses":
+            return {"type": "function", **fn}
+        if model_type == "chat":
+            return {"type": "function", "function": fn}
+        raise ValueError(f"Unknown model_type: {model_type!r}. Expected 'chat' or 'responses'.")
 
     def _run_async_in_sync(self, coroutine):
         try:
@@ -263,17 +274,39 @@ class ToolCalls(Type):
     class ToolCall(Type):
         name: str
         args: dict[str, Any]
+        id: str | None = None
 
-        def format(self):
-            return {
-                "type": "function",
-                "function": {
+        # TODO: return LMToolCallPart instead of dict; wire-format serialization moves to the LM.
+        def to_lm_tool_call(self, model_type: str) -> dict[str, Any]:
+            """Serialize this tool call for a LiteLLM assistant message.
+
+            `model_type` must be `"chat"` or `"responses"`.
+            `arguments` is always JSON-encoded as required by both APIs.
+            """
+            args_str = json.dumps(self.args)
+            if model_type == "responses":
+                payload: dict[str, Any] = {
+                    "type": "function_call",
                     "name": self.name,
-                    "arguments": self.args,
-                },
-            }
+                    "arguments": args_str,
+                }
+                if self.id is not None:
+                    payload["call_id"] = self.id
+                return payload
+            if model_type == "chat":
+                payload = {
+                    "type": "function",
+                    "function": {"name": self.name, "arguments": args_str},
+                }
+                if self.id is not None:
+                    payload["id"] = self.id
+                return payload
+            raise ValueError(f"Unknown model_type: {model_type!r}. Expected 'chat' or 'responses'.")
 
-        def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
+        def format(self) -> dict[str, Any]:
+            return {"name": self.name, "args": self.args}
+
+        def execute(self, functions: "dict[str, Any] | list[Tool] | None" = None) -> Any:
             """Execute this individual tool call and return its result.
 
             Args:
@@ -292,15 +325,11 @@ class ToolCalls(Type):
             func = None
 
             if functions is None:
-                # Automatic lookup in caller's globals and locals
                 frame = inspect.currentframe().f_back
                 try:
-                    caller_globals = frame.f_globals
-                    caller_locals = frame.f_locals
-                    func = caller_locals.get(self.name) or caller_globals.get(self.name)
+                    func = frame.f_locals.get(self.name) or frame.f_globals.get(self.name)
                 finally:
                     del frame
-
             elif isinstance(functions, dict):
                 func = functions.get(self.name)
             elif isinstance(functions, list):
@@ -310,48 +339,26 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. "
+                    "Please pass the tool functions to the `execute` method."
+                )
 
             try:
-                args = self.args or {}
-                return func(**args)
+                return func(**(self.args or {}))
             except Exception as e:
                 raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
     tool_calls: list[ToolCall]
 
     @classmethod
-    def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
-        """Convert a list of dictionaries to a ToolCalls instance.
-
-        Args:
-            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
-
-        Returns:
-            A ToolCalls instance.
-
-        Examples:
-
-            ```python
-            tool_calls_dict = [
-                {"name": "search", "args": {"query": "hello"}},
-                {"name": "translate", "args": {"text": "world"}}
-            ]
-            tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
-            ```
-        """
-        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
-        return cls(tool_calls=tool_calls)
-
-    @classmethod
     def description(cls) -> str:
         return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "One or more tool calls, including the name of each tool and the arguments to be passed to it. "
             "Arguments must be provided in JSON format."
         )
 
     def format(self) -> list[dict[str, Any]]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
@@ -359,30 +366,94 @@ class ToolCalls(Type):
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, data: Any):
+        def coerce(items):
+            result = []
+            for it in items:
+                if isinstance(it, cls.ToolCall):
+                    result.append(it)
+                elif isinstance(it, dict) and "name" in it and "args" in it:
+                    result.append(cls.ToolCall(**it))
+                else:
+                    raise ValueError(
+                        f"Invalid value for `dspy.ToolCalls`: each item must be a ToolCall "
+                        f"or a dict with 'name' and 'args' keys, got {it!r}"
+                    )
+            return result
+
         if isinstance(data, cls):
             return data
-
-        # Handle case where data is a list of dicts with "name" and "args" keys
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "name" in item and "args" in item for item in data
-        ):
-            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
-        # Handle case where data is a dict
-        elif isinstance(data, dict):
+        if isinstance(data, list):
+            return {"tool_calls": coerce(data)}
+        if isinstance(data, dict):
             if "tool_calls" in data:
-                # Handle case where data is a dict with "tool_calls" key
-                tool_calls_data = data["tool_calls"]
-                if isinstance(tool_calls_data, list):
-                    return {
-                        "tool_calls": [
-                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
-                        ]
-                    }
-            elif "name" in data and "args" in data:
-                # Handle case where data is a dict with "name" and "args" keys
+                return {"tool_calls": coerce(data["tool_calls"])}
+            if "name" in data and "args" in data:
                 return {"tool_calls": [cls.ToolCall(**data)]}
+        raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
-        raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
+
+# TODO: item should become LMToolCallResultPart, owned by clients.
+def from_lm_tool_call(item: Any) -> ToolCalls.ToolCall:
+    """Normalize a LiteLLM tool-call into a canonical `ToolCalls.ToolCall`.
+
+    Auto-detects Chat Completions vs Responses API from the item's shape.
+    """
+    if not isinstance(item, dict) and hasattr(item, "model_dump"):
+        try:
+            item = item.model_dump()
+        except TypeError:
+            return _from_lm_tool_call_attrs(item)
+
+    if not isinstance(item, dict):
+        raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
+
+    item_type = item.get("type")
+    if item_type == "function" and isinstance(item.get("function"), dict):
+        fn = item["function"]
+        return ToolCalls.ToolCall(
+            name=fn["name"],
+            args=_parse_args(fn.get("arguments")),
+            id=item.get("id"),
+        )
+    if item_type == "function_call" and item.get("name"):
+        return ToolCalls.ToolCall(
+            name=item["name"],
+            args=_parse_args(item.get("arguments")),
+            id=item.get("call_id") or item.get("id"),
+        )
+    raise ValueError(f"Unrecognized tool-call shape: {item!r}")
+
+
+def _from_lm_tool_call_attrs(item: Any) -> ToolCalls.ToolCall:
+    """MockValSer fallback: extract fields via attribute access."""
+    fn = getattr(item, "function", None)
+    if fn is not None:
+        return ToolCalls.ToolCall(
+            name=fn.name,
+            args=_parse_args(fn.arguments),
+            id=getattr(item, "id", None),
+        )
+    name = getattr(item, "name", None)
+    if name is not None:
+        return ToolCalls.ToolCall(
+            name=name,
+            args=_parse_args(getattr(item, "arguments", None)),
+            id=getattr(item, "call_id", None) or getattr(item, "id", None),
+        )
+    raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
+
+
+def _parse_args(args: Any) -> dict[str, Any]:
+    if args is None or args == "":
+        return {}
+    return json_repair.loads(args) if isinstance(args, str) else args
+
+
+_TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tool_name(name: str) -> str:
+    return _TOOL_NAME_RE.sub("_", name)
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
@@ -393,7 +464,7 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
         return schema
 
     def resolve_refs(obj: Any) -> Any:
-        if not isinstance(obj, (dict, list)):
+        if not isinstance(obj, dict | list):
             return obj
         if isinstance(obj, dict):
             if "$ref" in obj:

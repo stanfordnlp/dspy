@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 import dspy
-from dspy.adapters.types.tool import Tool, ToolCalls, convert_input_schema_to_tool_args
+from dspy.adapters.types.tool import Tool, ToolCalls, convert_input_schema_to_tool_args, from_lm_tool_call
 
 
 # Test fixtures
@@ -398,7 +398,7 @@ TOOL_CALL_TEST_CASES = [
     (
         [{"name": "search", "args": {"query": "hello"}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+            "tool_calls": [{"name": "search", "args": {"query": "hello"}}],
         },
     ),
     (
@@ -408,18 +408,15 @@ TOOL_CALL_TEST_CASES = [
         ],
         {
             "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
-                },
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world", "lang": "fr"}},
             ],
         },
     ),
     (
         [{"name": "get_time", "args": {}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+            "tool_calls": [{"name": "get_time", "args": {}}],
         },
     ),
 ]
@@ -433,21 +430,6 @@ def test_tool_calls_format_basic(tool_calls_data, expected):
     result = tool_calls.format()
 
     assert result == expected
-
-
-def test_tool_calls_format_from_dict_list():
-    """Test format works with ToolCalls created from from_dict_list."""
-    tool_calls_dicts = [
-        {"name": "search", "args": {"query": "hello"}},
-        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
-    ]
-
-    tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)
-    result = tool_calls.format()
-
-    assert len(result["tool_calls"]) == 2
-    assert result["tool_calls"][0]["function"]["name"] == "search"
-    assert result["tool_calls"][1]["function"]["name"] == "translate"
 
 
 def test_toolcalls_vague_match():
@@ -477,6 +459,17 @@ def test_toolcalls_vague_match():
     assert tc.tool_calls[0].name == "search"
     assert tc.tool_calls[1].name == "translate"
 
+    # List of ToolCall objects should parse as multiple ToolCalls
+    data_tool_call_objects = [
+        ToolCalls.ToolCall(name="search", args={"query": "hello"}),
+        ToolCalls.ToolCall(name="translate", args={"text": "world", "lang": "fr"}),
+    ]
+    tc = ToolCalls.model_validate(data_tool_call_objects)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "translate"
+
     # Dict with "tool_calls" key containing a list of dicts
     data_tool_calls = {
         "tool_calls": [
@@ -495,6 +488,14 @@ def test_toolcalls_vague_match():
         ToolCalls.model_validate({"foo": "bar"})
     with pytest.raises(ValueError):
         ToolCalls.model_validate([{"foo": "bar"}])
+
+    # Raw wire-format dicts should raise a clear ValueError, not a deep pydantic error
+    with pytest.raises(ValueError, match="each item must be a ToolCall"):
+        ToolCalls.model_validate([{"type": "function", "function": {"name": "search", "arguments": '{"q": "hi"}'}}])
+
+
+def test_toolcalls_description_describes_batch():
+    assert "One or more tool calls" in ToolCalls.description()
 
 
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
@@ -575,11 +576,8 @@ def test_tool_call_execute():
 
     # Test error case
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
-    try:
+    with pytest.raises(ValueError, match="not found"):
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not found" in str(e)
 
 
 def test_tool_call_execute_with_local_functions():
@@ -609,3 +607,262 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+# =============================================================================
+# `from_lm_tool_call`: the single inbound boundary that normalizes every LiteLLM
+# tool-call wire shape into a canonical `ToolCalls.ToolCall`. After this
+# normalization, no downstream code should need to handle multiple wire shapes.
+# =============================================================================
+
+
+def test_from_lm_tool_call_chat_completions_dict_shape():
+    item = {
+        "id": "call_abc",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"q":"hello"}'},
+    }
+    tc = from_lm_tool_call(item)
+    assert isinstance(tc, ToolCalls.ToolCall)
+    assert tc.name == "search"
+    assert tc.args == {"q": "hello"}
+    assert tc.id == "call_abc"
+
+
+def test_from_lm_tool_call_chat_completions_pydantic_shape():
+    """Real LiteLLM `ChatCompletionMessageToolCall` is a pydantic object;
+    we go through model_dump first."""
+    class Fn:
+        name = "search"
+        arguments = '{"q":"x"}'
+
+    class CCMToolCall:
+        id = "call_123"
+        type = "function"
+        function = Fn()
+
+        def model_dump(self):
+            return {
+                "id": self.id,
+                "type": self.type,
+                "function": {"name": self.function.name, "arguments": self.function.arguments},
+            }
+
+    tc = from_lm_tool_call(CCMToolCall())
+    assert tc.name == "search"
+    assert tc.args == {"q": "x"}
+    assert tc.id == "call_123"
+
+
+def test_from_lm_tool_call_chat_completions_arguments_as_dict():
+    """Some providers (and our own round-trips) put `arguments` as a dict."""
+    item = {"type": "function", "function": {"name": "lookup", "arguments": {"k": "v"}}}
+    tc = from_lm_tool_call(item)
+    assert tc.args == {"k": "v"}
+
+
+def test_from_lm_tool_call_chat_completions_empty_arguments_string():
+    """`arguments=""` should normalize to `{}`, not crash."""
+    item = {"type": "function", "function": {"name": "ping", "arguments": ""}}
+    assert from_lm_tool_call(item).args == {}
+
+
+def test_from_lm_tool_call_responses_api_dict_shape():
+    item = {
+        "type": "function_call",
+        "name": "search",
+        "arguments": '{"q":"y"}',
+        "call_id": "call_xyz",
+    }
+    tc = from_lm_tool_call(item)
+    assert tc.name == "search"
+    assert tc.args == {"q": "y"}
+    assert tc.id == "call_xyz"
+
+
+def test_from_lm_tool_call_responses_api_pydantic_shape():
+    class FunctionCallItem:
+        type = "function_call"
+        name = "search"
+        arguments = '{"q":"z"}'
+        call_id = "call_99"
+
+        def model_dump(self):
+            return {
+                "type": self.type,
+                "name": self.name,
+                "arguments": self.arguments,
+                "call_id": self.call_id,
+            }
+
+    tc = from_lm_tool_call(FunctionCallItem())
+    assert tc.name == "search"
+    assert tc.args == {"q": "z"}
+    assert tc.id == "call_99"
+
+
+def test_from_lm_tool_call_mockvalser_fallback_chat_completions_shape():
+    """Cached LiteLLM pydantic whose model_dump raises TypeError — must fall
+    back to attribute access via the `function` attribute."""
+    class Fn:
+        name = "search"
+        arguments = '{"q":"cached"}'
+
+    class CachedToolCall:
+        id = "call_cached"
+        type = "function"
+        function = Fn()
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tc = from_lm_tool_call(CachedToolCall())
+    assert tc.name == "search"
+    assert tc.args == {"q": "cached"}
+    assert tc.id == "call_cached"
+
+
+def test_from_lm_tool_call_mockvalser_fallback_responses_shape():
+    """Cached Responses API pydantic object — falls back to attribute access
+    via the `name` attribute."""
+    class CachedFunctionCall:
+        name = "search"
+        arguments = '{"q":"cached"}'
+        call_id = "call_resp"
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tc = from_lm_tool_call(CachedFunctionCall())
+    assert tc.name == "search"
+    assert tc.args == {"q": "cached"}
+    assert tc.id == "call_resp"
+
+
+def test_from_lm_tool_call_mockvalser_fallback_no_recoverable_attrs_raises():
+    """If model_dump fails AND there's no `function` or `name` attribute,
+    raise TypeError."""
+    class Unsalvageable:
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    with pytest.raises(TypeError):
+        from_lm_tool_call(Unsalvageable())
+
+
+def test_from_lm_tool_call_unrecognized_shape_raises():
+    with pytest.raises(ValueError, match="Unrecognized tool-call shape"):
+        from_lm_tool_call({"type": "unknown", "name": "x"})
+
+
+def test_from_lm_tool_call_non_dict_non_pydantic_raises():
+    with pytest.raises(TypeError, match="Cannot normalize tool call from int"):
+        from_lm_tool_call(42)
+
+
+def test_toolcall_id_field_optional():
+    """ToolCall.id should default to None when not provided."""
+    tc = ToolCalls.ToolCall(name="f", args={})
+    assert tc.id is None
+
+
+def test_toolcall_id_round_trips():
+    tc = ToolCalls.ToolCall(name="f", args={"a": 1}, id="call_zzz")
+    assert tc.id == "call_zzz"
+
+
+def test_toolcall_format_preserves_id_chat_round_trip():
+    original = ToolCalls.ToolCall(name="search", args={"q": "hello"}, id="call_xyz")
+    restored = from_lm_tool_call(original.to_lm_tool_call("chat"))
+    assert restored == original
+
+
+def test_toolcall_format_preserves_id_responses_round_trip():
+    """Outbound symmetry: a tool call serialized for the Responses API must
+    round-trip back through `from_lm_tool_call`."""
+    original = ToolCalls.ToolCall(name="search", args={"q": "hello"}, id="call_xyz")
+    restored = from_lm_tool_call(original.to_lm_tool_call("responses"))
+    assert restored == original
+
+
+def test_toolcall_format_returns_canonical_shape():
+    """`format()` returns the model-agnostic canonical shape, not a wire dialect."""
+    tc = ToolCalls.ToolCall(name="search", args={"q": "x"}, id="c1")
+    assert tc.format() == {"name": "search", "args": {"q": "x"}}
+
+
+def test_toolcall_format_omits_id_when_absent():
+    """A ToolCall constructed without an id should serialize without an `id`
+    (chat) or `call_id` (responses) key so we don't fabricate one on the wire."""
+    chat = ToolCalls.ToolCall(name="search", args={"q": "x"}).to_lm_tool_call("chat")
+    assert "id" not in chat
+    responses = ToolCalls.ToolCall(name="search", args={"q": "x"}).to_lm_tool_call("responses")
+    assert "call_id" not in responses
+
+
+def test_toolcall_format_arguments_is_json_string_for_openai_assistant_message():
+    """OpenAI Chat Completions requires `function.arguments` to be a
+    JSON-encoded **string** when this payload is replayed as an assistant
+    tool-call message. Same for the Responses API top-level `arguments`."""
+    import json as _json
+
+    chat = ToolCalls.ToolCall(name="search", args={"q": "hello", "n": 3}, id="c1").to_lm_tool_call("chat")
+    assert isinstance(chat["function"]["arguments"], str)
+    assert _json.loads(chat["function"]["arguments"]) == {"q": "hello", "n": 3}
+
+    responses = ToolCalls.ToolCall(name="search", args={"q": "hello", "n": 3}, id="c1").to_lm_tool_call(
+        "responses"
+    )
+    assert isinstance(responses["arguments"], str)
+    assert _json.loads(responses["arguments"]) == {"q": "hello", "n": 3}
+
+
+def test_toolcall_format_responses_uses_call_id_not_id():
+    """The Responses API field is `call_id`, not `id`."""
+    payload = ToolCalls.ToolCall(name="x", args={}, id="call_1").to_lm_tool_call("responses")
+    assert payload["call_id"] == "call_1"
+    assert "id" not in payload
+    assert payload["type"] == "function_call"
+
+
+def test_toolcall_format_empty_args_is_json_object_string():
+    assert (
+        ToolCalls.ToolCall(name="ping", args={}).to_lm_tool_call("chat")["function"]["arguments"]
+        == "{}"
+    )
+    assert (
+        ToolCalls.ToolCall(name="ping", args={}).to_lm_tool_call("responses")["arguments"]
+        == "{}"
+    )
+
+
+def test_toolcall_format_rejects_unknown_model_type():
+    with pytest.raises(ValueError, match="Unknown model_type"):
+        ToolCalls.ToolCall(name="x", args={}).to_lm_tool_call("gemini")
+
+
+def test_tool_definition_chat_completions_shape():
+    tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
+    payload = tool.to_lm_tool_spec(model_type="chat")
+    assert payload["type"] == "function"
+    assert "function" in payload
+    assert payload["function"]["name"] == "get_weather"
+    assert payload["function"]["description"] == "weather"
+    assert "parameters" in payload["function"]
+
+
+def test_tool_definition_responses_api_shape():
+    tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
+    payload = tool.to_lm_tool_spec(model_type="responses")
+    assert payload["type"] == "function"
+    # Responses API flattens: name/description/parameters at top level, no `function` wrapper.
+    assert "function" not in payload
+    assert payload["name"] == "get_weather"
+    assert payload["description"] == "weather"
+    assert "parameters" in payload
+
+
+def test_tool_definition_rejects_unknown_model_type():
+    tool = dspy.Tool(lambda city: city, name="x", desc="d")
+    with pytest.raises(ValueError, match="Unknown model_type"):
+        tool.to_lm_tool_spec(model_type="gemini")

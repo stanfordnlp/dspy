@@ -42,6 +42,7 @@ class ChatAdapter(Adapter):
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
         use_json_adapter_fallback: bool = True,
     ):
         """
@@ -49,6 +50,8 @@ class ChatAdapter(Adapter):
             callbacks: List of callback functions to execute during adapter methods.
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
+            allow_parallel_tool_calls: Whether to request provider-side parallel tool calls when native function calling
+                is active. If `None`, leaves the provider default unchanged.
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
@@ -57,6 +60,7 @@ class ChatAdapter(Adapter):
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
+            allow_parallel_tool_calls=allow_parallel_tool_calls,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 
@@ -82,7 +86,10 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+            return JSONAdapter(
+                use_native_function_calling=self.use_native_function_calling,
+                allow_parallel_tool_calls=self.allow_parallel_tool_calls,
+            )(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -106,7 +113,10 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+            return await JSONAdapter(
+                use_native_function_calling=self.use_native_function_calling,
+                allow_parallel_tool_calls=self.allow_parallel_tool_calls,
+            ).acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (

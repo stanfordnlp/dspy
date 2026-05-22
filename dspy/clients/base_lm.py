@@ -267,7 +267,10 @@ class BaseLM:
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                output["tool_calls"] = c.message.tool_calls
+                # TODO(MaximeRivest): Change this interface to use ToolPart.
+                # Lazy import avoids `base_lm → adapters/tool → base_type → base_lm`.
+                from dspy.adapters.types.tool import from_lm_tool_call
+                output["tool_calls"] = [from_lm_tool_call(tc) for tc in c.message.tool_calls]
 
             # Extract citations from LiteLLM response if available
             citations = self._extract_citations_from_response(c)
@@ -319,7 +322,10 @@ class BaseLM:
                 for content_item in output_item.content:
                     text_outputs.append(content_item.text)
             elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump())
+                # TODO(MaximeRivest): Change this interface to use ToolPart.
+                # Lazy import avoids `base_lm → adapters/tool → base_type → base_lm`.
+                from dspy.adapters.types.tool import from_lm_tool_call
+                tool_calls.append(from_lm_tool_call(output_item))
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
                     for content_item in output_item.content:
@@ -328,9 +334,12 @@ class BaseLM:
                     for summary_item in output_item.summary:
                         reasoning_contents.append(summary_item.text)
 
-        result = {}
-        if len(text_outputs) > 0:
-            result["text"] = "".join(text_outputs)
+        # Normalize the output shape to match `_process_completion`: `text` is
+        # always present (None when the response carried no message content),
+        # and the optional keys (`tool_calls`, `reasoning_content`) are only
+        # included when non-empty. This lets downstream code use direct key
+        # access on `text` without special-casing the Responses API.
+        result: dict[str, Any] = {"text": "".join(text_outputs) if text_outputs else None}
         if len(tool_calls) > 0:
             result["tool_calls"] = tool_calls
         if len(reasoning_contents) > 0:
