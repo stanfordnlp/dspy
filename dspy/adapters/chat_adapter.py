@@ -7,6 +7,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.base import Adapter
 from dspy.adapters.utils import (
     format_field_value,
+    format_field_value_parts,
     get_annotation_name,
     get_field_description_string,
     parse_value,
@@ -43,6 +44,7 @@ class ChatAdapter(Adapter):
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
+        renderers: dict[type, Any] | None = None,
     ):
         """
         Args:
@@ -57,6 +59,7 @@ class ChatAdapter(Adapter):
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
+            renderers=renderers,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 
@@ -148,13 +151,17 @@ class ChatAdapter(Adapter):
         prefix: str = "",
         suffix: str = "",
         main_request: bool = False,
-    ) -> str:
-        messages = [prefix]
+    ) -> str | list[dict[str, Any]]:
+        messages: list[str | list[dict[str, Any]]] = [prefix]
         for k, v in signature.input_fields.items():
             if k in inputs:
                 value = inputs.get(k)
-                formatted_field_value = format_field_value(field_info=v, value=value)
-                messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+                formatted_parts = format_field_value_parts(field_info=v, value=value)
+                if formatted_parts is None:
+                    formatted_field_value = format_field_value(field_info=v, value=value)
+                    messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+                else:
+                    messages.append([{"type": "text", "text": f"[[ ## {k} ## ]]\n"}, *formatted_parts])
 
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)
@@ -162,7 +169,7 @@ class ChatAdapter(Adapter):
                 messages.append(output_requirements)
 
         messages.append(suffix)
-        return "\n\n".join(messages).strip()
+        return self._join_message_parts(messages)
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
         """Returns a simplified format reminder for the language model.
@@ -258,12 +265,41 @@ class ChatAdapter(Adapter):
         Returns:
             The joined formatted values of the fields, represented as a string
         """
-        output = []
+        output: list[str | list[dict[str, Any]]] = []
         for field, field_value in fields_with_values.items():
-            formatted_field_value = format_field_value(field_info=field.info, value=field_value)
-            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+            formatted_parts = format_field_value_parts(field_info=field.info, value=field_value)
+            if formatted_parts is None:
+                formatted_field_value = format_field_value(field_info=field.info, value=field_value)
+                output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+            else:
+                output.append([{"type": "text", "text": f"[[ ## {field.name} ## ]]\n"}, *formatted_parts])
 
-        return "\n\n".join(output).strip()
+        return self._join_message_parts(output)
+
+    def _join_message_parts(self, chunks: list[str | list[dict[str, Any]]]) -> str | list[dict[str, Any]]:
+        chunks = [chunk for chunk in chunks if chunk]
+        if not any(isinstance(chunk, list) for chunk in chunks):
+            return "\n\n".join(str(chunk) for chunk in chunks).strip()
+
+        parts: list[dict[str, Any]] = []
+        pending_text = ""
+        for i, chunk in enumerate(chunks):
+            separator = "\n\n" if i > 0 else ""
+            if isinstance(chunk, list):
+                chunk = list(chunk)
+                prefix = pending_text + separator if pending_text else separator
+                pending_text = ""
+                if prefix:
+                    if chunk and chunk[0].get("type") == "text":
+                        chunk[0] = {**chunk[0], "text": prefix + chunk[0].get("text", "")}
+                    else:
+                        chunk.insert(0, {"type": "text", "text": prefix})
+                parts.extend(chunk)
+            else:
+                pending_text += separator + chunk
+        if pending_text:
+            parts.append({"type": "text", "text": pending_text})
+        return parts
 
     def format_finetune_data(
         self,
@@ -279,12 +315,11 @@ class ChatAdapter(Adapter):
         with a "role" and "content" key. The role can be "system", "user", or "assistant". Then, the messages are
         wrapped in a dictionary with a "messages" key.
         """
-        system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
-            signature=signature, demos=demos, inputs=inputs
-        )
-        assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
-            signature=signature, outputs=outputs
-        )
-        assistant_message = {"role": "assistant", "content": assistant_message_content}
-        messages = system_user_messages + [assistant_message]
+        from dspy.clients.openai_format import message_to_openai_chat
+        from dspy.core.types import LMMessage, LMTextPart
+
+        system_user_messages = self.render_messages(signature=signature, demos=demos, inputs=inputs)
+        assistant_message_content = self.format_assistant_message_content(signature=signature, outputs=outputs)
+        assistant_message = LMMessage(role="assistant", parts=[LMTextPart(text=assistant_message_content)])
+        messages = [message_to_openai_chat(message) for message in [*system_user_messages, assistant_message]]
         return {"messages": messages}

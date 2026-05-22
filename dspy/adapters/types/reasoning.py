@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
 from dspy.clients.base_lm import BaseLM
 
 if TYPE_CHECKING:
@@ -22,6 +22,7 @@ class Reasoning(Type):
     content: str
 
     def format(self):
+        warn_legacy_type_method("Reasoning.format()")
         return f"{self.content}"
 
     @pydantic.model_validator(mode="before")
@@ -50,6 +51,7 @@ class Reasoning(Type):
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
+        warn_legacy_type_method("Reasoning.adapt_to_native_lm_feature()")
         if "reasoning_effort" in lm_kwargs:
             # `lm_kwargs` overrides `lm.kwargs`.
             reasoning_effort = lm_kwargs["reasoning_effort"]
@@ -79,6 +81,7 @@ class Reasoning(Type):
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Reasoning"]:
         """Parse the LM response into a Reasoning object."""
+        warn_legacy_type_method("Reasoning.parse_lm_response()")
         if "reasoning_content" in response:
             return Reasoning(content=response["reasoning_content"])
         return None
@@ -94,6 +97,7 @@ class Reasoning(Type):
         Returns:
             The reasoning content (str) if available, None otherwise.
         """
+        warn_legacy_type_method("Reasoning.parse_stream_chunk()")
         try:
             if choices := getattr(chunk, "choices", None):
                 return getattr(choices[0].delta, "reasoning_content", None)
@@ -102,6 +106,7 @@ class Reasoning(Type):
 
     @classmethod
     def is_streamable(cls) -> bool:
+        warn_legacy_type_method("Reasoning.is_streamable()")
         return True
 
     def __repr__(self) -> str:

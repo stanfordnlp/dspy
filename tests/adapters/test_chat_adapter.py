@@ -7,6 +7,7 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
+from dspy.core.types import LMMessage, LMTextPart
 from dspy.experimental import Citations, Document
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
@@ -69,16 +70,10 @@ def test_chat_adapter_quotes_literals_as_expected(
         input_text: input_literal = dspy.InputField()
         output_text: output_literal = dspy.OutputField()
 
-    program = dspy.Predict(TestSignature)
-
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input_text=input_value)
-
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-    content = call_kwargs["messages"][0]["content"]
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(), TestSignature, [], {"input_text": input_value}, lm=dspy.LM(model="openai/gpt-4o")
+    )
+    content = messages[0]["content"]
 
     assert expected_input_str in content
     assert expected_output_str in content
@@ -90,6 +85,67 @@ def test_chat_adapter_sync_call():
     lm = dspy.utils.DummyLM([{"answer": "Paris"}])
     result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
+
+
+def test_chat_adapter_custom_renderer_can_parse_code_cell_tool_calls_without_running_them():
+    class CodeCellSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def parse_run_cells(*, output, **kwargs):
+        code_blocks = re.findall(r"```python\n#! run\n(.*?)```", output.text or "", flags=re.DOTALL)
+        if not code_blocks:
+            return None
+        return dspy.ToolCalls.from_dict_list(
+            [{"name": "python", "args": {"code": code.strip()}} for code in code_blocks]
+        )
+
+    def code_cell_tool_renderer(**kwargs):
+        assert kwargs["role"] == "output"
+        return {
+            "remove_from_prompt": [kwargs["field_name"]],
+            "messages": [
+                LMMessage(
+                    role="system",
+                    parts=[
+                        LMTextPart(
+                            text=(
+                                "When code execution is needed, emit a Python fenced block whose first line is `#! run`. "
+                                "A DSPy module may execute that code and continue the interaction; the adapter must only parse it."
+                            )
+                        )
+                    ],
+                )
+            ],
+            "output_parsers": {kwargs["field_name"]: parse_run_cells},
+        }
+
+    class CodeCellLM(dspy.BaseLM):
+        def __init__(self):
+            super().__init__(model="test/code-cell")
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.messages = messages
+            return [
+                "[[ ## answer ## ]]\nI need to run a calculation.\n\n"
+                "```python\n#! run\nprint(1 + 1)\n```\n\n"
+                "[[ ## completed ## ]]"
+            ]
+
+    lm = CodeCellLM()
+    adapter = dspy.ChatAdapter(renderers={dspy.ToolCalls: code_cell_tool_renderer}, use_json_adapter_fallback=False)
+
+    result = adapter(lm, {}, CodeCellSignature, [], {"question": "What is 1 + 1?"})
+
+    assert result[0]["answer"] == "I need to run a calculation.\n\n```python\n#! run\nprint(1 + 1)\n```"
+    assert result[0]["tool_calls"] == dspy.ToolCalls.from_dict_list(
+        [{"name": "python", "args": {"code": "print(1 + 1)"}}]
+    )
+
+    # The adapter parsed the requested action but did not execute it or loop. That remains module-level behavior.
+    executed = [call.execute({"python": lambda code: "2"}) for call in result[0]["tool_calls"].tool_calls]
+    assert executed == ["2"]
 
 
 @pytest.mark.asyncio
@@ -1486,20 +1542,21 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-    program = dspy.Predict(TestSignature)
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        TestSignature,
+        [],
+        {
+            "owner": PetOwner(
+                name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)
+            ),
+            "question": "How many non-dog pets does John have?",
+        },
+        lm=dspy.LM(model="openai/gpt-4o"),
+    )
 
-    with mock.patch("litellm.completion") as mock_completion:
-        program(
-            owner=PetOwner(name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)),
-            question="How many non-dog pets does John have?",
-        )
-
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
     assert "1. `owner` (PetOwner)" in system_content
     assert "2. `question` (str)" in system_content
     assert "1. `output` (Answer)" in system_content
@@ -1522,21 +1579,16 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-    program = dspy.Predict(TestSignature)
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(), TestSignature, [], {"input1": "Test", "input2": 11}, lm=dspy.LM(model="openai/gpt-4o")
+    )
 
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input1="Test", input2=11)
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
 
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-
-    assert len(call_kwargs["messages"]) == 2
-    assert call_kwargs["messages"][0]["role"] == "system"
-    assert call_kwargs["messages"][1]["role"] == "user"
-
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
 
     assert "1. `input1` (str)" in system_content
     assert "2. `input2` (int)" in system_content

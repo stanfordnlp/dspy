@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
 from dspy.utils.annotation import experimental
 
 
@@ -69,6 +69,7 @@ class Citations(Type):
             Returns:
                 A dictionary in the format expected by citation APIs.
             """
+            warn_legacy_type_method("Citations.Citation.format()")
             citation_dict = {
                 "type": self.type,
                 "cited_text": self.cited_text,
@@ -126,6 +127,7 @@ class Citations(Type):
 
     def format(self) -> list[dict[str, Any]]:
         """Format citations as a list of dictionaries."""
+        warn_legacy_type_method("Citations.format()")
         return [citation.format() for citation in self.citations]
 
     @pydantic.model_validator(mode="before")
@@ -169,6 +171,7 @@ class Citations(Type):
 
     @classmethod
     def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> bool:
+        warn_legacy_type_method("Citations.adapt_to_native_lm_feature()")
         if lm.model.startswith("anthropic/"):
             return signature.delete(field_name)
         return signature
@@ -176,6 +179,7 @@ class Citations(Type):
     @classmethod
     def is_streamable(cls) -> bool:
         """Whether the Citations type is streamable."""
+        warn_legacy_type_method("Citations.is_streamable()")
         return True
 
     @classmethod
@@ -189,6 +193,7 @@ class Citations(Type):
         Returns:
             A Citations object if the chunk contains citation data, None otherwise.
         """
+        warn_legacy_type_method("Citations.parse_stream_chunk()")
         try:
             # Check if the chunk has citation data in provider_specific_fields
             if hasattr(chunk, "choices") and chunk.choices:
@@ -211,6 +216,7 @@ class Citations(Type):
         Returns:
             A Citations object if citation data is found, None otherwise.
         """
+        warn_legacy_type_method("Citations.parse_lm_response()")
         if isinstance(response, dict):
             # Check if the response contains citations in the expected format
             if "citations" in response:

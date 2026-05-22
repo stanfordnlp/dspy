@@ -10,7 +10,8 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
+from dspy.core.types import LMImagePart
 
 try:
     from PIL import Image as PILImage
@@ -72,11 +73,20 @@ class Image(Type):
 
     @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
+        warn_legacy_type_method("Image.format()")
         try:
             image_url = encode_image(self.url)
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
         return [{"type": "image_url", "image_url": {"url": image_url}}]
+
+    def to_lm_parts(self) -> list[LMImagePart]:
+        source = self.url
+        if source.startswith("data:") and "," in source:
+            header, data = source.split(",", 1)
+            media_type = header.removeprefix("data:").split(";", 1)[0]
+            return [LMImagePart(data=data, media_type=media_type)]
+        return [LMImagePart(url=source)]
 
     @classmethod
     def from_url(cls, url: str, download: bool = False):
@@ -106,6 +116,7 @@ class Image(Type):
         return cls(pil_image)
 
     def __str__(self):
+        warn_legacy_type_method("Image.__str__() legacy serialization")
         return self.serialize_model()
 
     def __repr__(self):

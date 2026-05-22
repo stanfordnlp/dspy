@@ -2,7 +2,8 @@ from typing import Any, Literal
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
+from dspy.core.types import LMDocumentPart
 from dspy.utils.annotation import experimental
 
 
@@ -64,6 +65,7 @@ class Document(Type):
         Returns:
             A list containing the document block in the format expected by citation-enabled language models.
         """
+        warn_legacy_type_method("Document.format()")
         document_block = {
             "type": "document",
             "source": {
@@ -82,7 +84,17 @@ class Document(Type):
 
         return [document_block]
 
-
+    def to_lm_parts(self) -> list[LMDocumentPart]:
+        """Return this document as normalized LM document parts."""
+        source = {"type": "text", "media_type": self.media_type, "data": self.data}
+        return [
+            LMDocumentPart(
+                source=source,
+                citations={"enabled": True},
+                title=self.title,
+                context=self.context,
+            )
+        ]
 
     @classmethod
     def description(cls) -> str:
