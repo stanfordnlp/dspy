@@ -43,6 +43,7 @@ class ChatAdapter(Adapter):
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
+        renderers: dict[type, Any] | None = None,
     ):
         """
         Args:
@@ -57,6 +58,7 @@ class ChatAdapter(Adapter):
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
+            renderers=renderers,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 
@@ -282,7 +284,7 @@ class ChatAdapter(Adapter):
         from dspy.clients.openai_format import message_to_openai_chat
         from dspy.core.types import LMMessage, LMTextPart
 
-        system_user_messages = self.format(signature=signature, demos=demos, inputs=inputs)
+        system_user_messages = self.render_messages(signature=signature, demos=demos, inputs=inputs)
         assistant_message_content = self.format_assistant_message_content(signature=signature, outputs=outputs)
         assistant_message = LMMessage(role="assistant", parts=[LMTextPart(text=assistant_message_content)])
         messages = [message_to_openai_chat(message) for message in [*system_user_messages, assistant_message]]

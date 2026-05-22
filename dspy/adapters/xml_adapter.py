@@ -10,8 +10,8 @@ from dspy.utils.callback import BaseCallback
 
 
 class XMLAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None):
-        super().__init__(callbacks)
+    def __init__(self, callbacks: list[BaseCallback] | None = None, renderers: dict[type, Any] | None = None):
+        super().__init__(callbacks=callbacks, renderers=renderers)
         self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:

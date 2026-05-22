@@ -2,10 +2,11 @@ import logging
 from typing import Any, get_origin
 
 from dspy.adapters.types import Audio, File, History, Image, Type
+from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.openai_format import provider_tool_call_to_part, to_openai_chat_request
+from dspy.clients.openai_format import message_to_openai_chat, provider_tool_call_to_part, to_openai_chat_request
 from dspy.core.types import (
     LMAudioPart,
     LMBinaryPart,
@@ -51,6 +52,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        renderers: dict[type, Any] | None = None,
     ):
         """
         Args:
@@ -66,6 +68,7 @@ class Adapter:
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.renderers = renderers or {}
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -89,10 +92,25 @@ class Adapter:
         user_parts: list[LMPart] = []
         tools: list[LMToolSpec] = []
 
+        output_parsers: dict[str, Any] = {}
+
         for name, field in list(prompt_signature.input_fields.items()):
             if name not in inputs:
                 continue
             value = inputs[name]
+            custom_edits = self._run_custom_renderers(
+                role="input",
+                field_name=name,
+                field=field,
+                value=value,
+                signature=prompt_signature,
+                lm=lm,
+                lm_kwargs=lm_kwargs,
+                inputs=inputs,
+            )
+            if custom_edits is not None:
+                prompt_signature = self._apply_renderer_edits(prompt_signature, inputs, custom_edits, messages, user_parts, tools, lm_kwargs, output_parsers)
+                continue
             if field.annotation == History:
                 prompt_signature = prompt_signature.delete(name)
                 messages.extend(self._history_to_lm_messages(prompt_signature, value))
@@ -129,6 +147,19 @@ class Adapter:
                 inputs.pop(tool_call_input_field_name, None)
 
         for name, field in list(prompt_signature.output_fields.items()):
+            custom_edits = self._run_custom_renderers(
+                role="output",
+                field_name=name,
+                field=field,
+                value=None,
+                signature=prompt_signature,
+                lm=lm,
+                lm_kwargs=lm_kwargs,
+                inputs=inputs,
+            )
+            if custom_edits is not None:
+                prompt_signature = self._apply_renderer_edits(prompt_signature, inputs, custom_edits, messages, user_parts, tools, lm_kwargs, output_parsers)
+                continue
             if field.annotation == Reasoning and Reasoning in self.native_response_types:
                 reasoning_signature = self._plan_native_reasoning(prompt_signature, name, lm, lm_kwargs)
                 if reasoning_signature is not prompt_signature:
@@ -145,7 +176,73 @@ class Adapter:
             "messages": messages,
             "user_parts": user_parts,
             "tools": tools,
+            "output_parsers": output_parsers,
         }
+
+    def _run_custom_renderers(
+        self,
+        *,
+        role: str,
+        field_name: str,
+        field: Any,
+        value: Any,
+        signature: type[Signature],
+        lm: BaseLM,
+        lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        renderers = self._renderers_for_annotation(field.annotation)
+        for renderer in renderers:
+            edits = renderer(
+                role=role,
+                field_name=field_name,
+                field=field,
+                value=value,
+                signature=signature,
+                adapter=self,
+                lm=lm,
+                lm_kwargs=lm_kwargs,
+                inputs=inputs,
+            )
+            if edits is not None:
+                return edits
+        return None
+
+    def _renderers_for_annotation(self, annotation: Any) -> list[Any]:
+        renderers: list[Any] = []
+        for marker, marker_renderers in self.renderers.items():
+            try:
+                matches = annotation == marker or (isinstance(annotation, type) and issubclass(annotation, marker))
+            except TypeError:
+                matches = False
+            if matches:
+                if isinstance(marker_renderers, list | tuple):
+                    renderers.extend(marker_renderers)
+                else:
+                    renderers.append(marker_renderers)
+        return renderers
+
+    def _apply_renderer_edits(
+        self,
+        prompt_signature: type[Signature],
+        inputs: dict[str, Any],
+        edits: dict[str, Any],
+        messages: list[LMMessage],
+        user_parts: list[LMPart],
+        tools: list[LMToolSpec],
+        lm_kwargs: dict[str, Any],
+        output_parsers: dict[str, Any],
+    ) -> type[Signature]:
+        for field_name in edits.get("remove_from_prompt", []):
+            if field_name in prompt_signature.fields:
+                prompt_signature = prompt_signature.delete(field_name)
+            inputs.pop(field_name, None)
+        messages.extend(edits.get("messages", []))
+        user_parts.extend(edits.get("user_parts", []))
+        tools.extend(edits.get("tools", []))
+        lm_kwargs.update(edits.get("lm_kwargs", {}))
+        output_parsers.update(edits.get("output_parsers", {}))
+        return prompt_signature
 
     def render_request(
         self,
@@ -155,7 +252,7 @@ class Adapter:
         inputs: dict[str, Any],
     ) -> LMRequest:
         """Render the prompt-facing signature into a normalized LM request."""
-        messages = self.format(plan["prompt_signature"], demos, plan["inputs"])
+        messages = self.render_messages(plan["prompt_signature"], demos, plan["inputs"])
         messages = self._apply_planned_messages(messages, plan)
         request_kwargs = dict(plan["lm_kwargs"])
         tools = list(plan.get("tools", []))
@@ -315,6 +412,18 @@ class Adapter:
                     [{"name": call.name, "args": call.args} for call in output.tool_calls]
                 )
 
+            for field_name, parser in plan.get("output_parsers", {}).items():
+                parsed_value = parser(
+                    field_name=field_name,
+                    output=output,
+                    response=response,
+                    adapter=self,
+                    lm=lm,
+                    plan=plan,
+                )
+                if parsed_value is not None:
+                    value[field_name] = parsed_value
+
             # Parse custom types that do not rely on the `Adapter.parse()` text parser.
             output_dict = output.to_output_dict()
             for name, field in original_signature.output_fields.items():
@@ -376,7 +485,7 @@ class Adapter:
         response = await self.acall_lm(lm, request)
         return self.parse_response(plan, response, lm)
 
-    def format(
+    def render_messages(
         self,
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -450,6 +559,22 @@ class Adapter:
             messages.append({"role": "user", "content": content})
 
         return [message if isinstance(message, LMMessage) else LMMessage(**message) for message in messages]
+
+    def format(
+        self,
+        signature: type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Return legacy OpenAI-style messages for compatibility.
+
+        Deprecated:
+            Since DSPy 3.3. Adapter internals now use `render_messages()` and
+            normalized LM message types. This compatibility method will be
+            removed in DSPy 3.5.
+        """
+        messages = [message_to_openai_chat(message) for message in self.render_messages(signature, demos, inputs)]
+        return split_message_content_for_custom_types(messages)
 
     def format_system_message(self, signature: type[Signature]) -> str:
         """Format the system message for the LM call.

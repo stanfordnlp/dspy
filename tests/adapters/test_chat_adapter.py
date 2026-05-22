@@ -7,6 +7,7 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
+from dspy.core.types import LMMessage, LMTextPart
 from dspy.experimental import Citations, Document
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
@@ -90,6 +91,67 @@ def test_chat_adapter_sync_call():
     lm = dspy.utils.DummyLM([{"answer": "Paris"}])
     result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
+
+
+def test_chat_adapter_custom_renderer_can_parse_code_cell_tool_calls_without_running_them():
+    class CodeCellSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def parse_run_cells(*, output, **kwargs):
+        code_blocks = re.findall(r"```python\n#! run\n(.*?)```", output.text or "", flags=re.DOTALL)
+        if not code_blocks:
+            return None
+        return dspy.ToolCalls.from_dict_list(
+            [{"name": "python", "args": {"code": code.strip()}} for code in code_blocks]
+        )
+
+    def code_cell_tool_renderer(**kwargs):
+        assert kwargs["role"] == "output"
+        return {
+            "remove_from_prompt": [kwargs["field_name"]],
+            "messages": [
+                LMMessage(
+                    role="system",
+                    parts=[
+                        LMTextPart(
+                            text=(
+                                "When code execution is needed, emit a Python fenced block whose first line is `#! run`. "
+                                "A DSPy module may execute that code and continue the interaction; the adapter must only parse it."
+                            )
+                        )
+                    ],
+                )
+            ],
+            "output_parsers": {kwargs["field_name"]: parse_run_cells},
+        }
+
+    class CodeCellLM(dspy.BaseLM):
+        def __init__(self):
+            super().__init__(model="test/code-cell")
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.messages = messages
+            return [
+                "[[ ## answer ## ]]\nI need to run a calculation.\n\n"
+                "```python\n#! run\nprint(1 + 1)\n```\n\n"
+                "[[ ## completed ## ]]"
+            ]
+
+    lm = CodeCellLM()
+    adapter = dspy.ChatAdapter(renderers={dspy.ToolCalls: code_cell_tool_renderer}, use_json_adapter_fallback=False)
+
+    result = adapter(lm, {}, CodeCellSignature, [], {"question": "What is 1 + 1?"})
+
+    assert result[0]["answer"] == "I need to run a calculation.\n\n```python\n#! run\nprint(1 + 1)\n```"
+    assert result[0]["tool_calls"] == dspy.ToolCalls.from_dict_list(
+        [{"name": "python", "args": {"code": "print(1 + 1)"}}]
+    )
+
+    # The adapter parsed the requested action but did not execute it or loop. That remains module-level behavior.
+    executed = [call.execute({"python": lambda code: "2"}) for call in result[0]["tool_calls"].tool_calls]
+    assert executed == ["2"]
 
 
 @pytest.mark.asyncio
