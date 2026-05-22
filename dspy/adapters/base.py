@@ -111,22 +111,6 @@ class Adapter:
             if custom_edits is not None:
                 prompt_signature = self._apply_renderer_edits(prompt_signature, inputs, custom_edits, messages, user_parts, tools, lm_kwargs, output_parsers)
                 continue
-            if field.annotation == History:
-                prompt_signature = prompt_signature.delete(name)
-                messages.extend(self._history_to_lm_messages(prompt_signature, value))
-                inputs.pop(name, None)
-            elif field.annotation == Image:
-                prompt_signature = prompt_signature.delete(name)
-                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._image_to_lm_part(value)])
-                inputs.pop(name, None)
-            elif field.annotation == Audio:
-                prompt_signature = prompt_signature.delete(name)
-                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._audio_to_lm_part(value)])
-                inputs.pop(name, None)
-            elif field.annotation == File:
-                prompt_signature = prompt_signature.delete(name)
-                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._file_to_lm_part(value)])
-                inputs.pop(name, None)
 
         if self.use_native_function_calling:
             tool_call_input_field_name = self._get_tool_call_input_field_name(prompt_signature)
@@ -275,6 +259,7 @@ class Adapter:
         # `dspy.LM` converts those messages to text-completion or Responses requests internally.
         data = to_openai_chat_request(request)
         data.pop("model", None)
+        data["messages"] = split_message_content_for_custom_types(data["messages"])
         if request.config.cache is not None:
             if request.config.cache.enabled is not None:
                 data["cache"] = request.config.cache.enabled

@@ -11,6 +11,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type, warn_legacy_type_method
+from dspy.core.types import LMImagePart
 
 try:
     from PIL import Image as PILImage
@@ -78,6 +79,14 @@ class Image(Type):
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
         return [{"type": "image_url", "image_url": {"url": image_url}}]
+
+    def to_lm_parts(self) -> list[LMImagePart]:
+        source = self.url
+        if source.startswith("data:") and "," in source:
+            header, data = source.split(",", 1)
+            media_type = header.removeprefix("data:").split(";", 1)[0]
+            return [LMImagePart(data=data, media_type=media_type)]
+        return [LMImagePart(url=source)]
 
     @classmethod
     def from_url(cls, url: str, download: bool = False):

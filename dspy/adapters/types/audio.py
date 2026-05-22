@@ -8,6 +8,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type, warn_legacy_type_method
+from dspy.core.types import LMAudioPart
 
 try:
     import soundfile as sf
@@ -45,6 +46,9 @@ class Audio(Type):
             }
         }]
 
+
+    def to_lm_parts(self) -> list[LMAudioPart]:
+        return [LMAudioPart(data=self.data, media_type=f"audio/{self.audio_format}")]
 
     @pydantic.model_validator(mode="before")
     @classmethod

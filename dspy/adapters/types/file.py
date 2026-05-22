@@ -6,6 +6,7 @@ from typing import Any
 import pydantic
 
 from dspy.adapters.types.base_type import Type, warn_legacy_type_method
+from dspy.core.types import LMBinaryPart
 
 
 class File(Type):
@@ -70,6 +71,18 @@ class File(Type):
             return [{"type": "file", "file": file_dict}]
         except Exception as e:
             raise ValueError(f"Failed to format file for DSPy: {e}")
+
+    def to_lm_parts(self) -> list[LMBinaryPart]:
+        if self.file_data is not None:
+            media_type = "application/octet-stream"
+            data = self.file_data
+            if self.file_data.startswith("data:") and "," in self.file_data:
+                header, data = self.file_data.split(",", 1)
+                media_type = header.removeprefix("data:").split(";", 1)[0]
+            return [LMBinaryPart(data=data, media_type=media_type, filename=self.filename)]
+        if self.file_id is not None:
+            return [LMBinaryPart(file_id=self.file_id, filename=self.filename)]
+        raise ValueError("File must have file_data or file_id.")
 
     def __str__(self):
         warn_legacy_type_method("File.__str__() legacy serialization")

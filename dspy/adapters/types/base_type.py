@@ -63,6 +63,15 @@ class Type(pydantic.BaseModel):
         )
         raise NotImplementedError
 
+    def to_lm_parts(self):
+        """Return normalized LM parts for adapter rendering, if supported.
+
+        Subclasses should override this to participate in the marker-free
+        adapter pipeline. Returning ``None`` keeps the legacy marker-based
+        serializer as a compatibility fallback.
+        """
+        return None
+
     @classmethod
     def description(cls) -> str:
         """Description of the custom type"""
@@ -258,50 +267,65 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
             # Custom type messages are only in user messages
             continue
 
-        pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
-        result = []
-        last_end = 0
-        # DSPy adapter always formats user input into a string content before custom type splitting
-        content: str = message["content"]
-
-        for match in re.finditer(pattern, content, re.DOTALL):
-            start, end = match.span()
-
-            # Add text before the current block
-            if start > last_end:
-                result.append({"type": "text", "text": content[last_end:start]})
-
-            # Parse the JSON inside the block
-            custom_type_content = match.group(1).strip()
-            parsed = None
-
-            for parse_fn in [json.loads, _parse_doubly_quoted_json, json_repair.loads]:
-                try:
-                    parsed = parse_fn(custom_type_content)
-                    break
-                except json.JSONDecodeError:
-                    continue
-
-            if parsed:
-                for custom_type_content in parsed:
-                    result.append(custom_type_content)
-            else:
-                # fallback to raw string if it's not valid JSON
-                result.append({"type": "text", "text": custom_type_content})
-
-            last_end = end
-
-        if last_end == 0:
-            # No custom type found, return the original message
+        content = message["content"]
+        if isinstance(content, str):
+            result, changed = _split_custom_type_markers_in_text(content)
+            if changed:
+                message["content"] = result
             continue
 
-        # Add any remaining text after the last match
-        if last_end < len(content):
-            result.append({"type": "text", "text": content[last_end:]})
-
-        message["content"] = result
+        if isinstance(content, list):
+            result = []
+            changed = False
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                    split_blocks, block_changed = _split_custom_type_markers_in_text(block["text"])
+                    result.extend(split_blocks)
+                    changed = changed or block_changed
+                else:
+                    result.append(block)
+            if changed:
+                message["content"] = result
 
     return messages
+
+
+def _split_custom_type_markers_in_text(content: str) -> tuple[list[dict[str, Any]], bool]:
+    pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
+    result = []
+    last_end = 0
+
+    for match in re.finditer(pattern, content, re.DOTALL):
+        start, end = match.span()
+
+        if start > last_end:
+            result.append({"type": "text", "text": content[last_end:start]})
+
+        custom_type_content = match.group(1).strip()
+        parsed = None
+
+        for parse_fn in [json.loads, _parse_doubly_quoted_json, json_repair.loads]:
+            try:
+                parsed = parse_fn(custom_type_content)
+                break
+            except (json.JSONDecodeError, ValueError, TypeError):
+                continue
+
+        if parsed:
+            for custom_type_content in parsed:
+                result.append(custom_type_content)
+        else:
+            result.append({"type": "text", "text": custom_type_content})
+
+        last_end = end
+
+    if last_end == 0:
+        return [{"type": "text", "text": content}], False
+
+    if last_end < len(content):
+        result.append({"type": "text", "text": content[last_end:]})
+
+    return result, True
 
 
 def _parse_doubly_quoted_json(json_str: str) -> Any:

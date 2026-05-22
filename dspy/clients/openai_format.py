@@ -247,15 +247,17 @@ def audio_to_openai(audio: LMAudioPart) -> dict[str, Any]:
 
 
 def document_to_openai_blocks(document: LMDocumentPart) -> list[dict[str, Any]]:
-    source = document.source or {}
-    if source.get("type") == "text" and source.get("data") is not None:
-        text = str(source.get("data"))
-        if document.title is not None:
-            text = f"{document.title}\n\n{text}"
-        if document.context is not None:
-            text = f"{document.context}\n\n{text}"
-        return [{"type": "text", "text": text}]
-    return [{"type": "text", "text": json.dumps(document.model_dump(exclude_none=True), ensure_ascii=False)}]
+    if document.source is not None:
+        data = {"type": "document", "source": document.source}
+    else:
+        data = {"type": "document", "source": media_source(document), "media_type": document.media_type}
+    if document.citations:
+        data["citations"] = document.citations
+    if document.title is not None:
+        data["title"] = document.title
+    if document.context is not None:
+        data["context"] = document.context
+    return [data]
 
 
 def video_to_openai(video: LMVideoPart) -> dict[str, Any]:

@@ -42,6 +42,21 @@ def serialize_for_json(value: Any) -> Any:
         return str(value)
 
 
+def format_field_value_parts(field_info: FieldInfo, value: Any) -> list[dict[str, Any]] | None:
+    """Return provider content blocks for direct DSPy adapter type values.
+
+    This avoids using the deprecated marker serializer for top-level adapter
+    types. Nested custom types still use the legacy path for now.
+    """
+    if not isinstance(value, DspyType):
+        return None
+
+    parts = value.to_lm_parts()
+    if parts is None:
+        return None
+    return [part.model_dump(mode="json", exclude_none=True) for part in parts]
+
+
 def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
