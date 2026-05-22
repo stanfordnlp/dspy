@@ -350,15 +350,11 @@ def test_chat_adapter_format_exact_messages_with_history():
 
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
-                 "1. `history` (History): \n"
-                 "2. `question` (str):\n"
+                 "1. `question` (str):\n"
                  "Your output fields are:\n"
                  "1. `answer` (str):\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
-                 "\n"
-                 "[[ ## history ## ]]\n"
-                 "{history}\n"
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
@@ -602,18 +598,14 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
+                 '1. `image` (Image): \n'
+                 '2. `tools` (list[Tool]): \n'
+                 '3. `profile` (Profile): \n'
+                 '4. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -638,10 +630,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '        Answer using all supplied context.'},
      {"role": "user",
       "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+                   "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'
@@ -1268,29 +1257,25 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `audio` (Audio): \n'
-                 '4. `file` (File): \n'
-                 '5. `document` (Document): \n'
+                 '1. `image` (Image): \n'
+                 '2. `audio` (Audio): \n'
+                 '3. `file` (File): \n'
+                 '4. `document` (Document): \n'
                  '    Type description of Document: A document containing text content that can be '
                  'referenced and cited. Include the full text content and optionally a title for '
                  'proper referencing.\n'
-                 '6. `event` (Event): \n'
+                 '5. `event` (Event): \n'
                  '    Type description of Event: An event block.\n'
-                 '7. `tools` (list[Tool]): \n'
-                 '8. `profile` (Profile): \n'
-                 '9. `context` (str): \n'
-                 '10. `question` (str):\n'
+                 '6. `tools` (list[Tool]): \n'
+                 '7. `profile` (Profile): \n'
+                 '8. `context` (str): \n'
+                 '9. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard): \n'
                  "2. `verdict` (Literal['yes', 'no']): \n"
                  '3. `confidence` (float):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -1336,11 +1321,24 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  'In adhering to this structure, your objective is: \n'
                  '        Answer carefully using every available signal.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Incomplete example question"},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'Not supplied for this particular example. \n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 'Not supplied for this particular example.\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
                   {"type": "input_audio", "input_audio": {"data": "REVNTw==", "format": "wav"}},
@@ -1380,23 +1378,6 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '\n'
                  '[[ ## confidence ## ]]\n'
                  '0.9\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'},
-     {"role": "user",
-      "content": "This is an example of the task, though some input or output fields are not "
-                 "supplied.\n"
-                 "\n"
-                 "[[ ## question ## ]]\n"
-                 "Incomplete example question"},
-     {"role": "assistant",
-      "content": '[[ ## answer ## ]]\n'
-                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
-                 '\n'
-                 '[[ ## verdict ## ]]\n'
-                 'Not supplied for this particular example. \n'
-                 '\n'
-                 '[[ ## confidence ## ]]\n'
-                 'Not supplied for this particular example.\n'
                  '\n'
                  '[[ ## completed ## ]]\n'},
      {"role": "user",
@@ -1816,6 +1797,43 @@ def test_chat_adapter_formats_conversation_history():
     assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
     assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
     assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
+
+
+def test_chat_adapter_excludes_history_field_from_system_message_and_demos():
+    """The history field is rendered as conversation turns and should not appear in the system
+    prompt's field listing or in few-shot demonstrations. See issue #8260 and #9022."""
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {"question": "What is the capital of France?", "answer": "Paris"},
+        ]
+    )
+    demos = [
+        {
+            "question": "What is the capital of Italy?",
+            "history": dspy.History(messages=[]),
+            "answer": "Rome",
+        }
+    ]
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(
+        MySignature, demos, {"question": "What is the capital of Germany?", "history": history}
+    )
+
+    system_content = messages[0]["content"]
+    assert "`history` (History)" not in system_content
+    assert "[[ ## history ## ]]" not in system_content
+
+    for message in messages[1:]:
+        content = message["content"]
+        if isinstance(content, str):
+            assert "[[ ## history ## ]]" not in content
 
 
 def test_chat_adapter_fallback_to_json_adapter_on_exception():

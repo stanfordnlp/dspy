@@ -277,11 +277,16 @@ class Adapter:
                 history_field_name,
                 inputs_copy,
             )
+            # The history field is rendered out-of-band as conversation turns, so it should not appear as a
+            # field marker in the system prompt or in the few-shot demonstrations.
+            signature_for_prompt = signature_without_history
+        else:
+            signature_for_prompt = signature
 
         messages = []
-        system_message = self.format_system_message(signature)
+        system_message = self.format_system_message(signature_for_prompt)
         messages.append({"role": "system", "content": system_message})
-        messages.extend(self.format_demos(signature, demos))
+        messages.extend(self.format_demos(signature_for_prompt, demos))
         if history_field_name:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
