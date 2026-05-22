@@ -193,6 +193,8 @@ class JSONAdapter(ChatAdapter):
             )
 
         fields = {k: v for k, v in parsed_fields.items() if k in signature.output_fields}
+        # Only unwrap when the top level has no output fields. Partial top-level matches should remain parse errors
+        # instead of mixing fields from two potentially conflicting response shapes.
         if not fields:
             fields = _find_single_nested_output_fields(parsed_fields, signature)
 

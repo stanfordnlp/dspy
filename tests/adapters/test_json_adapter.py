@@ -950,6 +950,24 @@ def test_json_adapter_parse_keeps_top_level_output_fields_when_nested_json_is_pr
     }
 
 
+def test_json_adapter_parse_rejects_ambiguous_nested_output_fields():
+    class AnalysisSignature(dspy.Signature):
+        prompt: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        actors: list[str] = dspy.OutputField()
+        details: str = dspy.OutputField()
+
+    completion = (
+        '{"json_input": {"reasoning": "first", "actors": ["EntityA"], "details": "first details"}, '
+        '"json_object": {"reasoning": "second", "actors": ["EntityB"], "details": "second details"}}'
+    )
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        dspy.JSONAdapter().parse(AnalysisSignature, completion)
+
+    assert e.value.parsed_result == {}
+
+
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
