@@ -1,5 +1,7 @@
+import asyncio
 import json
 import tempfile
+import threading
 import time
 import warnings
 from pathlib import Path
@@ -549,6 +551,136 @@ def test_disable_history():
                 choices=[Choices(message=Message(content="test answer"))],
                 model="openai/gpt-4o-mini",
             )
+
+
+def test_local_history_async():
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+
+    async def mock_acompletion(*args, **kwargs):
+        messages = kwargs.get("messages", [])
+        prompt = messages[-1]["content"] if messages else ""
+        return ModelResponse(
+            choices=[Choices(message=Message(content=f"response_for_{prompt}"))],
+            model="openai/gpt-4o-mini",
+        )
+
+    async def make_call_with_prompt(prompt):
+        await lm.acall(prompt)
+        local = lm.local_history
+        assert len(local) == 1, f"Expected 1 local history entry, got {len(local)}"
+        assert local[0]["outputs"] == [f"response_for_{prompt}"]
+        return local[0]
+
+    async def run_all_with_prompt():
+        return await asyncio.gather(*[make_call_with_prompt(f"prompt_{i}") for i in range(5)])
+
+    with mock.patch("litellm.acompletion", side_effect=mock_acompletion):
+        results = asyncio.run(run_all_with_prompt())
+
+    assert len(results) == 5
+    assert len(lm.history) == 5
+    for i, entry in enumerate(results):
+        assert entry["outputs"] == [f"response_for_prompt_{i}"]
+        assert entry["prompt"] == f"prompt_{i}"
+
+    # Verify local history isolation when calling with messages
+    lm.history.clear()
+
+    async def make_call_with_messages(prompt):
+        messages = [{"role": "user", "content": prompt}]
+        await lm.acall(messages=messages)
+        local = lm.local_history
+        assert len(local) == 1, f"Expected 1 local history entry, got {len(local)}"
+        assert local[0]["outputs"] == [f"response_for_{prompt}"]
+        return local[0]
+
+    async def run_all_with_messages():
+        return await asyncio.gather(*[make_call_with_messages(f"prompt_{i}") for i in range(5)])
+
+    with mock.patch("litellm.acompletion", side_effect=mock_acompletion):
+        results = asyncio.run(run_all_with_messages())
+
+    assert len(results) == 5
+    assert len(lm.history) == 5
+    for i, entry in enumerate(results):
+        assert entry["outputs"] == [f"response_for_prompt_{i}"]
+        assert entry["messages"] == [{"role": "user", "content": f"prompt_{i}"}]
+
+
+def test_local_history_threaded():
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+    results = {}
+    errors = []
+
+    def mock_completion(*args, **kwargs):
+        messages = kwargs.get("messages", [])
+        prompt = messages[-1]["content"] if messages else ""
+        return ModelResponse(
+            choices=[Choices(message=Message(content=f"response_for_{prompt}"))],
+            model="openai/gpt-4o-mini",
+        )
+
+    def make_call_with_prompt(thread_id, prompt):
+        try:
+            lm(prompt)
+            local = list(lm.local_history)
+            assert len(local) == 1, f"Thread {thread_id}: expected 1 local history entry, got {len(local)}"
+            assert local[0]["outputs"] == [f"response_for_{prompt}"]
+            results[thread_id] = local[0]
+        except Exception as e:
+            errors.append(e)
+
+    with mock.patch("litellm.completion", side_effect=mock_completion):
+        threads = []
+        for i in range(5):
+            t = threading.Thread(target=make_call_with_prompt, args=(i, f"prompt_{i}"))
+            threads.append(t)
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert not errors, f"Thread errors: {errors}"
+    assert len(results) == 5
+    assert len(lm.history) == 5
+    for thread_id, entry in results.items():
+        assert entry["outputs"] == [f"response_for_prompt_{thread_id}"]
+        assert entry["prompt"] == f"prompt_{thread_id}"
+
+    # Verify local history isolation when calling with messages
+    lm.history.clear()
+    results.clear()
+    errors.clear()
+
+    def make_call_with_messages(thread_id, prompt):
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            lm(messages=messages)
+            local = list(lm.local_history)
+            assert len(local) == 1, f"Thread {thread_id}: expected 1 local history entry, got {len(local)}"
+            assert local[0]["outputs"] == [f"response_for_{prompt}"]
+            results[thread_id] = local[0]
+        except Exception as e:
+            errors.append(e)
+
+    with mock.patch("litellm.completion", side_effect=mock_completion):
+        threads = []
+        for i in range(5):
+            t = threading.Thread(target=make_call_with_messages, args=(i, f"prompt_{i}"))
+            threads.append(t)
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert not errors, f"Thread errors: {errors}"
+    assert len(results) == 5
+    assert len(lm.history) == 5
+    for thread_id, entry in results.items():
+        assert entry["outputs"] == [f"response_for_prompt_{thread_id}"]
+        assert entry["messages"] == [{"role": "user", "content": f"prompt_{thread_id}"}]
 
 
 def test_responses_api():

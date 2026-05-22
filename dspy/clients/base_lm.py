@@ -1,5 +1,7 @@
+import copy
 import datetime
 import uuid
+from contextvars import ContextVar
 from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
@@ -66,6 +68,11 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        # unique per instance
+        self._local_history: ContextVar[list | None] = ContextVar(
+            f"local_history_{uuid.uuid4().hex}",
+            default=None,
+        )
 
     @property
     def supports_function_calling(self) -> bool:
@@ -190,6 +197,18 @@ class BaseLM:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def __deepcopy__(self, memo: Any):
+        new_obj = self.__class__.__new__(self.__class__)
+        memo[id(self)] = new_obj
+
+        for k, v in self.__dict__.items():
+            if isinstance(v, ContextVar):
+                setattr(new_obj, k, v)  # shallow copy
+            else:
+                setattr(new_obj, k, copy.deepcopy(v, memo))
+
+        return new_obj
+
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters.
 
@@ -216,6 +235,14 @@ class BaseLM:
 
         return new_instance
 
+    @property
+    def local_history(self) -> list:
+        lst = self._local_history.get()
+        if lst is None:
+            lst = []
+            self._local_history.set(lst)
+        return lst
+
     def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
         pretty_print_history(self.history, n, file=file)
 
@@ -237,6 +264,9 @@ class BaseLM:
             self.history.pop(0)
 
         self.history.append(entry)
+
+        # thread-local/async-local history
+        self.local_history.append(entry)
 
         # Per-module history
         caller_modules = settings.caller_modules or []
