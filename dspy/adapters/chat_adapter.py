@@ -209,19 +209,15 @@ class ChatAdapter(Adapter):
         return assistant_message_content
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        sections = [(None, [])]
-
-        for line in completion.splitlines():
-            match = field_header_pattern.match(line.strip())
-            if match:
-                # If the header pattern is found, split the rest of the line as content
+        sections = [(None, completion)]
+        matches = list(field_header_pattern.finditer(completion))
+        if matches:
+            sections = [(None, completion[: matches[0].start()].strip())]
+            for idx, match in enumerate(matches):
                 header = match.group(1)
-                remaining_content = line[match.end() :].strip()
-                sections.append((header, [remaining_content] if remaining_content else []))
-            else:
-                sections[-1][1].append(line)
-
-        sections = [(k, "\n".join(v).strip()) for k, v in sections]
+                start = match.end()
+                end = matches[idx + 1].start() if idx + 1 < len(matches) else len(completion)
+                sections.append((header, completion[start:end].strip()))
 
         fields = {}
         for k, v in sections:
