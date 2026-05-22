@@ -2,12 +2,14 @@ import pytest
 
 import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
+from dspy.clients.language_models.base import GLOBAL_LANGUAGE_MODEL_HISTORY
 from dspy.utils.dummies import DummyLM
 
 
 @pytest.fixture(autouse=True)
 def clear_history():
     GLOBAL_HISTORY.clear()
+    GLOBAL_LANGUAGE_MODEL_HISTORY.clear()
     yield
 
 
@@ -75,3 +77,26 @@ def test_inspect_history_n_larger_than_history(capsys):
     dspy.inspect_history(n=5)
     history = GLOBAL_HISTORY
     assert len(history) == 2  # Should return all available entries
+
+
+class InspectHistoryLanguageModel(dspy.BaseLM):
+    def __init__(self):
+        super().__init__(model="test/inspect-history", cache=False)
+
+    def forward(self, request: dspy.LMRequest) -> dspy.LMResponse:
+        return dspy.LMResponse.from_text("normalized response", model=request.model)
+
+
+def test_inspect_history_includes_legacy_and_normalized_lm_calls(capsys):
+    legacy_lm = DummyLM([{"response": "legacy response"}])
+    dspy.configure(lm=legacy_lm)
+    dspy.Predict("query: str -> response: str")(query="Legacy query")
+
+    normalized_lm = InspectHistoryLanguageModel()
+    normalized_lm("Normalized query")
+
+    dspy.inspect_history(n=2)
+    out, _ = capsys.readouterr()
+
+    assert "Legacy query" in out
+    assert "Normalized query" in out

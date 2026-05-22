@@ -65,16 +65,84 @@ Note: Since `dspy.streamify` returns an async generator, you must use it within 
 
 You may have noticed that the above streaming contains two different entities: `StreamResponse`
 and `Prediction.` `StreamResponse` is the wrapper over streaming tokens on the field being listened to, and in
-this example it is the `answer` field. `Prediction` is the program's final output. In DSPy, streaming is
-implemented in a sidecar fashion: we enable streaming on the LM so that LM outputs a stream of tokens. We send these
-tokens to a side channel, which is being continuously read by the user-defined listeners. Listeners keep interpreting
-the stream, and decides if the `signature_field_name` it is listening to has started to appear and has finalized.
-Once it decides that the field appears, the listener begins outputting tokens to the async generator users can
-read. Listeners' internal mechanism changes according to the adapter behind the scene, and because usually
-we cannot decide if a field has finalized until seeing the next field, the listener buffers the output tokens
-before sending to the final generator, which is why you will usually see the last chunk of type `StreamResponse`
-has more than one token. The program's output is also written to the stream, which is the chunk of `Prediction`
-as in the sample output above.
+this example it is the `answer` field. `Prediction` is the program's final output. DSPy runs the LM in streaming
+mode, then lets the active adapter interpret the stream according to the adapter's output format. For example,
+`ChatAdapter` looks for `[[ ## field_name ## ]]` sections, `XMLAdapter` looks for XML tags, and `JSONAdapter`
+looks for JSON fields. Once the adapter decides that the field you are listening to has started, it begins
+outputting `StreamResponse` chunks to the async generator. Because adapters often need to see a field boundary
+before they know a field has ended, the final `StreamResponse` chunk may contain more than one token. The program's
+final output is also written to the stream as a `Prediction`, as in the sample output above.
+
+### Streaming with normalized `BaseLM`s
+
+DSPy's new normalized LM backends stream `LMStreamEvent` objects end to end. You can use them with the same
+`dspy.streamify` API. Enable the normalized router, configure a streaming `BaseLM`, and add listeners for the
+fields you want to expose:
+
+```python
+import asyncio
+
+import dspy
+
+with dspy.context(experimental=True):
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+predict = dspy.Predict("question -> answer")
+stream_predict = dspy.streamify(
+    predict,
+    stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+)
+
+async def main():
+    with dspy.context(lm=lm):
+        async for chunk in stream_predict(question="Why did a chicken cross the kitchen?"):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                print(chunk.chunk, end="")
+            elif isinstance(chunk, dspy.Prediction):
+                print("\nFinal:", chunk.answer)
+
+asyncio.run(main())
+```
+
+When you provide `StreamListener`s, the adapter parses normalized LM events into field-level `StreamResponse` chunks.
+When you do not provide listeners, `streamify` yields the raw normalized `LMStreamEvent`s along with the final
+`Prediction`:
+
+```python
+stream_predict = dspy.streamify(predict)
+
+async def main():
+    with dspy.context(lm=lm):
+        async for chunk in stream_predict(question="Say hello"):
+            if isinstance(chunk, dspy.LMStreamDeltaEvent) and isinstance(chunk.delta, dspy.LMTextDelta):
+                print(chunk.delta.text, end="")
+            elif isinstance(chunk, dspy.Prediction):
+                print("\nFinal:", chunk.answer)
+```
+
+If you want both layers at once, pass `include_lm_events=True`. This yields raw normalized LM events for tracing or
+custom clients and field-level `StreamResponse` chunks for your UI:
+
+```python
+stream_predict = dspy.streamify(
+    predict,
+    stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    include_lm_events=True,
+)
+
+async def main():
+    with dspy.context(lm=lm):
+        async for chunk in stream_predict(question="Say hello"):
+            if isinstance(chunk, dspy.LMStreamEvent):
+                log_raw_event(chunk)
+            elif isinstance(chunk, dspy.streaming.StreamResponse):
+                print(chunk.chunk, end="")
+            elif isinstance(chunk, dspy.Prediction):
+                print("\nFinal:", chunk.answer)
+```
+
+Legacy `BaseLM` and legacy `dspy.LM` streaming continue to use the existing LiteLLM chunk path. The normalized
+`LMStreamEvent` path is used for `dspy.BaseLM` backends.
 
 To handle these different types and implement custom logic:
 

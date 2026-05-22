@@ -88,6 +88,8 @@ nav:
     - FAQ:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
+    - Migration:
+        - BaseLM (typed contract): migration/baselm.md
 
     - API Reference:
         - API Reference: api/index.md
@@ -110,6 +112,7 @@ nav:
         - Models:
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
+            - LM messages: api/models/LMMessage.md
         - Modules:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md

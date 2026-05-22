@@ -39,12 +39,11 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
-weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
+weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
-litellm = ["litellm>=1.64.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -115,6 +114,7 @@ filterwarnings = [
     # The issue has been fixed repeatedly, but still keeps showing up.
     # For examples, see litellm PRs #6903, #7300, #8096, #9372, and #12528.
     "ignore:.+class-based `config` is deprecated, use ConfigDict:DeprecationWarning",
+    "ignore::DeprecationWarning:dspy"
 ]
 
 [tool.ruff]

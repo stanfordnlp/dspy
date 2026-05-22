@@ -17,6 +17,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.language_models.base import LanguageModel
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -37,19 +38,84 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     return False
 
 
+def _consume_json_field_value(buffer: str) -> tuple[str, bool]:
+    text = buffer.lstrip()
+    if not text:
+        return "", False
+    if text[0] == '"':
+        value, ended = _consume_json_string_value(text)
+        return value, ended
+    try:
+        value = json.JSONDecoder().raw_decode(text)[0]
+        return json.dumps(value) if not isinstance(value, str) else value, True
+    except json.JSONDecodeError:
+        return "", False
+
+
+def _consume_json_string_value(text: str) -> tuple[str, bool]:
+    escaped = False
+    for index, char in enumerate(text[1:], start=1):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            try:
+                return json.loads(text[: index + 1]), True
+            except json.JSONDecodeError:
+                return text[1:index], True
+    return "", False
+
+
+def _best_effort_json_field_value(buffer: str) -> str:
+    text = buffer.strip()
+    if text.startswith('"'):
+        return text[1:].rstrip('"')
+    return text.rstrip(",}").strip()
+
+
 class JSONAdapter(ChatAdapter):
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
         # JSONAdapter uses native function calling by default.
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
 
+    def stream_start_identifier(self, field_name: str) -> str:
+        return f'"{field_name}":'
+
+    def consume_stream_field_buffer(self, field_name: str, buffer: str, *, final: bool) -> tuple[str, str, bool]:
+        parsed, ended = _consume_json_field_value(buffer)
+        if ended:
+            return parsed, "", True
+        if final:
+            return _best_effort_json_field_value(buffer), "", False
+        return "", buffer, False
+
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
-        if "response_format" not in lm.supported_params:
+        if isinstance(lm, BaseLM):
+            # Prefer typed capabilities for v2 LMs; fall back to the legacy
+            # `supported_params` probe (LiteLLM-based) for v1 LMs that don't
+            # publish capabilities.
+            caps = getattr(lm, "capabilities", None)
+            if caps is not None and caps.response_schema:
+                pass
+            elif "response_format" not in lm.supported_params:
+                return call_fn(lm, lm_kwargs, signature, demos, inputs)
+        else:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        supports_response_schema = (
+            lm.supports_response_schema if isinstance(lm, BaseLM) else lm.capabilities.response_schema
+        )
+        if (
+            _has_open_ended_mapping(signature)
+            or (not self.use_native_function_calling and has_tool_calls)
+            or not supports_response_schema
+        ):
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -57,7 +123,7 @@ class JSONAdapter(ChatAdapter):
 
     def __call__(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -80,7 +146,7 @@ class JSONAdapter(ChatAdapter):
 
     async def acall(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],

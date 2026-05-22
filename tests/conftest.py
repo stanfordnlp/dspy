@@ -9,8 +9,13 @@ SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]
 
 
 @pytest.fixture(autouse=True)
-def clear_settings():
+def clear_settings(request):
     """Ensures that the settings are cleared after each test."""
+
+    if request.config.getoption("--experimental-lm-router"):
+        import dspy
+
+        dspy.configure(experimental=True)
 
     yield
 
@@ -27,6 +32,12 @@ def anyio_backend():
 
 # Taken from: https://gist.github.com/justinmklam/b2aca28cb3a6896678e2e2927c6b6a38
 def pytest_addoption(parser):
+    parser.addoption(
+        "--experimental-lm-router",
+        action="store_true",
+        default=False,
+        help="run tests with dspy.settings.experimental=True to exercise the normalized LM router",
+    )
     for flag in SKIP_DEFAULT_FLAGS:
         parser.addoption(
             f"--{flag}",
