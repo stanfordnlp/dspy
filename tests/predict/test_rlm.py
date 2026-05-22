@@ -540,6 +540,19 @@ class TestREPLTypes:
         assert "print(1)" in formatted
         assert "1" in formatted
 
+    def test_repl_entry_format_handles_nested_code_fences(self):
+        """History formatting should not let prior markdown fences close the current block."""
+        entry = REPLEntry(
+            reasoning="inspect previous model output",
+            code='print("""```python\nx = 1\n```""")',
+            output="Code:\n```python\nprint(1)\n```\nOutput: ok",
+        )
+        formatted = entry.format(index=0)
+
+        assert "````python\n" in formatted
+        assert "\n````\nOutput" in formatted
+        assert "Code:\n```python\nprint(1)\n```" in formatted
+
     def test_repl_entry_format_truncation(self):
         """Test REPLEntry.format() truncates with head+tail and shows true length."""
         output = "a" * 100 + "b" * 100
@@ -559,7 +572,15 @@ class TestREPLTypes:
     def test_repl_entry_truncation_preserves_exact_odd_limit(self, limit, head, tail):
         formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
 
-        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+        truncated = f"{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+        assert formatted == f"Output (6 chars):\n```\n{truncated}\n```"
+
+    def test_repl_entry_truncation_uses_a_fence_longer_than_retained_backticks(self):
+        formatted = REPLEntry.format_output("````abcdef````", max_output_chars=9)
+
+        assert formatted == (
+            "Output (14 chars):\n`````\n````\n\n... (5 characters omitted) ...\n\nf````\n`````"
+        )
 
     @pytest.mark.parametrize("limit", [0, -1])
     def test_repl_entry_rejects_non_positive_limit(self, limit):
@@ -590,6 +611,14 @@ class TestREPLTypes:
         assert var.type_name == "str"
         assert var.total_length == 11
         assert "hello world" in var.preview
+
+    def test_repl_variable_format_handles_nested_code_fences(self):
+        """Variable previews can contain markdown copied from prior traces."""
+        var = REPLVariable.from_value("context", "before\n```python\nx = 1\n```\nafter")
+        formatted = var.format()
+
+        assert "Preview:\n````\n" in formatted
+        assert "```python\nx = 1\n```" in formatted
 
     def test_repl_variable_truncation(self):
         """Test REPLVariable preview shows head and tail."""

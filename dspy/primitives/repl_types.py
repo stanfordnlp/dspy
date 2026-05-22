@@ -23,6 +23,23 @@ if TYPE_CHECKING:
 __all__ = ["REPLVariable", "REPLEntry", "REPLHistory"]
 
 
+def _longest_backtick_run(text: str) -> int:
+    longest = 0
+    current = 0
+    for char in text:
+        if char == "`":
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
+def _markdown_block(text: str, language: str = "") -> str:
+    fence = "`" * max(3, _longest_backtick_run(text) + 1)
+    return f"{fence}{language}\n{text}\n{fence}"
+
+
 class REPLVariable(pydantic.BaseModel):
     """Metadata about a variable available in the REPL environment."""
 
@@ -95,7 +112,7 @@ class REPLVariable(pydantic.BaseModel):
         if self.constraints:
             lines.append(f"Constraints: {self.constraints}")
         lines.append(f"Total length: {self.total_length:,} characters")
-        lines.append(f"Preview:\n```\n{self.preview}\n```")
+        lines.append(f"Preview:\n{_markdown_block(self.preview)}")
         return "\n".join(lines)
 
     @pydantic.model_serializer()
@@ -124,12 +141,12 @@ class REPLEntry(pydantic.BaseModel):
             tail_chars = max_output_chars - head_chars
             omitted = raw_len - max_output_chars
             output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
-        return f"Output ({raw_len:,} chars):\n{output}"
+        return f"Output ({raw_len:,} chars):\n{_markdown_block(output)}"
 
     def format(self, index: int, max_output_chars: int = 10_000) -> str:
         """Format this entry for inclusion in prompts."""
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
-        code_block = f"```python\n{self.code}\n```"
+        code_block = _markdown_block(self.code, "python")
         return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, max_output_chars)}"
 
 
