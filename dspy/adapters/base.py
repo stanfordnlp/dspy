@@ -198,9 +198,49 @@ class Adapter:
             if output_logprobs:
                 value["logprobs"] = output_logprobs
 
+            self._enforce_per_field_max_tokens(original_signature, value)
+
             values.append(value)
 
         return values
+
+    def _enforce_per_field_max_tokens(self, signature: type[Signature], value: dict[str, Any]) -> None:
+        """Apply per-field `max_tokens` budgets after parsing.
+
+        For string-typed output fields, the parsed value is truncated to the configured
+        whitespace-token budget. For non-string fields, exceeding the budget raises
+        `AdapterParseError` rather than risk silently corrupting structured output.
+        """
+        for name, field in signature.output_fields.items():
+            extra = getattr(field, "json_schema_extra", None) or {}
+            max_tokens = extra.get("max_tokens")
+            if not max_tokens:
+                continue
+            parsed = value.get(name)
+            if parsed is None:
+                continue
+            if isinstance(parsed, str):
+                tokens = parsed.split()
+                if len(tokens) > max_tokens:
+                    value[name] = " ".join(tokens[:max_tokens])
+                continue
+            # Non-string fields: refuse to truncate to avoid corrupting structured data.
+            token_count = self._approximate_token_count(parsed)
+            if token_count > max_tokens:
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=signature,
+                    lm_response=str(parsed),
+                    message=(
+                        f"Output field '{name}' exceeded its max_tokens budget of "
+                        f"{max_tokens} (got approximately {token_count} tokens) and "
+                        "cannot be safely truncated because it is not a string."
+                    ),
+                )
+
+    @staticmethod
+    def _approximate_token_count(value: Any) -> int:
+        return len(str(value).split())
 
     def _render_request(
         self,

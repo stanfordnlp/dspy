@@ -2157,3 +2157,82 @@ def test_tool_call_with_null_content_does_not_raise():
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None
     assert len(result) == 1
+
+
+def test_max_tokens_per_field_renders_hint_in_prompt():
+    """The per-field max_tokens budget is surfaced as a hint in the system prompt."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        summary: str = dspy.OutputField(desc="A short summary", max_tokens=10)
+        verdict: str = dspy.OutputField(desc="The verdict")
+
+    program = dspy.Predict(TestSignature)
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="[[ ## summary ## ]]\nshort\n\n[[ ## verdict ## ]]\nyes\n\n[[ ## completed ## ]]\n"
+                    )
+                )
+            ]
+        )
+        program(question="anything")
+
+    _, call_kwargs = mock_completion.call_args
+    system_content = call_kwargs["messages"][0]["content"]
+    assert "at most 10 tokens" in system_content
+
+
+def test_max_tokens_per_field_truncates_string_field_over_budget():
+    """A string output field whose parsed value exceeds its budget is truncated."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        summary: str = dspy.OutputField(max_tokens=5)
+        verdict: str = dspy.OutputField()
+
+    long_summary = "one two three four five six seven eight nine ten"
+    lm = dspy.utils.DummyLM([{"summary": long_summary, "verdict": "ok"}])
+    adapter = dspy.ChatAdapter()
+
+    result = adapter(lm, {}, TestSignature, [], {"question": "anything"})
+
+    assert result[0]["summary"] == "one two three four five"
+    assert len(result[0]["summary"].split()) == 5
+    # Fields without a budget are untouched.
+    assert result[0]["verdict"] == "ok"
+
+
+def test_max_tokens_per_field_passes_through_when_within_budget():
+    """When a field is within its budget the parsed value is preserved verbatim."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        summary: str = dspy.OutputField(max_tokens=20)
+
+    short_summary = "this is short"
+    lm = dspy.utils.DummyLM([{"summary": short_summary}])
+    adapter = dspy.ChatAdapter()
+
+    result = adapter(lm, {}, TestSignature, [], {"question": "anything"})
+
+    assert result[0]["summary"] == short_summary
+
+
+def test_max_tokens_per_field_raises_for_non_string_over_budget():
+    """For non-string fields, exceeding the budget raises rather than silently corrupts."""
+    from dspy.utils.exceptions import AdapterParseError
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        items: list[str] = dspy.OutputField(max_tokens=3)
+
+    lm = dspy.utils.DummyLM([{"items": ["alpha beta gamma", "delta epsilon zeta", "eta theta iota"]}])
+    adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
+
+    with pytest.raises(AdapterParseError, match="max_tokens"):
+        adapter(lm, {}, TestSignature, [], {"question": "anything"})

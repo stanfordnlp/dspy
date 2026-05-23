@@ -7,7 +7,15 @@ from dspy.utils.constants import IS_TYPE_UNDEFINED
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
-DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type", IS_TYPE_UNDEFINED]
+DSPY_FIELD_ARG_NAMES = [
+    "desc",
+    "prefix",
+    "format",
+    "parser",
+    "max_tokens",
+    "__dspy_field_type",
+    IS_TYPE_UNDEFINED,
+]
 
 _DEPRECATED_FIELD_ARGS = {
     "prefix": (
@@ -76,14 +84,34 @@ def _warn_deprecated_field_args(**kwargs):
             warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
+    """Declare an output field on a `dspy.Signature`.
+
+    Args:
+        desc: Human-readable description of the field.
+        max_tokens: Optional per-field token budget. The adapter will surface this as a
+            hint in the prompt and truncate string-typed fields to this many tokens after
+            parsing. The truncation is heuristic (whitespace token split). For non-string
+            fields, exceeding the budget raises an `AdapterParseError` rather than risk
+            silently corrupting structured output like mid-JSON. This is independent of
+            the LM's global `max_tokens` setting and applies per output field.
+        **kwargs: Standard `pydantic.Field` kwargs (e.g. `default`, `description`).
+    """
     _warn_deprecated_field_args(**kwargs)
+    _validate_max_tokens(kwargs.get("max_tokens"))
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
+
+
+def _validate_max_tokens(value):
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"OutputField 'max_tokens' must be a positive integer, got {value!r}.")
 
 
 def new_to_old_field(field):

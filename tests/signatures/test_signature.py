@@ -609,3 +609,36 @@ def test_predict_cloudpickle_roundtrip():
     loaded = pickle.loads(data)
 
     assert list(loaded.signature.fields.keys()) == ["question", "answer"]
+
+
+def test_output_field_accepts_max_tokens_kwarg():
+    class TestSignature(Signature):
+        question: str = InputField()
+        summary: str = OutputField(desc="Short summary", max_tokens=10)
+        verdict: str = OutputField()
+
+    assert TestSignature.output_fields["summary"].json_schema_extra["max_tokens"] == 10
+    # Fields without the kwarg should not have max_tokens set.
+    assert TestSignature.output_fields["verdict"].json_schema_extra.get("max_tokens") is None
+
+
+def test_output_field_max_tokens_rejects_invalid_values():
+    with pytest.raises(ValueError, match="positive integer"):
+        OutputField(max_tokens=0)
+    with pytest.raises(ValueError, match="positive integer"):
+        OutputField(max_tokens=-5)
+    with pytest.raises(ValueError, match="positive integer"):
+        OutputField(max_tokens="10")
+    with pytest.raises(ValueError, match="positive integer"):
+        OutputField(max_tokens=True)
+
+
+def test_output_field_max_tokens_renders_in_prompt():
+    from dspy.adapters.utils import get_field_description_string
+
+    class TestSignature(Signature):
+        question: str = InputField()
+        summary: str = OutputField(desc="Short summary", max_tokens=10)
+
+    description = get_field_description_string(TestSignature.output_fields)
+    assert "at most 10 tokens" in description

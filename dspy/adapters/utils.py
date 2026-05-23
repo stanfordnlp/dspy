@@ -234,6 +234,11 @@ def get_field_description_string(fields: dict) -> str:
             if len(custom_type.description()) > 0:
                 desc += f"\n    Type description of {get_annotation_name(custom_type)}: {custom_type.description()}"
 
+        max_tokens = v.json_schema_extra.get("max_tokens") if v.json_schema_extra else None
+        if max_tokens:
+            suffix = f" (at most {max_tokens} tokens)"
+            desc = f"{desc}{suffix}" if desc else suffix.lstrip()
+
         field_message += f": {desc}"
         field_message += (
             f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
