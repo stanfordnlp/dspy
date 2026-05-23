@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import Any, get_origin
+from typing import Any, get_args, get_origin
 
 from dspy.adapters.types import Type
 from dspy.adapters.types.tool import Tool, ToolCalls
@@ -42,8 +42,9 @@ class _SignatureFieldPartition:
 
     2. Native LM request/response channels. These fields are removed from the
        remaining signature and represented explicitly as normalized request data
-       (`tool_specs`, `request_kwargs`) or as source output fields that should be
-       filled from `LMResponse` (`native_response_fields`).
+       (`tool_specs`, `request_kwargs`, `uses_native_tool_calls`) or as source
+       output fields that should be filled from `LMResponse`
+       (`native_response_fields`).
 
     This object is not a planner or orchestrator. It is the value produced by a
     field-separation pass for one concrete signature execution, including the
@@ -58,6 +59,7 @@ class _SignatureFieldPartition:
     remaining_inputs: dict[str, Any]
     request_kwargs: dict[str, Any]
     tool_specs: list[LMToolSpec] = dataclass_field(default_factory=list)
+    uses_native_tool_calls: bool = False
     native_response_fields: list[_NativeResponseField] = dataclass_field(default_factory=list)
 
 
@@ -77,6 +79,8 @@ def _partition_signature_fields(
     )
 
     _partition_native_tool_calling(adapter, lm, partition)
+    _partition_non_native_tool_calling(adapter, partition)
+    _drop_inapplicable_tool_choice(partition)
     _partition_native_response_types(adapter, lm, partition)
     return partition
 
@@ -101,11 +105,37 @@ def _partition_native_tool_calling(adapter: Any, lm: BaseLM, partition: _Signatu
     tools = partition.remaining_inputs[tool_call_input_field_name]
     tools = tools if isinstance(tools, list) else [tools]
     partition.tool_specs.extend(_tool_to_lm_tool_spec(tool) for tool in tools)
-    partition.native_response_fields.append(_NativeResponseField(tool_call_output_field_name, ToolCalls))
+    partition.uses_native_tool_calls = True
+    if adapter.allow_parallel_tool_calls is not None:
+        partition.request_kwargs["parallel_tool_calls"] = adapter.allow_parallel_tool_calls
     partition.remaining_signature = partition.remaining_signature.delete(tool_call_output_field_name).delete(
         tool_call_input_field_name
     )
+    partition.remaining_signature = _with_native_feature_instructions(
+        partition.source_signature,
+        partition.remaining_signature,
+        [_native_tool_call_instruction(tool_call_output_field_name)],
+    )
     partition.remaining_inputs.pop(tool_call_input_field_name, None)
+
+
+def _partition_non_native_tool_calling(adapter: Any, partition: _SignatureFieldPartition) -> None:
+    if adapter.allow_parallel_tool_calls is not False:
+        return
+
+    tool_call_output_field_name = _get_tool_call_output_field_name(partition.remaining_signature)
+    if tool_call_output_field_name is None:
+        return
+
+    partition.remaining_signature = partition.remaining_signature.with_updated_fields(
+        tool_call_output_field_name,
+        **ToolCalls.json_schema_extra_for_max_items(1),
+    )
+
+
+def _drop_inapplicable_tool_choice(partition: _SignatureFieldPartition) -> None:
+    if not partition.tool_specs:
+        partition.request_kwargs.pop("tool_choice", None)
 
 
 def _partition_native_response_types(adapter: Any, lm: BaseLM, partition: _SignatureFieldPartition) -> None:
@@ -145,10 +175,34 @@ def _tool_to_lm_tool_spec(tool: Tool) -> LMToolSpec:
     )
 
 
+def _native_tool_call_instruction(field_name: str) -> str:
+    return (
+        "When tool use is needed, call the available tools through the native tool-call interface. "
+        f"Do not emit `{field_name}` as a text or JSON output field."
+    )
+
+
+def _with_native_feature_instructions(
+    original_signature: type[Signature],
+    prompt_signature: type[Signature],
+    native_feature_instructions: list[str],
+) -> type[Signature]:
+    original_default_instructions = Signature(original_signature.fields).instructions
+    prompt_default_instructions = Signature(prompt_signature.fields).instructions
+    if original_signature.instructions == original_default_instructions and not prompt_signature.output_fields:
+        instructions = original_signature.instructions
+    elif original_signature.instructions == original_default_instructions:
+        instructions = prompt_default_instructions
+    else:
+        instructions = prompt_signature.instructions
+    return prompt_signature.with_instructions("\n".join([instructions, *native_feature_instructions]))
+
+
 def _get_tool_call_input_field_name(signature: type[Signature]) -> str | None:
     for name, field in signature.input_fields.items():
         origin = get_origin(field.annotation)
-        if origin is list and field.annotation.__args__[0] == Tool:
+        args = get_args(field.annotation)
+        if origin is list and args and args[0] == Tool:
             return name
         if field.annotation == Tool:
             return name
@@ -157,6 +211,10 @@ def _get_tool_call_input_field_name(signature: type[Signature]) -> str | None:
 
 def _get_tool_call_output_field_name(signature: type[Signature]) -> str | None:
     for name, field in signature.output_fields.items():
-        if field.annotation == ToolCalls:
+        if _annotation_includes(field.annotation, ToolCalls):
             return name
     return None
+
+
+def _annotation_includes(annotation: Any, target: type) -> bool:
+    return annotation is target or target in get_args(annotation)

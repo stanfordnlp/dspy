@@ -39,9 +39,20 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = True,
+        native_response_types: list[type[type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
+    ):
         # JSONAdapter uses native function calling by default.
-        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+        super().__init__(
+            callbacks=callbacks,
+            use_native_function_calling=use_native_function_calling,
+            native_response_types=native_response_types,
+            allow_parallel_tool_calls=allow_parallel_tool_calls,
+        )
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
@@ -127,7 +138,10 @@ class JSONAdapter(ChatAdapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
+        if not signature.output_fields:
+            return None
+
         def type_info(v):
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"

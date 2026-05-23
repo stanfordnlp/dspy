@@ -49,6 +49,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
     ):
         """
         Args:
@@ -59,11 +60,16 @@ class Adapter:
                 or `list[dspy.Tool]` types. Defaults to False.
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
-                (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+                (e.g., Anthropic's citation feature). Defaults to `[Citations, Reasoning]`.
+            allow_parallel_tool_calls: Optional provider/tool-call policy. `False` enforces one call per turn for
+                native and non-native tool calling; `None` preserves provider/model defaults.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
-        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.native_response_types = list(
+            _DEFAULT_NATIVE_RESPONSE_TYPES if native_response_types is None else native_response_types
+        )
+        self.allow_parallel_tool_calls = allow_parallel_tool_calls
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -79,7 +85,15 @@ class Adapter:
         demos: list[dict[str, Any]],
     ) -> LMRequest:
         """Render the remaining signature fields into a normalized LM request."""
-        messages = self.format(partition.remaining_signature, demos, partition.remaining_inputs)
+        if partition.uses_native_tool_calls:
+            messages = self.format(
+                partition.remaining_signature,
+                demos,
+                partition.remaining_inputs,
+                use_native_tool_calls=True,
+            )
+        else:
+            messages = self.format(partition.remaining_signature, demos, partition.remaining_inputs)
         request_kwargs = dict(partition.request_kwargs)
         tools = list(partition.tool_specs)
         if "tools" in request_kwargs:
@@ -200,7 +214,7 @@ class Adapter:
 
             if has_tool_output:
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(
-                    [{"name": call.name, "args": call.args} for call in output.tool_calls]
+                    [{"name": call.name, "args": call.args, "id": call.id} for call in output.tool_calls]
                 )
 
             has_native_output = self._parse_native_response_fields(value, partition, output, lm)
@@ -216,9 +230,26 @@ class Adapter:
             if output.logprobs is not None:
                 value["logprobs"] = output.logprobs
 
+            self._validate_tool_call_parallel_policy(partition.source_signature, value)
             values.append(value)
 
         return values
+
+    def _validate_tool_call_parallel_policy(self, signature: type[Signature], value: dict[str, Any]) -> None:
+        if self.allow_parallel_tool_calls is not False:
+            return
+
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+        if not tool_call_output_field_name or tool_call_output_field_name not in value:
+            return
+
+        tool_calls = value[tool_call_output_field_name]
+        if tool_calls is None:
+            return
+        if not isinstance(tool_calls, ToolCalls):
+            tool_calls = ToolCalls.model_validate(tool_calls)
+            value[tool_call_output_field_name] = tool_calls
+        tool_calls.validate_max_items(1)
 
     def _parse_native_response_fields(
         self,
@@ -297,6 +328,8 @@ class Adapter:
         signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
+        *,
+        use_native_tool_calls: bool = False,
     ) -> list[dict[str, Any]]:
         """Format the input messages for the LM call.
 

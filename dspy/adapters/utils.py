@@ -14,6 +14,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.types.base_type import Type as DspyType
 from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
+from dspy.adapters.types.tool import ToolCalls
 from dspy.signatures.utils import get_dspy_field_type
 
 
@@ -74,7 +75,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
         return {"type": "text", "text": string_value}
 
 
-def _get_json_schema(field_type):
+def _get_json_schema(field_type, field_info=None):
     def move_type_to_front(d):
         # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
         if isinstance(d, Mapping):
@@ -85,7 +86,10 @@ def _get_json_schema(field_type):
             return [move_type_to_front(item) for item in d]
         return d
 
-    schema = pydantic.TypeAdapter(field_type).json_schema()
+    if field_type is ToolCalls:
+        schema = ToolCalls.json_schema(max_items=ToolCalls.max_items_from_field_info(field_info))
+    else:
+        schema = pydantic.TypeAdapter(field_type).json_schema()
     schema = move_type_to_front(schema)
     return schema
 
@@ -112,7 +116,8 @@ def translate_field_type(field_name, field_info):
         # Code has a rich type description already; avoid duplicating its large schema block.
         desc = ""
     else:
-        desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
+        json_schema = json.dumps(_get_json_schema(field_type, field_info), ensure_ascii=False)
+        desc = f"must adhere to the JSON schema: {json_schema}"
 
     desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
     return f"{{{field_name}}}{desc}"
