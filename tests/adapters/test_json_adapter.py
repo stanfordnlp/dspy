@@ -643,20 +643,17 @@ def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
                  '        Given the fields `question`, produce the fields `tool_calls`.'},
      {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
      {"role": "assistant",
-      "content": '{\n'
-                 '  "tool_calls": {\n'
-                 '    "tool_calls": [\n'
-                 '      {\n'
-                 '        "type": "function",\n'
-                 '        "function": {\n'
-                 '          "name": "search",\n'
-                 '          "arguments": {\n'
-                 '            "query": "cats"\n'
-                 '          }\n'
-                 '        }\n'
-                 '      }\n'
-                 '    ]\n'
-                 '  }\n'
+     "content": '{\n'
+                '  "tool_calls": {\n'
+                '    "tool_calls": [\n'
+                '      {\n'
+                '        "name": "search",\n'
+                '        "args": {\n'
+                '          "query": "cats"\n'
+                '        }\n'
+                '      }\n'
+                '    ]\n'
+                '  }\n'
                  '}'},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
