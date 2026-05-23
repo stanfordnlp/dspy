@@ -300,31 +300,38 @@ while (true) {
   }
 
   if (method === "register") {
-    const toolNames = [];
+    try {
+      const toolNames = [];
 
-    // Register tools with typed signatures
-    if (params.tools) {
-      for (const tool of params.tools) {
-        // Support both old format (string) and new format (object with parameters)
-        if (typeof tool === 'string') {
-          pyodide.runPython(makeToolWrapper(tool, []));
-          toolNames.push(tool);
-        } else {
-          pyodide.runPython(makeToolWrapper(tool.name, tool.parameters || []));
-          toolNames.push(tool.name);
+      // Register tools with typed signatures
+      if (params.tools) {
+        for (const tool of params.tools) {
+          // Support both old format (string) and new format (object with parameters)
+          if (typeof tool === 'string') {
+            pyodide.runPython(makeToolWrapper(tool, []));
+            toolNames.push(tool);
+          } else {
+            pyodide.runPython(makeToolWrapper(tool.name, tool.parameters || []));
+            toolNames.push(tool.name);
+          }
         }
       }
-    }
 
-    // Register SUBMIT with output signature
-    if (params.outputs) {
-      pyodide.runPython(makeSubmitWrapper(params.outputs));
-    }
+      // Register SUBMIT with output signature
+      if (params.outputs) {
+        pyodide.runPython(makeSubmitWrapper(params.outputs));
+      }
 
-    console.log(jsonrpcResult({
-      tools: toolNames,
-      outputs: params.outputs ? params.outputs.map(o => o.name) : []
-    }, requestId));
+      console.log(jsonrpcResult({
+        tools: toolNames,
+        outputs: params.outputs ? params.outputs.map(o => o.name) : []
+      }, requestId));
+    } catch (error) {
+      const errorType = error.type || "Error";
+      const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
+      const errorMessage = (error.message || String(error)).trim();
+      console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType }));
+    }
     continue;
   }
 
