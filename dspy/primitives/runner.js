@@ -65,7 +65,16 @@ def ${toolName}(${signature}):
 };
 
 // Generate SUBMIT function with output field signature.
-// Outputs is an array of {name, type?} objects.
+// Outputs is an array of {name, type?, serialize_code?} objects.
+// `serialize_code` is a Python expression containing `__VAR__` as a
+// placeholder for the parameter name; if present, the field's value is
+// wrapped as {"__sandbox_serializable__": true, "data": <expr>} so the
+// host can route it through SandboxSerializable.from_sandbox.
+//
+// The substitution is safe: the parameter name is a Python identifier
+// validated by RLM signature construction (no shell, no eval beyond
+// pyodide.runPython on the generated text), and substitution happens
+// here in JS before the Python source is ever handed to Pyodide.
 const makeSubmitWrapper = (outputs) => {
   if (!outputs || outputs.length === 0) {
     // Fallback to single-arg SUBMIT if no outputs defined
@@ -77,10 +86,18 @@ def SUBMIT(output):
 
   const sigParts = outputs.map(o => {
     let part = o.name;
-    if (o.type) part += `: ${o.type}`;
+    // Skip type annotation for serializable fields (the agent passes a bare
+    // value of the underlying type, not the wrapper class itself).
+    if (o.type && !o.serialize_code) part += `: ${o.type}`;
     return part;
   });
-  const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
+  const dictParts = outputs.map(o => {
+    if (o.serialize_code) {
+      const expr = o.serialize_code.replace(/__VAR__/g, o.name);
+      return `"${o.name}": {"__sandbox_serializable__": True, "data": ${expr}}`;
+    }
+    return `"${o.name}": ${o.name}`;
+  });
 
   return `
 def SUBMIT(${sigParts.join(', ')}):

@@ -1,9 +1,28 @@
 """Abstract base class for RLM sandbox-serializable types.
 
-Types that subclass :class:`SandboxSerializable` can be injected into the
-REPL environment used by :class:`dspy.RLM`. Subclasses implement four
-abstract methods describing how a value enters and appears inside the
-sandbox, and inherit:
+Types that subclass :class:`SandboxSerializable` can flow between the host
+and the REPL environment used by :class:`dspy.RLM` in **both** directions:
+
+- **As an input** (``dspy.InputField``): the host wraps a value in a subclass
+  instance, the framework serializes it via ``to_sandbox()``, ships the
+  payload into the sandbox, and reconstructs it as a native Python object
+  via ``sandbox_assignment()``. The agent's code sees the underlying value
+  bound to the field name.
+
+- **As an output** (``dspy.OutputField``): the agent's code passes the
+  underlying value to ``SUBMIT(...)``. The framework injects a wrapper
+  around ``SUBMIT`` that converts the bare value to a wire string via
+  ``sandbox_serialize_code()`` before raising ``FinalOutput``. On the host
+  side, ``from_sandbox()`` reconstructs the wrapper instance from the wire
+  payload.
+
+Subclasses implement one shared setup classmethod, three required methods
+for the host -> sandbox direction, and two optional methods for the
+sandbox -> host direction. The two output methods default to
+``NotImplementedError`` so input-only subclasses keep working — the error
+only fires when the type is actually used as an ``OutputField``
+annotation. Implement them to opt in to OutputField support. Subclasses
+also inherit:
 
 - ``__get_pydantic_core_schema__`` so the type can be used directly as a
   :class:`dspy.Signature` field annotation (see "The pydantic hook" below).
@@ -19,7 +38,7 @@ The pydantic hook
 ``__get_pydantic_core_schema__`` lets subclasses be used as
 ``dspy.Signature`` field annotations. It is a pass-through (no validation,
 ``str()`` serialization) — RLM owns real serialization via ``to_sandbox()``
-and ``sandbox_assignment()``.
+and ``sandbox_serialize_code()``.
 """
 
 from __future__ import annotations
@@ -39,18 +58,37 @@ __all__ = ["SandboxSerializable", "build_repl_variable"]
 
 
 class SandboxSerializable(ABC):
-    """Abstract base for types that support RLM sandbox injection.
+    """Abstract base for types that round-trip through the RLM sandbox.
 
-    Subclasses implement four methods:
+    Shared sandbox setup — classmethod:
 
     - ``sandbox_setup``: Python statements (usually imports) executed once
-      in the sandbox. The returned text is also surfaced to the LLM in the
-      variable description, so the model knows which names are in scope
-      (e.g. ``pd`` when pandas is imported).
-    - ``to_sandbox``: serialize the value to text bytes or binary bytes.
+      in the sandbox for both inputs and output annotations. The returned
+      text is also surfaced to the LLM in the variable description for
+      inputs, so the model knows which names are in scope (e.g. ``pd``
+      when pandas is imported).
+
+    Host -> sandbox (input) — instance methods:
+
+    - ``to_sandbox``: serialize the wrapped value to text bytes or binary
+      bytes for transport.
     - ``sandbox_assignment``: Python code that reconstructs the value from
-      a data expression.
+      a data expression on the sandbox side.
     - ``rlm_preview``: a short, LLM-friendly description of the value.
+
+    Sandbox -> host (output) — classmethods, optional:
+
+    - ``sandbox_serialize_code``: Python expression (a *string*) that, when
+      evaluated inside the sandbox, converts the bare value (bound to
+      ``var_name``) into a JSON-serializable wire payload — typically a
+      base64-encoded string. The expression runs after ``sandbox_setup()``
+      has executed, so it can use names imported by setup.
+    - ``from_sandbox``: reconstruct a wrapper instance on the host from
+      the wire payload.
+
+    Both default to raising ``NotImplementedError`` so subclasses written
+    against the input-only API keep working as ``InputField`` annotations.
+    Implement them to make a subclass usable as an ``OutputField``.
 
     Example::
 
@@ -58,9 +96,11 @@ class SandboxSerializable(ABC):
             def __init__(self, df):
                 self.data = df
 
-            def sandbox_setup(self) -> str:
-                return "import pandas as pd\\nimport base64\\nimport io"
+            @classmethod
+            def sandbox_setup(cls) -> str:
+                return "import pandas as pd\\nimport pyarrow\\nimport base64\\nimport io"
 
+            # host -> sandbox
             def to_sandbox(self) -> bytes:
                 return base64.b64encode(self.data.to_parquet(index=False))
 
@@ -70,14 +110,26 @@ class SandboxSerializable(ABC):
             def rlm_preview(self, max_chars: int = 500) -> str:
                 return f"DataFrame: {self.data.shape[0]} rows x {self.data.shape[1]} columns"
 
+            # sandbox -> host
+            @classmethod
+            def sandbox_serialize_code(cls, var_name: str) -> str:
+                return f"base64.b64encode({var_name}.to_parquet(index=False)).decode('ascii')"
+
+            @classmethod
+            def from_sandbox(cls, payload: str) -> "DataFrame":
+                import base64, io
+                import pandas as pd
+                return cls(pd.read_parquet(io.BytesIO(base64.b64decode(payload))))
+
     Subclasses can be used directly as :class:`dspy.Signature` field
     annotations because of the inherited ``__get_pydantic_core_schema__``
     hook (see the module docstring for what that hook does and why it is
     needed).
     """
 
+    @classmethod
     @abstractmethod
-    def sandbox_setup(self) -> str: ...
+    def sandbox_setup(cls) -> str: ...
 
     @abstractmethod
     def to_sandbox(self) -> bytes: ...
@@ -89,11 +141,45 @@ class SandboxSerializable(ABC):
     def rlm_preview(self, max_chars: int = 500) -> str: ...
 
     @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        """Python expression that converts a bare value at ``var_name`` to a wire payload.
+
+        Optional: implement to support use as an ``OutputField`` annotation.
+        The expression is evaluated inside the sandbox by the generated
+        SUBMIT wrapper. It must produce a JSON-serializable value
+        (typically a base64-encoded string). Shared ``sandbox_setup()`` runs
+        before the REPL loop, so the expression can use names imported by
+        setup.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not support OutputField usage. "
+            f"Implement sandbox_serialize_code and from_sandbox to opt in."
+        )
+
+    @classmethod
+    def from_sandbox(cls, payload: Any) -> SandboxSerializable:
+        """Reconstruct a wrapper instance on the host from the wire payload.
+
+        Optional: implement to support use as an ``OutputField`` annotation.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not support OutputField usage. "
+            f"Implement sandbox_serialize_code and from_sandbox to opt in."
+        )
+
+    @classmethod
     def __get_pydantic_core_schema__(cls, source_type: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        """Pass-through schema so subclasses work as ``dspy.Signature`` annotations."""
+        """Pass-through schema so subclasses work as ``dspy.Signature`` annotations.
+
+        ``json_schema_input_schema`` keeps JSON-schema generation happy for
+        OutputField usage (RLM materialises field schemas while building
+        action signatures) — RLM only ever needs the type *name* anyway, so
+        ``any_schema`` is the right semantic.
+        """
         return core_schema.no_info_plain_validator_function(
             lambda v: v,
             serialization=core_schema.plain_serializer_function_ser_schema(lambda v: str(v)),
+            json_schema_input_schema=core_schema.any_schema(),
         )
 
     def to_repl_variable(self, name: str, field_info: FieldInfo | None = None) -> REPLVariable:
