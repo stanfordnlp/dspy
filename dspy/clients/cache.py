@@ -148,9 +148,13 @@ class Cache:
 
     def _prepare_cached_response(self, response):
         response = copy.deepcopy(response)
-        if hasattr(response, "usage"):
-            # Clear the usage data when cache is hit, because no LM call is made
-            response.usage = {}
+        # Mark the response so downstream consumers can tell it came from the cache.
+        # The usage payload from the original response is preserved so that
+        # `lm.history[-1].usage` reports the same numbers on cache hits as on
+        # cache misses (see issue #7570). The aggregate usage tracker in
+        # `dspy.clients.lm` already skips cache hits via `cache_hit`, so this
+        # does not double-count tokens against `dspy.track_usage`.
+        if hasattr(response, "cache_hit") or hasattr(response, "usage"):
             response.cache_hit = True
         return response
 

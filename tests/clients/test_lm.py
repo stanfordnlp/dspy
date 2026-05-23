@@ -100,6 +100,70 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     dspy.cache = original_cache
 
 
+def test_history_usage_preserved_on_cache_hit(monkeypatch, tmp_path):
+    """Regression test for #7570: `lm.history[-1].usage` was empty on cache hits.
+
+    The disk cache previously cleared the usage payload when serving a cached
+    response, so any code that read `lm.history[-1].usage` (e.g. token-cost
+    accounting) only worked on the very first call. After this fix, the cached
+    response carries the original usage forward while still being flagged with
+    `cache_hit=True` so the aggregate usage tracker can avoid double counting.
+    """
+
+    call_count = {"n": 0}
+
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        call_count["n"] += 1
+        return ModelResponse(
+            choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12},
+            model="openai/dspy-test-model",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+
+    original_cache = dspy.cache
+    dspy.clients.configure_cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=tmp_path / ".disk_cache",
+    )
+
+    try:
+        lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+
+        lm(messages=[{"role": "user", "content": "Query"}])
+        first_usage = lm.history[-1]["usage"]
+        # The exact shape can include litellm-normalised fields (e.g. *_details: None),
+        # so just assert the core counts and that the dict is non-empty.
+        assert first_usage
+        assert first_usage.get("prompt_tokens") == 5
+        assert first_usage.get("completion_tokens") == 7
+        assert first_usage.get("total_tokens") == 12
+
+        # Second call should hit the memory cache.
+        lm(messages=[{"role": "user", "content": "Query"}])
+        second_usage = lm.history[-1]["usage"]
+        assert second_usage == first_usage
+        assert call_count["n"] == 1
+
+        # Clear memory cache and force a disk-cache hit.
+        dspy.cache.reset_memory_cache()
+        lm(messages=[{"role": "user", "content": "Query"}])
+        third_usage = lm.history[-1]["usage"]
+        assert third_usage == first_usage
+        assert call_count["n"] == 1
+
+        # Aggregate usage tracker should still skip cache hits to avoid double-counting.
+        with track_usage() as usage_tracker:
+            lm(messages=[{"role": "user", "content": "Query"}])
+        assert len(usage_tracker.usage_data) == 0
+        # History still reports the per-call usage even when the tracker skipped it.
+        assert lm.history[-1]["usage"] == first_usage
+    finally:
+        dspy.cache = original_cache
+
+
 def test_disabled_cache_skips_cache_key(monkeypatch):
     original_cache = dspy.cache
     dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)

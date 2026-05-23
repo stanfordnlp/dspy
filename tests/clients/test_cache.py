@@ -147,7 +147,10 @@ def test_put_and_get(cache):
     result = cache.get(request)
 
     assert result.message == value.message
-    assert result.usage == {}
+    # Usage payload is preserved on cache hits so `lm.history[-1].usage`
+    # matches the original response (see issue #7570).
+    assert result.usage == {"prompt_tokens": 10, "completion_tokens": 20}
+    assert result.cache_hit is True
 
     # Test with disk cache
     # First, clear memory cache to ensure we're using disk cache
@@ -156,7 +159,8 @@ def test_put_and_get(cache):
     # Get from disk cache
     result_from_disk = cache.get(request)
     assert result_from_disk.message == value.message
-    assert result_from_disk.usage == {}
+    assert result_from_disk.usage == {"prompt_tokens": 10, "completion_tokens": 20}
+    assert result_from_disk.cache_hit is True
 
     # Verify it was also added back to memory cache
     assert cache.cache_key(request) in cache.memory_cache
