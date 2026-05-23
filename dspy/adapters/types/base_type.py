@@ -166,8 +166,11 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
         pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
         result = []
         last_end = 0
-        # DSPy adapter always formats user input into a string content before custom type splitting
-        content: str = message["content"]
+        # Normalized adapter paths may have already rendered custom values into
+        # content blocks. The legacy marker splitter only applies to text.
+        content = message["content"]
+        if not isinstance(content, str):
+            continue
 
         for match in re.finditer(pattern, content, re.DOTALL):
             start, end = match.span()

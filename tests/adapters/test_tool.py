@@ -450,6 +450,73 @@ def test_tool_calls_format_from_dict_list():
     assert result["tool_calls"][1]["function"]["name"] == "translate"
 
 
+def test_tool_calls_preserve_call_ids_and_fill_missing_ids():
+    tool_calls = ToolCalls.from_dict_list(
+        [
+            {"name": "search", "args": {"query": "hello"}, "id": "call_search"},
+            {"name": "lookup", "args": {"key": "world"}},
+        ]
+    ).with_call_ids("call")
+
+    assert [tool_call.id for tool_call in tool_calls.tool_calls] == ["call_search", "call_1"]
+    assert [part.id for part in tool_calls.to_lm_parts()] == ["call_search", "call_1"]
+
+
+def test_tool_calls_json_schema_can_limit_cardinality():
+    schema = ToolCalls.json_schema(max_items=1)
+
+    assert schema["properties"]["tool_calls"]["maxItems"] == 1
+
+
+def test_tool_calls_validate_max_items_rejects_too_many_calls():
+    tool_calls = ToolCalls.from_dict_list(
+        [
+            {"name": "search", "args": {"query": "hello"}},
+            {"name": "lookup", "args": {"key": "world"}},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="permits at most 1"):
+        tool_calls.validate_max_items(1)
+
+
+def test_native_tool_response_preserves_call_ids():
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    class ToolCallLM:
+        model = "openai/gpt-5-nano"
+        supports_function_calling = True
+        supports_reasoning = False
+        supports_response_schema = False
+        supported_params = frozenset()
+
+        def __call__(self, messages, **kwargs):
+            return [
+                {
+                    "text": None,
+                    "tool_calls": [
+                        {
+                            "function": {"arguments": '{"x":1,"y":"two"}', "name": "dummy_function"},
+                            "id": "call_dummy",
+                            "type": "function",
+                        }
+                    ],
+                }
+            ]
+
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    result = adapter(ToolCallLM(), {}, ToolSignature, [], {"question": "call it", "tools": [Tool(dummy_function)]})[0]
+
+    assert result["answer"] is None
+    assert result["tool_calls"] == ToolCalls.from_dict_list(
+        [{"name": "dummy_function", "args": {"x": 1, "y": "two"}, "id": "call_dummy"}]
+    )
+
+
 def test_toolcalls_vague_match():
     """
     Test that ToolCalls can parse the data with slightly off format:
@@ -577,7 +644,7 @@ def test_tool_call_execute():
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
     try:
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
+        raise AssertionError("Should have raised ValueError")
     except ValueError as e:
         assert "not found" in str(e)
 
