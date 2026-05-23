@@ -1678,3 +1678,53 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_predict_explicit_zero_temperature_not_overridden_by_lm_default():
+    """Regression test: explicit temperature=0.0 in predict config must not be silently
+    discarded.
+
+    Prior to the fix, ``config.get("temperature") or lm.kwargs.get("temperature")``
+    evaluated ``0.0`` as falsy, so when the caller set ``temperature=0.0`` via the
+    predict config (full determinism) and the LM had a non-zero default temperature in
+    its kwargs, the Predict module would ignore the explicit zero and use the LM default
+    instead.
+
+    The ``config`` dict passed to the LM adapter is assembled from ``self.config`` merged
+    with the per-call ``config=`` kwarg.  Temperature passed there is the correct way to
+    set per-call LM parameters.
+    """
+    # Build a DummyLM whose kwargs contain a non-zero default temperature.
+    lm = DummyLM([{"answer": "deterministic"}])
+    lm.kwargs["temperature"] = 0.9  # LM-level default that must NOT win
+
+    dspy.configure(lm=lm)
+
+    predict_instance = Predict("question -> answer")
+
+    # Capture the lm_kwargs (== config) that the adapter receives.
+    captured_lm_kwargs: dict = {}
+    from dspy.adapters.chat_adapter import ChatAdapter
+
+    original_call = ChatAdapter.__call__
+
+    def capturing_call(self_adapter, lm_obj, lm_kwargs, **kw):
+        captured_lm_kwargs.update(lm_kwargs)
+        return original_call(self_adapter, lm_obj, lm_kwargs=lm_kwargs, **kw)
+
+    import dspy.adapters.chat_adapter as _chat_mod
+
+    _chat_mod.ChatAdapter.__call__ = capturing_call  # type: ignore[method-assign]
+
+    try:
+        # Pass temperature=0.0 via the per-call config dict.
+        predict_instance(question="What is 1+1?", config={"temperature": 0.0})
+    finally:
+        _chat_mod.ChatAdapter.__call__ = original_call
+
+    # The temperature forwarded to the adapter must be 0.0, not 0.9.
+    assert captured_lm_kwargs.get("temperature") == 0.0, (
+        f"Expected temperature=0.0 to be forwarded to the LM adapter, "
+        f"got temperature={captured_lm_kwargs.get('temperature')!r} instead. "
+        "Explicit zero temperature was silently discarded (falsy `or` bug)."
+    )
