@@ -90,7 +90,22 @@ def append_a_demo(demo_input_field_maxlen):
                 if demo_input_field_maxlen and len(str(v)) > demo_input_field_maxlen:
                     _inputs[k] = f"{str(v)[:demo_input_field_maxlen]}\n\t\t... <TRUNCATED FOR BREVITY>"
 
-            demo = dspy.Example(augmented=True, **_inputs, **_outputs)
+            # Merge inputs and outputs explicitly so a key that appears in
+            # both (e.g. an output field also marked as an input via
+            # `with_inputs`) does not raise the cryptic
+            # "got multiple values for keyword argument" TypeError when
+            # constructing the demo. Predictions take precedence over the
+            # input echo since the demo records what the model produced.
+            demo_fields = {**_inputs, **dict(_outputs)}
+            shared = set(_inputs).intersection(dict(_outputs))
+            if shared:
+                logger.debug(
+                    "Bootstrap demo had fields appearing in both inputs and outputs (%s); "
+                    "using predicted values. This usually means a field is marked as both an "
+                    "input via `with_inputs(...)` and as an `OutputField` in the signature.",
+                    sorted(shared),
+                )
+            demo = dspy.Example(augmented=True, **demo_fields)
             name = predictor2name[id(predictor)]
             name2demo[name] = demo  # keep the last demo for each predictor
         for name, demo in name2demo.items():

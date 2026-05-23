@@ -112,6 +112,60 @@ def test_error_handling_during_bootstrap():
         bootstrap.compile(student, teacher=teacher, trainset=trainset)
 
 
+def test_bootstrap_handles_output_field_listed_as_input():
+    """Regression test for issue #9472.
+
+    If a column on the training Example is both an output field on the signature
+    and is included in `with_inputs(...)`, the bootstrap trace ends up with the
+    same key in both `inputs` and `outputs`. The old implementation unpacked
+    them as `dspy.Example(augmented=True, **inputs, **outputs)`, which raised
+    the cryptic `got multiple values for keyword argument` TypeError. Bootstrap
+    should now merge the two and let the predicted value win.
+    """
+
+    class TurnClassifier(dspy.Signature):
+        """Classify a turn."""
+
+        context: str = dspy.InputField()
+        turn: str = dspy.InputField()
+        category: str = dspy.OutputField()
+
+    class TurnModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(TurnClassifier)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+        def __deepcopy__(self, memo):
+            new = TurnModule()
+            new.predictor = self.predictor.deepcopy()
+            return new
+
+    # The user marks `category` (an output field) as an input via with_inputs.
+    collision_trainset = [
+        Example(context="ctx1", turn="t1", category="Humour").with_inputs("context", "turn", "category"),
+    ]
+
+    lm = DummyLM([{"category": "Humour"}] * 4)
+    dspy.configure(lm=lm)
+
+    def category_metric(example, prediction, trace=None):
+        return prediction.category == example.category
+
+    bootstrap = BootstrapFewShot(metric=category_metric, max_bootstrapped_demos=1, max_labeled_demos=0)
+    compiled = bootstrap.compile(TurnModule(), teacher=TurnModule(), trainset=collision_trainset)
+
+    assert len(compiled.predictor.demos) == 1
+    demo = compiled.predictor.demos[0]
+    # The predicted value wins over the echoed input.
+    assert demo.category == "Humour"
+    assert demo.context == "ctx1"
+    assert demo.turn == "t1"
+    assert demo.augmented is True
+
+
 def test_validation_set_usage():
     """
     Test to ensure the validation set is correctly used during bootstrapping

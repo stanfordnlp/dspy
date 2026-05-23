@@ -223,7 +223,22 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = dspy.Example(augmented=True, **inputs, **outputs)
+                # Merge inputs and outputs explicitly so a key that appears in
+                # both (e.g. an output field also marked as an input via
+                # `with_inputs`) does not raise the cryptic
+                # "got multiple values for keyword argument" TypeError when
+                # constructing the demo. Predictions take precedence over the
+                # input echo since the demo records what the model produced.
+                demo_fields = {**inputs, **dict(outputs)}
+                shared = set(inputs).intersection(dict(outputs))
+                if shared:
+                    logger.debug(
+                        "Bootstrap demo had fields appearing in both inputs and outputs (%s); "
+                        "using predicted values. This usually means a field is marked as both an "
+                        "input via `with_inputs(...)` and as an `OutputField` in the signature.",
+                        sorted(shared),
+                    )
+                demo = dspy.Example(augmented=True, **demo_fields)
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
