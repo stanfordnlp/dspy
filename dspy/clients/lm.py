@@ -29,6 +29,42 @@ def _get_litellm():
     return get_litellm(feature="dspy.LM")
 
 
+def _messages_contain_image(messages: list[dict[str, Any]] | None) -> bool:
+    """Return True if any message in ``messages`` carries an ``image_url`` content block."""
+    if not messages:
+        return False
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "image_url":
+                return True
+    return False
+
+
+def _check_ollama_chat_image_unsupported(model: str, messages: list[dict[str, Any]] | None) -> None:
+    """Raise a clear error when ``ollama_chat/`` is paired with image inputs.
+
+    LiteLLM's ``ollama_chat`` provider currently drops ``image_url`` content blocks before
+    forwarding to Ollama, surfacing as ``BadRequestError: Invalid Message passed in`` or a
+    404 on ``/api/chat``. Until the upstream LiteLLM fix lands (tracked in
+    BerriAI/litellm#24598 and stanfordnlp/dspy#8067), the working path is to point dspy.LM
+    at Ollama's OpenAI-compatible endpoint using the ``openai/`` prefix.
+    """
+    if not isinstance(model, str) or not model.startswith("ollama_chat/"):
+        return
+    if not _messages_contain_image(messages):
+        return
+    raise ValueError(
+        "dspy.LM('ollama_chat/...') does not currently support image inputs because LiteLLM's "
+        "ollama_chat provider drops image_url content blocks before sending to Ollama (see "
+        "BerriAI/litellm#24598 and stanfordnlp/dspy#8067). Use Ollama's OpenAI-compatible "
+        "endpoint instead, for example: "
+        "dspy.LM('openai/<model>', api_base='http://localhost:11434/v1', api_key='ollama')."
+    )
+
+
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
@@ -160,12 +196,7 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
+    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -173,6 +204,7 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
+        _check_ollama_chat_image_unsupported(self.model, messages)
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -216,6 +248,7 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
+        _check_ollama_chat_image_unsupported(self.model, messages)
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:

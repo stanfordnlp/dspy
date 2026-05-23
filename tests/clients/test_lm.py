@@ -1103,9 +1103,7 @@ async def test_responses_api_with_none_usage_async():
                     "type": "message",
                     "role": "assistant",
                     "status": "incomplete",
-                    "content": [
-                        {"type": "output_text", "text": "Partial async response", "annotations": []}
-                    ],
+                    "content": [{"type": "output_text", "text": "Partial async response", "annotations": []}],
                 },
             ),
         ],
@@ -1177,3 +1175,103 @@ async def test_streaming_passes_headers_correctly():
             mock_acompletion.assert_called_once()
             call_kwargs = mock_acompletion.call_args.kwargs
             assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+
+
+def _image_message():
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this image."},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                    },
+                },
+            ],
+        }
+    ]
+
+
+def test_ollama_chat_with_image_raises_actionable_error():
+    """ollama_chat + image_url must raise before the request reaches LiteLLM.
+
+    LiteLLM's ollama_chat provider drops image_url blocks (see BerriAI/litellm#24598
+    and stanfordnlp/dspy#8067). Surface a clear error pointing at the OpenAI-compatible
+    workaround rather than letting it fail deep inside LiteLLM.
+    """
+    lm = dspy.LM(
+        "ollama_chat/llama3.2-vision",
+        api_base="http://localhost:11434",
+        api_key="",
+        cache=False,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        lm(messages=_image_message())
+
+    error_message = str(exc_info.value)
+    assert "ollama_chat" in error_message
+    assert "openai/" in error_message
+    assert "11434" in error_message
+
+
+def test_ollama_chat_without_image_does_not_raise():
+    """ollama_chat without image content should not be blocked by the image guard."""
+    lm = dspy.LM(
+        "ollama_chat/llama3.2",
+        api_base="http://localhost:11434",
+        api_key="",
+        cache=False,
+    )
+
+    mock_response = ModelResponse(
+        choices=[Choices(message=Message(content="ok"))],
+        model="ollama_chat/llama3.2",
+    )
+
+    with mock.patch("litellm.completion", return_value=mock_response) as mock_completion:
+        result = lm(messages=[{"role": "user", "content": "hi"}])
+
+    assert mock_completion.called
+    assert result == ["ok"]
+
+
+def test_ollama_image_guard_does_not_trigger_for_openai_prefix():
+    """The image-with-ollama_chat guard must not fire for openai/<model> (the workaround)."""
+    lm = dspy.LM(
+        "openai/llama3.2-vision",
+        api_base="http://localhost:11434/v1",
+        api_key="ollama",
+        cache=False,
+    )
+
+    mock_response = ModelResponse(
+        choices=[Choices(message=Message(content="image described"))],
+        model="openai/llama3.2-vision",
+    )
+
+    with mock.patch("litellm.completion", return_value=mock_response) as mock_completion:
+        result = lm(messages=_image_message())
+
+    assert mock_completion.called
+    assert result == ["image described"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_chat_with_image_raises_actionable_error_async():
+    """The async forward path must enforce the same guard as the sync path."""
+    lm = dspy.LM(
+        "ollama_chat/llama3.2-vision",
+        api_base="http://localhost:11434",
+        api_key="",
+        cache=False,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await lm.acall(messages=_image_message())
+
+    error_message = str(exc_info.value)
+    assert "ollama_chat" in error_message
+    assert "openai/" in error_message
