@@ -423,3 +423,42 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_timeout_default():
+    """Evaluate stores the timeout=120 default and passes it to ParallelExecutor."""
+    devset = [new_example("What is 1+1?", "2")]
+    ev = Evaluate(devset=devset, metric=answer_exact_match)
+    assert ev.timeout == 120
+
+
+def test_evaluate_timeout_custom():
+    """A custom timeout is stored and forwarded to the executor."""
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
+
+    captured = {}
+
+    original_init = __import__("dspy.utils.parallelizer", fromlist=["ParallelExecutor"]).ParallelExecutor.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        original_init(self, *args, **kwargs)
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor.__init__", tracking_init):
+        ev = Evaluate(devset=devset, metric=answer_exact_match, timeout=300)
+        ev(program)
+
+    assert captured["timeout"] == 300
+
+
+def test_evaluate_timeout_zero_disables_straggler():
+    """Setting timeout=0 disables straggler resubmission; evaluation still completes."""
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    ev = Evaluate(devset=devset, metric=answer_exact_match, display_progress=False, timeout=0)
+    result = ev(program)
+    assert result.score == 100.0
+
