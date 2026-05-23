@@ -1305,9 +1305,7 @@ async def test_chat_adapter_with_generic_type_annotation():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))]
-        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
@@ -1604,6 +1602,107 @@ async def test_json_adapter_multiple_fields_detection():
     assert "second response" in second_content
 
 
+@pytest.mark.anyio
+async def test_baml_adapter_simple_pydantic_streaming():
+    """BAMLAdapter inherits from JSONAdapter and emits JSON-shaped output, so streaming
+    should work the same way it does for JSONAdapter. This mirrors the basic JSONAdapter
+    streaming test."""
+    from dspy.adapters.baml_adapter import BAMLAdapter
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: SimpleResponse = dspy.OutputField()
+
+    async def baml_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='response"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=":"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "Hello'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' BAML!"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "ok"}'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))])
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=baml_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=BAMLAdapter()):
+            output = program(question="Say hello with BAML")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    assert len(chunks) > 0
+    assert chunks[0].signature_field_name == "response"
+
+    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert "Hello BAML!" in full_content
+
+
+@pytest.mark.anyio
+async def test_baml_adapter_multiple_fields_detection():
+    """BAMLAdapter should detect the boundary between two output fields the same way
+    JSONAdapter does, because both produce a single JSON object as the LM response."""
+    from dspy.adapters.baml_adapter import BAMLAdapter
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        first: SimpleResponse = dspy.OutputField()
+        second: SimpleResponse = dspy.OutputField()
+
+    async def multi_field_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"first": {'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "first response"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "ok"}'))]
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "second": {'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "second response"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "done"}}'))]
+        )
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="first"),
+            dspy.streaming.StreamListener(signature_field_name="second"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=multi_field_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=BAMLAdapter()):
+            output = program(question="Generate two responses")
+            first_chunks = []
+            second_chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    if value.signature_field_name == "first":
+                        first_chunks.append(value)
+                    elif value.signature_field_name == "second":
+                        second_chunks.append(value)
+
+    assert len(first_chunks) > 0
+    assert len(second_chunks) > 0
+
+    first_content = "".join(chunk.chunk for chunk in first_chunks)
+    second_content = "".join(chunk.chunk for chunk in second_chunks)
+
+    assert "first response" in first_content
+    assert "second response" in second_content
+
+
 def test_stream_listener_could_form_end_identifier_chat_adapter():
     listener = dspy.streaming.StreamListener(signature_field_name="answer")
 
@@ -1636,6 +1735,19 @@ def test_stream_listener_could_form_end_identifier_json_adapter():
     # Should return False for text that cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "JSONAdapter") is False
     assert listener._could_form_end_identifier("some text", "JSONAdapter") is False
+
+
+def test_stream_listener_could_form_end_identifier_baml_adapter():
+    listener = dspy.streaming.StreamListener(signature_field_name="output")
+
+    # BAMLAdapter uses the same JSON-shaped markers as JSONAdapter
+    assert listener._could_form_end_identifier('some text "', "BAMLAdapter") is True
+    assert listener._could_form_end_identifier('some text ",', "BAMLAdapter") is True
+    assert listener._could_form_end_identifier('some text " ', "BAMLAdapter") is True
+    assert listener._could_form_end_identifier('some text "}', "BAMLAdapter") is True
+
+    assert listener._could_form_end_identifier("hello world", "BAMLAdapter") is False
+    assert listener._could_form_end_identifier("some text", "BAMLAdapter") is False
 
 
 def test_stream_listener_could_form_end_identifier_xml_adapter():

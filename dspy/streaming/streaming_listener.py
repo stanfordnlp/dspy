@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import jiter
 
+from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
     from dspy.primitives.module import Module
 
-ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
+ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter, BAMLAdapter]
 
 
 class StreamListener:
@@ -65,6 +66,16 @@ class StreamListener:
                 "end_pattern_contains": "[[ ##",
             },
             "JSONAdapter": {
+                "start_identifier": f'"{self.signature_field_name}":',
+                "end_identifier": re.compile(r"\w*\"(,|\s*})"),
+                "start_indicator": '"',
+                "end_pattern_prefixes": ['"', '",', '" ', '"}'],
+                "end_pattern_contains": "}",
+            },
+            # BAMLAdapter inherits from JSONAdapter and emits JSON-shaped output, so the
+            # token-level streaming markers are identical. BAML's customisations are limited
+            # to the schema prompt sent to the LM, not the response format.
+            "BAMLAdapter": {
                 "start_identifier": f'"{self.signature_field_name}":',
                 "end_identifier": re.compile(r"\w*\"(,|\s*})"),
                 "start_indicator": '"',
