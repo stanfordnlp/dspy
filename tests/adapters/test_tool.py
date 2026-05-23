@@ -5,7 +5,8 @@ import pytest
 from pydantic import BaseModel
 
 import dspy
-from dspy.adapters.types.tool import Tool, ToolCalls, convert_input_schema_to_tool_args
+from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
+from dspy.core.types import LMToolCallPart
 
 
 # Test fixtures
@@ -397,9 +398,7 @@ TOOL_CALL_TEST_CASES = [
     ([], {"tool_calls": []}),
     (
         [{"name": "search", "args": {"query": "hello"}}],
-        {
-            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
-        },
+        {"tool_calls": [{"name": "search", "args": {"query": "hello"}}]},
     ),
     (
         [
@@ -408,19 +407,14 @@ TOOL_CALL_TEST_CASES = [
         ],
         {
             "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
-                },
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world", "lang": "fr"}},
             ],
         },
     ),
     (
         [{"name": "get_time", "args": {}}],
-        {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
-        },
+        {"tool_calls": [{"name": "get_time", "args": {}}]},
     ),
 ]
 
@@ -446,8 +440,8 @@ def test_tool_calls_format_from_dict_list():
     result = tool_calls.format()
 
     assert len(result["tool_calls"]) == 2
-    assert result["tool_calls"][0]["function"]["name"] == "search"
-    assert result["tool_calls"][1]["function"]["name"] == "translate"
+    assert result["tool_calls"][0]["name"] == "search"
+    assert result["tool_calls"][1]["name"] == "translate"
 
 
 def test_tool_calls_preserve_call_ids_and_fill_missing_ids():
@@ -562,6 +556,47 @@ def test_toolcalls_vague_match():
         ToolCalls.model_validate({"foo": "bar"})
     with pytest.raises(ValueError):
         ToolCalls.model_validate([{"foo": "bar"}])
+
+
+def test_toolcalls_accepts_normalized_lm_tool_call_parts():
+    tool_calls = ToolCalls.model_validate([LMToolCallPart(id="call_1", name="search", args={"query": "hello"})])
+
+    assert tool_calls == ToolCalls.from_dict_list([{"id": "call_1", "name": "search", "args": {"query": "hello"}}])
+
+
+def test_toolcalls_rejects_provider_native_shapes():
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate(
+            [
+                {
+                    "type": "function",
+                    "function": {"name": "search", "arguments": '{"query": "hello"}'},
+                    "id": "call_1",
+                }
+            ]
+        )
+
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate({"type": "function_call", "name": "search", "arguments": '{"query": "hello"}'})
+
+
+def test_tool_call_results_use_canonical_shape():
+    results = ToolCallResults.model_validate(
+        [{"call_id": "call_1", "name": "search", "value": {"answer": "hello"}, "is_error": False}]
+    )
+
+    assert results.format() == {
+        "tool_call_results": [
+            {"call_id": "call_1", "name": "search", "value": {"answer": "hello"}, "is_error": False}
+        ]
+    }
+
+
+def test_tool_call_results_reject_provider_native_shapes():
+    with pytest.raises(ValueError):
+        ToolCallResults.model_validate(
+            {"type": "function_call_output", "call_id": "call_1", "output": '{"answer": "hello"}'}
+        )
 
 
 def test_tool_convert_input_schema_to_tool_args_no_input_params():

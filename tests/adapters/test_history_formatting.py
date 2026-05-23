@@ -65,7 +65,7 @@ def test_json_adapter_formats_complete_tool_turn_without_duplicate_input():
     assert [message["role"] for message in messages] == ["system", "user", "assistant", "user", "user"]
     assert sum("What is 1+2?" in text for text in texts[1:]) == 1
     assert assistant["next_thought"] == "I should add."
-    assert assistant["tool_calls"]["tool_calls"][0]["function"]["name"] == "add"
+    assert assistant["tool_calls"]["tool_calls"][0]["name"] == "add"
     assert "[[ ## tool_call_results ## ]]" in texts[3]
     assert '"name": "add"' in texts[3]
     assert '"value": 3' in texts[3]

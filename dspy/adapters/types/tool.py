@@ -2,7 +2,6 @@ import asyncio
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, get_origin, get_type_hints
 
-import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -270,13 +269,7 @@ class ToolCalls(Type):
         id: str | None = None
 
         def format(self):
-            formatted = {
-                "type": "function",
-                "function": {
-                    "name": self.name,
-                    "arguments": self.args,
-                },
-            }
+            formatted = {"name": self.name, "args": self.args}
             if self.id is not None:
                 formatted["id"] = self.id
             return formatted
@@ -396,7 +389,6 @@ class ToolCalls(Type):
         )
 
     def format(self) -> dict[str, Any]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
@@ -423,62 +415,23 @@ class ToolCalls(Type):
         ]
         return self.model_copy(update={"tool_calls": tool_calls})
 
-    @staticmethod
-    def _get_tool_call_value(item: Any, key: str, default: Any = None) -> Any:
+    @classmethod
+    def _canonical_tool_call(cls, item: Any) -> Any:
+        if isinstance(item, cls.ToolCall):
+            return item.model_dump()
         if isinstance(item, dict):
-            return item.get(key, default)
-        return getattr(item, key, default)
-
-    @staticmethod
-    def _parse_tool_call_args(args: Any) -> Any:
-        if isinstance(args, str):
-            return json_repair.loads(args)
-        return args
-
-    @classmethod
-    def _normalized_tool_call(cls, name: Any, args: Any, tool_call_id: Any = None) -> dict[str, Any] | None:
-        if name is None:
-            return None
-        normalized = {"name": name, "args": cls._parse_tool_call_args(args)}
-        if tool_call_id:
-            normalized["id"] = tool_call_id
-        return normalized
-
-    @classmethod
-    def _normalize_native_tool_call(cls, item: Any) -> Any:
-        if not isinstance(item, dict) and hasattr(item, "model_dump"):
-            try:
-                dumped_item = item.model_dump()
-            except TypeError:
-                dumped_item = None
-            if isinstance(dumped_item, dict):
-                item = dumped_item
-
-        function = cls._get_tool_call_value(item, "function")
-        if function is not None:
-            name = cls._get_tool_call_value(function, "name")
-            arguments = cls._get_tool_call_value(function, "arguments", {})
-            normalized = cls._normalized_tool_call(name, arguments, cls._get_tool_call_value(item, "id"))
-            if normalized is not None:
+            if "name" in item and "args" in item:
+                normalized = {"name": item["name"], "args": item["args"]}
+                if "id" in item:
+                    normalized["id"] = item["id"]
                 return normalized
-
-        name = cls._get_tool_call_value(item, "name")
-        if cls._get_tool_call_value(item, "type") == "function_call" and name is not None:
-            arguments = cls._get_tool_call_value(item, "arguments", {})
-            normalized = cls._normalized_tool_call(
-                name,
-                arguments,
-                cls._get_tool_call_value(item, "call_id") or cls._get_tool_call_value(item, "id"),
-            )
-            if normalized is not None:
-                return normalized
-
-        args = cls._get_tool_call_value(item, "args")
-        if args is not None:
-            normalized = cls._normalized_tool_call(name, args, cls._get_tool_call_value(item, "id"))
-            if normalized is not None:
-                return normalized
-
+            return item
+        if hasattr(item, "name") and hasattr(item, "args"):
+            normalized = {"name": item.name, "args": item.args}
+            tool_call_id = getattr(item, "id", None)
+            if tool_call_id is not None:
+                normalized["id"] = tool_call_id
+            return normalized
         return item
 
     @pydantic.model_validator(mode="before")
@@ -493,13 +446,11 @@ class ToolCalls(Type):
         elif isinstance(data, dict):
             if "tool_calls" in data:
                 tool_calls_data = data["tool_calls"]
-            else:
-                normalized = cls._normalize_native_tool_call(data)
-                if isinstance(normalized, dict) and "name" in normalized and "args" in normalized:
-                    return {"tool_calls": [normalized]}
+            elif "name" in data and "args" in data:
+                return {"tool_calls": [cls._canonical_tool_call(data)]}
 
         if isinstance(tool_calls_data, list):
-            normalized = [cls._normalize_native_tool_call(item) for item in tool_calls_data]
+            normalized = [cls._canonical_tool_call(item) for item in tool_calls_data]
             if all(isinstance(item, dict) and "name" in item and "args" in item for item in normalized):
                 return {"tool_calls": normalized}
 
