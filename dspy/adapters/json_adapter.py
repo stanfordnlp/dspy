@@ -7,6 +7,7 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
+from dspy.adapters._signature_field_partition import _partition_signature_fields
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
@@ -68,11 +69,14 @@ class JSONAdapter(ChatAdapter):
             return result
 
         try:
+            partition = _partition_signature_fields(self, lm, lm_kwargs, signature, inputs)
             structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
+                partition.remaining_signature, self.use_native_function_calling
             )
-            lm_kwargs["response_format"] = structured_output_model
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            partition.request_kwargs["response_format"] = structured_output_model
+            request = self._render_request(partition, lm, demos)
+            response = self._call_lm(lm, request)
+            return self._parse_response(partition, response, lm)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -91,11 +95,14 @@ class JSONAdapter(ChatAdapter):
             return await result
 
         try:
+            partition = _partition_signature_fields(self, lm, lm_kwargs, signature, inputs)
             structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
+                partition.remaining_signature, self.use_native_function_calling
             )
-            lm_kwargs["response_format"] = structured_output_model
-            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            partition.request_kwargs["response_format"] = structured_output_model
+            request = self._render_request(partition, lm, demos)
+            response = await self._acall_lm(lm, request)
+            return self._parse_response(partition, response, lm)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}

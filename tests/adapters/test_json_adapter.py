@@ -1574,13 +1574,16 @@ def test_json_adapter_native_reasoning():
             ],
             model="anthropic/claude-3-7-sonnet-20250219",
         )
-        modified_signature = adapter._call_preprocess(
+        from dspy.adapters._signature_field_partition import _partition_signature_fields
+
+        partition = _partition_signature_fields(
+            adapter,
             dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
         )
-        assert "reasoning" not in modified_signature.output_fields
+        assert "reasoning" not in partition.remaining_signature.output_fields
 
         result = adapter(
             dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),

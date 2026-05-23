@@ -2028,13 +2028,16 @@ def test_chat_adapter_native_reasoning():
             ],
             model="anthropic/claude-3-7-sonnet-20250219",
         )
-        modified_signature = adapter._call_preprocess(
+        from dspy.adapters._signature_field_partition import _partition_signature_fields
+
+        partition = _partition_signature_fields(
+            adapter,
             dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
         )
-        assert "reasoning" not in modified_signature.output_fields
+        assert "reasoning" not in partition.remaining_signature.output_fields
 
         result = adapter(
             dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
@@ -2145,15 +2148,25 @@ def test_empty_string_content_raises_adapter_parse_error():
 
 
 def test_tool_call_with_null_content_does_not_raise():
-    """Tool-call-only responses legitimately have content=None.
-    _call_postprocess must NOT raise when tool_calls are present."""
+    """Tool-call-only responses legitimately have content=None and should parse."""
+    from dspy.adapters._signature_field_partition import _partition_signature_fields
+    from dspy.clients.openai_format import lm_response_from_legacy_outputs
+    from dspy.core.types import LMRequest
+
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
 
+    def search(query: str) -> str:
+        return query
+
+    inputs = {"question": "test", "tools": [dspy.Tool(search)]}
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    partition = _partition_signature_fields(adapter, lm, {}, sig_cls, inputs)
     outputs = [{"text": None, "tool_calls": [
         {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
     ]}]
+    response = lm_response_from_legacy_outputs(outputs, LMRequest.from_call(model=lm.model, messages=[]))
 
-    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+    result = adapter._parse_response(partition, response, lm)
     assert result is not None
     assert len(result) == 1

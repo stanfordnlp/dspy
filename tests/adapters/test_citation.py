@@ -151,13 +151,14 @@ def test_citations_postprocessing():
         ]
     }]
 
-    result = adapter._call_postprocess(
-        CitationSignature.delete("citations"),
-        CitationSignature,
-        outputs,
-        dspy.LM(model="anthropic/claude-3-5-sonnet-20241022"),
-        lm_kwargs={},
-    )
+    from dspy.adapters._signature_field_partition import _partition_signature_fields
+    from dspy.clients.openai_format import lm_response_from_legacy_outputs
+    from dspy.core.types import LMRequest
+
+    lm = dspy.LM(model="anthropic/claude-3-5-sonnet-20241022")
+    partition = _partition_signature_fields(adapter, lm, {}, CitationSignature, {"question": "What color is the sky?"})
+    response = lm_response_from_legacy_outputs(outputs, LMRequest.from_call(model=lm.model, messages=[]))
+    result = adapter._parse_response(partition, response, lm)
 
     assert len(result) == 1
     assert "citations" in result[0]
