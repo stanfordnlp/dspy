@@ -375,15 +375,19 @@ def find_predictor_for_stream_listeners(
 ) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
-    This is a utility function to automatically find the predictor for each stream listener. It is used when some
-    listeners don't specify the predictor they want to listen to. If a listener's `signature_field_name` is not
-    unique in the program, this function will raise an error.
+    This is a utility function to bind each stream listener to the live predictor instance inside the program.
+    It is used to ensure listeners route correctly even when the listener was constructed with a stale reference
+    to an inner predictor (for example, when the inner ``Predict`` of a ``dspy.ChainOfThought`` or ``dspy.ReAct``
+    is replaced after the listener was created). If a listener's ``signature_field_name`` is not unique in the
+    program and no ``predict`` or ``predict_name`` is supplied, this function raises an error.
     """
     predictors = program.named_predictors()
+    name_to_predictor = dict(predictors)
 
-    field_name_to_named_predictor = {}
+    # Build a lookup from signature field name to (name, predictor) for listeners that need auto-resolution.
+    field_name_to_named_predictor: dict[str, tuple[str, Any] | None] = {}
     for listener in stream_listeners:
-        if listener.predict:
+        if listener.predict is not None or listener.predict_name is not None:
             continue
         field_name_to_named_predictor[listener.signature_field_name] = None
 
@@ -401,7 +405,14 @@ def find_predictor_for_stream_listeners(
 
     predict_id_to_listener = defaultdict(list)
     for listener in stream_listeners:
-        if listener.predict:
+        if listener.predict_name is not None and listener.predict_name in name_to_predictor:
+            # Re-bind to the live predictor in the program by name. This handles the case where the listener
+            # holds a stale reference to an inner predictor that has since been replaced (for example, inside
+            # ``dspy.ChainOfThought`` or ``dspy.ReAct``).
+            listener.predict = name_to_predictor[listener.predict_name]
+            predict_id_to_listener[id(listener.predict)].append(listener)
+            continue
+        if listener.predict is not None:
             predict_id_to_listener[id(listener.predict)].append(listener)
             continue
         if listener.signature_field_name not in field_name_to_named_predictor:

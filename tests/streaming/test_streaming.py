@@ -1305,9 +1305,7 @@ async def test_chat_adapter_with_generic_type_annotation():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))]
-        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
@@ -2061,3 +2059,130 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+@pytest.mark.anyio
+async def test_stream_listener_chain_of_thought_with_stale_predict_reference():
+    """Regression test for https://github.com/stanfordnlp/dspy/issues/8736.
+
+    A ``StreamListener`` may hold a stale reference to the inner ``Predict`` of a
+    ``dspy.ChainOfThought`` (or other wrapping module) if the inner predictor is replaced
+    after the listener is constructed. ``streamify`` should re-bind the listener to the
+    live predictor by ``predict_name`` so streaming output is still delivered.
+    """
+
+    async def stream_chunks(*args, **kwargs):
+        for content in [
+            "[[",
+            " ##",
+            " reasoning",
+            " ##",
+            " ]]\n\n",
+            "Step",
+            " by",
+            " step",
+            ".",
+            "\n\n[[ ##",
+            " answer",
+            " ##",
+            " ]]\n\n",
+            "Because",
+            " of",
+            " gravity",
+            ".",
+            "\n\n[[ ##",
+            " completed",
+            " ##",
+            " ]]",
+        ]:
+            yield ModelResponseStream(
+                model="gpt-4o-mini",
+                choices=[StreamingChoices(delta=Delta(content=content))],
+            )
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_chunks()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        cot = dspy.ChainOfThought("question->answer")
+        # Capture the listener's reference to the *original* inner predictor.
+        listener = dspy.streaming.StreamListener(
+            signature_field_name="answer",
+            predict=cot.predict,
+            predict_name="predict",
+        )
+        # Simulate the inner predictor being replaced after the listener was created.
+        cot.predict = dspy.Predict(cot.predict.signature)
+
+        program = dspy.streamify(
+            cot,
+            stream_listeners=[listener],
+            include_final_prediction_in_output_stream=False,
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why does an apple fall?")
+            answer_chunks = [value async for value in output if isinstance(value, dspy.streaming.StreamResponse)]
+
+    assert len(answer_chunks) > 0
+    assert answer_chunks[0].predict_name == "predict"
+    assert answer_chunks[0].signature_field_name == "answer"
+    full_answer = "".join(chunk.chunk for chunk in answer_chunks)
+    assert "Because of gravity" in full_answer
+
+
+@pytest.mark.anyio
+async def test_stream_listener_chain_of_thought_with_predict_name_only():
+    """A listener that supplies ``predict_name`` (without ``predict``) should resolve via the program."""
+
+    async def stream_chunks(*args, **kwargs):
+        for content in [
+            "[[",
+            " ##",
+            " reasoning",
+            " ##",
+            " ]]\n\n",
+            "Step",
+            " by",
+            " step",
+            ".",
+            "\n\n[[ ##",
+            " answer",
+            " ##",
+            " ]]\n\n",
+            "Because",
+            " of",
+            " gravity",
+            ".",
+            "\n\n[[ ##",
+            " completed",
+            " ##",
+            " ]]",
+        ]:
+            yield ModelResponseStream(
+                model="gpt-4o-mini",
+                choices=[StreamingChoices(delta=Delta(content=content))],
+            )
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_chunks()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        cot = dspy.ChainOfThought("question->answer")
+        listener = dspy.streaming.StreamListener(
+            signature_field_name="answer",
+            predict_name="predict",
+        )
+        program = dspy.streamify(
+            cot,
+            stream_listeners=[listener],
+            include_final_prediction_in_output_stream=False,
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why does an apple fall?")
+            answer_chunks = [value async for value in output if isinstance(value, dspy.streaming.StreamResponse)]
+
+    assert len(answer_chunks) > 0
+    assert answer_chunks[0].predict_name == "predict"
+    assert answer_chunks[0].signature_field_name == "answer"
+    full_answer = "".join(chunk.chunk for chunk in answer_chunks)
+    assert "Because of gravity" in full_answer
