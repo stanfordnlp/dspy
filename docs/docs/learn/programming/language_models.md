@@ -88,6 +88,47 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "Microsoft Fabric"
+        Microsoft Fabric notebooks expose Azure OpenAI through prebuilt AI services. The notebook environment does not surface a static API key or endpoint, so the standard `AZURE_API_KEY` / `AZURE_API_BASE` pattern does not apply. Instead, DSPy points at the Fabric workload endpoint and authenticates with a short lived bearer token resolved from the runtime.
+
+        The recommended pattern uses an `azure_ad_token_provider` so the token refreshes automatically on long running optimization runs. The provider is forwarded to LiteLLM and used by the underlying Azure OpenAI client.
+
+        ```python linenums="1"
+        import dspy
+        from synapse.ml.fabric.service_discovery import get_fabric_env_config
+        from synapse.ml.fabric.token_utils import TokenUtils
+
+        fabric_env_config = get_fabric_env_config().fabric_env_config
+        api_base = f"{fabric_env_config.ml_workload_endpoint}cognitive/openai"
+
+        def fabric_token_provider() -> str:
+            # `get_openai_auth_header` returns "Bearer <token>"; LiteLLM expects the
+            # raw token, so strip the prefix before handing it back.
+            return TokenUtils().get_openai_auth_header().split(" ", 1)[-1]
+
+        lm = dspy.LM(
+            "azure/gpt-4.1",  # the deployment name exposed by Fabric
+            api_base=api_base,
+            api_version="2024-02-15-preview",
+            azure_ad_token_provider=fabric_token_provider,
+        )
+        dspy.configure(lm=lm)
+        ```
+
+        For a one shot call where token refresh is not a concern, pass a static token via `azure_ad_token` instead:
+
+        ```python linenums="1"
+        token = TokenUtils().get_openai_auth_header().split(" ", 1)[-1]
+        lm = dspy.LM(
+            "azure/gpt-4.1",
+            api_base=api_base,
+            api_version="2024-02-15-preview",
+            azure_ad_token=token,
+        )
+        ```
+
+        Replace `gpt-4.1` with the Fabric deployment you want to call. The list of prebuilt models is documented under [Foundry Tools in Fabric](https://learn.microsoft.com/en-us/fabric/data-science/ai-services/ai-services-overview). If you are using Bring Your Own Key against an Azure OpenAI resource you provisioned yourself, follow the standard [Azure OpenAI instructions](https://docs.litellm.ai/docs/providers/azure) with `AZURE_API_KEY`, `AZURE_API_BASE`, and `AZURE_API_VERSION`.
+
     === "Local LMs on a GPU server"
           First, install [SGLang](https://sgl-project.github.io/start/install.html) and launch its server with your LM.
 
