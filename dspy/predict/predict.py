@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.types.history import History
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
@@ -38,6 +39,18 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
         unsafe_keys,
     )
     return sanitized_lm_state
+
+
+def _field_is_present_in_history(signature: type[Signature], inputs: dict[str, Any], field_name: str) -> bool:
+    for history_name, field in signature.input_fields.items():
+        if field.annotation != History:
+            continue
+        history = inputs.get(history_name)
+        if not isinstance(history, History):
+            continue
+        if any(isinstance(message, dict) and field_name in message for message in history.messages):
+            return True
+    return False
 
 
 class Predict(Module, Parameter):
@@ -216,11 +229,13 @@ class Predict(Module, Parameter):
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
-            logger.warning(
-                "Not all input fields were provided to module. Present: %s. Missing: %s.",
-                present,
-                missing,
-            )
+            missing = [field_name for field_name in missing if not _field_is_present_in_history(signature, kwargs, field_name)]
+            if missing:
+                logger.warning(
+                    "Not all input fields were provided to module. Present: %s. Missing: %s.",
+                    present,
+                    missing,
+                )
         return lm, config, signature, demos, kwargs
 
     def _forward_postprocess(self, completions, signature, **kwargs):
@@ -354,7 +369,7 @@ def _check_type(value: Any, expected: type) -> bool:
                 return all(_check_type(item, args[0]) for item in value)
             if len(value) != len(args):
                 return False
-            return all(_check_type(item, arg) for item, arg in zip(value, args))
+            return all(_check_type(item, arg) for item, arg in zip(value, args, strict=True))
         return True
 
     # set / frozenset
