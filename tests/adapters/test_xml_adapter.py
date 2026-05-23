@@ -534,19 +534,14 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
+                 '1. `image` (Image): \n'
+                 '2. `tools` (list[Tool]): \n'
+                 '3. `profile` (Profile): \n'
+                 '4. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
-                 '\n'
-                 '<history>\n'
-                 '{history}\n'
-                 '</history>\n'
                  '\n'
                  '<image>\n'
                  '{image}\n'
@@ -573,11 +568,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  'In adhering to this structure, your objective is: \n'
                  '        Answer using all supplied context.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "<image>\n"},
+      "content": [{"type": "text", "text": "<image>\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'

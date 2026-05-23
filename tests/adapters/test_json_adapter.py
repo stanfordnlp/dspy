@@ -231,20 +231,16 @@ def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
+                 '1. `image` (Image): \n'
+                 '2. `tools` (list[Tool]): \n'
+                 '3. `profile` (Profile): \n'
+                 '4. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
                  '\n'
                  'Inputs will have the following structure:\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -270,19 +266,14 @@ def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  'In adhering to this structure, your objective is: \n'
                  '        Answer using all supplied context.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'
                            '\n'
                            '[[ ## tools ## ]]\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It takes '
+                           "arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', 'default': 3}}.\"]\n"
                            '\n'
                            '[[ ## profile ## ]]\n'
                            '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
@@ -316,15 +307,15 @@ def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '  }\n'
                  '}'},
      {"role": "user",
-      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+      "content": [{"type": "text",
+                   "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
                   {"type": "text",
                    "text": '\n'
                            '\n'
                            '[[ ## tools ## ]]\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It takes '
+                           "arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', 'default': 3}}.\"]\n"
                            '\n'
                            '[[ ## profile ## ]]\n'
                            '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
@@ -591,12 +582,12 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "\n"
                  "{}\n"
                  "In adhering to this structure, your objective is: \n"
-                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
+                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`.\n"
+                 "        When tool use is needed, call the available tools through the native tool-call interface. "
+                 "Do not emit `tool_calls` as a text or JSON output field."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with a JSON object in the following order of fields: ."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",
@@ -640,8 +631,10 @@ def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
                  '  "tool_calls": "{tool_calls}        # note: the value you produce must adhere to '
                  'the JSON schema: {\\"type\\": \\"object\\", \\"$defs\\": {\\"ToolCall\\": '
                  '{\\"type\\": \\"object\\", \\"properties\\": {\\"args\\": {\\"type\\": \\"object\\", '
-                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}, \\"name\\": {\\"type\\": '
-                 '\\"string\\", \\"title\\": \\"Name\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
+                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}, \\"id\\": {\\"anyOf\\": '
+                 '[{\\"type\\": \\"string\\"}, {\\"type\\": \\"null\\"}], \\"default\\": null, '
+                 '\\"title\\": \\"Id\\"}, \\"name\\": {\\"type\\": \\"string\\", \\"title\\": '
+                 '\\"Name\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
                  '\\"title\\": \\"ToolCall\\"}}, \\"properties\\": {\\"tool_calls\\": {\\"type\\": '
                  '\\"array\\", \\"items\\": {\\"$ref\\": \\"#/$defs/ToolCall\\"}, \\"title\\": \\"Tool '
                  'Calls\\"}}, \\"required\\": [\\"tool_calls\\"], \\"title\\": \\"ToolCalls\\"}"\n'
@@ -1500,7 +1493,13 @@ def test_json_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None

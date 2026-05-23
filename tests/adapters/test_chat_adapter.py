@@ -350,15 +350,11 @@ def test_chat_adapter_format_exact_messages_with_history():
 
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
-                 "1. `history` (History): \n"
-                 "2. `question` (str):\n"
+                 "1. `question` (str):\n"
                  "Your output fields are:\n"
                  "1. `answer` (str):\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
-                 "\n"
-                 "[[ ## history ## ]]\n"
-                 "{history}\n"
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
@@ -602,18 +598,14 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
+                 '1. `image` (Image): \n'
+                 '2. `tools` (list[Tool]): \n'
+                 '3. `profile` (Profile): \n'
+                 '4. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -637,11 +629,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  'In adhering to this structure, your objective is: \n'
                  '        Answer using all supplied context.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'
@@ -675,7 +663,8 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '\n'
                  '[[ ## completed ## ]]\n'},
      {"role": "user",
-      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+      "content": [{"type": "text",
+                   "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
                   {"type": "text",
                    "text": '\n'
@@ -1092,13 +1081,12 @@ def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "\n"
                  "[[ ## completed ## ]]\n"
                  "In adhering to this structure, your objective is: \n"
-                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
+                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`.\n"
+                 "        When tool use is needed, call the available tools through the native tool-call interface. "
+                 "Do not emit `tool_calls` as a text or JSON output field."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with the corresponding output fields, starting with the field , and then "
-                 "ending with the marker for `[[ ## completed ## ]]`."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",
@@ -1268,29 +1256,25 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `audio` (Audio): \n'
-                 '4. `file` (File): \n'
-                 '5. `document` (Document): \n'
+                 '1. `image` (Image): \n'
+                 '2. `audio` (Audio): \n'
+                 '3. `file` (File): \n'
+                 '4. `document` (Document): \n'
                  '    Type description of Document: A document containing text content that can be '
                  'referenced and cited. Include the full text content and optionally a title for '
                  'proper referencing.\n'
-                 '6. `event` (Event): \n'
+                 '5. `event` (Event): \n'
                  '    Type description of Event: An event block.\n'
-                 '7. `tools` (list[Tool]): \n'
-                 '8. `profile` (Profile): \n'
-                 '9. `context` (str): \n'
-                 '10. `question` (str):\n'
+                 '6. `tools` (list[Tool]): \n'
+                 '7. `profile` (Profile): \n'
+                 '8. `context` (str): \n'
+                 '9. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard): \n'
                  "2. `verdict` (Literal['yes', 'no']): \n"
                  '3. `confidence` (float):\n'
                  'All interactions will be structured in the following way, with the appropriate '
                  'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -1336,11 +1320,24 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  'In adhering to this structure, your objective is: \n'
                  '        Answer carefully using every available signal.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Incomplete example question"},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'Not supplied for this particular example. \n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 'Not supplied for this particular example.\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
                   {"type": "input_audio", "input_audio": {"data": "REVNTw==", "format": "wav"}},
@@ -1380,23 +1377,6 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '\n'
                  '[[ ## confidence ## ]]\n'
                  '0.9\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'},
-     {"role": "user",
-      "content": "This is an example of the task, though some input or output fields are not "
-                 "supplied.\n"
-                 "\n"
-                 "[[ ## question ## ]]\n"
-                 "Incomplete example question"},
-     {"role": "assistant",
-      "content": '[[ ## answer ## ]]\n'
-                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
-                 '\n'
-                 '[[ ## verdict ## ]]\n'
-                 'Not supplied for this particular example. \n'
-                 '\n'
-                 '[[ ## confidence ## ]]\n'
-                 'Not supplied for this particular example.\n'
                  '\n'
                  '[[ ## completed ## ]]\n'},
      {"role": "user",
@@ -1926,7 +1906,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
@@ -1946,6 +1932,114 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
         assert result[0]["answer"] == "Paris"
         assert result[0]["tool_calls"] is None
+
+
+def test_chat_adapter_toolcalls_serial_non_native_schema_limits_cardinality():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(allow_parallel_tool_calls=False),
+        MySignature,
+        [],
+        {"question": "What is the weather in Paris?", "tools": [dspy.Tool(get_weather)]},
+    )
+
+    assert '"maxItems": 1' in messages[0]["content"]
+    assert "parallel_tool_calls" not in lm_kwargs
+
+
+def test_chat_adapter_toolcalls_native_serial_forwards_provider_flag():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True, allow_parallel_tool_calls=False),
+        MySignature,
+        [],
+        {"question": "What is the weather in Paris?", "tools": [dspy.Tool(get_weather)]},
+        lm=dspy.LM(model="openai/gpt-4o-mini", cache=False),
+    )
+
+    assert lm_kwargs["parallel_tool_calls"] is False
+
+
+def test_chat_adapter_toolcalls_native_partition_uses_tool_call_path():
+    from dspy.adapters._signature_field_partition import _partition_signature_fields
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    partition = _partition_signature_fields(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        dspy.LM(model="openai/gpt-4o-mini", cache=False),
+        {},
+        MySignature,
+        {"question": "What is the weather in Paris?", "tools": [dspy.Tool(get_weather)]},
+    )
+
+    assert partition.uses_native_tool_calls
+    assert "tool_calls" not in partition.remaining_signature.output_fields
+    assert all(field.annotation is not dspy.ToolCalls for field in partition.native_response_fields)
+
+
+def test_chat_adapter_toolcalls_serial_non_native_rejects_multiple_calls():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    def get_time(city: str) -> str:
+        return f"The time in {city} is noon"
+
+    adapter = dspy.ChatAdapter(allow_parallel_tool_calls=False, use_json_adapter_fallback=False)
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content=(
+                            "[[ ## tool_calls ## ]]\n"
+                            "["
+                            "{'name': 'get_weather', 'args': {'city': 'Paris'}}, "
+                            "{'name': 'get_time', 'args': {'city': 'Paris'}}"
+                            "]"
+                        )
+                    )
+                )
+            ],
+            model="openai/gpt-4o-mini",
+        )
+
+        with pytest.raises(ValueError, match="permits at most 1"):
+            adapter(
+                dspy.LM(model="openai/gpt-4o-mini", cache=False),
+                {},
+                MySignature,
+                [],
+                {
+                    "question": "What is the weather and time in Paris?",
+                    "tools": [dspy.Tool(get_weather), dspy.Tool(get_time)],
+                },
+            )
 
 
 def test_chat_adapter_toolcalls_vague_match():
