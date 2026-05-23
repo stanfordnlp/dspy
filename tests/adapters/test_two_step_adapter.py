@@ -68,6 +68,7 @@ def test_two_step_adapter_call():
     mock_main_lm = mock.MagicMock(spec=dspy.LM)
     mock_main_lm.return_value = ["text from main LM"]
     mock_main_lm.kwargs = {"temperature": 1.0}
+    mock_main_lm.model = "openai/gpt-4o-mini"
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
     mock_extraction_lm.return_value = [
@@ -134,6 +135,7 @@ async def test_two_step_adapter_async_call():
     mock_main_lm = mock.MagicMock(spec=dspy.LM)
     mock_main_lm.acall.return_value = ["text from main LM"]
     mock_main_lm.kwargs = {"temperature": 1.0}
+    mock_main_lm.model = "openai/gpt-4o-mini"
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
     mock_extraction_lm.acall.return_value = [

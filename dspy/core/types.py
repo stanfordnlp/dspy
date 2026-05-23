@@ -300,7 +300,13 @@ class LMToolChoice(BaseModel):
 
     @classmethod
     def from_value(cls, value: Any = None, **overrides: Any) -> LMToolChoice:
-        data = _config_data(value, str_field="mode")
+        if isinstance(value, Mapping) and value.get("type") == "function" and isinstance(value.get("function"), Mapping):
+            # Accept OpenAI/LiteLLM-shaped tool choices for the current BaseLM
+            # compatibility path. Internally, DSPy represents this as requiring
+            # one allowed tool.
+            data = {"mode": "required", "allowed": [value["function"].get("name", "")]}
+        else:
+            data = _config_data(value, str_field="mode")
         if "parallel_tool_calls" in data and "parallel" not in data:
             data["parallel"] = data.pop("parallel_tool_calls")
         data.update({key: value for key, value in overrides.items() if value is not _MISSING})
@@ -1759,7 +1765,7 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
     for item in content:
         item_type = item.get("type") if isinstance(item, dict) else None
         if item_type == "text":
-            parts.append(LMTextPart(text=item.get("text", "")))
+            parts.append(LMTextPart(text=item.get("text", ""), metadata=item.get("metadata", {}) or {}))
         elif item_type == "image_url":
             image = item.get("image_url", {})
             if not isinstance(image, dict):
@@ -1924,10 +1930,12 @@ def _coerce_tool_spec(tool: Any) -> LMToolSpec:
     if isinstance(tool, dict):
         if "function" in tool:
             function = tool["function"]
+            provider_data = {key: value for key, value in tool.items() if key not in {"type", "function"}}
             return LMToolSpec(
                 name=function.get("name"),
                 description=function.get("description"),
                 parameters=function.get("parameters", {}),
+                provider_data=provider_data,
             )
         return LMToolSpec(**tool)
     raise TypeError(f"Cannot convert {type(tool)!r} to LMToolSpec.")

@@ -1,13 +1,23 @@
+import json
 import logging
 from typing import Any, get_origin
 
 import json_repair
 
+from dspy.adapters._legacy_type_markers import (
+    _expand_legacy_custom_type_markers_in_chat_message,
+    _expand_legacy_custom_type_markers_in_lm_message,
+)
 from dspy.adapters.types import History, Type
-from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.openai_format import (
+    legacy_outputs_from_lm_response,
+    lm_response_from_legacy_outputs,
+    to_openai_chat_request,
+)
+from dspy.core.types import LMMessage, LMRequest, LMResponse
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -70,6 +80,12 @@ class Adapter:
         signature: type[Signature],
         inputs: dict[str, Any],
     ) -> type[Signature]:
+        # TODO(adapters-plan): This remains the pre-normalized planning hook. It
+        # mutates `lm_kwargs` and returns only the render signature, which loses
+        # information we will need for plan-driven rendering/parsing. The next
+        # stacked PR should replace this with an explicit `_AdapterPlan` that
+        # records deleted fields, native tools, native output fields, inserted
+        # messages/parts, and LM config patches.
         if self.use_native_function_calling:
             tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
             tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
@@ -96,6 +112,9 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
+        # TODO(adapters-plan): Built-in/native response planning should move out
+        # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning
+        # renderers. Keep this compatibility hook for this boundary-only PR.
         # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
             if (
@@ -115,6 +134,11 @@ class Adapter:
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        # TODO(adapters-plan): This still parses legacy adapter output objects.
+        # PR1 normalizes the LM boundary, then immediately converts back to this
+        # shape to avoid changing parser semantics. A later PR should parse
+        # `LMResponse` directly and merge text-parsed fields with explicit
+        # native fields from `_AdapterPlan`.
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
@@ -157,6 +181,9 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
+            # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
+            # the real normalized hook, this should not call the legacy
+            # provider-shaped `parse_lm_response()` directly.
             # Parse custom types that does not rely on the `Adapter.parse()` method
             for name, field in original_signature.output_fields.items():
                 if (
@@ -174,6 +201,112 @@ class Adapter:
             values.append(value)
 
         return values
+
+    def _render_request(
+        self,
+        lm: BaseLM,
+        lm_kwargs: dict[str, Any],
+        messages: list[LMMessage | dict[str, Any]],
+    ) -> LMRequest:
+        """Build the normalized LM request for the current adapter call path.
+
+        TODO(adapters-plan): This currently receives already-rendered messages.
+        Once planning lands, this should render from `_AdapterPlan` and apply
+        planned message/part insertions before creating `LMRequest`.
+        """
+        return LMRequest.from_call(
+            model=lm.model,
+            messages=self._coerce_lm_messages(messages),
+            **lm_kwargs,
+        )
+
+    def _call_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:
+        """Call current `BaseLM` through the normalized request/response boundary.
+
+        TODO(language-models): When `BaseLM` is replaced by/updated to the
+        normalized `BaseLM.forward(request: LMRequest) -> LMResponse` contract,
+        remove this compatibility shim and let adapters call the normalized LM
+        entry point directly. The OpenAI-shaped compatibility kwargs should live
+        only inside concrete LM backends.
+        """
+        data = self._legacy_call_kwargs(request)
+        outputs = lm(messages=data.pop("messages"), **data)
+        return self._normalize_legacy_outputs(outputs, request)
+
+    async def _acall_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:
+        """Async variant of `_call_lm`.
+
+        TODO(language-models): Same transitional boundary as `_call_lm()`; this
+        should eventually call a normalized async LM method directly.
+        """
+        data = self._legacy_call_kwargs(request)
+        outputs = await lm.acall(messages=data.pop("messages"), **data)
+        return self._normalize_legacy_outputs(outputs, request)
+
+    def _legacy_call_kwargs(self, request: LMRequest) -> dict[str, Any]:
+        # TODO(language-models): Current `BaseLM` expects OpenAI/LiteLLM-shaped
+        # chat kwargs. We intentionally use `dspy.clients.openai_format` here so
+        # the conversion code lives in the future LM/client layer, not in
+        # adapters. Remove this adapter helper once `BaseLM` accepts `LMRequest`.
+        data = to_openai_chat_request(request)
+        data.pop("model", None)
+        # TODO(language-models): `cache` and `rollout_id` are DSPy BaseLM
+        # execution controls, not provider request fields. The future
+        # normalized LM base should own them before provider-format conversion.
+        if request.config.cache is not None:
+            if request.config.cache.enabled is not None:
+                data["cache"] = request.config.cache.enabled
+            if request.config.cache.rollout_id is not None:
+                data["rollout_id"] = request.config.cache.rollout_id
+        return data
+
+    def _coerce_lm_messages(self, messages: list[LMMessage | dict[str, Any]]) -> list[LMMessage]:
+        """Normalize subclass `format()` output before the LM boundary.
+
+        TODO(adapters-normalized-rendering): Adapter `format()` methods still
+        return OpenAI-chat-shaped dictionaries. This coercion is the bridge until
+        adapters render `LMMessage` / `LMPart` directly.
+        """
+        return [
+            _expand_legacy_custom_type_markers_in_lm_message(
+                message if isinstance(message, LMMessage) else self._chat_dict_to_lm_message(message)
+            )
+            for message in messages
+        ]
+
+    def _chat_dict_to_lm_message(self, message: dict[str, Any]) -> LMMessage:
+        try:
+            return LMMessage(**message)
+        except Exception:
+            # TODO(legacy-custom-types): Unknown OpenAI content blocks are
+            # temporarily preserved as `legacy_content_block` metadata on an
+            # empty text part so `openai_format` can round-trip them back to
+            # current BaseLM calls. Replace this with either explicit opaque
+            # provider parts or remove it when marker-based custom type
+            # serialization is retired.
+            message = dict(message)
+            content = message.get("content")
+            if isinstance(content, list):
+                sanitized = []
+                supported = {"text", "image_url", "input_audio", "file", "document", "video"}
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") in supported:
+                        sanitized.append(block)
+                    elif isinstance(block, dict):
+                        sanitized.append({"type": "text", "text": "", "metadata": {"legacy_content_block": block}})
+                    else:
+                        sanitized.append({"type": "text", "text": json.dumps(block, ensure_ascii=False)})
+                message["content"] = sanitized
+            return LMMessage(**message)
+
+    def _normalize_legacy_outputs(self, outputs: list[dict[str, Any] | str | None], request: LMRequest) -> LMResponse:
+        """Convert current `BaseLM` outputs into a normalized `LMResponse`.
+
+        TODO(language-models): Current `BaseLM` returns `list[str | dict | None]`.
+        Future LMs should return `LMResponse` directly, making this method a
+        compatibility-only path for old/custom LMs.
+        """
+        return lm_response_from_legacy_outputs(outputs, request)
 
     def __call__(
         self,
@@ -200,9 +333,14 @@ class Adapter:
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = lm(messages=inputs, **lm_kwargs)
+        messages = self.format(processed_signature, demos, inputs)
+        request = self._render_request(lm, lm_kwargs, messages)
+        response = self._call_lm(lm, request)
+        # TODO(adapters-response): We normalize at the LM boundary, but still
+        # convert back to legacy postprocess dictionaries here to keep this PR
+        # behavior-preserving. Replace with direct `LMResponse` parsing once the
+        # explicit adapter plan exists.
+        outputs = legacy_outputs_from_lm_response(response)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     async def acall(
@@ -214,9 +352,12 @@ class Adapter:
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        messages = self.format(processed_signature, demos, inputs)
+        request = self._render_request(lm, lm_kwargs, messages)
+        response = await self._acall_lm(lm, request)
+        # TODO(adapters-response): Keep in sync with `__call__()` until both use
+        # direct `LMResponse` parsing.
+        outputs = legacy_outputs_from_lm_response(response)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     def format(
@@ -292,8 +433,7 @@ class Adapter:
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
             messages.append({"role": "user", "content": content})
 
-        messages = split_message_content_for_custom_types(messages)
-        return messages
+        return [_expand_legacy_custom_type_markers_in_chat_message(message) for message in messages]
 
     def format_system_message(self, signature: type[Signature]) -> str:
         """Format the system message for the LM call.
