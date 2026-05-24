@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -397,9 +398,7 @@ TOOL_CALL_TEST_CASES = [
     ([], {"tool_calls": []}),
     (
         [{"name": "search", "args": {"query": "hello"}}],
-        {
-            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
-        },
+        {"tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}]},
     ),
     (
         [
@@ -409,18 +408,13 @@ TOOL_CALL_TEST_CASES = [
         {
             "tool_calls": [
                 {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
-                },
+                {"type": "function", "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}}},
             ],
         },
     ),
     (
         [{"name": "get_time", "args": {}}],
-        {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
-        },
+        {"tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}]},
     ),
 ]
 
@@ -448,6 +442,72 @@ def test_tool_calls_format_from_dict_list():
     assert len(result["tool_calls"]) == 2
     assert result["tool_calls"][0]["function"]["name"] == "search"
     assert result["tool_calls"][1]["function"]["name"] == "translate"
+
+
+def test_tool_calls_preserve_call_ids_and_fill_missing_ids():
+    tool_calls = ToolCalls.from_dict_list(
+        [
+            {"name": "search", "args": {"query": "hello"}, "id": "call_search"},
+            {"name": "lookup", "args": {"key": "world"}},
+        ]
+    ).with_call_ids("call")
+
+    assert [tool_call.id for tool_call in tool_calls.tool_calls] == ["call_search", "call_1"]
+    assert [part.id for part in tool_calls.to_lm_parts()] == ["call_search", "call_1"]
+    assert "id" not in str(tool_calls.format())
+
+
+def test_tool_calls_schema_does_not_prompt_for_call_ids():
+    schema = ToolCalls.model_json_schema()
+    assert "id" not in schema["$defs"]["ToolCall"]["properties"]
+
+
+def test_tool_calls_parse_provider_shape_with_json_arguments_and_call_id():
+    tool_calls = ToolCalls.model_validate(
+        [
+            {
+                "type": "function",
+                "call_id": "call_search",
+                "function": {"name": "search", "arguments": '{"query": "hello"}'},
+            }
+        ]
+    )
+
+    assert tool_calls.tool_calls[0].id == "call_search"
+    assert tool_calls.tool_calls[0].name == "search"
+    assert tool_calls.tool_calls[0].args == {"query": "hello"}
+
+
+def test_tool_call_results_roundtrip_and_lm_messages():
+    tool_calls = ToolCalls.from_dict_list([{"name": "search", "args": {"query": "hello"}, "id": "call_search"}])
+    results = dspy.ToolCallResults.from_tool_calls_and_values(tool_calls.tool_calls, ["world"])
+
+    assert "previous tool calls" in dspy.ToolCallResults.description()
+    assert results.format() == {
+        "tool_call_results": [{"call_id": "call_search", "name": "search", "value": "world", "is_error": False}]
+    }
+    message = results.to_lm_messages()[0]
+    assert message.role == "tool"
+    assert message.parts[0].call_id == "call_search"
+    assert message.parts[0].name == "search"
+
+
+def test_tool_call_results_serialize_values_like_adapter_fields():
+    class ResultModel(BaseModel):
+        answer: str
+        score: float
+
+    tool_calls = ToolCalls.from_dict_list([{"name": "search", "args": {}, "id": "call_search"}])
+    results = dspy.ToolCallResults.from_tool_calls_and_values(
+        tool_calls.tool_calls,
+        [ResultModel(answer="café", score=0.9)],
+    )
+
+    assert results.format()["tool_call_results"][0]["value"] == {"answer": "café", "score": 0.9}
+    assert json.dumps(results.format())
+
+    message = results.to_lm_messages()[0]
+    assert message.parts[0].content[0].text == '{"answer": "café", "score": 0.9}'
 
 
 def test_toolcalls_vague_match():
@@ -551,10 +611,7 @@ def test_tool_call_execute():
     def add_numbers(a: int, b: int) -> int:
         return a + b
 
-    tools = [
-        dspy.Tool(get_weather),
-        dspy.Tool(add_numbers)
-    ]
+    tools = [dspy.Tool(get_weather), dspy.Tool(add_numbers)]
 
     tool_call = dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Berlin"})
     result = tool_call.execute(functions=tools)
@@ -575,11 +632,8 @@ def test_tool_call_execute():
 
     # Test error case
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
-    try:
+    with pytest.raises(ValueError, match="not found"):
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not found" in str(e)
 
 
 def test_tool_call_execute_with_local_functions():

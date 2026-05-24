@@ -1,12 +1,16 @@
 import asyncio
 import inspect
+import json
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.utils import serialize_for_json
+from dspy.core.types import LMMessage, LMTextPart, LMToolCallPart, LMToolResultPart, LMToolSpec
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
@@ -162,6 +166,14 @@ class Tool(Type):
             },
         }
 
+    def to_lm_tool_spec(self) -> LMToolSpec:
+        args = self.args or {}
+        return LMToolSpec(
+            name=self.name or "",
+            description=self.desc,
+            parameters={"type": "object", "properties": args, "required": list(args.keys())},
+        )
+
     def _run_async_in_sync(self, coroutine):
         try:
             loop = asyncio.get_running_loop()
@@ -263,6 +275,7 @@ class ToolCalls(Type):
     class ToolCall(Type):
         name: str
         args: dict[str, Any]
+        id: str | None = None
 
         def format(self):
             return {
@@ -272,6 +285,20 @@ class ToolCalls(Type):
                     "arguments": self.args,
                 },
             }
+
+        @classmethod
+        def __get_pydantic_json_schema__(cls, core_schema, handler):
+            schema = handler(core_schema)
+            properties = schema.get("properties")
+            if isinstance(properties, dict):
+                properties.pop("id", None)
+            required = schema.get("required")
+            if isinstance(required, list):
+                schema["required"] = [field for field in required if field != "id"]
+            return schema
+
+        def to_lm_part(self, tool_call_id: str | None = None) -> LMToolCallPart:
+            return LMToolCallPart(id=tool_call_id or self.id, name=self.name, args=self.args)
 
         def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
             """Execute this individual tool call and return its result.
@@ -310,7 +337,9 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method."
+                )
 
             try:
                 args = self.args or {}
@@ -340,8 +369,7 @@ class ToolCalls(Type):
             tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
             ```
         """
-        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
-        return cls(tool_calls=tool_calls)
+        return cls.model_validate(tool_calls_dicts)
 
     @classmethod
     def description(cls) -> str:
@@ -350,11 +378,69 @@ class ToolCalls(Type):
             "Arguments must be provided in JSON format."
         )
 
-    def format(self) -> list[dict[str, Any]]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
+    def format(self) -> dict[str, Any]:
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> "ToolCalls | None":
+        if not isinstance(response, dict):
+            return None
+        tool_calls = response.get("tool_calls")
+        if not tool_calls:
+            return None
+        return cls.model_validate(tool_calls)
+
+    def to_lm_parts(self, id_prefix: str | None = None) -> list[LMToolCallPart]:
+        return [
+            tool_call.to_lm_part(f"{id_prefix}_{idx}" if id_prefix is not None and tool_call.id is None else None)
+            for idx, tool_call in enumerate(self.tool_calls)
+        ]
+
+    def with_call_ids(self, id_prefix: str) -> "ToolCalls":
+        tool_calls = [
+            tool_call if tool_call.id is not None else tool_call.model_copy(update={"id": f"{id_prefix}_{idx}"})
+            for idx, tool_call in enumerate(self.tool_calls)
+        ]
+        return self.model_copy(update={"tool_calls": tool_calls})
+
+    @classmethod
+    def _canonical_tool_call(cls, item: Any) -> Any:
+        if isinstance(item, cls.ToolCall):
+            normalized = {"name": item.name, "args": item.args}
+            if item.id is not None:
+                normalized["id"] = item.id
+            return normalized
+
+        if isinstance(item, dict):
+            if "name" in item and "args" in item:
+                normalized = {"name": item["name"], "args": item["args"]}
+                call_id = item.get("id") or item.get("call_id")
+                if call_id is not None:
+                    normalized["id"] = call_id
+                return normalized
+            if "function" in item and isinstance(item["function"], dict):
+                function = item["function"]
+                arguments = function.get("arguments", {})
+                normalized = {
+                    "name": function.get("name"),
+                    "args": json_repair.loads(arguments) if isinstance(arguments, str) else arguments,
+                }
+                call_id = item.get("id") or item.get("call_id")
+                if call_id is not None:
+                    normalized["id"] = call_id
+                return normalized
+            return item
+
+        if hasattr(item, "name") and hasattr(item, "args"):
+            normalized = {"name": item.name, "args": item.args}
+            tool_call_id = getattr(item, "id", None) or getattr(item, "call_id", None)
+            if tool_call_id is not None:
+                normalized["id"] = tool_call_id
+            return normalized
+
+        return item
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -362,27 +448,110 @@ class ToolCalls(Type):
         if isinstance(data, cls):
             return data
 
-        # Handle case where data is a list of dicts with "name" and "args" keys
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "name" in item and "args" in item for item in data
-        ):
-            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
-        # Handle case where data is a dict
+        tool_calls_data = None
+        if isinstance(data, list):
+            tool_calls_data = data
         elif isinstance(data, dict):
             if "tool_calls" in data:
-                # Handle case where data is a dict with "tool_calls" key
                 tool_calls_data = data["tool_calls"]
-                if isinstance(tool_calls_data, list):
-                    return {
-                        "tool_calls": [
-                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
-                        ]
-                    }
             elif "name" in data and "args" in data:
-                # Handle case where data is a dict with "name" and "args" keys
-                return {"tool_calls": [cls.ToolCall(**data)]}
+                return {"tool_calls": [cls._canonical_tool_call(data)]}
+
+        if isinstance(tool_calls_data, list):
+            normalized = [cls._canonical_tool_call(item) for item in tool_calls_data]
+            if all(isinstance(item, dict) and "name" in item and "args" in item for item in normalized):
+                return {"tool_calls": normalized}
 
         raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
+
+
+class _ToolCallResult(BaseModel):
+    call_id: str | None = None
+    name: str | None = None
+    value: Any
+    is_error: bool = False
+
+    def to_lm_message(self) -> LMMessage:
+        jsonable_value = serialize_for_json(self.value)
+        text = (
+            json.dumps(jsonable_value, ensure_ascii=False)
+            if isinstance(jsonable_value, (dict, list))
+            else str(jsonable_value)
+        )
+        return LMMessage(
+            role="tool",
+            parts=[
+                LMToolResultPart(
+                    call_id=self.call_id,
+                    name=self.name,
+                    content=[LMTextPart(text=text)],
+                    is_error=self.is_error,
+                )
+            ],
+        )
+
+    def format(self) -> dict[str, Any]:
+        formatted = {"value": serialize_for_json(self.value), "is_error": self.is_error}
+        if self.call_id is not None:
+            formatted["call_id"] = self.call_id
+        if self.name is not None:
+            formatted["name"] = self.name
+        return formatted
+
+
+class ToolCallResults(Type):
+    tool_call_results: list[_ToolCallResult]
+
+    @classmethod
+    def from_dict_list(cls, tool_call_result_dicts: list[dict[str, Any]]) -> "ToolCallResults":
+        return cls.model_validate(tool_call_result_dicts)
+
+    @classmethod
+    def from_tool_calls_and_values(
+        cls,
+        tool_calls: list[ToolCalls.ToolCall],
+        values: list[Any],
+        is_errors: list[bool] | None = None,
+    ) -> "ToolCallResults":
+        if is_errors is None:
+            is_errors = [False] * len(values)
+        return cls(
+            tool_call_results=[
+                _ToolCallResult(
+                    call_id=tool_call.id,
+                    name=tool_call.name,
+                    value=value,
+                    is_error=is_error,
+                )
+                for tool_call, value, is_error in zip(tool_calls, values, is_errors, strict=True)
+            ]
+        )
+
+    @classmethod
+    def description(cls) -> str:
+        return (
+            "Results returned by previous tool calls, including the tool call id, tool name, returned value, "
+            "and whether the tool execution failed."
+        )
+
+    def format(self) -> dict[str, Any]:
+        return {"tool_call_results": [result.format() for result in self.tool_call_results]}
+
+    def to_lm_messages(self) -> list[LMMessage]:
+        return [result.to_lm_message() for result in self.tool_call_results]
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        if isinstance(data, cls):
+            return data
+        if isinstance(data, list):
+            return {"tool_call_results": data}
+        if isinstance(data, dict) and "tool_call_results" in data:
+            return data
+        if isinstance(data, dict) and "value" in data:
+            return {"tool_call_results": [data]}
+        raise ValueError(f"Received invalid value for `dspy.ToolCallResults`: {data}")
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
