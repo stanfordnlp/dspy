@@ -1,6 +1,10 @@
-from typing import Any
+from typing import Any, Callable
 
 import pydantic
+from pydantic import Field
+
+from dspy.adapters.types.tool import ToolCallResults, ToolCalls
+from dspy.adapters.utils import serialize_for_json
 
 
 class History(pydantic.BaseModel):
@@ -58,11 +62,51 @@ class History(pydantic.BaseModel):
         ```
     """
 
-    messages: list[dict[str, Any]]
+    messages: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = pydantic.ConfigDict(
-        frozen=True,
         str_strip_whitespace=True,
         validate_assignment=True,
         extra="forbid",
     )
+
+    def __init__(self, *args: Any, compact_fn: Callable[["History"], None] | None = None, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        object.__setattr__(self, "_compact_fn", compact_fn)
+
+    @pydantic.model_serializer()
+    def serialize_model(self) -> dict[str, Any]:
+        return {"messages": [self._serialize_message(message) for message in self.messages]}
+
+    def compact_if_needed(self) -> None:
+        compact_fn = getattr(self, "_compact_fn", None)
+        if compact_fn is not None:
+            compact_fn(self)
+
+    def append(self, message: dict[str, Any]) -> dict[str, Any]:
+        message = dict(message)
+        self.messages.append(message)
+        return message
+
+    @staticmethod
+    def _serialize_message(message: dict[str, Any]) -> dict[str, Any]:
+        serialized = {}
+        for key, value in message.items():
+            if isinstance(value, ToolCalls):
+                serialized[key] = {
+                    "tool_calls": [
+                        {
+                            "name": tool_call.name,
+                            "args": serialize_for_json(tool_call.args),
+                            **({"id": tool_call.id} if tool_call.id is not None else {}),
+                        }
+                        for tool_call in value.tool_calls
+                    ]
+                }
+            elif isinstance(value, ToolCallResults):
+                serialized[key] = value.format()
+            elif hasattr(value, "model_dump"):
+                serialized[key] = value.model_dump()
+            else:
+                serialized[key] = value
+        return serialized

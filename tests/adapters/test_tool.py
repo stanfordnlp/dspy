@@ -510,6 +510,20 @@ def test_tool_call_results_serialize_values_like_adapter_fields():
     assert message.parts[0].content[0].text == '{"answer": "café", "score": 0.9}'
 
 
+def test_history_serialization_preserves_tool_call_ids():
+    tool_calls = dspy.ToolCalls.from_dict_list([{"name": "search", "args": {"query": "hello"}, "id": "call_search"}])
+    tool_results = dspy.ToolCallResults.from_tool_calls_and_values(tool_calls.tool_calls, ["world"])
+    history = dspy.History(messages=[{"tool_calls": tool_calls, "tool_call_results": tool_results}])
+
+    serialized = history.model_dump()
+    restored = dspy.History.model_validate(serialized)
+
+    serialized_tool_call = serialized["messages"][0]["tool_calls"]["tool_calls"][0]
+    assert serialized_tool_call == {"name": "search", "args": {"query": "hello"}, "id": "call_search"}
+    assert restored.messages[0]["tool_calls"]["tool_calls"][0]["id"] == "call_search"
+    assert restored.messages[0]["tool_call_results"]["tool_call_results"][0]["call_id"] == "call_search"
+
+
 def test_toolcalls_vague_match():
     """
     Test that ToolCalls can parse the data with slightly off format:

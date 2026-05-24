@@ -1496,6 +1496,7 @@ def test_json_adapter_toolcalls_native_function_calling():
                 dspy.ToolCalls.ToolCall(
                     name="get_weather",
                     args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
                 )
             ]
         )

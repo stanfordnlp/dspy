@@ -1100,6 +1100,87 @@ def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                                             "required": ["query", "k"]}}}]}
     assert lm_kwargs == expected_lm_kwargs
 
+
+def test_chat_adapter_format_exact_messages_with_native_tool_call_history_result():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def add(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    class ToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_call_results: dspy.ToolCallResults = dspy.InputField(default=None)
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "question": "What is 1+2?",
+                "tool_calls": [{"id": "call_add", "name": "add", "args": {"a": 1, "b": 2}}],
+                "tool_call_results": [{"call_id": "call_add", "name": "add", "value": {"sum": 3}}],
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        ToolHistorySignature,
+        [],
+        {"question": "Use the prior tool result.", "history": history, "tools": [dspy.Tool(add)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str): \n"
+                 "2. `history` (History):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## history ## ]]\n"
+                 "{history}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `history`, `tools`, `tool_call_results`, produce the fields "
+                 "`answer`, `tool_calls`."},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+2?"},
+     {"role": "assistant",
+      "content": [],
+      "tool_calls": [{"type": "function",
+                      "function": {"name": "add", "arguments": '{"a": 1, "b": 2}'},
+                      "id": "call_add"}]},
+     {"role": "tool", "content": '{"sum": 3}', "tool_call_id": "call_add", "name": "add"},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Use the prior tool result.\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## "
+                 "answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {"tools": [{"type": "function",
+                "function": {"name": "add",
+                             "description": "Add two numbers.",
+                             "parameters": {"type": "object",
+                                            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+                                            "required": ["a", "b"]}}}]}
+    assert lm_kwargs == expected_lm_kwargs
+
 def test_chat_adapter_format_exact_messages_with_tool_input():
     def search(query: str, k: int = 3) -> str:
         """Search for documents."""
@@ -1917,7 +1998,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
