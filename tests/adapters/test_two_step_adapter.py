@@ -1,9 +1,30 @@
+from typing import Any, ClassVar
 from unittest import mock
 
 import pytest
 
 import dspy
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+
+
+class AsyncNativeToolLM:
+    model = "openai/gpt-5-nano"
+    model_type = "chat"
+    kwargs: ClassVar[dict[str, Any]] = {}
+    supported_params = frozenset()
+    supports_function_calling = True
+    supports_reasoning = False
+    supports_response_schema = False
+
+    def __init__(self, output):
+        self.output = output
+        self.messages = None
+        self.call_kwargs = None
+
+    async def acall(self, messages, **kwargs):
+        self.messages = messages
+        self.call_kwargs = kwargs
+        return [self.output]
 
 
 def test_two_step_adapter_format_exact_messages_for_simple_signature_with_demo():
@@ -187,6 +208,62 @@ async def test_two_step_adapter_async_call():
     assert call_kwargs["messages"][1]["role"] == "user"
     content = call_kwargs["messages"][1]["content"]
     assert "text from main LM" in content
+
+
+@pytest.mark.asyncio
+async def test_two_step_adapter_async_call_uses_normalized_request_pipeline_with_tools():
+    def search(query: str) -> str:
+        """Search for documents."""
+        return query
+
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    main_lm = AsyncNativeToolLM(
+        {
+            "text": "The answer is in the documents.",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": '{"query": "documents"}'},
+                }
+            ],
+        }
+    )
+
+    extraction_lm = mock.MagicMock(spec=dspy.LM)
+    extraction_lm.acall.return_value = [
+        """
+[[ ## answer ## ]] extracted answer
+[[ ## completed ## ]]
+"""
+    ]
+    extraction_lm.kwargs = {"temperature": 1.0}
+    extraction_lm.model = "openai/gpt-4o"
+
+    adapter = dspy.TwoStepAdapter(extraction_model=extraction_lm, use_native_function_calling=True)
+    lm_kwargs = {"temperature": 0.2}
+
+    result = await adapter.acall(
+        main_lm,
+        lm_kwargs,
+        ToolSignature,
+        [],
+        {"question": "What should I search?", "tools": [dspy.Tool(search)]},
+    )
+
+    assert lm_kwargs == {"temperature": 0.2}
+    assert main_lm.call_kwargs["temperature"] == 0.2
+    assert main_lm.call_kwargs["tools"][0]["function"]["name"] == "search"
+    assert "tools:" not in main_lm.messages[-1]["content"]
+    assert result[0]["answer"] == "extracted answer"
+    assert result[0]["tool_calls"] == dspy.ToolCalls.from_dict_list(
+        [{"name": "search", "args": {"query": "documents"}}]
+    )
 
 
 def test_two_step_adapter_parse():

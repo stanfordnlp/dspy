@@ -1,14 +1,13 @@
 from typing import Any
 
-import json_repair
-
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.types import ToolCalls
+from dspy.adapters.types import ToolCalls, Type
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients.base_lm import BaseLM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
+from dspy.utils.exceptions import AdapterParseError
 
 """
 NOTE/TODO/FIXME:
@@ -103,59 +102,75 @@ class TwoStepAdapter(Adapter):
         except Exception as e:
             raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
 
-    async def acall(
-        self,
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-        signature: type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
-
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        # The signature is supposed to be "text -> {original output fields}"
+    async def aparse(self, signature: Signature, completion: str) -> dict[str, Any]:
         extractor_signature = self._create_extractor_signature(signature)
 
+        try:
+            parsed_result = await ChatAdapter().acall(
+                lm=self.extraction_model,
+                lm_kwargs={},
+                signature=extractor_signature,
+                demos=[],
+                inputs={"text": completion},
+            )
+            return parsed_result[0]
+
+        except Exception as e:
+            raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
+
+    async def _aparse_response(self, state, response, lm=None, request=None) -> list[dict[str, Any]]:
         values = []
+        tool_call_output_field_name = self._get_tool_call_output_field_name(state.source_signature)
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
-        for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
+        for output in response.outputs:
+            if output.metadata.get("empty_legacy_outputs"):
+                continue
 
-            if isinstance(output, dict):
-                text = output["text"]
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
+            value: dict[str, Any] = {}
+            parsed_any = False
 
-            try:
-                # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
-                value = await ChatAdapter().acall(
-                    lm=self.extraction_model,
-                    lm_kwargs={},
-                    signature=extractor_signature,
-                    demos=[],
-                    inputs={"text": text},
+            if output.text and state.render_signature.output_fields:
+                value.update(await self.aparse(state.render_signature, output.text))
+                parsed_any = True
+
+            if output.tool_calls and tool_call_output_field_name:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [
+                        {
+                            "name": tool_call.name,
+                            "args": tool_call.args,
+                        }
+                        for tool_call in output.tool_calls
+                    ]
                 )
-                value = value[0]
+                parsed_any = True
 
-            except Exception as e:
-                raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+            output_dict = output.to_output_dict()
+            legacy_output = output.provider_output if output.provider_output is not None else output_dict
+            for name, field_info in state.source_signature.output_fields.items():
+                if (
+                    isinstance(field_info.annotation, type)
+                    and field_info.annotation in self.native_response_types
+                    and issubclass(field_info.annotation, Type)
+                ):
+                    parsed_value = field_info.annotation.parse_lm_response(legacy_output)
+                    if parsed_value is not None:
+                        value[name] = parsed_value
+                        parsed_any = True
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+            for field_name in state.source_signature.output_fields:
+                value.setdefault(field_name, None)
 
-            if output_logprobs is not None:
-                value["logprobs"] = output_logprobs
+            if not parsed_any:
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=state.source_signature,
+                    lm_response=str(output_dict),
+                    message="The LM returned an empty or null response.",
+                )
+
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
 
             values.append(value)
         return values
@@ -180,6 +195,7 @@ class TwoStepAdapter(Adapter):
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
+        main_request: bool = False,
     ) -> str:
         parts = [prefix]
 

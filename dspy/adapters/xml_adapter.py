@@ -38,7 +38,8 @@ class XMLAdapter(ChatAdapter):
             )
 
         parts.append(format_signature_fields_for_instructions(signature.input_fields))
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        if signature.output_fields:
+            parts.append(format_signature_fields_for_instructions(signature.output_fields))
         return "\n\n".join(parts).strip()
 
     def format_user_message_content(
@@ -51,12 +52,15 @@ class XMLAdapter(ChatAdapter):
     ) -> str:
         messages = [prefix]
 
-        messages.append(self.format_field_with_value(
-            {
-                FieldInfoWithName(name=k, info=v): inputs.get(k)
-                for k, v in signature.input_fields.items() if k in inputs
-            },
-        ))
+        messages.append(
+            self.format_field_with_value(
+                {
+                    FieldInfoWithName(name=k, info=v): inputs.get(k)
+                    for k, v in signature.input_fields.items()
+                    if k in inputs
+                },
+            )
+        )
 
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)
@@ -79,7 +83,10 @@ class XMLAdapter(ChatAdapter):
             },
         )
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
+        if not signature.output_fields:
+            return None
+
         message = "Respond with the corresponding output fields wrapped in XML tags "
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
         message += "."

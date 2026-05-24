@@ -1,5 +1,5 @@
 import enum
-from typing import Literal
+from typing import Any, ClassVar, Literal
 from unittest import mock
 
 import pydantic
@@ -10,6 +10,36 @@ from openai.types.responses import ResponseOutputMessage
 
 import dspy
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+
+
+class RecordingJSONLM:
+    model = "openai/gpt-5-nano"
+    model_type = "chat"
+    kwargs: ClassVar[dict[str, Any]] = {}
+    supported_params = frozenset({"response_format"})
+    supports_function_calling = False
+    supports_reasoning = False
+
+    def __init__(self, supports_response_schema: bool, fail_structured_once: bool = False):
+        self.supports_response_schema = supports_response_schema
+        self.fail_structured_once = fail_structured_once
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, messages, **kwargs):
+        self.calls.append({"messages": messages, "kwargs": dict(kwargs)})
+        response_format = kwargs.get("response_format")
+        if self.fail_structured_once and isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
+            self.fail_structured_once = False
+            raise RuntimeError("Structured output failed!")
+        return ["{'answer': 'Test output'}"]
+
+    async def acall(self, messages, **kwargs):
+        return self(messages, **kwargs)
+
+
+class JSONMutationSignature(dspy.Signature):
+    question: str = dspy.InputField()
+    answer: str = dspy.OutputField(desc="String output field")
 
 
 def test_json_adapter_format_exact_messages_for_simple_signature():
@@ -577,8 +607,6 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
                  "1. `question` (str):\n"
-                 "Your output fields are:\n"
-                 "\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
                  "\n"
@@ -586,17 +614,11 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
-                 "\n"
-                 "Outputs will be a JSON object with the following fields.\n"
-                 "\n"
-                 "{}\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with a JSON object in the following order of fields: ."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",
@@ -1319,6 +1341,30 @@ def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
         assert second_call_kwargs.get("response_format") == {"type": "json_object"}
 
 
+@pytest.mark.parametrize(
+    ("supports_response_schema", "fail_structured_once", "expected_call_count"),
+    [(False, False, 1), (True, True, 2)],
+)
+def test_json_adapter_does_not_mutate_caller_lm_kwargs(
+    supports_response_schema, fail_structured_once, expected_call_count
+):
+    adapter = dspy.JSONAdapter()
+    lm = RecordingJSONLM(
+        supports_response_schema=supports_response_schema,
+        fail_structured_once=fail_structured_once,
+    )
+    lm_kwargs = {"temperature": 0.2}
+
+    result = adapter(lm, lm_kwargs, JSONMutationSignature, [], {"question": "Dummy question!"})
+
+    assert result == [{"answer": "Test output"}]
+    assert lm_kwargs == {"temperature": 0.2}
+    assert len(lm.calls) == expected_call_count
+    if expected_call_count == 2:
+        assert issubclass(lm.calls[0]["kwargs"].get("response_format"), pydantic.BaseModel)
+    assert lm.calls[-1]["kwargs"].get("response_format") == {"type": "json_object"}
+
+
 def test_json_adapter_json_mode_no_structured_outputs():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -1406,6 +1452,31 @@ async def test_json_adapter_fallback_to_json_mode_on_structured_output_failure_a
         # The second call should have used JSON mode
         _, second_call_kwargs = mock_acompletion.call_args_list[1]
         assert second_call_kwargs.get("response_format") == {"type": "json_object"}
+
+
+@pytest.mark.parametrize(
+    ("supports_response_schema", "fail_structured_once", "expected_call_count"),
+    [(False, False, 1), (True, True, 2)],
+)
+@pytest.mark.asyncio
+async def test_json_adapter_does_not_mutate_caller_lm_kwargs_async(
+    supports_response_schema, fail_structured_once, expected_call_count
+):
+    adapter = dspy.JSONAdapter()
+    lm = RecordingJSONLM(
+        supports_response_schema=supports_response_schema,
+        fail_structured_once=fail_structured_once,
+    )
+    lm_kwargs = {"temperature": 0.2}
+
+    result = await adapter.acall(lm, lm_kwargs, JSONMutationSignature, [], {"question": "Dummy question!"})
+
+    assert result == [{"answer": "Test output"}]
+    assert lm_kwargs == {"temperature": 0.2}
+    assert len(lm.calls) == expected_call_count
+    if expected_call_count == 2:
+        assert issubclass(lm.calls[0]["kwargs"].get("response_format"), pydantic.BaseModel)
+    assert lm.calls[-1]["kwargs"].get("response_format") == {"type": "json_object"}
 
 
 def test_error_message_on_json_adapter_failure():
