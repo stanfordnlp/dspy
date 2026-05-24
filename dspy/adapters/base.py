@@ -5,16 +5,23 @@ from dataclasses import field as dataclass_field
 from typing import Any, get_args, get_origin
 
 import json_repair
+from pydantic.fields import FieldInfo
 
 from dspy.adapters._legacy_type_markers import (
     _expand_legacy_custom_type_markers_in_lm_message,
+    _split_legacy_custom_type_text_to_parts,
 )
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.adapters.utils import format_field_value
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.openai_format import lm_response_from_legacy_outputs, message_to_openai_chat, to_openai_chat_request
-from dspy.core.types import LMMessage, LMRequest, LMResponse, LMToolSpec
+from dspy.clients.openai_format import (
+    lm_response_from_legacy_outputs,
+    message_to_openai_chat,
+    to_openai_chat_request,
+)
+from dspy.core.types import LMMessage, LMPart, LMRequest, LMResponse, LMTextPart, LMToolSpec
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -436,6 +443,42 @@ class Adapter:
 
         return values
 
+    def _value_to_lm_parts(self, value: Any, field_info: FieldInfo) -> list[LMPart]:
+        rendered = format_field_value(field_info=field_info, value=value)
+        return self._coerce_field_payload_to_lm_parts(rendered)
+
+    def _coerce_field_payload_to_lm_parts(self, rendered: Any) -> list[LMPart]:
+        if isinstance(rendered, str):
+            if "<<CUSTOM-TYPE-START-IDENTIFIER>>" in rendered:
+                return _split_legacy_custom_type_text_to_parts(rendered)
+            return [LMTextPart(text=rendered)]
+        if isinstance(rendered, list):
+            return self._chat_dict_to_lm_message({"role": "user", "content": rendered}).parts
+        if isinstance(rendered, dict):
+            if "type" in rendered:
+                return self._chat_dict_to_lm_message({"role": "user", "content": [rendered]}).parts
+            return [LMTextPart(text=json.dumps(rendered, ensure_ascii=False))]
+        return [LMTextPart(text=str(rendered))]
+
+    def _wrap_input_field_parts(self, field_name: str, parts: list[LMPart]) -> list[LMPart]:
+        raise NotImplementedError
+
+    @staticmethod
+    def _merge_adjacent_text_parts(parts: list[LMPart]) -> list[LMPart]:
+        merged: list[LMPart] = []
+        for part in parts:
+            if (
+                isinstance(part, LMTextPart)
+                and merged
+                and isinstance(merged[-1], LMTextPart)
+                and not part.metadata
+                and not merged[-1].metadata
+            ):
+                merged[-1] = LMTextPart(text=merged[-1].text + part.text)
+            else:
+                merged.append(part)
+        return merged
+
     def __call__(
         self,
         lm: BaseLM,
@@ -744,7 +787,37 @@ class Adapter:
         prefix: str = "",
         suffix: str = "",
     ) -> list[LMMessage]:
-        regular_inputs = self._drop_absent_optional_inputs(signature, dict(inputs))
+        regular_inputs = {
+            key: value
+            for key, value in inputs.items()
+            if not (value is None and key in signature.input_fields and signature.input_fields[key].default is None)
+        }
+        if self._should_render_input_as_parts(signature, regular_inputs):
+            parts: list[LMPart] = []
+            if prefix:
+                parts.append(LMTextPart(text=prefix))
+            for key, field_info in signature.input_fields.items():
+                if key not in regular_inputs:
+                    continue
+                if parts:
+                    parts.append(LMTextPart(text="\n\n"))
+                parts.extend(
+                    self._wrap_input_field_parts(key, self._value_to_lm_parts(regular_inputs[key], field_info))
+                )
+            if main_request:
+                output_requirements_fn = getattr(self, "user_message_output_requirements", lambda _signature: None)
+                output_requirements = output_requirements_fn(signature)
+                if output_requirements is not None:
+                    if parts:
+                        parts.append(LMTextPart(text="\n\n"))
+                    parts.append(LMTextPart(text=output_requirements))
+            if suffix:
+                if parts:
+                    parts.append(LMTextPart(text="\n\n"))
+                parts.append(LMTextPart(text=suffix))
+            parts = self._merge_adjacent_text_parts(parts)
+            return [LMMessage(role="user", parts=parts)] if parts else []
+
         content = self.format_user_message_content(
             signature,
             regular_inputs,
@@ -770,13 +843,17 @@ class Adapter:
             [LMMessage.model_validate({"role": "assistant", "content": content})] if self._has_content(content) else []
         )
 
-    @staticmethod
-    def _drop_absent_optional_inputs(signature: type[Signature], inputs: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: value
-            for key, value in inputs.items()
-            if not (value is None and key in signature.input_fields and signature.input_fields[key].default is None)
-        }
+    def _should_render_input_as_parts(self, signature: type[Signature], inputs: dict[str, Any]) -> bool:
+        for key, value in inputs.items():
+            field_info = signature.input_fields.get(key)
+            if field_info is None:
+                continue
+            if any(
+                not isinstance(part, LMTextPart) or part.metadata.get("legacy_content_block")
+                for part in self._value_to_lm_parts(value, field_info)
+            ):
+                return True
+        return False
 
     @staticmethod
     def _has_content(content: Any) -> bool:

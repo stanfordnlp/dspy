@@ -38,9 +38,18 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = True,
+        native_response_types: list[type[type]] | None = None,
+    ):
         # JSONAdapter uses native function calling by default.
-        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+        super().__init__(
+            callbacks=callbacks,
+            use_native_function_calling=use_native_function_calling,
+            native_response_types=native_response_types,
+        )
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
@@ -49,7 +58,11 @@ class JSONAdapter(ChatAdapter):
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        if (
+            _has_open_ended_mapping(signature)
+            or (not self.use_native_function_calling and has_tool_calls)
+            or not lm.supports_response_schema
+        ):
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -68,10 +81,6 @@ class JSONAdapter(ChatAdapter):
             return result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
-            lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
@@ -91,15 +100,36 @@ class JSONAdapter(ChatAdapter):
             return await result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
-            lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+
+    def _prepare_request_kwargs(self, lm: BaseLM, state) -> dict[str, Any]:
+        request_kwargs = dict(state.lm_kwargs)
+        if "response_format" in request_kwargs or "response_format" not in lm.supported_params:
+            return request_kwargs
+        if not state.render_signature.output_fields:
+            return request_kwargs
+
+        has_tool_calls = any(
+            self._annotation_includes(field.annotation, ToolCalls)
+            for field in state.source_signature.output_fields.values()
+        )
+        if (
+            _has_open_ended_mapping(state.render_signature)
+            or (not self.use_native_function_calling and has_tool_calls)
+            or not lm.supports_response_schema
+        ):
+            request_kwargs["response_format"] = {"type": "json_object"}
+            return request_kwargs
+
+        request_kwargs["response_format"] = _get_structured_outputs_response_format(
+            state.render_signature,
+            self.use_native_function_calling,
+        )
+        return request_kwargs
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
@@ -116,11 +146,15 @@ class JSONAdapter(ChatAdapter):
 
         parts.append("Inputs will have the following structure:")
         parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
-        parts.append("Outputs will be a JSON object with the following fields.")
-        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
+        if signature.output_fields:
+            parts.append("Outputs will be a JSON object with the following fields.")
+            parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
+        if not signature.output_fields:
+            return None
+
         def type_info(v):
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"

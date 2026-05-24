@@ -13,6 +13,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.core.types import LMPart, LMTextPart
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
@@ -70,19 +71,23 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
+        except Exception as err:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
             if (
-                isinstance(e, ContextWindowExceededError)
+                isinstance(err, ContextWindowExceededError)
                 or isinstance(self, JSONAdapter)
                 or not self.use_json_adapter_fallback
             ):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
-                raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+                raise
+            return JSONAdapter(
+                callbacks=self.callbacks,
+                use_native_function_calling=self.use_native_function_calling,
+                native_response_types=self.native_response_types,
+            )(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -94,25 +99,29 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
+        except Exception as err:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
             if (
-                isinstance(e, ContextWindowExceededError)
+                isinstance(err, ContextWindowExceededError)
                 or isinstance(self, JSONAdapter)
                 or not self.use_json_adapter_fallback
             ):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
-                raise e
-            return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+                raise
+            return await JSONAdapter(
+                callbacks=self.callbacks,
+                use_native_function_calling=self.use_native_function_calling,
+                native_response_types=self.native_response_types,
+            ).acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
-        return (
-            f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
-            f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
-        )
+        description = f"Your input fields are:\n{get_field_description_string(signature.input_fields)}"
+        if signature.output_fields:
+            description += f"\nYour output fields are:\n{get_field_description_string(signature.output_fields)}"
+        return description
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         """
@@ -132,8 +141,9 @@ class ChatAdapter(Adapter):
             )
 
         parts.append(format_signature_fields_for_instructions(signature.input_fields))
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
-        parts.append("[[ ## completed ## ]]\n")
+        if signature.output_fields:
+            parts.append(format_signature_fields_for_instructions(signature.output_fields))
+            parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
 
     def format_task_description(self, signature: type[Signature]) -> str:
@@ -164,7 +174,7 @@ class ChatAdapter(Adapter):
         messages.append(suffix)
         return "\n\n".join(messages).strip()
 
-    def user_message_output_requirements(self, signature: type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str | None:
         """Returns a simplified format reminder for the language model.
 
         In chat-based interactions, language models may lose track of the required output format
@@ -182,6 +192,9 @@ class ChatAdapter(Adapter):
             for inline reminders within chat messages.
         """
 
+        if not signature.output_fields:
+            return None
+
         def type_info(v):
             if v.annotation is not str:
                 return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
@@ -192,6 +205,9 @@ class ChatAdapter(Adapter):
         message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
         return message
+
+    def _wrap_input_field_parts(self, field_name: str, parts: list[LMPart]) -> list[LMPart]:
+        return [LMTextPart(text=f"[[ ## {field_name} ## ]]\n"), *parts]
 
     def format_assistant_message_content(
         self,

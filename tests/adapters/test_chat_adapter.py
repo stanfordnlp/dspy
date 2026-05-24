@@ -1080,25 +1080,16 @@ def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
                  "1. `question` (str):\n"
-                 "Your output fields are:\n"
-                 "\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
-                 "\n"
-                 "\n"
-                 "\n"
-                 "[[ ## completed ## ]]\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with the corresponding output fields, starting with the field , and then "
-                 "ending with the marker for `[[ ## completed ## ]]`."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",

@@ -577,8 +577,6 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
                  "1. `question` (str):\n"
-                 "Your output fields are:\n"
-                 "\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
                  "\n"
@@ -586,17 +584,11 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
-                 "\n"
-                 "Outputs will be a JSON object with the following fields.\n"
-                 "\n"
-                 "{}\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with a JSON object in the following order of fields: ."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",
@@ -1500,7 +1492,12 @@ def test_json_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
