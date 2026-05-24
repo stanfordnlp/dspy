@@ -8,7 +8,6 @@ from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.module import Module
@@ -95,7 +94,7 @@ class Predict(Module, Parameter):
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
-                serialized LM state. Enable only when loading trusted files.
+                serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
@@ -108,7 +107,11 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
-        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
+        self.lm = (
+            BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
+            if sanitized_lm_state
+            else None
+        )
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -354,7 +357,7 @@ def _check_type(value: Any, expected: type) -> bool:
                 return all(_check_type(item, args[0]) for item in value)
             if len(value) != len(args):
                 return False
-            return all(_check_type(item, arg) for item, arg in zip(value, args))
+            return all(_check_type(item, arg) for item, arg in zip(value, args, strict=False))
         return True
 
     # set / frozenset

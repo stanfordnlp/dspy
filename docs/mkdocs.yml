@@ -108,6 +108,7 @@ nav:
             - Citations: api/experimental/Citations.md
             - Document: api/experimental/Document.md
         - Models:
+            - BaseLM: api/models/BaseLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:

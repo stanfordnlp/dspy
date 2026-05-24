@@ -20,7 +20,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import ContextWindowExceededError
 
-from .base_lm import BaseLM
+from .base_lm import LM_CLASS_STATE_KEY, BaseLM
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +318,12 @@ class LM(BaseLM):
         return Provider()
 
     def dump_state(self):
+        """Return a sanitized reconstruction state for this LM.
+
+        Returns:
+            A dictionary that can be passed to `BaseLM.load_state` to
+            reconstruct this `LM`. The state excludes API keys.
+        """
         state_keys = [
             "model",
             "model_type",
@@ -327,9 +333,14 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
-        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
-        return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
+        # Exclude api_key from kwargs to prevent API keys from being saved in plain text, and exclude the internal
+        # class marker so callers cannot override the computed class path.
+        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k not in ("api_key", LM_CLASS_STATE_KEY)}
+        return {
+            LM_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
+            **{key: getattr(self, key) for key in state_keys},
+            **filtered_kwargs,
+        }
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):

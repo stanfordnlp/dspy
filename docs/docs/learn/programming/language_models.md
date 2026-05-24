@@ -284,3 +284,39 @@ Please note that not all models or providers support the Responses API, check [L
 
 Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
 
+### Saving programs that use custom LMs
+
+When a DSPy program is saved, each LM attached to a module is serialized with `lm.dump_state()`. The built-in `dspy.LM` and `dspy.BaseLM` subclasses whose state is captured by `BaseLM.__init__` can use the default state format. If your custom LM needs extra constructor arguments or runtime state, override both `dump_state` and `load_state`.
+
+```python linenums="1"
+import dspy
+
+
+class MyLM(dspy.BaseLM):
+    def __init__(self, model: str, *, deployment: str, **kwargs):
+        super().__init__(model=model, **kwargs)
+        self.deployment = deployment
+
+    def dump_state(self):
+        state = super().dump_state()
+        state["deployment"] = self.deployment
+        return state
+
+    @classmethod
+    def load_state(cls, state):
+        state = dict(state)
+        state.pop("_dspy_lm_class", None)
+        return cls(**state)
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        ...
+```
+
+Custom LM classes are reloaded from their module-qualified class path, so they must be importable when you load the saved program. Loading a saved state that imports a custom LM class requires trusted opt-in:
+
+```python linenums="1"
+program.load("program.json", allow_unsafe_lm_state=True)
+```
+
+Use this only for files you trust. The flag also preserves serialized LM endpoint configuration such as `api_base`, `base_url`, and `model_list`.
+

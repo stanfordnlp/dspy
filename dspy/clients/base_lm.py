@@ -1,4 +1,6 @@
 import datetime
+import importlib
+import inspect
 import uuid
 from typing import Any, TextIO
 
@@ -8,6 +10,36 @@ from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
+LM_CLASS_STATE_KEY = "_dspy_lm_class"
+_BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+
+
+def _import_lm_class(class_path: str) -> type:
+    parts = class_path.split(".")
+    last_error = None
+
+    for split_index in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:split_index])
+        try:
+            obj = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name == module_name or module_name.startswith(f"{exc.name}."):
+                last_error = exc
+                continue
+            raise
+
+        try:
+            for attr in parts[split_index:]:
+                obj = getattr(obj, attr)
+        except AttributeError as exc:
+            last_error = exc
+            continue
+
+        if not isinstance(obj, type):
+            raise TypeError(f"Serialized LM class `{class_path}` did not resolve to a class.")
+        return obj
+
+    raise ImportError(f"Could not import serialized LM class `{class_path}`.") from last_error
 
 
 class BaseLM:
@@ -17,6 +49,9 @@ class BaseLM:
     own subclasses of `BaseLM` to support custom LLM providers and inject custom logic. To do so, simply override the
     `forward` method and make sure the return format is identical to the
     [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+
+    Subclasses whose state is captured by `BaseLM.__init__` can use the default `dump_state` and `load_state`
+    methods. Subclasses with extra persistent state should override both methods.
 
     Examples:
 
@@ -60,10 +95,20 @@ class BaseLM:
     ```
     """
 
-    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    def __init__(
+        self,
+        model,
+        model_type="chat",
+        temperature=0.0,
+        max_tokens=1000,
+        cache=True,
+        num_retries=0,
+        **kwargs,
+    ):
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.num_retries = num_retries
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
@@ -189,6 +234,75 @@ class BaseLM:
                 re-raising it as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    def dump_state(self) -> dict[str, Any]:
+        """Return a sanitized reconstruction state for this LM.
+
+        Subclasses whose state is captured by `BaseLM.__init__` can use this
+        default. Subclasses with extra persistent state should override both
+        `dump_state` and `load_state`.
+
+        Returns:
+            A dictionary that can be passed to `BaseLM.load_state`. The state
+            excludes API keys.
+        """
+        filtered_kwargs = {key: value for key, value in self.kwargs.items() if key not in ("api_key", LM_CLASS_STATE_KEY)}
+        return {
+            LM_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
+            "model": self.model,
+            "model_type": self.model_type,
+            "cache": self.cache,
+            "num_retries": getattr(self, "num_retries", 0),
+            **filtered_kwargs,
+        }
+
+    @classmethod
+    def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False) -> "BaseLM":
+        """Reconstruct an LM from `dump_state` output.
+
+        Legacy states without a class marker load as `dspy.LM`. Custom LM
+        classes must be importable by their module-qualified class path and are
+        only loaded when `allow_custom_lm_class=True`.
+
+        Args:
+            state: Serialized LM state produced by `dump_state`.
+            allow_custom_lm_class: If True, allow importing and loading custom
+                `BaseLM` subclasses recorded in `state`. Enable only for trusted
+                state.
+
+        Returns:
+            The reconstructed LM instance.
+
+        Raises:
+            ValueError: If `state` references a custom LM class and
+                `allow_custom_lm_class` is False.
+            ImportError: If the serialized LM class cannot be imported.
+            TypeError: If the serialized class is not a `BaseLM` subclass.
+        """
+        state = dict(state)
+        class_path = state.pop(LM_CLASS_STATE_KEY, None)
+
+        if cls is BaseLM:
+            if class_path is None:
+                # Legacy saved programs did not record the concrete LM class.
+                from dspy.clients.lm import LM
+
+                return LM(**state)
+
+            if class_path != _BUILTIN_LM_CLASS_PATH and not allow_custom_lm_class:
+                raise ValueError(
+                    f"Refusing to import custom serialized LM class `{class_path}`. "
+                    "Pass allow_unsafe_lm_state=True when loading trusted files to enable custom LM classes."
+                )
+
+            lm_cls = _import_lm_class(class_path)
+            if not issubclass(lm_cls, BaseLM):
+                raise TypeError(f"Serialized LM class `{class_path}` must be a subclass of dspy.BaseLM.")
+            if "allow_custom_lm_class" in inspect.signature(lm_cls.load_state).parameters:
+                return lm_cls.load_state(state, allow_custom_lm_class=allow_custom_lm_class)
+            return lm_cls.load_state(state)
+
+        return cls(**state)
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters.

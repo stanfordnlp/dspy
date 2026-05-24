@@ -390,6 +390,7 @@ def test_dump_state():
     )
 
     assert lm.dump_state() == {
+        "_dspy_lm_class": "dspy.clients.lm.LM",
         "model": "openai/gpt-4o-mini",
         "model_type": "chat",
         "temperature": 1,
@@ -400,6 +401,35 @@ def test_dump_state():
         "launch_kwargs": {"temperature": 1},
         "train_kwargs": {"temperature": 5},
     }
+
+
+def test_dump_state_ignores_internal_class_marker_kwarg():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        **{"_dspy_lm_class": "malicious.module.LM"},
+    )
+
+    dumped_state = lm.dump_state()
+
+    assert dumped_state["_dspy_lm_class"] == "dspy.clients.lm.LM"
+    assert lm.kwargs["_dspy_lm_class"] == "malicious.module.LM"
+
+
+def test_load_state():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+        launch_kwargs={"temperature": 1},
+        train_kwargs={"temperature": 5},
+    )
+
+    loaded_lm = dspy.LM.load_state(lm.dump_state())
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.dump_state() == lm.dump_state()
 
 
 def test_exponential_backoff_retry():
