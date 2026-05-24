@@ -1,7 +1,7 @@
-# dspy.LM
+# dspy.BaseLM
 
 <!-- START_API_REF -->
-::: dspy.LM
+::: dspy.BaseLM
     handler: python
     options:
         members:
@@ -10,14 +10,9 @@
             - aforward
             - copy
             - dump_state
-            - finetune
             - forward
-            - infer_provider
             - inspect_history
-            - kill
-            - launch
             - load_state
-            - reinforce
             - update_history
         show_source: true
         show_root_heading: true
