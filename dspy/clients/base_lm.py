@@ -1,3 +1,4 @@
+import copy as copy_module
 import datetime
 import importlib
 import inspect
@@ -5,7 +6,7 @@ import uuid
 from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
@@ -99,18 +100,38 @@ class BaseLM:
         self,
         model,
         model_type="chat",
-        temperature=0.0,
-        max_tokens=1000,
+        temperature=None,
+        max_tokens=None,
         cache=True,
-        num_retries=0,
+        callbacks: list[BaseCallback] | None = None,
+        num_retries: int = 3,
         **kwargs,
     ):
+        """Initialize a base language model.
+
+        Args:
+            model: The model identifier.
+            model_type: The LM API type, such as `"chat"`, `"text"`, or
+                `"responses"`.
+            temperature: The default sampling temperature.
+            max_tokens: The default maximum number of output tokens.
+            cache: Whether requests should use DSPy's cache by default.
+            num_retries: The default number of provider request retries.
+            callbacks: Optional instance-level callback handlers.
+            **kwargs: Additional default request parameters stored in
+                `self.kwargs`.
+        """
         self.model = model
         self.model_type = model_type
         self.cache = cache
+        self.callbacks = list(callbacks or [])
         self.num_retries = num_retries
-        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+        self.kwargs = self._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self._warned_zero_temp_rollout = False
+
+    def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
+        return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @property
     def supports_function_calling(self) -> bool:
@@ -139,6 +160,9 @@ class BaseLM:
             outputs = self._process_response(response)
         else:
             outputs = self._process_completion(response, merged_kwargs)
+
+        if not getattr(response, "cache_hit", False) and settings.usage_tracker:
+            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
 
         if settings.disable_history:
             return outputs
@@ -252,7 +276,7 @@ class BaseLM:
             "model": self.model,
             "model_type": self.model_type,
             "cache": self.cache,
-            "num_retries": getattr(self, "num_retries", 0),
+            "num_retries": getattr(self, "num_retries", 3),
             **filtered_kwargs,
         }
 
@@ -305,22 +329,34 @@ class BaseLM:
         return cls(**state)
 
     def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters.
+        """Return a copy of the language model with updated parameters.
 
-        Any provided keyword arguments update the corresponding attributes or LM kwargs of
-        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
-        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
+        The default implementation makes a shallow runtime copy. Provider
+        clients, sessions, and local model handles are preserved by reference.
+        DSPy-owned mutable state is isolated for `history`, the `callbacks`
+        list, and the `kwargs` dict. Other attributes are shared by reference.
+        Subclasses with additional mutable DSPy-owned state should override this
+        method.
+
+        Args:
+            **kwargs: Attribute or request-parameter updates to apply to the
+                copy. For example, `lm.copy(rollout_id=1, temperature=1.0)`
+                returns an LM whose requests use a different rollout ID at
+                non-zero temperature to bypass cache collisions.
+
+        Returns:
+            A copied LM instance.
         """
 
-        import copy
-
-        new_instance = copy.deepcopy(self)
+        new_instance = copy_module.copy(self)
         new_instance.history = []
+        new_instance.callbacks = list(getattr(self, "callbacks", []) or [])
+        new_instance.kwargs = dict(getattr(self, "kwargs", {}) or {})
 
         for key, value in kwargs.items():
-            if hasattr(self, key):
+            if hasattr(new_instance, key):
                 setattr(new_instance, key, value)
-            if (key in self.kwargs) or (not hasattr(self, key)):
+            if (key in new_instance.kwargs) or (not hasattr(self, key)):
                 if value is None:
                     new_instance.kwargs.pop(key, None)
                 else:
