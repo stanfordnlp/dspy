@@ -16,11 +16,10 @@ from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
-from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import ContextWindowExceededError
 
-from .base_lm import LM_CLASS_STATE_KEY, BaseLM
+from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
 
@@ -50,21 +49,22 @@ class LM(BaseLM):
         use_developer_role: bool = False,
         **kwargs,
     ):
-        """
-        Create a new language model instance for use with DSPy modules and programs.
+        """Create a new language model instance for use with DSPy modules and programs.
 
         Args:
-            model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
-                   supported by LiteLLM. For example, ``"openai/gpt-4o"``.
-            model_type: The type of the model, either ``"chat"`` or ``"text"``.
+            model: The model to use. This should be a string of the form
+                `"llm_provider/llm_name"` supported by LiteLLM. For example,
+                `"openai/gpt-4o"`.
+            model_type: The type of the model, such as `"chat"`, `"text"`, or
+                `"responses"`.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
-                   and reduce costs.
+                and reduce costs.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
-                         network error, rate limiting, etc. Requests are retried with exponential
-                         backoff.
+                network error, rate limiting, etc. Requests are retried with exponential
+                backoff.
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
@@ -74,22 +74,28 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
-        # Remember to update LM.copy() if you modify the constructor!
-        self.model = model
-        self.model_type = model_type
-        self.cache = cache
+        super().__init__(
+            model=model,
+            model_type=model_type,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            cache=cache,
+            num_retries=num_retries,
+            callbacks=callbacks,
+            **kwargs,
+        )
+
         self.provider = provider or self.infer_provider()
-        self.callbacks = callbacks or []
-        self.history = []
-        self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
         self.use_developer_role = use_developer_role
-        self._warned_zero_temp_rollout = False
 
-        # Handle model-specific configuration for different model families
-        model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+        self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+
+    def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
+        # Override BaseLM's default kwargs shape for LiteLLM/model-family-specific token parameters.
+        model_family = self.model.split("/")[-1].lower() if "/" in self.model else self.model.lower()
 
         # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
         # Exclude non-reasoning variants like gpt-5-chat this is in azure ai foundry
@@ -106,15 +112,13 @@ class LM(BaseLM):
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
                 )
-            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
-            if self.kwargs.get("rollout_id") is None:
-                self.kwargs.pop("rollout_id", None)
+            initial_kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
-            self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-            if self.kwargs.get("rollout_id") is None:
-                self.kwargs.pop("rollout_id", None)
+            initial_kwargs = super()._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
-        self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+        if initial_kwargs.get("rollout_id") is None:
+            initial_kwargs.pop("rollout_id", None)
+        return initial_kwargs
 
     @property
     def _provider_name(self) -> str:
@@ -199,8 +203,6 @@ class LM(BaseLM):
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker:
-            settings.usage_tracker.add_usage(self.model, dict(getattr(results, "usage", {}) or {}))
         return results
 
     async def aforward(
@@ -242,8 +244,6 @@ class LM(BaseLM):
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker:
-            settings.usage_tracker.add_usage(self.model, dict(getattr(results, "usage", {}) or {}))
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
@@ -324,23 +324,17 @@ class LM(BaseLM):
             A dictionary that can be passed to `BaseLM.load_state` to
             reconstruct this `LM`. The state excludes API keys.
         """
-        state_keys = [
-            "model",
-            "model_type",
-            "cache",
-            "num_retries",
-            "finetuning_model",
-            "launch_kwargs",
-            "train_kwargs",
-        ]
-        # Exclude api_key from kwargs to prevent API keys from being saved in plain text, and exclude the internal
-        # class marker so callers cannot override the computed class path.
-        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k not in ("api_key", LM_CLASS_STATE_KEY)}
-        return {
-            LM_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
-            **{key: getattr(self, key) for key in state_keys},
-            **filtered_kwargs,
-        }
+        state = super().dump_state()
+        state.update(
+            {
+                "finetuning_model": self.finetuning_model,
+                "launch_kwargs": self.launch_kwargs,
+                "train_kwargs": self.train_kwargs,
+            }
+        )
+        if self.use_developer_role:
+            state["use_developer_role"] = self.use_developer_role
+        return state
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):

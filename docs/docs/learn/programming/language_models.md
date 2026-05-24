@@ -320,3 +320,9 @@ program.load("program.json", allow_unsafe_lm_state=True)
 
 Use this only for files you trust. The flag also preserves serialized LM endpoint configuration such as `api_base`, `base_url`, and `model_list`.
 
+### Copying custom LMs
+
+DSPy uses `lm.copy(...)` when it needs the same LM with different request parameters, such as a different `temperature` or `rollout_id`. The default `BaseLM.copy()` implementation makes a shallow runtime copy: provider clients, sessions, and local model handles are shared by reference, while DSPy-owned mutable state (`history`, the `callbacks` list, and `kwargs`) is isolated on the copy. The callback list is copied, but callback objects themselves are shared.
+
+If your custom LM stores additional mutable DSPy-owned state that should not be shared across copies, override `copy()` and isolate that state explicitly. Runtime handles that are expensive or unsafe to duplicate should usually continue to be shared by reference.
+
