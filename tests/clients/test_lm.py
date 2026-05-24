@@ -1196,3 +1196,40 @@ async def test_streaming_passes_headers_correctly():
             mock_acompletion.assert_called_once()
             call_kwargs = mock_acompletion.call_args.kwargs
             assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+
+
+def test_invalid_model_type_raises_value_error_in_forward():
+    """An unrecognised model_type must raise ValueError, not an opaque NameError.
+
+    Before the fix, ``forward`` and ``aforward`` assigned ``completion`` only inside
+    ``if/elif`` branches for the three known model types.  Passing an unknown value
+    left ``completion`` unbound and caused ``NameError: name 'completion' is not
+    defined``, which gives users no indication of what went wrong.
+    """
+    # Bypass the Literal type-hint — runtime enforcement is the responsibility of
+    # forward() / aforward(), not the constructor.
+    lm = dspy.LM.__new__(dspy.LM)
+    lm.model = "openai/gpt-4o"
+    lm.model_type = "invalid_type"  # not "chat", "text", or "responses"
+    lm.cache = False
+    lm.kwargs = {}
+    lm.use_developer_role = False
+    lm._warned_zero_temp_rollout = False
+
+    with pytest.raises(ValueError, match="Unknown model_type 'invalid_type'"):
+        lm.forward(prompt="hello")
+
+
+@pytest.mark.asyncio
+async def test_invalid_model_type_raises_value_error_in_aforward():
+    """aforward must also raise ValueError for an unrecognised model_type."""
+    lm = dspy.LM.__new__(dspy.LM)
+    lm.model = "openai/gpt-4o"
+    lm.model_type = "invalid_type"
+    lm.cache = False
+    lm.kwargs = {}
+    lm.use_developer_role = False
+    lm._warned_zero_temp_rollout = False
+
+    with pytest.raises(ValueError, match="Unknown model_type 'invalid_type'"):
+        await lm.aforward(prompt="hello")

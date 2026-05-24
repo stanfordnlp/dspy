@@ -184,6 +184,10 @@ class LM(BaseLM):
             completion = litellm_text_completion
         elif self.model_type == "responses":
             completion = litellm_responses_completion
+        else:
+            raise ValueError(
+                f"Unknown model_type '{self.model_type}'. Expected one of: 'chat', 'text', 'responses'."
+            )
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         try:
@@ -227,6 +231,10 @@ class LM(BaseLM):
             completion = alitellm_text_completion
         elif self.model_type == "responses":
             completion = alitellm_responses_completion
+        else:
+            raise ValueError(
+                f"Unknown model_type '{self.model_type}'. Expected one of: 'chat', 'text', 'responses'."
+            )
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         try:
