@@ -27,6 +27,7 @@ import mimetypes
 import os
 from typing import Any
 
+import json_repair
 import pydantic
 
 from dspy.core.types import (
@@ -649,7 +650,7 @@ def provider_tool_call_to_part(tool_call: Any) -> LMToolCallPart:
     arguments = get_value(function, "arguments", get_value(tool_call, "arguments", "{}"))
     provider_data = model_dump(tool_call)
     try:
-        args = json.loads(arguments) if isinstance(arguments, str) else dict(arguments)
+        args = json_repair.loads(arguments) if isinstance(arguments, str) else dict(arguments)
     except Exception as error:
         args = {}
         provider_data["raw_arguments"] = arguments
@@ -664,7 +665,7 @@ def responses_function_call_to_part(output_item: Any) -> LMToolCallPart:
     provider_data = model_dump(output_item)
     if isinstance(args, str):
         try:
-            args = json.loads(args)
+            args = json_repair.loads(args)
         except Exception as error:
             provider_data["raw_arguments"] = args
             provider_data["arguments_parse_error"] = str(error)

@@ -356,7 +356,7 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
         return callback.on_evaluate_start
 
     if isinstance(instance, dspy.Adapter):
-        if fn.__name__ == "format":
+        if fn.__name__ in ("format", "_format_request_with_callbacks"):
             return callback.on_adapter_format_start
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_start
@@ -378,7 +378,7 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
         return callback.on_evaluate_end
 
     if isinstance(instance, (dspy.Adapter)):
-        if fn.__name__ == "format":
+        if fn.__name__ in ("format", "_format_request_with_callbacks"):
             return callback.on_adapter_format_end
         elif fn.__name__ == "parse":
             return callback.on_adapter_parse_end

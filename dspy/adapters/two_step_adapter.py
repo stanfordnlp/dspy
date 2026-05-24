@@ -9,6 +9,7 @@ from dspy.adapters.utils import get_field_description_string
 from dspy.clients.base_lm import BaseLM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
+from dspy.utils.callback import with_callbacks
 
 """
 NOTE/TODO/FIXME:
@@ -61,6 +62,20 @@ class TwoStepAdapter(Adapter):
         Returns:
             A list of messages to be passed to the main LM.
         """
+        return self._format_main_request_messages(signature, demos, inputs)
+
+    @with_callbacks
+    def _format_request_with_callbacks(self, state, demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Render the first-stage prompt while preserving the adapter format callback."""
+        return self._format_main_request_messages(state.render_signature, demos, state.inputs)
+
+    def _format_main_request_messages(
+        self,
+        signature: type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build the natural-language first-stage prompt shared by format and the state-aware render path."""
         messages = []
 
         # Create a task description for the main LM
@@ -180,6 +195,7 @@ class TwoStepAdapter(Adapter):
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
+        main_request: bool = False,
     ) -> str:
         parts = [prefix]
 
