@@ -363,6 +363,25 @@ def test_reasoning_model_requirements(model_name):
     assert lm.kwargs["max_completion_tokens"] is None
 
 
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
+def test_reasoning_model_rejects_zero_temperature(model_name):
+    """temperature=0.0 must trigger the validation error for reasoning models.
+
+    The previous guard used ``temperature and temperature != 1.0`` which short-circuits
+    on 0.0 (falsy) and silently accepts an invalid configuration.  The fix uses
+    ``temperature is not None and temperature != 1.0`` so that 0.0 is correctly rejected.
+    """
+    with pytest.raises(
+        ValueError,
+        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
+    ):
+        dspy.LM(
+            model=model_name,
+            temperature=0.0,  # Falsy but invalid for reasoning models
+            max_tokens=16_000,
+        )
+
+
 def test_gpt_5_chat_not_reasoning_model():
     """Test that gpt-5-chat is NOT treated as a reasoning model."""
     # Should NOT raise validation error - gpt-5-chat is not a reasoning model
