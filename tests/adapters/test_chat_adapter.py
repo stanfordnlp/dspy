@@ -1926,7 +1926,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                    name="get_weather",
+                    args={"city": "Paris"},
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
@@ -2157,3 +2163,30 @@ def test_tool_call_with_null_content_does_not_raise():
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None
     assert len(result) == 1
+    assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
+
+
+def test_provider_tool_calls_preserve_id_and_repair_arguments():
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> tool_calls: dspy.ToolCalls")
+
+    outputs = [
+        {
+            "text": None,
+            "tool_calls": [
+                {
+                    "function": {"name": "search", "arguments": '{"query": "cats",}'},
+                    "call_id": "call_from_responses",
+                    "type": "function",
+                }
+            ],
+        }
+    ]
+
+    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+
+    assert result[0]["tool_calls"] == dspy.ToolCalls(
+        tool_calls=[
+            dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
+        ]
+    )
