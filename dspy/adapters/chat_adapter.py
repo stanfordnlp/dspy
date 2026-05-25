@@ -44,6 +44,7 @@ class ChatAdapter(Adapter):
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
+        parallel_tool_calls: bool | None = None,
     ):
         """
         Args:
@@ -53,13 +54,24 @@ class ChatAdapter(Adapter):
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
+            parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
+                calling is active. If None, the adapter does not set the provider option.
         """
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
+            parallel_tool_calls=parallel_tool_calls,
             native_response_types=native_response_types,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
+
+    def _make_json_adapter_fallback(self):
+        from dspy.adapters.json_adapter import JSONAdapter
+
+        return JSONAdapter(
+            use_native_function_calling=self.use_native_function_calling,
+            parallel_tool_calls=self.parallel_tool_calls,
+        )
 
     def __call__(
         self,
@@ -79,7 +91,7 @@ class ChatAdapter(Adapter):
                 # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
                 # retry with a different adapter. Raise the original error instead of the fallback error.
                 raise
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+            return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -99,7 +111,7 @@ class ChatAdapter(Adapter):
                 # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
                 # retry with a different adapter. Raise the original error instead of the fallback error.
                 raise
-            return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+            return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (

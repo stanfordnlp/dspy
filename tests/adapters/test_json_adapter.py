@@ -673,6 +673,55 @@ def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
     assert lm_kwargs == expected_lm_kwargs
 
 
+def test_json_adapter_format_exact_non_native_tool_result_history_field():
+    def search(query: str) -> str:
+        return query
+
+    class ToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat"])
+
+    messages, _lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(use_native_function_calling=False),
+        ToolHistorySignature,
+        [],
+        {
+            "question": "Q2",
+            "history": dspy.History(
+                messages=[
+                    {
+                        "question": "Q1",
+                        "next_thought": "I should search.",
+                        "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+                    }
+                ]
+            ),
+            "tools": [dspy.Tool(search)],
+        },
+    )
+
+    assert messages[3]["content"] == (
+        "[[ ## tool_call_results ## ]]\n"
+        '{"tool_call_results": [{"call_id": "call_1", "name": "search", "value": "cat", "is_error": false}]}'
+    )
+    assert messages[4]["content"] == (
+        "[[ ## question ## ]]\n"
+        "Q2\n"
+        "\n"
+        "[[ ## tools ## ]]\n"
+        '["search. It takes arguments {\'query\': {\'type\': \'string\'}}."]\n'
+        "\n"
+        "Respond with a JSON object in the following order of fields: `next_thought`, then "
+        '`tool_calls` (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]}).'
+    )
+
+
 def test_json_adapter_passes_structured_output_when_supported_by_model():
     class OutputField3(pydantic.BaseModel):
         subfield1: int = pydantic.Field(description="Int subfield 1", ge=0, le=10)
