@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 from litellm import Choices, Message, ModelResponse
@@ -63,14 +63,13 @@ def test_bootstrap_trace_data():
         call_count = completion_side_effect.call_count
         completion_side_effect.call_count += 1
 
-        if call_count == 5:  # Third call (0-indexed)
-            # Return malformed response that will cause AdapterParseError
+        if call_count in (2, 3):
+            # Return malformed responses for both structured-output mode and JSON-mode fallback.
             return ModelResponse(
                 choices=[Choices(message=Message(content="This is an invalid JSON!"))],
                 model="openai/gpt-4o-mini",
             )
-        else:
-            return successful_responses[call_count]
+        return successful_responses[call_count if call_count < 2 else call_count - 2]
 
     completion_side_effect.call_count = 0
 
@@ -80,6 +79,7 @@ def test_bootstrap_trace_data():
             program=program,
             dataset=dataset,
             metric=exact_match_metric,
+            num_threads=1,
             raise_on_error=False,
             capture_failed_parses=True,
         )
@@ -138,7 +138,7 @@ def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
             captured_metadata["value"] = callback_metadata
 
             class _Result:
-                results: list[Any] = []
+                results: ClassVar[list[Any]] = []
 
             return _Result()
 
