@@ -276,6 +276,68 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     lm("Query")
 
 
+def test_lm_wraps_litellm_errors_with_metadata():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    response = mock.Mock()
+    response.status_code = 429
+    response.headers = {"x-request-id": "req-123", "retry-after": "2.5"}
+
+    error = litellm.RateLimitError(message="too many requests", llm_provider="openai", model="gpt-4o", response=response)
+    wrapped = lm._wrap_litellm_exception(error)
+
+    assert isinstance(wrapped, dspy.LMRateLimitError)
+    assert wrapped.model == "gpt-4o"
+    assert wrapped.provider == "openai"
+    assert wrapped.status == 429
+    assert wrapped.request_id == "req-123"
+    assert wrapped.retry_after == 2.5
+
+
+def test_lm_wraps_litellm_context_window_error():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    error = litellm.ContextWindowExceededError(message="too long", llm_provider="openai", model="gpt-4o")
+    wrapped = lm._wrap_litellm_exception(error)
+
+    assert isinstance(wrapped, dspy.ContextWindowExceededError)
+    assert isinstance(wrapped, dspy.LMError)
+    assert wrapped.model == "gpt-4o"
+    assert wrapped.provider == "openai"
+
+
+def test_lm_wraps_unknown_boundary_error_as_unexpected_error():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    wrapped = lm._wrap_litellm_exception(RuntimeError("local boundary failure"))
+
+    assert isinstance(wrapped, dspy.LMUnexpectedError)
+    assert wrapped.code == "unexpected"
+    assert wrapped.model == "openai/gpt-4o-mini"
+
+
+def test_lm_preserves_existing_lm_error_without_self_cause():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.litellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            lm("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_lm_preserves_existing_lm_error_without_self_cause_async():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.alitellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            await lm.acall("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
@@ -297,7 +359,7 @@ def test_retry_made_on_system_errors():
 
     lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
     with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
-        with pytest.raises(RateLimitError):
+        with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
     assert retry_tracking[0] == 4
@@ -338,7 +400,7 @@ def test_reasoning_model_token_parameter():
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
-        ValueError,
+        dspy.LMConfigurationError,
         match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
     ):
         dspy.LM(
@@ -506,7 +568,7 @@ def test_exponential_backoff_retry():
 
     lm = dspy.LM(model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
     with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
-        with pytest.raises(RateLimitError):
+        with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
     # The first retry happens immediately regardless of the configuration

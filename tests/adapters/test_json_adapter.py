@@ -736,22 +736,6 @@ def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model()
     assert "response_format" not in call_kwargs
 
 
-def test_json_adapter_falls_back_when_structured_outputs_fails():
-    class TestSignature(dspy.Signature):
-        input1: str = dspy.InputField()
-        output1: str = dspy.OutputField(desc="String output field")
-
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
-    program = dspy.Predict(TestSignature)
-    with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.side_effect = [Exception("Bad structured outputs!"), mock_completion.return_value]
-        program(input1="Test input")
-        assert mock_completion.call_count == 2
-        _, first_call_kwargs = mock_completion.call_args_list[0]
-        assert issubclass(first_call_kwargs.get("response_format"), pydantic.BaseModel)
-        _, second_call_kwargs = mock_completion.call_args_list[1]
-        assert second_call_kwargs.get("response_format") == {"type": "json_object"}
-
 
 def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature():
     class OutputField3(pydantic.BaseModel):
@@ -1290,7 +1274,7 @@ async def test_json_adapter_on_pydantic_model_async():
         assert result.answer.result == "Paris"
 
 
-def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
+def test_json_adapter_does_not_fallback_to_json_mode_on_structured_output_lm_error():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
@@ -1299,24 +1283,14 @@ def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
-        # First call raises error to simulate structured output failure, second call returns a valid response
-        mock_completion.side_effect = [
-            RuntimeError("Structured output failed!"),
-            ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]),
-        ]
+        mock_completion.side_effect = RuntimeError("Structured output failed!")
 
-        result = program(question="Dummy question!")
-        # The parse should succeed on the second call
-        assert mock_completion.call_count == 2
-        assert result.answer == "Test output"
+        with pytest.raises(dspy.LMUnexpectedError, match="Structured output failed"):
+            program(question="Dummy question!")
 
-        # The first call should have tried structured output
+        assert mock_completion.call_count == 1
         _, first_call_kwargs = mock_completion.call_args_list[0]
         assert issubclass(first_call_kwargs.get("response_format"), pydantic.BaseModel)
-
-        # The second call should have used JSON mode
-        _, second_call_kwargs = mock_completion.call_args_list[1]
-        assert second_call_kwargs.get("response_format") == {"type": "json_object"}
 
 
 def test_json_adapter_json_mode_no_structured_outputs():
@@ -1379,7 +1353,7 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
 
 
 @pytest.mark.asyncio
-async def test_json_adapter_fallback_to_json_mode_on_structured_output_failure_async():
+async def test_json_adapter_does_not_fallback_to_json_mode_on_structured_output_lm_error_async():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
@@ -1387,25 +1361,15 @@ async def test_json_adapter_fallback_to_json_mode_on_structured_output_failure_a
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.acompletion") as mock_acompletion:
-        # First call raises error to simulate structured output failure, second call returns a valid response
-        mock_acompletion.side_effect = [
-            RuntimeError("Structured output failed!"),
-            ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]),
-        ]
+        mock_acompletion.side_effect = RuntimeError("Structured output failed!")
 
         with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
-            result = await program.acall(question="Dummy question!")
-        # The parse should succeed on the second call
-        assert mock_acompletion.call_count == 2
-        assert result.answer == "Test output"
+            with pytest.raises(dspy.LMUnexpectedError, match="Structured output failed"):
+                await program.acall(question="Dummy question!")
 
-        # The first call should have tried structured output
+        assert mock_acompletion.call_count == 1
         _, first_call_kwargs = mock_acompletion.call_args_list[0]
         assert issubclass(first_call_kwargs.get("response_format"), pydantic.BaseModel)
-
-        # The second call should have used JSON mode
-        _, second_call_kwargs = mock_acompletion.call_args_list[1]
-        assert second_call_kwargs.get("response_format") == {"type": "json_object"}
 
 
 def test_error_message_on_json_adapter_failure():
@@ -1420,13 +1384,13 @@ def test_error_message_on_json_adapter_failure():
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = RuntimeError("RuntimeError!")
 
-        with pytest.raises(RuntimeError) as error:
+        with pytest.raises(dspy.LMUnexpectedError) as error:
             program(question="Dummy question!")
 
         assert "RuntimeError!" in str(error.value)
 
         mock_completion.side_effect = ValueError("ValueError!")
-        with pytest.raises(ValueError) as error:
+        with pytest.raises(dspy.LMUnexpectedError) as error:
             program(question="Dummy question!")
 
         assert "ValueError!" in str(error.value)
@@ -1443,13 +1407,13 @@ async def test_error_message_on_json_adapter_failure_async():
     with mock.patch("litellm.acompletion") as mock_acompletion:
         with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             mock_acompletion.side_effect = RuntimeError("RuntimeError!")
-            with pytest.raises(RuntimeError) as error:
+            with pytest.raises(dspy.LMUnexpectedError) as error:
                 await program.acall(question="Dummy question!")
 
             assert "RuntimeError!" in str(error.value)
 
             mock_acompletion.side_effect = ValueError("ValueError!")
-            with pytest.raises(ValueError) as error:
+            with pytest.raises(dspy.LMUnexpectedError) as error:
                 await program.acall(question="Dummy question!")
 
             assert "ValueError!" in str(error.value)

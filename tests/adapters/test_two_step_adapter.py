@@ -231,5 +231,5 @@ def test_two_step_adapter_parse_errors():
 
     adapter = dspy.TwoStepAdapter(mock_extraction_lm)
 
-    with pytest.raises(ValueError, match="Failed to parse response"):
+    with pytest.raises(dspy.AdapterParseError, match="Failed to parse response"):
         adapter.parse(TestSignature, first_response)

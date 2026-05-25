@@ -158,6 +158,7 @@ nav:
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - Errors: api/utils/Errors.md
             - configure: api/utils/configure.md
             - context: api/utils/context.md
             - StatusMessage: api/utils/StatusMessage.md

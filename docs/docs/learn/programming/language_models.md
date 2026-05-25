@@ -250,6 +250,24 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost', 'timestamp', 'uuid', 'model', 'response_model', 'model_type])
 ```
 
+## Handling LM errors
+
+DSPy's built-in `dspy.LM` wraps provider and LiteLLM failures in structured DSPy exceptions. Catch `dspy.LMError` to handle any LM failure, or catch a more specific subclass for targeted behavior.
+
+```python linenums="1"
+try:
+    answer = qa(question="...")
+except dspy.ContextWindowExceededError:
+    # Reduce prompt size, retrieved passages, or demos before retrying.
+    raise
+except dspy.LMRateLimitError as e:
+    print(f"Rate limited by {e.provider}; retry after {e.retry_after} seconds")
+except dspy.LMError as e:
+    print(f"LM failed: code={e.code}, model={e.model}, request_id={e.request_id}")
+```
+
+All DSPy LM errors expose a stable `code` and may include `model`, `provider`, provider `status`, `request_id`, and `retry_after`. If an unknown exception is raised at the LM backend boundary, DSPy raises `dspy.LMUnexpectedError` instead of treating it as an adapter parse failure. See the [Errors API reference](../../api/utils/Errors.md) for the full hierarchy.
+
 ## Using the Responses API
 
 By default, DSPy calls language models (LMs) using LiteLLM's [Chat Completions API](https://docs.litellm.ai/docs/completion), which is suitable for most standard models and tasks. However, some advanced models, such as OpenAI's reasoning models (e.g., `gpt-5` or other future models), may offer improved quality or additional features when accessed via the [Responses API](https://docs.litellm.ai/docs/response_api), which is supported in DSPy.
