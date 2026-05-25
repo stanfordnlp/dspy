@@ -7,6 +7,8 @@ from dspy.clients._litellm import get_litellm
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
+from dspy.clients.language_models import *
+from dspy.clients.language_models import __all__ as _language_model_all
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
 
@@ -120,4 +122,5 @@ __all__ = [
     "enable_litellm_logging",
     "disable_litellm_logging",
     "configure_cache",
+    *_language_model_all,
 ]
