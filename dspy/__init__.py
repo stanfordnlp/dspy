@@ -26,7 +26,7 @@ from dspy.utils.exceptions import (
     LMUnexpectedError,
     LMUnsupportedFeatureError,
     LMUnsupportedModelError,
-    RETRYABLE_LM_ERRORS,
+    is_retryable_lm_error,
 )
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify

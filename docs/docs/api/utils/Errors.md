@@ -15,13 +15,15 @@ except dspy.LMError as e:
     print(f"LM failed with code={e.code}, provider={e.provider}, request_id={e.request_id}")
 ```
 
-`dspy.RETRYABLE_LM_ERRORS` is a tuple of LM error classes that are generally safe to retry: rate limits, timeouts, server errors, and transport errors. DSPy's built-in `dspy.LM` delegates provider retries to LiteLLM, but callers can use this tuple after retries are exhausted. Retryability is advisory: respect provider policy and `retry_after` when present.
+Use `dspy.is_retryable_lm_error(error)` to classify LM failures that are generally safe to retry: rate limits, timeouts, server errors, and transport errors. DSPy's built-in `dspy.LM` delegates provider retries to LiteLLM, but callers can use this helper after retries are exhausted. Retryability is advisory: respect provider policy and `retry_after` when present.
 
 ```python
 try:
     result = program(question="...")
-except dspy.RETRYABLE_LM_ERRORS:
-    # Schedule another attempt later.
+except dspy.LMError as e:
+    if dspy.is_retryable_lm_error(e):
+        # Schedule another attempt later.
+        raise
     raise
 ```
 
@@ -47,7 +49,7 @@ except dspy.RETRYABLE_LM_ERRORS:
             - LMUnsupportedModelError
             - LMTimeoutError
             - LMServerError
-            - RETRYABLE_LM_ERRORS
+            - is_retryable_lm_error
             - AdapterParseError
         show_source: true
         show_root_heading: false

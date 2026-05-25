@@ -13,22 +13,18 @@ def test_lm_errors_are_exported_from_dspy():
     assert dspy.LMError is LMError
     assert dspy.LMUnexpectedError is not None
     assert dspy.AdapterParseError is AdapterParseError
-    assert dspy.RETRYABLE_LM_ERRORS == (
-        dspy.LMRateLimitError,
-        dspy.LMTimeoutError,
-        dspy.LMServerError,
-        dspy.LMTransportError,
-    )
+    assert dspy.is_retryable_lm_error is not None
 
 
 def test_retryable_lm_errors_classification():
-    assert isinstance(dspy.LMRateLimitError(), dspy.RETRYABLE_LM_ERRORS)
-    assert isinstance(dspy.LMTimeoutError(), dspy.RETRYABLE_LM_ERRORS)
-    assert isinstance(dspy.LMServerError(), dspy.RETRYABLE_LM_ERRORS)
-    assert isinstance(dspy.LMTransportError(), dspy.RETRYABLE_LM_ERRORS)
-    assert not isinstance(dspy.LMAuthError(), dspy.RETRYABLE_LM_ERRORS)
-    assert not isinstance(dspy.LMInvalidRequestError(), dspy.RETRYABLE_LM_ERRORS)
-    assert not isinstance(dspy.LMUnexpectedError(), dspy.RETRYABLE_LM_ERRORS)
+    assert dspy.is_retryable_lm_error(dspy.LMRateLimitError())
+    assert dspy.is_retryable_lm_error(dspy.LMTimeoutError())
+    assert dspy.is_retryable_lm_error(dspy.LMServerError())
+    assert dspy.is_retryable_lm_error(dspy.LMTransportError())
+    assert not dspy.is_retryable_lm_error(dspy.LMAuthError())
+    assert not dspy.is_retryable_lm_error(dspy.LMInvalidRequestError())
+    assert not dspy.is_retryable_lm_error(dspy.LMUnexpectedError())
+    assert not dspy.is_retryable_lm_error(ValueError("not an LM error"))
 
 
 def test_lm_error_metadata():

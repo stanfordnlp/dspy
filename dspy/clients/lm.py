@@ -753,6 +753,11 @@ def _lm_error_class_from_status(status: int | None) -> type[LMError]:
     return LMUnexpectedError if status is None else LMProviderError
 
 
+# Best-effort LiteLLM/provider exception metadata extraction.
+#
+# LiteLLM exception metadata is not exposed as a single stable typed shape across providers, exception classes, and
+# LiteLLM versions. Keep the defensive getattr-based extraction localized here so the rest of DSPy sees structured
+# DSPyError metadata.
 def _exception_status(exc: Exception) -> int | None:
     status = getattr(exc, "status_code", None)
     if status is None:

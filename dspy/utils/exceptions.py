@@ -204,14 +204,21 @@ class LMServerError(LMProviderError):
     default_code = "server"
 
 
-RETRYABLE_LM_ERRORS = (LMRateLimitError, LMTimeoutError, LMServerError, LMTransportError)
-"""Tuple of LM error classes that are generally safe to retry.
+_RETRYABLE_LM_ERRORS = (LMRateLimitError, LMTimeoutError, LMServerError, LMTransportError)
 
-DSPy's built-in `LM` delegates provider retries to LiteLLM, but callers and
-higher-level orchestration code can use this tuple to classify wrapped LM
-failures after provider retries are exhausted. Retryability is advisory: callers
-should still respect provider policy and `retry_after` when present.
-"""
+
+def is_retryable_lm_error(error: Exception) -> bool:
+    """Return whether an LM error is generally safe to retry.
+
+    DSPy's built-in `LM` delegates provider retries to LiteLLM, but callers and
+    higher-level orchestration code can use this helper to classify wrapped LM
+    failures after provider retries are exhausted. Retryability is advisory:
+    callers should still respect provider policy and `retry_after` when present.
+
+    Args:
+        error: The exception to classify.
+    """
+    return isinstance(error, _RETRYABLE_LM_ERRORS)
 
 
 class AdapterParseError(DSPyError):
