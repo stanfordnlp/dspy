@@ -93,3 +93,7 @@ for step, value in result.trajectory.items():
 ```
 
 For tool authoring patterns, MCP integration, and trajectory debugging, see [Tools, ReAct, and MCP](../diving-deeper/tools-react-and-mcp.md).
+
+---
+
+**Next:** [Composing modules →](08_composing_modules.md)

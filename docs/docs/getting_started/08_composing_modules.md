@@ -137,3 +137,7 @@ Reasons to decompose appear as our AI programs grow in complexity and we learn t
 See [Modules: composing your own](../diving-deeper/modules.md) for control-flow patterns (branching, retry loops, parallel calls) and composition beyond this example.
 
 Speaking of evaluation and optimization, it's time for the next section.
+
+---
+
+**Next:** [Metrics →](09_metrics.md)

@@ -159,3 +159,7 @@ Location handling:
 It continues (you can view the entire text here), covering season and mood handling, common failure modes, and detailing a final quality check before output.
 
 Fascinatingly, the same program will optimize differently depending on the model.
+
+---
+
+**Next:** [Saving and loading →](11_saving_and_loading.md)

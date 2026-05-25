@@ -1,0 +1,5 @@
+- [ ] Add link to whole optimized prompt
+- [ ] Add link to Haiku metric
+- [ ] Add adapter link to behind the scenes list
+- [ ] Fix any curly quotes
+- [ ] Move and update the LM provider example list to the LM page on getting started (also dial the colors)

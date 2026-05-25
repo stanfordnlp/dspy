@@ -101,3 +101,7 @@ soft light, easy air.
 ```
 
 Once a program accrues several fields or we want to add nuanced instructions, it's likely time to graduate to a class-based signature.
+
+---
+
+**Next:** [Class-based signatures →](05_class_based_signatures.md)

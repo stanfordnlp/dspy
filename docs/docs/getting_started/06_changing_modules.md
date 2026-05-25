@@ -29,3 +29,7 @@ Bodega Bay in autumn evokes a cool, misty atmosphere, and the mysterious mood in
 ```
 
 `ChainOfThought` is simple, but nicely demonstrates the flexibility of DSPy's module layer. [Other modules](../diving-deeper/built-in-module-variants.md) implement other strategies, including model ensembles, coding sandboxes, and *tool-calling*, which the next section explores.
+
+---
+
+**Next:** [Tools with ReAct →](07_react_and_tools.md)

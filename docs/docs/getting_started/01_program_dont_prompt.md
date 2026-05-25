@@ -16,3 +16,7 @@ In this tutorial we'll build a haiku-writing program that starts with four lines
 - How to compose a custom `dspy.Module` that decomposes a task into named, independent stages.  
 - How to write **metrics** and use **optimizers** to compile better versions of our program.  
 - How to save optimized programs and reload them.
+
+---
+
+**Next:** [Setting up DSPy →](02_installation.md)

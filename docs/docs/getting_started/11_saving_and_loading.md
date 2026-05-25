@@ -32,3 +32,7 @@ fresh.load("haiku_bot.json")
 The save file contains the optimized instructions, demos, and signature metadata. It does not contain the LM client configuration: your API keys, your provider choice, your temperature. That separation is intentional: configure your LM as usual after loading and the same program targets whichever model you point it at today.
 
 See [Saving and loading](../diving-deeper/saving-and-loading.md) for versioning saved programs, swapping models against the same checkpoint, and managing demo lifecycles.
+
+---
+
+**Next:** [Where to go next →](12_where_to_go_next.md)

@@ -98,3 +98,7 @@ WARNING dspy.predict.predict: Type mismatch for field 'season': expected Literal
 ```
 
 See [Signatures in depth](../diving-deeper/signatures-in-depth.md) for the rest of the surface — output validators, multi-output composition, and richer Pydantic patterns.
+
+---
+
+**Next:** [Changing modules →](06_changing_modules.md)

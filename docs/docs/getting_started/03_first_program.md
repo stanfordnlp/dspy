@@ -89,4 +89,8 @@ Bugs bloom, then resolve
 [[ ## completed ## ]]
 ```
 
-In DSPy, to produce a prompt you compose a signature and the messages are written for you. 
+In DSPy, to produce a prompt you compose a signature and the messages are written for you.
+
+---
+
+**Next:** [Expanding signatures →](04_expanding_signatures.md)
