@@ -224,9 +224,10 @@ class LM(BaseLM):
 
         Raises:
             dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures.
-            dspy.ContextWindowExceededError: The prompt or messages exceed the
-                model context window.
+                provider, and unsupported-feature failures. Notable subclasses
+                include `dspy.ContextWindowExceededError` for context-window
+                failures, which adapters use to avoid inappropriate fallback
+                retries when the prompt is too long.
         """
         # Build the request.
         kwargs = dict(kwargs)
@@ -281,9 +282,10 @@ class LM(BaseLM):
 
         Raises:
             dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures.
-            dspy.ContextWindowExceededError: The prompt or messages exceed the
-                model context window.
+                provider, and unsupported-feature failures. Notable subclasses
+                include `dspy.ContextWindowExceededError` for context-window
+                failures, which adapters use to avoid inappropriate fallback
+                retries when the prompt is too long.
         """
         # Build the request.
         kwargs = dict(kwargs)

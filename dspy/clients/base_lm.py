@@ -227,11 +227,12 @@ class BaseLM:
 
         Raises:
             dspy.LMError: Base class for LM configuration, transport, provider,
-                and unsupported-feature failures.
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. Each subclass should
-                catch its provider's native context-window error and re-raise it
-                as `dspy.ContextWindowExceededError`.
+                and unsupported-feature failures. Notable subclasses include
+                `dspy.ContextWindowExceededError` for context-window failures,
+                which adapters use to avoid inappropriate fallback retries when
+                the prompt is too long. Each subclass should catch its
+                provider's native context-window error and re-raise it as
+                `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -251,11 +252,12 @@ class BaseLM:
 
         Raises:
             dspy.LMError: Base class for LM configuration, transport, provider,
-                and unsupported-feature failures.
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. Each subclass should
-                catch its provider's native context-window error and re-raise it
-                as `dspy.ContextWindowExceededError`.
+                and unsupported-feature failures. Notable subclasses include
+                `dspy.ContextWindowExceededError` for context-window failures,
+                which adapters use to avoid inappropriate fallback retries when
+                the prompt is too long. Each subclass should catch its
+                provider's native context-window error and re-raise it as
+                `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
