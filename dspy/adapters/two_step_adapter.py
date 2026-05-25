@@ -1,7 +1,5 @@
 from typing import Any
 
-import json_repair
-
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
@@ -111,51 +109,52 @@ class TwoStepAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        from dspy.adapters._signature_field_partition import _partition_signature_fields
 
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        # The signature is supposed to be "text -> {original output fields}"
-        extractor_signature = self._create_extractor_signature(signature)
+        partition = _partition_signature_fields(self, lm, lm_kwargs, signature, inputs)
+        request = self._render_request(partition, lm, demos)
+        response = await self._acall_lm(lm, request)
 
         values = []
-
         tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
-        for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
+        extractor_signature = self._create_extractor_signature(partition.remaining_signature)
 
-            if isinstance(output, dict):
-                text = output["text"]
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
+        for output in response.outputs:
+            if output.metadata.get("empty_legacy_outputs"):
+                continue
 
-            try:
-                # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
-                value = await ChatAdapter().acall(
-                    lm=self.extraction_model,
-                    lm_kwargs={},
-                    signature=extractor_signature,
-                    demos=[],
-                    inputs={"text": text},
+            has_text_output = bool(output.text and partition.remaining_signature.output_fields)
+            has_tool_output = bool(output.tool_calls and tool_call_output_field_name)
+
+            if has_text_output:
+                try:
+                    value = await ChatAdapter().acall(
+                        lm=self.extraction_model,
+                        lm_kwargs={},
+                        signature=extractor_signature,
+                        demos=[],
+                        inputs={"text": output.text},
+                    )
+                    value = value[0]
+                    for field_name in signature.output_fields:
+                        value.setdefault(field_name, None)
+                except Exception as e:
+                    raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+            else:
+                value = dict.fromkeys(signature.output_fields.keys())
+
+            if has_tool_output:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"name": call.name, "args": call.args} for call in output.tool_calls]
                 )
-                value = value[0]
 
-            except Exception as e:
-                raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+            has_native_output = self._parse_native_response_fields(value, partition, output, lm)
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+            if not (has_text_output or has_tool_output or has_native_output):
+                raise ValueError(f"Failed to parse response from the original completion: {output}")
 
-            if output_logprobs is not None:
-                value["logprobs"] = output_logprobs
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
 
             values.append(value)
         return values

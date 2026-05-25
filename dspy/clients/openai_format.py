@@ -882,26 +882,6 @@ def lm_response_from_legacy_outputs(outputs: list[dict[str, Any] | str | None], 
     return LMResponse(model=request.model, outputs=[lm_output_from_legacy_output(output) for output in outputs])
 
 
-def legacy_outputs_from_lm_response(response: LMResponse) -> list[dict[str, Any] | str | None]:
-    """Return legacy adapter postprocess values from a normalized response.
-
-    This is a temporary compatibility helper for current adapter postprocessing.
-    Prefer the exact original legacy output when it is available so compatibility
-    hooks that distinguish `str` from provider dictionaries keep working.
-    """
-    outputs = []
-    for output in response.outputs:
-        if output.metadata.get("empty_legacy_outputs"):
-            continue
-        if output.provider_output is not None:
-            outputs.append(output.provider_output)
-        elif output.text is not None and not output.reasoning_content and not output.tool_calls and not output.citations and output.logprobs is None:
-            outputs.append(output.text)
-        else:
-            outputs.append(output.to_output_dict())
-    return outputs
-
-
 def lm_output_from_legacy_output(output: dict[str, Any] | str | None) -> LMOutput:
     """Normalize one current legacy `BaseLM` output item into an `LMOutput`."""
     if isinstance(output, str):

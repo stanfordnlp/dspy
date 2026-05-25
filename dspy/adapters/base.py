@@ -2,22 +2,21 @@ import json
 import logging
 from typing import Any, get_origin
 
-import json_repair
-
 from dspy.adapters._legacy_type_markers import (
     _expand_legacy_custom_type_markers_in_chat_message,
     _expand_legacy_custom_type_markers_in_lm_message,
+)
+from dspy.adapters._signature_field_partition import (
+    _NativeResponseField,
+    _partition_signature_fields,
+    _SignatureFieldPartition,
 )
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.openai_format import (
-    legacy_outputs_from_lm_response,
-    lm_response_from_legacy_outputs,
-    to_openai_chat_request,
-)
-from dspy.core.types import LMMessage, LMRequest, LMResponse
+from dspy.clients.openai_format import lm_response_from_legacy_outputs, to_openai_chat_request
+from dspy.core.types import LMMessage, LMOutput, LMRequest, LMResponse
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -73,151 +72,23 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def _call_preprocess(
-        self,
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-        signature: type[Signature],
-        inputs: dict[str, Any],
-    ) -> type[Signature]:
-        # TODO(adapters-plan): This remains the pre-normalized planning hook. It
-        # mutates `lm_kwargs` and returns only the render signature, which loses
-        # information we will need for plan-driven rendering/parsing. The next
-        # stacked PR should replace this with an explicit `_AdapterPlan` that
-        # records deleted fields, native tools, native output fields, inserted
-        # messages/parts, and LM config patches.
-        if self.use_native_function_calling:
-            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
-            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
-
-            if tool_call_output_field_name and tool_call_input_field_name is None:
-                raise ValueError(
-                    f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
-                    "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
-                    "input field with type `list[dspy.Tool]`."
-                )
-
-            if tool_call_output_field_name and lm.supports_function_calling:
-                tools = inputs[tool_call_input_field_name]
-                tools = tools if isinstance(tools, list) else [tools]
-
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
-
-                lm_kwargs["tools"] = lm_tools
-
-                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
-                signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
-                )
-
-                return signature_for_native_function_calling
-
-        # TODO(adapters-plan): Built-in/native response planning should move out
-        # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning
-        # renderers. Keep this compatibility hook for this boundary-only PR.
-        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
-        for name, field in signature.output_fields.items():
-            if (
-                isinstance(field.annotation, type)
-                and field.annotation in self.native_response_types
-                and issubclass(field.annotation, Type)
-            ):
-                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
-
-        return signature
-
-    def _call_postprocess(
-        self,
-        processed_signature: type[Signature],
-        original_signature: type[Signature],
-        outputs: list[dict[str, Any] | str],
-        lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        # TODO(adapters-plan): This still parses legacy adapter output objects.
-        # PR1 normalizes the LM boundary, then immediately converts back to this
-        # shape to avoid changing parser semantics. A later PR should parse
-        # `LMResponse` directly and merge text-parsed fields with explicit
-        # native fields from `_AdapterPlan`.
-        values = []
-
-        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-
-        for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
-
-            if isinstance(output, dict):
-                text = output["text"]
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
-
-            if text:
-                value = self.parse(processed_signature, text)
-                for field_name in original_signature.output_fields.keys():
-                    if field_name not in value:
-                        # We need to set the field not present in the processed signature to None for consistency.
-                        value[field_name] = None
-            elif tool_calls and tool_call_output_field_name:
-                value = {}
-                for field_name in original_signature.output_fields.keys():
-                    value[field_name] = None
-            else:
-                raise AdapterParseError(
-                    adapter_name=type(self).__name__,
-                    signature=original_signature,
-                    lm_response=str(output),
-                    message="The LM returned an empty or null response.",
-                )
-
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
-
-            # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
-            # the real normalized hook, this should not call the legacy
-            # provider-shaped `parse_lm_response()` directly.
-            # Parse custom types that does not rely on the `Adapter.parse()` method
-            for name, field in original_signature.output_fields.items():
-                if (
-                    isinstance(field.annotation, type)
-                    and field.annotation in self.native_response_types
-                    and issubclass(field.annotation, Type)
-                ):
-                    parsed_value = field.annotation.parse_lm_response(output)
-                    if parsed_value is not None:
-                        value[name] = parsed_value
-
-            if output_logprobs:
-                value["logprobs"] = output_logprobs
-
-            values.append(value)
-
-        return values
-
     def _render_request(
         self,
+        partition: _SignatureFieldPartition,
         lm: BaseLM,
-        lm_kwargs: dict[str, Any],
-        messages: list[LMMessage | dict[str, Any]],
+        demos: list[dict[str, Any]],
     ) -> LMRequest:
-        """Build the normalized LM request for the current adapter call path.
-
-        TODO(adapters-plan): This currently receives already-rendered messages.
-        Once planning lands, this should render from `_AdapterPlan` and apply
-        planned message/part insertions before creating `LMRequest`.
-        """
+        """Render the remaining signature fields into a normalized LM request."""
+        messages = self.format(partition.remaining_signature, demos, partition.remaining_inputs)
+        request_kwargs = dict(partition.request_kwargs)
+        tools = list(partition.tool_specs)
+        if "tools" in request_kwargs:
+            tools.extend(request_kwargs.pop("tools") or [])
         return LMRequest.from_call(
             model=lm.model,
             messages=self._coerce_lm_messages(messages),
-            **lm_kwargs,
+            tools=tools,
+            **request_kwargs,
         )
 
     def _call_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:
@@ -308,6 +179,77 @@ class Adapter:
         """
         return lm_response_from_legacy_outputs(outputs, request)
 
+    def _parse_response(self, partition: _SignatureFieldPartition, response: LMResponse, lm: BaseLM) -> list[dict[str, Any]]:
+        """Parse a normalized LM response into dictionaries for the source signature."""
+        values = []
+        tool_call_output_field_name = self._get_tool_call_output_field_name(partition.source_signature)
+
+        for output in response.outputs:
+            if output.metadata.get("empty_legacy_outputs"):
+                continue
+
+            has_text_output = bool(output.text and partition.remaining_signature.output_fields)
+            has_tool_output = bool(output.tool_calls and tool_call_output_field_name)
+
+            if has_text_output:
+                value = self.parse(partition.remaining_signature, output.text)
+                for field_name in partition.source_signature.output_fields:
+                    value.setdefault(field_name, None)
+            else:
+                value = dict.fromkeys(partition.source_signature.output_fields.keys())
+
+            if has_tool_output:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"name": call.name, "args": call.args} for call in output.tool_calls]
+                )
+
+            has_native_output = self._parse_native_response_fields(value, partition, output, lm)
+
+            if not (has_text_output or has_tool_output or has_native_output):
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=partition.source_signature,
+                    lm_response=str(output.to_output_dict()),
+                    message="The LM returned an empty or null response.",
+                )
+
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
+
+            values.append(value)
+
+        return values
+
+    def _parse_native_response_fields(
+        self,
+        value: dict[str, Any],
+        partition: _SignatureFieldPartition,
+        output: LMOutput,
+        lm: BaseLM,
+    ) -> bool:
+        parsed_any = False
+        for native_field in partition.native_response_fields:
+            parsed_value = self._parse_native_response_field(native_field, output, partition, lm)
+            if parsed_value is not None:
+                value[native_field.name] = parsed_value
+                parsed_any = True
+        return parsed_any
+
+    def _parse_native_response_field(
+        self,
+        native_field: _NativeResponseField,
+        output: LMOutput,
+        partition: _SignatureFieldPartition,
+        lm: BaseLM,
+    ) -> Type | None:
+        # TODO(adapter-types): Replace this provider-shaped compatibility call
+        # with `Type.parse_lm_output(context, output)` once the normalized type
+        # hook lands. Prefer the exact legacy provider output when present so
+        # existing custom types keep seeing the shape they saw before normalized
+        # request/response parsing moved into adapters.
+        legacy_response = output.provider_output if output.provider_output is not None else output.to_output_dict()
+        return native_field.annotation.parse_lm_response(legacy_response)
+
     def __call__(
         self,
         lm: BaseLM,
@@ -332,16 +274,10 @@ class Adapter:
             List of dictionaries representing parsed LM responses. Each dictionary contains keys matching the
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        messages = self.format(processed_signature, demos, inputs)
-        request = self._render_request(lm, lm_kwargs, messages)
+        partition = _partition_signature_fields(self, lm, lm_kwargs, signature, inputs)
+        request = self._render_request(partition, lm, demos)
         response = self._call_lm(lm, request)
-        # TODO(adapters-response): We normalize at the LM boundary, but still
-        # convert back to legacy postprocess dictionaries here to keep this PR
-        # behavior-preserving. Replace with direct `LMResponse` parsing once the
-        # explicit adapter plan exists.
-        outputs = legacy_outputs_from_lm_response(response)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        return self._parse_response(partition, response, lm)
 
     async def acall(
         self,
@@ -351,14 +287,10 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        messages = self.format(processed_signature, demos, inputs)
-        request = self._render_request(lm, lm_kwargs, messages)
+        partition = _partition_signature_fields(self, lm, lm_kwargs, signature, inputs)
+        request = self._render_request(partition, lm, demos)
         response = await self._acall_lm(lm, request)
-        # TODO(adapters-response): Keep in sync with `__call__()` until both use
-        # direct `LMResponse` parsing.
-        outputs = legacy_outputs_from_lm_response(response)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        return self._parse_response(partition, response, lm)
 
     def format(
         self,
