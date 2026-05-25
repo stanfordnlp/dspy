@@ -115,9 +115,9 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 - **How do I deal with "context too long" errors?**
 
-If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
+If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. DSPy raises this as `dspy.ContextWindowExceededError`, a subclass of `dspy.LMInvalidRequestError`. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
 
-A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`).
+A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`). For other provider failures, catch `dspy.LMError` or a concrete subclass such as `dspy.LMRateLimitError`, `dspy.LMAuthError`, or `dspy.LMServerError`. See the [Errors API reference](api/utils/Errors.md) for details.
 
 ## Set Verbose Level
 DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.html) to print logs. If you want to debug your DSPy code, set the logging level to DEBUG with the example code below.

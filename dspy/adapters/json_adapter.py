@@ -19,7 +19,7 @@ from dspy.adapters.utils import (
 from dspy.clients.base_lm import BaseLM
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, LMError
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except LMError:
+            raise
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -96,6 +98,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        except LMError:
+            raise
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}

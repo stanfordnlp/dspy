@@ -226,12 +226,12 @@ class BaseLM:
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
 
         Raises:
+            dspy.LMError: Base class for LM configuration, transport, provider,
+                and unsupported-feature failures.
             dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
+                input exceeds the model's context window. Each subclass should
+                catch its provider's native context-window error and re-raise it
+                as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -250,12 +250,12 @@ class BaseLM:
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
 
         Raises:
+            dspy.LMError: Base class for LM configuration, transport, provider,
+                and unsupported-feature failures.
             dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
+                input exceeds the model's context window. Each subclass should
+                catch its provider's native context-window error and re-raise it
+                as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 

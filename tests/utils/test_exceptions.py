@@ -1,9 +1,60 @@
 import dspy
-from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
+from dspy.utils.exceptions import (
+    AdapterParseError,
+    ContextWindowExceededError,
+    DSPyError,
+    LMError,
+    LMInvalidRequestError,
+)
+
+
+def test_lm_errors_are_exported_from_dspy():
+    assert dspy.DSPyError is not None
+    assert dspy.LMError is LMError
+    assert dspy.LMUnexpectedError is not None
+    assert dspy.AdapterParseError is AdapterParseError
+    assert dspy.RETRYABLE_LM_ERRORS == (
+        dspy.LMRateLimitError,
+        dspy.LMTimeoutError,
+        dspy.LMServerError,
+        dspy.LMTransportError,
+    )
+
+
+def test_retryable_lm_errors_classification():
+    assert isinstance(dspy.LMRateLimitError(), dspy.RETRYABLE_LM_ERRORS)
+    assert isinstance(dspy.LMTimeoutError(), dspy.RETRYABLE_LM_ERRORS)
+    assert isinstance(dspy.LMServerError(), dspy.RETRYABLE_LM_ERRORS)
+    assert isinstance(dspy.LMTransportError(), dspy.RETRYABLE_LM_ERRORS)
+    assert not isinstance(dspy.LMAuthError(), dspy.RETRYABLE_LM_ERRORS)
+    assert not isinstance(dspy.LMInvalidRequestError(), dspy.RETRYABLE_LM_ERRORS)
+    assert not isinstance(dspy.LMUnexpectedError(), dspy.RETRYABLE_LM_ERRORS)
+
+
+def test_lm_error_metadata():
+    error = dspy.LMRateLimitError(
+        "rate limited",
+        model="openai/gpt-4o",
+        provider="openai",
+        status=429,
+        request_id="req-123",
+        retry_after=2.5,
+    )
+
+    assert error.code == "rate_limit"
+    assert error.model == "openai/gpt-4o"
+    assert error.provider == "openai"
+    assert error.status == 429
+    assert error.request_id == "req-123"
+    assert error.retry_after == 2.5
+    assert str(error) == "[openai/gpt-4o] rate limited"
 
 
 def test_context_window_exceeded_error_defaults():
     error = ContextWindowExceededError()
+    assert isinstance(error, LMInvalidRequestError)
+    assert isinstance(error, LMError)
+    assert error.code == "context_window_exceeded"
     assert error.model is None
     assert str(error) == "Context window exceeded"
 
@@ -33,6 +84,7 @@ def test_adapter_parse_error_basic():
 
     error = AdapterParseError(adapter_name=adapter_name, signature=signature, lm_response=lm_response)
 
+    assert isinstance(error, DSPyError)
     assert error.adapter_name == adapter_name
     assert error.signature == signature
     assert error.lm_response == lm_response
