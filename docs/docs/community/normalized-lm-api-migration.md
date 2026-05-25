@@ -2,43 +2,57 @@
 
 DSPy is moving toward a typed language-model boundary while keeping `dspy.BaseLM` as the public base class for language models.
 
-The short version: **most DSPy users do not need to change anything in DSPy 3.3**. Existing `lm(...)`, modules, and programs keep their current behavior by default. The typed LM API is opt-in in 3.3 with `dspy.context(experimental=True)`.
+**Most DSPy users do not need to change anything in DSPy 3.3**. Existing `lm(...)`, modules, and programs keep their current behavior by default. The typed LM API is opt-in in 3.3 with `dspy.context(experimental=True)`.
 
-!!! note "Status"
-    This is a migration plan for the DSPy 3.3–3.6/4.0 series. Names and exact release timing may change before implementation lands, but the staged compatibility plan below should guide discussion.
-
-!!! info "Community feedback wanted"
-    This plan mostly affects custom LM backends and adapters. If you maintain one, please review the proposed one-line `forward_contract` migration and share feedback before the default LM path changes.
-
-## Who is affected?
-
-| Group | DSPy 3.3 action | Later action |
-| --- | --- | --- |
-| Most DSPy users | No action required. | Optionally try typed direct LM calls with `dspy.context(experimental=True)`. |
-| Custom LM authors | Add `forward_contract = "legacy"` if your LM implements `forward(prompt=None, messages=None, **kwargs)`. | Migrate to `forward_contract = "typed_lm"` and `forward(request: dspy.LMRequest) -> dspy.LMResponse` before legacy support is removed. |
-| New LM backend authors | Prefer the typed contract from the start. | Package and distribute backends as first-class DSPy-compatible libraries. |
-| Custom adapter authors | Do not call `lm.forward(...)` directly. Route LM calls through `lm(...)`. | Move toward building `LMRequest` objects and parsing `LMResponse` directly. |
-| DSPy maintainers and contributors | Keep public typed returns guarded by `experimental=True` in 3.3. | Warn in 3.4, make the typed path the default candidate in 3.5, and remove legacy in 3.6 or 4.0 after final review. |
-
-## Background
-
-Today, most `BaseLM` subclasses implement a legacy provider-shaped hook:
+TLDR: `dspy.LM.forward` is currently untyped and mixes DSPy-specific behavior with OpenAI/LiteLLM-shaped inputs. We will migrate `BaseLM.forward` and `LM.forward` from:
 
 ```python
 def forward(self, prompt=None, messages=None, **kwargs):
     ...
 ```
 
-That hook usually receives OpenAI/LiteLLM-shaped inputs and returns an OpenAI-like provider response. DSPy then post-processes that response into legacy outputs such as `list[str | dict]`.
-
-The target contract is typed:
+to:
 
 ```python
 def forward(self, request: dspy.LMRequest) -> dspy.LMResponse:
     ...
 ```
 
-DSPy has settled on the internal LM type system around `LMRequest`, `LMResponse`, typed messages, parts, config, usage, and stream events. These types should be treated as the stable direction for LM backends. Concrete LMs translate between these DSPy types and their provider API.
+!!! note "Status"
+    This is a migration plan for the DSPy 3.3–3.6/4.0 series. Names and exact release timing may change before implementation lands, but the staged compatibility plan below should guide discussion.
+
+!!! info "Community feedback wanted"
+    This plan mostly affects custom LMs and adapters. If you maintain one, please review the proposed one-line `forward_contract` migration and share feedback before the default LM path changes.
+
+## Who is affected?
+
+| Group | What to do now | Future requirement |
+| --- | --- | --- |
+| Most DSPy users | Nothing required. Optionally try the direct `lm(...)` API with `dspy.context(experimental=True)` and provide feedback. | DSPy programs will keep working before, during, and after this migration without user changes. |
+| Existing custom LM authors | Nothing required in 3.3. If you want to be explicit, add `forward_contract = "legacy"`. | Add an explicit `forward_contract`; eventually migrate to `forward_contract = "typed_lm"` before legacy support is removed. |
+| New custom LM authors | Use `forward_contract = "typed_lm"` and implement `forward(request: dspy.LMRequest) -> dspy.LMResponse`. | No later migration needed if you start with the typed contract. |
+| Custom adapter authors | Call `lm(...)`, not `lm.forward(...)`. | Build `LMRequest` objects and parse `LMResponse` directly. |
+
+
+## Background
+
+Today, `BaseLM` subclasses implement an untyped forward method, with a few optional parameters:
+
+```python
+def forward(self, prompt=None, messages=None, **kwargs):
+    ...
+```
+
+That hook usually receives OpenAI/LiteLLM-shaped inputs and returns an OpenAI-like provider response. DSPy then post-processes that response into a `list[str | dict]` containing outputs.
+
+Because the current parameters are untyped, it is hard to know inside an LM exactly which inputs you will get and what types they will contain. The new contract is typed and provider-neutral. We have designed `LMRequest` and `LMResponse` to be flexible enough for LMs backed by many different provider APIs:
+
+```python
+def forward(self, request: dspy.LMRequest) -> dspy.LMResponse:
+    ...
+```
+
+DSPy has settled on the internal LM type system around `LMRequest`, `LMResponse`, typed messages, parts, config, usage, and stream events. These types should be treated as the stable direction for LM implementations. Concrete LMs translate between these DSPy types and their provider API.
 
 ## Why this matters
 
@@ -54,7 +68,7 @@ That gives DSPy and the community:
 - less OpenAI/LiteLLM-shaped logic inside adapters,
 - first-class support for multimodal inputs, tool calls, reasoning, citations, usage, and provider metadata,
 - a more expressive direct `lm(...)` UX,
-- a clearer path for community packages to ship LM backends that feel and are treated like first-class DSPy backends.
+- a clearer path for community packages to ship LMs that feel and are treated like first-class DSPy LMs.
 
 The migration is staged so existing code keeps working while new code can opt into the typed path.
 
@@ -201,14 +215,16 @@ During the transition, adapters may still convert `LMResponse` back to legacy pa
 
 ## Version sequence
 
-| Version | Missing `forward_contract` | Public `lm(...)` behavior |
-| --- | --- | --- |
-| 3.3 | Treat as legacy | Typed returns available only through `experimental=True` or explicit `LMRequest` calls. |
-| 3.4 | Treat as legacy and warn | Still guarded while migration continues. |
-| 3.5 | Require explicit contract or flip default after final review | Candidate default typed path. |
-| 3.6 or 4.0 | Remove the legacy `forward(prompt, messages, **kwargs)` contract after final review | `forward(request: LMRequest) -> LMResponse` is the only supported `BaseLM` implementation contract. |
+| Version | Custom `BaseLM.forward` contract | Public `lm(...)` behavior | LiteLLM role |
+| --- | --- | --- | --- |
+| 3.3 | Missing `forward_contract` is treated as legacy. | Typed returns available only through `experimental=True` or explicit `LMRequest` calls. | Current `dspy.LM` LiteLLM path remains the default. |
+| 3.4 | Missing `forward_contract` is treated as legacy and warns. | Still requires `experimental=True` or explicit `LMRequest` while migration continues. | Native typed LMs become preferred where available; LiteLLM is used as a compatibility fallback. |
+| 3.5 | Require explicit contract or flip default after final review. | Typed path becomes default with a legacy escape hatch. | Native typed LMs remain preferred; LiteLLM is used as a compatibility fallback but may require manual installation. |
+| 3.6 or 4.0 | Remove the legacy `forward(prompt, messages, **kwargs)` implementation contract after final review. | `forward(request: LMRequest) -> LMResponse` is the only supported `BaseLM` implementation contract. | TBD whether the LiteLLM fallback remains. |
 
-Before changing the default, DSPy should give custom LM authors enough time to add one of:
+The important distinction is that removing the legacy `BaseLM.forward(prompt, messages, **kwargs)` contract does not require removing LiteLLM. LiteLLM can continue as a typed compatibility implementation that accepts `LMRequest` internally and returns `LMResponse`.
+
+Before changing the default, DSPy will give custom LM authors enough time to add one of:
 
 ```python
 forward_contract = "legacy"
