@@ -225,6 +225,8 @@ class AdapterParseError(DSPyError):
         parsed_result: Partial parsed result, if any.
     """
 
+    default_code = "adapter_parse_error"
+
     def __init__(
         self,
         adapter_name: str,

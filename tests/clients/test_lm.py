@@ -313,6 +313,31 @@ def test_lm_wraps_unknown_boundary_error_as_unexpected_error():
     assert wrapped.model == "openai/gpt-4o-mini"
 
 
+def test_lm_preserves_existing_lm_error_without_self_cause():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.litellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            lm("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_lm_preserves_existing_lm_error_without_self_cause_async():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.alitellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            await lm.acall("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:

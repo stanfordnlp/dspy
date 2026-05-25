@@ -85,6 +85,7 @@ def test_adapter_parse_error_basic():
     error = AdapterParseError(adapter_name=adapter_name, signature=signature, lm_response=lm_response)
 
     assert isinstance(error, DSPyError)
+    assert error.code == "adapter_parse_error"
     assert error.adapter_name == adapter_name
     assert error.signature == signature
     assert error.lm_response == lm_response

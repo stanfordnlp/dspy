@@ -255,6 +255,8 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as e:
+            if isinstance(e, LMError):
+                raise
             raise self._wrap_litellm_exception(e) from e
 
         self._check_truncation(results)
@@ -310,6 +312,8 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as e:
+            if isinstance(e, LMError):
+                raise
             raise self._wrap_litellm_exception(e) from e
 
         self._check_truncation(results)
