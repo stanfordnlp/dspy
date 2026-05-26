@@ -519,6 +519,22 @@ def test_dump_state():
     }
 
 
+def test_reasoning_model_dump_state_uses_constructor_max_tokens():
+    lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+        cache=False,
+        num_retries=1,
+    )
+
+    state = lm.dump_state()
+
+    assert lm.kwargs["max_completion_tokens"] == 16_000
+    assert "max_completion_tokens" not in state
+    assert state["max_tokens"] == 16_000
+
+
 def test_dump_state_preserves_enabled_developer_role():
     lm = dspy.LM("openai/gpt-4o-mini", use_developer_role=True)
 
@@ -553,6 +569,59 @@ def test_load_state():
 
     assert isinstance(loaded_lm, dspy.LM)
     assert loaded_lm.dump_state() == lm.dump_state()
+
+
+def test_reasoning_model_load_state_round_trips_canonical_state():
+    lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+        cache=False,
+        num_retries=1,
+    )
+
+    loaded_lm = dspy.BaseLM.load_state(lm.dump_state())
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.kwargs["max_completion_tokens"] == 16_000
+    assert loaded_lm.dump_state() == lm.dump_state()
+
+
+def test_reasoning_model_load_state_accepts_max_completion_tokens_alias():
+    state = {
+        "_dspy_lm_class": "dspy.clients.lm.LM",
+        "model": "openai/gpt-5-nano",
+        "model_type": "chat",
+        "cache": False,
+        "num_retries": 1,
+        "temperature": 1.0,
+        "max_completion_tokens": 16_000,
+        "finetuning_model": None,
+        "launch_kwargs": {},
+        "train_kwargs": {},
+    }
+
+    loaded_lm = dspy.BaseLM.load_state(state)
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.kwargs["max_completion_tokens"] == 16_000
+    assert "max_completion_tokens" not in loaded_lm.dump_state()
+    assert loaded_lm.dump_state()["max_tokens"] == 16_000
+
+
+def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
+    calls = []
+    original_load_state = dspy.BaseLM.load_state.__func__
+
+    def spy_load_state(cls, state, *, allow_custom_lm_class=False):
+        calls.append(allow_custom_lm_class)
+        return original_load_state(cls, state, allow_custom_lm_class=allow_custom_lm_class)
+
+    monkeypatch.setattr(dspy.BaseLM, "load_state", classmethod(spy_load_state))
+
+    dspy.LM.load_state(dspy.LM("openai/gpt-4o-mini").dump_state(), allow_custom_lm_class=True)
+
+    assert calls == [True]
 
 
 def test_exponential_backoff_retry():

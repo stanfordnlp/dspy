@@ -44,6 +44,14 @@ def _get_litellm():
     return get_litellm(feature="dspy.LM")
 
 
+def _is_openai_reasoning_model(model: str) -> bool:
+    model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+    return re.match(
+        r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+        model_family,
+    ) is not None
+
+
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
@@ -111,18 +119,7 @@ class LM(BaseLM):
 
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
         # Override BaseLM's default kwargs shape for LiteLLM/model-family-specific token parameters.
-        model_family = self.model.split("/")[-1].lower() if "/" in self.model else self.model.lower()
-
-        # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
-        # Exclude non-reasoning variants like gpt-5-chat this is in azure ai foundry
-        # Allow date suffixes like -2023-01-01 after model name or mini/nano/pro
-        # For gpt-5, use negative lookahead to exclude -chat and allow other suffixes
-        model_pattern = re.match(
-            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
-            model_family,
-        )
-
-        if model_pattern:
+        if _is_openai_reasoning_model(self.model):
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise LMConfigurationError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
@@ -418,7 +415,21 @@ class LM(BaseLM):
         )
         if self.use_developer_role:
             state["use_developer_role"] = self.use_developer_role
+        if _is_openai_reasoning_model(self.model) and "max_completion_tokens" in state:
+            state["max_tokens"] = state.pop("max_completion_tokens")
         return state
+
+    @classmethod
+    def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False):
+        state = dict(state)
+
+        model = state.get("model")
+        if isinstance(model, str) and _is_openai_reasoning_model(model) and "max_completion_tokens" in state:
+            if "max_tokens" not in state:
+                state["max_tokens"] = state["max_completion_tokens"]
+            state.pop("max_completion_tokens")
+
+        return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
