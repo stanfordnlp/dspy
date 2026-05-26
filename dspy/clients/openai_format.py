@@ -674,7 +674,7 @@ def responses_function_call_to_part(output_item: Any) -> LMToolCallPart:
 
 def citation_to_part(citation: Any) -> LMCitationPart:
     if hasattr(citation, "model_dump"):
-        citation = citation.model_dump(exclude_none=True)
+        citation = model_dump(citation)
     if not isinstance(citation, dict):
         citation = {"text": str(citation)}
     citation_fields = {"cited_text", "text", "supported_text", "document_title", "title", "url"}
@@ -779,7 +779,7 @@ def usage_from_response(response: Any) -> LMUsage | None:
     if usage is None:
         return None
     if hasattr(usage, "model_dump"):
-        usage = usage.model_dump(exclude_none=True)
+        usage = model_dump(usage)
     elif not isinstance(usage, dict):
         data = {}
         for key in dir(usage):
@@ -852,9 +852,29 @@ def get_value(value: Any, key: str, default: Any = None) -> Any:
     return value.get(key, default) if isinstance(value, dict) else getattr(value, key, default)
 
 
+def _rebuild_pydantic_serializers(value: Any) -> None:
+    stack = [value]
+    seen = set()
+    for item in stack:
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if isinstance(item, pydantic.BaseModel):
+            type(item).model_rebuild(force=True, raise_errors=False)
+            stack.extend([*item.__dict__.values(), *((item.__pydantic_extra__ or {}).values())])
+        elif isinstance(item, (dict, list, tuple)):
+            stack.extend(item.values() if isinstance(item, dict) else item)
+
+
 def model_dump(value: Any) -> dict[str, Any]:
     if hasattr(value, "model_dump"):
-        return value.model_dump(exclude_none=True)
+        try:
+            return value.model_dump(exclude_none=True)
+        except TypeError as error:
+            if "MockValSer" not in str(error):
+                raise
+            _rebuild_pydantic_serializers(value)
+            return value.model_dump(exclude_none=True)
     if isinstance(value, dict):
         return dict(value)
     data = {}
