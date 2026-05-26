@@ -68,8 +68,6 @@ def _run_subprocess_cache_case(case, directory):
     subprocess.run(
         [sys.executable, "-m", "tests.clients.test_disk_serialization", case, str(directory)],
         check=True,
-        capture_output=True,
-        text=True,
     )
 
 

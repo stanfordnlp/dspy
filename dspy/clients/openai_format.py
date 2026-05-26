@@ -854,7 +854,11 @@ def get_value(value: Any, key: str, default: Any = None) -> Any:
 
 def _rebuild_pydantic_serializers(value: Any) -> None:
     stack = [value]
+    seen = set()
     for item in stack:
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
         if isinstance(item, pydantic.BaseModel):
             type(item).model_rebuild(force=True, raise_errors=False)
             stack.extend([*item.__dict__.values(), *((item.__pydantic_extra__ or {}).values())])
