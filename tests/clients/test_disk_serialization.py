@@ -2,6 +2,8 @@
 
 import io
 import pickle
+import subprocess
+import sys
 from dataclasses import dataclass
 
 import diskcache
@@ -10,13 +12,15 @@ import pydantic
 import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
-from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 
 from dspy.clients.disk_serialization import (
     DeserializationError,
     _restricted_load,
     restricted_disk,
 )
+from dspy.clients.openai_format import completion_to_lm_response, responses_to_lm_response
+from dspy.core.types import LMRequest
 
 
 class AllowedPydanticModel(pydantic.BaseModel):
@@ -58,6 +62,108 @@ def _make_cache(directory, allowed):
         disk=restricted_disk(allowed),
         timeout=10,
     )
+
+
+def _run_subprocess_cache_case(case, directory):
+    subprocess.run(
+        [sys.executable, "-m", "tests.clients.test_disk_serialization", case, str(directory)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _write_tool_call_cache(directory):
+    cache = _make_cache(directory, set())
+    cache["k"] = ModelResponse(
+        id="chatcmpl-tool",
+        model="dummy",
+        choices=[{
+            "message": {
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city":"SF"}'},
+                }],
+            },
+            "index": 0,
+            "finish_reason": "tool_calls",
+        }],
+        usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+    )
+    cache.close()
+
+
+def _assert_cached_tool_call_normalizes(directory):
+    response = _make_cache(directory, set())["k"]
+    tool_call = response.choices[0].message.tool_calls[0]
+    assert type(type(tool_call).__pydantic_serializer__).__name__ == "MockValSer"
+    assert type(type(tool_call.function).__pydantic_serializer__).__name__ == "MockValSer"
+
+    lm_response = completion_to_lm_response(response, LMRequest(model="dummy", messages=[]))
+    part = lm_response.outputs[0].tool_calls[0]
+    assert part.name == "get_weather"
+    assert part.args == {"city": "SF"}
+    assert part.provider_data["function"]["name"] == "get_weather"
+    assert lm_response.usage.total_tokens == 3
+
+
+def _write_responses_function_call_cache(directory):
+    cache = _make_cache(directory, set())
+    cache["k"] = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="dummy",
+        object="response",
+        output=[ResponseFunctionToolCall(
+            id="fc_1",
+            call_id="call_1",
+            type="function_call",
+            name="get_weather",
+            arguments='{"city":"SF"}',
+            status="completed",
+        )],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+        user=None,
+    )
+    cache.close()
+
+
+def _assert_cached_responses_function_call_normalizes(directory):
+    response = _make_cache(directory, set())["k"]
+    function_call = response.output[0]
+    assert type(type(function_call).__pydantic_serializer__).__name__ == "MockValSer"
+
+    lm_response = responses_to_lm_response(response, LMRequest(model="dummy", messages=[]))
+    part = lm_response.outputs[0].tool_calls[0]
+    assert part.name == "get_weather"
+    assert part.args == {"city": "SF"}
+    assert part.provider_data["call_id"] == "call_1"
+    assert lm_response.usage.total_tokens == 3
+
+
+_SUBPROCESS_CASES = {
+    "write-tool-call-cache": _write_tool_call_cache,
+    "assert-tool-call-cache-normalizes": _assert_cached_tool_call_normalizes,
+    "write-responses-function-call-cache": _write_responses_function_call_cache,
+    "assert-responses-function-call-cache-normalizes": _assert_cached_responses_function_call_normalizes,
+}
 
 
 @pytest.mark.parametrize("value", [
@@ -197,6 +303,16 @@ def test_tool_call_response_roundtrip(tmp_path):
     assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
 
 
+def test_cached_tool_call_normalizes_after_fresh_process_roundtrip(tmp_path):
+    _run_subprocess_cache_case("write-tool-call-cache", tmp_path)
+    _run_subprocess_cache_case("assert-tool-call-cache-normalizes", tmp_path)
+
+
+def test_cached_responses_function_call_normalizes_after_fresh_process_roundtrip(tmp_path):
+    _run_subprocess_cache_case("write-responses-function-call-cache", tmp_path)
+    _run_subprocess_cache_case("assert-responses-function-call-cache-normalizes", tmp_path)
+
+
 # -- allowlist enforcement --
 
 def test_unlisted_type_blocked_on_read(tmp_path):
@@ -284,3 +400,7 @@ def test_all_cached_lm_types_roundtrip():
     for value in test_values:
         result = _roundtrip(value)
         assert type(result) is type(value), f"Failed roundtrip for {type(value).__name__}"
+
+
+if __name__ == "__main__":
+    _SUBPROCESS_CASES[sys.argv[1]](sys.argv[2])
