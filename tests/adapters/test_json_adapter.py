@@ -1,5 +1,5 @@
 import enum
-from typing import Literal
+from typing import Any, Literal
 from unittest import mock
 
 import pydantic
@@ -888,6 +888,28 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
         "Expected to find output fields in the LM response: [answer] \n\n"
         "Actual output fields parsed from the LM response: [] \n\n"
     )
+
+
+def test_json_adapter_parses_dict_any_unchanged_by_chat_adapter_fix():
+    """Regression guard for stanfordnlp/dspy#8820: JSONAdapter keeps json-first parsing.
+
+    The ChatAdapter fix added ``prefer_python_literal=True`` only on the ChatAdapter path.
+    JSONAdapter must remain unaffected: a JSON object with ``null`` still parses a
+    ``dict[str, Any]`` field to real ``None`` (and bools to real bools).
+    """
+
+    class DictAnySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        arguments: dict[str, Any] = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    completion = '{"arguments": {"city": "Paris", "limit": null, "active": true}}'
+
+    parsed = adapter.parse(DictAnySignature, completion)
+
+    assert parsed["arguments"] == {"city": "Paris", "limit": None, "active": True}
+    assert parsed["arguments"]["limit"] is None
+    assert parsed["arguments"]["active"] is True
 
 
 def test_json_adapter_formats_image():

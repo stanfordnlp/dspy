@@ -146,7 +146,33 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-def parse_value(value, annotation):
+def _parse_string_candidate(value: str, prefer_python_literal: bool):
+    """Parse a raw string into a Python object, choosing the parser ordering by adapter.
+
+    ChatAdapter instructs the LM (via ``user_message_output_requirements``) to emit a "valid
+    Python dict", so its responses contain Python literals such as ``None``, ``True``, ``False``,
+    and single-quoted strings. Running ``json_repair.loads`` first would silently coerce these
+    (e.g. ``None`` -> the string ``"None"``), corrupting the value. When ``prefer_python_literal``
+    is True we therefore try ``ast.literal_eval`` first and fall back to the json-first logic,
+    which still handles JSON-style payloads (e.g. ``null``). JSONAdapter and XMLAdapter keep the
+    default json-first behavior unchanged.
+    """
+    if prefer_python_literal:
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            pass
+
+    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    if candidate == "" and value != "":
+        try:
+            candidate = ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            candidate = value
+    return candidate
+
+
+def parse_value(value, annotation, *, prefer_python_literal: bool = False):
     if annotation is str:
         return str(value)
 
@@ -179,12 +205,7 @@ def parse_value(value, annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
-    if candidate == "" and value != "":
-        try:
-            candidate = ast.literal_eval(value)
-        except (ValueError, SyntaxError):
-            candidate = value
+    candidate = _parse_string_candidate(value, prefer_python_literal)
 
     try:
         return TypeAdapter(annotation).validate_python(candidate)

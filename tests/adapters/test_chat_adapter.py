@@ -1,5 +1,5 @@
 import re
-from typing import Literal
+from typing import Any, Literal
 from unittest import mock
 
 import pydantic
@@ -1561,6 +1561,67 @@ def test_chat_adapter_exception_raised_on_failure():
     invalid_completion = "{'output':'mismatched value'}"
     with pytest.raises(dspy.utils.exceptions.AdapterParseError, match=r"Adapter ChatAdapter failed to parse.*"):
         adapter.parse(signature, invalid_completion)
+
+
+class _ArgumentsSignature(dspy.Signature):
+    """Signature with a free-form dict output field used by the literal-parsing tests."""
+
+    question: str = dspy.InputField()
+    arguments: dict[str, Any] = dspy.OutputField()
+
+
+def test_chat_adapter_parses_python_literal_none_as_real_none():
+    """ChatAdapter must preserve a Python-literal ``None`` as real ``None``, not the string ``"None"``.
+
+    This is the core bug from stanfordnlp/dspy#8820: ChatAdapter instructs the LM to emit a
+    "valid Python dict", so completions contain ``None`` (not JSON ``null``). Running json_repair
+    first would coerce ``None`` into the string ``"None"``.
+    """
+    adapter = dspy.ChatAdapter()
+    completion = "[[ ## arguments ## ]]\n{'city': 'Paris', 'limit': None}\n\n[[ ## completed ## ]]\n"
+
+    parsed = adapter.parse(_ArgumentsSignature, completion)
+
+    assert parsed["arguments"] == {"city": "Paris", "limit": None}
+    assert parsed["arguments"]["limit"] is None
+    assert parsed["arguments"]["limit"] != "None"
+
+
+def test_chat_adapter_preserves_python_literal_bools_and_none():
+    """ChatAdapter must preserve Python-literal ``True``/``False``/``None`` as real bools/None."""
+    adapter = dspy.ChatAdapter()
+    completion = "[[ ## arguments ## ]]\n{'a': True, 'b': False, 'c': None}\n\n[[ ## completed ## ]]\n"
+
+    parsed = adapter.parse(_ArgumentsSignature, completion)
+
+    arguments = parsed["arguments"]
+    assert arguments == {"a": True, "b": False, "c": None}
+    assert arguments["a"] is True
+    assert arguments["b"] is False
+    assert arguments["c"] is None
+
+
+def test_chat_adapter_parses_json_style_null_via_fallback():
+    """A JSON-style dict using ``null`` must still parse to real ``None`` (json_repair fallback)."""
+    adapter = dspy.ChatAdapter()
+    completion = '[[ ## arguments ## ]]\n{"city": "Paris", "limit": null}\n\n[[ ## completed ## ]]\n'
+
+    parsed = adapter.parse(_ArgumentsSignature, completion)
+
+    assert parsed["arguments"] == {"city": "Paris", "limit": None}
+    assert parsed["arguments"]["limit"] is None
+
+
+def test_chat_adapter_does_not_coerce_string_none_value():
+    """A quoted string ``'None'`` must stay the string ``"None"`` (no over-coercion)."""
+    adapter = dspy.ChatAdapter()
+    completion = "[[ ## arguments ## ]]\n{'status': 'None'}\n\n[[ ## completed ## ]]\n"
+
+    parsed = adapter.parse(_ArgumentsSignature, completion)
+
+    assert parsed["arguments"] == {"status": "None"}
+    assert parsed["arguments"]["status"] == "None"
+    assert parsed["arguments"]["status"] is not None
 
 
 def test_chat_adapter_formats_image():

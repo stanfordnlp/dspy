@@ -219,7 +219,7 @@ class ChatAdapter(Adapter):
         for k, v in sections:
             if (k not in fields) and (k in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation, prefer_python_literal=True)
                 except Exception as e:
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
