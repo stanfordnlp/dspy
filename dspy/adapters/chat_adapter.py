@@ -5,6 +5,7 @@ from typing import Any, NamedTuple
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
+from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -175,6 +176,8 @@ class ChatAdapter(Adapter):
         """
 
         def type_info(v):
+            if v.annotation == ToolCalls:
+                return ' (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]})'
             if v.annotation is not str:
                 return f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
             else:

@@ -172,13 +172,7 @@ class Adapter:
                 )
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
+                tool_calls = [_provider_tool_call_to_tool_call_dict(tool_call) for tool_call in tool_calls]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
@@ -673,3 +667,26 @@ class Adapter:
             A dictionary of the output fields.
         """
         raise NotImplementedError
+
+
+def _provider_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
+    function = _provider_value(tool_call, "function", {}) or {}
+    arguments = _provider_value(function, "arguments", {})
+    if isinstance(arguments, str):
+        parsed_arguments = json_repair.loads(arguments)
+    elif isinstance(arguments, dict):
+        parsed_arguments = arguments
+    else:
+        parsed_arguments = {}
+
+    return {
+        "id": _provider_value(tool_call, "id") or _provider_value(tool_call, "call_id"),
+        "name": _provider_value(function, "name") or _provider_value(tool_call, "name"),
+        "args": parsed_arguments,
+    }

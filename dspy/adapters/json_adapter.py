@@ -130,6 +130,8 @@ class JSONAdapter(ChatAdapter):
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
         def type_info(v):
+            if v.annotation == ToolCalls:
+                return ' (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]})'
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
                 if v.annotation is not str
