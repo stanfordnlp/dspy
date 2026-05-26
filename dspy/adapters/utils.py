@@ -161,7 +161,10 @@ def _parse_string_candidate(value: str, prefer_python_literal: bool):
         try:
             return ast.literal_eval(value)
         except (ValueError, SyntaxError):
-            pass
+            # ast.literal_eval already failed; fall back to json_repair for JSON-style
+            # payloads (e.g. ``null``) without retrying ast.literal_eval below.
+            candidate = json_repair.loads(value)
+            return candidate if candidate != "" else value
 
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
