@@ -93,7 +93,7 @@ def message_to_openai_chat(message: LMMessage) -> dict[str, Any]:
     if message.role == "assistant":
         tool_calls = [part for part in message.parts if isinstance(part, LMToolCallPart)]
         content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
-        output["content"] = parts_to_openai_content(content_parts)
+        output["content"] = None if tool_calls and not content_parts else parts_to_openai_content(content_parts)
         if tool_calls:
             output["tool_calls"] = [assistant_tool_call_to_openai(part) for part in tool_calls]
         return output
