@@ -1104,6 +1104,39 @@ def test_extra_fields_warning(caplog):
     assert "extra_field" in caplog.text
 
 
+def test_missing_optional_input_field_no_warning(caplog):
+    log_test_helper()
+
+    class OptionalInputSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str | None = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    predict_instance = Predict(OptionalInputSignature)
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(question="test")
+
+    assert "Not all input fields were provided" not in caplog.text
+
+
+def test_missing_required_input_field_still_warns(caplog):
+    log_test_helper()
+
+    class OptionalInputSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str | None = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    predict_instance = Predict(OptionalInputSignature)
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance()
+
+    assert "Not all input fields were provided" in caplog.text
+    assert "Missing: ['question']" in caplog.text
+
+
 def test_warning_images(caplog):
     """Test whether type mismatch for images generates a warning."""
     log_test_helper()
