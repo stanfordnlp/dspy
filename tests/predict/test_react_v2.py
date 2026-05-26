@@ -47,6 +47,38 @@ def test_react_v2_text_mock_lm_loop_records_inputs_once():
     assert pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0].call_id == "call_0_0"
 
 
+def test_react_v2_continuation_omits_missing_original_inputs():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "lookup", "args": {"query": "cats"}}]
+                ),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "found cats"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[lookup])(question="cats")
+
+    assert pred.answer == "found cats"
+    second_call_messages = lm.history[1]["messages"]
+    second_current_user_message = second_call_messages[-1]["content"]
+    assert "[[ ## question ## ]]\nNone" not in second_current_user_message
+    assert "[[ ## question ## ]]" not in second_current_user_message
+    assert any("[[ ## question ## ]]\ncats" in message["content"] for message in second_call_messages)
+
+
 def test_react_v2_text_mode_accepts_top_level_tool_arguments():
     def lookup(query: str) -> str:
         return f"found {query}"

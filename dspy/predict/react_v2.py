@@ -60,7 +60,7 @@ class ReActV2(Module):
         for name, field in self.signature.input_fields.items():
             fields[name] = (
                 _optional_annotation(field.annotation),
-                dspy.InputField(default=None, desc=field.json_schema_extra.get("desc")),
+                dspy.InputField(desc=field.json_schema_extra.get("desc")),
             )
 
         fields["history"] = (dspy.History, dspy.InputField())
