@@ -1,5 +1,7 @@
 import importlib.util
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -56,3 +58,29 @@ def test_embedder_litellm_use_raises_helpful_error_without_litellm(monkeypatch):
     msg = str(exc_info.value)
     assert "[litellm]" in msg
     assert "dspy.Embedder" in msg
+
+
+def test_concurrent_lm_first_use_materializes_litellm_once():
+    import dspy
+    from dspy.clients._litellm import get_litellm
+
+    original_litellm = sys.modules.pop("litellm", None)
+    get_litellm.cache_clear()
+    try:
+        threads = 8
+        barrier = threading.Barrier(threads)
+
+        def supports_function_calling(_):
+            barrier.wait()
+            lm = dspy.LM("openai/gpt-4o-mini", cache=False, num_retries=0)
+            return lm.supports_function_calling
+
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            results = list(executor.map(supports_function_calling, range(threads)))
+
+        assert len(results) == threads
+        assert all(isinstance(result, bool) for result in results)
+    finally:
+        get_litellm.cache_clear()
+        if original_litellm is not None:
+            sys.modules["litellm"] = original_litellm

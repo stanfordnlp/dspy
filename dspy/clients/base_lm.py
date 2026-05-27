@@ -3,10 +3,11 @@ import datetime
 import importlib
 import inspect
 import uuid
-from typing import Any, TextIO
+import warnings
+from typing import Any, Literal, TextIO
 
 from dspy.clients.openai_format import responses_to_lm_response
-from dspy.core.types import LMRequest
+from dspy.core.types import LMRequest, LMResponse
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -15,6 +16,7 @@ MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 LM_CLASS_STATE_KEY = "_dspy_lm_class"
 _BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+ForwardContract = Literal["legacy", "typed_lm"]
 
 
 def _import_lm_class(class_path: str) -> type:
@@ -98,6 +100,14 @@ class BaseLM:
     ```
     """
 
+    forward_contract: ForwardContract = "legacy"
+    """The `forward()` implementation contract used by this LM.
+
+    `"legacy"` means `forward(prompt=None, messages=None, **kwargs)` returns an
+    OpenAI-like provider response. `"typed_lm"` means
+    `forward(request: dspy.LMRequest) -> dspy.LMResponse`.
+    """
+
     def __init__(
         self,
         model,
@@ -134,6 +144,64 @@ class BaseLM:
 
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
         return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+
+    def _declares_forward_contract(self) -> bool:
+        """Return whether this concrete LM class declares `forward_contract`."""
+        return "forward_contract" in type(self).__dict__
+
+    def _get_forward_contract(self) -> ForwardContract:
+        """Return the declared `forward()` contract for this LM.
+
+        DSPy deliberately does not inspect `forward()` signatures during the
+        migration to typed LM calls. Subclasses opt into the typed contract by
+        setting `forward_contract = "typed_lm"`; all existing custom LMs remain
+        on the legacy contract unless they say otherwise.
+        """
+        contract = getattr(type(self), "forward_contract", "legacy")
+        if contract not in {"legacy", "typed_lm"}:
+            raise ValueError(
+                f"{type(self).__name__}.forward_contract must be 'legacy' or 'typed_lm', "
+                f"but got {contract!r}."
+            )
+        return contract
+
+    def _validate_typed_lm_response(self, response: Any) -> LMResponse:
+        """Validate the result of a typed `forward(request)` implementation."""
+        if isinstance(response, LMResponse):
+            return response
+        raise TypeError(
+            f"{type(self).__name__}.forward_contract='typed_lm' requires forward(request) "
+            f"to return dspy.LMResponse, but got {type(response).__name__}."
+        )
+
+    def _validate_legacy_lm_response(
+        self,
+        response: Any,
+        *,
+        stacklevel: int = 2,
+    ) -> LMResponse | None:
+        """Validate a legacy `forward()` result that already looks typed.
+
+        During the 3.3 migration, custom LMs that inherit the default legacy
+        contract may accidentally return `LMResponse`; warn so authors can add
+        `forward_contract = "typed_lm"`. If a class explicitly declares
+        `forward_contract = "legacy"`, treat `LMResponse` as a contract
+        mismatch and fail fast.
+        """
+        if not isinstance(response, LMResponse):
+            return None
+        if self._declares_forward_contract():
+            raise TypeError(
+                f"{type(self).__name__}.forward_contract='legacy' requires forward() to return an "
+                "OpenAI-like provider response, but got dspy.LMResponse. Set forward_contract='typed_lm'."
+            )
+        warnings.warn(
+            f"{type(self).__name__}.forward() returned dspy.LMResponse while using the default legacy "
+            "forward_contract. Set forward_contract='typed_lm' before the typed LM API becomes the default.",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
+        return response
 
     @property
     def supports_function_calling(self) -> bool:

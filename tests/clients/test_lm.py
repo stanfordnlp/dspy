@@ -450,6 +450,71 @@ def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
     assert lm.callbacks is not callbacks
 
 
+def test_base_lm_forward_contract_defaults_to_legacy():
+    class CustomLM(dspy.BaseLM):
+        pass
+
+    lm = CustomLM("custom-model")
+
+    assert lm._get_forward_contract() == "legacy"
+    assert not lm._declares_forward_contract()
+
+
+def test_base_lm_forward_contract_accepts_explicit_values():
+    class LegacyLM(dspy.BaseLM):
+        forward_contract = "legacy"
+
+    class TypedLM(dspy.BaseLM):
+        forward_contract = "typed_lm"
+
+    assert LegacyLM("custom-model")._get_forward_contract() == "legacy"
+    assert LegacyLM("custom-model")._declares_forward_contract()
+    assert TypedLM("custom-model")._get_forward_contract() == "typed_lm"
+    assert TypedLM("custom-model")._declares_forward_contract()
+
+
+def test_base_lm_forward_contract_rejects_unknown_values():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "normalized"
+
+    with pytest.raises(ValueError, match="forward_contract must be 'legacy' or 'typed_lm'"):
+        CustomLM("custom-model")._get_forward_contract()
+
+
+def test_base_lm_validates_typed_lm_response():
+    lm = dspy.BaseLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    assert lm._validate_typed_lm_response(response) is response
+
+    with pytest.raises(TypeError, match=r"requires forward\(request\).*dspy.LMResponse"):
+        lm._validate_typed_lm_response(["ok"])
+
+
+def test_base_lm_warns_when_inherited_legacy_forward_returns_lm_response():
+    class CustomLM(dspy.BaseLM):
+        pass
+
+    lm = CustomLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    with pytest.warns(DeprecationWarning, match="default legacy forward_contract"):
+        assert lm._validate_legacy_lm_response(response) is response
+
+    assert lm._validate_legacy_lm_response(["ok"]) is None
+
+
+def test_base_lm_errors_when_explicit_legacy_forward_returns_lm_response():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "legacy"
+
+    lm = CustomLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    with pytest.raises(TypeError, match=r"forward_contract='legacy'.*got dspy.LMResponse"):
+        lm._validate_legacy_lm_response(response)
+
+
 def test_base_lm_tracks_usage_for_custom_subclasses():
     class CustomLM(dspy.BaseLM):
         def forward(self, prompt=None, messages=None, **kwargs):

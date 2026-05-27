@@ -58,6 +58,8 @@ class LM(BaseLM):
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
 
+    forward_contract = "legacy"
+
     def __init__(
         self,
         model: str,

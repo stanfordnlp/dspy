@@ -69,6 +69,8 @@ class DummyLM(BaseLM):
 
     """
 
+    forward_contract = "legacy"
+
     def __init__(
         self,
         answers: list[dict[str, Any]] | dict[str, dict[str, Any]],

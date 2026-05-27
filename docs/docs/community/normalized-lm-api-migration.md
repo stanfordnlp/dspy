@@ -103,8 +103,8 @@ response.provider_data
 
 The typed path also makes direct `lm(...)` calls more expressive. Strings, typed messages, media parts, previous responses, and explicit `LMRequest` objects all flow through one call API.
 
-!!! warning "Planned 3.3 API"
-    The examples below illustrate the proposed typed LM call API. Helpers such as `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolCall`, and `dspy.ToolResult` are part of the planned implementation and may not exist in the current stable namespace yet.
+!!! warning "Experimental 3.3 API"
+    The typed LM symbols are importable without `experimental=True`. During the 3.3 release-candidate period, the direct typed `lm(...)` call path will land incrementally behind `dspy.context(experimental=True)` as the API settles. These helpers are expected to be available in DSPy 3.3. Key helpers such as `dspy.LMRequest`, `dspy.LMResponse`, `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolCall`, and `dspy.ToolResult` are available at the top level. The complete typed LM vocabulary is available under `dspy.core.types`, e.g. `dspy.core.types.LMTextPart`.
 
 Multimodal request with instructions:
 
