@@ -4,7 +4,7 @@ from unittest import mock
 import pydantic
 import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
-from openai.types.responses import ResponseOutputMessage
+from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
@@ -119,10 +119,11 @@ def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls
                 "id": "fc_1",
                 "status": "completed",
             },
-            {
-                "type": "reasoning",
-                "summary": [Summary(type="summary_text", text="Need live weather.")],
-            },
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="Need live weather.")],
+            ),
         ]
     )
 
@@ -251,10 +252,11 @@ def test_lm_responses_cache_history_and_usage_use_normalized_output(tmp_path):
                 status="completed",
                 content=[{"type": "output_text", "text": "cached answer", "annotations": []}],
             ),
-            {
-                "type": "reasoning",
-                "summary": [Summary(type="summary_text", text="cached reasoning")],
-            },
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="cached reasoning")],
+            ),
         ],
         usage=ResponseAPIUsage(input_tokens=4, output_tokens=5, total_tokens=9),
     )
@@ -283,10 +285,11 @@ def test_lm_responses_cache_history_and_usage_use_normalized_output(tmp_path):
 def test_lm_responses_reasoning_output_uses_thinking_part_in_normalized_response():
     response = _responses_response(
         [
-            {
-                "type": "reasoning",
-                "summary": [Summary(type="summary_text", text="think first")],
-            }
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="think first")],
+            )
         ]
     )
 
