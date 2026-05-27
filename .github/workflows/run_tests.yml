@@ -82,8 +82,11 @@ jobs:
         uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
         with:
           deno-version: v2.7.7
+          cache: true
       - name: Verify Deno installation
         run: deno --version
+      - name: Cache Deno dependencies
+        run: deno cache dspy/primitives/runner.js
       - name: Install uv with caching
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -104,11 +107,32 @@ jobs:
         with:
           args: check --fix-only
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/
+        run: uv run -p .venv pytest -q tests/ -n 16 --dist=loadgroup
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
-      - name: Run extra and deno tests
-        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno
+      - name: Run extra tests
+        run: >
+          uv run -p .venv pytest -q -m extra --extra -n 16 --dist=worksteal
+          tests/datasets/test_dataset.py
+          tests/evaluate/test_evaluate.py
+          tests/primitives/test_base_module.py
+          tests/predict/test_react.py
+          tests/utils/test_langchain_tool.py
+          tests/utils/test_mcp.py
+          tests/utils/test_saving.py
+      - name: Run Deno interpreter tests
+        run: >
+          uv run -p .venv pytest -q -m deno --deno -n 16 --dist=worksteal
+          tests/primitives/test_python_interpreter.py
+      - name: Run Deno RLM tests
+        run: >
+          uv run -p .venv pytest -q -m deno --deno -n 16 --dist=worksteal
+          tests/predict/test_rlm.py
+      - name: Run Deno prediction tests
+        run: >
+          uv run -p .venv pytest -q -m deno --deno -n 16 --dist=worksteal
+          tests/predict/test_code_act.py
+          tests/predict/test_program_of_thought.py
   
   llm_call_test:
     name: Run Tests with Real LM
