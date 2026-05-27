@@ -11,6 +11,8 @@ import dspy
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
+REAL_LM_MAX_TOKENS = 32
+
 
 def test_deepcopy_basic():
     signature = dspy.Signature("q -> a")
@@ -247,10 +249,13 @@ def test_load_with_version_mismatch(tmp_path):
 
 @pytest.mark.llm_call
 def test_single_module_call_with_usage_tracker(lm_for_test):
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), track_usage=True)
+    dspy.configure(
+        lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS),
+        track_usage=True,
+    )
 
-    predict = dspy.ChainOfThought("question -> answer")
-    output = predict(question="What is the capital of France?")
+    predict = dspy.Predict("question -> answer")
+    output = predict(question="Paris?")
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1
@@ -259,21 +264,27 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
     assert lm_usage[lm_for_test]["total_tokens"] > 0
 
     # Test no usage being tracked when cache is enabled
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=True, temperature=0.0), track_usage=True)
+    dspy.configure(
+        lm=dspy.LM(lm_for_test, cache=True, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS),
+        track_usage=True,
+    )
     for _ in range(2):
-        output = predict(question="What is the capital of France?")
+        output = predict(question="Paris?")
 
     assert len(output.get_lm_usage()) == 0
 
 
 @pytest.mark.llm_call
 def test_multi_module_call_with_usage_tracker(lm_for_test):
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), track_usage=True)
+    dspy.configure(
+        lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS),
+        track_usage=True,
+    )
 
     class MyProgram(dspy.Module):
         def __init__(self):
-            self.predict1 = dspy.ChainOfThought("question -> answer")
-            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+            self.predict1 = dspy.Predict("question -> answer")
+            self.predict2 = dspy.Predict("question, answer -> score")
 
         def __call__(self, question: str) -> Prediction:
             answer = self.predict1(question=question)
@@ -281,7 +292,7 @@ def test_multi_module_call_with_usage_tracker(lm_for_test):
             return score
 
     program = MyProgram()
-    output = program(question="What is the capital of France?")
+    output = program(question="Paris?")
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1

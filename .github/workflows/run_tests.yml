@@ -204,7 +204,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ollama-data
-          key: ollama-llama3.2-3b-${{ runner.os }}-v1
+          key: ollama-llama3.2-1b-${{ runner.os }}-v1
       - name: Start Ollama service
         run: |
           mkdir -p ollama-data
@@ -215,9 +215,9 @@ jobs:
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
       - name: Pull LLM
         if: steps.cache-ollama.outputs.cache-hit != 'true'
-        run: docker exec ollama ollama pull llama3.2:3b
+        run: docker exec ollama ollama pull llama3.2:1b
       - name: Set LM environment variable
-        run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> "$GITHUB_ENV"
+        run: echo "LM_FOR_TEST=ollama/llama3.2:1b" >> "$GITHUB_ENV"
       - name: Run tests
         run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
       - name: Fix permissions for cache
