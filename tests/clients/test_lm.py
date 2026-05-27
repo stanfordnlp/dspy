@@ -46,6 +46,21 @@ def make_response(output_blocks):
     )
 
 
+def _skip_retry_backoff(monkeypatch):
+    sleep_durations = []
+    real_sleep = time.sleep
+
+    def sleep_without_backoff(duration):
+        if duration >= 1:
+            sleep_durations.append(duration)
+            return None
+
+        return real_sleep(duration)
+
+    monkeypatch.setattr(time, "sleep", sleep_without_backoff)
+    return sleep_durations
+
+
 def test_chat_lms_can_be_queried(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
@@ -348,7 +363,7 @@ def test_retry_number_set_correctly():
 
 def test_retry_made_on_system_errors(monkeypatch):
     retry_tracking = [0]  # Using a list to track retries
-    monkeypatch.setattr(time, "sleep", lambda _: None)
+    _skip_retry_backoff(monkeypatch)
 
     def mock_create(*args, **kwargs):
         retry_tracking[0] += 1
@@ -626,8 +641,7 @@ def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
 
 
 def test_exponential_backoff_retry(monkeypatch):
-    sleep_durations = []
-    monkeypatch.setattr(time, "sleep", sleep_durations.append)
+    sleep_durations = _skip_retry_backoff(monkeypatch)
 
     def mock_create(*args, **kwargs):
         # These fields are called during the error handling

@@ -111,7 +111,7 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-n 8 --dist=worksteal"
+addopts = "-n 8 --dist=loadgroup"
 filterwarnings = [
     # litellm uses deprecated pydantic config classes sometimes.
     # The issue has been fixed repeatedly, but still keeps showing up.

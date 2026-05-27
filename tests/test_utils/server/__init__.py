@@ -12,7 +12,7 @@ import pytest
 from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def litellm_test_server() -> tuple[str, str]:
     """
     Start a LiteLLM test server for a DSPy integration test case, and tear down the
@@ -76,7 +76,7 @@ def _get_random_port():
         return s.getsockname()[1]
 
 
-def _wait_for_port(host, port, timeout=10):
+def _wait_for_port(host, port, timeout=30):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -84,5 +84,5 @@ def _wait_for_port(host, port, timeout=10):
                 sock.connect((host, port))
                 return True
             except ConnectionRefusedError:
-                time.sleep(0.5)  # Wait briefly before trying again
+                time.sleep(0.1)
     raise TimeoutError(f"Server on port {port} did not become ready within {timeout} seconds.")

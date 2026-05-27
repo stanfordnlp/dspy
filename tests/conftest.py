@@ -59,6 +59,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     for flag in SKIP_DEFAULT_FLAGS:
         config.addinivalue_line("markers", flag)
+    config.addinivalue_line("markers", "xdist_group(name): run related tests in the same xdist worker")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -70,6 +71,10 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if flag in item.keywords:
                 item.add_marker(skip_mark)
+
+    for item in items:
+        if "litellm_test_server" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.xdist_group("litellm_test_server"))
 
 
 @pytest.fixture
