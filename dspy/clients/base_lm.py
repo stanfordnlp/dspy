@@ -5,6 +5,8 @@ import inspect
 import uuid
 from typing import Any, TextIO
 
+from dspy.clients.openai_format import responses_to_lm_response
+from dspy.core.types import LMRequest
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -461,9 +463,6 @@ class BaseLM:
         Returns:
             List of processed outputs, which is always of size 1 because the Response API only supports one output.
         """
-        from dspy.clients.openai_format import responses_to_lm_response
-        from dspy.core.types import LMRequest
-
         request = LMRequest(model=self.model, messages=[])
         outputs = responses_to_lm_response(response, request).to_legacy_outputs()
         # Preserve the existing Responses API shape: even text-only outputs are dictionaries.

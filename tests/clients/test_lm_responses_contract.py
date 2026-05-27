@@ -139,6 +139,40 @@ def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls
     assert lm_response.usage.total_tokens == 3
 
 
+def test_responses_request_converts_assistant_tool_calls_and_tool_results():
+    request = LMRequest.from_call(
+        model="openai/gpt-5-mini",
+        messages=[
+            {"role": "user", "content": "What is the weather?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "name": "get_weather", "content": "sunny"},
+        ],
+    )
+
+    data = to_openai_responses_request(request)
+
+    assert data["input"] == [
+        {"role": "user", "content": [{"type": "input_text", "text": "What is the weather?"}]},
+        {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": json.dumps({"city": "Paris"}),
+            "call_id": "call_1",
+        },
+        {"type": "function_call_output", "output": "sunny", "call_id": "call_1"},
+    ]
+
+
 def test_lm_responses_direct_native_tool_calling_uses_responses_tool_shape():
     response = _responses_response(
         [

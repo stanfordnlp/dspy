@@ -7,14 +7,13 @@ import warnings
 from typing import Any, Literal, cast
 
 import anyio.from_thread
-import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
 from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.openai_format import tool_choice_to_openai_responses, tool_to_openai_responses
+from dspy.clients.openai_format import to_openai_responses_request
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.core.types import LMRequest
@@ -618,96 +617,20 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """
-    Convert a chat request to a responses request
-    See https://platform.openai.com/docs/api-reference/responses/create for the responses API specification.
-    Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
-    """
+    """Convert legacy chat-shaped LM kwargs into Responses API kwargs."""
     request = dict(request)
-    if "messages" in request:
-        input_items = []
-        for msg in request.pop("messages"):
-            content_blocks = []
-            c = msg.get("content")
-            if isinstance(c, str):
-                content_blocks.append({"type": "input_text", "text": c})
-            elif isinstance(c, list):
-                # Convert each content item from Chat API format to Responses API format
-                for item in c:
-                    content_blocks.append(_convert_content_item_to_responses_format(item))
-            input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
-        request["input"] = input_items
-    # Convert `reasoning_effort` to reasoning format supported by the Responses API
-    if "reasoning_effort" in request:
-        effort = request.pop("reasoning_effort")
-        request["reasoning"] = {"effort": effort, "summary": "auto"}
+    model = request.pop("model")
+    messages = request.pop("messages", [])
+    tools = request.pop("tools", None)
 
-    # Convert `response_format` to `text.format` for Responses API
-    if "response_format" in request:
-        response_format = request.pop("response_format")
-        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
-            response_format = {
-                "name": response_format.__name__,
-                "type": "json_schema",
-                "schema": response_format.model_json_schema(),
-            }
-        text = request.pop("text", {})
-        request["text"] = {**text, "format": response_format}
+    # Reasoning models use `max_completion_tokens` in the chat path. The
+    # normalized Responses mapper expects the shared `max_tokens` name and emits
+    # `max_output_tokens`.
+    if "max_completion_tokens" in request and "max_tokens" not in request:
+        request["max_tokens"] = request.pop("max_completion_tokens")
 
-    # Convert Chat Completions tool definitions/choices to Responses API function-tool shape.
-    if "tools" in request:
-        tool_request = LMRequest.from_call(model=request.get("model", ""), messages=[], tools=request.pop("tools") or [])
-        request["tools"] = [tool_to_openai_responses(tool) for tool in tool_request.tools]
-    if isinstance(request.get("tool_choice"), dict):
-        choice_request = LMRequest.from_call(
-            model=request.get("model", ""),
-            messages=[],
-            tool_choice=request["tool_choice"],
-            parallel_tool_calls=request.get("parallel_tool_calls"),
-        )
-        request.update(tool_choice_to_openai_responses(choice_request.config.tool_choice))
-
-    return request
-
-
-def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
-    """
-    Convert a content item from Chat API format to Responses API format.
-
-    For images, converts from:
-        {"type": "image_url", "image_url": {"url": "..."}}
-    To:
-        {"type": "input_image", "image_url": "..."}
-
-    For text, converts from:
-        {"type": "text", "text": "..."}
-    To:
-        {"type": "input_text", "text": "..."}
-
-    For other types, passes through as-is.
-    """
-    if item.get("type") == "image_url":
-        image_url = item.get("image_url", {}).get("url", "")
-        return {
-            "type": "input_image",
-            "image_url": image_url,
-        }
-    elif item.get("type") == "text":
-        return {
-            "type": "input_text",
-            "text": item.get("text", ""),
-        }
-    elif item.get("type") == "file":
-        file = item.get("file", {})
-        return {
-            "type": "input_file",
-            "file_data": file.get("file_data"),
-            "filename": file.get("filename"),
-            "file_id": file.get("file_id"),
-        }
-
-    # For other items, return as-is
-    return item
+    lm_request = LMRequest.from_call(model=model, messages=messages, tools=tools, **request)
+    return to_openai_responses_request(lm_request)
 
 
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
