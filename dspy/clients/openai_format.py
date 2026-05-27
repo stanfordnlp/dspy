@@ -482,8 +482,7 @@ def reasoning_to_responses_kwargs(reasoning: Any) -> dict[str, Any]:
     data = {}
     if reasoning.effort is not None:
         data["effort"] = reasoning.effort
-        data["summary"] = reasoning.summary or "auto"
-    elif reasoning.summary is not None:
+    if reasoning.summary is not None:
         data["summary"] = reasoning.summary
     return {"reasoning": data} if data else {}
 

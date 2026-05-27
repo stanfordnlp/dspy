@@ -65,7 +65,7 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
         tools=[_chat_shaped_weather_tool()],
         tool_choice={"type": "function", "function": {"name": "get_weather"}},
         parallel_tool_calls=False,
-        reasoning_effort="low",
+        reasoning={"effort": "low", "summary": "auto"},
         response_format=ContractSchema,
         max_tokens=123,
     )
@@ -99,6 +99,17 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
         "name": "ContractSchema",
         "schema": ContractSchema.model_json_schema(),
     }
+
+
+def test_openai_format_responses_request_preserves_unspecified_reasoning_summary():
+    request = LMRequest.from_call(
+        model="openai/gpt-5-mini",
+        messages=[{"role": "user", "content": "Say OK."}],
+        reasoning={"effort": "low"},
+    )
+
+    assert request.config.reasoning.summary is None
+    assert to_openai_responses_request(request)["reasoning"] == {"effort": "low"}
 
 
 def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls():

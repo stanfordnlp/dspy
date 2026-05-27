@@ -631,6 +631,12 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     if "max_completion_tokens" in request and "max_tokens" not in request:
         request["max_tokens"] = request.pop("max_completion_tokens")
 
+    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
+    # compatibility shim: requesting reasoning effort also asks OpenAI for an
+    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
+    if "reasoning_effort" in request and request.get("reasoning") is None:
+        request["reasoning"] = {"effort": request.pop("reasoning_effort"), "summary": "auto"}
+
     lm_request = LMRequest.from_call(model=model, messages=messages, tools=tools, **request)
     return to_openai_responses_request(lm_request)
 
