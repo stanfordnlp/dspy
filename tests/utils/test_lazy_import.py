@@ -1,3 +1,7 @@
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from dspy.utils.lazy_import import _INSTALL_HINTS, _detect_dspy_dist, _MissingModule, is_available, require
@@ -31,10 +35,47 @@ def test_require_returns_lazy_module_when_present():
 
 
 def test_require_returns_cached_module():
-    import sys
-
     mod = require("json")
     assert mod is sys.modules["json"]
+
+
+def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_threaded_module"
+    counter_path = tmp_path / "imports.txt"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text(
+        "import pathlib\n"
+        "import time\n"
+        "time.sleep(0.1)\n"
+        f"path = pathlib.Path({str(counter_path)!r})\n"
+        "path.write_text(path.read_text() + '1' if path.exists() else '1')\n"
+        "value = 42\n"
+    )
+
+    threads = 8
+    barrier = threading.Barrier(threads)
+
+    def read_value(_):
+        barrier.wait()
+        return require(module_name).value
+
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        assert list(executor.map(read_value, range(threads))) == [42] * threads
+
+    assert counter_path.read_text() == "1"
+
+
+def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_assignment_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+
+    mod = require(module_name)
+    mod.value = 2
+
+    assert sys.modules[module_name].value == 2
 
 
 def test_require_returns_stub_when_missing():
