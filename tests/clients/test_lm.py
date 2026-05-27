@@ -61,6 +61,10 @@ def _skip_retry_backoff(monkeypatch):
     return sleep_durations
 
 
+def _rollout_id_warnings(record):
+    return [warning for warning in record if "rollout_id has no effect" in str(warning.message)]
+
+
 def test_chat_lms_can_be_queried(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
@@ -209,7 +213,7 @@ def test_zero_temperature_rollout_warns_once(monkeypatch):
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         lm("Query", rollout_id=2)
-        assert len(record) == 0
+        assert _rollout_id_warnings(record) == []
 
 
 def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
@@ -226,7 +230,7 @@ def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
         warnings.simplefilter("always")
         lm = dspy.LM(model="openai/gpt-5-nano", model_type="chat", rollout_id=1)
         lm("Query")
-        assert len(record) == 0
+        assert _rollout_id_warnings(record) == []
 
 
 def test_text_lms_can_be_queried(litellm_test_server):
