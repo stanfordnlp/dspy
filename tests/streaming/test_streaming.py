@@ -14,7 +14,7 @@ from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
 
-REAL_LM_MAX_TOKENS = 64
+REAL_LM_MAX_TOKENS = 16
 
 
 @pytest.mark.anyio

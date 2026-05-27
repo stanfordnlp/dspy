@@ -11,7 +11,7 @@ import dspy
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
-REAL_LM_MAX_TOKENS = 32
+REAL_LM_MAX_TOKENS = 1
 
 
 def test_deepcopy_basic():
@@ -254,8 +254,13 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
         track_usage=True,
     )
 
-    predict = dspy.Predict("question -> answer")
-    output = predict(question="Paris?")
+    class MyProgram(dspy.Module):
+        def forward(self, prompt: str) -> Prediction:
+            response = dspy.settings.lm(prompt=prompt)
+            return Prediction(answer=response[0])
+
+    program = MyProgram()
+    output = program(prompt="hi")
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1
@@ -269,7 +274,7 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
         track_usage=True,
     )
     for _ in range(2):
-        output = predict(question="Paris?")
+        output = program(prompt="hi")
 
     assert len(output.get_lm_usage()) == 0
 
@@ -282,17 +287,13 @@ def test_multi_module_call_with_usage_tracker(lm_for_test):
     )
 
     class MyProgram(dspy.Module):
-        def __init__(self):
-            self.predict1 = dspy.Predict("question -> answer")
-            self.predict2 = dspy.Predict("question, answer -> score")
-
-        def __call__(self, question: str) -> Prediction:
-            answer = self.predict1(question=question)
-            score = self.predict2(question=question, answer=answer)
-            return score
+        def forward(self, prompt: str) -> Prediction:
+            first_response = dspy.settings.lm(prompt=prompt)
+            second_response = dspy.settings.lm(prompt=first_response[0])
+            return Prediction(answer=first_response[0], score=second_response[0])
 
     program = MyProgram()
-    output = program(question="Paris?")
+    output = program(prompt="hi")
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1

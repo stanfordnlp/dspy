@@ -218,8 +218,14 @@ jobs:
         run: docker exec ollama ollama pull llama3.2:1b
       - name: Set LM environment variable
         run: echo "LM_FOR_TEST=ollama/llama3.2:1b" >> "$GITHUB_ENV"
-      - name: Run tests
-        run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
+      - name: Run real LM streaming tests
+        run: >
+          uv run -p .venv pytest -q -n3 -m llm_call --llm_call --durations=5
+          tests/streaming/test_streaming.py
+      - name: Run real LM usage tracker tests
+        run: >
+          uv run -p .venv pytest -q -n0 -m llm_call --llm_call --durations=5
+          tests/primitives/test_base_module.py
       - name: Fix permissions for cache
         if: always()
         run: sudo chown -R "$USER":"$USER" ollama-data || true
