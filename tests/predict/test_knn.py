@@ -1,9 +1,10 @@
-import numpy as np
 import pytest
 
 import dspy
 from dspy.predict import KNN
 from dspy.utils import DummyVectorizer
+
+pytestmark = pytest.mark.extra
 
 
 def mock_example(question: str, answer: str) -> dspy.Example:
@@ -24,6 +25,8 @@ def setup_knn() -> KNN:
 
 def test_knn_initialization(setup_knn):
     """Tests the KNN initialization and checks if the trainset vectors are correctly created."""
+    import numpy as np
+
     knn = setup_knn
     assert knn.k == 2, "Incorrect k value"
     assert len(knn.trainset_vectors) == 3, "Incorrect size of trainset vectors"
