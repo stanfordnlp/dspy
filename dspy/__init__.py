@@ -7,6 +7,18 @@ from dspy.teleprompt import *
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStepAdapter, Image, Audio, File, History, Type, Tool, ToolCalls, ToolCallResults, Code, Reasoning  # isort: skip
+from dspy.core import (  # isort: skip
+    Assistant,
+    Developer,
+    LMConfig,
+    LMMessage,
+    LMRequest,
+    LMResponse,
+    System,
+    ToolCall,
+    ToolResult,
+    User,
+)
 from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
 from dspy.utils.exceptions import (
     AdapterParseError,
