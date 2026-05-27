@@ -12,16 +12,18 @@ real import until first attribute access:
 If the package is not installed, the first attribute access raises
 `ImportError` with an install hint.
 
-The lazy-load machinery is vendored from *lazy_loader* (BSD-3, Scientific
-Python team) and uses `importlib.util.LazyLoader` under the hood.
+Lazy modules are materialized under a per-module lock so concurrent first use
+cannot expose a partially initialized module.
 """
 
 import functools
 import importlib
+import importlib.machinery
 import importlib.metadata
 import importlib.util
 import inspect
 import sys
+import threading
 import types
 from typing import Any
 
@@ -46,6 +48,15 @@ _INSTALL_HINTS: dict[str, str] = {
 }
 
 
+_lazy_module_locks: dict[str, threading.RLock] = {}
+_lazy_module_locks_lock = threading.Lock()
+
+
+def _get_lazy_module_lock(module: str) -> threading.RLock:
+    with _lazy_module_locks_lock:
+        return _lazy_module_locks.setdefault(module, threading.RLock())
+
+
 class _MissingModule(types.ModuleType):
     """Stand-in returned by `require()` when a package is not installed.
 
@@ -68,6 +79,55 @@ class _MissingModule(types.ModuleType):
         )
 
 
+class _LazyModule(types.ModuleType):
+    """Module proxy that imports the real module on first attribute access.
+
+    Attribute assignment also materializes the real module so configuration writes apply to the real dependency.
+    """
+
+    def __init__(self, module: str, spec: importlib.machinery.ModuleSpec, lock: threading.RLock):
+        super().__init__(module)
+        self.__spec__ = spec
+        self.__loader__ = spec.loader
+        self.__package__ = spec.parent
+        if spec.submodule_search_locations is not None:
+            self.__path__ = spec.submodule_search_locations
+        self._dspy_lazy_spec = spec
+        self._dspy_lazy_lock = lock
+
+    def _load(self) -> types.ModuleType:
+        # The proxy starts in sys.modules, then the first attribute access swaps in and executes the real module under
+        # the per-module lock. If import fails, restore the proxy so later accesses can retry and still share the lock.
+        # Return sys.modules after execution because a module may replace itself while importing.
+        module_name = self.__name__
+        with self._dspy_lazy_lock:
+            loaded = sys.modules.get(module_name)
+            if loaded is not None and loaded is not self:
+                return loaded
+
+            spec = self._dspy_lazy_spec
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules[module_name] = self
+                raise
+            return sys.modules.get(module_name, module)
+
+    def __getattr__(self, attr: str) -> Any:
+        return getattr(self._load(), attr)
+
+    def __setattr__(self, attr: str, value: Any) -> None:
+        if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
+            super().__setattr__(attr, value)
+        else:
+            setattr(self._load(), attr, value)
+
+    def __dir__(self) -> list[str]:
+        return dir(self._load())
+
+
 @functools.cache
 def is_available(module: str) -> bool:
     """Return True if *module* can be imported, without actually importing it."""
@@ -84,8 +144,8 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
 
         np = require("numpy")
 
-    **Installed** -- returns a `LazyLoader`-wrapped module. The real import
-    happens on first attribute access; afterwards the object is a plain module.
+    **Installed** -- returns a `_LazyModule` proxy. The real import happens on first attribute access, guarded by a
+    per-module lock so concurrent first use cannot observe a partially initialized module.
 
     **Not installed** -- returns a `_MissingModule` stub. The first attribute
     access raises `ImportError` with a `pip install dspy[…]` hint and the
@@ -96,10 +156,12 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
         extra: Name of the dspy extra that provides this dep.
         feature: Label shown in the error (e.g. `"dspy.Embeddings"`).
     """
-    if module in sys.modules:
-        return sys.modules[module]
+    lock = _get_lazy_module_lock(module)
+    with lock:
+        if module in sys.modules:
+            return sys.modules[module]
 
-    spec = importlib.util.find_spec(module)
+        spec = importlib.util.find_spec(module)
     if spec is None or spec.loader is None:
         top = module.split(".", 1)[0]
         feat = feature or "this feature"
@@ -119,9 +181,10 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
         del parent
         return _MissingModule(module, message, frame_data)
 
-    loader = importlib.util.LazyLoader(spec.loader)
-    spec.loader = loader
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module] = mod
-    loader.exec_module(mod)
-    return mod
+    with lock:
+        if module in sys.modules:
+            return sys.modules[module]
+
+        mod = _LazyModule(module, spec, lock)
+        sys.modules[module] = mod
+        return mod
