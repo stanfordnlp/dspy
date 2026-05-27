@@ -2,7 +2,7 @@ import asyncio
 import copy
 import enum
 import logging
-import time
+import threading
 import types
 from datetime import datetime
 from unittest.mock import patch
@@ -810,10 +810,10 @@ def test_lm_usage():
 
 def test_lm_usage_with_parallel():
     program = Predict("question -> answer")
+    barrier = threading.Barrier(2, timeout=2)
 
     def program_wrapper(question):
-        # Sleep to make it possible to cause a race condition
-        time.sleep(0.5)
+        barrier.wait()
         return program(question=question)
 
     dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
@@ -841,9 +841,15 @@ async def test_lm_usage_with_async():
     program = Predict("question -> answer")
 
     original_aforward = program.aforward
+    entered = 0
+    all_entered = asyncio.Event()
 
     async def patched_aforward(self, **kwargs):
-        await asyncio.sleep(1)
+        nonlocal entered
+        entered += 1
+        if entered == 4:
+            all_entered.set()
+        await all_entered.wait()
         return await original_aforward(**kwargs)
 
     program.aforward = types.MethodType(patched_aforward, program)
@@ -862,7 +868,7 @@ async def test_lm_usage_with_async():
                 program.acall(question="What is the capital of France?"),
                 program.acall(question="What is the capital of France?"),
             ]
-            results = await asyncio.gather(*coroutines)
+            results = await asyncio.wait_for(asyncio.gather(*coroutines), timeout=2)
             assert results[0].answer == "Paris"
             assert results[1].answer == "Paris"
             assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10

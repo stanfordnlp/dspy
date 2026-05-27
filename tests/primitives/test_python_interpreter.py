@@ -10,65 +10,40 @@ from dspy.primitives.python_interpreter import PythonInterpreter
 pytestmark = pytest.mark.deno
 
 
-def test_execute_simple_code():
+def test_default_execution_behaviors():
+    # These default-sandbox cases share one interpreter because separate tests only
+    # duplicated Pyodide startup; the assertions still cover each behavior.
     with PythonInterpreter() as interpreter:
         code = "print('Hello, World!')"
         result = interpreter.execute(code)
         assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
 
-
-def test_import():
-    with PythonInterpreter() as interpreter:
         code = "import math\nresult = math.sqrt(4)\nresult"
         result = interpreter.execute(code)
         assert result == 2, "Should be able to import and use math.sqrt"
 
-
-def test_user_variable_definitions():
-    with PythonInterpreter() as interpreter:
         code = "result = number + 1\nresult"
         result = interpreter.execute(code, variables={"number": 4})
         assert result == 5, "User variable assignment should work"
 
-
-def test_rejects_python_keywords_as_variable_names():
-    """Test that Python keywords are rejected as variable names."""
-    with PythonInterpreter() as interpreter:
-        # These are valid Python identifiers but reserved keywords
-        # Using them as variable names would cause syntax errors
         keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
-
         for keyword in keywords_to_test:
             with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
                 interpreter.execute("print(x)", variables={keyword: 42})
 
-
-def test_failure_syntax_error():
-    with PythonInterpreter() as interpreter:
         code = "+++"
         with pytest.raises(SyntaxError, match="Invalid Python syntax"):
             interpreter.execute(code)
 
-
-def test_failure_zero_division():
-    with PythonInterpreter() as interpreter:
         code = "1+0/0"
         with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
-
-def test_exception_args():
-    with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
         with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
 
-
-def test_submit_with_list():
-    """Test SUBMIT() with a list argument returns FinalOutput with dict format."""
-
-    with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"SUBMIT(['The result is', {token}])"
         result = interpreter(code)
@@ -213,28 +188,62 @@ def test_tools_dict_is_copied():
     assert "new_tool" not in sandbox.tools
 
 
-def test_serialize_tuple():
-    """Test that tuples can be serialized as variables."""
+def test_variable_serialization_behaviors(monkeypatch):
+    # These all exercise variable serialization/injection. One sandbox preserves
+    # the same coverage without repeated Deno startups.
+    large_var_threshold = 1024
+    monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", large_var_threshold)
+
     with PythonInterpreter() as interpreter:
         result = interpreter.execute("x", variables={"x": (1, 2, 3)})
         assert result == [1, 2, 3]  # Tuples become lists in JSON
 
-
-def test_serialize_set():
-    """Test that sets can be serialized as variables."""
-    with PythonInterpreter() as interpreter:
         result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
         assert result == [1, 2, 3]
 
-
-def test_serialize_set_mixed_types():
-    """Test that sets with mixed types can be serialized (fallback to list)."""
-    with PythonInterpreter() as interpreter:
-        # Mixed types can't be sorted, so they serialize as a list in arbitrary order
-        # We verify the list contains the expected elements
         result = interpreter.execute("x", variables={"x": {1, "a"}})
         assert isinstance(result, list)
         assert set(result) == {1, "a"}
+
+        complex_data = {"tags": {1, 2, 3}, "coords": (10, 20), "nested": [{"inner_set": {"a", "b"}}]}
+        result = interpreter.execute("data", variables={"data": complex_data})
+        assert result["tags"] == [1, 2, 3]
+        assert result["coords"] == [10, 20]
+        assert result["nested"][0]["inner_set"] == ["a", "b"]
+
+        large_data = "x" * (large_var_threshold + 1024)
+        result = interpreter.execute("len(data)", variables={"data": large_data})
+        assert result == len(large_data), "Large variable should be correctly injected and accessible"
+
+        pattern = "ABCDEFGHIJ" * 100
+        patterned_data = pattern * ((large_var_threshold // len(pattern)) + 2)
+        code = """
+first_100 = data[:100]
+last_100 = data[-100:]
+(first_100, last_100)
+"""
+        result = interpreter.execute(code, variables={"data": patterned_data})
+        assert result[0] == patterned_data[:100], "First 100 chars should match"
+        assert result[1] == patterned_data[-100:], "Last 100 chars should match"
+
+        small_var = "hello"
+        large_var = "x" * (large_var_threshold + 1024)
+        code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
+        result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
+        expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
+        assert result == expected, "Both small and large variables should work together"
+
+        large_a = "a" * (large_var_threshold + 100)
+        large_b = "b" * (large_var_threshold + 200)
+        code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
+        result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
+        assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
+
+        num_elements = large_var_threshold // 3
+        large_list = ["x"] * num_elements
+        code = "(len(data), data[0], data[-1], type(data).__name__)"
+        result = interpreter.execute(code, variables={"data": large_list})
+        assert result == [num_elements, "x", "x", "list"]
 
 
 def test_deno_command_dict_raises_type_error():
@@ -248,54 +257,88 @@ def test_deno_command_dict_raises_type_error():
 # =============================================================================
 
 
-def test_tool_with_typed_signature():
-    """Test that tools get proper typed signatures from inspect."""
-
+def test_tool_call_behaviors():
+    # All of these cases exercise one registered tool bridge. Keeping them as
+    # separate tests repeated sandbox startup without adding isolation coverage.
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
-    with PythonInterpreter(tools={"my_tool": my_tool}) as sandbox:
-        # Tool should be callable with typed signature
-        result = sandbox.execute('my_tool(query="test", limit=5)')
-        assert result == "searched 'test' with limit 5"
-
-
-def test_tool_positional_args():
-    """Test that tools work with positional arguments."""
-
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
-
-    with PythonInterpreter(tools={"search": search}) as sandbox:
-        result = sandbox.execute('search("hello")')
-        assert result == "query=hello, limit=10"
-
-
-def test_tool_keyword_args():
-    """Test that tools work with keyword arguments."""
-
-    def search(query: str, limit: int = 10) -> str:
-        return f"query={query}, limit={limit}"
-
-    with PythonInterpreter(tools={"search": search}) as sandbox:
-        result = sandbox.execute('search(query="hello", limit=5)')
-        assert result == "query=hello, limit=5"
-
-
-def test_tool_default_args():
-    """Test that tool default arguments work correctly."""
 
     def greet(name: str, greeting: str = "Hello") -> str:
         return f"{greeting}, {name}!"
 
-    with PythonInterpreter(tools={"greet": greet}) as sandbox:
-        # Without default
+    def add(a: int, b: int, c: int) -> str:
+        return f"{a + b + c}"
+
+    def failing_tool(x: int) -> str:
+        raise ValueError(f"bad value: {x}")
+
+    async def slow_search(query: str) -> str:
+        await asyncio.sleep(0)
+        return f"answer:{query}"
+
+    async def failing_async(x: int) -> str:
+        await asyncio.sleep(0)
+        raise ValueError(f"boom:{x}")
+
+    with PythonInterpreter(
+        tools={
+            "my_tool": my_tool,
+            "search": search,
+            "greet": greet,
+            "add": add,
+            "failing_tool": failing_tool,
+            "slow_search": slow_search,
+            "failing_async": failing_async,
+        }
+    ) as sandbox:
+        result = sandbox.execute('my_tool(query="test", limit=5)')
+        assert result == "searched 'test' with limit 5"
+
+        result = sandbox.execute('search("hello")')
+        assert result == "query=hello, limit=10"
+
+        result = sandbox.execute('search(query="hello", limit=5)')
+        assert result == "query=hello, limit=5"
+
         result = sandbox.execute('greet("World")')
         assert result == "Hello, World!"
 
-        # Overriding default
         result = sandbox.execute('greet("World", "Hi")')
         assert result == "Hi, World!"
+
+        result = sandbox.execute("add(1, 2, 3)")
+        assert result == "6"
+
+        result = sandbox.execute("add(10, 20, c=30)")
+        assert result == "60"
+
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_tool(42)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "bad value: 42" in result
+
+        result = sandbox.execute("slow_search(query='hello')")
+        assert result == "answer:hello"
+
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_async(7)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "boom:7" in result
 
 
 def test_tools_re_register_after_process_restart():
@@ -343,138 +386,41 @@ def test_mounts_replay_after_process_restart(tmp_path):
         assert interpreter.deno_process.pid != first_pid
 
 
-def test_tool_all_positional_args():
-    """Test that tools work when all arguments are passed positionally."""
-
-    def add(a: int, b: int, c: int) -> str:
-        return f"{a + b + c}"
-
-    with PythonInterpreter(tools={"add": add}) as sandbox:
-        result = sandbox.execute("add(1, 2, 3)")
-        assert result == "6"
-
-        # Mixed: some positional, some keyword
-        result = sandbox.execute("add(10, 20, c=30)")
-        assert result == "60"
-
-
-def test_tool_error_surfaces_as_runtime_error():
-    """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
-
-    def failing_tool(x: int) -> str:
-        raise ValueError(f"bad value: {x}")
-
-    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
-        result = sandbox.execute(
-            "try:\n"
-            "    failing_tool(42)\n"
-            "    output = 'no error'\n"
-            "except RuntimeError as e:\n"
-            "    output = str(e)\n"
-            "output"
-        )
-        assert "ValueError" in result
-        assert "bad value: 42" in result
-
-
-def test_tool_async_def_function():
-    """async def tools should be awaited so the sandbox sees the resolved value."""
-
-    async def slow_search(query: str) -> str:
-        await asyncio.sleep(0)
-        return f"answer:{query}"
-
-    with PythonInterpreter(tools={"slow_search": slow_search}) as sandbox:
-        result = sandbox.execute("slow_search(query='hello')")
-        assert result == "answer:hello"
-
-
-def test_tool_async_def_raises_propagates():
-    """Exceptions raised inside an async tool should surface as RuntimeError in the sandbox."""
-
-    async def failing_async(x: int) -> str:
-        await asyncio.sleep(0)
-        raise ValueError(f"boom:{x}")
-
-    with PythonInterpreter(tools={"failing_async": failing_async}) as sandbox:
-        result = sandbox.execute(
-            "try:\n"
-            "    failing_async(7)\n"
-            "    output = 'no error'\n"
-            "except RuntimeError as e:\n"
-            "    output = str(e)\n"
-            "output"
-        )
-        assert "ValueError" in result
-        assert "boom:7" in result
-
-
 
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
 
 
-def test_submit_with_typed_signature():
-    """Test SUBMIT with typed output signature."""
-
-    output_fields = [
+def test_typed_submit_behaviors():
+    # Same typed SUBMIT bridge; combining avoids a Deno boot per calling style.
+    answer_confidence_fields = [
         {"name": "answer", "type": "str"},
         {"name": "confidence", "type": "float"},
     ]
-
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
+    with PythonInterpreter(output_fields=answer_confidence_fields) as sandbox:
         result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
-
         assert isinstance(result, FinalOutput)
         assert result.output == {"answer": "the answer", "confidence": 0.95}
 
-
-def test_submit_positional_args():
-    """Test SUBMIT with positional arguments."""
-
-    output_fields = [
-        {"name": "answer", "type": "str"},
-        {"name": "confidence", "type": "float"},
-    ]
-
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
         result = sandbox.execute('SUBMIT("the answer", 0.95)')
-
         assert isinstance(result, FinalOutput)
         assert result.output == {"answer": "the answer", "confidence": 0.95}
 
-
-def test_submit_multi_output():
-    """Test SUBMIT with multiple output fields using positional args."""
-
-    output_fields = [
+    answer_score_fields = [
         {"name": "answer", "type": "str"},
         {"name": "score", "type": "int"},
     ]
-
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
-        # Positional args: values mapped to output fields in order
+    with PythonInterpreter(output_fields=answer_score_fields) as sandbox:
         code = """
 a = "my answer"
 s = 42
 SUBMIT(a, s)
 """
         result = sandbox.execute(code)
-
         assert isinstance(result, FinalOutput)
         assert result.output == {"answer": "my answer", "score": 42}
 
-
-def test_submit_wrong_arg_count():
-    """Test SUBMIT with wrong number of args gives clear error."""
-
-    output_fields = [
-        {"name": "answer", "type": "str"},
-        {"name": "score", "type": "int"},
-    ]
-
-    with PythonInterpreter(output_fields=output_fields) as sandbox:
         with pytest.raises(CodeInterpreterError) as exc_info:
             sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
         assert "missing 1 required positional argument" in str(exc_info.value)
@@ -515,91 +461,6 @@ def test_extract_parameters_complex_types():
 # =============================================================================
 
 
-def test_large_variable_injection():
-    """Test that large strings are injected via filesystem to avoid Pyodide's FFI size limit."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
-    # Create a string just over the threshold
-    large_data = "x" * (LARGE_VAR_THRESHOLD + 1024)
-
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("len(data)", variables={"data": large_data})
-        assert result == len(large_data), "Large variable should be correctly injected and accessible"
-
-
-def test_large_variable_content_integrity():
-    """Test that large variable content is preserved exactly through filesystem injection."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
-    # Create a string with recognizable pattern just over threshold
-    pattern = "ABCDEFGHIJ" * 100
-    large_data = pattern * ((LARGE_VAR_THRESHOLD // len(pattern)) + 1)
-
-    with PythonInterpreter() as interpreter:
-        # Check first and last parts to verify content integrity
-        code = """
-first_100 = data[:100]
-last_100 = data[-100:]
-(first_100, last_100)
-"""
-        result = interpreter.execute(code, variables={"data": large_data})
-        assert result[0] == large_data[:100], "First 100 chars should match"
-        assert result[1] == large_data[-100:], "Last 100 chars should match"
-
-
-def test_mixed_small_and_large_variables():
-    """Test that small and large variables can be used together."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
-    small_var = "hello"
-    large_var = "x" * (LARGE_VAR_THRESHOLD + 1024)
-
-    with PythonInterpreter() as interpreter:
-        code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
-        result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
-        expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
-        assert result == expected, "Both small and large variables should work together"
-
-
-def test_multiple_large_variables():
-    """Test that multiple large variables can be injected."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
-    large_a = "a" * (LARGE_VAR_THRESHOLD + 100)
-    large_b = "b" * (LARGE_VAR_THRESHOLD + 200)
-
-    with PythonInterpreter() as interpreter:
-        code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
-        result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
-        assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
-
-
-def test_large_list_variable():
-    """Test that large list variables are injected via filesystem and JSON parsed."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
-    # Each element "x" serializes to ~3 chars, so divide threshold by 3
-    num_elements = LARGE_VAR_THRESHOLD // 3
-    large_list = ["x"] * num_elements
-
-    with PythonInterpreter() as interpreter:
-        code = "(len(data), data[0], data[-1], type(data).__name__)"
-        result = interpreter.execute(code, variables={"data": large_list})
-        assert result == [num_elements, "x", "x", "list"]
-
-
-def test_nested_sets_and_tuples():
-    """Test that nested structures with sets and tuples are converted to JSON-compatible types."""
-    complex_data = {"tags": {1, 2, 3}, "coords": (10, 20), "nested": [{"inner_set": {"a", "b"}}]}
-
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute("data", variables={"data": complex_data})
-        # Sets become sorted lists, tuples become lists
-        assert result["tags"] == [1, 2, 3]
-        assert result["coords"] == [10, 20]
-        assert result["nested"][0]["inner_set"] == ["a", "b"]
-
-
 def test_small_variable_not_using_filesystem():
     """Test that small variables are embedded in code, not using filesystem."""
     small_var = "small string"
@@ -611,17 +472,18 @@ def test_small_variable_not_using_filesystem():
     assert interpreter._pending_large_vars == {}, "Small variables should not be in _pending_large_vars"
 
 
-def test_large_variable_threshold_boundary():
+def test_large_variable_threshold_boundary(monkeypatch):
     """Test behavior at exactly the threshold boundary.
 
     The threshold applies to the serialized size, not the original value.
     For strings, serialization adds 2 bytes (quotes).
     """
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+    large_var_threshold = 1024
+    monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", large_var_threshold)
 
     # Serialized size at threshold - should use embedded (not filesystem)
     # Account for 2 bytes of quotes added by repr()
-    at_threshold = "x" * (LARGE_VAR_THRESHOLD - 2)
+    at_threshold = "x" * (large_var_threshold - 2)
 
     interpreter = PythonInterpreter()
     interpreter._pending_large_vars = {}
@@ -629,7 +491,7 @@ def test_large_variable_threshold_boundary():
     assert interpreter._pending_large_vars == {}, "Serialized size at threshold should be embedded"
 
     # Serialized size over threshold - should use filesystem
-    over_threshold = "x" * (LARGE_VAR_THRESHOLD - 1)
+    over_threshold = "x" * (large_var_threshold - 1)
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"

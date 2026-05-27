@@ -47,6 +47,7 @@ numpy = ["numpy>=1.26.0"]
 litellm = ["litellm>=1.64.0"]
 dev = [
     "pytest>=6.2.5",
+    "pytest-xdist>=3.8.0",
     "pytest-mock>=3.12.0",
     "pytest-asyncio>=0.26.0",
     "ruff>=0.3.0",
@@ -110,6 +111,7 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
+addopts = "-n 8 --dist=worksteal"
 filterwarnings = [
     # litellm uses deprecated pydantic config classes sometimes.
     # The issue has been fixed repeatedly, but still keeps showing up.

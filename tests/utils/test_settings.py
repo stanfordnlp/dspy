@@ -1,6 +1,6 @@
 import asyncio
 import sys
-import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
@@ -56,6 +56,7 @@ def test_dspy_context_parallel():
 
 def test_dspy_context_with_dspy_parallel():
     dspy.configure(lm=dspy.LM("openai/gpt-4o", cache=False), adapter=dspy.ChatAdapter())
+    barrier = threading.Barrier(2, timeout=2)
 
     class MyModule(dspy.Module):
         def __init__(self):
@@ -64,7 +65,7 @@ def test_dspy_context_with_dspy_parallel():
         def forward(self, question: str) -> str:
             lm = dspy.LM("openai/gpt-4o-mini", cache=False) if "France" in question else dspy.settings.lm
             with dspy.context(lm=lm):
-                time.sleep(1)
+                barrier.wait()
                 assert dspy.settings.lm.model == lm.model
                 return self.predict(question=question)
 
@@ -98,6 +99,9 @@ def test_dspy_context_with_dspy_parallel():
 
 @pytest.mark.asyncio
 async def test_dspy_context_with_async_task_group():
+    entered = 0
+    all_entered = asyncio.Event()
+
     class MyModule(dspy.Module):
         def __init__(self):
             self.predict = dspy.Predict("question -> answer")
@@ -109,7 +113,11 @@ async def test_dspy_context_with_async_task_group():
                 else dspy.LM("openai/gpt-4o", cache=False)
             )
             with dspy.context(lm=lm, trace=[]):
-                await asyncio.sleep(1)
+                nonlocal entered
+                entered += 1
+                if entered == 4:
+                    all_entered.set()
+                await all_entered.wait()
                 assert dspy.settings.lm.model == lm.model
                 result = await self.predict.acall(question=question)
                 assert len(dspy.settings.trace) == 1
@@ -133,7 +141,7 @@ async def test_dspy_context_with_async_task_group():
             ]
 
             # Run them concurrently and gather results
-            results = await asyncio.gather(*coroutines)
+            results = await asyncio.wait_for(asyncio.gather(*coroutines), timeout=2)
 
         assert results[0].answer == "Paris"
         assert results[1].answer == "Paris"
@@ -142,12 +150,9 @@ async def test_dspy_context_with_async_task_group():
 
         # Verify mock was called correctly
         assert mock_completion.call_count == 4
-        # France question uses gpt-4o-mini
-        assert mock_completion.call_args_list[0].kwargs["model"] == "openai/gpt-4o-mini"
-        assert mock_completion.call_args_list[1].kwargs["model"] == "openai/gpt-4o-mini"
-        # Germany question uses gpt-4o
-        assert mock_completion.call_args_list[2].kwargs["model"] == "openai/gpt-4o"
-        assert mock_completion.call_args_list[3].kwargs["model"] == "openai/gpt-4o"
+        models = [call.kwargs["model"] for call in mock_completion.call_args_list]
+        assert models.count("openai/gpt-4o-mini") == 2
+        assert models.count("openai/gpt-4o") == 2
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4.1"

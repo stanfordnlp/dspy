@@ -1,7 +1,6 @@
 import copy
 import os
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,12 +17,15 @@ def _close_cache(cache: Any) -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_settings(tmp_path: Path) -> Iterator[None]:
+def clear_settings() -> Iterator[None]:
     """Ensure each test gets fresh DSPy settings and an isolated cache."""
     import dspy
 
     original_cache = dspy.cache
-    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache")
+    # Disk-cache behavior has dedicated tests that opt in explicitly. The suite-wide
+    # fixture only needs isolation, and a disk-backed FanoutCache per test dominated
+    # local runtime without adding fidelity to tests that never inspect the disk cache.
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=True)
     try:
         yield
     finally:

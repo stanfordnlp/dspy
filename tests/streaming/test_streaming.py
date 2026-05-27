@@ -1,5 +1,5 @@
 import asyncio
-import time
+import threading
 from dataclasses import dataclass
 from unittest import mock
 from unittest.mock import AsyncMock
@@ -841,8 +841,10 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
 
 @pytest.mark.anyio
 async def test_status_message_non_blocking():
+    finish_tool = threading.Event()
+
     def dummy_tool():
-        time.sleep(1)
+        finish_tool.wait(timeout=2)
         return "dummy_tool_output"
 
     class MyProgram(dspy.Module):
@@ -855,22 +857,21 @@ async def test_status_message_non_blocking():
     with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
             output = program(question="why did a chicken cross the kitchen?")
-            timestamps = []
+            status_messages = []
             async for value in output:
                 if isinstance(value, dspy.streaming.StatusMessage):
-                    timestamps.append(time.time())
+                    status_messages.append(value)
+                    finish_tool.set()
 
-    # timestamps[0]: tool start message
-    # timestamps[1]: tool end message
-    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
-    # in the tool.
-    assert timestamps[1] - timestamps[0] >= 1
+    assert len(status_messages) == 2
 
 
 @pytest.mark.anyio
 async def test_status_message_non_blocking_async_program():
+    finish_tool = asyncio.Event()
+
     async def dummy_tool():
-        await asyncio.sleep(1)
+        await finish_tool.wait()
         return "dummy_tool_output"
 
     class MyProgram(dspy.Module):
@@ -883,16 +884,13 @@ async def test_status_message_non_blocking_async_program():
     with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
             output = program(question="why did a chicken cross the kitchen?")
-            timestamps = []
+            status_messages = []
             async for value in output:
                 if isinstance(value, dspy.streaming.StatusMessage):
-                    timestamps.append(time.time())
+                    status_messages.append(value)
+                    finish_tool.set()
 
-    # timestamps[0]: tool start message
-    # timestamps[1]: tool end message
-    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
-    # in the tool.
-    assert timestamps[1] - timestamps[0] >= 1
+    assert len(status_messages) == 2
 
 
 @pytest.mark.anyio

@@ -130,12 +130,14 @@ def test_multithread_evaluate_call():
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
-    # slow LM that sleeps for 1 second before returning the answer
+    lm_started = threading.Event()
+
     class SlowLM(DummyLM):
         def __call__(self, *args, **kwargs):
             import time
 
-            time.sleep(1)
+            lm_started.set()
+            time.sleep(0.05)
             return super().__call__(*args, **kwargs)
 
     dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
@@ -143,14 +145,12 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
+    lm_started.clear()
 
-    # spawn a thread that will sleep for .1 seconds then send a KeyboardInterrupt
     def sleep_then_interrupt():
-        import time
-
-        time.sleep(0.1)
         import os
 
+        assert lm_started.wait(timeout=2)
         os.kill(os.getpid(), signal.SIGINT)
 
     input_thread = threading.Thread(target=sleep_then_interrupt)
@@ -422,4 +422,3 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
-

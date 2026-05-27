@@ -1,6 +1,5 @@
 import asyncio
-import math
-from time import sleep, time
+import threading
 
 import pytest
 
@@ -22,31 +21,41 @@ async def test_async_limiter():
 
 @pytest.mark.anyio
 async def test_asyncify():
-    def the_answer_to_life_the_universe_and_everything(wait: float):
-        sleep(wait)
+    def the_answer_to_life_the_universe_and_everything(started, release):
+        with active_lock:
+            active_workers[0] += 1
+            max_active_workers[0] = max(max_active_workers[0], active_workers[0])
+            if active_workers[0] == capacity:
+                started.set()
+
+        release.wait(timeout=2)
+
+        with active_lock:
+            active_workers[0] -= 1
         return 42
 
     ask_the_question = dspy.asyncify(the_answer_to_life_the_universe_and_everything)
+    capacity = 4
+    active_lock = threading.Lock()
+    active_workers = [0]
+    max_active_workers = [0]
+    first_batch_started = threading.Event()
+    release_workers = threading.Event()
 
-    async def run_n_tasks(n: int, wait: float):
-        await asyncio.gather(*[ask_the_question(wait) for _ in range(n)])
-
-    async def verify_asyncify(capacity: int, number_of_tasks: int, wait: float = 0.5):
+    async def run_tasks():
         with dspy.context(async_max_workers=capacity):
-            start = time()
-            await run_n_tasks(number_of_tasks, wait)
-            end = time()
-            total_time = end - start
+            return await asyncio.gather(
+                *[
+                    ask_the_question(first_batch_started, release_workers)
+                    for _ in range(capacity * 2)
+                ]
+            )
 
-        # If asyncify is working correctly, the total time should be less than the total number of loops
-        # `(number_of_tasks / capacity)` times wait time, plus the computational overhead. The lower bound should
-        # be `math.floor(number_of_tasks * 1.0 / capacity) * wait` because there are more than
-        # `math.floor(number_of_tasks * 1.0 / capacity)` loops.
-        lower_bound = math.floor(number_of_tasks * 1.0 / capacity) * wait
-        upper_bound = math.ceil(number_of_tasks * 1.0 / capacity) * wait + 2 * wait  # 2*wait for buffer
+    tasks = asyncio.create_task(run_tasks())
+    await asyncio.to_thread(first_batch_started.wait, 2)
+    assert first_batch_started.is_set(), "The first asyncify worker batch should start"
+    assert max_active_workers[0] == capacity
 
-        assert lower_bound < total_time < upper_bound
-
-    await verify_asyncify(4, 10)
-    await verify_asyncify(8, 15)
-    await verify_asyncify(8, 30)
+    release_workers.set()
+    assert await asyncio.wait_for(tasks, timeout=2) == [42] * (capacity * 2)
+    assert max_active_workers[0] == capacity

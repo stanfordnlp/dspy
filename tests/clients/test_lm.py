@@ -346,8 +346,9 @@ def test_retry_number_set_correctly():
     assert mock_completion.call_args.kwargs["num_retries"] == 3
 
 
-def test_retry_made_on_system_errors():
+def test_retry_made_on_system_errors(monkeypatch):
     retry_tracking = [0]  # Using a list to track retries
+    monkeypatch.setattr(time, "sleep", lambda _: None)
 
     def mock_create(*args, **kwargs):
         retry_tracking[0] += 1
@@ -624,11 +625,11 @@ def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
     assert calls == [True]
 
 
-def test_exponential_backoff_retry():
-    time_counter = []
+def test_exponential_backoff_retry(monkeypatch):
+    sleep_durations = []
+    monkeypatch.setattr(time, "sleep", sleep_durations.append)
 
     def mock_create(*args, **kwargs):
-        time_counter.append(time.time())
         # These fields are called during the error handling
         mock_response = mock.Mock()
         mock_response.headers = {}
@@ -640,9 +641,7 @@ def test_exponential_backoff_retry():
         with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
-    # The first retry happens immediately regardless of the configuration
-    for i in range(1, len(time_counter) - 1):
-        assert time_counter[i + 1] - time_counter[i] >= 2 ** (i - 1)
+    assert sleep_durations == [1, 2]
 
 
 def test_logprobs_included_when_requested():

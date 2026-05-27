@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import threading
 from unittest.mock import patch
 
@@ -133,7 +132,8 @@ def test_save_with_extra_modules(tmp_path):
     import sys
 
     # Create a temporary Python file with our custom module
-    custom_module_path = tmp_path / "custom_module.py"
+    module_name = "custom_base_module"
+    custom_module_path = tmp_path / f"{module_name}.py"
     with open(custom_module_path, "w") as f:
         f.write("""
 import dspy
@@ -149,13 +149,13 @@ class MyModule(dspy.Module):
     # Add the tmp_path to Python path so we can import the module
     sys.path.insert(0, str(tmp_path))
     try:
-        import custom_module
+        custom_module = __import__(module_name)
 
         cot = custom_module.MyModule()
 
         cot.save(tmp_path, save_program=True)
         # Remove the custom module from sys.modules to simulate it not being available
-        sys.modules.pop("custom_module", None)
+        sys.modules.pop(module_name, None)
         # Also remove it from sys.path
         sys.path.remove(str(tmp_path))
         del custom_module
@@ -165,7 +165,7 @@ class MyModule(dspy.Module):
             dspy.load(tmp_path, allow_pickle=True)
 
         sys.path.insert(0, str(tmp_path))
-        import custom_module
+        custom_module = __import__(module_name)
 
         cot.save(
             tmp_path,
@@ -174,7 +174,7 @@ class MyModule(dspy.Module):
         )
 
         # Remove the custom module from sys.modules to simulate it not being available
-        sys.modules.pop("custom_module", None)
+        sys.modules.pop(module_name, None)
         # Also remove it from sys.path
         sys.path.remove(str(tmp_path))
         del custom_module
@@ -291,8 +291,6 @@ def test_multi_module_call_with_usage_tracker(lm_for_test):
     assert lm_usage[lm_for_test]["total_tokens"] > 0
 
 
-# TODO: prepare second model for testing this unit test in ci
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
 def test_usage_tracker_in_parallel():
     class MyProgram(dspy.Module):
         def __init__(self, lm):
@@ -312,18 +310,31 @@ def test_usage_tracker_in_parallel():
 
     parallelizer = dspy.Parallel()
 
-    results = parallelizer(
-        [
-            (program1, {"question": "What is the meaning of life?"}),
-            (program2, {"question": "why did a chicken cross the kitchen?"}),
-        ]
-    )
+    def fake_completion(*args, **kwargs):
+        prompt = kwargs["messages"][-1]["content"]
+        if "[[ ## score ## ]]" in prompt:
+            content = "[[ ## reasoning ## ]]\nmock\n\n[[ ## score ## ]]\n1"
+        else:
+            content = "[[ ## reasoning ## ]]\nmock\n\n[[ ## answer ## ]]\n42"
+        return ModelResponse(
+            choices=[Choices(message=Message(content=content))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model=kwargs["model"],
+        )
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        results = parallelizer(
+            [
+                (program1, {"question": "What is the meaning of life?"}),
+                (program2, {"question": "why did a chicken cross the kitchen?"}),
+            ]
+        )
 
     assert results[0].get_lm_usage() is not None
     assert results[1].get_lm_usage() is not None
 
-    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
-    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+    assert results[0].get_lm_usage().keys() == {"openai/gpt-4o-mini"}
+    assert results[1].get_lm_usage().keys() == {"openai/gpt-3.5-turbo"}
 
 
 @pytest.mark.asyncio
