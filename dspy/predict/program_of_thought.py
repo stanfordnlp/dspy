@@ -60,6 +60,7 @@ class ProgramOfThought(Module):
             ),
         )
         # It will raises exception when dspy cannot find available deno instance by now.
+        self._owns_interpreter = interpreter is None
         self.interpreter = interpreter or PythonInterpreter()
 
     def _generate_signature(self, mode):
@@ -154,6 +155,10 @@ class ProgramOfThought(Module):
         except Exception as e:
             return None, str(e)
 
+    def _shutdown_interpreter_if_owned(self):
+        if self._owns_interpreter:
+            self.interpreter.shutdown()
+
     def forward(self, **kwargs):
         input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
         code_data = self.code_generate(**input_kwargs)
@@ -166,7 +171,7 @@ class ProgramOfThought(Module):
         while error is not None:
             logger.error(f"Error in code execution: {error}")
             if hop == self.max_iters:
-                self.interpreter.shutdown()
+                self._shutdown_interpreter_if_owned()
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
@@ -176,5 +181,5 @@ class ProgramOfThought(Module):
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
         output_gen_result = self.generate_output(**input_kwargs)
-        self.interpreter.shutdown()
+        self._shutdown_interpreter_if_owned()
         return output_gen_result

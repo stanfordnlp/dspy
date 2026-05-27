@@ -66,6 +66,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
+        self._owns_interpreter = interpreter is None
         self.interpreter = interpreter or PythonInterpreter()
 
     def _build_instructions(self, signature, tools):
@@ -115,5 +116,5 @@ class CodeAct(ReAct, ProgramOfThought):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
+        self._shutdown_interpreter_if_owned()
         return dspy.Prediction(trajectory=trajectory, **extract)

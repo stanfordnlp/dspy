@@ -10,11 +10,35 @@ from dspy.primitives.python_interpreter import PythonInterpreter
 pytestmark = pytest.mark.deno
 
 
-def test_default_execution_behaviors(monkeypatch):
+def test_default_execution_and_denied_access_behaviors(monkeypatch, tmp_path):
     # These default-sandbox cases share one interpreter because separate tests only
     # duplicated Pyodide startup; the assertions still cover each behavior.
     large_var_threshold = 1024
     monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", large_var_threshold)
+
+    os.environ["FOO_TEST_ENV"] = "test_value"
+    test_url = "https://example.com"
+
+    read_file = tmp_path / "test_temp_file.txt"
+    read_file.write_text("test content")
+    read_virtual_path = f"/sandbox/{read_file.name}"
+
+    write_file = tmp_path / "test_temp_output.txt"
+    write_virtual_path = f"/sandbox/{write_file.name}"
+
+    secret_file = tmp_path / "secret.txt"
+    secret_content = "This is a secret content"
+    secret_file.write_text(secret_content)
+    secret_path_str = str(secret_file.absolute())
+
+    malicious_code = f"""
+import js
+try:
+    content = js.Deno.readTextFileSync('{secret_path_str}')
+    print(content)
+except Exception as e:
+    print(f"Error: {{e}}")
+"""
 
     with PythonInterpreter() as interpreter:
         code = "print('Hello, World!')"
@@ -105,33 +129,6 @@ last_100 = data[-100:]
         result = interpreter.execute(code, variables={"data": large_list})
         assert result == [num_elements, "x", "x", "list"]
 
-
-def test_access_control_behaviors(tmp_path):
-    os.environ["FOO_TEST_ENV"] = "test_value"
-    test_url = "https://example.com"
-
-    read_file = tmp_path / "test_temp_file.txt"
-    read_file.write_text("test content")
-    read_virtual_path = f"/sandbox/{read_file.name}"
-
-    write_file = tmp_path / "test_temp_output.txt"
-    write_virtual_path = f"/sandbox/{write_file.name}"
-
-    secret_file = tmp_path / "secret.txt"
-    secret_content = "This is a secret content"
-    secret_file.write_text(secret_content)
-    secret_path_str = str(secret_file.absolute())
-
-    malicious_code = f"""
-import js
-try:
-    content = js.Deno.readTextFileSync('{secret_path_str}')
-    print(content)
-except Exception as e:
-    print(f"Error: {{e}}")
-"""
-
-    with PythonInterpreter() as interpreter:
         code = "import os\nresult = os.getenv('FOO_TEST_ENV')\nresult"
         result = interpreter.execute(code)
         assert result == "", "Environment variables should be inaccessible without allow-env"
@@ -171,70 +168,56 @@ except Exception as e:
         with pytest.raises(CodeInterpreterError, match="PythonError"):
             interpreter.execute(code)
 
-    with PythonInterpreter(
-        enable_env_vars=["FOO_TEST_ENV"],
-        enable_read_paths=[str(read_file), secret_path_str],
-        enable_write_paths=[str(write_file)],
-        enable_network_access=["example.com"],
-    ) as interpreter:
-        code = "import os\nresult = os.getenv('FOO_TEST_ENV')\nresult"
-        result = interpreter.execute(code)
-        assert result == "test_value", "Environment variables should be accessible with allow-env"
 
-        code = f"with open({read_virtual_path!r}, 'r') as f:\n    data = f.read()\ndata"
-        result = interpreter.execute(code)
-        assert result == "test content", "Test file should be accessible with enable_read_paths and specified file"
+def test_enabled_access_control_behaviors(tmp_path):
+    os.environ["FOO_TEST_ENV"] = "test_value"
+    test_url = "https://example.com"
 
-        code = f"with open({write_virtual_path!r}, 'w') as f:\n    f.write('allowed')\n'ok'"
-        result = interpreter.execute(code)
-        assert result == "ok", "Test file should be writable with enable_write_paths"
+    read_file = tmp_path / "test_temp_file.txt"
+    read_file.write_text("test content")
+    read_virtual_path = f"/sandbox/{read_file.name}"
 
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        result = interpreter.execute(code)
-        assert int(result) == 200, "Network access is permitted with enable_network_access"
+    write_file = tmp_path / "test_temp_output.txt"
+    write_virtual_path = f"/sandbox/{write_file.name}"
 
-        output = interpreter(malicious_code)
-        assert secret_content in output
+    real_file = tmp_path / "real_name.txt"
+    real_file.write_text("through symlink")
+    link_file = tmp_path / "link_name.txt"
+    try:
+        link_file.symlink_to(real_file)
+    except (OSError, NotImplementedError):
+        link_file = None
 
-    assert write_file.exists()
-    with open(write_file) as f:
-        assert f.read() == "allowed", "Test file outputs should match content written during execution"
+    file1 = tmp_path / "test1.txt"
+    file2 = tmp_path / "test2.txt"
+    file3 = tmp_path / "test3.txt"
+    file1.write_text("Content 1")
+    file2.write_text("Content 2")
+    file3.write_text("Content 3")
 
-    write_file.write_text("original_content")
-    with PythonInterpreter(enable_write_paths=[str(write_file)], sync_files=False) as interpreter:
-        code = f"with open({write_virtual_path!r}, 'w') as f:\n    f.write('should_not_sync')\n'done_no_sync'"
-        result = interpreter.execute(code)
-        assert result == "done_no_sync"
-    with open(write_file) as f:
-        assert f.read() == "original_content", "File should not be changed when sync_files is False"
+    secret_file = tmp_path / "secret.txt"
+    secret_content = "This is a secret content"
+    secret_file.write_text(secret_content)
+    secret_path_str = str(secret_file.absolute())
 
+    malicious_code = f"""
+import js
+try:
+    content = js.Deno.readTextFileSync('{secret_path_str}')
+    print(content)
+except Exception as e:
+    print(f"Error: {{e}}")
+"""
 
-def test_tools_dict_is_copied():
-    """Test that tools dict is defensively copied, not stored by reference."""
-    tools = {"my_tool": lambda: "result"}
-    sandbox = PythonInterpreter(tools=tools)
+    answer_confidence_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "confidence", "type": "float"},
+    ]
+    answer_score_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "score", "type": "int"},
+    ]
 
-    # Modify the original dict after construction
-    tools["new_tool"] = lambda: "new"
-
-    # The sandbox should not see the new tool
-    assert "new_tool" not in sandbox.tools
-
-
-def test_deno_command_dict_raises_type_error():
-    """Test that passing a dict as deno_command raises TypeError."""
-    with pytest.raises(TypeError, match="deno_command must be a list"):
-        PythonInterpreter(deno_command={"invalid": "dict"})
-
-
-# =============================================================================
-# Typed Tool Signature Tests
-# =============================================================================
-
-
-def test_tool_call_and_restart_behaviors(tmp_path):
-    # All of these cases exercise one registered tool bridge. Keeping them as
-    # separate tests repeated sandbox startup without adding isolation coverage.
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
@@ -263,10 +246,19 @@ def test_tool_call_and_restart_behaviors(tmp_path):
 
     host_file = tmp_path / "mount_restart.txt"
     host_file.write_text("restarted-ok")
-    virtual_path = f"/sandbox/{host_file.name}"
+    host_virtual_path = f"/sandbox/{host_file.name}"
+
+    read_paths = [str(read_file), secret_path_str, str(file1), str(file2), str(file3)]
+    if link_file is not None:
+        read_paths.append(str(link_file))
+    read_paths.append(str(host_file))
 
     with PythonInterpreter(
-        enable_read_paths=[str(host_file)],
+        output_fields=answer_confidence_fields,
+        enable_env_vars=["FOO_TEST_ENV"],
+        enable_read_paths=read_paths,
+        enable_write_paths=[str(write_file)],
+        enable_network_access=["example.com"],
         tools={
             "my_tool": my_tool,
             "search": search,
@@ -276,30 +268,86 @@ def test_tool_call_and_restart_behaviors(tmp_path):
             "slow_search": slow_search,
             "failing_async": failing_async,
             "echo": echo,
-        }
-    ) as sandbox:
-        result = sandbox.execute('my_tool(query="test", limit=5)')
+        },
+    ) as interpreter:
+        code = "import os\nresult = os.getenv('FOO_TEST_ENV')\nresult"
+        result = interpreter.execute(code)
+        assert result == "test_value", "Environment variables should be accessible with allow-env"
+
+        code = f"with open({read_virtual_path!r}, 'r') as f:\n    data = f.read()\ndata"
+        result = interpreter.execute(code)
+        assert result == "test content", "Test file should be accessible with enable_read_paths and specified file"
+
+        code = f"with open({write_virtual_path!r}, 'w') as f:\n    f.write('allowed')\n'ok'"
+        result = interpreter.execute(code)
+        assert result == "ok", "Test file should be writable with enable_write_paths"
+
+        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
+        result = interpreter.execute(code)
+        assert int(result) == 200, "Network access is permitted with enable_network_access"
+
+        output = interpreter(malicious_code)
+        assert secret_content in output
+
+        if link_file is not None:
+            allow_read_arg = next(a for a in interpreter.deno_command if a.startswith("--allow-read="))
+            allow_read = allow_read_arg[len("--allow-read="):].split(",")
+            assert os.path.realpath(str(real_file)) in allow_read
+            assert str(link_file) not in allow_read
+
+            result = interpreter.execute("with open('/sandbox/link_name.txt') as f:\n    data = f.read()\ndata")
+            assert result == "through symlink"
+
+        code = (
+            "import os\n"
+            "files = sorted(os.listdir('/sandbox'))\n"
+            "contents = {}\n"
+            "for f in files:\n"
+            "    with open(f'/sandbox/{f}') as fh:\n"
+            "        contents[f] = fh.read()\n"
+            "(files, contents)"
+        )
+        result = interpreter.execute(code)
+        files, contents = result
+        expected_files = ["test1.txt", "test2.txt", "test3.txt"]
+        if link_file is not None:
+            expected_files = ["link_name.txt", *expected_files]
+            assert contents["link_name.txt"] == "through symlink"
+        assert set(expected_files).issubset(files), "All expected files should be mounted"
+        assert contents["test1.txt"] == "Content 1"
+        assert contents["test2.txt"] == "Content 2"
+        assert contents["test3.txt"] == "Content 3"
+
+        result = interpreter.execute('SUBMIT(answer="the answer", confidence=0.95)')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
+
+        result = interpreter.execute('SUBMIT("the answer", 0.95)')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
+
+        result = interpreter.execute('my_tool(query="test", limit=5)')
         assert result == "searched 'test' with limit 5"
 
-        result = sandbox.execute('search("hello")')
+        result = interpreter.execute('search("hello")')
         assert result == "query=hello, limit=10"
 
-        result = sandbox.execute('search(query="hello", limit=5)')
+        result = interpreter.execute('search(query="hello", limit=5)')
         assert result == "query=hello, limit=5"
 
-        result = sandbox.execute('greet("World")')
+        result = interpreter.execute('greet("World")')
         assert result == "Hello, World!"
 
-        result = sandbox.execute('greet("World", "Hi")')
+        result = interpreter.execute('greet("World", "Hi")')
         assert result == "Hi, World!"
 
-        result = sandbox.execute("add(1, 2, 3)")
+        result = interpreter.execute("add(1, 2, 3)")
         assert result == "6"
 
-        result = sandbox.execute("add(10, 20, c=30)")
+        result = interpreter.execute("add(10, 20, c=30)")
         assert result == "60"
 
-        result = sandbox.execute(
+        result = interpreter.execute(
             "try:\n"
             "    failing_tool(42)\n"
             "    output = 'no error'\n"
@@ -310,10 +358,10 @@ def test_tool_call_and_restart_behaviors(tmp_path):
         assert "ValueError" in result
         assert "bad value: 42" in result
 
-        result = sandbox.execute("slow_search(query='hello')")
+        result = interpreter.execute("slow_search(query='hello')")
         assert result == "answer:hello"
 
-        result = sandbox.execute(
+        result = interpreter.execute(
             "try:\n"
             "    failing_async(7)\n"
             "    output = 'no error'\n"
@@ -324,67 +372,76 @@ def test_tool_call_and_restart_behaviors(tmp_path):
         assert "ValueError" in result
         assert "boom:7" in result
 
-        first_echo = sandbox.execute('print(echo(message="one"))')
+        first_echo = interpreter.execute('print(echo(message="one"))')
         assert "Echo: one" in first_echo
-        first_mount = sandbox.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
+        first_mount = interpreter.execute(
+            f"with open({host_virtual_path!r}, 'r') as f:\n"
             f"    data = f.read()\n"
             f"data"
         )
         assert first_mount == "restarted-ok"
 
-        first_pid = sandbox.deno_process.pid
-        sandbox.deno_process.kill()
-        sandbox.deno_process.wait()
+        first_pid = interpreter.deno_process.pid
+        interpreter.deno_process.kill()
+        interpreter.deno_process.wait()
 
-        second_echo = sandbox.execute('print(echo(message="two"))')
+        second_echo = interpreter.execute('print(echo(message="two"))')
         assert "Echo: two" in second_echo
-        second_mount = sandbox.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
+        second_mount = interpreter.execute(
+            f"with open({host_virtual_path!r}, 'r') as f:\n"
             f"    data = f.read()\n"
             f"data"
         )
         assert second_mount == "restarted-ok"
-        assert sandbox.deno_process.pid != first_pid
+        assert interpreter.deno_process.pid != first_pid
 
+    assert write_file.exists()
+    with open(write_file) as f:
+        assert f.read() == "allowed", "Test file outputs should match content written during execution"
 
-# =============================================================================
-# Multi-Output SUBMIT Tests
-# =============================================================================
+    write_file.write_text("original_content")
+    with PythonInterpreter(
+        output_fields=answer_score_fields,
+        enable_write_paths=[str(write_file)],
+        sync_files=False,
+    ) as interpreter:
+        code = f"with open({write_virtual_path!r}, 'w') as f:\n    f.write('should_not_sync')\n'done_no_sync'"
+        result = interpreter.execute(code)
+        assert result == "done_no_sync"
 
-
-def test_typed_submit_behaviors():
-    # Same typed SUBMIT bridge; combining avoids a Deno boot per calling style.
-    answer_confidence_fields = [
-        {"name": "answer", "type": "str"},
-        {"name": "confidence", "type": "float"},
-    ]
-    with PythonInterpreter(output_fields=answer_confidence_fields) as sandbox:
-        result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
-        assert isinstance(result, FinalOutput)
-        assert result.output == {"answer": "the answer", "confidence": 0.95}
-
-        result = sandbox.execute('SUBMIT("the answer", 0.95)')
-        assert isinstance(result, FinalOutput)
-        assert result.output == {"answer": "the answer", "confidence": 0.95}
-
-    answer_score_fields = [
-        {"name": "answer", "type": "str"},
-        {"name": "score", "type": "int"},
-    ]
-    with PythonInterpreter(output_fields=answer_score_fields) as sandbox:
         code = """
 a = "my answer"
 s = 42
 SUBMIT(a, s)
 """
-        result = sandbox.execute(code)
+        result = interpreter.execute(code)
         assert isinstance(result, FinalOutput)
         assert result.output == {"answer": "my answer", "score": 42}
 
         with pytest.raises(CodeInterpreterError) as exc_info:
-            sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
+            interpreter.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
         assert "missing 1 required positional argument" in str(exc_info.value)
+
+    with open(write_file) as f:
+        assert f.read() == "original_content", "File should not be changed when sync_files is False"
+
+
+def test_tools_dict_is_copied():
+    """Test that tools dict is defensively copied, not stored by reference."""
+    tools = {"my_tool": lambda: "result"}
+    sandbox = PythonInterpreter(tools=tools)
+
+    # Modify the original dict after construction
+    tools["new_tool"] = lambda: "new"
+
+    # The sandbox should not see the new tool
+    assert "new_tool" not in sandbox.tools
+
+
+def test_deno_command_dict_raises_type_error():
+    """Test that passing a dict as deno_command raises TypeError."""
+    with pytest.raises(TypeError, match="deno_command must be a list"):
+        PythonInterpreter(deno_command={"invalid": "dict"})
 
 
 def test_extract_parameters():
@@ -456,56 +513,3 @@ def test_large_variable_threshold_boundary(monkeypatch):
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
-
-
-def test_enable_read_paths_symlink_and_multiple_files(tmp_path):
-    """Regression test for #9501: symlinked enable_read_paths must resolve so Deno
-    can read through them (denoland/deno#9607 — Deno prefix-matches against the
-    realpath of the file being read). The sandbox virtual path keeps the user's
-    original basename so user code refers to the file by the name passed in.
-
-    This also verifies that mounting multiple files to /sandbox/ works when the
-    second file is mounted; Pyodide's ErrnoError has errno but no message property,
-    which previously broke that path.
-    """
-    real_file = tmp_path / "real_name.txt"
-    real_file.write_text("through symlink")
-    link_file = tmp_path / "link_name.txt"
-    try:
-        link_file.symlink_to(real_file)
-    except (OSError, NotImplementedError) as exc:
-        pytest.skip(f"symlink creation unavailable: {exc}")
-
-    file1 = tmp_path / "test1.txt"
-    file2 = tmp_path / "test2.txt"
-    file3 = tmp_path / "test3.txt"
-    file1.write_text("Content 1")
-    file2.write_text("Content 2")
-    file3.write_text("Content 3")
-
-    with PythonInterpreter(enable_read_paths=[str(link_file), str(file1), str(file2), str(file3)]) as interp:
-        allow_read_arg = next(a for a in interp.deno_command if a.startswith("--allow-read="))
-        allow_read = allow_read_arg[len("--allow-read="):].split(",")
-        assert os.path.realpath(str(real_file)) in allow_read
-        assert str(link_file) not in allow_read
-
-        result = interp.execute("with open('/sandbox/link_name.txt') as f:\n    data = f.read()\ndata")
-        assert result == "through symlink"
-
-        code = (
-            "import os\n"
-            "files = sorted(os.listdir('/sandbox'))\n"
-            "contents = {}\n"
-            "for f in files:\n"
-            "    with open(f'/sandbox/{f}') as fh:\n"
-            "        contents[f] = fh.read()\n"
-            "(files, contents)"
-        )
-        result = interp.execute(code)
-        files, contents = result
-
-        assert files == ["link_name.txt", "test1.txt", "test2.txt", "test3.txt"], "All four files should be mounted"
-        assert contents["link_name.txt"] == "through symlink"
-        assert contents["test1.txt"] == "Content 1"
-        assert contents["test2.txt"] == "Content 2"
-        assert contents["test3.txt"] == "Content 3"

@@ -4,6 +4,7 @@ import pytest
 
 import dspy
 from dspy import ProgramOfThought, Signature
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.utils import DummyLM
 
 
@@ -13,7 +14,16 @@ class BasicQA(Signature):
 
 
 @pytest.mark.deno
-def test_pot_code_generation():
+def test_pot_real_interpreter_cases():
+    with PythonInterpreter() as interpreter:
+        _assert_pot_code_generation(interpreter)
+        _assert_old_style_pot(interpreter)
+        _assert_pot_support_multiple_fields(interpreter)
+        _assert_pot_code_generation_with_one_error(interpreter)
+        _assert_pot_code_generation_persistent_errors(interpreter)
+
+
+def _assert_pot_code_generation(interpreter):
     lm = DummyLM(
         [
             {
@@ -24,15 +34,14 @@ def test_pot_code_generation():
         ]
     )
     dspy.configure(lm=lm)
-    pot = ProgramOfThought(BasicQA)
+    pot = ProgramOfThought(BasicQA, interpreter=interpreter)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
+    assert pot.interpreter.deno_process is not None
 
 
 # This test ensures the old finetuned saved models still work
-@pytest.mark.deno
-def test_old_style_pot():
+def _assert_old_style_pot(interpreter):
     lm = DummyLM(
         [
             {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
@@ -40,10 +49,10 @@ def test_old_style_pot():
         ]
     )
     dspy.configure(lm=lm)
-    pot = ProgramOfThought(BasicQA)
+    pot = ProgramOfThought(BasicQA, interpreter=interpreter)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
+    assert pot.interpreter.deno_process is not None
 
 
 class ExtremumFinder(Signature):
@@ -52,8 +61,7 @@ class ExtremumFinder(Signature):
     minimum = dspy.OutputField(desc="The minimum of the given numbers")
 
 
-@pytest.mark.deno
-def test_pot_support_multiple_fields():
+def _assert_pot_support_multiple_fields(interpreter):
     lm = DummyLM(
         [
             {
@@ -64,15 +72,14 @@ def test_pot_support_multiple_fields():
         ]
     )
     dspy.configure(lm=lm)
-    pot = ProgramOfThought(ExtremumFinder)
+    pot = ProgramOfThought(ExtremumFinder, interpreter=interpreter)
     res = pot(input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
-    assert pot.interpreter.deno_process is None
+    assert pot.interpreter.deno_process is not None
 
 
-@pytest.mark.deno
-def test_pot_code_generation_with_one_error():
+def _assert_pot_code_generation_with_one_error(interpreter):
     lm = DummyLM(
         [
             {
@@ -87,14 +94,13 @@ def test_pot_code_generation_with_one_error():
         ]
     )
     dspy.configure(lm=lm)
-    pot = ProgramOfThought(BasicQA)
+    pot = ProgramOfThought(BasicQA, interpreter=interpreter)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
+    assert pot.interpreter.deno_process is not None
 
 
-@pytest.mark.deno
-def test_pot_code_generation_persistent_errors():
+def _assert_pot_code_generation_persistent_errors(interpreter):
     max_iters = 3
     lm = DummyLM(
         [
@@ -107,8 +113,8 @@ def test_pot_code_generation_persistent_errors():
     )
     dspy.configure(lm=lm)
 
-    pot = ProgramOfThought(BasicQA, max_iters=max_iters)
-    with pytest.raises(RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
+    pot = ProgramOfThought(BasicQA, max_iters=max_iters, interpreter=interpreter)
+    with pytest.raises(RuntimeError, match=r"Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
         pot(question="What is 1+1?")
 
 
@@ -125,7 +131,7 @@ def test_pot_code_parse_error():
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,
         pytest.raises(
-            RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
+            RuntimeError, match=r"Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
         ),
     ):
         pot(question="What is 1+1?")

@@ -751,88 +751,51 @@ class TestRLMTypeCoercionMock:
 
 
 @pytest.mark.deno
-def test_rlm_python_interpreter_typed_submit_smoke():
-    """Smoke-test the RLM -> PythonInterpreter typed SUBMIT bridge.
+@pytest.mark.asyncio
+async def test_rlm_python_interpreter_integration_smoke_cases():
+    """Exercise the real PythonInterpreter bridge once, with the matrix covered by unit tests."""
+    with PythonInterpreter(tools={}) as interp:
+        rlm = RLM("query -> count: int, label: str", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return both outputs", "code": 'SUBMIT(count=42, label="ok")'},
+        ])
+        result = rlm.forward(query="test")
+        assert result.count == 42
+        assert isinstance(result.count, int)
+        assert result.label == "ok"
 
-    The full scalar/list/dict/Literal matrix is covered above with
-    MockInterpreter and in tests/primitives/test_python_interpreter.py. Repeating
-    every value shape here only duplicated those checks with a Deno boot per row.
-    """
-    rlm = RLM("query -> count: int, label: str", max_iterations=3)
-    rlm.generate_action = make_mock_predictor([
-        {"reasoning": "Return both outputs", "code": 'SUBMIT(count=42, label="ok")'},
-    ])
+        rlm = RLM("query -> name: str, count: int", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
+            {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
+        ])
+        result = rlm.forward(query="test")
+        assert result.name == "alice"
+        assert result.count == 5
 
-    result = rlm.forward(query="test")
-    assert result.count == 42
-    assert isinstance(result.count, int)
-    assert result.label == "ok"
-
-
-@pytest.mark.deno
-def test_rlm_python_interpreter_submit_error_recovery_smoke():
-    """Keep one real-sandbox recovery case; the rest is covered by MockInterpreter."""
-    rlm = RLM("query -> name: str, count: int", max_iterations=3)
-    rlm.generate_action = make_mock_predictor([
-        {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
-        {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
-    ])
-
-    result = rlm.forward(query="test")
-    assert result.name == "alice"
-    assert result.count == 5
-
-
-# ============================================================================
-# Integration Tests: RLM with DummyLM and PythonInterpreter
-# ============================================================================
-
-
-@pytest.mark.deno
-class TestRLMWithDummyLM:
-    """End-to-end tests using DummyLM with RLM and PythonInterpreter.
-
-    Note: These tests let RLM create its own PythonInterpreter so it can register
-    typed output_fields for SUBMIT based on the signature.
-    """
-
-    def test_simple_computation_e2e(self):
-        """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
             {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
-            rlm = RLM("query -> answer: int", max_iterations=3)
+            rlm = RLM("query -> answer: int", max_iterations=3, interpreter=interp)
             result = rlm.forward(query="What is 2 + 3?")
-
             assert result.answer == 5
             assert isinstance(result.answer, int)
 
-    def test_with_tool_e2e(self):
-        """Test RLM calling a host-side tool through the sandbox."""
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
         with dummy_lm_context([
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
-            rlm = RLM("fruit -> color: str", max_iterations=3, tools=[lookup])
+            rlm = RLM("fruit -> color: str", max_iterations=3, tools=[lookup], interpreter=interp)
             result = rlm.forward(fruit="apple")
-
             assert result.color == "red"
 
-    # Multi-turn and input-variable cases are covered by MockInterpreter unit tests
-    # above plus direct PythonInterpreter variable tests. Keeping sync and async
-    # copies here only duplicated those paths with extra Deno startups.
-
-    @pytest.mark.asyncio
-    async def test_aforward_simple_computation_e2e(self):
-        """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
             {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
-            rlm = RLM("query -> answer: int", max_iterations=3)
+            rlm = RLM("query -> answer: int", max_iterations=3, interpreter=interp)
             result = await rlm.aforward(query="What is 2 + 3?")
-
             assert result.answer == 5
             assert isinstance(result.answer, int)
 
