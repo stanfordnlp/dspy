@@ -116,10 +116,11 @@ jobs:
           tests/clients/test_cache.py
           tests/clients/test_lm_local.py
           tests/clients/test_embedding.py
-      - name: Run callback and client utility tests
+      - name: Run callback tests
+        run: uv run -p .venv pytest -q -n0 tests/callback
+      - name: Run client utility tests
         run: >
           uv run -p .venv pytest -q -n0
-          tests/callback
           tests/clients/test_databricks.py
           tests/clients/test_disk_serialization.py
           tests/clients/test_inspect_global_history.py
