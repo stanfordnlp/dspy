@@ -14,8 +14,10 @@ import dspy
 from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
+from dspy.clients.openai_format import tool_choice_to_openai_responses, tool_to_openai_responses
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.core.types import LMRequest
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import (
     ContextWindowExceededError,
@@ -651,6 +653,19 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             }
         text = request.pop("text", {})
         request["text"] = {**text, "format": response_format}
+
+    # Convert Chat Completions tool definitions/choices to Responses API function-tool shape.
+    if "tools" in request:
+        tool_request = LMRequest.from_call(model=request.get("model", ""), messages=[], tools=request.pop("tools") or [])
+        request["tools"] = [tool_to_openai_responses(tool) for tool in tool_request.tools]
+    if isinstance(request.get("tool_choice"), dict):
+        choice_request = LMRequest.from_call(
+            model=request.get("model", ""),
+            messages=[],
+            tool_choice=request["tool_choice"],
+            parallel_tool_calls=request.get("parallel_tool_calls"),
+        )
+        request.update(tool_choice_to_openai_responses(choice_request.config.tool_choice))
 
     return request
 

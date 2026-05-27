@@ -2715,17 +2715,21 @@ def test_empty_string_content_raises_adapter_parse_error():
                 cot(question="test")
 
 
-def test_tool_call_with_null_content_does_not_raise():
-    """Tool-call-only responses legitimately have content=None.
+@pytest.mark.parametrize("output", [
+    {"text": None, "tool_calls": [
+        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+    ]},
+    {"tool_calls": [
+        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+    ]},
+])
+def test_tool_call_with_null_or_missing_content_does_not_raise(output):
+    """Tool-call-only responses legitimately have content=None or no text key.
     _call_postprocess must NOT raise when tool_calls are present."""
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
 
-    outputs = [{"text": None, "tool_calls": [
-        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
-    ]}]
-
-    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+    result = adapter._call_postprocess(sig_cls, sig_cls, [output], None, {})
     assert result is not None
     assert len(result) == 1
     assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
@@ -2771,6 +2775,71 @@ def test_tool_call_with_structured_content_preserves_other_outputs():
 
     assert result[0]["answer"] == "I should use a tool."
     assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
+
+
+def test_responses_model_native_tool_calling_round_trips_tool_only_output():
+    from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def search(query: str) -> str:
+        return query
+
+    api_response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="openai/dspy-test-model",
+        object="response",
+        output=[
+            {
+                "type": "function_call",
+                "name": "search",
+                "arguments": json.dumps({"query": "cats"}),
+                "call_id": "call_1",
+                "status": "completed",
+                "id": "fc_1",
+            }
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        user=None,
+    )
+
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+
+    with mock.patch("litellm.supports_function_calling", return_value=True), mock.patch(
+        "litellm.responses", return_value=api_response
+    ) as responses:
+        result = adapter(lm, {}, MySignature, [], {"question": "find cats", "tools": [dspy.Tool(search)]})
+
+    assert result == [
+        {"tool_calls": dspy.ToolCalls(tool_calls=[dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})])}
+    ]
+    assert responses.call_args.kwargs["tools"] == [
+        {
+            "type": "function",
+            "name": "search",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        }
+    ]
 
 
 def test_provider_tool_calls_preserve_id_and_repair_arguments():

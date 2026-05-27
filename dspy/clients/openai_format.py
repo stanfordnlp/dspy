@@ -55,6 +55,7 @@ __all__ = [
     "to_openai_chat_request",
     "to_openai_responses_request",
     "to_openai_text_request",
+    "tool_to_openai_responses",
     "completion_to_lm_response",
     "responses_to_lm_response",
     "provider_tool_call_to_part",
@@ -129,9 +130,9 @@ def to_openai_responses_request(request: LMRequest) -> dict[str, Any]:
     }
     data.update(responses_config_kwargs(config, model=request.model))
     if config.tool_choice is not None:
-        data.update(tool_choice_to_openai(config.tool_choice))
+        data.update(tool_choice_to_openai_responses(config.tool_choice))
     if request.tools:
-        data["tools"] = [tool_to_openai(tool) for tool in request.tools]
+        data["tools"] = [tool_to_openai_responses(tool) for tool in request.tools]
     return data
 
 
@@ -351,6 +352,15 @@ def tool_to_openai(tool: LMToolSpec) -> dict[str, Any]:
     return data
 
 
+def tool_to_openai_responses(tool: LMToolSpec) -> dict[str, Any]:
+    """Convert a normalized tool spec into Responses API function-tool shape."""
+    data = {"type": "function", "name": tool.name, "parameters": tool.parameters}
+    if tool.description is not None:
+        data["description"] = tool.description
+    data.update(tool.provider_data)
+    return data
+
+
 def tool_choice_to_openai(choice: LMToolChoice) -> dict[str, Any]:
     if choice.allowed:
         if len(choice.allowed) != 1 or choice.mode not in {"required", "auto"}:
@@ -359,6 +369,21 @@ def tool_choice_to_openai(choice: LMToolChoice) -> dict[str, Any]:
                 "with mode 'required' or 'auto'."
             )
         data: dict[str, Any] = {"tool_choice": {"type": "function", "function": {"name": choice.allowed[0]}}}
+    else:
+        data = {"tool_choice": choice.mode}
+    if choice.parallel is not None:
+        data["parallel_tool_calls"] = choice.parallel
+    return data
+
+
+def tool_choice_to_openai_responses(choice: LMToolChoice) -> dict[str, Any]:
+    if choice.allowed:
+        if len(choice.allowed) != 1 or choice.mode not in {"required", "auto"}:
+            raise ValueError(
+                "OpenAI Responses tool_choice only supports constraining to a single allowed tool "
+                "with mode 'required' or 'auto'."
+            )
+        data: dict[str, Any] = {"tool_choice": {"type": "function", "name": choice.allowed[0]}}
     else:
         data = {"tool_choice": choice.mode}
     if choice.parallel is not None:
@@ -457,7 +482,8 @@ def reasoning_to_responses_kwargs(reasoning: Any) -> dict[str, Any]:
     data = {}
     if reasoning.effort is not None:
         data["effort"] = reasoning.effort
-    if reasoning.summary is not None:
+        data["summary"] = reasoning.summary or "auto"
+    elif reasoning.summary is not None:
         data["summary"] = reasoning.summary
     return {"reasoning": data} if data else {}
 

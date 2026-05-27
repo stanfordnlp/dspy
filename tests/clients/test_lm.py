@@ -830,27 +830,35 @@ def test_lm_replaces_system_with_developer_role():
         assert mock_completion.call_args.kwargs["request"]["messages"][0]["role"] == "developer"
 
 
-def test_responses_api_tool_calls(litellm_test_server):
-    api_base, _ = litellm_test_server
-    expected_tool_call = {
+def test_responses_api_tool_calls():
+    response_tool_call = {
         "type": "function_call",
         "name": "get_weather",
         "arguments": json.dumps({"city": "Paris"}),
         "call_id": "call_1",
         "status": "completed",
-        "id": "call_1",
+        "id": "fc_1",
     }
-    expected_response = [{"tool_calls": [expected_tool_call]}]
+    expected_response = [
+        {
+            "text": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                    "id": "call_1",
+                }
+            ],
+        }
+    ]
 
     api_response = make_response(
-        output_blocks=[expected_tool_call],
+        output_blocks=[response_tool_call],
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
             model="openai/dspy-test-model",
-            api_base=api_base,
-            api_key="fakekey",
             model_type="responses",
             cache=False,
         )
@@ -862,8 +870,7 @@ def test_responses_api_tool_calls(litellm_test_server):
 
 def test_reasoning_effort_responses_api():
     """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
-    with mock.patch("litellm.responses") as mock_responses:
-        # OpenAI model with Responses API - should normalize
+    with mock.patch("litellm.responses", return_value=make_response([])) as mock_responses:
         lm = dspy.LM(
             model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
@@ -947,6 +954,46 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["model"] == "openai/gpt-4o-mini"
         assert saved_state["lm"]["temperature"] == 1.0
         assert saved_state["lm"]["max_tokens"] == 100
+
+
+def test_responses_api_converts_tools_to_responses_shape():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    result = _convert_chat_request_to_responses_request(
+        {
+            "model": "openai/gpt-4o-mini",
+            "messages": [{"role": "user", "content": "What is the weather?"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get weather.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"city": {"type": "string"}},
+                            "required": ["city"],
+                        },
+                    },
+                }
+            ],
+            "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+        }
+    )
+
+    assert result["tools"] == [
+        {
+            "type": "function",
+            "name": "get_weather",
+            "description": "Get weather.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        }
+    ]
+    assert result["tool_choice"] == {"type": "function", "name": "get_weather"}
 
 
 def test_responses_api_converts_images_correctly():
