@@ -5,6 +5,7 @@ import pickle
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import diskcache
 import numpy as np
@@ -156,11 +157,21 @@ def _assert_cached_responses_function_call_normalizes(directory):
     assert lm_response.usage.total_tokens == 3
 
 
+def _write_normalization_caches(directory):
+    directory = Path(directory)
+    _write_tool_call_cache(str(directory / "tool_call"))
+    _write_responses_function_call_cache(str(directory / "responses_function_call"))
+
+
+def _assert_normalization_caches(directory):
+    directory = Path(directory)
+    _assert_cached_tool_call_normalizes(str(directory / "tool_call"))
+    _assert_cached_responses_function_call_normalizes(str(directory / "responses_function_call"))
+
+
 _SUBPROCESS_CASES = {
-    "write-tool-call-cache": _write_tool_call_cache,
-    "assert-tool-call-cache-normalizes": _assert_cached_tool_call_normalizes,
-    "write-responses-function-call-cache": _write_responses_function_call_cache,
-    "assert-responses-function-call-cache-normalizes": _assert_cached_responses_function_call_normalizes,
+    "write-normalization-caches": _write_normalization_caches,
+    "assert-normalization-caches": _assert_normalization_caches,
 }
 
 
@@ -301,14 +312,9 @@ def test_tool_call_response_roundtrip(tmp_path):
     assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
 
 
-def test_cached_tool_call_normalizes_after_fresh_process_roundtrip(tmp_path):
-    _run_subprocess_cache_case("write-tool-call-cache", tmp_path)
-    _run_subprocess_cache_case("assert-tool-call-cache-normalizes", tmp_path)
-
-
-def test_cached_responses_function_call_normalizes_after_fresh_process_roundtrip(tmp_path):
-    _run_subprocess_cache_case("write-responses-function-call-cache", tmp_path)
-    _run_subprocess_cache_case("assert-responses-function-call-cache-normalizes", tmp_path)
+def test_cached_lm_responses_normalize_after_fresh_process_roundtrip(tmp_path):
+    _run_subprocess_cache_case("write-normalization-caches", tmp_path)
+    _run_subprocess_cache_case("assert-normalization-caches", tmp_path)
 
 
 # -- allowlist enforcement --
