@@ -1,3 +1,5 @@
+import json
+import re
 from typing import Literal
 from unittest import mock
 
@@ -6,7 +8,8 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
-from dspy.experimental import Citations
+from dspy.experimental import Citations, Document
+from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
 @pytest.mark.parametrize(
@@ -98,6 +101,1885 @@ async def test_chat_adapter_async_call():
     result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
+
+def test_chat_adapter_format_exact_messages_for_simple_signature():
+    class QA(dspy.Signature):
+        """Answer the question."""
+
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(), QA, [], {"question": "What is the capital of France?"})
+
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answer ## ]]
+{answer}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is:\x20
+        Answer the question.""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+What is the capital of France?
+
+Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.""",
+        },
+    ]
+
+
+def test_chat_adapter_format_exact_messages_with_demo_and_typed_outputs():
+    class MultiAnswer(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        MultiAnswer,
+        demos=[{"question": "Q1", "answers": ["A1", "A2"], "scores": [0.1, 0.9]}],
+        inputs={"question": "Q2"},
+    )
+
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]):\x20
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answers ## ]]
+{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+
+[[ ## scores ## ]]
+{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is:\x20
+        Answer the question with multiple answers and scores""",
+        },
+        {"role": "user", "content": """[[ ## question ## ]]
+Q1"""},
+        {
+            "role": "assistant",
+            "content": """[[ ## answers ## ]]
+["A1", "A2"]
+
+[[ ## scores ## ]]
+[0.1, 0.9]
+
+[[ ## completed ## ]]
+""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+Q2
+
+Respond with the corresponding output fields, starting with the field `[[ ## answers ## ]]` (must be formatted as a valid Python list[str]), then `[[ ## scores ## ]]` (must be formatted as a valid Python list[float]), and then ending with the marker for `[[ ## completed ## ]]`.""",
+        },
+    ]
+
+
+def test_chat_adapter_format_exact_messages_with_nested_pydantic_models():
+    class Address(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Person(pydantic.BaseModel):
+        name: str
+        address: Address
+        tags: list[str]
+
+    class Summary(pydantic.BaseModel):
+        headline: str
+        score: float
+
+    class PydanticSignature(dspy.Signature):
+        person: Person = dspy.InputField()
+        summary: Summary = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        PydanticSignature,
+        [],
+        {"person": Person(name="Ada", address=Address(city="London", country="UK"), tags=["math", "code"])},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `person` (Person):\n'
+                 'Your output fields are:\n'
+                 '1. `summary` (Summary):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 '[[ ## person ## ]]\n'
+                 '{person}\n'
+                 '\n'
+                 '[[ ## summary ## ]]\n'
+                 '{summary}        # note: the value you produce must adhere to the JSON schema: '
+                 '{"type": "object", "properties": {"headline": {"type": "string", "title": '
+                 '"Headline"}, "score": {"type": "number", "title": "Score"}}, "required": '
+                 '["headline", "score"], "title": "Summary"}\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `person`, produce the fields `summary`.'},
+     {"role": "user",
+      "content": '[[ ## person ## ]]\n'
+                 '{"name": "Ada", "address": {"city": "London", "country": "UK"}, "tags": ["math", '
+                 '"code"]}\n'
+                 '\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## summary '
+                 '## ]]` (must be formatted as a valid Python Summary), and then ending with the '
+                 'marker for `[[ ## completed ## ]]`.'}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_incomplete_demo():
+    class IncompleteDemoSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        IncompleteDemoSignature,
+        [{"question": "Q1", "answer": "A1"}],
+        {"question": "Q2", "context": "C2"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str): \n"
+                 "2. `context` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str): \n"
+                 "2. `confidence` (float):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## context ## ]]\n"
+                 "{context}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## confidence ## ]]\n"
+                 "{confidence}        # note: the value you produce must be a single float value\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `context`, produce the fields `answer`, "
+                 "`confidence`."},
+     {"role": "user",
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Q1"},
+     {"role": "assistant",
+      "content": "[[ ## answer ## ]]\n"
+                 "A1\n"
+                 "\n"
+                 "[[ ## confidence ## ]]\n"
+                 "Not supplied for this particular example.\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q2\n"
+                 "\n"
+                 "[[ ## context ## ]]\n"
+                 "C2\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, then `[[ ## confidence ## ]]` (must be formatted as a valid Python float), "
+                 "and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_history():
+    class HistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {"question": "What is 1+1?", "answer": "2"},
+            {"question": "What is 2+2?", "answer": "4"},
+        ]
+    )
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        HistorySignature,
+        [],
+        {"history": history, "question": "What is 3+3?"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## history ## ]]\n"
+                 "{history}\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `history`, `question`, produce the fields `answer`."},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 1+1?"},
+     {"role": "assistant", "content": "[[ ## answer ## ]]\n2\n\n[[ ## completed ## ]]\n"},
+     {"role": "user", "content": "[[ ## question ## ]]\nWhat is 2+2?"},
+     {"role": "assistant", "content": "[[ ## answer ## ]]\n4\n\n[[ ## completed ## ]]\n"},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "What is 3+3?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_list_value_for_string_input():
+    class ListAsStringSignature(dspy.Signature):
+        context: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(), ListAsStringSignature, [], {"context": ["alpha", "beta"]})
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `context` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## context ## ]]\n"
+                 "{context}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `context`, produce the fields `answer`."},
+     {"role": "user",
+      "content": "[[ ## context ## ]]\n"
+                 "[1] «alpha»\n"
+                 "[2] «beta»\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_literal_output():
+    class LiteralSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        verdict: Literal["yes", "no"] = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(), LiteralSignature, [], {"question": "Is the sky blue?"})
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `verdict` (Literal['yes', 'no']):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## verdict ## ]]\n"
+                 "{verdict}        # note: the value you produce must exactly match (no extra "
+                 "characters) one of: yes; no\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `verdict`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Is the sky blue?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## verdict "
+                 "## ]]` (must be formatted as a valid Python Literal['yes', 'no']), and then ending "
+                 "with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_multimodal_custom_type_inputs():
+    class CustomTypeSignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        audio: dspy.Audio = dspy.InputField()
+        file: dspy.File = dspy.InputField()
+        document: Document = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        CustomTypeSignature,
+        [],
+        {
+            "image": dspy.Image("https://example.com/cat.png"),
+            "audio": dspy.Audio(data="QUJD", audio_format="wav"),
+            "file": dspy.File.from_file_id("file-123", filename="notes.txt"),
+            "document": Document(data="Alpha beta", title="Doc"),
+        },
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `image` (Image): \n"
+                 "2. `audio` (Audio): \n"
+                 "3. `file` (File): \n"
+                 "4. `document` (Document): \n"
+                 "    Type description of Document: A document containing text content that can be "
+                 "referenced and cited. Include the full text content and optionally a title for "
+                 "proper referencing.\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## image ## ]]\n"
+                 "{image}\n"
+                 "\n"
+                 "[[ ## audio ## ]]\n"
+                 "{audio}\n"
+                 "\n"
+                 "[[ ## file ## ]]\n"
+                 "{file}\n"
+                 "\n"
+                 "[[ ## document ## ]]\n"
+                 "{document}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `image`, `audio`, `file`, `document`, produce the fields "
+                 "`answer`."},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
+                  {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
+                  {"type": "input_audio", "input_audio": {"data": "QUJD", "format": "wav"}},
+                  {"type": "text", "text": "\n\n[[ ## file ## ]]\n"},
+                  {"type": "file", "file": {"file_id": "file-123", "filename": "notes.txt"}},
+                  {"type": "text", "text": "\n\n[[ ## document ## ]]\n"},
+                  {"type": "document",
+                   "source": {"type": "text", "media_type": "text/plain", "data": "Alpha beta"},
+                   "citations": {"enabled": True},
+                   "title": "Doc"},
+                  {"type": "text",
+                   "text": "\n"
+                           "\n"
+                           "Respond with the corresponding output fields, starting with the field `[[ "
+                           "## answer ## ]]`, and then ending with the marker for `[[ ## completed ## "
+                           "]]`."}]}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_image():
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class Location(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        location: Location
+        interests: list[str]
+
+    class AnswerCard(pydantic.BaseModel):
+        answer: str
+        sources: list[str]
+
+    class RichRenderingSignature(dspy.Signature):
+        """Answer using all supplied context."""
+
+        history: dspy.History = dspy.InputField()
+        image: dspy.Image = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        profile: Profile = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: AnswerCard = dspy.OutputField()
+
+    tool = dspy.Tool(search)
+    demo_profile = Profile(
+        name="Ada",
+        location=Location(city="London", country="UK"),
+        interests=["math", "machines"],
+    )
+    current_profile = Profile(
+        name="Grace",
+        location=Location(city="Arlington", country="USA"),
+        interests=["compilers", "navy"],
+    )
+    history = dspy.History(
+        messages=[
+            {
+                "profile": demo_profile,
+                "question": "Who is Ada?",
+                "answer": AnswerCard(answer="Ada is a mathematician.", sources=["memory"]),
+            }
+        ]
+    )
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        RichRenderingSignature,
+        demos=[
+            {
+                "image": dspy.Image("https://example.com/demo.png"),
+                "tools": [tool],
+                "profile": demo_profile,
+                "question": "What should we mention?",
+                "answer": AnswerCard(answer="Mention analytical engines.", sources=["demo"]),
+            }
+        ],
+        inputs={
+            "history": history,
+            "image": dspy.Image("https://example.com/current.png"),
+            "tools": [tool],
+            "profile": current_profile,
+            "question": "What should the answer include?",
+        },
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `history` (History): \n'
+                 '2. `image` (Image): \n'
+                 '3. `tools` (list[Tool]): \n'
+                 '4. `profile` (Profile): \n'
+                 '5. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `answer` (AnswerCard):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 '[[ ## history ## ]]\n'
+                 '{history}\n'
+                 '\n'
+                 '[[ ## image ## ]]\n'
+                 '{image}\n'
+                 '\n'
+                 '[[ ## tools ## ]]\n'
+                 '{tools}\n'
+                 '\n'
+                 '[[ ## profile ## ]]\n'
+                 '{profile}\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 '[[ ## answer ## ]]\n'
+                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
+                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
+                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
+                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Answer using all supplied context.'},
+     {"role": "user",
+      "content": [{"type": "text",
+                   "text": "This is an example of the task, though some input or output fields are not "
+                           "supplied.\n"
+                           "\n"
+                           "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                           '"interests": ["math", "machines"]}\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should we mention?'}]},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Mention analytical engines.", "sources": ["demo"]}\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": '[[ ## profile ## ]]\n'
+                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+                 '["math", "machines"]}\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 'Who is Ada?'},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                           '"interests": ["compilers", "navy"]}\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should the answer include?\n'
+                           '\n'
+                           'Respond with the corresponding output fields, starting with the field `[[ '
+                           '## answer ## ]]` (must be formatted as a valid Python AnswerCard), and '
+                           'then ending with the marker for `[[ ## completed ## ]]`.'}]}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_chat_adapter_format_exact_messages_with_base_custom_type_input():
+    class Event(dspy.Type):
+        label: str
+
+        def format(self):
+            return [{"type": "event", "event": {"label": self.label}}]
+
+        @classmethod
+        def description(cls):
+            return "An event block."
+
+    class EventSignature(dspy.Signature):
+        event: Event = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(), EventSignature, [], {"event": Event(label="launch")})
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `event` (Event): \n"
+                 "    Type description of Event: An event block.\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## event ## ]]\n"
+                 "{event}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `event`, produce the fields `answer`."},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## event ## ]]\n"},
+                  {"type": "event", "event": {"label": "launch"}},
+                  {"type": "text",
+                   "text": "\n"
+                           "\n"
+                           "Respond with the corresponding output fields, starting with the field `[[ "
+                           "## answer ## ]]`, and then ending with the marker for `[[ ## completed ## "
+                           "]]`."}]}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_chat_adapter_format_exact_messages_with_citations_output_demo():
+    class CitationSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        citations: Citations = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        CitationSignature,
+        [
+            {
+                "question": "Q1",
+                "citations": Citations.from_dict_list(
+                    [
+                        {
+                            "cited_text": "alpha",
+                            "document_index": 0,
+                            "start_char_index": 0,
+                            "end_char_index": 5,
+                        }
+                    ]
+                ),
+            }
+        ],
+        {"question": "Q2"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `citations` (Citations): \n'
+                 '    Type description of Citations: Citations with quoted text and source references. '
+                 'Include the exact text being cited and information about its source.\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 '[[ ## citations ## ]]\n'
+                 '{citations}        # note: the value you produce must adhere to the JSON schema: '
+                 '{"type": "object", "$defs": {"Citation": {"type": "object", "description": '
+                 '"Individual citation with character location information.", "properties": {"type": '
+                 '{"type": "string", "default": "char_location", "title": "Type"}, "cited_text": '
+                 '{"type": "string", "title": "Cited Text"}, "document_index": {"type": "integer", '
+                 '"title": "Document Index"}, "document_title": {"anyOf": [{"type": "string"}, '
+                 '{"type": "null"}], "default": null, "title": "Document Title"}, "end_char_index": '
+                 '{"type": "integer", "title": "End Char Index"}, "start_char_index": {"type": '
+                 '"integer", "title": "Start Char Index"}, "supported_text": {"anyOf": [{"type": '
+                 '"string"}, {"type": "null"}], "default": null, "title": "Supported Text"}}, '
+                 '"required": ["cited_text", "document_index", "start_char_index", "end_char_index"], '
+                 '"title": "Citation"}}, "description": "Experimental: This class may change or be '
+                 'removed in a future release without warning (introduced in v3.0.4).\\n\\nCitations '
+                 'extracted from an LM response with source references.\\n\\n    This type represents '
+                 'citations returned by language models that support\\n    citation extraction, '
+                 "particularly Anthropic's Citations API through LiteLLM.\\n    Citations include the "
+                 'quoted text and source information.\\n\\n    Examples:\\n        ```python\\n        '
+                 'import os\\n        import dspy\\n        from dspy.signatures import '
+                 'Signature\\n        from dspy.experimental import Citations, Document\\n        '
+                 'os.environ[\\"ANTHROPIC_API_KEY\\"] = \\"YOUR_ANTHROPIC_API_KEY\\"\\n\\n        '
+                 "class AnswerWithSources(Signature):\\n            '''Answer questions using provided "
+                 "documents with citations.'''\\n            documents: list[Document] = "
+                 'dspy.InputField()\\n            question: str = dspy.InputField()\\n            '
+                 'answer: str = dspy.OutputField()\\n            citations: Citations = '
+                 'dspy.OutputField()\\n\\n        # Create documents to provide as sources\\n        '
+                 'docs = [\\n            Document(\\n                data=\\"The Earth orbits the Sun '
+                 'in an elliptical path.\\",\\n                title=\\"Basic Astronomy '
+                 'Facts\\"\\n            ),\\n            Document(\\n                data=\\"Water '
+                 'boils at 100°C at standard atmospheric pressure.\\",\\n                '
+                 'title=\\"Physics Fundamentals\\",\\n                metadata={\\"author\\": \\"Dr. '
+                 'Smith\\", \\"year\\": 2023}\\n            )\\n        ]\\n\\n        # Use with a '
+                 'model that supports citations like Claude\\n        lm = '
+                 'dspy.LM(\\"anthropic/claude-opus-4-1-20250805\\")\\n        predictor = '
+                 'dspy.Predict(AnswerWithSources)\\n        result = predictor(documents=docs, '
+                 'question=\\"What temperature does water boil?\\", lm=lm)\\n\\n        for citation '
+                 'in result.citations.citations:\\n            print(citation.format())\\n        '
+                 '```\\n    ", "properties": {"citations": {"type": "array", "items": {"$ref": '
+                 '"#/$defs/Citation"}, "title": "Citations"}}, "required": ["citations"], "title": '
+                 '"Citations"}\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `question`, produce the fields `citations`.'},
+     {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+     {"role": "assistant",
+      "content": '[[ ## citations ## ]]\n'
+                 '<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "char_location", "cited_text": "alpha", '
+                 '"document_index": 0, "start_char_index": 0, "end_char_index": '
+                 '5}]<<CUSTOM-TYPE-END-IDENTIFIER>>\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q2\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## "
+                 "citations ## ]]` (must be formatted as a valid Python Citations), and then ending "
+                 "with the marker for `[[ ## completed ## ]]`."}]
+    def normalize_citations_schema_description(content):
+        return re.sub(
+            r'"description": ".*?", "properties":',
+            '"description": "<CITATIONS_SCHEMA_DESCRIPTION>", "properties":',
+            content,
+        )
+
+    messages[0]["content"] = normalize_citations_schema_description(messages[0]["content"])
+    expected_messages[0]["content"] = normalize_citations_schema_description(expected_messages[0]["content"])
+
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_citations():
+    class AnthropicLM(dspy.utils.DummyLM):
+        def __init__(self):
+            super().__init__([{}])
+            self.model = "anthropic/claude-3-5-sonnet"
+
+    class CitationSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        CitationSignature,
+        [],
+        {"question": "Q?"},
+        lm=AnthropicLM(),
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `answer`, `citations`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_chat_adapter_format_exact_messages_preserves_passthrough_lm_kwargs():
+    class PassthroughSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        PassthroughSignature,
+        [],
+        {"question": "Q?"},
+        lm_kwargs={"temperature": 0.7, "max_tokens": 42, "stream": True, "cache": False},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `answer`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {"temperature": 0.7, "max_tokens": 42, "stream": True, "cache": False}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_reasoning():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class NativeReasoningSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        NativeReasoningSignature,
+        [],
+        {"question": "Q?"},
+        lm=ReasoningLM([{}]),
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `reasoning`, `answer`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## answer "
+                 "## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {"reasoning_effort": "low"}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_native_tool_calling_still_enables_native_reasoning():
+    class NativeToolReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+        @property
+        def supports_reasoning(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolReasoningSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: dspy.Reasoning = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolReasoningSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm=NativeToolReasoningLM([{}]),
+    )
+
+    assert "tools" in lm_kwargs
+    assert lm_kwargs["reasoning_effort"] == "low"
+
+
+def test_chat_adapter_nonnative_strips_native_tool_kwargs():
+    def search(query: str) -> str:
+        return query
+
+    class NonNativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=False),
+        NonNativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm_kwargs={
+            "tools": [{"type": "function", "function": {"name": "submit"}}],
+            "tool_choice": {"type": "function", "function": {"name": "submit"}},
+            "parallel_tool_calls": True,
+        },
+    )
+
+    assert "tools" not in lm_kwargs
+    assert "tool_choice" not in lm_kwargs
+    assert "parallel_tool_calls" not in lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_with_reasoning_and_code_outputs():
+    python_code = dspy.Code["python"]
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: python_code = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        CodeSignature,
+        [{"question": "Q1", "reasoning": dspy.Reasoning(content="Think"), "code": python_code(code="print('hi')")}],
+        {"question": "Q2"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `reasoning` (str): \n"
+                 "2. `code` (Code_python): \n"
+                 "    Type description of Code_python: Code represented in a string, specified in the "
+                 "`code` field. If this is an output field, the code field should follow the markdown "
+                 "code block format, e.g. \n"
+                 "```python\n"
+                 "{code}\n"
+                 "```\n"
+                 "Programming language: python\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## reasoning ## ]]\n"
+                 "{reasoning}\n"
+                 "\n"
+                 "[[ ## code ## ]]\n"
+                 "{code}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `reasoning`, `code`."},
+     {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+     {"role": "assistant",
+      "content": "[[ ## reasoning ## ]]\n"
+                 "Think\n"
+                 "\n"
+                 "[[ ## code ## ]]\n"
+                 "print('hi')\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q2\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field `[[ ## "
+                 "reasoning ## ]]` (must be formatted as a valid Python str), then `[[ ## code ## ]]` "
+                 "(must be formatted as a valid Python Code_python), and then ending with the marker "
+                 "for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calling():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q?\n"
+                 "\n"
+                 "Respond with the corresponding output fields, starting with the field , and then "
+                 "ending with the marker for `[[ ## completed ## ]]`."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {"tools": [{"type": "function",
+                "function": {"name": "search",
+                             "description": "Search for documents.",
+                             "parameters": {"type": "object",
+                                            "properties": {"query": {"type": "string"},
+                                                           "k": {"type": "integer", "default": 3}},
+                                            "required": ["query", "k"]}}}]}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        dspy.ChatAdapter(use_native_function_calling=True, parallel_tool_calls=True),
+        dspy.JSONAdapter(use_native_function_calling=True, parallel_tool_calls=True),
+        dspy.XMLAdapter(use_native_function_calling=True, parallel_tool_calls=True),
+    ],
+)
+def test_adapter_native_tool_calling_can_request_parallel_tool_calls(adapter):
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _messages, lm_kwargs = format_messages_and_lm_kwargs(
+        adapter,
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert lm_kwargs["tool_choice"] == "auto"
+    assert lm_kwargs["parallel_tool_calls"] is True
+
+
+def test_adapter_native_tool_calling_respects_lm_kwargs_parallel_tool_call_override():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True, parallel_tool_calls=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm_kwargs={"parallel_tool_calls": False},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert lm_kwargs["tool_choice"] == "auto"
+    assert lm_kwargs["parallel_tool_calls"] is False
+
+
+def test_chat_adapter_native_tool_history_replay():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        """Search for documents."""
+        return query
+
+    class NativeToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: dspy.Reasoning = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], [{"items": ["cat"]}])
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": dspy.Reasoning(content="I should search."),
+                "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "Q1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "[[ ## next_thought ## ]]\nI should search.\n\n[[ ## completed ## ]]\n",
+        "tool_calls": [
+            {
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"query": "cats"}'},
+                "id": "call_1",
+            }
+        ],
+    }
+    assert json.loads(messages[2]["tool_calls"][0]["function"]["arguments"]) == {"query": "cats"}
+    assert messages[3] == {
+        "role": "tool",
+        "content": '{"items": ["cat"]}',
+        "tool_call_id": "call_1",
+        "name": "search",
+    }
+    assert messages[4]["role"] == "user"
+    assert "Q2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "tools" not in messages[4]["content"]
+    assert "tool_call_results" not in messages[4]["content"]
+    assert "None" not in messages[4]["content"]
+    assert "tools" in lm_kwargs
+
+
+def test_chat_adapter_native_tool_history_replays_parallel_tool_results():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: dspy.Reasoning = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_calls = dspy.ToolCalls(
+        tool_calls=[
+            dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"}),
+            dspy.ToolCalls.ToolCall(id="call_2", name="search", args={"query": "dogs"}),
+        ]
+    )
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values(
+        tool_calls,
+        [{"items": ["cat"]}, {"items": ["dog"]}],
+    )
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": dspy.Reasoning(content="I should search twice."),
+                "tool_calls": tool_calls.model_copy(update={"tool_call_results": tool_call_results}),
+            }
+        ]
+    )
+
+    messages, _lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert [tool_call["id"] for tool_call in messages[2]["tool_calls"]] == ["call_1", "call_2"]
+    assert [
+        (message["role"], message["tool_call_id"], message["content"])
+        for message in messages[3:5]
+    ] == [
+        ("tool", "call_1", '{"items": ["cat"]}'),
+        ("tool", "call_2", '{"items": ["dog"]}'),
+    ]
+
+
+def test_chat_adapter_native_tool_history_skips_empty_user_message():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: dspy.Reasoning = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat result"])
+    history = dspy.History(
+        messages=[
+            {
+                "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolHistorySignature,
+        [],
+        {"history": history, "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] is None
+    assert messages[2]["role"] == "tool"
+
+
+@pytest.mark.parametrize(
+    "tool_call_id, tool_call_results",
+    [
+        ("call_1", None),
+        (
+            "call_1",
+            dspy.ToolCallResults(
+                tool_call_results=[
+                    dspy.ToolCallResults.ToolCallResult(call_id="other_call", name="search", value="cat result")
+                ]
+            ),
+        ),
+        (
+            None,
+            dspy.ToolCallResults(
+                tool_call_results=[
+                    dspy.ToolCallResults.ToolCallResult(call_id=None, name="search", value="cat result")
+                ]
+            ),
+        ),
+    ],
+)
+def test_chat_adapter_native_tool_history_skips_unmatched_tool_calls(tool_call_id, tool_call_results):
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: dspy.Reasoning = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id=tool_call_id, name="search", args={"query": "cats"})
+    tool_calls = dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results)
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": dspy.Reasoning(content="I should search."),
+                "tool_calls": tool_calls,
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    assert all("tool_calls" not in message for message in messages)
+    assert all(message["role"] != "tool" for message in messages)
+    assert messages[2]["role"] == "assistant"
+    assert "I should search." in messages[2]["content"]
+
+
+def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
+    def search(query: str) -> str:
+        return query
+
+    class ToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat"])
+    history = dspy.History(
+        messages=[
+            {
+                "question": "Q1",
+                "next_thought": "I should search.",
+                "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=False),
+        ToolHistorySignature,
+        [],
+        {"question": "Q2", "history": history, "tools": [dspy.Tool(search)]},
+    )
+
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `question` (str): \n"
+            "2. `history` (History): \n"
+            "3. `tools` (list[Tool]):\n"
+            "Your output fields are:\n"
+            "1. `next_thought` (str): \n"
+            "2. `tool_calls` (ToolCalls): \n"
+            "    Type description of ToolCalls: Tool calls must be a JSON object with `tool_calls`, a list of "
+            'calls. Each call must include `name` and `args`. Example: {"tool_calls": [{"name": "search", '
+            '"args": {"query": "cats"}}]}\n'
+            "All interactions will be structured in the following way, with the appropriate values filled in.\n"
+            "\n"
+            "[[ ## question ## ]]\n"
+            "{question}\n"
+            "\n"
+            "[[ ## history ## ]]\n"
+            "{history}\n"
+            "\n"
+            "[[ ## tools ## ]]\n"
+            "{tools}\n"
+            "\n"
+            "[[ ## next_thought ## ]]\n"
+            "{next_thought}\n"
+            "\n"
+            "[[ ## tool_calls ## ]]\n"
+            '{tool_calls}        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+            '"$defs": {"ToolCall": {"type": "object", "properties": {"args": {"type": "object", '
+            '"additionalProperties": true, "title": "Args"}, "name": {"type": "string", "title": "Name"}}, '
+            '"required": ["name", "args"], "title": "ToolCall"}}, "properties": {"tool_calls": {"type": "array", '
+            '"items": {"$ref": "#/$defs/ToolCall"}, "title": "Tool Calls"}}, "required": ["tool_calls"], "title": '
+            '"ToolCalls"}\n'
+            "\n"
+            "[[ ## completed ## ]]\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Given the fields `question`, `history`, `tools`, produce the fields `next_thought`, "
+            "`tool_calls`.",
+        },
+        {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+        {
+            "role": "assistant",
+            "content": "[[ ## next_thought ## ]]\n"
+            "I should search.\n"
+            "\n"
+            "[[ ## tool_calls ## ]]\n"
+            '{"tool_calls": [{"name": "search", "args": {"query": "cats"}}]}\n'
+            "\n"
+            "[[ ## completed ## ]]\n",
+        },
+        {
+            "role": "user",
+            "content": "[[ ## tool_call_results ## ]]\n"
+            '{"tool_call_results": [{"call_id": "call_1", "name": "search", "value": "cat", "is_error": false}]}',
+        },
+        {
+            "role": "user",
+            "content": "[[ ## question ## ]]\n"
+            "Q2\n"
+            "\n"
+            "[[ ## tools ## ]]\n"
+            '["search. It takes arguments {\'query\': {\'type\': \'string\'}}."]\n'
+            "\n"
+            "Respond with the corresponding output fields, starting with the field `[[ ## next_thought ## ]]`, then "
+            '`[[ ## tool_calls ## ]]` (must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]}), and then ending with the '
+            "marker for `[[ ## completed ## ]]`.",
+        },
+    ]
+    assert messages == expected_messages
+    assert lm_kwargs == {}
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [dspy.ChatAdapter(use_native_function_calling=False), dspy.JSONAdapter(use_native_function_calling=False)],
+)
+def test_non_native_tool_history_remains_text_based(adapter):
+    def search(query: str) -> str:
+        return query
+
+    class ToolHistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        next_thought: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    tool_call = dspy.ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    tool_call_results = dspy.ToolCallResults.from_tool_calls_and_values([tool_call], ["cat"])
+    messages = adapter.format(
+        ToolHistorySignature,
+        [],
+        {
+            "question": "Q2",
+            "history": dspy.History(
+                messages=[
+                    {
+                        "question": "Q1",
+                        "next_thought": "I should search.",
+                        "tool_calls": dspy.ToolCalls(tool_calls=[tool_call], tool_call_results=tool_call_results),
+                    }
+                ]
+            ),
+            "tools": [dspy.Tool(search)],
+        },
+    )
+
+    assert all(message["role"] != "tool" for message in messages)
+    assert [message["role"] for message in messages[1:]] == ["user", "assistant", "user", "user"]
+    assert "Q1" in messages[1]["content"]
+    assert "tool_call_results" not in messages[1]["content"]
+    assert "tool_calls" in messages[2]["content"]
+    assert "[[ ## tool_call_results ## ]]" in messages[3]["content"]
+    assert "cat" in messages[3]["content"]
+    assert "Q2" not in messages[3]["content"]
+    assert "Q2" in messages[4]["content"]
+    assert "None" not in messages[3]["content"]
+
+
+def test_chat_adapter_format_accepts_custom_history_formatter_returning_messages_only():
+    class CustomHistoryAdapter(dspy.ChatAdapter):
+        def format_conversation_history(self, signature, history_field_name, inputs):
+            del inputs[history_field_name]
+            return [{"role": "user", "content": "custom history"}]
+
+    class HistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages = CustomHistoryAdapter().format(
+        HistorySignature,
+        [],
+        {
+            "question": "Q2",
+            "history": dspy.History(messages=[{"question": "Q1"}]),
+        },
+    )
+
+    assert messages[1] == {"role": "user", "content": "custom history"}
+    assert messages[2]["role"] == "user"
+    assert "Q2" in messages[2]["content"]
+
+
+def test_chat_adapter_format_exact_messages_with_tool_input():
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        ToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str): \n"
+                 "2. `tools` (list[Tool]):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (str):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## tools ## ]]\n"
+                 "{tools}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `tools`, produce the fields `answer`."},
+     {"role": "user",
+      "content": '[[ ## question ## ]]\n'
+                 'Q?\n'
+                 '\n'
+                 '[[ ## tools ## ]]\n'
+                 '["search, whose description is <desc>Search for documents.</desc>. It takes '
+                 "arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', 'default': "
+                 '3}}."]\n'
+                 '\n'
+                 'Respond with the corresponding output fields, starting with the field `[[ ## answer '
+                 '## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.'}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_format_exact_messages_kitchen_sink():
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class Event(dspy.Type):
+        label: str
+
+        def format(self):
+            return [{"type": "event", "event": {"label": self.label}}]
+
+        @classmethod
+        def description(cls):
+            return "An event block."
+
+    class Location(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        location: Location
+        interests: list[str]
+
+    class AnswerCard(pydantic.BaseModel):
+        answer: str
+        sources: list[str]
+
+    class KitchenSinkSignature(dspy.Signature):
+        """Answer carefully using every available signal."""
+
+        history: dspy.History = dspy.InputField()
+        image: dspy.Image = dspy.InputField()
+        audio: dspy.Audio = dspy.InputField()
+        file: dspy.File = dspy.InputField()
+        document: Document = dspy.InputField()
+        event: Event = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        profile: Profile = dspy.InputField()
+        context: str = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: AnswerCard = dspy.OutputField()
+        verdict: Literal["yes", "no"] = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    tool = dspy.Tool(search)
+    demo_profile = Profile(
+        name="Ada",
+        location=Location(city="London", country="UK"),
+        interests=["math", "machines"],
+    )
+    current_profile = Profile(
+        name="Grace",
+        location=Location(city="Arlington", country="USA"),
+        interests=["compilers", "navy"],
+    )
+    history = dspy.History(
+        messages=[
+            {
+                "profile": demo_profile,
+                "context": ["old note", "older note"],
+                "question": "Who is Ada?",
+                "answer": AnswerCard(answer="Ada is a mathematician.", sources=["memory"]),
+                "verdict": "yes",
+                "confidence": 0.8,
+            }
+        ]
+    )
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        KitchenSinkSignature,
+        demos=[
+            {
+                "image": dspy.Image("https://example.com/demo.png"),
+                "audio": dspy.Audio(data="REVNTw==", audio_format="wav"),
+                "file": dspy.File.from_file_id("file-demo", filename="demo.txt"),
+                "document": Document(data="Demo document", title="Demo Doc"),
+                "event": Event(label="demo-event"),
+                "tools": [tool],
+                "profile": demo_profile,
+                "context": ["demo context one", "demo context two"],
+                "question": "What should we mention?",
+                "answer": AnswerCard(answer="Mention analytical engines.", sources=["demo"]),
+                "verdict": "yes",
+                "confidence": 0.9,
+            },
+            {
+                "question": "Incomplete example question",
+                "answer": AnswerCard(answer="Partial answer.", sources=["partial"]),
+            },
+        ],
+        inputs={
+            "history": history,
+            "image": dspy.Image("https://example.com/current.png"),
+            "audio": dspy.Audio(data="Q1VSUkVOVA==", audio_format="wav"),
+            "file": dspy.File.from_file_id("file-current", filename="current.txt"),
+            "document": Document(data="Current document", title="Current Doc"),
+            "event": Event(label="current-event"),
+            "tools": [tool],
+            "profile": current_profile,
+            "context": ["current context one", "current context two"],
+            "question": "What should the answer include?",
+        },
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `history` (History): \n'
+                 '2. `image` (Image): \n'
+                 '3. `audio` (Audio): \n'
+                 '4. `file` (File): \n'
+                 '5. `document` (Document): \n'
+                 '    Type description of Document: A document containing text content that can be '
+                 'referenced and cited. Include the full text content and optionally a title for '
+                 'proper referencing.\n'
+                 '6. `event` (Event): \n'
+                 '    Type description of Event: An event block.\n'
+                 '7. `tools` (list[Tool]): \n'
+                 '8. `profile` (Profile): \n'
+                 '9. `context` (str): \n'
+                 '10. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `answer` (AnswerCard): \n'
+                 "2. `verdict` (Literal['yes', 'no']): \n"
+                 '3. `confidence` (float):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 '[[ ## history ## ]]\n'
+                 '{history}\n'
+                 '\n'
+                 '[[ ## image ## ]]\n'
+                 '{image}\n'
+                 '\n'
+                 '[[ ## audio ## ]]\n'
+                 '{audio}\n'
+                 '\n'
+                 '[[ ## file ## ]]\n'
+                 '{file}\n'
+                 '\n'
+                 '[[ ## document ## ]]\n'
+                 '{document}\n'
+                 '\n'
+                 '[[ ## event ## ]]\n'
+                 '{event}\n'
+                 '\n'
+                 '[[ ## tools ## ]]\n'
+                 '{tools}\n'
+                 '\n'
+                 '[[ ## profile ## ]]\n'
+                 '{profile}\n'
+                 '\n'
+                 '[[ ## context ## ]]\n'
+                 '{context}\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 '[[ ## answer ## ]]\n'
+                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
+                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
+                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
+                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 '{verdict}        # note: the value you produce must exactly match (no extra '
+                 'characters) one of: yes; no\n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 '{confidence}        # note: the value you produce must be a single float value\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Answer carefully using every available signal.'},
+     {"role": "user",
+      "content": [{"type": "text",
+                   "text": "This is an example of the task, though some input or output fields are not "
+                           "supplied.\n"
+                           "\n"
+                           "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                  {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
+                  {"type": "input_audio", "input_audio": {"data": "REVNTw==", "format": "wav"}},
+                  {"type": "text", "text": "\n\n[[ ## file ## ]]\n"},
+                  {"type": "file", "file": {"file_id": "file-demo", "filename": "demo.txt"}},
+                  {"type": "text", "text": "\n\n[[ ## document ## ]]\n"},
+                  {"type": "document",
+                   "source": {"type": "text", "media_type": "text/plain", "data": "Demo document"},
+                   "citations": {"enabled": True},
+                   "title": "Demo Doc"},
+                  {"type": "text", "text": "\n\n[[ ## event ## ]]\n"},
+                  {"type": "event", "event": {"label": "demo-event"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                           '"interests": ["math", "machines"]}\n'
+                           '\n'
+                           '[[ ## context ## ]]\n'
+                           '[1] «demo context one»\n'
+                           '[2] «demo context two»\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should we mention?'}]},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Mention analytical engines.", "sources": ["demo"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'yes\n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 '0.9\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Incomplete example question"},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'Not supplied for this particular example. \n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 'Not supplied for this particular example.\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": '[[ ## profile ## ]]\n'
+                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+                 '["math", "machines"]}\n'
+                 '\n'
+                 '[[ ## context ## ]]\n'
+                 '[1] «old note»\n'
+                 '[2] «older note»\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 'Who is Ada?'},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'yes\n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 '0.8\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                  {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
+                  {"type": "input_audio", "input_audio": {"data": "Q1VSUkVOVA==", "format": "wav"}},
+                  {"type": "text", "text": "\n\n[[ ## file ## ]]\n"},
+                  {"type": "file", "file": {"file_id": "file-current", "filename": "current.txt"}},
+                  {"type": "text", "text": "\n\n[[ ## document ## ]]\n"},
+                  {"type": "document",
+                   "source": {"type": "text", "media_type": "text/plain", "data": "Current document"},
+                   "citations": {"enabled": True},
+                   "title": "Current Doc"},
+                  {"type": "text", "text": "\n\n[[ ## event ## ]]\n"},
+                  {"type": "event", "event": {"label": "current-event"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                           '"interests": ["compilers", "navy"]}\n'
+                           '\n'
+                           '[[ ## context ## ]]\n'
+                           '[1] «current context one»\n'
+                           '[2] «current context two»\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should the answer include?\n'
+                           '\n'
+                           'Respond with the corresponding output fields, starting with the field `[[ '
+                           '## answer ## ]]` (must be formatted as a valid Python AnswerCard), then '
+                           "`[[ ## verdict ## ]]` (must be formatted as a valid Python Literal['yes', "
+                           "'no']), then `[[ ## confidence ## ]]` (must be formatted as a valid Python "
+                           'float), and then ending with the marker for `[[ ## completed ## ]]`.'}]}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
 
 def test_chat_adapter_with_pydantic_models():
     """
@@ -195,7 +2077,7 @@ def test_chat_adapter_exception_raised_on_failure():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
     invalid_completion = "{'output':'mismatched value'}"
-    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Adapter ChatAdapter failed to parse*"):
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match=r"Adapter ChatAdapter failed to parse.*"):
         adapter.parse(signature, invalid_completion)
 
 
@@ -476,6 +2358,29 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
         assert result == [{"answer": "Paris"}]
 
 
+def test_chat_adapter_fallback_preserves_native_function_calling_flag():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter(use_native_function_calling=False)
+    seen = {}
+
+    def fake_json_adapter_call(self, lm, lm_kwargs, signature, demos, inputs):
+        seen["use_native_function_calling"] = self.use_native_function_calling
+        return [{"answer": "Paris"}]
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__", new=fake_json_adapter_call):
+            result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert result == [{"answer": "Paris"}]
+    assert seen["use_native_function_calling"] is False
+
+
 def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
@@ -515,6 +2420,30 @@ async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
         # The parse should succeed
         result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
         assert result == [{"answer": "Paris"}]
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_async_fallback_preserves_native_function_calling_flag():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter(use_native_function_calling=False)
+    seen = {}
+
+    async def fake_json_adapter_acall(self, lm, lm_kwargs, signature, demos, inputs):
+        seen["use_native_function_calling"] = self.use_native_function_calling
+        return [{"answer": "Paris"}]
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall", new=fake_json_adapter_acall):
+            result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert result == [{"answer": "Paris"}]
+    assert seen["use_native_function_calling"] is False
 
 
 def test_chat_adapter_toolcalls_native_function_calling():
@@ -562,7 +2491,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                    name="get_weather",
+                    args={"city": "Paris"},
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
@@ -726,7 +2661,7 @@ def test_format_system_message():
     expected_system_message = """Your input fields are:
 1. `question` (str):
 Your output fields are:
-1. `answers` (list[str]): 
+1. `answers` (list[str]):\x20
 2. `scores` (list[float]):
 All interactions will be structured in the following way, with the appropriate values filled in.
 
@@ -740,7 +2675,7 @@ All interactions will be structured in the following way, with the appropriate v
 {scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
 
 [[ ## completed ## ]]
-In adhering to this structure, your objective is: 
+In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
 
@@ -793,3 +2728,72 @@ def test_tool_call_with_null_content_does_not_raise():
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None
     assert len(result) == 1
+    assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
+
+
+def test_tool_call_with_unstructured_content_does_not_raise():
+    """Provider tool calls are authoritative even when content is not adapter-formatted."""
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    original_sig = dspy.Signature(
+        "question, tools: list[dspy.Tool] -> next_thought: dspy.Reasoning, tool_calls: dspy.ToolCalls"
+    )
+    processed_sig = original_sig.delete("tools").delete("tool_calls").delete("next_thought")
+    outputs = [
+        {
+            "text": "I'll search for that now.",
+            "tool_calls": [
+                {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+            ],
+            "reasoning_content": "I need a search result.",
+        }
+    ]
+
+    result = adapter._call_postprocess(processed_sig, original_sig, outputs, None, {})
+
+    assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
+    assert result[0]["next_thought"] == dspy.Reasoning(content="I need a search result.")
+
+
+def test_tool_call_with_structured_content_preserves_other_outputs():
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    original_sig = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
+    processed_sig = original_sig.delete("tools").delete("tool_calls")
+    outputs = [
+        {
+            "text": "[[ ## answer ## ]]\nI should use a tool.\n\n[[ ## completed ## ]]",
+            "tool_calls": [
+                {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+            ],
+        }
+    ]
+
+    result = adapter._call_postprocess(processed_sig, original_sig, outputs, None, {})
+
+    assert result[0]["answer"] == "I should use a tool."
+    assert result[0]["tool_calls"].tool_calls[0].id == "call_1"
+
+
+def test_provider_tool_calls_preserve_id_and_repair_arguments():
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> tool_calls: dspy.ToolCalls")
+
+    outputs = [
+        {
+            "text": None,
+            "tool_calls": [
+                {
+                    "function": {"name": "search", "arguments": '{"query": "cats",}'},
+                    "call_id": "call_from_responses",
+                    "type": "function",
+                }
+            ],
+        }
+    ]
+
+    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+
+    assert result[0]["tool_calls"] == dspy.ToolCalls(
+        tool_calls=[
+            dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
+        ]
+    )

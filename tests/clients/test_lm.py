@@ -276,6 +276,68 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     lm("Query")
 
 
+def test_lm_wraps_litellm_errors_with_metadata():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    response = mock.Mock()
+    response.status_code = 429
+    response.headers = {"x-request-id": "req-123", "retry-after": "2.5"}
+
+    error = litellm.RateLimitError(message="too many requests", llm_provider="openai", model="gpt-4o", response=response)
+    wrapped = lm._wrap_litellm_exception(error)
+
+    assert isinstance(wrapped, dspy.LMRateLimitError)
+    assert wrapped.model == "gpt-4o"
+    assert wrapped.provider == "openai"
+    assert wrapped.status == 429
+    assert wrapped.request_id == "req-123"
+    assert wrapped.retry_after == 2.5
+
+
+def test_lm_wraps_litellm_context_window_error():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    error = litellm.ContextWindowExceededError(message="too long", llm_provider="openai", model="gpt-4o")
+    wrapped = lm._wrap_litellm_exception(error)
+
+    assert isinstance(wrapped, dspy.ContextWindowExceededError)
+    assert isinstance(wrapped, dspy.LMError)
+    assert wrapped.model == "gpt-4o"
+    assert wrapped.provider == "openai"
+
+
+def test_lm_wraps_unknown_boundary_error_as_unexpected_error():
+    lm = dspy.LM("openai/gpt-4o-mini")
+    wrapped = lm._wrap_litellm_exception(RuntimeError("local boundary failure"))
+
+    assert isinstance(wrapped, dspy.LMUnexpectedError)
+    assert wrapped.code == "unexpected"
+    assert wrapped.model == "openai/gpt-4o-mini"
+
+
+def test_lm_preserves_existing_lm_error_without_self_cause():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.litellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            lm("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_lm_preserves_existing_lm_error_without_self_cause_async():
+    error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("dspy.clients.lm.alitellm_completion", side_effect=error):
+        with pytest.raises(dspy.LMRateLimitError) as exc_info:
+            await lm.acall("question")
+
+    assert exc_info.value is error
+    assert exc_info.value.__cause__ is None
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
@@ -297,7 +359,7 @@ def test_retry_made_on_system_errors():
 
     lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
     with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
-        with pytest.raises(RateLimitError):
+        with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
     assert retry_tracking[0] == 4
@@ -338,8 +400,8 @@ def test_reasoning_model_token_parameter():
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
-        ValueError,
-        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
+        dspy.LMConfigurationError,
+        match=r"reasoning models require passing temperature=1\.0 or None and max_tokens >= 16000 or None",
     ):
         dspy.LM(
             model=model_name,
@@ -378,6 +440,125 @@ def test_gpt_5_chat_not_reasoning_model():
     assert lm.kwargs["temperature"] == 0.7
 
 
+def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
+    callbacks = [object()]
+    lm = dspy.BaseLM("custom-model", callbacks=callbacks)
+
+    assert lm.kwargs == {"temperature": None, "max_tokens": None}
+    assert lm.num_retries == 3
+    assert lm.callbacks == callbacks
+    assert lm.callbacks is not callbacks
+
+
+def test_base_lm_forward_contract_defaults_to_legacy():
+    class CustomLM(dspy.BaseLM):
+        pass
+
+    lm = CustomLM("custom-model")
+
+    assert lm._get_forward_contract() == "legacy"
+    assert not lm._declares_forward_contract()
+
+
+def test_base_lm_forward_contract_accepts_explicit_values():
+    class LegacyLM(dspy.BaseLM):
+        forward_contract = "legacy"
+
+    class TypedLM(dspy.BaseLM):
+        forward_contract = "typed_lm"
+
+    assert LegacyLM("custom-model")._get_forward_contract() == "legacy"
+    assert LegacyLM("custom-model")._declares_forward_contract()
+    assert TypedLM("custom-model")._get_forward_contract() == "typed_lm"
+    assert TypedLM("custom-model")._declares_forward_contract()
+
+
+def test_base_lm_forward_contract_rejects_unknown_values():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "normalized"
+
+    with pytest.raises(ValueError, match="forward_contract must be 'legacy' or 'typed_lm'"):
+        CustomLM("custom-model")._get_forward_contract()
+
+
+def test_base_lm_validates_typed_lm_response():
+    lm = dspy.BaseLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    assert lm._validate_typed_lm_response(response) is response
+
+    with pytest.raises(TypeError, match=r"requires forward\(request\).*dspy.LMResponse"):
+        lm._validate_typed_lm_response(["ok"])
+
+
+def test_base_lm_warns_when_inherited_legacy_forward_returns_lm_response():
+    class CustomLM(dspy.BaseLM):
+        pass
+
+    lm = CustomLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    with pytest.warns(DeprecationWarning, match="default legacy forward_contract"):
+        assert lm._validate_legacy_lm_response(response) is response
+
+    assert lm._validate_legacy_lm_response(["ok"]) is None
+
+
+def test_base_lm_errors_when_explicit_legacy_forward_returns_lm_response():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "legacy"
+
+    lm = CustomLM("custom-model")
+    response = dspy.LMResponse.from_text("ok", model="custom-model")
+
+    with pytest.raises(TypeError, match=r"forward_contract='legacy'.*got dspy.LMResponse"):
+        lm._validate_legacy_lm_response(response)
+
+
+def test_base_lm_tracks_usage_for_custom_subclasses():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                model="custom-model",
+            )
+
+    lm = CustomLM(model="custom-model")
+
+    with track_usage() as usage_tracker:
+        lm("Query")
+
+    total_usage = usage_tracker.get_total_tokens()["custom-model"]
+    assert total_usage["prompt_tokens"] == 1
+    assert total_usage["completion_tokens"] == 1
+    assert total_usage["total_tokens"] == 2
+
+
+def test_base_lm_copy_is_shallow_runtime_copy_with_isolated_dspy_state():
+    class CustomLM(dspy.BaseLM):
+        pass
+
+    callback = object()
+    client = object()
+    lm = CustomLM(model="custom-model", callbacks=[callback], temperature=0.1)
+    lm.client = client
+    lm.extra_state = {"mutable": []}
+    lm.history = [{"prompt": "original"}]
+
+    copied_lm = lm.copy(temperature=0.2, rollout_id=1)
+
+    assert copied_lm is not lm
+    assert copied_lm.client is client
+    assert copied_lm.extra_state is lm.extra_state
+    assert copied_lm.history == []
+    assert copied_lm.history is not lm.history
+    assert copied_lm.callbacks == [callback]
+    assert copied_lm.callbacks is not lm.callbacks
+    assert copied_lm.kwargs == {"temperature": 0.2, "max_tokens": None, "rollout_id": 1}
+    assert lm.kwargs == {"temperature": 0.1, "max_tokens": None}
+
+
 def test_dump_state():
     lm = dspy.LM(
         model="openai/gpt-4o-mini",
@@ -390,6 +571,7 @@ def test_dump_state():
     )
 
     assert lm.dump_state() == {
+        "_dspy_lm_class": "dspy.clients.lm.LM",
         "model": "openai/gpt-4o-mini",
         "model_type": "chat",
         "temperature": 1,
@@ -400,6 +582,111 @@ def test_dump_state():
         "launch_kwargs": {"temperature": 1},
         "train_kwargs": {"temperature": 5},
     }
+
+
+def test_reasoning_model_dump_state_uses_constructor_max_tokens():
+    lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+        cache=False,
+        num_retries=1,
+    )
+
+    state = lm.dump_state()
+
+    assert lm.kwargs["max_completion_tokens"] == 16_000
+    assert "max_completion_tokens" not in state
+    assert state["max_tokens"] == 16_000
+
+
+def test_dump_state_preserves_enabled_developer_role():
+    lm = dspy.LM("openai/gpt-4o-mini", use_developer_role=True)
+
+    assert lm.dump_state()["use_developer_role"] is True
+    assert dspy.LM.load_state(lm.dump_state()).use_developer_role is True
+
+
+def test_dump_state_ignores_internal_class_marker_kwarg():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        **{"_dspy_lm_class": "malicious.module.LM"},
+    )
+
+    dumped_state = lm.dump_state()
+
+    assert dumped_state["_dspy_lm_class"] == "dspy.clients.lm.LM"
+    assert lm.kwargs["_dspy_lm_class"] == "malicious.module.LM"
+
+
+def test_load_state():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        model_type="chat",
+        temperature=1,
+        max_tokens=100,
+        num_retries=10,
+        launch_kwargs={"temperature": 1},
+        train_kwargs={"temperature": 5},
+    )
+
+    loaded_lm = dspy.LM.load_state(lm.dump_state())
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.dump_state() == lm.dump_state()
+
+
+def test_reasoning_model_load_state_round_trips_canonical_state():
+    lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+        cache=False,
+        num_retries=1,
+    )
+
+    loaded_lm = dspy.BaseLM.load_state(lm.dump_state())
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.kwargs["max_completion_tokens"] == 16_000
+    assert loaded_lm.dump_state() == lm.dump_state()
+
+
+def test_reasoning_model_load_state_accepts_max_completion_tokens_alias():
+    state = {
+        "_dspy_lm_class": "dspy.clients.lm.LM",
+        "model": "openai/gpt-5-nano",
+        "model_type": "chat",
+        "cache": False,
+        "num_retries": 1,
+        "temperature": 1.0,
+        "max_completion_tokens": 16_000,
+        "finetuning_model": None,
+        "launch_kwargs": {},
+        "train_kwargs": {},
+    }
+
+    loaded_lm = dspy.BaseLM.load_state(state)
+
+    assert isinstance(loaded_lm, dspy.LM)
+    assert loaded_lm.kwargs["max_completion_tokens"] == 16_000
+    assert "max_completion_tokens" not in loaded_lm.dump_state()
+    assert loaded_lm.dump_state()["max_tokens"] == 16_000
+
+
+def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
+    calls = []
+    original_load_state = dspy.BaseLM.load_state.__func__
+
+    def spy_load_state(cls, state, *, allow_custom_lm_class=False):
+        calls.append(allow_custom_lm_class)
+        return original_load_state(cls, state, allow_custom_lm_class=allow_custom_lm_class)
+
+    monkeypatch.setattr(dspy.BaseLM, "load_state", classmethod(spy_load_state))
+
+    dspy.LM.load_state(dspy.LM("openai/gpt-4o-mini").dump_state(), allow_custom_lm_class=True)
+
+    assert calls == [True]
 
 
 def test_exponential_backoff_retry():
@@ -415,7 +702,7 @@ def test_exponential_backoff_retry():
 
     lm = dspy.LM(model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
     with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
-        with pytest.raises(RateLimitError):
+        with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
     # The first retry happens immediately regardless of the configuration

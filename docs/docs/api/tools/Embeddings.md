@@ -1,5 +1,8 @@
 # dspy.retrievers.Embeddings
 
+!!! note "Requires numpy"
+    `dspy.retrievers.Embeddings` requires numpy. Install it with `pip install dspy[numpy]`.
+
 <!-- START_API_REF -->
 ::: dspy.Embeddings
     handler: python

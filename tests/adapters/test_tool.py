@@ -2,10 +2,12 @@ import asyncio
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 import dspy
-from dspy.adapters.types.tool import Tool, ToolCalls, convert_input_schema_to_tool_args
+from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
+from dspy.clients.openai_format import to_openai_chat_request
+from dspy.core.types import LMMessage, LMRequest, LMToolResultPart
 
 
 # Test fixtures
@@ -398,7 +400,7 @@ TOOL_CALL_TEST_CASES = [
     (
         [{"name": "search", "args": {"query": "hello"}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+            "tool_calls": [{"name": "search", "args": {"query": "hello"}}],
         },
     ),
     (
@@ -408,18 +410,15 @@ TOOL_CALL_TEST_CASES = [
         ],
         {
             "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
-                },
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world", "lang": "fr"}},
             ],
         },
     ),
     (
         [{"name": "get_time", "args": {}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+            "tool_calls": [{"name": "get_time", "args": {}}],
         },
     ),
 ]
@@ -446,8 +445,117 @@ def test_tool_calls_format_from_dict_list():
     result = tool_calls.format()
 
     assert len(result["tool_calls"]) == 2
-    assert result["tool_calls"][0]["function"]["name"] == "search"
-    assert result["tool_calls"][1]["function"]["name"] == "translate"
+    assert result["tool_calls"][0]["name"] == "search"
+    assert result["tool_calls"][1]["name"] == "translate"
+
+
+def test_tool_calls_preserves_ids_from_dict_list_and_format_omits_ids():
+    tool_calls = ToolCalls.from_dict_list(
+        [
+            {"id": "call_1", "name": "search", "args": {"query": "hello"}},
+            {"name": "translate", "args": {"text": "world", "lang": "fr"}},
+        ]
+    )
+
+    assert tool_calls.tool_calls[0].id == "call_1"
+    assert tool_calls.tool_calls[1].id is None
+
+    formatted = tool_calls.format()["tool_calls"]
+    assert "id" not in formatted[0]
+    assert "id" not in formatted[1]
+
+
+def test_tool_calls_json_schema_omits_internal_id_field():
+    schema = TypeAdapter(ToolCalls).json_schema()
+
+    assert "tool_call_results" not in schema["properties"]
+    assert "id" not in schema["$defs"]["ToolCall"]["properties"]
+    assert schema["$defs"]["ToolCall"]["required"] == ["name", "args"]
+
+
+def test_tool_calls_can_carry_results_without_formatting_them_for_lm():
+    tool_call = ToolCalls.ToolCall(id="call_1", name="search", args={"query": "hello"})
+    results = ToolCallResults.from_tool_calls_and_values([tool_call], [{"answer": "world"}])
+    tool_calls = ToolCalls(tool_calls=[tool_call], tool_call_results=results)
+
+    assert "tool_call_results" not in tool_calls.format()
+    assert tool_calls.model_dump(mode="json")["tool_call_results"] == {
+        "tool_call_results": [
+            {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
+        ]
+    }
+
+
+def test_tool_call_results_from_tool_calls_and_values():
+    tool_calls = [
+        ToolCalls.ToolCall(id="call_1", name="search", args={"query": "hello"}),
+        ToolCalls.ToolCall(id="call_2", name="fetch", args={"url": "https://example.com"}),
+    ]
+
+    results = ToolCallResults.from_tool_calls_and_values(
+        tool_calls,
+        [{"items": [1, 2]}, "failed"],
+        is_errors=[False, True],
+    )
+
+    assert results.tool_call_results[0].call_id == "call_1"
+    assert results.tool_call_results[0].name == "search"
+    assert results.tool_call_results[0].value == {"items": [1, 2]}
+    assert results.tool_call_results[0].is_error is False
+    assert results.tool_call_results[1].call_id == "call_2"
+    assert results.tool_call_results[1].name == "fetch"
+    assert results.tool_call_results[1].value == "failed"
+    assert results.tool_call_results[1].is_error is True
+
+
+def test_tool_call_results_history_serialization_round_trip():
+    tool_call = ToolCalls.ToolCall(id="call_1", name="search", args={"query": "hello"})
+    results = ToolCallResults.from_tool_calls_and_values(
+        [tool_call],
+        [{"answer": "world"}],
+    )
+    tool_calls = ToolCalls(tool_calls=[tool_call], tool_call_results=results)
+
+    history = dspy.History(messages=[{"tool_calls": tool_calls}])
+    dumped = history.model_dump(mode="json")
+    restored = dspy.History.model_validate(dumped)
+
+    assert dumped == {
+        "messages": [
+            {
+                "tool_calls": {
+                    "tool_calls": [
+                        {"name": "search", "args": {"query": "hello"}}
+                    ],
+                    "tool_call_results": {
+                        "tool_call_results": [
+                            {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
+                        ]
+                    },
+                }
+            }
+        ]
+    }
+    assert restored.messages == dumped["messages"]
+
+
+def test_tool_call_results_can_round_trip_as_native_tool_result_message():
+    tool_call = ToolCalls.ToolCall(id="call_1", name="search", args={"query": "cats"})
+    results = ToolCallResults.from_tool_calls_and_values([tool_call], ['{"items": ["cat"]}'])
+    result = results.tool_call_results[0]
+
+    message = LMMessage(role="tool", tool_call_id=result.call_id, name=result.name, content=result.value)
+
+    assert len(message.parts) == 1
+    assert isinstance(message.parts[0], LMToolResultPart)
+    assert message.parts[0].call_id == "call_1"
+    assert message.parts[0].name == "search"
+    assert message.parts[0].content[0].text == '{"items": ["cat"]}'
+
+    request = LMRequest(model="test-model", messages=[message])
+    assert to_openai_chat_request(request)["messages"] == [
+        {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1", "name": "search"}
+    ]
 
 
 def test_toolcalls_vague_match():
@@ -490,11 +598,48 @@ def test_toolcalls_vague_match():
     assert tc.tool_calls[0].name == "search"
     assert tc.tool_calls[1].name == "get_time"
 
+    # Top-level "arguments" should be accepted as an alias for "args".
+    tc = ToolCalls.model_validate({"name": "search", "arguments": {"query": "hello"}})
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
+    # List entries with "arguments" should normalize to ToolCall.args.
+    tc = ToolCalls.model_validate(
+        [
+            {"name": "search", "arguments": {"query": "hello"}},
+            {"name": "get_time", "arguments": {}},
+        ]
+    )
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].args == {"query": "hello"}
+    assert tc.tool_calls[1].args == {}
+
+    # "tool_calls" wrappers may also use "arguments".
+    tc = ToolCalls.model_validate({"tool_calls": [{"name": "search", "arguments": {"query": "hello"}}]})
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
+    # Provider-style nested function.arguments should accept dict and JSON-string values.
+    tc = ToolCalls.model_validate(
+        {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}
+    )
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
+    tc = ToolCalls.model_validate(
+        {"type": "function", "function": {"name": "search", "arguments": '{"query":"hello"}'}}
+    )
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
     # Invalid input should raise ValueError
     with pytest.raises(ValueError):
         ToolCalls.model_validate({"foo": "bar"})
     with pytest.raises(ValueError):
         ToolCalls.model_validate([{"foo": "bar"}])
+    with pytest.raises(ValueError, match="function value"):
+        ToolCalls.from_dict_list([{"function": "bad"}])
 
 
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
@@ -575,11 +720,9 @@ def test_tool_call_execute():
 
     # Test error case
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
-    try:
+    with pytest.raises(ValueError) as exc_info:
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not found" in str(e)
+    assert "not found" in str(exc_info.value)
 
 
 def test_tool_call_execute_with_local_functions():

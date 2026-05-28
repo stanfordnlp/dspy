@@ -6,13 +6,10 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
-from dspy.utils.callback import BaseCallback
 
 
 class XMLAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None):
-        super().__init__(callbacks)
-        self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
+    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []

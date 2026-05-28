@@ -1,6 +1,44 @@
 {% extends "base.html" %}
 
+{% block announce %}
+  <strong>DSPy.LM API migration:</strong>
+  We are planning the typed <code>BaseLM</code> transition for DSPy 3.3–3.6/4.0.
+  <a href="{{ 'community/normalized-lm-api-migration/' | url }}">Review the plan and share feedback.</a>
+{% endblock %}
+
 {% block extrahead %}
+<style>
+  [data-md-color-scheme="default"] .md-banner {
+    background: #eef5ff;
+    border-bottom: 1px solid #c9ddff;
+    color: #1f2937;
+  }
+  [data-md-color-scheme="default"] .md-banner a {
+    color: #2457c5;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
+  [data-md-color-scheme="default"] .md-banner code {
+    background: rgba(36, 87, 197, 0.1);
+    color: #1e3a8a;
+  }
+  [data-md-color-scheme="slate"] .md-banner {
+    background: #0f2747;
+    border-bottom: 1px solid #24496f;
+    color: #eef6ff;
+  }
+  [data-md-color-scheme="slate"] .md-banner a {
+    color: #9dccff;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
+  [data-md-color-scheme="slate"] .md-banner code {
+    background: rgba(157, 204, 255, 0.14);
+    color: #d6ebff;
+  }
+</style>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-G728W2L8KQ"></script>
 <script>
   window.dataLayer = window.dataLayer || [];

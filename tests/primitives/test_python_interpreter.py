@@ -1,3 +1,4 @@
+import asyncio
 import os
 import random
 
@@ -376,6 +377,38 @@ def test_tool_error_surfaces_as_runtime_error():
         assert "bad value: 42" in result
 
 
+def test_tool_async_def_function():
+    """async def tools should be awaited so the sandbox sees the resolved value."""
+
+    async def slow_search(query: str) -> str:
+        await asyncio.sleep(0)
+        return f"answer:{query}"
+
+    with PythonInterpreter(tools={"slow_search": slow_search}) as sandbox:
+        result = sandbox.execute("slow_search(query='hello')")
+        assert result == "answer:hello"
+
+
+def test_tool_async_def_raises_propagates():
+    """Exceptions raised inside an async tool should surface as RuntimeError in the sandbox."""
+
+    async def failing_async(x: int) -> str:
+        await asyncio.sleep(0)
+        raise ValueError(f"boom:{x}")
+
+    with PythonInterpreter(tools={"failing_async": failing_async}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_async(7)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "boom:7" in result
+
+
 
 # =============================================================================
 # Multi-Output SUBMIT Tests
@@ -600,6 +633,30 @@ def test_large_variable_threshold_boundary():
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
+
+
+def test_enable_read_paths_symlink(tmp_path):
+    """Regression test for #9501: symlinked enable_read_paths must resolve so Deno
+    can read through them (denoland/deno#9607 — Deno prefix-matches against the
+    realpath of the file being read). The sandbox virtual path keeps the user's
+    original basename so user code refers to the file by the name passed in.
+    """
+    real_file = tmp_path / "real_name.txt"
+    real_file.write_text("through symlink")
+    link_file = tmp_path / "link_name.txt"
+    try:
+        link_file.symlink_to(real_file)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    with PythonInterpreter(enable_read_paths=[str(link_file)]) as interp:
+        allow_read_arg = next(a for a in interp.deno_command if a.startswith("--allow-read="))
+        allow_read = allow_read_arg[len("--allow-read="):].split(",")
+        assert os.path.realpath(str(real_file)) in allow_read
+        assert str(link_file) not in allow_read
+
+        result = interp.execute("with open('/sandbox/link_name.txt') as f:\n    data = f.read()\ndata")
+        assert result == "through symlink"
 
 
 def test_enable_read_paths_multiple_files(tmp_path):

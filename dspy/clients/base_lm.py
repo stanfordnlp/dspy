@@ -1,13 +1,49 @@
+import copy as copy_module
 import datetime
+import importlib
+import inspect
 import uuid
-from typing import Any, TextIO
+import warnings
+from typing import Any, Literal, TextIO
 
+from dspy.core.types import LMResponse
 from dspy.dsp.utils import settings
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
+LM_CLASS_STATE_KEY = "_dspy_lm_class"
+_BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+ForwardContract = Literal["legacy", "typed_lm"]
+
+
+def _import_lm_class(class_path: str) -> type:
+    parts = class_path.split(".")
+    last_error = None
+
+    for split_index in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:split_index])
+        try:
+            obj = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name == module_name or module_name.startswith(f"{exc.name}."):
+                last_error = exc
+                continue
+            raise
+
+        try:
+            for attr in parts[split_index:]:
+                obj = getattr(obj, attr)
+        except AttributeError as exc:
+            last_error = exc
+            continue
+
+        if not isinstance(obj, type):
+            raise TypeError(f"Serialized LM class `{class_path}` did not resolve to a class.")
+        return obj
+
+    raise ImportError(f"Could not import serialized LM class `{class_path}`.") from last_error
 
 
 class BaseLM:
@@ -17,6 +53,9 @@ class BaseLM:
     own subclasses of `BaseLM` to support custom LLM providers and inject custom logic. To do so, simply override the
     `forward` method and make sure the return format is identical to the
     [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+
+    Subclasses whose state is captured by `BaseLM.__init__` can use the default `dump_state` and `load_state`
+    methods. Subclasses with extra persistent state should override both methods.
 
     Examples:
 
@@ -60,12 +99,108 @@ class BaseLM:
     ```
     """
 
-    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
+    forward_contract: ForwardContract = "legacy"
+    """The `forward()` implementation contract used by this LM.
+
+    `"legacy"` means `forward(prompt=None, messages=None, **kwargs)` returns an
+    OpenAI-like provider response. `"typed_lm"` means
+    `forward(request: dspy.LMRequest) -> dspy.LMResponse`.
+    """
+
+    def __init__(
+        self,
+        model,
+        model_type="chat",
+        temperature=None,
+        max_tokens=None,
+        cache=True,
+        callbacks: list[BaseCallback] | None = None,
+        num_retries: int = 3,
+        **kwargs,
+    ):
+        """Initialize a base language model.
+
+        Args:
+            model: The model identifier.
+            model_type: The LM API type, such as `"chat"`, `"text"`, or
+                `"responses"`.
+            temperature: The default sampling temperature.
+            max_tokens: The default maximum number of output tokens.
+            cache: Whether requests should use DSPy's cache by default.
+            num_retries: The default number of provider request retries.
+            callbacks: Optional instance-level callback handlers.
+            **kwargs: Additional default request parameters stored in
+                `self.kwargs`.
+        """
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+        self.callbacks = list(callbacks or [])
+        self.num_retries = num_retries
+        self.kwargs = self._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        self._warned_zero_temp_rollout = False
+
+    def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
+        return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+
+    def _declares_forward_contract(self) -> bool:
+        """Return whether this concrete LM class declares `forward_contract`."""
+        return "forward_contract" in type(self).__dict__
+
+    def _get_forward_contract(self) -> ForwardContract:
+        """Return the declared `forward()` contract for this LM.
+
+        DSPy deliberately does not inspect `forward()` signatures during the
+        migration to typed LM calls. Subclasses opt into the typed contract by
+        setting `forward_contract = "typed_lm"`; all existing custom LMs remain
+        on the legacy contract unless they say otherwise.
+        """
+        contract = getattr(type(self), "forward_contract", "legacy")
+        if contract not in {"legacy", "typed_lm"}:
+            raise ValueError(
+                f"{type(self).__name__}.forward_contract must be 'legacy' or 'typed_lm', "
+                f"but got {contract!r}."
+            )
+        return contract
+
+    def _validate_typed_lm_response(self, response: Any) -> LMResponse:
+        """Validate the result of a typed `forward(request)` implementation."""
+        if isinstance(response, LMResponse):
+            return response
+        raise TypeError(
+            f"{type(self).__name__}.forward_contract='typed_lm' requires forward(request) "
+            f"to return dspy.LMResponse, but got {type(response).__name__}."
+        )
+
+    def _validate_legacy_lm_response(
+        self,
+        response: Any,
+        *,
+        stacklevel: int = 2,
+    ) -> LMResponse | None:
+        """Validate a legacy `forward()` result that already looks typed.
+
+        During the 3.3 migration, custom LMs that inherit the default legacy
+        contract may accidentally return `LMResponse`; warn so authors can add
+        `forward_contract = "typed_lm"`. If a class explicitly declares
+        `forward_contract = "legacy"`, treat `LMResponse` as a contract
+        mismatch and fail fast.
+        """
+        if not isinstance(response, LMResponse):
+            return None
+        if self._declares_forward_contract():
+            raise TypeError(
+                f"{type(self).__name__}.forward_contract='legacy' requires forward() to return an "
+                "OpenAI-like provider response, but got dspy.LMResponse. Set forward_contract='typed_lm'."
+            )
+        warnings.warn(
+            f"{type(self).__name__}.forward() returned dspy.LMResponse while using the default legacy "
+            "forward_contract. Set forward_contract='typed_lm' before the typed LM API becomes the default.",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
+        return response
 
     @property
     def supports_function_calling(self) -> bool:
@@ -94,6 +229,9 @@ class BaseLM:
             outputs = self._process_response(response)
         else:
             outputs = self._process_completion(response, merged_kwargs)
+
+        if not getattr(response, "cache_hit", False) and settings.usage_tracker:
+            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
 
         if settings.disable_history:
             return outputs
@@ -157,12 +295,13 @@ class BaseLM:
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
 
         Raises:
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
+            dspy.LMError: Base class for LM configuration, transport, provider,
+                and unsupported-feature failures. Notable subclasses include
+                `dspy.ContextWindowExceededError` for context-window failures,
+                which adapters use to avoid inappropriate fallback retries when
+                the prompt is too long. Each subclass should catch its
+                provider's native context-window error and re-raise it as
+                `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -181,32 +320,114 @@ class BaseLM:
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
 
         Raises:
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
+            dspy.LMError: Base class for LM configuration, transport, provider,
+                and unsupported-feature failures. Notable subclasses include
+                `dspy.ContextWindowExceededError` for context-window failures,
+                which adapters use to avoid inappropriate fallback retries when
+                the prompt is too long. Each subclass should catch its
+                provider's native context-window error and re-raise it as
+                `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters.
+    def dump_state(self) -> dict[str, Any]:
+        """Return a sanitized reconstruction state for this LM.
 
-        Any provided keyword arguments update the corresponding attributes or LM kwargs of
-        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
-        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
+        Subclasses whose state is captured by `BaseLM.__init__` can use this
+        default. Subclasses with extra persistent state should override both
+        `dump_state` and `load_state`.
+
+        Returns:
+            A dictionary that can be passed to `BaseLM.load_state`. The state
+            excludes API keys.
+        """
+        filtered_kwargs = {key: value for key, value in self.kwargs.items() if key not in ("api_key", LM_CLASS_STATE_KEY)}
+        return {
+            LM_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
+            "model": self.model,
+            "model_type": self.model_type,
+            "cache": self.cache,
+            "num_retries": getattr(self, "num_retries", 3),
+            **filtered_kwargs,
+        }
+
+    @classmethod
+    def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False) -> "BaseLM":
+        """Reconstruct an LM from `dump_state` output.
+
+        Legacy states without a class marker load as `dspy.LM`. Custom LM
+        classes must be importable by their module-qualified class path and are
+        only loaded when `allow_custom_lm_class=True`.
+
+        Args:
+            state: Serialized LM state produced by `dump_state`.
+            allow_custom_lm_class: If True, allow importing and loading custom
+                `BaseLM` subclasses recorded in `state`. Enable only for trusted
+                state.
+
+        Returns:
+            The reconstructed LM instance.
+
+        Raises:
+            ValueError: If `state` references a custom LM class and
+                `allow_custom_lm_class` is False.
+            ImportError: If the serialized LM class cannot be imported.
+            TypeError: If the serialized class is not a `BaseLM` subclass.
+        """
+        state = dict(state)
+        class_path = state.pop(LM_CLASS_STATE_KEY, None)
+
+        if cls is BaseLM:
+            if class_path is None:
+                # Legacy saved programs did not record the concrete LM class.
+                from dspy.clients.lm import LM
+
+                return LM(**state)
+
+            if class_path != _BUILTIN_LM_CLASS_PATH and not allow_custom_lm_class:
+                raise ValueError(
+                    f"Refusing to import custom serialized LM class `{class_path}`. "
+                    "Pass allow_unsafe_lm_state=True when loading trusted files to enable custom LM classes."
+                )
+
+            lm_cls = _import_lm_class(class_path)
+            if not issubclass(lm_cls, BaseLM):
+                raise TypeError(f"Serialized LM class `{class_path}` must be a subclass of dspy.BaseLM.")
+            if "allow_custom_lm_class" in inspect.signature(lm_cls.load_state).parameters:
+                return lm_cls.load_state(state, allow_custom_lm_class=allow_custom_lm_class)
+            return lm_cls.load_state(state)
+
+        return cls(**state)
+
+    def copy(self, **kwargs):
+        """Return a copy of the language model with updated parameters.
+
+        The default implementation makes a shallow runtime copy. Provider
+        clients, sessions, and local model handles are preserved by reference.
+        DSPy-owned mutable state is isolated for `history`, the `callbacks`
+        list, and the `kwargs` dict. Other attributes are shared by reference.
+        Subclasses with additional mutable DSPy-owned state should override this
+        method.
+
+        Args:
+            **kwargs: Attribute or request-parameter updates to apply to the
+                copy. For example, `lm.copy(rollout_id=1, temperature=1.0)`
+                returns an LM whose requests use a different rollout ID at
+                non-zero temperature to bypass cache collisions.
+
+        Returns:
+            A copied LM instance.
         """
 
-        import copy
-
-        new_instance = copy.deepcopy(self)
+        new_instance = copy_module.copy(self)
         new_instance.history = []
+        new_instance.callbacks = list(getattr(self, "callbacks", []) or [])
+        new_instance.kwargs = dict(getattr(self, "kwargs", {}) or {})
 
         for key, value in kwargs.items():
-            if hasattr(self, key):
+            if hasattr(new_instance, key):
                 setattr(new_instance, key, value)
-            if (key in self.kwargs) or (not hasattr(self, key)):
+            if (key in new_instance.kwargs) or (not hasattr(self, key)):
                 if value is None:
                     new_instance.kwargs.pop(key, None)
                 else:

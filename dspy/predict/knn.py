@@ -1,7 +1,8 @@
-import numpy as np
-
 from dspy.clients import Embedder
 from dspy.primitives import Example
+from dspy.utils.lazy_import import require
+
+np = require("numpy")
 
 
 class KNN:

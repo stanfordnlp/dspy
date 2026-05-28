@@ -1,14 +1,13 @@
 import logging
 import random
 import types
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.module import Module
@@ -95,7 +94,7 @@ class Predict(Module, Parameter):
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
-                serialized LM state. Enable only when loading trusted files.
+                serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
@@ -108,7 +107,11 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
-        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
+        self.lm = (
+            BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
+            if sanitized_lm_state
+            else None
+        )
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -213,9 +216,13 @@ class Predict(Module, Parameter):
                             value,
                         )
 
-        if not all(k in kwargs for k in signature.input_fields):
+        missing = [
+            k
+            for k, field_info in signature.input_fields.items()
+            if k not in kwargs and not _annotation_allows_none(field_info.annotation)
+        ]
+        if missing:
             present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
             logger.warning(
                 "Not all input fields were provided to module. Present: %s. Missing: %s.",
                 present,
@@ -302,6 +309,23 @@ def _get_type_name(type_annotation) -> str:
 
     return getattr(origin, "__name__", str(origin))
 
+
+def _annotation_allows_none(annotation: Any) -> bool:
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    if annotation is None or annotation is type(None):
+        return True
+
+    if origin is Annotated:
+        return bool(args) and _annotation_allows_none(args[0])
+
+    if origin is Union or origin is types.UnionType:
+        return any(_annotation_allows_none(arg) for arg in args)
+
+    return False
+
+
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
     # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
@@ -354,7 +378,7 @@ def _check_type(value: Any, expected: type) -> bool:
                 return all(_check_type(item, args[0]) for item in value)
             if len(value) != len(args):
                 return False
-            return all(_check_type(item, arg) for item, arg in zip(value, args))
+            return all(_check_type(item, arg) for item, arg in zip(value, args, strict=False))
         return True
 
     # set / frozenset
