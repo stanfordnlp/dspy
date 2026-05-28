@@ -334,7 +334,9 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             assert MySig.instructions == original  # original unchanged
 ```
         """
-        return cls.with_instructions(cls.instructions + "\n" + instructions)
+        current = cls.instructions
+        new_instructions = (current + "\n" + instructions) if current else instructions
+        return cls.with_instructions(new_instructions)
     @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.
