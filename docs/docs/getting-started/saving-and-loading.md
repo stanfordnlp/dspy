@@ -10,10 +10,10 @@ Reach for `save_program=True` when whoever is loading the program won’t have y
 
 ```py
 # state-only — small file, requires re-instantiating the program before loading
-optimized.save("haiku_bot.json")
+optimized_haiku_bot.save("haiku_bot.json")
 
 # whole program — directory, rehydrates without you re-defining the class
-optimized.save("haiku_bot/", save_program=True)
+optimized_haiku_bot.save("haiku_bot/", save_program=True)
 ```
 
 ## Reloading a saved program

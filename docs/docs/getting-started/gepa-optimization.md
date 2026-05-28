@@ -103,7 +103,7 @@ Once optimized with GEPA, our smaller model is faster, cheaper, and *better* tha
 Let’s quickly save our optimized program, then take a look at how our prompt changed.
 
 ```py
-optimized.save("react_gpt_nano_haiku_optimized.json")
+optimized_haiku_bot.save("react_gpt_nano_haiku_optimized.json")
 ```
 
 ## GEPA’s improved prompt
