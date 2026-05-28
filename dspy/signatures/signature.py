@@ -289,7 +289,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             and whose instructions equal `instructions`.
 
         Examples:
-            ```python
+```python
             import dspy
 
             class MySig(dspy.Signature):
@@ -299,10 +299,41 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             NewSig = MySig.with_instructions("Translate to French.")
             assert NewSig is not MySig
             assert NewSig.instructions == "Translate to French."
-            ```
+```
         """
         return Signature(cls.fields, instructions)
 
+    @classmethod
+    def append_instructions(cls, instructions: str) -> type["Signature"]:
+        """Return a new Signature class with additional instructions appended.
+
+        This method does not mutate `cls`. It constructs a fresh Signature
+        class using the current fields and the existing instructions with
+        the provided ``instructions`` appended on a new line.
+
+        Args:
+            instructions (str): Instruction text to append to the existing instructions.
+
+        Returns:
+            A new Signature class whose fields match ``cls.fields``
+            and whose instructions are the original instructions with
+            the new instructions appended.
+
+        Examples:
+```python
+            import dspy
+
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input text")
+                output_text: str = dspy.OutputField(desc="Output text")
+
+            NewSig = MySig.append_instructions("Always respond in French.")
+            assert NewSig is not MySig
+            assert NewSig.instructions == MySig.instructions + "\n" + "Always respond in French."
+            assert MySig.instructions == MySig.instructions  # original unchanged
+```
+        """
+        return cls.with_instructions(cls.instructions + "\n" + instructions)
     @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.

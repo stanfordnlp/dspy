@@ -609,3 +609,26 @@ def test_predict_cloudpickle_roundtrip():
     loaded = pickle.loads(data)
 
     assert list(loaded.signature.fields.keys()) == ["question", "answer"]
+
+    
+def test_append_instructions():
+    class MySig(dspy.Signature):
+        """Original instructions."""
+        input_text: str = dspy.InputField(desc="Input text")
+        output_text: str = dspy.OutputField(desc="Output text")
+
+    original_instructions = MySig.instructions
+
+    NewSig = MySig.append_instructions("Always respond in French.")
+
+    # New signature has appended instructions
+    assert NewSig.instructions == original_instructions + "\n" + "Always respond in French."
+
+    # Original signature is unchanged
+    assert MySig.instructions == original_instructions
+
+    # New signature is a different class
+    assert NewSig is not MySig
+
+    # Fields are preserved
+    assert list(NewSig.fields.keys()) == list(MySig.fields.keys())
