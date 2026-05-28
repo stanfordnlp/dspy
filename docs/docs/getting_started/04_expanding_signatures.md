@@ -80,7 +80,7 @@ Novel jokes echo
 
 Inline types instruct DSPy to coerce the LM's output into the types we ask for, and surface clear warnings when they can't. This catches a class of silent failures that prompt-only systems hide.
 
-Types also let us communicate structural details that are easier to express in code than in natural language. Richer types – like Pydantic models, `TypedDicts`, or `dataclasses` – can pack plenty of details that help LMs correctly complete a task.
+Types also let us communicate structural details that are easier to express in code than in natural language. [Richer types](../diving-deeper/signatures-in-depth.md) – like Pydantic models, `TypedDicts`, or `dataclasses` – can pack plenty of details that help LMs correctly complete a task.
 
 This is especially helpful when typing output fields. For example, if we wanted to modify our program to generate several haikus we could make our output field name plural and type it as a `list[str]`:
 

@@ -160,6 +160,8 @@ It continues (you can view the entire text here), covering season and mood handl
 
 Fascinatingly, the same program will optimize differently depending on the model.
 
+See [GEPA in depth](../diving-deeper/gepa-in-depth.md) for the full mechanics: Pareto sampling, per-predictor feedback, `auto` budget translation, and the `detailed_results` audit trail.
+
 ---
 
 **Next:** [Saving and loading →](11_saving_and_loading.md)

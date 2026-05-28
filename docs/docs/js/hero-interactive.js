@@ -237,28 +237,59 @@
     }
   }
 
+  function track(eventName, params) {
+    if (typeof window.gtag === "function") {
+      window.gtag("event", eventName, params || {});
+    }
+  }
+
   function init() {
     var lmBtn = document.getElementById("hp-btn-lm");
     var fieldBtn = document.getElementById("hp-btn-field");
     var agentBtn = document.getElementById("hp-btn-agent");
-    if (!lmBtn || !fieldBtn || !agentBtn) return;
+    if (lmBtn && fieldBtn && agentBtn) {
+      lmBtn.addEventListener("click", function () {
+        state.lm = (state.lm + 1) % lmConfigs.length;
+        render();
+        track("hero_code_button_click", {
+          button: "change_llm",
+          lm_index: state.lm,
+          lm_provider: ["openai", "anthropic", "openrouter", "ollama"][state.lm],
+        });
+      });
 
-    lmBtn.addEventListener("click", function () {
-      state.lm = (state.lm + 1) % lmConfigs.length;
-      render();
+      fieldBtn.addEventListener("click", function () {
+        state.field = (state.field + 1) % (fieldConfigs.length + 1);
+        render();
+        var fieldName = state.field === 0 ? "removed" : fieldConfigs[state.field - 1].name;
+        track("hero_code_button_click", {
+          button: "add_field",
+          field_index: state.field,
+          field_name: fieldName,
+        });
+      });
+
+      agentBtn.addEventListener("click", function () {
+        state.agent = !state.agent;
+        render();
+        track("hero_code_button_click", {
+          button: "make_agent",
+          agent_enabled: state.agent,
+        });
+      });
+
+      silentRender();
+    }
+
+    var tabIds = ["extract", "agent", "pipeline", "multimodal", "optimize"];
+    tabIds.forEach(function (id) {
+      var label = document.querySelector('label[for="hp-tab-' + id + '"]');
+      if (label) {
+        label.addEventListener("click", function () {
+          track("example_tab_click", { tab: id });
+        });
+      }
     });
-
-    fieldBtn.addEventListener("click", function () {
-      state.field = (state.field + 1) % (fieldConfigs.length + 1);
-      render();
-    });
-
-    agentBtn.addEventListener("click", function () {
-      state.agent = !state.agent;
-      render();
-    });
-
-    silentRender();
   }
 
   if (document.readyState === "loading") {

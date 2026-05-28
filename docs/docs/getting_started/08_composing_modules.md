@@ -2,7 +2,7 @@
 
 Switching to `dspy.ReAct` turned our single-step program into a multi-step agent. It's a significant change, but `ReAct` itself is simple to understand.
 
-Inside `dspy.ReAct`, other DSPy modules are composed together. Each step where the model considers its inputs and picks the next tool is a `dspy.Predict` module. A bit of code manages the control flow, looping through `Predict` calls until the model calls `finish` or hits `max_iters`. The synthesis step that follows, where the model assembles the answer from everything it's learned, is a `ChainOfThought` module.
+Inside [`dspy.ReAct`](../diving-deeper/tools-react-and-mcp.md), other DSPy modules are composed together. Each step where the model considers its inputs and picks the next tool is a `dspy.Predict` module. A bit of code manages the control flow, looping through `Predict` calls until the model calls `finish` or hits `max_iters`. The synthesis step that follows, where the model assembles the answer from everything it's learned, is a `ChainOfThought` module.
 
 Modules are modular. We can compose them together and they just *work*.
 

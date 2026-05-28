@@ -17,7 +17,7 @@ The simplest way to define a DSPy Signature is with a string of the form `"input
 
 Because we are programming with language models, the names of our variables matter. They both define the interface for our program and give the model a hint at our intent. If we change `haiku` to `limerick`, the model would note our cue and produce a limerick instead. Additionally, our program’s output would be accessible as `result.limerick`, rather than `result.haiku`.
 
-To turn our Signature into a callable function, we use `dspy.Predict`. Predict is a kind of DSPy `Module`. If Signatures specify *what* we want, Modules define *how* we aim to achieve it. They implement a call-time strategy, manage the control flow, tools, and more. 
+To turn our Signature into a callable function, we use `dspy.Predict`. Predict is a kind of [DSPy `Module`](../diving-deeper/modules.md). If Signatures specify *what* we want, Modules define *how* we aim to achieve it. They implement a call-time strategy, manage the control flow, tools, and more. 
 
 `Predict` is the foundational Module. Let’s look at what happens when we call `dspy.Predict(haiku_signature)`:
 

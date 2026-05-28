@@ -18,7 +18,7 @@ We have the same fields (`location`, `mood`, and the `haiku` output) typed as st
 
 Class-based signatures also let us write a docstring, the string at the start of the class, which DSPy uses as task instructions when preparing prompts.
 
-We pass class-based signatures to modules just like we passed string signatures (it is the same object after all, just another way of making it):
+We pass class-based signatures to modules just like we passed string signatures:
 
 ```py
 haiku_bot = dspy.Predict(HaikuBot)

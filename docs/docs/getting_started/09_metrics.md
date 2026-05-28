@@ -6,13 +6,17 @@ Before DSPy can improve our program automatically, we need to tell it what "bett
 
 So far we've written DSPy programs by hand. Our signatures and instructions are only as good as what we type, with no examples to learn from. The quality of our haikus depends on the base knowledge a given model has about locations and writing haikus.
 
-*Optimizers* close that gap. An optimizer is an algorithm that improves your program automatically, and DSPy ships several. Some select small input/output pairs (few-shot examples) to include in the prompt as demonstrations. Others rewrite the natural-language instructions in your signatures. A few go further and fine-tune the underlying model. What they share is a loop: run your program many times, keep the version that scores best.
+*Optimizers* close that gap. An optimizer is an algorithm that improves your program automatically, and [DSPy ships several](../diving-deeper/choosing-an-optimizer.md). Some select small input/output pairs (few-shot examples) to include in the prompt as demonstrations. Others rewrite the natural-language instructions in your signatures. A few go further and fine-tune the underlying model. What they share is a loop: run your program many times, keep the version that scores best.
 
-To decide what "better" means, an optimizer needs a *metric*: a Python function that scores a single prediction. There are many ways to define your metric, but most use one or more of these patterns:
+To decide what "better" means, an optimizer needs a *metric*: a Python function that scores a single prediction.
+
+Outside DSPy, evaluation code often spends real effort on structural checks — did the model return valid JSON, are the right fields filled, does the output parse. Signatures already handle structure for us, so our metrics focus on the goal of the task: did the haiku evoke the place, did the answer reach the right conclusion, did the agent do what we asked. Rubrics, judges, and dataset comparisons all aim at that.
+
+There are many ways to define your metric, but most use one or more of these patterns:
 
 - **Labeled data comparisons:** Compare the prediction against a "gold" output, usually labeled by a human expert. For example, a dataset of five-haiku arrays each paired with one ideal pick would let us evaluate and optimize the ensemble judge.  
 - **Rule-based checks:** Evaluate with code that checks verifiable properties. For our haiku program, this might involve counting lines and syllables in a haiku.  
-- **LLM judges:** Evaluate with another, usually larger, model. We might ask a frontier model how well a smaller model's haiku evokes a place and season, similar to our ensemble's judge. But here the optimizer bakes those judgments into the smaller model's instructions once, instead of calling the judge with every inference.
+- **[LLM judges](../diving-deeper/metrics-and-evaluation.md):** Evaluate with another, usually larger, model. We might ask a frontier model how well a smaller model's haiku evokes a place and season, similar to our ensemble's judge. But here the optimizer bakes those judgments into the smaller model's instructions once, instead of calling the judge with every inference.
 
 You can get creative and clever with these patterns. For example, we could measure our program's ability to evoke a specific place by generating sets of haikus from varied location inputs, presenting an LLM judge with the array, and asking it to pick the verse matching a given location.
 

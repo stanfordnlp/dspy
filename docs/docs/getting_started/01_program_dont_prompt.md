@@ -1,8 +1,10 @@
 # Program, don't prompt
 
-DSPy is a declarative way to build with LLMs. We describe each step as structured inputs and outputs, then compose those steps into programs where each piece stays independently inspectable, swappable, and tunable. DSPy handles prompt construction, context management, and optimization that tunes each step to improve the whole program.
+DSPy is a declarative way to build with LLMs. 
 
-When a step needs to act on the world (to search, fetch, or compute), we give it tools as plain Python functions. Functions also guide DSPy in optimizing your steps: you define a metric to grade the output, and DSPy generates a better prompt accordingly. DSPy programs don't just run against any LM; the optimizer tunes the prompt for the specific model you pick, so a small, cheap model can often match or beat a hand-prompted frontier one.
+We describe our tasks as structured inputs and outputs. Often, we compose multiple tasks into multi-step programs and agents where each piece stays independently inspectable, swappable, and tunable. DSPy handles prompt construction, context management, and optimization that tunes each step to improve the whole program.
+
+When a step needs to act on the world (to search, fetch, or compute), we give it tools as plain Python functions. Functions also serve as metrics: you define one to grade the output, and DSPy generates a better program accordingly. The optimizer tunes the prompt for any model you pick, so a small, cheap model can often match or beat a hand-prompted frontier one..
 
 DSPy helps us program LLMs, rather than prompting them, creating modular, maintainable and optimizable AI software.
 
