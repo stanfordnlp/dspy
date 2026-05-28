@@ -49,7 +49,7 @@ val_end = int(n * 0.875)
 train, val, test = examples[:train_end], examples[train_end:val_end], examples[val_end:]
 ```
 
-`.with_inputs` is how you tell DSPy which fields of an `Example` should be passed to the program at call time. In this dataset every field is an input, because our metric will score the haiku against its own rules rather than against a labeled answer. A question-answering dataset is the more typical shape: each row carries `(question, answer)`, you’d call `.with\_inputs(“question”)`, and DSPy would pass only the question to the program while holding` answer\` back for the metric.
+`.with_inputs` is how you tell DSPy which fields of an `Example` should be passed to the program at call time. In this dataset every field is an input, because our metric will score the haiku against its own rules rather than against a labeled answer. A question-answering dataset is the more typical shape: each row carries `(question, answer)`, you’d call `.with\_inputs(“question”)`, and DSPy would pass only the question to the program while holding `answer` back for the metric.
 
 ## Building our evaluation metric
 
