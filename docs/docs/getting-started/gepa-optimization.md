@@ -156,7 +156,7 @@ Location handling:
 - If the location is unusual or man-made, pair one specific man-made image from the setting with one seasonal sign.
 ```
 
-It continues (you can view the entire text here), covering season and mood handling, common failure modes, and detailing a final quality check before output.
+It continues, covering season and mood handling, common failure modes, and detailing a final quality check before output.
 
 Fascinatingly, the same program will optimize differently depending on the model.
 
