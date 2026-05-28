@@ -220,8 +220,8 @@ jobs:
         run: echo "LM_FOR_TEST=ollama/llama3.2:1b" >> "$GITHUB_ENV"
       - name: Run real LM streaming tests
         run: >
-          uv run -p .venv pytest -q -n3 -m llm_call --llm_call --durations=5
-          tests/streaming/test_streaming.py
+          uv run -p .venv pytest -q -n0 -m llm_call --llm_call --durations=5
+          tests/streaming/test_streaming.py::test_stream_listener_real_lm_json_adapter
       - name: Run real LM usage tracker tests
         run: >
           uv run -p .venv pytest -q -n0 -m llm_call --llm_call --durations=5

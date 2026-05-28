@@ -221,44 +221,6 @@ async def test_concurrent_status_message_providers():
     assert dspy.settings.callbacks == original_callbacks
 
 
-@pytest.mark.llm_call
-@pytest.mark.anyio
-async def test_stream_listener_chat_adapter(lm_for_test):
-    class MyProgram(dspy.Module):
-        def __init__(self):
-            self.predict1 = dspy.Predict("question->answer")
-            self.predict2 = dspy.Predict("question, answer->judgement")
-
-        def __call__(self, x: str, **kwargs):
-            answer = self.predict1(question=x, **kwargs)
-            judgement = self.predict2(question=x, answer=answer, **kwargs)
-            return judgement
-
-    my_program = MyProgram()
-    program = dspy.streamify(
-        my_program,
-        stream_listeners=[
-            dspy.streaming.StreamListener(signature_field_name="answer"),
-            dspy.streaming.StreamListener(signature_field_name="judgement"),
-        ],
-        include_final_prediction_in_output_stream=False,
-    )
-    # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS)):
-        output = program(x="hi")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
-
-    assert all_chunks[0].predict_name == "predict1"
-    assert all_chunks[0].signature_field_name == "answer"
-    # The last chunk can be from either predictor because sometimes small LMs miss the `[[ ## completed ## ]]` marker,
-    # which results in an extra chunk that flushes out the buffer.
-    assert all_chunks[-2].predict_name == "predict2"
-    assert all_chunks[-2].signature_field_name == "judgement"
-
-
 @pytest.mark.anyio
 async def test_default_status_streaming_in_async_program():
     class MyProgram(dspy.Module):
@@ -287,43 +249,26 @@ async def test_default_status_streaming_in_async_program():
 
 @pytest.mark.llm_call
 @pytest.mark.anyio
-async def test_stream_listener_json_adapter(lm_for_test):
-    class MyProgram(dspy.Module):
-        def __init__(self):
-            self.predict1 = dspy.Predict("question->answer")
-            self.predict2 = dspy.Predict("question, answer->judgement")
-
-        def __call__(self, x: str, **kwargs):
-            answer = self.predict1(question=x, **kwargs)
-            judgement = self.predict2(question=x, answer=answer, **kwargs)
-            return judgement
-
-    my_program = MyProgram()
+async def test_stream_listener_real_lm_json_adapter(lm_for_test):
     program = dspy.streamify(
-        my_program,
-        stream_listeners=[
-            dspy.streaming.StreamListener(signature_field_name="answer"),
-            dspy.streaming.StreamListener(signature_field_name="judgement"),
-        ],
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
         include_final_prediction_in_output_stream=False,
     )
-    # Turn off the cache to ensure the stream is produced.
+    # Detailed adapter and sync streaming behavior is covered by deterministic stream tests below.
     with dspy.context(
         lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS),
         adapter=dspy.JSONAdapter(),
     ):
-        output = program(x="hi")
+        output = program(question="hi")
         all_chunks = []
         async for value in output:
             if isinstance(value, dspy.streaming.StreamResponse):
                 all_chunks.append(value)
 
-    assert all_chunks[0].predict_name == "predict1"
+    assert all_chunks
     assert all_chunks[0].signature_field_name == "answer"
-    assert all_chunks[0].is_last_chunk is False
-
-    assert all_chunks[-1].predict_name == "predict2"
-    assert all_chunks[-1].signature_field_name == "judgement"
+    assert all(chunk.signature_field_name == "answer" for chunk in all_chunks)
 
 
 @pytest.mark.anyio
@@ -354,45 +299,6 @@ async def test_streaming_handles_space_correctly():
                     all_chunks.append(value)
 
     assert "".join([chunk.chunk for chunk in all_chunks]) == "How are you doing?"
-
-
-@pytest.mark.llm_call
-def test_sync_streaming(lm_for_test):
-    class MyProgram(dspy.Module):
-        def __init__(self):
-            self.predict1 = dspy.Predict("question->answer")
-            self.predict2 = dspy.Predict("question, answer->judgement")
-
-        def __call__(self, x: str, **kwargs):
-            answer = self.predict1(question=x, **kwargs)
-            judgement = self.predict2(question=x, answer=answer, **kwargs)
-            return judgement
-
-    my_program = MyProgram()
-    program = dspy.streamify(
-        my_program,
-        stream_listeners=[
-            dspy.streaming.StreamListener(signature_field_name="answer"),
-            dspy.streaming.StreamListener(signature_field_name="judgement"),
-        ],
-        include_final_prediction_in_output_stream=False,
-        async_streaming=False,
-    )
-    # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS)):
-        output = program(x="hi")
-        all_chunks = []
-        for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
-
-    assert all_chunks[0].predict_name == "predict1"
-    assert all_chunks[0].signature_field_name == "answer"
-    assert all_chunks[0].is_last_chunk is False
-    # The last chunk can be from either predictor because sometimes small LMs miss the `[[ ## completed ## ]]` marker,
-    # which results in an extra chunk that flushes out the buffer.
-    assert all_chunks[-2].predict_name == "predict2"
-    assert all_chunks[-2].signature_field_name == "judgement"
 
 
 def test_sync_status_streaming():
