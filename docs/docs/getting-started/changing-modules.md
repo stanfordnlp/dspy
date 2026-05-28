@@ -32,4 +32,4 @@ Bodega Bay in autumn evokes a cool, misty atmosphere, and the mysterious mood in
 
 ---
 
-**Next:** [Tools with ReAct →](07_react_and_tools.md)
+**Next:** [Tools with ReAct →](react-and-tools.md)

@@ -104,4 +104,4 @@ Once a program accrues several fields or we want to add nuanced instructions, it
 
 ---
 
-**Next:** [Class-based signatures →](05_class_based_signatures.md)
+**Next:** [Class-based signatures →](class-based-signatures.md)

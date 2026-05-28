@@ -84,4 +84,4 @@ See [Metrics and evaluation](../diving-deeper/metrics-and-evaluation.md) for com
 
 ---
 
-**Next:** [GEPA optimization →](10_gepa_optimization.md)
+**Next:** [GEPA optimization →](gepa-optimization.md)

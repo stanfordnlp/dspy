@@ -21,4 +21,4 @@ In this tutorial we’ll build a haiku-writing program that starts with four lin
 
 ---
 
-**Next:** [Setting up DSPy →](02_installation.md)
+**Next:** [Setting up DSPy →](installation.md)

@@ -140,4 +140,4 @@ Speaking of evaluation and optimization, it’s time for the next section.
 
 ---
 
-**Next:** [Metrics →](09_metrics.md)
+**Next:** [Metrics →](metrics.md)

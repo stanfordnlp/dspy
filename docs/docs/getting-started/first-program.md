@@ -93,4 +93,4 @@ In DSPy, to produce a prompt you compose a signature and the messages are writte
 
 ---
 
-**Next:** [Expanding signatures →](04_expanding_signatures.md)
+**Next:** [Expanding signatures →](expanding-signatures.md)

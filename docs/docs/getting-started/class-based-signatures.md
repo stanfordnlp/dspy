@@ -101,4 +101,4 @@ See [Signatures in depth](../diving-deeper/signatures-in-depth.md) for the rest 
 
 ---
 
-**Next:** [Changing modules →](06_changing_modules.md)
+**Next:** [Changing modules →](changing-modules.md)

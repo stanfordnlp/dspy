@@ -53,7 +53,7 @@ To give our model more of a challenge, we’ve built out our metric to check for
 
 We can use the natural-language processing library [spaCy](https://spacy.io/) to assist with most of these measures.
 
-All of these conditions make our metric too long to drop into this walkthrough, but the code is available here. Drop `haiku_metric.py` next to your notebook and add `from haiku_metric import haiku_metric` to follow along.
+All of these conditions make our metric too long to drop into this walkthrough, but [the code is available here](https://gist.github.com/dbreunig/228848f9b34bcdad6be37fc5f85ec1a0). Drop `haiku_metric.py` next to your notebook and add `from haiku_metric import haiku_metric` to follow along.
 
 ## Compiling our optimization
 
@@ -164,4 +164,4 @@ See [GEPA in depth](../diving-deeper/gepa-in-depth.md) for the full mechanics: P
 
 ---
 
-**Next:** [Saving and loading →](11_saving_and_loading.md)
+**Next:** [Saving and loading →](saving-and-loading.md)

@@ -49,4 +49,4 @@ With an `LM` configured, we can proceed to writing our first program.
 
 ---
 
-**Next:** [Your first program →](03_first_program.md)
+**Next:** [Your first program →](first-program.md)

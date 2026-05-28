@@ -96,4 +96,4 @@ For tool authoring patterns, MCP integration, and trajectory debugging, see [Too
 
 ---
 
-**Next:** [Composing modules →](08_composing_modules.md)
+**Next:** [Composing modules →](composing-modules.md)
