@@ -29,11 +29,11 @@ When selecting the next_tool_name and its next_tool_args, the tool must be one o
 
 Note how DSPy presents the function name, docstring, and parameters to the model. Writing tools, like signatures, requires being mindful about naming. `wikipedia_search` and the parameter `query` are helpful names, that clearly describe their function and role.
 
-Note that there's a tool in the mix that we didn't define. `finish` is a special tool used by `dspy.ReAct` that the model calls when it's done. `dspy.ReAct` populates that one for us.
+Note that there’s a tool in the mix that we didn’t define. `finish` is a special tool used by `dspy.ReAct` that the model calls when it’s done. `dspy.ReAct` populates that one for us.
 
 ## Defining our Wikipedia-wielding haiku bot
 
-In addition to searching Wikipedia, we'll need a tool that lets our agent fetch a given page:
+In addition to searching Wikipedia, we’ll need a tool that lets our agent fetch a given page:
 
 ```py
 def get_wikipedia_page(title: str) -> str:
@@ -51,8 +51,8 @@ print(result.haiku)
 
 When we called `haiku_bot` it:
 
-1. Searched Wikipedia for "Camp Meeker", which yielded nine relevant results, including "Camp Meeker, California".  
-2. Fetched the page content for "Camp Meeker, California".  
+1. Searched Wikipedia for “Camp Meeker”, which yielded nine relevant results, including “Camp Meeker, California”.  
+2. Fetched the page content for “Camp Meeker, California”.  
 3. Called `finish`, then synthesized its outputs.
 
 The code above yields:
@@ -83,7 +83,7 @@ While testing this program, we saw runs where the model made as many as 8 tool c
 
 ## Inspecting the ReAct trajectory
 
-ReAct's returned `Prediction` instance carries a `trajectory` field: a dictionary that records each thought, tool call, and observation (what the tool returned) in order. When an agent does something surprising, the trajectory is the first thing to read.
+ReAct’s returned `Prediction` instance carries a `trajectory` field: a dictionary that records each thought, tool call, and observation (what the tool returned) in order. When an agent does something surprising, the trajectory is the first thing to read.
 
 We can print it like so:
 

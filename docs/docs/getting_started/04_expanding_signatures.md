@@ -2,7 +2,7 @@
 
 ## Adding additional inputs and outputs
 
-Adding more fields to signature strings is as easy as separating field names with commas. For example, let's update our program to accept two inputs, a `location` and `mood`:
+Adding more fields to signature strings is as easy as separating field names with commas. For example, let’s update our program to accept two inputs, a `location` and `mood`:
 
 ```py
 haiku_bot = dspy.Predict("location, mood -> haiku")
@@ -40,9 +40,9 @@ Night reads in quiet
 
 ## Hone your signature by mindfully naming your fields
 
-The field names we choose aren't just for our own readability. Unlike traditional programming, where variable names are purely identifiers, the LM reads them too, and uses them to infer what each input and output means.
+The field names we choose aren’t just for our own readability. Unlike traditional programming, where variable names are purely identifiers, the LM reads them too, and uses them to infer what each input and output means.
 
-If we replaced `"location, mood -> haiku"` with `"a, b -> c"`, the LM would be lost. Let's try it:
+If we replaced `"location, mood -> haiku"` with `"a, b -> c"`, the LM would be lost. Let’s try it:
 
 ```py
 haiku_bot = dspy.Predict("a, b -> c")
@@ -56,7 +56,7 @@ This produces:
 In the quiet library, a mysterious presence seemed to linger between the shelves, as if it had been waiting for someone to notice.
 ```
 
-Our model doesn't know we want a haiku, so it just makes a guess.
+Our model doesn’t know we want a haiku, so it just makes a guess.
 
 Naming is the cheapest optimization in DSPy. A field called `research_request` will produce better completions than one called `request`, with no other changes. Signatures are easy to edit; take advantage.
 
@@ -78,7 +78,7 @@ Spine turns to hush of riddles
 Novel jokes echo
 ```
 
-Inline types instruct DSPy to coerce the LM's output into the types we ask for, and surface clear warnings when they can't. This catches a class of silent failures that prompt-only systems hide.
+Inline types instruct DSPy to coerce the LM’s output into the types we ask for, and surface clear warnings when they can’t. This catches a class of silent failures that prompt-only systems hide.
 
 Types also let us communicate structural details that are easier to express in code than in natural language. [Richer types](../diving-deeper/signatures-in-depth.md) – like Pydantic models, `TypedDicts`, or `dataclasses` – can pack plenty of details that help LMs correctly complete a task.
 
@@ -100,7 +100,7 @@ waves breathe slow, worries drift away—
 soft light, easy air.
 ```
 
-Once a program accrues several fields or we want to add nuanced instructions, it's likely time to graduate to a class-based signature.
+Once a program accrues several fields or we want to add nuanced instructions, it’s likely time to graduate to a class-based signature.
 
 ---
 

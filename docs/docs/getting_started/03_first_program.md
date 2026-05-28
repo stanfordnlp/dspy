@@ -1,6 +1,6 @@
 # Writing our first DSPy program
 
-In this tutorial we're building a haiku-generating program, extending it in each section to introduce new DSPy concepts and capabilities.
+In this tutorial we’re building a haiku-generating program, extending it in each section to introduce new DSPy concepts and capabilities.
 
 Let’s start by writing the simplest version of our program and run it, then walk through everything DSPy is doing behind the scenes:
 
@@ -21,15 +21,15 @@ To turn our Signature into a callable function, we use `dspy.Predict`. Predict i
 
 `Predict` is the foundational Module. Let’s look at what happens when we call `dspy.Predict(haiku_signature)`:
 
-1. The string, `“subject -> haiku”` is parsed into a Signature class, with input and output fields defaulting to type `str`.  
-2. A default instruction string is generated for the `Signature` instance, in this case: "Given the fields `subject`, produce the fields `haiku`."  
+1. The string, `"subject -> haiku"` is parsed into a Signature class, with input and output fields defaulting to type `str`.  
+2. A default instruction string is generated for the `Signature` instance, in this case: “Given the fields `subject`, produce the fields `haiku`.”  
 3. A `Predict` module is instantiated with this `Signature`.
 
-`haiku_generator` is now callable. Calling `haiku_generator(subject=”computer science”)` kicks off the following process:
+`haiku_generator` is now callable. Calling `haiku_generator(subject="computer science")` kicks off the following process:
 
 1. The DSPy settings are checked to ensure an `LM` is configured.  
 2. An [`Adapter`](../diving-deeper/adapters.md) is used to render the `Signature` and its inputs into messages the `LM` can consume. By default, this is the `ChatAdapter`, but there are JSON, XML, and other variants to format your messages suitable for a given `LM`.  
-3. The `ChatAdapter` builds the prompt, which includes the `Signature` instructions, the field schema describing the inputs and outputs, formatting instructions, and the provided input (in this case, "computer science").   
+3. The `ChatAdapter` builds the prompt, which includes the `Signature` instructions, the field schema describing the inputs and outputs, formatting instructions, and the provided input (in this case, “computer science”).   
 4. The messages are sent to the `LM`. Caching is enabled by default so identical calls return cached responses.  
 5. A response is returned, which the `ChatAdapter` parses to extract the output fields.  
 6. The `Predict` module returns a `Prediction` object with accessible output fields. Calling `result.haiku` returns the generated haiku.  

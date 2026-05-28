@@ -2,7 +2,7 @@
 
 ## Adding instructional nuance with class-based signatures
 
-A class-based signature details the same structure a string signature can, but adds a few levers for adding additional nuance. Here's our haiku writer string signature rephrased as a class-based signature:
+A class-based signature details the same structure a string signature can, but adds a few levers for adding additional nuance. Here’s our haiku writer string signature rephrased as a class-based signature:
 
 ```py
 class HaikuBot(dspy.Signature):
@@ -50,17 +50,17 @@ In adhering to this structure, your objective is:
     Write a classical haiku given the provided inputs.
 ```
 
-Signature docstrings and field descriptions are optional, but they are handy levers when field names don't provide sufficient context for a task. However, resist the urge to restate what the signature already says or write prescriptive tutorials. Expansive rules, watch-outs, and guidance are what optimizers are for (more on that later). 
+Signature docstrings and field descriptions are optional, but they are handy levers when field names don’t provide sufficient context for a task. However, resist the urge to restate what the signature already says or write prescriptive tutorials. Expansive rules, watch-outs, and guidance are what optimizers are for (more on that later). 
 
 Though it’s worth noting: field descriptions are not touched by the optimizers, so mind your naming. A poorly chosen field name can’t be adjusted by optimizers.
 
 ## Tightening signature fields with richer types
 
-Sometimes a plain `str` is too loose. When a value should come from a small fixed set, we'd rather pin it down so the LM (and the caller) can't drift outside it. This is the unit-test framing from Section 3 made stricter: not just *some string*, but *one of these specific strings*.
+Sometimes a plain `str` is too loose. When a value should come from a small fixed set, we’d rather pin it down so the LM (and the caller) can’t drift outside it. This is the unit-test framing from Section 3 made stricter: not just *some string*, but *one of these specific strings*.
 
 We can use `typing`, from Python’s standard lib, to add richer types.
 
-Typing `season` as `Literal["spring", "summer", "autumn", "winter"]` does exactly that. DSPy now accepts only those four values, both at call time and when parsing the LM's response.
+Typing `season` as `Literal["spring", "summer", "autumn", "winter"]` does exactly that. DSPy now accepts only those four values, both at call time and when parsing the LM’s response.
 
 ```py
 from typing import Literal

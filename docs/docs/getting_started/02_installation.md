@@ -21,7 +21,7 @@ For this tutorial, we could replace the `"openai/gpt-5-nano"` model string and o
 
 Once we have an `LM`, calling `dspy.configure(lm=lm)` sets our `LM` as the default provider for every DSPy program in the process. This sets our `LM` globally, but we can selectively override this with [`dspy.context`](../diving-deeper/settings-and-context.md) when more granular control is needed.
 
-Let's ensure everything works by manually calling the model:
+Let’s ensure everything works by manually calling the model:
 
 ```py
 messages = [

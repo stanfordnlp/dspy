@@ -1,4 +1,4 @@
-# Program, don't prompt
+# Program, don’t prompt
 
 DSPy is a declarative way to build with LLMs. 
 
@@ -8,9 +8,9 @@ When a step needs to act on the world (to search, fetch, or compute), we give it
 
 DSPy helps us program LLMs, rather than prompting them, creating modular, maintainable and optimizable AI software.
 
-## What we'll learn today
+## What we’ll learn today
 
-In this tutorial we'll build a haiku-writing program that starts with four lines of Python and grows into a tool-using, prompt-optimized agent. Along the way we'll touch each of DSPy's core components. We'll learn:
+In this tutorial we’ll build a haiku-writing program that starts with four lines of Python and grows into a tool-using, prompt-optimized agent. Along the way we’ll touch each of DSPy’s core components. We’ll learn:
 
 - How to install DSPy, configure a **language model** and write a simple DSPy program.  
 - What a **Signature** is, and why DSPy uses signatures instead of hand-written prompt strings.  

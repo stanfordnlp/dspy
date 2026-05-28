@@ -28,7 +28,7 @@ We can view this by printing `result.reasoning`:
 Bodega Bay in autumn evokes a cool, misty atmosphere, and the mysterious mood invites subtle, haunting imagery. I chose fog, waves, and gulls to ground the poem in the specific coastal setting, while autumnal leaves signal the season. The haiku’s 5‑7‑5 syllable structure preserves the traditional form, allowing each image to resonate briefly. The first line establishes the misty shoreline, the second line introduces quiet, nocturnal movement, and the third line offers a luminous, almost spectral image of the moon cutting through the fog—capturing mystery and the fleeting quality of autumn evenings.
 ```
 
-`ChainOfThought` is simple, but nicely demonstrates the flexibility of DSPy's module layer. [Other modules](../diving-deeper/built-in-module-variants.md) implement other strategies, including model ensembles, coding sandboxes, and *tool-calling*, which the next section explores.
+`ChainOfThought` is simple, but nicely demonstrates the flexibility of DSPy’s module layer. [Other modules](../diving-deeper/built-in-module-variants.md) implement other strategies, including model ensembles, coding sandboxes, and *tool-calling*, which the next section explores.
 
 ---
 

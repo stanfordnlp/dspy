@@ -14,7 +14,7 @@ The [GEPA in depth](../diving-deeper/gepa-in-depth.md) guide covers Pareto sampl
 
 ## Try a different optimizer
 
-If GEPA didn't fit your task, the [Optimizers: choosing one](../diving-deeper/choosing-an-optimizer.md) guide walks through when to reach for `BootstrapFewShot`, `MIPROv2`, `BootstrapFinetune`, and the rest.
+If GEPA didn’t fit your task, the [Optimizers: choosing one](../diving-deeper/choosing-an-optimizer.md) guide walks through when to reach for `BootstrapFewShot`, `MIPROv2`, `BootstrapFinetune`, and the rest.
 
 ## Debug a run
 
