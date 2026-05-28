@@ -288,17 +288,18 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             A new Signature class whose fields match `cls.fields`
             and whose instructions equal `instructions`.
 
-        Examples:
+Examples:
 ```python
-            import dspy
+        import dspy
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input text")
-                output_text: str = dspy.OutputField(desc="Output text")
+        class MySig(dspy.Signature):
+            input_text: str = dspy.InputField(desc="Input text")
+            output_text: str = dspy.OutputField(desc="Output text")
 
-            NewSig = MySig.with_instructions("Translate to French.")
-            assert NewSig is not MySig
-            assert NewSig.instructions == "Translate to French."
+        NewSig = MySig.append_instructions("Always respond in French.")
+        assert NewSig is not MySig
+        assert NewSig.instructions == MySig.instructions + "\n" + "Always respond in French."
+        assert MySig.instructions == original_instructions  # original unchanged
 ```
         """
         return Signature(cls.fields, instructions)
@@ -330,7 +331,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             NewSig = MySig.append_instructions("Always respond in French.")
             assert NewSig is not MySig
             assert NewSig.instructions == MySig.instructions + "\n" + "Always respond in French."
-            assert MySig.instructions == MySig.instructions  # original unchanged
+            assert MySig.instructions == original_instructions  # original unchanged
 ```
         """
         return cls.with_instructions(cls.instructions + "\n" + instructions)
