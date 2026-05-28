@@ -121,6 +121,5 @@ A single `threading.Lock` guards `_ensure_configure_allowed`. The read path does
 
 ## Cross-links
 
-- [Async, streaming, and parallel](async-streaming-and-parallel.md) — the executors that snapshot and re-apply overrides live there.
 - [Saving and loading](saving-and-loading.md) — settings serialization sits next to module serialization.
 - Reference: `clients.md` — LM-instance knobs (`temperature`, `max_tokens`, `api_base`, retries) that intentionally don’t live in settings.
