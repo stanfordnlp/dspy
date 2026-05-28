@@ -81,6 +81,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int = 120,
+        straggler_limit: int = 3,
         **kwargs,
     ):
         """
@@ -97,6 +99,12 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (int): Per-item timeout in seconds for the parallel executor's straggler
+                resubmission. Set higher when individual examples take longer than the
+                default 120 seconds (e.g., long reasoning chains or slow tool calls).
+                Pass 0 to disable straggler resubmission entirely.
+            straggler_limit (int): How many remaining stragglers trigger the resubmission
+                check. Defaults to 3 to match the executor.
 
         """
         self.devset = devset
@@ -109,6 +117,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +135,8 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -153,6 +165,8 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
@@ -165,6 +179,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=timeout,
+            straggler_limit=straggler_limit,
         )
 
         def process_item(example):
