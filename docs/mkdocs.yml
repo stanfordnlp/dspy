@@ -9,24 +9,32 @@ edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
 nav:
-    - Get Started: index.md
-    - Learn DSPy:
-        - Learning DSPy: learn/index.md
-        - DSPy Programming:
-            - Programming Overview: learn/programming/overview.md
-            - Language Models: learn/programming/language_models.md
-            - Signatures: learn/programming/signatures.md
-            - Modules: learn/programming/modules.md
-            - Adapters: learn/programming/adapters.md
-            - Tools: learn/programming/tools.md
-            - MCP: learn/programming/mcp.md
-        - DSPy Evaluation:
-            - Evaluation Overview: learn/evaluation/overview.md
-            - Data Handling: learn/evaluation/data.md
-            - Metrics: learn/evaluation/metrics.md
-        - DSPy Optimization:
-            - Optimization Overview: learn/optimization/overview.md
-            - Optimizers: learn/optimization/optimizers.md
+    - Overview: index.md
+    - Getting Started:
+        - Program, don't prompt: getting-started/program-dont-prompt.md
+        - Setting up DSPy: getting-started/installation.md
+        - Your first program: getting-started/first-program.md
+        - Expanding signatures: getting-started/expanding-signatures.md
+        - Class-based signatures: getting-started/class-based-signatures.md
+        - Changing modules: getting-started/changing-modules.md
+        - Tools with ReAct: getting-started/react-and-tools.md
+        - Composing modules: getting-started/composing-modules.md
+        - Metrics: getting-started/metrics.md
+        - GEPA optimization: getting-started/gepa-optimization.md
+        - Saving and loading: getting-started/saving-and-loading.md
+        - Where to go next: getting-started/where-to-go-next.md
+    - Diving Deeper:
+        - Signatures in depth: diving-deeper/signatures-in-depth.md
+        - "Modules: composing your own": diving-deeper/modules.md
+        - Built-in module variants: diving-deeper/built-in-module-variants.md
+        - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
+        - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
+        - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
+        - GEPA in depth: diving-deeper/gepa-in-depth.md
+        - BootstrapFewShot family: diving-deeper/bootstrap-fewshot-family.md
+        - "Adapters: how signatures become prompts": diving-deeper/adapters.md
+        - "Settings and context()": diving-deeper/settings-and-context.md
+        - Saving and loading: diving-deeper/saving-and-loading.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
@@ -78,8 +86,6 @@ nav:
             - Email Information Extraction: tutorials/email_extraction/index.md
             - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
             - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
-    - Deployment:
-        - Deploying DSPy: production/index.md
     - Community:
         - Use Cases: community/use-cases.md
         - Built with DSPy: community/built-with-dspy.md
@@ -178,13 +184,15 @@ nav:
 theme:
     name: material
     custom_dir: overrides
+    font:
+        text: Inter
+        code: Fira Mono
     features:
         - navigation.tabs
         - navigation.path
         - navigation.indexes
         - navigation.expand
         - toc.follow
-        - toc.integrate
         - navigation.top
         - search.suggest
         - search.highlight
@@ -192,7 +200,6 @@ theme:
         - content.code.annotation
         - content.code.copy
         - navigation.footer
-        - content.action.edit
     language: en
     palette:
         - scheme: default
@@ -211,7 +218,7 @@ theme:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/dspy_logo.png
+    logo: static/dspy-logo.svg
     favicon: static/img/logo.png
 
 extra_css:
@@ -269,6 +276,35 @@ plugins:
 
             "community/community-ports.md": "community/built-with-dspy.md"
             "production/companies.md": "community/use-cases.md"
+
+            # Redirect old learn/ pages to the new Getting Started tutorial
+            "learn/index.md": "getting-started/program-dont-prompt.md"
+            "learn/programming/overview.md": "getting-started/first-program.md"
+            "learn/programming/language_models.md": "getting-started/installation.md"
+            "learn/programming/signatures.md": "getting-started/expanding-signatures.md"
+            "learn/programming/modules.md": "getting-started/changing-modules.md"
+            "learn/programming/adapters.md": "getting-started/first-program.md"
+            "learn/programming/tools.md": "getting-started/react-and-tools.md"
+            "learn/programming/mcp.md": "getting-started/react-and-tools.md"
+            "learn/evaluation/overview.md": "getting-started/metrics.md"
+            "learn/evaluation/data.md": "getting-started/metrics.md"
+            "learn/evaluation/metrics.md": "getting-started/metrics.md"
+            "learn/optimization/overview.md": "getting-started/gepa-optimization.md"
+            "learn/optimization/optimizers.md": "getting-started/gepa-optimization.md"
+
+            # Redirect old numbered Getting Started URLs to the new kebab-case paths
+            "getting_started/01_program_dont_prompt.md": "getting-started/program-dont-prompt.md"
+            "getting_started/02_installation.md":       "getting-started/installation.md"
+            "getting_started/03_first_program.md":      "getting-started/first-program.md"
+            "getting_started/04_expanding_signatures.md": "getting-started/expanding-signatures.md"
+            "getting_started/05_class_based_signatures.md": "getting-started/class-based-signatures.md"
+            "getting_started/06_changing_modules.md":   "getting-started/changing-modules.md"
+            "getting_started/07_react_and_tools.md":    "getting-started/react-and-tools.md"
+            "getting_started/08_composing_modules.md":  "getting-started/composing-modules.md"
+            "getting_started/09_metrics.md":            "getting-started/metrics.md"
+            "getting_started/10_gepa_optimization.md":  "getting-started/gepa-optimization.md"
+            "getting_started/11_saving_and_loading.md": "getting-started/saving-and-loading.md"
+            "getting_started/12_where_to_go_next.md":   "getting-started/where-to-go-next.md"
     - llmstxt:
         markdown_description: >
           DSPy is the framework for programming—rather than prompting—language models.
@@ -278,16 +314,10 @@ plugins:
         sections:
           Get Started:
             - index.md: DSPy overview and quick start guide
-          Learn DSPy - Learning DSPy:
-            - learn/index.md: Three stages of building AI systems - programming, evaluation, and optimization
-          Learn DSPy - DSPy Programming:
-            - learn/programming/**.md
-          Learn DSPy - DSPy Evaluation:
-            - learn/evaluation/**.md
-          Learn DSPy - DSPy Optimization:
-            - learn/optimization/**.md
-          # Since we don't have a learn/**.md, future sections within learn/ should be added here
-          # to ensure they show up in the llms.txt navigation
+          Getting Started:
+            - getting-started/**.md
+          Diving Deeper:
+            - diving-deeper/**.md
           Tutorials - Docs:
             - tutorials/**.md
           Tutorials - Notebooks:
@@ -300,6 +330,9 @@ plugins:
           API Reference:
             - api/**.md
 
+hooks:
+    - hooks/fetch_stats.py
+
 extra:
     social:
         - icon: fontawesome/brands/github
@@ -310,9 +343,10 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
-    - "js/copy-as-markdown.js"
+    - "js/hero-interactive.js"
 
 markdown_extensions:
+    - smarty
     - toc:
         permalink: true
         toc_depth: 3
@@ -336,4 +370,4 @@ markdown_extensions:
         emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
+    &copy; 2026 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>

@@ -1,147 +1,496 @@
-{% extends "base.html" %}
+{% extends "main.html" %}
+
+{# Hide the site-wide announcement banner on the landing page only #}
+{% block announce %}{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'stylesheets/home.css' | url }}">
+{% endblock %}
 
 {% block content %}
-<style>
-    .md-main__inner .md-grid {
-        padding: 0;
-        margin: 0;
-    }
+<div class="dspy-home">
 
-    .content-container {
-        max-width: 100%;
-        margin: 0;
-        padding: 0;
-    }
-    
-    .hero {
-        text-align: center;
-        padding: 4rem 2rem;
-        margin: 0;
-        background-color: #f5f6f77a;
-        color: white;
-    }
-    
-    .hero-logo {
-        max-width: 15rem;
-        height: auto;
-        margin: 0 auto;
-    }
-    
-    .hero-subtitle {
-        font-size: 1.2rem;
-        margin: 1.5rem 0;
-        color: #e2e8f0;
-    }
-    
-    .cta-button {
-        display: inline-block;
-        padding: 0.75rem 1.5rem;
-        background-color: transparent;
-        color: black;
-        text-decoration: none;
-        border-radius: 0.375rem;
-        font-weight: 600;
-        border: 2px solid black;
-        transition: all 0.3s ease;
-    }
-    
-    .cta-button:hover {
-        background-color: white;
-        color: black;
-        border: 2px solid white;
-    }
-    
-    .features-section {
-        padding: 4rem 2rem;
-    }
-    
-    .features-title {
-        text-align: center;
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: 3rem;
-        color: #1a202c;
-    }
-    
-    .features-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 3rem;
-        max-width: 1200px;
-        margin: 0 auto;
-    }
-    
-    .feature-card {
-        text-align: center;
-        padding: 1.5rem;
-    }
-    
-    .feature-image {
-        width: 10rem;
-        height: auto;
-        margin: 0 auto 1.5rem;
-    }
-    
-    .feature-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        color: #2d3748;
-    }
-    
-    .feature-description {
-        color: #4a5568;
-        line-height: 1.5;
-    }
-    
-    @media (max-width: 768px) {
-        .hero {
-            padding: 3rem 1rem;
-        }
-        
-        .hero-logo {
-            max-width: 10rem;
-        }
-        
-        .features-grid {
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-        
-        .feature-card {
-            padding: 1rem;
-        }
-    }
-</style>
-
-<div class="content-container">
-    <div class="hero">
-        <img src="{{ 'static/img/dspy_logo.png' | url }}" alt="DSPy Logo" class="hero-logo">
-        <p class="hero-subtitle">Programming—not prompting—Language Models</p>
-        <a href="{{ 'quick-start/getting-started-1' | url }}" class="cta-button">Get Started with DSPy</a>
-    </div>
-
-    <div class="features-section">
-        <h2 class="features-title">The Way of DSPy</h2>
-        <div class="features-grid">
-            <div class="feature-card">
-                <img src="{{ 'static/img/optimize.png' | url }}" alt="Systematic Optimization" class="feature-image">
-                <h3 class="feature-title">Systematic Optimization</h3>
-                <p class="feature-description">Choose from a range of optimizers to enhance your program. Whether it's generating refined instructions, or fine-tuning weights, DSPy's optimizers are engineered to maximize efficiency and effectiveness.</p>
-            </div>
-            
-            <div class="feature-card">
-                <img src="{{ 'static/img/modular.png' | url }}" alt="Modular Approach" class="feature-image">
-                <h3 class="feature-title">Modular Approach</h3>
-                <p class="feature-description">With DSPy, you can build your system using predefined modules, replacing intricate prompting techniques with straightforward, effective solutions.</p>
-            </div>
-            
-            <div class="feature-card">
-                <img src="{{ 'static/img/universal_compatibility.png' | url }}" alt="Cross-LM Compatibility" class="feature-image">
-                <h3 class="feature-title">Cross-LM Compatibility</h3>
-                <p class="feature-description">Whether you're working with powerhouse models like GPT-3.5 or GPT-4, or local models such as T5-base or Llama2-13b, DSPy seamlessly integrates and enhances their performance in your system.</p>
-            </div>
+  <!-- ===== HERO ===== -->
+  <section class="hp-section hp-hero">
+    <div class="hp-container hp-hero-grid">
+      <div class="hp-hero-text">
+        <div class="hp-hero-badge">
+          <span class="hp-dot"></span>
+          DSPy {{ config.extra.stats.release_major_minor }} &mdash; {{ config.extra.stats.release_blurb }}
+          <span style="color:var(--hp-fg-3)">&middot;</span>
+          <a href="https://github.com/stanfordnlp/dspy/releases">learn more &rarr;</a>
         </div>
+
+        <h1 class="hp-hero-title">
+          <span class="hp-hl">Program</span>, don&rsquo;t prompt,<br>your LLMs.
+        </h1>
+
+        <p class="hp-hero-sub">
+          DSPy is a Python framework for building AI systems. Express your
+          tasks as structured signatures, not prompts, to produce
+          maintainable, modular, and optimizable programs.
+        </p>
+
+        <div class="hp-hero-actions">
+          <a href="{{ 'getting-started/installation/' | url }}" class="hp-btn-primary">
+            <span class="hp-dollar">$</span> pip install -U dspy
+          </a>
+          <a href="{{ 'getting-started/program-dont-prompt/' | url }}" class="hp-btn-outline">
+            Getting Started &rarr;
+          </a>
+        </div>
+
+        <div class="hp-hero-meta">
+          <span><strong>python</strong> &ge; 3.10</span>
+          <span>MIT license</span>
+          <span>Stanford NLP</span>
+          <span><a href="https://github.com/stanfordnlp/dspy">github.com/stanfordnlp/dspy</a></span>
+        </div>
+      </div>
+
+      <div class="hp-hero-code">
+        <div class="hp-code-buttons">
+          <button class="hp-code-btn" id="hp-btn-lm">Change LLM</button>
+          <button class="hp-code-btn" id="hp-btn-field">Add a Field</button>
+          <button class="hp-code-btn" id="hp-btn-agent">Make it an Agent</button>
+        </div>
+        <div class="hp-code-window">
+          <div class="hp-code-chrome">
+            <div class="hp-dots"><span></span><span></span><span></span></div>
+            <div class="hp-code-title">
+              <strong>extract_events.py</strong>
+            </div>
+          </div>
+          <div class="hp-code-body">
+            <div class="hp-line-nums" id="hp-hero-linenums">
+              <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+              <span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
+            </div>
+            <div class="hp-code-content" id="hp-hero-code">
+              <div class="line">lm = dspy.<span class="tok-m">LM</span>(<span class="tok-s">"openai/gpt-5.4-nano"</span>)</div>
+              <div class="line">&nbsp;</div>
+              <div class="line"><span class="tok-k">class</span> <span class="tok-t">ExtractEvent</span>(dspy.Signature):</div>
+              <div class="line">    <span class="tok-s">"""Extract event details from an email."""</span></div>
+              <div class="line">    email: <span class="tok-t">str</span> = dspy.<span class="tok-m">InputField</span>()</div>
+              <div class="line">    event_name: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+              <div class="line">    date: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+              <div class="line">&nbsp;</div>
+              <div class="line">extract = dspy.<span class="tok-m">Predict</span>(ExtractEvent)</div>
+              <div class="line">extract(email=inbox_message)</div>
+            </div>
+          </div>
+          <div class="hp-code-output" id="hp-hero-output">
+            <div class="hp-code-output-header">output</div>
+            <div class="line">Prediction(</div>
+            <div class="line">  event_name=<span class="tok-s">"Team Offsite"</span>,</div>
+            <div class="line">  date=<span class="tok-s">"Thursday, June 5"</span></div>
+            <div class="line">)</div>
+          </div>
+        </div>
+      </div>
     </div>
+  </section>
+
+  <!-- ===== STATS STRIP ===== -->
+  <section class="hp-section hp-stats">
+    <div class="hp-container hp-stats-grid">
+      <div class="hp-stat">
+        <div class="hp-stat-num">{{ config.extra.stats.monthly_downloads }}</div>
+        <div class="hp-stat-label">monthly downloads</div>
+      </div>
+      <div class="hp-stat">
+        <div class="hp-stat-num">{{ config.extra.stats.contributors }}</div>
+        <div class="hp-stat-label">contributors</div>
+      </div>
+      <div class="hp-stat">
+        <div class="hp-stat-num">{{ config.extra.stats.stars }}</div>
+        <div class="hp-stat-label">github stars</div>
+      </div>
+      <div class="hp-stat-production">
+        <div class="hp-stat-production-label">in production at</div>
+        <div class="hp-logos">
+          <img src="{{ 'static/img/logos/databricks-wordmark.svg' | url }}" alt="Databricks" class="hp-logo-img">
+          <img src="{{ 'static/img/logos/shopify-wordmark.svg' | url }}" alt="Shopify" class="hp-logo-img">
+          <img src="{{ 'static/img/logos/dropbox-wordmark.svg' | url }}" alt="Dropbox" class="hp-logo-img">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== THREE PRIMITIVES ===== -->
+  <section class="hp-section hp-features">
+    <div class="hp-container">
+      <h2 class="hp-section-title">
+        Compose programs with reusable <span class="hp-hl">primitives</span>.
+      </h2>
+
+      <div class="hp-features-grid">
+        <!-- Signatures -->
+        <div class="hp-feature">
+          <h3>Signatures</h3>
+          <div class="hp-feature-tagline">Declare your task.</div>
+          <p>
+            Define your task as typed inputs and outputs instead of managing
+            messy prompts. Portable, maintainable, and easy to iterate on.
+          </p>
+          <div class="hp-feature-cta">
+            <a href="{{ 'getting-started/expanding-signatures/' | url }}" class="hp-cta-link">Learn about Signatures &rarr;</a>
+          </div>
+          <div class="hp-feature-code">
+            <div class="line"><span class="tok-k">class</span> <span class="tok-t">Triage</span>(dspy.Signature):</div>
+            <div class="line">    <span class="tok-s">"""Route a support ticket."""</span></div>
+            <div class="line">    ticket: <span class="tok-t">str</span> = dspy.<span class="tok-m">InputField</span>()</div>
+            <div class="line">    urgency: <span class="tok-t">Literal</span>[<span class="tok-s">"low"</span>, <span class="tok-s">"high"</span>] = dspy.<span class="tok-m">OutputField</span>()</div>
+            <div class="line">    team: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+          </div>
+        </div>
+
+        <!-- Modules -->
+        <div class="hp-feature">
+          <h3>Modules</h3>
+          <div class="hp-feature-tagline">Same interface, different strategy.</div>
+          <p>
+            Modules control how your signature executes. Reason, run
+            ensembles, use tools, add a REPL, and more without rewriting your task.
+          </p>
+          <div class="hp-feature-cta">
+            <a href="{{ 'getting-started/changing-modules/' | url }}" class="hp-cta-link">Explore Modules &rarr;</a>
+          </div>
+          <div class="hp-feature-code">
+            <div class="line"><span class="tok-cm"># Direct completion</span></div>
+            <div class="line">classify = dspy.<span class="tok-m">Predict</span>(Triage)</div>
+            <div class="line">&nbsp;</div>
+            <div class="line"><span class="tok-cm"># Add step-by-step reasoning</span></div>
+            <div class="line">classify = dspy.<span class="tok-m">ChainOfThought</span>(Triage)</div>
+            <div class="line">&nbsp;</div>
+            <div class="line"><span class="tok-cm"># Add tools and a reasoning loop</span></div>
+            <div class="line">classify = dspy.<span class="tok-m">ReAct</span>(Triage, tools=[search])</div>
+          </div>
+        </div>
+
+        <!-- Optimizers -->
+        <div class="hp-feature">
+          <h3>Optimizers</h3>
+          <div class="hp-feature-tagline">Compile your program against a metric.</div>
+          <p>
+            Give DSPy examples and a scoring function. It tunes your
+            prompts automatically until quality converges.
+          </p>
+          <div class="hp-feature-cta">
+            <a href="{{ 'getting-started/gepa-optimization/' | url }}" class="hp-cta-link">Try Optimizers &rarr;</a>
+          </div>
+          <div class="hp-feature-code">
+            <div class="line">tp = dspy.<span class="tok-m">GEPA</span>(</div>
+            <div class="line">    metric=semantic_f1,</div>
+            <div class="line">    auto=<span class="tok-s">"medium"</span>)</div>
+            <div class="line">opt = tp.<span class="tok-m">compile</span>(rag, trainset)</div>
+            <div class="line">&nbsp;</div>
+            <div class="line"><span class="tok-cm"># Before: 0.41 F1</span></div>
+            <div class="line"><span class="tok-cm"># After:  0.63 F1</span></div>
+            <div class="line">&nbsp;</div>
+            <div class="line">opt.<span class="tok-m">save</span>(<span class="tok-s">"rag.v2.json"</span>)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== IN PRACTICE (TABBED EXAMPLES) ===== -->
+  <section class="hp-section hp-examples">
+    <div class="hp-container">
+      <div class="hp-examples-header">
+        <h2 class="hp-section-title" style="margin-top:16px">
+          Define a task. Grow it into a system.
+        </h2>
+      </div>
+
+      <div class="hp-tabs">
+        <input type="radio" name="hp-tab" id="hp-tab-extract" checked>
+        <input type="radio" name="hp-tab" id="hp-tab-agent">
+        <input type="radio" name="hp-tab" id="hp-tab-pipeline">
+        <input type="radio" name="hp-tab" id="hp-tab-multimodal">
+        <input type="radio" name="hp-tab" id="hp-tab-optimize">
+
+        <div class="hp-tabs-wrapper">
+          <div class="hp-tabs-bar">
+            <label for="hp-tab-extract">Extract</label>
+            <label for="hp-tab-agent">Agent</label>
+            <label for="hp-tab-pipeline">Pipeline</label>
+            <label for="hp-tab-multimodal">Multimodal</label>
+            <label for="hp-tab-optimize">Optimize</label>
+          </div>
+
+          <div class="hp-tab-panels">
+            <!-- Extract -->
+            <div class="hp-tab-panel" id="hp-panel-extract">
+              <div class="hp-tab-code">
+                <div class="line"><span class="tok-k">class</span> <span class="tok-t">Extract</span>(dspy.Signature):</div>
+                <div class="line">    <span class="tok-s">"""Extract contact info."""</span></div>
+                <div class="line">    message: <span class="tok-t">str</span> = dspy.<span class="tok-m">InputField</span>()</div>
+                <div class="line">    name: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">    email: <span class="tok-t">Optional</span>[<span class="tok-t">str</span>] = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">    intent: <span class="tok-t">Literal</span>[</div>
+                <div class="line">        <span class="tok-s">"meeting"</span>, <span class="tok-s">"intro"</span>, <span class="tok-s">"follow-up"</span></div>
+                <div class="line">    ] = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">&nbsp;</div>
+                <div class="line">extract = dspy.<span class="tok-m">Predict</span>(Extract)</div>
+                <div class="line">extract(message=<span class="tok-s">"I'm Sarah"</span></div>
+                <div class="line">    <span class="tok-s">"(sarah@acme.co). Meet Thursday?"</span>)</div>
+              </div>
+              <div class="hp-tab-output">
+                <div class="hp-tab-output-header"><span>output</span><span>stdout</span></div>
+                <div class="line">Prediction(</div>
+                <div class="line">  name=<span class="tok-s">"Sarah"</span>,</div>
+                <div class="line">  email=<span class="tok-s">"sarah@acme.co"</span>,</div>
+                <div class="line">  intent=<span class="tok-s">"meeting"</span></div>
+                <div class="line">)</div>
+              </div>
+            </div>
+
+            <!-- Agent -->
+            <div class="hp-tab-panel" id="hp-panel-agent">
+              <div class="hp-tab-code">
+                <div class="line"><span class="tok-k">def</span> <span class="tok-m">search</span>(query: <span class="tok-t">str</span>) -&gt; <span class="tok-t">list</span>[<span class="tok-t">str</span>]:</div>
+                <div class="line">    <span class="tok-s">"""Search a knowledge base."""</span></div>
+                <div class="line">    <span class="tok-k">return</span> kb.query(query, k=<span class="tok-num">3</span>)</div>
+                <div class="line">&nbsp;</div>
+                <div class="line"><span class="tok-k">def</span> <span class="tok-m">calc</span>(expr: <span class="tok-t">str</span>) -&gt; <span class="tok-t">float</span>:</div>
+                <div class="line">    <span class="tok-s">"""Evaluate a math expression."""</span></div>
+                <div class="line">    <span class="tok-k">return</span> dspy.<span class="tok-m">PythonInterpreter</span>({}).execute(expr)</div>
+                <div class="line">&nbsp;</div>
+                <div class="line">agent = dspy.<span class="tok-m">ReAct</span>(</div>
+                <div class="line">    <span class="tok-s">"question -&gt; answer"</span>,</div>
+                <div class="line">    tools=[search, calc])</div>
+                <div class="line">agent(question=<span class="tok-s">"GDP per capita of France?"</span>)</div>
+              </div>
+              <div class="hp-tab-output">
+                <div class="hp-tab-output-header"><span>output</span><span>stdout</span></div>
+                <div class="line"><span class="tok-cm"># thought 1: I need France's GDP and population.</span></div>
+                <div class="line"><span class="tok-cm"># action 1: search("France GDP") &rarr; ...</span></div>
+                <div class="line"><span class="tok-cm"># thought 2: Now divide GDP by population.</span></div>
+                <div class="line"><span class="tok-cm"># action 2: calc("3.13e12 / 68e6") &rarr; 46029.4</span></div>
+                <div class="line">Prediction(answer=<span class="tok-s">"$46,029"</span>)</div>
+              </div>
+            </div>
+
+            <!-- Pipeline -->
+            <div class="hp-tab-panel" id="hp-panel-pipeline">
+              <div class="hp-tab-code">
+                <div class="line"><span class="tok-k">class</span> <span class="tok-t">FactCheck</span>(dspy.Module):</div>
+                <div class="line">    <span class="tok-k">def</span> <span class="tok-m">__init__</span>(self):</div>
+                <div class="line">        self.find = dspy.<span class="tok-m">ChainOfThought</span>(</div>
+                <div class="line">            <span class="tok-s">"article -&gt; claims: list[str]"</span>)</div>
+                <div class="line">        self.verify = dspy.<span class="tok-m">ChainOfThought</span>(</div>
+                <div class="line">            <span class="tok-s">"claim, source -&gt; verdict"</span>)</div>
+                <div class="line">&nbsp;</div>
+                <div class="line">    <span class="tok-k">def</span> <span class="tok-m">forward</span>(self, article):</div>
+                <div class="line">        found = self.find(article=article)</div>
+                <div class="line">        <span class="tok-k">return</span> [</div>
+                <div class="line">            self.verify(claim=c, source=article)</div>
+                <div class="line">            <span class="tok-k">for</span> c <span class="tok-k">in</span> found.claims]</div>
+              </div>
+              <div class="hp-tab-output">
+                <div class="hp-tab-output-header"><span>output</span><span>stdout</span></div>
+                <div class="line"><span class="tok-cm"># &gt;&gt;&gt; FactCheck()(article=news_article)</span></div>
+                <div class="line">[Prediction(verdict=<span class="tok-s">"supported"</span>),</div>
+                <div class="line"> Prediction(verdict=<span class="tok-s">"unsupported"</span>),</div>
+                <div class="line"> Prediction(verdict=<span class="tok-s">"supported"</span>)]</div>
+              </div>
+            </div>
+
+            <!-- Multimodal -->
+            <div class="hp-tab-panel" id="hp-panel-multimodal">
+              <div class="hp-tab-code">
+                <div class="line"><span class="tok-k">class</span> <span class="tok-t">AnalyzeChart</span>(dspy.Signature):</div>
+                <div class="line">    <span class="tok-s">"""Describe the trend and key data points in a chart."""</span></div>
+                <div class="line">    chart: dspy.<span class="tok-t">Image</span> = dspy.<span class="tok-m">InputField</span>()</div>
+                <div class="line">    title: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">    trend: <span class="tok-t">str</span> = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">    data_points: <span class="tok-t">list</span>[<span class="tok-t">dict</span>] = dspy.<span class="tok-m">OutputField</span>()</div>
+                <div class="line">&nbsp;</div>
+                <div class="line">analyze = dspy.<span class="tok-m">Predict</span>(AnalyzeChart)</div>
+                <div class="line">analyze(chart=dspy.<span class="tok-m">Image</span>(<span class="tok-s">"quarterly_revenue.png"</span>))</div>
+              </div>
+              <div class="hp-tab-output">
+                <div class="hp-tab-output-header"><span>output</span><span>stdout</span></div>
+                <div class="line">Prediction(</div>
+                <div class="line">  title=<span class="tok-s">"Quarterly Revenue (2024)"</span>,</div>
+                <div class="line">  trend=<span class="tok-s">"Steady growth, Q3 dip, strong Q4 recovery"</span>,</div>
+                <div class="line">  data_points=[{<span class="tok-s">"q"</span>: <span class="tok-s">"Q1"</span>, <span class="tok-s">"rev"</span>: <span class="tok-s">"$4.2M"</span>}, ...]</div>
+                <div class="line">)</div>
+              </div>
+            </div>
+
+            <!-- Optimize -->
+            <div class="hp-tab-panel" id="hp-panel-optimize">
+              <div class="hp-tab-code">
+                <div class="line">optimizer = dspy.<span class="tok-m">GEPA</span>(</div>
+                <div class="line">    metric=accuracy, auto=<span class="tok-s">"medium"</span>)</div>
+                <div class="line">optimized = optimizer.<span class="tok-m">compile</span>(</div>
+                <div class="line">    extract, trainset=labeled_emails)</div>
+                <div class="line">&nbsp;</div>
+                <div class="line">optimized.<span class="tok-m">save</span>(<span class="tok-s">"extract_v2.json"</span>)</div>
+              </div>
+              <div class="hp-tab-output">
+                <div class="hp-tab-output-header"><span>output</span><span>stdout</span></div>
+                <div class="line"><span class="tok-cm"># Baseline   62%   (gpt-5.4-mini, zero-shot)</span></div>
+                <div class="line"><span class="tok-cm"># Optimized  89%   (gpt-5.4-mini + GEPA compile)</span></div>
+                <div class="line"><span class="tok-cm"># Cost       $2.18 &middot; 200 examples</span></div>
+                <div class="line"><span class="tok-cm"># Saved to   &rarr; extract_v2.json</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hp-tab-footer">
+            <span class="hp-tab-footer-caption">
+              <span class="hp-tab-caption" data-tab="extract">Signatures define tasks and enforce output types</span>
+              <span class="hp-tab-caption" data-tab="agent">Define tools as functions and pass them to a ReAct module</span>
+              <span class="hp-tab-caption" data-tab="pipeline">Compose multiple Signatures into new modules with plain Python control flow</span>
+              <span class="hp-tab-caption" data-tab="multimodal">Images are a Signature field types, enabling multimodal tasks</span>
+              <span class="hp-tab-caption" data-tab="optimize">Optimizers improve your program against a defined metric</span>
+            </span>
+            <span>
+              <a class="hp-tab-link" data-tab="extract" href="{{ 'getting-started/expanding-signatures/' | url }}">Learn more about Signatures &rarr;</a>
+              <a class="hp-tab-link" data-tab="agent" href="{{ 'getting-started/react-and-tools/' | url }}">Learn how to add tools &rarr;</a>
+              <a class="hp-tab-link" data-tab="pipeline" href="{{ 'getting-started/composing-modules/' | url }}">Learn how to compose modules &rarr;</a>
+              <a class="hp-tab-link" data-tab="multimodal" href="{{ 'tutorials/image_generation_prompting/' | url }}">Learn how to build multimodal programs &rarr;</a>
+              <a class="hp-tab-link" data-tab="optimize" href="{{ 'getting-started/gepa-optimization/' | url }}">Learn how to write metrics and optimize &rarr;</a>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ECOSYSTEM ===== -->
+  <section class="hp-section hp-ecosystem">
+    <div class="hp-container">
+      <div class="hp-eco-grid">
+        <div class="hp-eco-left">
+          <h2 class="hp-eco-title">
+            Built in the open, since <span class="hp-hl">Dec 2022</span>.
+          </h2>
+          <p class="hp-eco-desc">
+            DSPy started at Stanford NLP and grew into a research community.
+            New optimizers and module types land here first &mdash; then
+            show up in production systems at companies you&rsquo;ve heard&nbsp;of.
+          </p>
+          <div class="hp-papers">
+            <div class="hp-paper-date">Dec 2025</div>
+            <div class="hp-paper-title">Recursive Language Models</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2512.24601">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Jul 2025</div>
+            <div class="hp-paper-title">GEPA: Reflective Prompt Evolution</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2507.19457">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Jul 2024</div>
+            <div class="hp-paper-title">BetterTogether: Fine-Tuning + Prompt Opt.</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2407.10930">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Jun 2024</div>
+            <div class="hp-paper-title">MIPROv2: Optimizing Instructions &amp; Demos</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2406.11695">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Feb 2024</div>
+            <div class="hp-paper-title">STORM: Writing Wikipedia-like Articles</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2402.14207">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Oct 2023</div>
+            <div class="hp-paper-title">DSPy: Compiling Declarative LM Calls</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2310.03714">arxiv &rarr;</a></div>
+
+            <div class="hp-paper-date">Dec 2022</div>
+            <div class="hp-paper-title">Demonstrate-Search-Predict</div>
+            <div class="hp-paper-link"><a href="https://arxiv.org/abs/2212.14024">arxiv &rarr;</a></div>
+
+            <div class="hp-papers-end"></div>
+          </div>
+        </div>
+
+        <div class="hp-eco-right">
+          <h3>DSPy in production</h3>
+          <div class="hp-built-grid">
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://www.youtube.com/watch?v=bxToahwOVpY" class="hp-built-name">Shopify</a>
+              </div>
+              <div class="hp-built-blurb">Metadata extraction across all shops; ~550&times; cost reduction</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy" class="hp-built-name">Dropbox</a>
+              </div>
+              <div class="hp-built-blurb">Optimized Dash relevance judge for ranking and evaluation</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://aws.amazon.com/blogs/machine-learning/improve-amazon-nova-migration-performance-with-data-aware-prompt-optimization/" class="hp-built-name">AWS</a>
+              </div>
+              <div class="hp-built-blurb">Prompt migration from larger to smaller models on Amazon Nova</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy" class="hp-built-name">JetBlue</a>
+              </div>
+              <div class="hp-built-blurb">Multiple chatbot use cases on Databricks</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://blog.replit.com/code-repair" class="hp-built-name">Replit</a>
+              </div>
+              <div class="hp-built-blurb">Code repair pipeline using code LLMs to synthesize diffs</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://www.databricks.com/blog/dspy-databricks" class="hp-built-name">Databricks</a>
+              </div>
+              <div class="hp-built-blurb">LM judges, RAG, classification, and customer solutions</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="https://github.com/NousResearch/hermes-agent-self-evolution" class="hp-built-name">Nous Research</a>
+              </div>
+              <div class="hp-built-blurb">Evolutionary self-improvement for the Hermes agent</div>
+            </div>
+            <div class="hp-built-item">
+              <div class="hp-built-item-header">
+                <a href="{{ 'community/use-cases/' | url }}" class="hp-built-name hp-built-more">More &rarr;</a>
+              </div>
+              <div class="hp-built-blurb">See all companies using DSPy in production</div>
+            </div>
+          </div>
+
+          <div class="hp-community">
+            <div class="hp-community-label">Community</div>
+            <div class="hp-community-stats">
+              <div>
+                <div class="hp-community-stat-num">{{ config.extra.stats.contributors }}</div>
+                <div class="hp-community-stat-label">contributors</div>
+              </div>
+              <div>
+                <div class="hp-community-stat-num">{{ config.extra.stats.discord_members }}</div>
+                <div class="hp-community-stat-label">discord members</div>
+              </div>
+              <div>
+                <div class="hp-community-stat-num">{{ config.extra.stats.merged_prs_yr }}</div>
+                <div class="hp-community-stat-label">merged PRs / yr</div>
+              </div>
+              <div>
+                <div class="hp-community-stat-num">60+</div>
+                <div class="hp-community-stat-label">tutorials &amp; recipes</div>
+              </div>
+            </div>
+            <div class="hp-community-links">
+              <a href="https://github.com/stanfordnlp/dspy">GitHub &rarr;</a>
+              <a href="https://discord.gg/XCGy2WDCQB">Discord &rarr;</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </div>
 {% endblock %}

@@ -1,42 +1,67 @@
 {% extends "base.html" %}
 
 {% block announce %}
-  <strong>DSPy.LM API migration:</strong>
-  We are planning the typed <code>BaseLM</code> transition for DSPy 3.3–3.6/4.0.
-  <a href="{{ 'community/normalized-lm-api-migration/' | url }}">Review the plan and share feedback.</a>
+  <strong>DSPy.LM improvements:</strong>
+  we've added a typed <code>BaseLM</code> that will become the default interface.
+  <a href="{{ 'community/normalized-lm-api-migration/' | url }}">Read the plan and share feedback</a>
 {% endblock %}
 
 {% block extrahead %}
 <style>
+  /* Announcement banner — restyled to fit the home-page aesthetic:
+     quiet warm band, single rust accent, thin rule. Sans text; mono only for code.
+     Spacing uses padding (not margin) so no top margin collapses out and exposes
+     a white stripe above the band. */
+  .md-banner {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+  }
+  .md-banner__inner {
+    margin: 0 auto;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .md-banner strong { font-weight: 600; }
+  .md-banner code {
+    font-family: 'Fira Mono', ui-monospace, monospace;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+  .md-banner a {
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
+  }
+
   [data-md-color-scheme="default"] .md-banner {
-    background: #eef5ff;
-    border-bottom: 1px solid #c9ddff;
-    color: #1f2937;
+    background: #f3f7fc;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    color: var(--md-default-fg-color--light);
   }
-  [data-md-color-scheme="default"] .md-banner a {
-    color: #2457c5;
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 0.12em;
-  }
+  [data-md-color-scheme="default"] .md-banner strong { color: #4870aa; }
+  [data-md-color-scheme="default"] .md-banner a { color: #4870aa; }
+  [data-md-color-scheme="default"] .md-banner a:hover { border-bottom-color: #4870aa; }
   [data-md-color-scheme="default"] .md-banner code {
-    background: rgba(36, 87, 197, 0.1);
-    color: #1e3a8a;
+    background: rgba(52, 95, 158, 0.09);
+    color: #2c4f86;
   }
+
   [data-md-color-scheme="slate"] .md-banner {
-    background: #0f2747;
-    border-bottom: 1px solid #24496f;
-    color: #eef6ff;
+    background: #151e2b;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    color: var(--md-default-fg-color--light);
   }
-  [data-md-color-scheme="slate"] .md-banner a {
-    color: #9dccff;
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 0.12em;
-  }
+  [data-md-color-scheme="slate"] .md-banner strong { color: #87aad8; }
+  [data-md-color-scheme="slate"] .md-banner a { color: #87aad8; }
+  [data-md-color-scheme="slate"] .md-banner a:hover { border-bottom-color: #87aad8; }
   [data-md-color-scheme="slate"] .md-banner code {
-    background: rgba(157, 204, 255, 0.14);
-    color: #d6ebff;
+    background: rgba(143, 184, 236, 0.14);
+    color: #a9c8f0;
   }
 </style>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-G728W2L8KQ"></script>
