@@ -81,8 +81,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
-        timeout: int = 120,
-        straggler_limit: int = 3,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
         **kwargs,
     ):
         """
@@ -99,12 +99,15 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
-            timeout (int): Per-item timeout in seconds for the parallel executor's straggler
-                resubmission. Set higher when individual examples take longer than the
-                default 120 seconds (e.g., long reasoning chains or slow tool calls).
-                Pass 0 to disable straggler resubmission entirely.
-            straggler_limit (int): How many remaining stragglers trigger the resubmission
-                check. Defaults to 3 to match the executor.
+            timeout (Optional[int]): Per-item timeout in seconds for the parallel executor's
+                straggler resubmission. ``None`` defers to ``ParallelExecutor``'s own default
+                (currently 120 seconds). Raise this when individual examples legitimately take
+                longer than the default, e.g. long reasoning chains or slow tool calls, so the
+                straggler logic does not resubmit work that has not actually hung. Pass ``0`` to
+                disable straggler resubmission entirely.
+            straggler_limit (Optional[int]): How many remaining stragglers trigger the
+                resubmission check. ``None`` defers to ``ParallelExecutor``'s default
+                (currently 3).
 
         """
         self.devset = devset
@@ -173,15 +176,20 @@ class Evaluate:
 
         tqdm.tqdm._instances.clear()
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            disable_progress_bar=not display_progress,
-            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
-            provide_traceback=self.provide_traceback,
-            compare_results=True,
-            timeout=timeout,
-            straggler_limit=straggler_limit,
-        )
+        executor_kwargs: dict[str, Any] = {
+            "num_threads": num_threads,
+            "disable_progress_bar": not display_progress,
+            "max_errors": self.max_errors if self.max_errors is not None else dspy.settings.max_errors,
+            "provide_traceback": self.provide_traceback,
+            "compare_results": True,
+        }
+        # Only forward the straggler knobs when the caller actually picked a value, so
+        # `ParallelExecutor`'s own defaults stay authoritative if they ever change.
+        if timeout is not None:
+            executor_kwargs["timeout"] = timeout
+        if straggler_limit is not None:
+            executor_kwargs["straggler_limit"] = straggler_limit
+        executor = ParallelExecutor(**executor_kwargs)
 
         def process_item(example):
             prediction = program(**example.inputs())
