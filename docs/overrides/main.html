@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
 {% block announce %}
-  <strong>DSPy.LM API migration:</strong>
-  We are planning the typed <code>BaseLM</code> transition for DSPy 3.3–3.6/4.0.
-  <a href="{{ 'community/normalized-lm-api-migration/' | url }}">Review the plan and share feedback.</a>
+  <strong>DSPy.LM improvements:</strong>
+  we've added a typed <code>BaseLM</code> that will become the default interface.
+  <a href="{{ 'community/normalized-lm-api-migration/' | url }}">Read the plan and share feedback</a>
 {% endblock %}
 
 {% block extrahead %}
@@ -12,10 +12,15 @@
      quiet warm band, single rust accent, thin rule. Sans text; mono only for code.
      Spacing uses padding (not margin) so no top margin collapses out and exposes
      a white stripe above the band. */
+  .md-banner {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+  }
   .md-banner__inner {
     margin: 0 auto;
-    padding-top: 0.7rem;
-    padding-bottom: 0.7rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
     font-size: 13px;
     line-height: 1.55;
   }
