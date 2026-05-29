@@ -1,5 +1,8 @@
 {% extends "main.html" %}
 
+{# Hide the site-wide announcement banner on the landing page only #}
+{% block announce %}{% endblock %}
+
 {% block styles %}
   {{ super() }}
   <link rel="stylesheet" href="{{ 'stylesheets/home.css' | url }}">
@@ -14,7 +17,7 @@
       <div class="hp-hero-text">
         <div class="hp-hero-badge">
           <span class="hp-dot"></span>
-          DSPy {{ config.extra.stats.release_major_minor }} &mdash; {{ config.extra.stats.release_date }}
+          DSPy {{ config.extra.stats.release_major_minor }} &mdash; {{ config.extra.stats.release_blurb }}
           <span style="color:var(--hp-fg-3)">&middot;</span>
           <a href="https://github.com/stanfordnlp/dspy/releases">learn more &rarr;</a>
         </div>

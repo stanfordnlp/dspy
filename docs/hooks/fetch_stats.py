@@ -27,6 +27,7 @@ DEFAULTS = {
     "release_version": "3.2.1",
     "release_major_minor": "3.2",
     "release_date": "May 2025",
+    "release_blurb": "Improved tool calling and more",
     "monthly_downloads": "7.5M+",
     "contributors": "400+",
     "stars": "34.6k",
