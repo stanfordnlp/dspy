@@ -21,13 +21,14 @@ REPO = "stanfordnlp/dspy"
 DISCORD_INVITE = "XCGy2WDCQB"
 CACHE_DIR = Path(__file__).parent.parent / ".cache"
 CACHE_FILE = CACHE_DIR / "stats.json"
+CACHE_VERSION = 3
 CACHE_TTL = 3600  # 1 hour
 
 DEFAULTS = {
-    "release_version": "3.2.1",
-    "release_major_minor": "3.2",
-    "release_date": "May 2025",
-    "release_blurb": "Improved tool calling and more",
+    "release_version": "3.3.0b1",
+    "release_major_minor": "3.3",
+    "release_date": "May 2026",
+    "release_blurb": "New ReActV2 Module and improved LM/BaseLM",
     "monthly_downloads": "7.5M+",
     "contributors": "400+",
     "stars": "34.6k",
@@ -58,6 +59,8 @@ def _load_cache():
     try:
         if CACHE_FILE.exists():
             data = json.loads(CACHE_FILE.read_text())
+            if data.get("_cache_version") != CACHE_VERSION:
+                return None
             if time.time() - data.get("_ts", 0) < CACHE_TTL:
                 log.info("Using cached stats (age: %ds)", int(time.time() - data["_ts"]))
                 return data
@@ -70,6 +73,7 @@ def _save_cache(stats):
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         stats["_ts"] = time.time()
+        stats["_cache_version"] = CACHE_VERSION
         CACHE_FILE.write_text(json.dumps(stats, indent=2))
     except Exception as e:
         log.warning("Could not write stats cache: %s", e)
@@ -77,13 +81,21 @@ def _save_cache(stats):
 
 def _fetch_release():
     data, _ = _get(
-        f"https://api.github.com/repos/{REPO}/releases/latest",
+        f"https://api.github.com/repos/{REPO}/releases?per_page=20",
         headers=GITHUB_HEADERS,
     )
-    tag = data["tag_name"].lstrip("v")
+    releases = [release for release in data if not release.get("draft") and release.get("published_at")]
+    if not releases:
+        return {}
+
+    release = max(
+        releases,
+        key=lambda release: datetime.fromisoformat(release["published_at"].replace("Z", "+00:00")),
+    )
+    tag = release["tag_name"].lstrip("v")
     parts = tag.split(".")
     major_minor = f"{parts[0]}.{parts[1]}" if len(parts) >= 2 else tag
-    pub = datetime.fromisoformat(data["published_at"].replace("Z", "+00:00"))
+    pub = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
     return {
         "release_version": tag,
         "release_major_minor": major_minor,
