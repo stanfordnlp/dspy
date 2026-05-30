@@ -190,6 +190,7 @@
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    min-width: 0;
 }
 .hp-code-chrome {
     display: flex;
@@ -221,7 +222,7 @@
 }
 .hp-code-body {
     display: grid;
-    grid-template-columns: 40px 1fr;
+    grid-template-columns: 40px minmax(0, 1fr);
 }
 .hp-line-nums {
     padding: 18px 0;
@@ -239,8 +240,9 @@
     font-family: var(--hp-mono);
     font-size: 13px;
     line-height: 1.7;
-    overflow: hidden;
+    overflow-x: auto;
     color: #e6edf3;
+    -webkit-overflow-scrolling: touch;
 }
 .hp-code-content .line {
     white-space: pre;
@@ -266,6 +268,8 @@
     font-size: 12.5px;
     line-height: 1.7;
     color: #8b949e;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .hp-code-output .line {
     white-space: pre;
@@ -481,9 +485,10 @@
     font-size: 11.5px;
     line-height: 1.7;
     align-self: stretch;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
 }
-.hp-feature-code .line { white-space: pre; min-height: 1em; overflow: hidden; text-overflow: ellipsis; }
+.hp-feature-code .line { white-space: pre-wrap; min-height: 1em; }
 
 /* ===== EXAMPLES (TABBED) ===== */
 .hp-examples {
@@ -528,23 +533,25 @@
     transition: color 0.15s;
 }
 .hp-tabs-bar label:hover { color: var(--hp-fg-2); }
-.hp-tab-panel { display: none; grid-template-columns: 1.2fr 1fr; }
+.hp-tab-panel { display: none; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
 .hp-tab-code {
     border-right: 1px solid var(--hp-line);
     padding: 22px 28px;
     font-family: var(--hp-mono);
     font-size: 13px;
     line-height: 1.75;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
 }
-.hp-tab-code .line { white-space: pre; min-height: 1em; }
+.hp-tab-code .line { white-space: pre-wrap; min-height: 1em; }
 .hp-tab-output {
     background: var(--hp-bg-2);
     padding: 22px 28px;
     font-family: var(--hp-mono);
     font-size: 12.5px;
     line-height: 1.7;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
 }
 .hp-tab-output-header {
     display: flex;
@@ -557,7 +564,7 @@
     text-transform: uppercase;
     color: var(--hp-fg-3);
 }
-.hp-tab-output .line { white-space: pre; min-height: 1em; }
+.hp-tab-output .line { white-space: pre-wrap; min-height: 1em; }
 .hp-tab-footer {
     border-top: 1px solid var(--hp-line);
     padding: 12px 18px;
