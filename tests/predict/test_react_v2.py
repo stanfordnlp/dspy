@@ -324,3 +324,31 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+
+def test_react_v2_rejects_reserved_output_field_history():
+    try:
+        dspy.ReActV2("question -> answer, history: str", tools=[])
+        assert False, "Expected ValueError for reserved output field 'history'"
+    except ValueError as e:
+        assert "history" in str(e)
+        assert "reserved" in str(e).lower()
+
+
+def test_react_v2_rejects_reserved_output_field_termination_reason():
+    try:
+        dspy.ReActV2("question -> answer, termination_reason: str", tools=[])
+        assert False, "Expected ValueError for reserved output field 'termination_reason'"
+    except ValueError as e:
+        assert "termination_reason" in str(e)
+        assert "reserved" in str(e).lower()
+
+
+def test_react_v2_rejects_both_reserved_output_fields():
+    try:
+        dspy.ReActV2("question -> answer, history: str, termination_reason: str", tools=[])
+        assert False, "Expected ValueError for reserved output fields"
+    except ValueError as e:
+        msg = str(e)
+        assert "history" in msg
+        assert "termination_reason" in msg

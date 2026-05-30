@@ -471,3 +471,12 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_rejects_reserved_output_field_trajectory():
+    try:
+        dspy.ReAct("question -> answer, trajectory: str", tools=[])
+        assert False, "Expected ValueError for reserved output field 'trajectory'"
+    except ValueError as e:
+        assert "trajectory" in str(e)
+        assert "reserved" in str(e).lower()
