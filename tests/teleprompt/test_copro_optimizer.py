@@ -154,3 +154,31 @@ def test_statistics_tracking_during_optimization():
     ), "Optimizer did not properly populate the latest results statistics"
 
     # Additional detailed checks can be added here to verify the contents of the tracked statistics
+
+
+def test_compile_without_eval_kwargs():
+    """Test that COPRO.compile works when eval_kwargs is not provided (defaults to {})."""
+    lm = DummyLM(
+        [
+            {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+            {"reasoning": "france", "output": "Paris"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+
+    student = SimpleModule("input -> output")
+
+    # Should work without eval_kwargs parameter
+    optimized_student = optimizer.compile(student, trainset=trainset)
+
+    assert optimized_student is not student, "Optimization did not modify the student"
+    test_input = "What is the capital of France?"
+    prediction = optimized_student(input=test_input)
+    assert prediction.output == "Paris"
