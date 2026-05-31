@@ -87,9 +87,16 @@ class ChatAdapter(Adapter):
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
+            if (
+                isinstance(e, LMError)
+                or isinstance(self, JSONAdapter)
+                or not self.use_json_adapter_fallback
+                or (isinstance(e, AdapterParseError) and e.field_constraint_violation)
+            ):
+                # On LM errors, already using JSONAdapter, use_json_adapter_fallback is False, or the failure
+                # was a semantic field-value constraint violation rather than a structural parse failure, we
+                # don't want to retry with a different adapter. Raise the original error instead of the
+                # fallback error (#7843).
                 raise
             return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -107,9 +114,16 @@ class ChatAdapter(Adapter):
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
+            if (
+                isinstance(e, LMError)
+                or isinstance(self, JSONAdapter)
+                or not self.use_json_adapter_fallback
+                or (isinstance(e, AdapterParseError) and e.field_constraint_violation)
+            ):
+                # On LM errors, already using JSONAdapter, use_json_adapter_fallback is False, or the failure
+                # was a semantic field-value constraint violation rather than a structural parse failure, we
+                # don't want to retry with a different adapter. Raise the original error instead of the
+                # fallback error (#7843).
                 raise
             return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
@@ -236,11 +250,18 @@ class ChatAdapter(Adapter):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except Exception as e:
+                    # The field marker was located in the LM response, so this
+                    # is a value-level constraint failure (e.g. Literal/Enum
+                    # mismatch or a pydantic ValidationError on the annotation),
+                    # not a structural format failure. Mark it so callers do not
+                    # waste another LM call on the JSONAdapter fallback path
+                    # (issue #7843).
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                        field_constraint_violation=True,
                     )
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
