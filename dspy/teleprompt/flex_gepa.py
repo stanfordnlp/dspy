@@ -5,7 +5,14 @@ import math
 import random
 from typing import Any, Callable, Literal, cast
 
-from gepa import EvaluationBatch, GEPAAdapter, GEPAResult, optimize
+from gepa import EvaluationBatch, GEPAAdapter, GEPAResult
+from gepa.optimize_anything import (
+    EngineConfig,
+    GEPAConfig,
+    MergeConfig,
+    ReflectionConfig,
+    optimize_anything,
+)
 
 import dspy
 from dspy.clients.lm import LM
@@ -17,7 +24,6 @@ from dspy.flex.manifest import ManifestStore
 from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData, bootstrap_trace_data
-from dspy.teleprompt.gepa.gepa_utils import LoggerAdapter
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -430,9 +436,69 @@ class FlexGEPA(Teleprompter):
             "predictors_src": student.predictors_src,
             "forward_src": student.forward_src,
         }
+        sig_hash = student._signature_hash()
+
+        def _evaluator(candidate: dict[str, str], example: Example) -> tuple[float, dict[str, Any]]:
+            try:
+                program = adapter.build_program(candidate)
+            except Exception as e:
+                return self.failure_score, {"Error": f"failed to build program: {e}"}
+
+            try:
+                with dspy.context(trace=[]):
+                    prediction = program(**example.inputs())
+                    trace = list(dspy.settings.trace or [])
+            except Exception as e:
+                return self.failure_score, {
+                    "Error": str(e),
+                    "Inputs": {k: _short_repr(v) for k, v in example.inputs().items()},
+                }
+
+            try:
+                score_result: Any = self.metric_fn(example, prediction, trace)
+            except Exception as e:
+                return self.failure_score, {"Error": f"metric raised: {e}"}
+
+            if hasattr(score_result, "score"):
+                score_dict = cast(dict, score_result)
+                feedback = score_dict.get("feedback") or ""
+                score = float(score_dict["score"])
+            else:
+                feedback = ""
+                score = float(score_result)
+
+            return score, {
+                "Inputs": {k: _short_repr(v) for k, v in example.inputs().items()},
+                "Generated Outputs": _render_prediction(prediction),
+                "Feedback": feedback or f"This trajectory got a score of {score}.",
+            }
+
+        eval_running_scores: dict[str, list[float]] = {}
+
+        def _evaluator_logged(candidate: dict[str, str], example: Example) -> tuple[float, dict[str, Any]]:
+            score, side_info = _evaluator(candidate, example)
+            cid = candidate_id(candidate["predictors_src"], candidate["forward_src"])
+            scores = eval_running_scores.setdefault(cid, [])
+            scores.append(score)
+            adapter.exploration.record(
+                "evaluate",
+                predictors_src=candidate["predictors_src"],
+                forward_src=candidate["forward_src"],
+                signature_hash=sig_hash,
+                score=sum(scores) / len(scores),
+                extra={"n_examples": len(scores)},
+            )
+            return score, side_info
+
+        def _custom_proposer(
+            candidate: dict[str, str],
+            reflective_dataset: Any,
+            components_to_update: list[str],
+        ) -> dict[str, str]:
+            return adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
 
         reflection_callable: Callable[[str], str] | None = None
-        if isinstance(self.reflection_lm, LM):
+        if self.reflection_lm is not None:
             captured_lm = self.reflection_lm
 
             def _call(x: str) -> str:
@@ -446,43 +512,67 @@ class FlexGEPA(Teleprompter):
 
             reflection_callable = _call
 
-        optimize_kwargs: dict[str, Any] = dict(
-            seed_candidate=seed_candidate,
-            trainset=trainset,
-            valset=valset,
-            adapter=adapter,
-            reflection_lm=reflection_callable,
-            candidate_selection_strategy=self.candidate_selection_strategy,
-            skip_perfect_score=self.skip_perfect_score,
-            reflection_minibatch_size=self.reflection_minibatch_size,
-            module_selector=self.component_selector,
-            perfect_score=self.perfect_score,
-            use_merge=self.use_merge,
-            max_merge_invocations=self.max_merge_invocations,
-            max_metric_calls=self.max_metric_calls,
-            logger=LoggerAdapter(logger),
-            run_dir=self.log_dir,
-            display_progress_bar=True,
-            raise_on_exception=True,
-            seed=self.seed,
+        # --- build GEPAConfig ----------------------------------------------
+        objective = student._flex_ctx.render_signature_spec()
+        background = (
+            "You are optimizing the source code of a dspy.Flex module. The "
+            "two components being evolved are `predictors_src` (a PREDICTORS "
+            "dict literal) and `forward_src` (a `def forward(self, ...): ...`).\n\n"
+            + PRIMITIVES_CATALOG
+            + "\n\n"
+            + student._flex_ctx.render_context_blurb()
         )
-        optimize_kwargs.update(self.gepa_kwargs)
-        gepa_result: GEPAResult = optimize(**optimize_kwargs)
+
+        config = GEPAConfig(
+            engine=EngineConfig(
+                max_metric_calls=self.max_metric_calls,
+                seed=self.seed or 0,
+                run_dir=self.log_dir,
+                display_progress_bar=True,
+                raise_on_exception=True,
+                candidate_selection_strategy=self.candidate_selection_strategy,
+                track_best_outputs=self.track_stats,
+                parallel=(self.num_threads or 1) > 1,
+                max_workers=self.num_threads,
+            ),
+            reflection=ReflectionConfig(
+                reflection_lm=reflection_callable,
+                reflection_minibatch_size=self.reflection_minibatch_size,
+                module_selector=self.component_selector,  # type: ignore[arg-type]
+                skip_perfect_score=self.skip_perfect_score,
+                perfect_score=self.perfect_score,
+                custom_candidate_proposer=_custom_proposer,
+                reflection_prompt_template=None,
+            ),
+            merge=MergeConfig(max_merge_invocations=self.max_merge_invocations or 5)
+            if self.use_merge
+            else None,
+        )
+
+        gepa_result: GEPAResult = optimize_anything(
+            seed_candidate=seed_candidate,
+            evaluator=_evaluator_logged,
+            dataset=trainset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            config=config,
+        )
 
         best = cast(dict, gepa_result.best_candidate)
         new_prog = adapter.build_program(best)
         best_score = max(gepa_result.val_aggregate_scores) if gepa_result.val_aggregate_scores else None
 
         if new_prog._persist_to is not None:
-            sig_hash = new_prog._signature_hash()
-            new_prog._write_persisted(best["predictors_src"], best["forward_src"], sig_hash)
+            new_sig_hash = new_prog._signature_hash()
+            new_prog._write_persisted(best["predictors_src"], best["forward_src"], new_sig_hash)
             parents_at_best: list[int] = []
             if gepa_result.parents:
                 parents_at_best = [p for p in gepa_result.parents[gepa_result.best_idx] if p is not None]
             version_id = ManifestStore(new_prog._flex_root).append_version(
                 flex_id=new_prog._flex_id,
                 src_path=new_prog._persist_to,
-                signature_hash=sig_hash,
+                signature_hash=new_sig_hash,
                 score=best_score,
                 parents=parents_at_best,
                 notes="FlexGEPA optimized",
@@ -491,7 +581,7 @@ class FlexGEPA(Teleprompter):
                 "accept",
                 predictors_src=best["predictors_src"],
                 forward_src=best["forward_src"],
-                signature_hash=sig_hash,
+                signature_hash=new_sig_hash,
                 score=best_score,
                 extra={"version_id": version_id, "src_path": str(new_prog._persist_to)},
             )
