@@ -29,10 +29,7 @@ def flex(  # type: ignore[misc]
     flex_id: str | None = None,
     flex_root: Any = None,
 ):
-    """Decorate a ``dspy.Signature`` subclass to produce a Flex module factory.
-
-    See the class docstring on :class:`dspy.Flex` for the full set of options.
-    """
+    """Decorate a ``dspy.Signature`` subclass to produce a Flex module factory."""
 
     def _wrap(cls: type) -> Callable[..., Flex]:
         bound_persist_to = persist_to
