@@ -179,7 +179,8 @@ class Flex(Module):
                 flex_id=self._flex_id,
                 src_path=self._persist_to,
                 signature_hash=sig_hash,
-                notes=f"initial codegen (candidate {cid})" if cid else "initial codegen",
+                candidate_id=cid,
+                notes="initial codegen",
             )
             self._exploration.record(
                 "accept",

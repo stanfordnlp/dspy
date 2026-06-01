@@ -243,6 +243,16 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 results[component] = revised
                 proposed = dict(candidate)
                 proposed[component] = revised
+                proposed_id = candidate_id(proposed["predictors_src"], proposed["forward_src"])
+                if proposed_id == parent_id:
+                    # No-op revision (LM returned source that hashes identically to parent).
+                    # Don't pollute the log with a fake propose event or duplicate the parent
+                    # candidate file.
+                    logger.info(
+                        "FlexAdapter.propose_new_texts: LM returned no-op revision for %s; skipping.",
+                        component,
+                    )
+                    continue
                 self.exploration.record(
                     "propose",
                     predictors_src=proposed["predictors_src"],
@@ -436,7 +446,6 @@ class FlexGEPA(Teleprompter):
             "predictors_src": student.predictors_src,
             "forward_src": student.forward_src,
         }
-        sig_hash = student._signature_hash()
 
         def _evaluator(candidate: dict[str, str], example: Example) -> tuple[float, dict[str, Any]]:
             try:
@@ -472,23 +481,6 @@ class FlexGEPA(Teleprompter):
                 "Generated Outputs": _render_prediction(prediction),
                 "Feedback": feedback or f"This trajectory got a score of {score}.",
             }
-
-        eval_running_scores: dict[str, list[float]] = {}
-
-        def _evaluator_logged(candidate: dict[str, str], example: Example) -> tuple[float, dict[str, Any]]:
-            score, side_info = _evaluator(candidate, example)
-            cid = candidate_id(candidate["predictors_src"], candidate["forward_src"])
-            scores = eval_running_scores.setdefault(cid, [])
-            scores.append(score)
-            adapter.exploration.record(
-                "evaluate",
-                predictors_src=candidate["predictors_src"],
-                forward_src=candidate["forward_src"],
-                signature_hash=sig_hash,
-                score=sum(scores) / len(scores),
-                extra={"n_examples": len(scores)},
-            )
-            return score, side_info
 
         def _custom_proposer(
             candidate: dict[str, str],
@@ -551,7 +543,7 @@ class FlexGEPA(Teleprompter):
 
         gepa_result: GEPAResult = optimize_anything(
             seed_candidate=seed_candidate,
-            evaluator=_evaluator_logged,
+            evaluator=_evaluator,
             dataset=trainset,
             valset=valset,
             objective=objective,
@@ -564,28 +556,46 @@ class FlexGEPA(Teleprompter):
         best_score = max(gepa_result.val_aggregate_scores) if gepa_result.val_aggregate_scores else None
 
         if new_prog._persist_to is not None:
-            new_sig_hash = new_prog._signature_hash()
-            new_prog._write_persisted(best["predictors_src"], best["forward_src"], new_sig_hash)
-            parents_at_best: list[int] = []
-            if gepa_result.parents:
-                parents_at_best = [p for p in gepa_result.parents[gepa_result.best_idx] if p is not None]
             assert new_prog._flex_root is not None
-            version_id = ManifestStore(new_prog._flex_root).append_version(
-                flex_id=new_prog._flex_id,
-                src_path=new_prog._persist_to,
-                signature_hash=new_sig_hash,
-                score=best_score,
-                parents=parents_at_best,
-                notes="FlexGEPA optimized",
-            )
-            adapter.exploration.record(
-                "accept",
-                predictors_src=best["predictors_src"],
-                forward_src=best["forward_src"],
-                signature_hash=new_sig_hash,
-                score=best_score,
-                extra={"version_id": version_id, "src_path": str(new_prog._persist_to)},
-            )
+            best_cid = candidate_id(best["predictors_src"], best["forward_src"])
+            manifest = ManifestStore(new_prog._flex_root)
+            latest = manifest.latest(new_prog._flex_id)
+            if latest is not None and latest.get("candidate_id") == best_cid:
+                # No improvement: GEPA's best is the already-accepted seed. Don't
+                # write a duplicate manifest version with empty parents that would
+                # look like a real new release.
+                logger.info(
+                    "FlexGEPA: best candidate matches current accepted version %s; "
+                    "skipping manifest write.",
+                    best_cid,
+                )
+            else:
+                new_sig_hash = new_prog._signature_hash()
+                new_prog._write_persisted(best["predictors_src"], best["forward_src"], new_sig_hash)
+                parent_cids: list[str] = []
+                if gepa_result.parents:
+                    for p_idx in gepa_result.parents[gepa_result.best_idx]:
+                        if p_idx is None:
+                            continue
+                        p_cand = gepa_result.candidates[p_idx]
+                        parent_cids.append(candidate_id(p_cand["predictors_src"], p_cand["forward_src"]))
+                version_id = manifest.append_version(
+                    flex_id=new_prog._flex_id,
+                    src_path=new_prog._persist_to,
+                    signature_hash=new_sig_hash,
+                    candidate_id=best_cid,
+                    score=best_score,
+                    parents=parent_cids,
+                    notes="FlexGEPA optimized",
+                )
+                adapter.exploration.record(
+                    "accept",
+                    predictors_src=best["predictors_src"],
+                    forward_src=best["forward_src"],
+                    signature_hash=new_sig_hash,
+                    score=best_score,
+                    extra={"version_id": version_id, "src_path": str(new_prog._persist_to)},
+                )
 
         if self.track_stats:
             new_prog.detailed_results = gepa_result

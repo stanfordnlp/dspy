@@ -6,9 +6,19 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 FLEX_DIRNAME = ".flex"
+
+EventType = Literal["codegen", "load", "evaluate", "propose", "accept"]
+"""Closed set of event names that may appear in ``exploration.jsonl``.
+
+- ``codegen``: a Flex module's implementation was generated from scratch by the codegen LM.
+- ``load``: a Flex module loaded its implementation from a persisted ``.py`` file.
+- ``evaluate``: a candidate was scored on a batch of examples. Score is the batch mean.
+- ``propose``: the reflection LM produced a *non-trivial* revision of one component
+- ``accept``: a candidate was written to disk and appended as a new manifest version.
+"""
 
 
 def candidate_id(predictors_src: str, forward_src: str) -> str:
@@ -72,17 +82,22 @@ class ExplorationStore:
 
     def record(
         self,
-        event: str,
+        event: EventType,
         *,
         predictors_src: str | None = None,
         forward_src: str | None = None,
         signature_hash: str | None = None,
         score: float | None = None,
         parents: list[str] | None = None,
-        feedback_summary: str | None = None,
-        rejected_reason: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> str | None:
+        """Append one event row to ``exploration.jsonl``.
+
+        ``signature_hash`` is captured only on the *candidate file* (first-seen
+        snapshot); it is not embedded in each event row since it doesn't change
+        within a compile run. Reconstruct it from ``candidates/<cid>.json`` when
+        needed.
+        """
         if self.root is None:
             return None
         assert self.candidates_dir is not None and self.log_path is not None
@@ -105,16 +120,10 @@ class ExplorationStore:
         entry: dict[str, Any] = {"event": event, "ts": _now_iso()}
         if cid is not None:
             entry["candidate_id"] = cid
-        if signature_hash is not None:
-            entry["signature_hash"] = signature_hash
         if score is not None:
             entry["score"] = score
         if parents is not None:
             entry["parents"] = parents
-        if feedback_summary is not None:
-            entry["feedback_summary"] = feedback_summary
-        if rejected_reason is not None:
-            entry["rejected_reason"] = rejected_reason
         if extra:
             for k, v in extra.items():
                 if k not in entry:

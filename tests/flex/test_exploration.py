@@ -49,8 +49,8 @@ def test_exploration_store_records_event_and_writes_candidate(tmp_path) -> None:
 def test_exploration_store_deduplicates_candidate_files(tmp_path) -> None:
     store = ExplorationStore(tmp_path, "myflex")
     store.record("codegen", predictors_src="P", forward_src="F", signature_hash="h")
-    store.record("evaluate", predictors_src="P", forward_src="F", signature_hash="h", score=0.5)
-    store.record("evaluate", predictors_src="P", forward_src="F", signature_hash="h", score=0.7)
+    store.record("evaluate", predictors_src="P", forward_src="F", score=0.5)
+    store.record("evaluate", predictors_src="P", forward_src="F", score=0.7)
     # One candidate file, three events.
     assert len(store.list_candidates()) == 1
     history = store.get_history()
@@ -60,9 +60,9 @@ def test_exploration_store_deduplicates_candidate_files(tmp_path) -> None:
 
 def test_exploration_store_best_score(tmp_path) -> None:
     store = ExplorationStore(tmp_path, "myflex")
-    store.record("evaluate", predictors_src="P1", forward_src="F1", score=0.2, signature_hash="h")
-    store.record("evaluate", predictors_src="P2", forward_src="F2", score=0.9, signature_hash="h")
-    store.record("evaluate", predictors_src="P3", forward_src="F3", score=0.5, signature_hash="h")
+    store.record("evaluate", predictors_src="P1", forward_src="F1", score=0.2)
+    store.record("evaluate", predictors_src="P2", forward_src="F2", score=0.9)
+    store.record("evaluate", predictors_src="P3", forward_src="F3", score=0.5)
     best = store.best_score()
     assert best is not None
     assert best[1] == 0.9
@@ -72,20 +72,34 @@ def test_exploration_store_best_score(tmp_path) -> None:
 
 def test_exploration_store_handles_events_without_sources(tmp_path) -> None:
     store = ExplorationStore(tmp_path, "myflex")
-    cid = store.record("noop", signature_hash="h")
+    cid = store.record("load")
     assert cid is None
-    assert store.get_history()[0]["event"] == "noop"
+    assert store.get_history()[0]["event"] == "load"
 
 
 def test_exploration_log_is_jsonl(tmp_path) -> None:
     store = ExplorationStore(tmp_path, "myflex")
-    store.record("a", predictors_src="P", forward_src="F", signature_hash="h")
-    store.record("b", predictors_src="P", forward_src="F", signature_hash="h", score=0.3)
+    store.record("codegen", predictors_src="P", forward_src="F", signature_hash="h")
+    store.record("evaluate", predictors_src="P", forward_src="F", score=0.3)
     text = (tmp_path / ".flex" / "myflex" / "exploration.jsonl").read_text()
     lines = [l for l in text.splitlines() if l.strip()]
     assert len(lines) == 2
     for line in lines:
         json.loads(line)  # each line parses
+
+
+def test_event_rows_do_not_carry_signature_hash(tmp_path) -> None:
+    """signature_hash is captured on candidate files, not on each event row."""
+    store = ExplorationStore(tmp_path, "myflex")
+    store.record("codegen", predictors_src="P", forward_src="F", signature_hash="sighash")
+    store.record("evaluate", predictors_src="P", forward_src="F", score=0.5)
+    for entry in store.get_history():
+        assert "signature_hash" not in entry
+    # ...but it IS captured once on the candidate file.
+    cid = candidate_id("P", "F")
+    cand = store.get_candidate(cid)
+    assert cand is not None
+    assert cand["signature_hash"] == "sighash"
 
 
 def test_exploration_store_with_none_root_is_a_noop() -> None:
@@ -95,7 +109,6 @@ def test_exploration_store_with_none_root_is_a_noop() -> None:
         "codegen",
         predictors_src="P",
         forward_src="F",
-        signature_hash="h",
     )
     assert cid is None
     assert store.get_history() == []

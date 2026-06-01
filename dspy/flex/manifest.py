@@ -40,18 +40,23 @@ class ManifestStore:
         src_path: str | Path,
         signature_hash: str,
         *,
+        candidate_id: str | None = None,
         score: float | None = None,
-        parents: list[int] | None = None,
+        parents: list[str] | None = None,
         notes: str | None = None,
     ) -> int:
+        """Append an accepted version.
+
+        ``candidate_id`` and ``parents`` are the 12-char source hashes from
+        :func:`dspy.flex.exploration.candidate_id` — they cross-link every
+        manifest entry to its row in ``<flex_id>/exploration.jsonl``.
+        """
         data = self.read()
-        entry = data["flex_modules"].setdefault(flex_id, {"signature_hash": signature_hash, "versions": []})
-        # Quarantine prior versions if the signature has changed: keep them as history but
-        # mark the new hash on the module entry.
-        entry["signature_hash"] = signature_hash
+        entry = data["flex_modules"].setdefault(flex_id, {"versions": []})
         next_id = (entry["versions"][-1]["id"] + 1) if entry["versions"] else 0
         version = {
             "id": next_id,
+            "candidate_id": candidate_id,
             "src_path": str(src_path),
             "signature_hash": signature_hash,
             "score": score,

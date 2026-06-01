@@ -27,14 +27,22 @@ def test_append_creates_first_version(tmp_path) -> None:
 
 def test_append_increments_version_id(tmp_path) -> None:
     store = ManifestStore(tmp_path)
-    store.append_version("myflex", tmp_path / "src.py", "abc")
-    second_id = store.append_version("myflex", tmp_path / "src.py", "abc", score=0.7, parents=[0])
+    store.append_version("myflex", tmp_path / "src.py", "abc", candidate_id="seedhash00aa")
+    second_id = store.append_version(
+        "myflex",
+        tmp_path / "src.py",
+        "abc",
+        candidate_id="childhash00b",
+        score=0.7,
+        parents=["seedhash00aa"],
+    )
     assert second_id == 1
     latest = store.latest("myflex")
     assert latest is not None
     assert latest["id"] == 1
+    assert latest["candidate_id"] == "childhash00b"
     assert latest["score"] == 0.7
-    assert latest["parents"] == [0]
+    assert latest["parents"] == ["seedhash00aa"]
 
 
 def test_latest_returns_none_when_missing(tmp_path) -> None:
