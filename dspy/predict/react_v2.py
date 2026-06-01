@@ -121,7 +121,10 @@ class ReActV2(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                # Remove reserved keys from final_outputs to avoid duplicate keyword argument errors
+                # when the user's signature declares an output field with the same name.
+                safe_outputs = {k: v for k, v in final_outputs.items() if k not in ("history", "termination_reason")}
+                return Prediction(**safe_outputs, history=history, termination_reason="submit")
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
@@ -197,7 +200,8 @@ class ReActV2(Module):
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            safe_outputs = {k: v for k, v in final_outputs.items() if k not in ("history", "termination_reason")}
+            return Prediction(**safe_outputs, history=history, termination_reason="forced_submit")
 
         return Prediction(history=history, termination_reason=break_reason or "failed")
 
