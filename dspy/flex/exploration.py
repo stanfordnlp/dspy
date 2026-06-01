@@ -9,19 +9,6 @@ from pathlib import Path
 from typing import Any
 
 FLEX_DIRNAME = ".flex"
-_PROJECT_ROOT_MARKERS = (".git", "pyproject.toml", "setup.py", "setup.cfg")
-
-
-def find_project_root(start: str | Path | None = None) -> Path:
-    cur = Path(start).resolve() if start else Path.cwd().resolve()
-    while True:
-        for marker in _PROJECT_ROOT_MARKERS:
-            if (cur / marker).exists():
-                return cur
-        if cur == cur.parent:
-            break
-        cur = cur.parent
-    return Path(start).resolve() if start else Path.cwd().resolve()
 
 
 def candidate_id(predictors_src: str, forward_src: str) -> str:
@@ -31,29 +18,39 @@ def candidate_id(predictors_src: str, forward_src: str) -> str:
 
 
 class ExplorationStore:
-    """Append-only candidate + event store for a single Flex module."""
+    """Append-only candidate + event store for a single Flex module.
 
-    def __init__(self, root: str | Path, flex_id: str):
-        self.root = Path(root) / FLEX_DIRNAME / flex_id
-        self.candidates_dir = self.root / "candidates"
-        self.log_path = self.root / "exploration.jsonl"
+    Lives at ``<root>/.flex/<flex_id>/``. When ``root`` is ``None`` (in-memory
+    Flex mode), every read returns the empty value and every write is a no-op
+    — callers don't have to null-check.
+    """
+
+    def __init__(self, root: str | Path | None, flex_id: str):
+        self.flex_id = flex_id
+        self.root: Path | None = (Path(root) / FLEX_DIRNAME / flex_id) if root is not None else None
+        self.candidates_dir: Path | None = (self.root / "candidates") if self.root is not None else None
+        self.log_path: Path | None = (self.root / "exploration.jsonl") if self.root is not None else None
 
     def has_candidate(self, cid: str) -> bool:
+        if self.candidates_dir is None:
+            return False
         return (self.candidates_dir / f"{cid}.json").exists()
 
     def get_candidate(self, cid: str) -> dict[str, Any] | None:
+        if self.candidates_dir is None:
+            return None
         p = self.candidates_dir / f"{cid}.json"
         if not p.exists():
             return None
         return json.loads(p.read_text(encoding="utf-8"))
 
     def list_candidates(self) -> list[str]:
-        if not self.candidates_dir.exists():
+        if self.candidates_dir is None or not self.candidates_dir.exists():
             return []
         return sorted(p.stem for p in self.candidates_dir.glob("*.json"))
 
     def get_history(self) -> list[dict[str, Any]]:
-        if not self.log_path.exists():
+        if self.log_path is None or not self.log_path.exists():
             return []
         return [
             json.loads(line)
@@ -86,6 +83,10 @@ class ExplorationStore:
         rejected_reason: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> str | None:
+        if self.root is None:
+            return None
+        assert self.candidates_dir is not None and self.log_path is not None
+
         cid: str | None = None
         if predictors_src is not None and forward_src is not None:
             cid = candidate_id(predictors_src, forward_src)
@@ -123,6 +124,8 @@ class ExplorationStore:
         return cid
 
     def _append_log(self, entry: dict[str, Any]) -> None:
+        if self.root is None or self.log_path is None:
+            return
         self.root.mkdir(parents=True, exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, sort_keys=True) + "\n")

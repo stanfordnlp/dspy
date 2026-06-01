@@ -10,7 +10,7 @@ from typing import Any
 
 import dspy
 from dspy.flex.codegen import FlexContext, generate
-from dspy.flex.exploration import ExplorationStore, find_project_root
+from dspy.flex.exploration import ExplorationStore
 from dspy.flex.manifest import ManifestStore
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
@@ -49,11 +49,12 @@ class Flex(Module):
         codegen_lm: LM to use for generation. Defaults to ``dspy.settings.lm``.
         flex_id: Stable identifier in the manifest. Defaults to the Signature class
             name (or a hash of the signature when ``persist_to`` is None).
-        flex_root: Project root under which ``.flex/`` lives. Holds the manifest
-            and the exploration history (every candidate ever seen). Defaults
-            to the detected project root (walks up from cwd for ``.git`` /
-            ``pyproject.toml``). Override in tests or to share an exploration
-            store across processes.
+
+    Persistence layout: when ``persist_to`` is set, the generated source goes
+    to that file and bookkeeping goes to ``<persist_to>.parent/.flex/`` —
+    ``manifest.json`` (shared across all Flexes in that directory) and per-flex
+    history under ``.flex/<flex_id>/``. When ``persist_to=None`` the
+    implementation lives only in memory and no bookkeeping is written.
     """
 
     def __init__(
@@ -64,7 +65,6 @@ class Flex(Module):
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         flex_id: str | None = None,
-        flex_root: str | Path | None = None,
     ):
         super().__init__()
 
@@ -92,8 +92,11 @@ class Flex(Module):
         sig_hash = self._signature_hash()
         self._flex_id = flex_id or getattr(self._signature_cls, "__name__", None) or f"flex_{sig_hash[:8]}"
 
-        self._flex_root: Path = Path(flex_root).resolve() if flex_root else find_project_root()
-        self._exploration = ExplorationStore(self._flex_root, self._flex_id)
+        # `.flex/` always lives next to `persist_to`. In-memory mode (no
+        # persist_to) → root=None → the store no-ops on every write.
+        flex_root = self._persist_to.parent if self._persist_to is not None else None
+        self._flex_root: Path | None = flex_root
+        self._exploration = ExplorationStore(flex_root, self._flex_id)
 
         self._lazy_implement()
 
@@ -170,6 +173,7 @@ class Flex(Module):
 
         if self._persist_to is not None:
             self._write_persisted(predictors_src, forward_src, sig_hash)
+            assert self._flex_root is not None
             manifest = ManifestStore(self._flex_root)
             version_id = manifest.append_version(
                 flex_id=self._flex_id,

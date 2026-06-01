@@ -1,5 +1,3 @@
-"""Tests for the project-root ``.flex/`` exploration store."""
-
 from __future__ import annotations
 
 import json
@@ -7,11 +5,7 @@ import textwrap
 
 import dspy
 from dspy.flex import flex
-from dspy.flex.exploration import (
-    ExplorationStore,
-    candidate_id,
-    find_project_root,
-)
+from dspy.flex.exploration import ExplorationStore, candidate_id
 from dspy.utils.dummies import DummyLM
 
 PREDICTORS_SRC = textwrap.dedent("""
@@ -34,11 +28,6 @@ def test_candidate_id_is_deterministic_and_short() -> None:
     assert a == b
     assert a != c
     assert len(a) == 12
-
-
-def test_find_project_root_returns_repo_root_from_within_repo() -> None:
-    root = find_project_root()
-    assert (root / "pyproject.toml").exists() or (root / ".git").exists()
 
 
 def test_exploration_store_records_event_and_writes_candidate(tmp_path) -> None:
@@ -99,13 +88,29 @@ def test_exploration_log_is_jsonl(tmp_path) -> None:
         json.loads(line)  # each line parses
 
 
-# --- Integration test: Flex codegen writes into .flex/ -----------------------
+def test_exploration_store_with_none_root_is_a_noop() -> None:
+    """In-memory Flex mode passes root=None; all writes must silently no-op."""
+    store = ExplorationStore(None, "myflex")
+    cid = store.record(
+        "codegen",
+        predictors_src="P",
+        forward_src="F",
+        signature_hash="h",
+    )
+    assert cid is None
+    assert store.get_history() == []
+    assert store.list_candidates() == []
+    assert store.has_candidate("anything") is False
+    assert store.best_score() is None
+
+
+# --- Integration tests: Flex codegen writes into .flex/ next to persist_to ---
 
 
 def test_codegen_records_event_in_flex_directory(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -125,7 +130,7 @@ def test_codegen_records_event_in_flex_directory(tmp_path) -> None:
 def test_reload_from_disk_records_load_event(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -139,3 +144,19 @@ def test_reload_from_disk_records_load_event(tmp_path) -> None:
     events = [e["event"] for e in ExplorationStore(tmp_path, "Echo").get_history()]
     assert events.count("codegen") == 1
     assert events.count("load") == 1
+
+
+def test_in_memory_flex_writes_no_exploration_files(tmp_path, monkeypatch) -> None:
+    """When persist_to is None, no .flex/ directory is created anywhere."""
+    monkeypatch.chdir(tmp_path)
+    dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
+
+    @flex
+    class Echo(dspy.Signature):
+        """Echo."""
+
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    Echo()
+    assert not (tmp_path / ".flex").exists()

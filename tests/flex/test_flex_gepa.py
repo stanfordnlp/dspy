@@ -33,7 +33,7 @@ def _codegen_lm():
 def _make_flex(tmp_path):
     dspy.configure(lm=_codegen_lm())
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo."""
 

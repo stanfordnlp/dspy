@@ -15,7 +15,6 @@ def flex(
     context: Any = None,
     codegen_lm: Any = None,
     flex_id: str | None = None,
-    flex_root: Any = None,
 ) -> Callable[[type], Callable[..., Flex]]: ...
 
 
@@ -27,7 +26,6 @@ def flex(  # type: ignore[misc]
     context: Any = None,
     codegen_lm: Any = None,
     flex_id: str | None = None,
-    flex_root: Any = None,
 ):
     """Decorate a ``dspy.Signature`` subclass to produce a Flex module factory."""
 
@@ -36,7 +34,6 @@ def flex(  # type: ignore[misc]
         bound_context = context
         bound_codegen_lm = codegen_lm
         bound_flex_id = flex_id
-        bound_flex_root = flex_root
 
         class FlexFactory:
             """Factory that instantiates a `dspy.Flex` bound to ``cls``."""
@@ -47,7 +44,6 @@ def flex(  # type: ignore[misc]
             _flex_context = bound_context
             _flex_codegen_lm = bound_codegen_lm
             _flex_id = bound_flex_id
-            _flex_root = bound_flex_root
 
             def __new__(
                 cls,
@@ -56,7 +52,6 @@ def flex(  # type: ignore[misc]
                 context: Any = None,
                 codegen_lm: Any = None,
                 flex_id: str | None = None,
-                flex_root: Any = None,
             ) -> Flex:
                 return Flex(
                     signature=cls._signature_cls,
@@ -64,7 +59,6 @@ def flex(  # type: ignore[misc]
                     context=context if context is not None else cls._flex_context,
                     codegen_lm=codegen_lm if codegen_lm is not None else cls._flex_codegen_lm,
                     flex_id=flex_id if flex_id is not None else cls._flex_id,
-                    flex_root=flex_root if flex_root is not None else cls._flex_root,
                 )
 
         FlexFactory.__name__ = getattr(cls, "__name__", "FlexFactory")

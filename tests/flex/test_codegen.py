@@ -1,5 +1,3 @@
-"""Codegen + lifecycle tests with a mocked LM."""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +27,7 @@ def _make_codegen_lm():
 def test_decorator_construction_runs_codegen_and_binds_forward(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo the question as the answer, twice."""
 
@@ -46,7 +44,7 @@ def test_decorator_construction_runs_codegen_and_binds_forward(tmp_path) -> None
 def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -62,7 +60,7 @@ def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path), flex_root=str(tmp_path))
+    @flex(persist_to=str(persist_path))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -87,7 +85,7 @@ def test_signature_hash_mismatch_triggers_regeneration(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path), flex_root=str(tmp_path))
+    @flex(persist_to=str(persist_path))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -110,7 +108,7 @@ def test_signature_hash_mismatch_triggers_regeneration(tmp_path) -> None:
 def test_in_memory_only_mode_binds_without_writing_disk(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(flex_root=str(tmp_path))
+    @flex
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -134,7 +132,7 @@ def test_end_to_end_forward_call(tmp_path) -> None:
     )
     dspy.configure(lm=lm)
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), flex_root=str(tmp_path))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"))
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -151,7 +149,7 @@ def test_manifest_records_a_version(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path), flex_root=str(tmp_path))
+    @flex(persist_to=str(persist_path))
     class Echo(dspy.Signature):
         """Echo."""
 

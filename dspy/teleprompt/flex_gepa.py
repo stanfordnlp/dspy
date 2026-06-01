@@ -569,6 +569,7 @@ class FlexGEPA(Teleprompter):
             parents_at_best: list[int] = []
             if gepa_result.parents:
                 parents_at_best = [p for p in gepa_result.parents[gepa_result.best_idx] if p is not None]
+            assert new_prog._flex_root is not None
             version_id = ManifestStore(new_prog._flex_root).append_version(
                 flex_id=new_prog._flex_id,
                 src_path=new_prog._persist_to,
