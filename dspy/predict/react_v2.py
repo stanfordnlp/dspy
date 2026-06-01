@@ -21,10 +21,20 @@ if TYPE_CHECKING:
 
 @experimental
 class ReActV2(Module):
+    RESERVED_OUTPUT_FIELDS = {"history", "termination_reason"}
+
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        # Validate that user signature does not use reserved output field names.
+        reserved_conflicts = self.RESERVED_OUTPUT_FIELDS & set(self.signature.output_fields)
+        if reserved_conflicts:
+            raise ValueError(
+                f"Output field(s) {sorted(reserved_conflicts)} are reserved by ReActV2 and cannot be used "
+                f"in the signature. Please rename them. Reserved names: {sorted(self.RESERVED_OUTPUT_FIELDS)}"
+            )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}
@@ -121,10 +131,7 @@ class ReActV2(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                # Remove reserved keys from final_outputs to avoid duplicate keyword argument errors
-                # when the user's signature declares an output field with the same name.
-                safe_outputs = {k: v for k, v in final_outputs.items() if k not in ("history", "termination_reason")}
-                return Prediction(**safe_outputs, history=history, termination_reason="submit")
+                return Prediction(**final_outputs, history=history, termination_reason="submit")
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
@@ -200,8 +207,7 @@ class ReActV2(Module):
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            safe_outputs = {k: v for k, v in final_outputs.items() if k not in ("history", "termination_reason")}
-            return Prediction(**safe_outputs, history=history, termination_reason="forced_submit")
+            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
         return Prediction(history=history, termination_reason=break_reason or "failed")
 
