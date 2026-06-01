@@ -41,10 +41,16 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        # Validate that user signature does not use reserved output field names.
+        # Validate that user signature does not use reserved output or input field names.
+        # 'trajectory' is injected as both an input and output field by ReAct internals.
         if "trajectory" in signature.output_fields:
             raise ValueError(
                 "Output field 'trajectory' is reserved by ReAct and cannot be used in the signature. "
+                "Please rename it."
+            )
+        if "trajectory" in signature.input_fields:
+            raise ValueError(
+                "Input field 'trajectory' is reserved by ReAct and cannot be used in the signature. "
                 "Please rename it."
             )
 
