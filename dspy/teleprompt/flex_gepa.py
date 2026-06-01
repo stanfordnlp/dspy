@@ -1,12 +1,3 @@
-"""``dspy.FlexGEPA``: evolves the source code of a ``dspy.Flex`` module with GEPA.
-
-Mirrors :class:`dspy.GEPA` but operates on two text components — ``forward_src``
-and ``predictors_src`` — and rebinds candidate code onto a cloned Flex module
-during evaluation. Reflection proposes revised source via a custom
-:class:`CodeProposalSignature` and the new source replaces the component
-verbatim. (v2 may re-introduce sandbox validation here.)
-"""
-
 from __future__ import annotations
 
 import logging
@@ -14,7 +5,7 @@ import math
 import random
 from typing import Any, Callable, Literal, cast
 
-from gepa import EvaluationBatch, GEPAAdapter, GEPAResult, optimize  # type: ignore[attr-defined]
+from gepa import EvaluationBatch, GEPAAdapter, GEPAResult, optimize
 
 import dspy
 from dspy.clients.lm import LM
@@ -96,7 +87,7 @@ def _render_prediction(prediction: Any) -> Any:
 
 
 class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
-    """GEPA adapter that evolves the source code of a :class:`Flex` module."""
+    """GEPA adapter that evolves the source code of a `Flex` module."""
 
     def __init__(
         self,
@@ -120,14 +111,10 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self._signature_hash = flex_module._signature_hash()
         self.exploration = exploration_store or flex_module._exploration
 
-    # ----------------------------------------------------------------- helpers
-
     def build_program(self, candidate: dict[str, str]) -> Flex:
         program = self.student.deepcopy()
         program._bind_code(candidate["predictors_src"], candidate["forward_src"])
         return program
-
-    # ------------------------------------------------------------- evaluate(...)
 
     def evaluate(self, batch, candidate, capture_traces=False) -> EvaluationBatch:
         program = self.build_program(candidate)
@@ -175,8 +162,6 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self._record_evaluation(candidate, final_scores)
         return EvaluationBatch(outputs=outputs, scores=final_scores, trajectories=None)
 
-    # ----------------------------------------------------- make_reflective_dataset(...)
-
     def make_reflective_dataset(
         self,
         candidate: dict[str, str],
@@ -213,9 +198,7 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return {component: records for component in components_to_update if component in candidate}
 
-    # ----------------------------------------------------- propose_new_texts(...)
-
-    def propose_new_texts(  # type: ignore[assignment]
+    def propose_new_texts(
         self,
         candidate: dict[str, str],
         reflective_dataset: dict[str, list[dict[str, Any]]],
@@ -291,10 +274,10 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 
 @experimental(version="3.3.0b2")
 class FlexGEPA(Teleprompter):
-    """Reflective evolutionary optimizer for the source code of a :class:`dspy.Flex` module.
+    """Reflective evolutionary optimizer for the source code of a `dspy.Flex` module.
 
     Wraps the external ``gepa`` package's optimization loop with a custom
-    :class:`FlexAdapter` whose candidate shape is
+    `FlexAdapter` whose candidate shape is
     ``{"predictors_src": str, "forward_src": str}``. The reflection LM proposes
     revised source per component which replaces the prior version verbatim.
 

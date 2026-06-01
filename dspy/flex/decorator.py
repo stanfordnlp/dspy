@@ -39,7 +39,7 @@ def flex(  # type: ignore[misc]
         bound_flex_root = flex_root
 
         class FlexFactory:
-            """Factory that instantiates a :class:`dspy.Flex` bound to ``cls``."""
+            """Factory that instantiates a `dspy.Flex` bound to ``cls``."""
 
             signature = cls
             _signature_cls = cls

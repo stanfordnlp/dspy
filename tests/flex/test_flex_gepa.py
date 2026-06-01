@@ -1,5 +1,3 @@
-"""Unit tests for :class:`dspy.FlexGEPA` and its custom :class:`FlexAdapter`."""
-
 from __future__ import annotations
 
 import textwrap
