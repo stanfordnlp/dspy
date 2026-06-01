@@ -98,4 +98,5 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
 - [Tools, ReAct, and MCP](tools-react-and-mcp.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery as `ReAct`.
+- [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.
