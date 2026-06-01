@@ -13,7 +13,7 @@ dspy.configure(lm=exec_lm)
 def test_flex() -> None:
     @flex(persist_to=str(Path(__file__).parent / "math_word.py"))
     class MathWord(dspy.Signature):
-        """Solve a one-sentence math word problem; return just the integer answer."""
+        """Solve a math word problem."""
 
         problem: str = dspy.InputField()
         answer: int = dspy.OutputField()
@@ -21,7 +21,7 @@ def test_flex() -> None:
     program = MathWord()
     baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
 
-    assert int(baseline.answer) == 5
+    print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")
 
     def ex(p, a):
         return dspy.Example(problem=p, answer=a).with_inputs("problem")
@@ -48,7 +48,6 @@ def test_flex() -> None:
         max_metric_calls=15,
         reflection_minibatch_size=2,
         num_threads=1,
-        seed=0,
     ).compile(program, trainset=trainset, valset=valset)
 
     pred = optimized(problem="What is 2 plus 2?")

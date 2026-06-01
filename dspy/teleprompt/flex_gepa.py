@@ -482,6 +482,50 @@ class FlexGEPA(Teleprompter):
                 "Feedback": feedback or f"This trajectory got a score of {score}.",
             }
 
+        class _BatchedEvaluator:
+            """Wraps the per-example evaluator and emits one ``evaluate`` event per
+            *consecutive run of same-candidate calls*.
+
+            GEPA invokes the evaluator one example at a time, but it always processes
+            a candidate's whole batch (valset, minibatch) contiguously. Watching for
+            the candidate-id transition gives us batch boundaries without depending
+            on GEPA's internals — one event with the batch mean and ``n_examples``,
+            not one event per example.
+            """
+
+            def __init__(self, base: Callable, store: ExplorationStore):
+                self._base = base
+                self._store = store
+                self._cur_cid: str | None = None
+                self._cur_cand: dict[str, str] | None = None
+                self._cur_scores: list[float] = []
+
+            def __call__(self, candidate: dict[str, str], example: Example) -> tuple[float, dict[str, Any]]:
+                score, side = self._base(candidate, example)
+                cid = candidate_id(candidate["predictors_src"], candidate["forward_src"])
+                if self._cur_cid is not None and self._cur_cid != cid:
+                    self.flush()
+                self._cur_cid = cid
+                self._cur_cand = candidate
+                self._cur_scores.append(score)
+                return score, side
+
+            def flush(self) -> None:
+                if not self._cur_scores or self._cur_cand is None:
+                    return
+                self._store.record(
+                    "evaluate",
+                    predictors_src=self._cur_cand["predictors_src"],
+                    forward_src=self._cur_cand["forward_src"],
+                    score=sum(self._cur_scores) / len(self._cur_scores),
+                    extra={"n_examples": len(self._cur_scores)},
+                )
+                self._cur_cid = None
+                self._cur_cand = None
+                self._cur_scores = []
+
+        batched_evaluator = _BatchedEvaluator(_evaluator, adapter.exploration)
+
         def _custom_proposer(
             candidate: dict[str, str],
             reflective_dataset: Any,
@@ -543,13 +587,14 @@ class FlexGEPA(Teleprompter):
 
         gepa_result: GEPAResult = optimize_anything(
             seed_candidate=seed_candidate,
-            evaluator=_evaluator,
+            evaluator=batched_evaluator,
             dataset=trainset,
             valset=valset,
             objective=objective,
             background=background,
             config=config,
         )
+        batched_evaluator.flush()
 
         best = cast(dict, gepa_result.best_candidate)
         new_prog = adapter.build_program(best)
