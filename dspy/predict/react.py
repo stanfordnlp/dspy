@@ -41,6 +41,13 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
+        # Validate that user signature does not use reserved output field names.
+        if "trajectory" in signature.output_fields:
+            raise ValueError(
+                "Output field 'trajectory' is reserved by ReAct and cannot be used in the signature. "
+                "Please rename it."
+            )
+
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
@@ -115,8 +122,7 @@ class ReAct(Module):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        safe_extract = {k: v for k, v in extract.items() if k != "trajectory"}
-        return dspy.Prediction(trajectory=trajectory, **safe_extract)
+        return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
         trajectory = {}
@@ -141,8 +147,7 @@ class ReAct(Module):
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        safe_extract = {k: v for k, v in extract.items() if k != "trajectory"}
-        return dspy.Prediction(trajectory=trajectory, **safe_extract)
+        return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
