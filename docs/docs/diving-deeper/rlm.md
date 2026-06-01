@@ -24,7 +24,7 @@ The recursion in an RLM is the model’s ability to call a model from inside its
 
 ### 5. A shared counter caps sub-LLM calls per run
 
-Recursion is the expensive part, so `dspy.RLM` bounds it. `max_llm_calls` caps how many sub-LLM calls the model can make over a whole run, counting each batched prompt as one call. Exceeding the cap raises an error that is fed back to the model, nudging it to aggregate in plain Python instead of spending more calls. The budget resets on each `forward()`, so a runaway loop cannot quietly fan out into hundreds of paid calls.
+Recursion is the expensive part, so `dspy.RLM` bounds it. `max_llm_calls` caps how many sub-LLM calls the model can make over a whole run; each prompt in a `llm_query_batched` list is counted individually, so `llm_query_batched([p1, p2, p3])` costs three budget units. Exceeding the cap raises an error that is fed back to the model, nudging it to aggregate in plain Python instead of spending more calls. The budget resets on each `forward()`, so a runaway loop cannot quietly fan out into hundreds of paid calls.
 
 ### 6. A separate `sub_lm` can handle the recursive calls
 
