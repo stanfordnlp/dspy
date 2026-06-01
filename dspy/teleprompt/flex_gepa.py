@@ -95,6 +95,8 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         metric_fn: Callable,
         *,
         reflection_lm: LM | None = None,
+        proposer_type: type = dspy.Predict,
+        proposer_kwargs: dict[str, Any] | None = None,
         failure_score: float = 0.0,
         num_threads: int | None = None,
         rng: random.Random | None = None,
@@ -103,6 +105,8 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.student = flex_module
         self.metric_fn = metric_fn
         self.reflection_lm = reflection_lm
+        self.proposer_type = proposer_type
+        self.proposer_kwargs = proposer_kwargs or {}
         self.failure_score = failure_score
         self.num_threads = num_threads
         self.rng = rng or random.Random(0)
@@ -205,7 +209,7 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         components_to_update: list[str],
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
-        proposer = dspy.Predict(CodeProposalSignature)
+        proposer = self.proposer_type(CodeProposalSignature, **self.proposer_kwargs)
         parent_id = candidate_id(candidate["predictors_src"], candidate["forward_src"])
 
         results: dict[str, str] = {}
@@ -283,8 +287,14 @@ class FlexGEPA(Teleprompter):
 
     Args:
         metric: Standard DSPy metric ``(example, prediction, trace=None) -> float | ScoreWithFeedback``.
-        reflection_lm: LM used to author code revisions. Prefer a strong model
-            (e.g. ``dspy.LM("openai/gpt-5", temperature=1.0)``).
+        reflection_lm: ``dspy.LM`` used to author code revisions. Prefer a strong
+            model (e.g. ``dspy.LM("openai/gpt-5", temperature=1.0)``).
+        proposer_type: DSPy primitive class wrapping the reflection LM. Defaults
+            to ``dspy.Predict``. Use ``dspy.ChainOfThought`` for more deliberate
+            reflection or ``dspy.ReAct`` for tool-using reflection (in which case
+            pass ``proposer_kwargs={"tools": [...]}``).
+        proposer_kwargs: Extra constructor kwargs for ``proposer_type``. Most
+            useful for ``dspy.ReAct`` (``{"tools": [...]}``).
         auto / max_full_evals / max_metric_calls: Budget. Exactly one must be set.
         reflection_minibatch_size: How many examples per reflection step.
         candidate_selection_strategy: ``"pareto"`` (default) or ``"current_best"``.
@@ -302,6 +312,8 @@ class FlexGEPA(Teleprompter):
         metric: Callable,
         *,
         reflection_lm: LM | None = None,
+        proposer_type: type = dspy.Predict,
+        proposer_kwargs: dict[str, Any] | None = None,
         auto: Literal["light", "medium", "heavy"] | None = None,
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
@@ -328,6 +340,8 @@ class FlexGEPA(Teleprompter):
 
         self.metric_fn = metric
         self.reflection_lm = reflection_lm
+        self.proposer_type = proposer_type
+        self.proposer_kwargs = proposer_kwargs or {}
         self.auto = auto
         self.max_full_evals = max_full_evals
         self.max_metric_calls = max_metric_calls
@@ -405,6 +419,8 @@ class FlexGEPA(Teleprompter):
             flex_module=student,
             metric_fn=self.metric_fn,
             reflection_lm=self.reflection_lm,
+            proposer_type=self.proposer_type,
+            proposer_kwargs=self.proposer_kwargs,
             failure_score=self.failure_score,
             num_threads=self.num_threads,
             rng=rng,
@@ -416,7 +432,7 @@ class FlexGEPA(Teleprompter):
         }
 
         reflection_callable: Callable[[str], str] | None = None
-        if self.reflection_lm is not None:
+        if isinstance(self.reflection_lm, LM):
             captured_lm = self.reflection_lm
 
             def _call(x: str) -> str:

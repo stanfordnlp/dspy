@@ -99,3 +99,65 @@ def test_flex_gepa_exactly_one_budget_required() -> None:
         FlexGEPA(metric=lambda *_: 0.0, reflection_lm=DummyLM([]))
     with pytest.raises(ValueError, match="Exactly one of"):
         FlexGEPA(metric=lambda *_: 0.0, reflection_lm=DummyLM([]), auto="light", max_full_evals=1)
+
+
+def test_proposer_type_defaults_to_predict(tmp_path) -> None:
+    student = _make_flex(tmp_path)
+    adapter = FlexAdapter(student, metric_fn=lambda *_: 0.0, reflection_lm=DummyLM([]))
+    assert adapter.proposer_type is dspy.Predict
+
+
+def test_proposer_type_can_be_chain_of_thought(tmp_path) -> None:
+    """The reflection LM can be wrapped in dspy.ChainOfThought instead of dspy.Predict."""
+    student = _make_flex(tmp_path)
+
+    revision_lm = DummyLM(
+        [
+            {"reasoning": "Add a verifier step.", "revised_source": 'PREDICTORS = {"echo2": dspy.Predict("q -> a")}'},
+        ]
+    )
+
+    adapter = FlexAdapter(
+        student,
+        metric_fn=lambda *_: 0.0,
+        reflection_lm=revision_lm,
+        proposer_type=dspy.ChainOfThought,
+    )
+
+    candidate = {"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}
+    reflective_dataset = {
+        "predictors_src": [
+            {"Inputs": {"q": "hi"}, "Generated Outputs": {"a": "x"}, "Feedback": "wrong"}
+        ],
+    }
+    result = adapter.propose_new_texts(candidate, reflective_dataset, ["predictors_src"])
+    assert "echo2" in result["predictors_src"]
+
+
+def test_proposer_kwargs_are_forwarded_to_proposer_constructor(tmp_path) -> None:
+    """proposer_kwargs is passed to the proposer_type's constructor."""
+    student = _make_flex(tmp_path)
+
+    constructed: list[dict] = []
+
+    class _SpyProposer(dspy.Module):
+        def __init__(self, signature, **kwargs):
+            super().__init__()
+            constructed.append(kwargs)
+            self.inner = dspy.Predict(signature)
+
+        def forward(self, **kw):
+            return self.inner(**kw)
+
+    revision_lm = DummyLM([{"revised_source": "PREDICTORS = {}"}])
+    adapter = FlexAdapter(
+        student,
+        metric_fn=lambda *_: 0.0,
+        reflection_lm=revision_lm,
+        proposer_type=_SpyProposer,
+        proposer_kwargs={"foo": 42, "bar": "x"},
+    )
+    candidate = {"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}
+    reflective_dataset = {"predictors_src": [{"Inputs": {}, "Generated Outputs": {}, "Feedback": "x"}]}
+    adapter.propose_new_texts(candidate, reflective_dataset, ["predictors_src"])
+    assert constructed == [{"foo": 42, "bar": "x"}]
