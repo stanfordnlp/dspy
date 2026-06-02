@@ -123,6 +123,8 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def build_program(self, candidate: dict[str, str]) -> Flex:
         program = self.student.deepcopy()
+        # Disable auto-repair during GEPA
+        program._auto_repair = False
         program._bind_code(candidate["predictors_src"], candidate["forward_src"])
         return program
 

@@ -161,3 +161,43 @@ def test_proposer_kwargs_are_forwarded_to_proposer_constructor(tmp_path) -> None
     reflective_dataset = {"predictors_src": [{"Inputs": {}, "Generated Outputs": {}, "Feedback": "x"}]}
     adapter.propose_new_texts(candidate, reflective_dataset, ["predictors_src"])
     assert constructed == [{"foo": 42, "bar": "x"}]
+
+
+def test_build_program_disables_auto_repair(tmp_path) -> None:
+    """A program produced for GEPA search must not auto-repair on a broken probe.
+
+    Regression test: when a proposed candidate's forward() raised at evaluation
+    time, runtime auto-repair would rewrite the persisted file and append a
+    manifest version, polluting the optimizer's history.
+    """
+    import json
+
+    student = _make_flex(tmp_path)
+    assert student._auto_repair is True  # student keeps auto-repair on
+
+    adapter = FlexAdapter(student, metric_fn=lambda *_: 0.0)
+
+    # A candidate whose forward() blows up at runtime — `out` is None.
+    broken_forward = textwrap.dedent("""
+        def forward(self, q):
+            out = None
+            return dspy.Prediction(a=out.a)
+    """).strip()
+    candidate = {"predictors_src": CANNED_PREDICTORS, "forward_src": broken_forward}
+
+    program = adapter.build_program(candidate)
+    assert program._auto_repair is False, "build_program must turn off auto_repair"
+
+    # Snapshot the manifest before calling the broken program.
+    manifest_path = tmp_path / ".flex" / "manifest.json"
+    before = json.loads(manifest_path.read_text())
+    versions_before = before["flex_modules"]["Echo"]["versions"]
+
+    # The broken program should raise the AttributeError directly, with no
+    # repair codegen, no file rewrite, no manifest append.
+    with pytest.raises(AttributeError):
+        program(q="hello")
+
+    after = json.loads(manifest_path.read_text())
+    versions_after = after["flex_modules"]["Echo"]["versions"]
+    assert len(versions_after) == len(versions_before)
