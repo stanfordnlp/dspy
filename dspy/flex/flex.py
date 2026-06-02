@@ -31,7 +31,7 @@ You may edit the PREDICTORS dict and the forward() body between the marker
 comments below. dspy.Flex parses those regions back out.
 
 - __FLEX_SIGNATURE_HASH__ tracks the user's Signature. If you change the
-  Signature, Flex regenerates this file -- seeding the codegen LM with your
+  Signature, Flex regenerates this file, seeding the codegen LM with your
   current code.
 - __FLEX_BODY_HASH__ tracks the code body. If you hand-edit the body, Flex
   detects it on the next run, honors your code, and refreshes this hash.

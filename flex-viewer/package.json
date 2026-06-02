@@ -1,0 +1,35 @@
+{
+  "name": "flex-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Visual viewer for dspy.Flex .flex/ history (candidate lineage DAG, events, scores, code).",
+  "scripts": {
+    "dev": "vite",
+    "serve": "tsx src/bin/serve.ts",
+    "serve:sample": "tsx src/bin/serve.ts ../tests/flex/demo/.flex",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "export": "tsx src/bin/export.ts",
+    "export:sample": "tsx src/bin/export.ts ../tests/flex/demo/.flex sample/history.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.4",
+    "@xyflow/react": "^12.3.5",
+    "prism-react-renderer": "^2.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.3"
+  }
+}
