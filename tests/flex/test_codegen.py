@@ -5,6 +5,7 @@ import textwrap
 
 import dspy
 from dspy.flex import flex
+from dspy.flex.exploration import ExplorationStore, candidate_id
 from dspy.utils.dummies import DummyLM
 
 CANNED_PREDICTORS = textwrap.dedent("""
@@ -103,6 +104,111 @@ def test_signature_hash_mismatch_triggers_regeneration(tmp_path) -> None:
 
     program = Echo()
     assert "echo2" in program.predictors_src
+
+
+def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
+    persist_path = tmp_path / "echo_flex.py"
+    dspy.configure(lm=_make_codegen_lm())
+
+    @flex(persist_to=str(persist_path))
+    class Echo(dspy.Signature):
+        """Echo."""
+
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    Echo()
+
+    # Hand-edit the forward body. Signature (and its hash) is untouched, so only
+    # the body hash goes stale.
+    original = persist_path.read_text()
+    edited = original.replace("dspy.Prediction(a=out.a)", "dspy.Prediction(a=out.a.upper())")
+    assert edited != original
+    persist_path.write_text(edited)
+
+    # Reconstruct with NO codegen LM available — the edit must be honored, not
+    # regenerated.
+    dspy.configure(lm=DummyLM([]))
+    program = Echo()
+    assert "out.a.upper()" in program.forward_src
+
+    # A `manual_edit` event was recorded, and the file's body hash was refreshed
+    # so the file reads as pristine again.
+    history = ExplorationStore(tmp_path, "Echo").get_history()
+    assert any(e["event"] == "manual_edit" for e in history)
+
+    refreshed = persist_path.read_text()
+    expected_body_hash = candidate_id(program.predictors_src, program.forward_src)
+    assert f"# __FLEX_BODY_HASH__: {expected_body_hash}" in refreshed
+
+    # The manifest tracks accepted releases only — a hand edit does not add one.
+    manifest = json.loads((tmp_path / ".flex" / "manifest.json").read_text())
+    assert len(manifest["flex_modules"]["Echo"]["versions"]) == 1
+
+
+def test_signature_change_seeds_regeneration_from_current_implementation(tmp_path) -> None:
+    persist_path = tmp_path / "echo_flex.py"
+    dspy.configure(lm=_make_codegen_lm())
+
+    @flex(persist_to=str(persist_path))
+    class Echo(dspy.Signature):
+        """Echo."""
+
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    Echo()
+    seed_id = candidate_id(CANNED_PREDICTORS, CANNED_FORWARD)
+
+    # Same flex_id (class name "Echo") + same persist_to, but a changed signature
+    # → hash mismatch → regenerate, seeded from the current on-disk body.
+    new_predictors = CANNED_PREDICTORS.replace('"echo"', '"echo2"')
+    new_forward = CANNED_FORWARD.replace("self.echo", "self.echo2")
+    dspy.configure(lm=DummyLM([{"predictors_src": new_predictors, "forward_src": new_forward}]))
+
+    @flex(persist_to=str(persist_path))
+    class Echo(dspy.Signature):  # noqa: F811
+        """Echo."""
+
+        q: str = dspy.InputField()
+        extra: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    program = Echo()
+    assert "echo2" in program.predictors_src
+
+    # The regeneration's codegen event is parented to the prior implementation.
+    history = ExplorationStore(tmp_path, "Echo").get_history()
+    codegen_events = [e for e in history if e["event"] == "codegen"]
+    assert any(e.get("parents") == [seed_id] for e in codegen_events)
+
+
+def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
+    persist_path = tmp_path / "echo_flex.py"
+    dspy.configure(lm=_make_codegen_lm())
+
+    @flex(persist_to=str(persist_path))
+    class Echo(dspy.Signature):
+        """Echo."""
+
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    Echo()
+
+    # Simulate a file written before body hashes existed by stripping the line.
+    text = persist_path.read_text()
+    legacy = "\n".join(
+        line for line in text.splitlines() if not line.startswith("# __FLEX_BODY_HASH__:")
+    )
+    persist_path.write_text(legacy)
+    assert "# __FLEX_BODY_HASH__:" not in persist_path.read_text()
+
+    dspy.configure(lm=DummyLM([]))
+    program = Echo()
+    assert "PREDICTORS" in program.predictors_src
+    # The hash is backfilled on load so future edits become detectable.
+    assert "# __FLEX_BODY_HASH__:" in persist_path.read_text()
 
 
 def test_in_memory_only_mode_binds_without_writing_disk(tmp_path) -> None:

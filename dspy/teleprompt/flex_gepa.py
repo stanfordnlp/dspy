@@ -18,7 +18,7 @@ import dspy
 from dspy.clients.lm import LM
 from dspy.evaluate.evaluate import Evaluate
 from dspy.flex.codegen import _strip_code_fences
-from dspy.flex.exploration import ExplorationStore, candidate_id
+from dspy.flex.exploration import ExplorationStore, FlexEvent, candidate_id
 from dspy.flex.flex import Flex
 from dspy.flex.manifest import ManifestStore
 from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
@@ -254,7 +254,7 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     )
                     continue
                 self.exploration.record(
-                    "propose",
+                    FlexEvent.PROPOSE,
                     predictors_src=proposed["predictors_src"],
                     forward_src=proposed["forward_src"],
                     signature_hash=self._signature_hash,
@@ -269,7 +269,7 @@ class FlexAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return
         mean = sum(scores) / len(scores)
         self.exploration.record(
-            "evaluate",
+            FlexEvent.EVALUATE,
             predictors_src=candidate.get("predictors_src"),
             forward_src=candidate.get("forward_src"),
             signature_hash=self._signature_hash,
@@ -514,7 +514,7 @@ class FlexGEPA(Teleprompter):
                 if not self._cur_scores or self._cur_cand is None:
                     return
                 self._store.record(
-                    "evaluate",
+                    FlexEvent.EVALUATE,
                     predictors_src=self._cur_cand["predictors_src"],
                     forward_src=self._cur_cand["forward_src"],
                     score=sum(self._cur_scores) / len(self._cur_scores),
@@ -634,7 +634,7 @@ class FlexGEPA(Teleprompter):
                     notes="FlexGEPA optimized",
                 )
                 adapter.exploration.record(
-                    "accept",
+                    FlexEvent.ACCEPT,
                     predictors_src=best["predictors_src"],
                     forward_src=best["forward_src"],
                     signature_hash=new_sig_hash,

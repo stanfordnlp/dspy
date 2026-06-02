@@ -89,6 +89,11 @@ class CodegenSignature(dspy.Signature):
       ``dspy.Prediction(<output fields>=...)`` matching the parent signature.
 
     You must follow the rules in ``primitives_catalog`` exactly.
+
+    When ``seed_implementation`` is not ``'(none)'``, treat it as the starting
+    point — it is an existing implementation (possibly hand-edited by the user)
+    that must be adapted to the *current* signature. Preserve its structure,
+    helper logic, and intent; change only what the current signature requires.
     """
 
     signature_spec: str = dspy.InputField(
@@ -99,6 +104,12 @@ class CodegenSignature(dspy.Signature):
     )
     primitives_catalog: str = dspy.InputField(
         desc="Catalog of DSPy primitives and conventions the generated code should follow."
+    )
+    seed_implementation: str = dspy.InputField(
+        desc="An existing implementation to adapt (the current `predictors_src` and "
+        "`forward_src`), or '(none)' for a fresh generation. When not '(none)', "
+        "preserve its structure and intent and change only what the current "
+        "signature requires."
     )
     predictors_src: str = dspy.OutputField(
         desc="Python source defining `PREDICTORS = {...}` at module scope."
@@ -119,13 +130,35 @@ def _strip_code_fences(s: str) -> str:
     return s.strip()
 
 
-def generate(ctx: FlexContext, *, lm: dspy.LM | None = None) -> tuple[str, str]:
-    """Run the codegen LM against ``ctx`` and return ``(predictors_src, forward_src)``."""
+def generate(
+    ctx: FlexContext,
+    *,
+    lm: dspy.LM | None = None,
+    seed: tuple[str, str] | None = None,
+) -> tuple[str, str]:
+    """Run the codegen LM against ``ctx`` and return ``(predictors_src, forward_src)``.
+
+    When ``seed`` is given as ``(predictors_src, forward_src)``, the codegen LM is
+    asked to *adapt* that existing implementation to the current signature rather
+    than author one from scratch. Used to carry hand-edited code forward across a
+    signature change.
+    """
     predictor = dspy.Predict(CodegenSignature)
+    if seed is not None:
+        seed_predictors, seed_forward = seed
+        seed_text = (
+            "# Existing predictors_src:\n"
+            + seed_predictors.strip()
+            + "\n\n# Existing forward_src:\n"
+            + seed_forward.strip()
+        )
+    else:
+        seed_text = "(none)"
     inputs = dict(
         signature_spec=ctx.render_signature_spec(),
         context_blurb=ctx.render_context_blurb(),
         primitives_catalog=PRIMITIVES_CATALOG,
+        seed_implementation=seed_text,
     )
     if lm is not None:
         with dspy.context(lm=lm):
