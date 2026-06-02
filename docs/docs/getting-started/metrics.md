@@ -24,7 +24,7 @@ Today, however, we’re going to keep it simple. We’re going to use a *quantif
 
 ## Preparing examples from the haiku dataset
 
-We’ve created a dataset of example inputs by randomly grouping locations, seasons, and mood strings. Click here to download the JSONL file, containing 800 rows.
+We’ve created a dataset of example inputs by randomly grouping locations, seasons, and mood strings. [Click here to download the JSONL file](https://gist.github.com/dbreunig/b64412e6103d41889f3a87615008408d), containing 800 rows.
 
 To prepare them for an evaluation or optimization, we need to convert each record into a `dspy.Example` object, like so:
 
