@@ -88,7 +88,12 @@ class CodegenSignature(dspy.Signature):
       orchestrates the predictors (via ``self.<name>(...)``) and returns
       ``dspy.Prediction(<output fields>=...)`` matching the parent signature.
 
-    You must follow the rules in ``primitives_catalog`` exactly.
+    You MUST follow the rules and patterns in ``primitives_catalog`` exactly.
+    In particular: every predictor call returns a ``dspy.Prediction`` — read
+    its declared output fields off as attributes (``result.foo``) before
+    composing them or building the final return. Never pass a whole
+    ``dspy.Prediction`` as the value of an output field. Coerce values to the
+    declared output type (``int(...)``, ``float(...)``, etc.) before returning.
 
     When ``seed_implementation`` is not ``'(none)'``, treat it as the starting
     point — it is an existing implementation (possibly hand-edited by the user)
@@ -129,6 +134,19 @@ class RepairSignature(dspy.Signature):
     Preserve as much of the broken implementation's structure and intent as
     possible — touch only what's needed to make the error go away. Honor the
     rules in ``primitives_catalog``.
+
+    Common runtime bugs to check for when diagnosing ``error_text``:
+
+    - ``AttributeError: '...' object has no attribute 'X'`` on a predictor's
+      sub-signature field: the predictor's signature string declares
+      different output names than the code reads. Either fix the signature
+      string or fix the attribute access.
+    - The final return is ``dspy.Prediction(field=<Prediction>)`` instead of
+      ``dspy.Prediction(field=<Prediction>.field)``. Unwrap the inner
+      ``dspy.Prediction`` by reading its declared output attribute.
+    - ``TypeError``/``ValueError`` when constructing the final
+      ``dspy.Prediction``: the value's type doesn't match the declared
+      output type. Add an explicit cast (``int(...)``, ``float(...)``, etc.).
     """
 
     signature_spec: str = dspy.InputField(

@@ -11,8 +11,9 @@ You are authoring two code artifacts for a `dspy.Flex` module:
 
 Available DSPy primitives:
 
-- `dspy.Predict("a, b -> c, d")`, one LM call. `result = p(a=x, b=y)`; outputs are
-   attributes: `result.c`, `result.d`. Signature strings use snake_case names.
+- `dspy.Predict("a, b -> c, d")`, one LM call. `result = p(a=x, b=y)` returns a
+  `dspy.Prediction` object; the declared outputs are attributes on it:
+  `result.c`, `result.d`. Signature strings use snake_case names.
 
 - `dspy.ChainOfThought("a -> b")`, like Predict but adds an implicit `reasoning`
    output field; useful when the answer benefits from explicit step-by-step thought.
@@ -31,7 +32,9 @@ Available DSPy primitives:
 - `dspy.Tool(func)`, wraps a callable as a tool (only used inside ReAct).
 
 - `dspy.Prediction(field_a=value_a, field_b=value_b)`, construct the final return
-   value. The keyword names MUST match the parent signature's output_fields exactly.
+   value. The keyword names MUST match the parent signature's output_fields
+   exactly, and each `value_*` must be a plain value of the declared output
+   type — never a `dspy.Prediction` you got back from a predictor call.
 
 Rules you MUST follow:
 
@@ -59,4 +62,44 @@ Rules you MUST follow:
     * `dspy.RLM` when an input field is a large blob (long document, big JSON,
       multi-table data) that doesn't fit naturally in a single prompt — RLM
       lets the LLM explore it iteratively via a sandboxed REPL.
+
+Common patterns (study these before writing `forward`):
+
+1) Unwrap every predictor output. A predictor call returns a `dspy.Prediction`
+   whose declared output fields are attributes on it. Always read those
+   attributes before composing further calls or the final return.
+
+   ```
+   PREDICTORS = {
+       "parse":   dspy.Predict("invoice -> qty: int, unit_price: float"),
+       "shipping": dspy.Predict("invoice -> shipping_dollars: float"),
+   }
+
+   # RIGHT — pull fields off each predictor result, then build the final Prediction
+   def forward(self, **inputs):
+       parsed = self.parse(invoice=inputs["invoice"])
+       ship = self.shipping(invoice=inputs["invoice"])
+       cents = round((parsed.qty * parsed.unit_price + ship.shipping_dollars) * 100)
+       return dspy.Prediction(total_cents=int(cents))
+
+   # WRONG — passes the whole inner Prediction as the field value, producing
+   # Prediction(total_cents=Prediction(total_cents=...)) at runtime
+   def forward(self, **inputs):
+       result = self.parse(invoice=inputs["invoice"])
+       return dspy.Prediction(total_cents=result)            # bug: no `.field`
+   ```
+
+2) Coerce to the declared output type. If the parent signature declares
+   `total_cents: int`, cast in Python (`int(...)`, `float(...)`, `str(...)`,
+   `bool(...)`, list comprehensions for `list[T]`) before returning. LM
+   string outputs do NOT auto-cast to the declared type.
+
+3) Compose predictor outputs into the next call by passing the unwrapped
+   attribute, never the whole Prediction. `self.next(x=prev.x)` — not
+   `self.next(x=prev)`.
+
+4) Do arithmetic, sorting, filtering, and aggregation in plain Python in
+   `forward()`. Use the LM to extract / classify / generate; let Python do
+   the math. This is more reliable and easier to debug than asking the LM
+   to do both at once.
 """
