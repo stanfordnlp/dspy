@@ -24,8 +24,9 @@ class FlexEvent(str, Enum):
     - ``LOAD``: a Flex module loaded its implementation from a persisted ``.py`` file.
     - ``MANUAL_EDIT``: a persisted file's body was hand-edited; Flex detected the
       change via the body hash, honored the on-disk code, and recorded it as a
-      candidate. This is an event only — hand edits are not appended to the
-      manifest (which tracks accepted releases from codegen and FlexGEPA).
+      candidate. When the file is persisted, the edit is also appended to the
+      manifest (followed by an ``ACCEPT``), since the hand-edited code is the
+      deployed artifact — mirroring the ``CODEGEN`` → ``ACCEPT`` path.
     - ``EVALUATE``: a candidate was scored on a batch of examples. Score is the batch mean.
     - ``PROPOSE``: the reflection LM produced a *non-trivial* revision of one component.
     - ``ACCEPT``: a candidate was written to disk and appended as a new manifest version.

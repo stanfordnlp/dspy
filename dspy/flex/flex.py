@@ -244,15 +244,13 @@ class Flex(Module):
             )
 
     def _honor_manual_edit(self, stored: dict[str, Any], sig_hash: str, body_id: str) -> None:
-        """Accept a hand-edited file: record it and refresh the body hash on disk.
+        """Accept a hand-edited file: record it, refresh the body hash, and version it.
 
         Called when the signature is unchanged but the body hash no longer matches
         the persisted code — i.e. the user edited the file by hand. The edit is the
-        running implementation (already bound by the caller); here we log a
-        ``manual_edit`` event to the exploration ledger and rewrite the file so its
-        body hash matches again. The manifest is left untouched — a hand edit is a
-        recorded event, not an accepted release (only codegen and FlexGEPA append
-        manifest versions).
+        running implementation (already bound by the caller). We log a
+        ``manual_edit`` event, rewrite the file so its body hash
+        matches again, and append a manifest version.
         """
         self._exploration.record(
             FlexEvent.MANUAL_EDIT,
@@ -263,8 +261,29 @@ class Flex(Module):
         )
         # Refresh the body hash so subsequent runs see a pristine file.
         self._write_persisted(stored["predictors_src"], stored["forward_src"], sig_hash)
+
+        if self._flex_root is not None:
+            manifest = ManifestStore(self._flex_root)
+            prev = manifest.latest(self._flex_id)
+            parents = [prev["candidate_id"]] if prev and prev.get("candidate_id") else []
+            version_id = manifest.append_version(
+                flex_id=self._flex_id,
+                src_path=self._persist_to,
+                signature_hash=sig_hash,
+                candidate_id=body_id,
+                parents=parents,
+                notes="manual edit",
+            )
+            self._exploration.record(
+                FlexEvent.ACCEPT,
+                predictors_src=stored["predictors_src"],
+                forward_src=stored["forward_src"],
+                signature_hash=sig_hash,
+                extra={"version_id": version_id, "src_path": str(self._persist_to)},
+            )
         logger.info(
-            "dspy.Flex %r: honored hand-edited implementation in %s (recorded a `manual_edit` event).",
+            "dspy.Flex %r: honored hand-edited implementation in %s (recorded a `manual_edit` "
+            "event and a new manifest version).",
             self._flex_id,
             self._persist_to,
         )

@@ -141,9 +141,13 @@ def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
     expected_body_hash = candidate_id(program.predictors_src, program.forward_src)
     assert f"# __FLEX_BODY_HASH__: {expected_body_hash}" in refreshed
 
-    # The manifest tracks accepted releases only — a hand edit does not add one.
+    # The edit is the deployed artifact, so it's appended as a manifest version
+    # (after the initial codegen) and marked as a manual edit.
     manifest = json.loads((tmp_path / ".flex" / "manifest.json").read_text())
-    assert len(manifest["flex_modules"]["Echo"]["versions"]) == 1
+    versions = manifest["flex_modules"]["Echo"]["versions"]
+    assert len(versions) == 2
+    assert versions[-1]["notes"] == "manual edit"
+    assert versions[-1]["candidate_id"] == expected_body_hash
 
 
 def test_signature_change_seeds_regeneration_from_current_implementation(tmp_path) -> None:
