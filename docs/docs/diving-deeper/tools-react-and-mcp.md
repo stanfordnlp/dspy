@@ -116,4 +116,5 @@ Walks an MCP-style JSON schema and produces the three dicts a `Tool` needs. Reso
 
 - [Adapters: how signatures become prompts](adapters.md) — where `Tool` and `ToolCalls` are formatted onto the wire, and where native function calling is opted into.
 - [Built-in module variants](built-in-module-variants.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery in a code-execution context.
+- [RLM: exploring large contexts with code](rlm.md) — how RLM exposes built-in `llm_query` tools and your own tools inside its sandbox.
 - [Modules: composing your own](modules.md) — `ReAct` is a `Module`, so trace, history, and `set_lm` all apply.

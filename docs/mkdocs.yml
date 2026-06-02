@@ -27,6 +27,7 @@ nav:
         - Signatures in depth: diving-deeper/signatures-in-depth.md
         - "Modules: composing your own": diving-deeper/modules.md
         - Built-in module variants: diving-deeper/built-in-module-variants.md
+        - "RLM: exploring large contexts with code": diving-deeper/rlm.md
         - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
         - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
         - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
