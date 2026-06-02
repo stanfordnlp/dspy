@@ -7,11 +7,11 @@ from dspy import FlexGEPA, flex
 
 load_dotenv()
 exec_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=500)
-reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=1.0, max_tokens=4000)
+reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
 def test_flex() -> None:
-    @flex(persist_to=str(Path(__file__).parent / "math_word.py"))
+    @flex(persist_to=str(Path(__file__).parent / "math_flex_gen.py"))
     class MathWord(dspy.Signature):
         """Solve a math word problem."""
 

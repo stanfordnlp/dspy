@@ -49,10 +49,10 @@ from dspy.utils.dummies import DummyLM
 load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "test_flex_invoice.py"
+FLEX_PATH = DEMO_DIR / "invoice_flex_gen.py"
 
 exec_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=600)
-reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=1.0, max_tokens=4000)
+reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
 

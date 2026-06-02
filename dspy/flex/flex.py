@@ -9,11 +9,21 @@ from pathlib import Path
 from typing import Any
 
 import dspy
-from dspy.flex.codegen import FlexContext, generate
+from dspy.flex.codegen import FlexContext, generate, repair
 from dspy.flex.exploration import ExplorationStore, FlexEvent, candidate_id
 from dspy.flex.manifest import ManifestStore
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
+
+# Runtime exceptions that we treat as "the user's code is wrong, not a flaky
+# downstream call." A bare LM or tool call typically raises a more specific
+# subclass that doesn't appear here (e.g. anthropic.APIError, openai.OpenAIError).
+_RUNTIME_REPAIRABLE_ERRORS: tuple[type[BaseException], ...] = (
+    AttributeError,
+    TypeError,
+    NameError,
+    KeyError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +66,10 @@ class Flex(Module):
         codegen_lm: LM to use for generation. Defaults to ``dspy.settings.lm``.
         flex_id: Stable identifier in the manifest. Defaults to the Signature class
             name (or a hash of the signature when ``persist_to`` is None).
+        auto_repair: When True (default), Flex tries to recover from broken
+            implementations by re-invoking the codegen LM with the broken body
+            and the exception text. Runs at most once at bind time and at most
+            once at runtime per process. Set False to surface errors directly.
 
     Persistence layout: when ``persist_to`` is set, the generated source goes
     to that file and bookkeeping goes to ``<persist_to>.parent/.flex/`` —
@@ -72,6 +86,7 @@ class Flex(Module):
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         flex_id: str | None = None,
+        auto_repair: bool = True,
     ):
         super().__init__()
 
@@ -95,6 +110,9 @@ class Flex(Module):
         self._forward_src: str | None = None
         self._predictors_src: str | None = None
         self._predictor_names: list[str] = []
+        self._forward_impl: Any = None
+        self._auto_repair = auto_repair
+        self._runtime_repair_used = False
 
         sig_hash = self._signature_hash()
         self._flex_id = flex_id or getattr(self._signature_cls, "__name__", None) or f"flex_{sig_hash[:8]}"
@@ -161,7 +179,26 @@ class Flex(Module):
 
                 if stored["signature_hash"] == sig_hash:
                     # Signature unchanged — run exactly what's on disk, edited or not.
-                    self._bind_code(stored["predictors_src"], stored["forward_src"])
+                    try:
+                        self._bind_code(stored["predictors_src"], stored["forward_src"])
+                    except Exception as err:
+                        if not self._auto_repair:
+                            raise
+                        broken = (stored["predictors_src"], stored["forward_src"])
+                        fixed_predictors, fixed_forward = self._repair_after_bind_failure(
+                            broken=broken,
+                            error=err,
+                            signature_hash=sig_hash,
+                            parents=self._latest_manifest_parents(),
+                        )
+                        self._accept_fixed(
+                            fixed_predictors,
+                            fixed_forward,
+                            sig_hash=sig_hash,
+                            parents=[candidate_id(*broken)],
+                            notes=f"auto-repair after load bind error: {type(err).__name__}",
+                        )
+                        return
                     if body_edited:
                         self._honor_manual_edit(stored, sig_hash, body_id)
                     else:
@@ -206,14 +243,29 @@ class Flex(Module):
                 )
 
         predictors_src, forward_src = generate(self._flex_ctx, lm=self._codegen_lm, seed=seed)
-        self._bind_code(predictors_src, forward_src)
         seed_parents = [candidate_id(*seed)] if seed is not None else None
+        codegen_parents = seed_parents
+        notes = "regenerated from seed (signature changed)" if seed is not None else "initial codegen"
+        try:
+            self._bind_code(predictors_src, forward_src)
+        except Exception as err:
+            if not self._auto_repair:
+                raise
+            broken = (predictors_src, forward_src)
+            predictors_src, forward_src = self._repair_after_bind_failure(
+                broken=broken,
+                error=err,
+                signature_hash=sig_hash,
+                parents=seed_parents,
+            )
+            codegen_parents = [candidate_id(*broken)]
+            notes = f"auto-repair after codegen bind error: {type(err).__name__}"
         cid = self._exploration.record(
             FlexEvent.CODEGEN,
             predictors_src=predictors_src,
             forward_src=forward_src,
             signature_hash=sig_hash,
-            parents=seed_parents,
+            parents=codegen_parents,
         )
 
         if self._persist_to is not None:
@@ -225,8 +277,8 @@ class Flex(Module):
                 src_path=self._persist_to,
                 signature_hash=sig_hash,
                 candidate_id=cid,
-                parents=seed_parents,
-                notes="regenerated from seed (signature changed)" if seed is not None else "initial codegen",
+                parents=codegen_parents,
+                notes=notes,
             )
             self._exploration.record(
                 FlexEvent.ACCEPT,
@@ -288,6 +340,105 @@ class Flex(Module):
             self._persist_to,
         )
 
+    def _latest_manifest_parents(self) -> list[str] | None:
+        """Candidate IDs of the last accepted manifest entry, for REPAIR parentage."""
+        if self._flex_root is None:
+            return None
+        prev = ManifestStore(self._flex_root).latest(self._flex_id)
+        if prev and prev.get("candidate_id"):
+            return [prev["candidate_id"]]
+        return None
+
+    def _accept_fixed(
+        self,
+        predictors_src: str,
+        forward_src: str,
+        *,
+        sig_hash: str,
+        parents: list[str],
+        notes: str,
+    ) -> None:
+        """Record a CODEGEN+ACCEPT pair, write the file, and append a manifest version.
+
+        Used after auto-repair: the new (fixed) implementation is already bound.
+        """
+        cid = self._exploration.record(
+            FlexEvent.CODEGEN,
+            predictors_src=predictors_src,
+            forward_src=forward_src,
+            signature_hash=sig_hash,
+            parents=parents,
+        )
+        if self._persist_to is None or self._flex_root is None:
+            return
+        self._write_persisted(predictors_src, forward_src, sig_hash)
+        version_id = ManifestStore(self._flex_root).append_version(
+            flex_id=self._flex_id,
+            src_path=self._persist_to,
+            signature_hash=sig_hash,
+            candidate_id=cid,
+            parents=parents,
+            notes=notes,
+        )
+        self._exploration.record(
+            FlexEvent.ACCEPT,
+            predictors_src=predictors_src,
+            forward_src=forward_src,
+            signature_hash=sig_hash,
+            extra={"version_id": version_id, "src_path": str(self._persist_to)},
+        )
+        logger.info(
+            "dspy.Flex %r: wrote auto-repaired implementation to %s (manifest version %d).",
+            self._flex_id,
+            self._persist_to,
+            version_id,
+        )
+
+    def _repair_after_bind_failure(
+        self,
+        *,
+        broken: tuple[str, str],
+        error: BaseException,
+        signature_hash: str,
+        parents: list[str] | None,
+    ) -> tuple[str, str]:
+        """Invoke the repair codegen LM after ``_bind_code`` raised.
+
+        Records the broken candidate under a ``REPAIR`` event with the supplied
+        ``parents``, asks the codegen LM to fix it, and binds the result. The
+        bind of the *repaired* code is not wrapped — if the repair itself is
+        broken, the user sees that as a hard error rather than an infinite
+        repair loop. Returns the fixed ``(predictors_src, forward_src)``.
+
+        The caller is responsible for the subsequent ``CODEGEN`` event, file
+        write, and manifest append using the returned sources.
+        """
+        broken_predictors, broken_forward = broken
+        error_text = f"{type(error).__name__}: {error}"
+        logger.warning(
+            "dspy.Flex %r: bind failure (%s) — running auto-repair. "
+            "Set auto_repair=False to surface the error directly.",
+            self._flex_id,
+            error_text,
+        )
+        self._exploration.record(
+            FlexEvent.REPAIR,
+            predictors_src=broken_predictors,
+            forward_src=broken_forward,
+            signature_hash=signature_hash,
+            parents=parents,
+            extra={"failure_kind": "bind", "error": error_text},
+        )
+        fixed_predictors, fixed_forward = repair(
+            self._flex_ctx,
+            broken=broken,
+            failure_kind="bind",
+            error_text=error_text,
+            lm=self._codegen_lm,
+        )
+        self._bind_code(fixed_predictors, fixed_forward)
+        return fixed_predictors, fixed_forward
+
     def _bind_code(self, predictors_src: str, forward_src: str) -> None:
         """Exec and attach both source artifacts to ``self``."""
         ctx_names = self._flex_ctx.context_names()
@@ -312,10 +463,79 @@ class Flex(Module):
         forward_fn = fwd_ns.get("forward")
         if not callable(forward_fn):
             raise RuntimeError("forward_src must define a `def forward(self, ...)` function")
-        self.forward = types.MethodType(forward_fn, self)
+        # Bind to `_forward_impl` instead of `forward`. The class-level
+        # ``forward`` wraps this with runtime auto-repair.
+        self._forward_impl = types.MethodType(forward_fn, self)
 
         self._predictors_src = predictors_src
         self._forward_src = forward_src
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the LM-authored ``_forward_impl`` with runtime auto-repair.
+
+        If a call raises one of the narrow user-code errors in
+        ``_RUNTIME_REPAIRABLE_ERRORS`` and ``auto_repair`` is on, Flex
+        re-invokes the codegen LM with the broken body + the exception, swaps
+        in the fix, and re-runs the call once. Subsequent failures (or
+        non-repairable exceptions like a tool/LM error) propagate unchanged.
+        """
+        if self._forward_impl is None:
+            raise RuntimeError(
+                f"dspy.Flex {self._flex_id!r}: no implementation bound. "
+                "Did __init__ or implement() fail?"
+            )
+        try:
+            return self._forward_impl(*args, **kwargs)
+        except _RUNTIME_REPAIRABLE_ERRORS as err:
+            if not self._auto_repair or self._runtime_repair_used:
+                raise
+            self._runtime_repair_used = True
+            self._repair_after_runtime_failure(error=err)
+            return self._forward_impl(*args, **kwargs)
+
+    def _repair_after_runtime_failure(self, *, error: BaseException) -> None:
+        """Regenerate, rebind, log, and persist after a runtime exception in forward().
+
+        Mirrors the bind-time repair flow but is driven by an exception raised
+        while ``_forward_impl`` was running. The broken candidate is the
+        currently-bound code. Records ``REPAIR`` → ``CODEGEN`` → ``ACCEPT``,
+        parented to the last accepted manifest entry. If repair codegen
+        produces another bind-broken body, the bind error propagates — we do
+        not loop on repair.
+        """
+        assert self._predictors_src is not None and self._forward_src is not None
+        broken = (self._predictors_src, self._forward_src)
+        sig_hash = self._signature_hash()
+        error_text = f"{type(error).__name__}: {error}"
+        logger.warning(
+            "dspy.Flex %r: runtime failure (%s) — running auto-repair. "
+            "Set auto_repair=False to surface the error directly.",
+            self._flex_id,
+            error_text,
+        )
+        self._exploration.record(
+            FlexEvent.REPAIR,
+            predictors_src=broken[0],
+            forward_src=broken[1],
+            signature_hash=sig_hash,
+            parents=self._latest_manifest_parents(),
+            extra={"failure_kind": "runtime", "error": error_text},
+        )
+        fixed_predictors, fixed_forward = repair(
+            self._flex_ctx,
+            broken=broken,
+            failure_kind="runtime",
+            error_text=error_text,
+            lm=self._codegen_lm,
+        )
+        self._bind_code(fixed_predictors, fixed_forward)
+        self._accept_fixed(
+            fixed_predictors,
+            fixed_forward,
+            sig_hash=sig_hash,
+            parents=[candidate_id(*broken)],
+            notes=f"auto-repair after runtime error: {type(error).__name__}",
+        )
 
     def _read_persisted(self) -> dict[str, Any] | None:
         if self._persist_to is None or not self._persist_to.exists():

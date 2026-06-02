@@ -27,6 +27,13 @@ class FlexEvent(str, Enum):
       candidate. When the file is persisted, the edit is also appended to the
       manifest (followed by an ``ACCEPT``), since the hand-edited code is the
       deployed artifact — mirroring the ``CODEGEN`` → ``ACCEPT`` path.
+    - ``REPAIR``: a persisted (or in-memory) implementation broke — either at
+      bind time (e.g. ``PREDICTORS = None``, ``SyntaxError``) or at runtime
+      (e.g. ``AttributeError`` from user-edited code). Flex re-invoked the
+      codegen LM with the broken body + the exception text, recorded the
+      *broken* body as a candidate parented to the prior accepted version, and
+      emitted this event before recording the new ``CODEGEN`` candidate. When
+      persisted, the new candidate is also appended to the manifest.
     - ``EVALUATE``: a candidate was scored on a batch of examples. Score is the batch mean.
     - ``PROPOSE``: the reflection LM produced a *non-trivial* revision of one component.
     - ``ACCEPT``: a candidate was written to disk and appended as a new manifest version.
@@ -35,6 +42,7 @@ class FlexEvent(str, Enum):
     CODEGEN = "codegen"
     LOAD = "load"
     MANUAL_EDIT = "manual_edit"
+    REPAIR = "repair"
     EVALUATE = "evaluate"
     PROPOSE = "propose"
     ACCEPT = "accept"
