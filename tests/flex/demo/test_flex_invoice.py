@@ -26,8 +26,8 @@ in its ledger — you stay in control of the code that ships.
 
 Run it
 ======
-    python tests/flex/demo/invoice_demo.py          # narrated story
-    pytest tests/flex/demo/invoice_demo.py           # same thing, with asserts
+    python tests/flex/demo/test_flex_invoice.py          # narrated story
+    pytest tests/flex/demo/test_flex_invoice.py           # same thing, with asserts
 
 Needs an OpenAI key (reads ``.env``). Uses ``gpt-4o-mini`` to keep it cheap.
 """
@@ -49,7 +49,7 @@ from dspy.utils.dummies import DummyLM
 load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "invoice_flex.py"
+FLEX_PATH = DEMO_DIR / "test_flex_invoice.py"
 
 exec_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=600)
 reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=1.0, max_tokens=4000)
@@ -141,7 +141,7 @@ PREDICTORS = {
     "solve": dspy.ChainOfThought("invoice -> total_cents"),
 }"""
 
-NAIVE_FORWARD = '''\
+NAIVE_FORWARD = """\
 def forward(self, **inputs):
     out = self.solve(invoice=inputs["invoice"])
     # Trust whatever the LM returned; coerce it to an int as best we can.
@@ -149,7 +149,7 @@ def forward(self, **inputs):
     try:
         return dspy.Prediction(total_cents=int(float(raw)))
     except ValueError:
-        return dspy.Prediction(total_cents=0)'''
+        return dspy.Prediction(total_cents=0)"""
 
 
 # The version a developer might hand-polish to after reading GEPA's output: the
@@ -163,7 +163,7 @@ PREDICTORS = {
     ),
 }"""
 
-HAND_POLISHED_FORWARD = '''\
+HAND_POLISHED_FORWARD = """\
 def forward(self, **inputs):
     out = self.extract(invoice=inputs["invoice"])
     quantities = list(out.quantities or [])
@@ -173,7 +173,7 @@ def forward(self, **inputs):
     line_total = sum(q * p for q, p in zip(quantities, unit_prices))
     total_dollars = line_total + sum(adjustments)
     total_cents = round(total_dollars * 100)
-    return dspy.Prediction(total_cents=max(0, int(total_cents)))'''
+    return dspy.Prediction(total_cents=max(0, int(total_cents)))"""
 
 
 _FILE_HEADER = '''\
@@ -229,7 +229,7 @@ def show_predictions(program: dspy.Module, dataset: list[dspy.Example]) -> None:
         except Exception as e:
             got = f"<crash: {e}>"
         mark = "OK " if str(got) == str(example.total_cents) else "BAD"
-        print(f"    [{mark}] want {example.total_cents:>5} | got {str(got):>8} | {example.invoice}")
+        print(f"    [{mark}] want {example.total_cents:>5} | got {got!s:>8} | {example.invoice}")
 
 
 def banner(text: str) -> None:
