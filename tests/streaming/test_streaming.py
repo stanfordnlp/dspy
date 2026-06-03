@@ -14,6 +14,8 @@ from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
 
+REAL_LM_MAX_TOKENS = 64
+
 
 @pytest.mark.anyio
 async def test_streamify_yields_expected_response_chunks(litellm_test_server):
@@ -242,8 +244,8 @@ async def test_stream_listener_chat_adapter(lm_for_test):
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0)):
-        output = program(x="why did a chicken cross the kitchen?")
+    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS)):
+        output = program(x="hi")
         all_chunks = []
         async for value in output:
             if isinstance(value, dspy.streaming.StreamResponse):
@@ -306,8 +308,11 @@ async def test_stream_listener_json_adapter(lm_for_test):
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), adapter=dspy.JSONAdapter()):
-        output = program(x="why did a chicken cross the kitchen?")
+    with dspy.context(
+        lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS),
+        adapter=dspy.JSONAdapter(),
+    ):
+        output = program(x="hi")
         all_chunks = []
         async for value in output:
             if isinstance(value, dspy.streaming.StreamResponse):
@@ -374,8 +379,8 @@ def test_sync_streaming(lm_for_test):
         async_streaming=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0)):
-        output = program(x="why did a chicken cross the kitchen?")
+    with dspy.context(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0, max_tokens=REAL_LM_MAX_TOKENS)):
+        output = program(x="hi")
         all_chunks = []
         for value in output:
             if isinstance(value, dspy.streaming.StreamResponse):
