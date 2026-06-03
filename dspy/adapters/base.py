@@ -157,7 +157,7 @@ class Adapter:
             text = output
 
             if isinstance(output, dict):
-                text = output["text"]
+                text = output.get("text")
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
@@ -217,10 +217,13 @@ class Adapter:
         Once planning lands, this should render from `_AdapterPlan` and apply
         planned message/part insertions before creating `LMRequest`.
         """
+        kwargs = dict(lm_kwargs)
+        tools = kwargs.pop("tools", None)
         return LMRequest.from_call(
             model=lm.model,
             messages=self._coerce_lm_messages(messages),
-            **lm_kwargs,
+            tools=tools,
+            **kwargs,
         )
 
     def _call_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:

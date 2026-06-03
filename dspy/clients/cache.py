@@ -79,12 +79,12 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            fanout_kwargs = dict(
-                directory=self.disk_cache_dir,
-                shards=16,
-                timeout=10,
-                size_limit=disk_size_limit_bytes,
-            )
+            fanout_kwargs = {
+                "directory": self.disk_cache_dir,
+                "shards": 16,
+                "timeout": 10,
+                "size_limit": disk_size_limit_bytes,
+            }
             if restrict_pickle:
                 for t in safe_types or []:
                     if not isinstance(t, type):
@@ -149,9 +149,15 @@ class Cache:
     def _prepare_cached_response(self, response):
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
-            # Clear the usage data when cache is hit, because no LM call is made
+            # Clear the usage data when cache is hit, because no LM call is made.
             response.usage = {}
-            response.cache_hit = True
+            try:
+                response.cache_hit = True
+            except (AttributeError, ValueError):
+                # Some provider SDK objects are strict Pydantic models that reject
+                # ad-hoc attributes. The cleared usage still preserves the main
+                # cache-hit semantics without mutating the provider object shape.
+                pass
         return response
 
     def put(
