@@ -59,7 +59,7 @@ class BaseLM:
 
     Most users should use `dspy.LM`, which is a `BaseLM` subclass.
 
-    For advanced use cases, such as custom language model backends, users can 
+    For advanced use cases, such as custom language model backends, users can
     subclass `BaseLM` and implement `forward()`.
 
     DSPy is migrating `forward()` from the legacy OpenAI/LiteLLM-shaped
@@ -81,12 +81,15 @@ class BaseLM:
     outputs = lm(messages=[{"role": "user", "content": "What is DSPy?"}])
     ```
 
-    The typed call path returns `dspy.LMResponse`. It is used when the caller
-    passes an explicit `dspy.LMRequest`, when `dspy.context(experimental=True)`
-    is active, or when the subclass declares `forward_contract = "typed_lm"`.
-    The typed path accepts richer direct-call inputs, including `dspy.System`,
-    `dspy.User`, `dspy.Assistant`, `dspy.ToolResult`, content parts, and prior
-    `dspy.LMResponse` objects.
+    Calls can flow internally through the typed `LMRequest` / `LMResponse` path
+    without changing the public return shape. The typed path is used when the
+    caller passes an explicit `dspy.LMRequest`, when
+    `dspy.context(experimental=True)` is active, or when the subclass declares
+    `forward_contract = "typed_lm"`. It accepts richer direct-call inputs,
+    including `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolResult`,
+    content parts, and prior `dspy.LMResponse` objects. The public return value
+    remains legacy outputs unless the caller explicitly opts into typed output
+    with an `LMRequest` or `experimental=True`.
 
     Example typed direct call:
 
@@ -326,14 +329,14 @@ class BaseLM:
     ) -> LMResponse | list[dict[str, Any] | str]:
         """Call the language model synchronously.
 
-        The default call path preserves DSPy's legacy behavior and returns `list[str | dict]`. The typed path returns
-        `dspy.LMResponse` when either:
+        The default call path preserves DSPy's legacy behavior and returns `list[str | dict]`. Calls flow internally
+        through `LMRequest` / `LMResponse` when either:
 
         - `request=` is provided or the first positional argument is an `LMRequest`, or
         - `dspy.context(experimental=True)` is active, or
         - the subclass declares `forward_contract = "typed_lm"`.
 
-        In the experimental typed path, positional `items` are normalized with `LMRequest.from_call()`. This supports
+        In the typed request path, positional `items` are normalized with `LMRequest.from_call()`. This supports
         a single prompt string, direct message objects such as `dspy.System(...)`, `dspy.User(...)`, and
         `dspy.Assistant(...)`, `dspy.ToolResult(...)` tool messages, and prior `LMResponse` values as assistant turns.
 
@@ -347,22 +350,25 @@ class BaseLM:
             **kwargs: Per-call generation parameters.
 
         Returns:
-            `LMResponse` on the typed path; otherwise DSPy's legacy list of output strings or dictionaries.
+            `LMResponse` for explicit `LMRequest` calls or `experimental=True`; otherwise DSPy's legacy list of output
+            strings or dictionaries, even when a typed LM subclass uses the typed path internally.
         """
-        explicit_request = self._is_explicit_lm_request_call(items=items, request=request)
-        if not self._use_typed_lm_call(explicit_request=explicit_request):
-            return self._legacy_call_direct(*items, prompt=prompt, messages=messages, **kwargs)
-
-        ## TODO: For dspy 3.4 we must fully document and teach the ways lm() can be called
-        normalized_request = self._normalize_lm_call(
-            *items,
+        return_typed_response, forward_contract, normalized_request = self._prepare_lm_call(
+            items=items,
             prompt=prompt,
             messages=messages,
             request=request,
-            **kwargs,
+            kwargs=kwargs,
         )
-        response = self._call_with_lm_request(normalized_request)
-        if explicit_request or settings.get("experimental", False):
+        if normalized_request is None:
+            return self._legacy_call_direct(*items, prompt=prompt, messages=messages, **kwargs)
+
+        if forward_contract == "typed_lm":
+            response = self.forward(normalized_request)
+            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+        else:
+            response = self._legacy_forward_as_lm_response(normalized_request)
+        if return_typed_response:
             return response
         return response.to_legacy_outputs()
 
@@ -378,11 +384,41 @@ class BaseLM:
         """Asynchronously call the language model.
 
         This is the async equivalent of `__call__()`. It preserves legacy outputs by default and returns
-        `dspy.LMResponse` for explicit `LMRequest` calls, experimental direct calls, or typed-LM subclasses.
+        `dspy.LMResponse` for explicit `LMRequest` calls or experimental direct calls.
         """
-        explicit_request = self._is_explicit_lm_request_call(items=items, request=request)
-        if not self._use_typed_lm_call(explicit_request=explicit_request):
+        return_typed_response, forward_contract, normalized_request = self._prepare_lm_call(
+            items=items,
+            prompt=prompt,
+            messages=messages,
+            request=request,
+            kwargs=kwargs,
+        )
+        if normalized_request is None:
             return await self._legacy_acall_direct(*items, prompt=prompt, messages=messages, **kwargs)
+
+        if forward_contract == "typed_lm":
+            response = await self.aforward(normalized_request)
+            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+        else:
+            response = await self._legacy_aforward_as_lm_response(normalized_request)
+        if return_typed_response:
+            return response
+        return response.to_legacy_outputs()
+
+    def _prepare_lm_call(
+        self,
+        *,
+        items: tuple[Any, ...],
+        prompt: str | None,
+        messages: list[dict[str, Any]] | None,
+        request: LMRequest | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[bool, ForwardContract, LMRequest | None]:
+        explicit_request = request is not None or bool(items and isinstance(items[0], LMRequest))
+        return_typed_response = explicit_request or bool(settings.get("experimental", False))
+        forward_contract = self._get_forward_contract()
+        if not return_typed_response and forward_contract != "typed_lm":
+            return return_typed_response, forward_contract, None
 
         normalized_request = self._normalize_lm_call(
             *items,
@@ -391,18 +427,7 @@ class BaseLM:
             request=request,
             **kwargs,
         )
-        response = await self._acall_with_lm_request(normalized_request)
-        if explicit_request or settings.get("experimental", False):
-            return response
-        return response.to_legacy_outputs()
-
-    def _is_explicit_lm_request_call(self, *, items: tuple[Any, ...], request: LMRequest | None) -> bool:
-        """Return whether the caller explicitly requested the normalized LM API."""
-        return request is not None or bool(items and isinstance(items[0], LMRequest))
-
-    def _use_typed_lm_call(self, *, explicit_request: bool) -> bool:
-        """Return whether this call should flow through `LMRequest` / `LMResponse`."""
-        return explicit_request or bool(settings.get("experimental", False)) or self._get_forward_contract() == "typed_lm"
+        return return_typed_response, forward_contract, normalized_request
 
     def _legacy_call_direct(
         self,
@@ -413,17 +438,12 @@ class BaseLM:
     ) -> list[dict[str, Any] | str]:
         """Execute the pre-typed synchronous call path and return legacy outputs."""
         prompt = self._legacy_prompt_from_items(items, prompt=prompt)
-        # This response variable here has the legacy response shape
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
-        typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
-        if typed_response is not None:
-            # It is currently impossible to get here
-            # because the legacy path should not be used with typed responses, but
-            # we could change that in `_use_typed_lm_call` so that legacy adapter
-            # can work on new typed subclasses without themselves protecting
-            # against typed response. Not sure what to do.. keeping for now.
-            request = self._legacy_direct_lm_request(prompt=prompt, messages=messages, **kwargs)
-            return self._finalize_lm_response(request, typed_response).to_legacy_outputs()
+        if isinstance(response, LMResponse):
+            raise TypeError(
+                f"{type(self).__name__}.forward() returned dspy.LMResponse on the legacy direct path. "
+                "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
+            )
         return self._process_lm_response(response, prompt, messages, **kwargs)
 
     async def _legacy_acall_direct(
@@ -436,10 +456,11 @@ class BaseLM:
         """Execute the pre-typed asynchronous call path and return legacy outputs."""
         prompt = self._legacy_prompt_from_items(items, prompt=prompt)
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
-        typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
-        if typed_response is not None:
-            request = self._legacy_direct_lm_request(prompt=prompt, messages=messages, **kwargs)
-            return self._finalize_lm_response(request, typed_response).to_legacy_outputs()
+        if isinstance(response, LMResponse):
+            raise TypeError(
+                f"{type(self).__name__}.aforward() returned dspy.LMResponse on the legacy direct path. "
+                "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
+            )
         return self._process_lm_response(response, prompt, messages, **kwargs)
 
     def _legacy_prompt_from_items(self, items: tuple[Any, ...], *, prompt: str | None) -> str | None:
@@ -454,20 +475,6 @@ class BaseLM:
         if items and isinstance(items[0], LMRequest):
             raise TypeError("LMRequest calls require the typed LM path; this should be unreachable.")
         return items[0] if items else prompt
-
-    def _legacy_direct_lm_request(
-        self,
-        *,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs: Any,
-    ) -> LMRequest:
-        """Best-effort normalized request for legacy direct calls that returned `LMResponse`."""
-        merged_kwargs = {**self.kwargs, **kwargs}
-        merged_kwargs.setdefault("cache", self.cache)
-        if prompt is not None and messages is not None:
-            return LMRequest.from_call(model=self.model, messages=messages, **merged_kwargs)
-        return LMRequest.from_call(model=self.model, prompt=prompt, messages=messages, **merged_kwargs)
 
     def _normalize_lm_call(
         self,
@@ -500,20 +507,6 @@ class BaseLM:
             **merged_kwargs,
         )
 
-    def _call_with_lm_request(self, request: LMRequest) -> LMResponse:
-        """Execute a normalized request using either the typed or legacy `forward()` contract."""
-        if self._get_forward_contract() == "typed_lm":
-            response = self.forward(request)
-            return self._finalize_lm_response(request, self._validate_typed_lm_response(response))
-        return self._legacy_forward_as_lm_response(request)
-
-    async def _acall_with_lm_request(self, request: LMRequest) -> LMResponse:
-        """Async variant of `_call_with_lm_request()`."""
-        if self._get_forward_contract() == "typed_lm":
-            response = await self.aforward(request)
-            return self._finalize_lm_response(request, self._validate_typed_lm_response(response))
-        return await self._legacy_aforward_as_lm_response(request)
-
     def _legacy_forward_as_lm_response(self, request: LMRequest) -> LMResponse:
         """Call a legacy `forward()` implementation and normalize its provider response."""
         data = self._legacy_forward_kwargs(request)
@@ -525,7 +518,8 @@ class BaseLM:
         typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
         if typed_response is not None:
             return self._finalize_lm_response(request, typed_response)
-        outputs = self._process_lm_response_for_lm_response_bridge(response, prompt, messages, **data)
+        with settings.context(disable_history=True, usage_tracker=None):
+            outputs = self._process_lm_response(response, prompt, messages, **data)
         lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
         return self._finalize_lm_response(request, lm_response)
 
@@ -540,19 +534,10 @@ class BaseLM:
         typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
         if typed_response is not None:
             return self._finalize_lm_response(request, typed_response)
-        outputs = self._process_lm_response_for_lm_response_bridge(response, prompt, messages, **data)
+        with settings.context(disable_history=True, usage_tracker=None):
+            outputs = self._process_lm_response(response, prompt, messages, **data)
         lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
         return self._finalize_lm_response(request, lm_response)
-
-    def _process_lm_response_for_lm_response_bridge(self, response, prompt, messages, **kwargs):
-        """Process a legacy provider response without recording legacy call side effects.
-
-        The typed bridge records usage and history after converting the provider response
-        to `LMResponse`, so the typed path consistently produces `LMHistoryEntry` history
-        entries and does not double-count usage.
-        """
-        with settings.context(disable_history=True, usage_tracker=None):
-            return self._process_lm_response(response, prompt, messages, **kwargs)
 
     def _legacy_outputs_to_lm_response(
         self,

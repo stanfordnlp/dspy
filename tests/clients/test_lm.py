@@ -515,7 +515,7 @@ def test_base_lm_errors_when_explicit_legacy_forward_returns_lm_response():
         lm._validate_legacy_lm_response(response)
 
 
-def test_base_lm_inherited_legacy_forward_returning_lm_response_records_history_and_usage():
+def test_base_lm_inherited_legacy_forward_returning_lm_response_errors_on_direct_call():
     class CustomLM(dspy.BaseLM):
         def forward(self, prompt=None, messages=None, **kwargs):
             return dspy.LMResponse.from_text(
@@ -526,17 +526,10 @@ def test_base_lm_inherited_legacy_forward_returning_lm_response_records_history_
 
     lm = CustomLM("custom-model")
 
-    with track_usage() as usage_tracker:
-        with pytest.warns(DeprecationWarning, match="default legacy forward_contract"):
-            assert lm("Query") == ["ok"]
+    with pytest.raises(TypeError, match="legacy direct path"):
+        lm("Query")
 
-    assert len(lm.history) == 1
-    assert lm.history[0].request.messages[0].text == "Query"
-    assert lm.history[0].response.text == "ok"
-    total_usage = usage_tracker.get_total_tokens()["custom-model"]
-    assert total_usage["prompt_tokens"] == 1
-    assert total_usage["completion_tokens"] == 2
-    assert total_usage["total_tokens"] == 3
+    assert len(lm.history) == 0
 
 
 # BaseLM direct-call compatibility tests.
