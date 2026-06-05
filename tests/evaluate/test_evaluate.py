@@ -423,3 +423,32 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_with_custom_timeout():
+    """Evaluate respects straggler timeout parameter."""
+    dspy.configure(lm=DummyLM({"test": {"answer": "ok"}}))
+    devset = [new_example("test", "ok")]
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=300,
+    )
+    assert ev.timeout == 300
+    result = ev(program=Predict("question -> answer"))
+    assert result.score == 100.0
+
+
+def test_evaluate_call_with_timeout_override():
+    """__call__ timeout overrides constructor timeout."""
+    dspy.configure(lm=DummyLM({"test": {"answer": "ok"}}))
+    devset = [new_example("test", "ok")]
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=300,
+    )
+    result = ev(program=Predict("question -> answer"), timeout=600)
+    assert result.score == 100.0
+
