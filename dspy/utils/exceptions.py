@@ -230,6 +230,14 @@ class AdapterParseError(DSPyError):
         lm_response: Raw LM response text or representation being parsed.
         message: Optional additional context about the parse failure.
         parsed_result: Partial parsed result, if any.
+        field_constraint_violation: True if the adapter successfully located the
+            output field in the LM response but the parsed value violated a
+            field-level constraint (e.g. a Literal/Enum mismatch or a pydantic
+            ValidationError on the field annotation). When True the failure is
+            semantic rather than structural: retrying with a different adapter
+            (e.g. the ChatAdapter -> JSONAdapter auto-fallback) cannot recover
+            from it, so callers should propagate the error instead of silently
+            swallowing it with another LM call. Defaults to False.
     """
 
     default_code = "adapter_parse_error"
@@ -241,11 +249,13 @@ class AdapterParseError(DSPyError):
         lm_response: str,
         message: str | None = None,
         parsed_result: str | None = None,
+        field_constraint_violation: bool = False,
     ):
         self.adapter_name = adapter_name
         self.signature = signature
         self.lm_response = lm_response
         self.parsed_result = parsed_result
+        self.field_constraint_violation = field_constraint_violation
 
         message = f"{message}\n\n" if message else ""
         message = (
