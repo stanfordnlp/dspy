@@ -32,6 +32,14 @@ class ReActV2(Module):
             raise ValueError("`submit` is reserved by ReActV2 as the final-output tool.")
         self.tools["submit"] = self._make_submit_tool()
 
+        reserved_output_field_names = {"history", "termination_reason"}
+        conflicting = reserved_output_field_names & set(self.signature.output_fields)
+        if conflicting:
+            raise ValueError(
+                f"Output field name(s) {sorted(conflicting)} are reserved by ReActV2. "
+                "Please rename them in your signature."
+            )
+
         self.react = dspy.Predict(self._make_react_signature())
 
     def _make_submit_tool(self) -> Tool:
@@ -121,7 +129,7 @@ class ReActV2(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                return _make_prediction(final_outputs, history, "submit")
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
@@ -197,7 +205,7 @@ class ReActV2(Module):
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            return _make_prediction(final_outputs, history, "forced_submit")
 
         return Prediction(history=history, termination_reason=break_reason or "failed")
 
@@ -244,6 +252,19 @@ def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int) -> ToolCalls:
 def _append_history_event(history: dspy.History, event: dict[str, Any]) -> None:
     if event:
         history.messages.append(event)
+
+
+_RESERVED_REACT_V2_KEYS = frozenset({"history", "termination_reason"})
+
+
+def _make_prediction(final_outputs: dict[str, Any], history: dspy.History, termination_reason: str) -> Prediction:
+    """Build a Prediction from ReActV2 final outputs.
+
+    ``history`` and ``termination_reason`` are internal ReActV2 metadata keys.
+    Signature output fields with these names are rejected in ``__init__`` so
+    this function should never encounter a key collision.
+    """
+    return Prediction(**final_outputs, history=history, termination_reason=termination_reason)
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
