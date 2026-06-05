@@ -66,7 +66,7 @@ Exporting DSPy programs is simply saving them as highlighted above!
 
 - **How do I search my own data?**
 
-Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
+Open source libraries such as [RAGatouille](https://github.com/bclavie/RAGatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
 
 - **How do I turn off the cache? How do I export the cache?**
 
@@ -82,7 +82,7 @@ os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
 
 !!! warning "Important"
-    `DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
+    `DSP_CACHEDIR` is responsible for legacy clients (including the deprecated dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the current `dspy.LM` client.
 
     In the AWS lambda deployment, you should disable both DSP_\* and DSPY_\*.
 
@@ -117,7 +117,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. DSPy raises this as `dspy.ContextWindowExceededError`, a subclass of `dspy.LMInvalidRequestError`. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
 
-A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`). For other provider failures, catch `dspy.LMError` or a concrete subclass such as `dspy.LMRateLimitError`, `dspy.LMAuthError`, or `dspy.LMServerError`. See the [Errors API reference](api/utils/Errors.md) for details.
+A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.LM('openai/gpt-4o-mini', max_tokens=...)`). For other provider failures, catch `dspy.LMError` or a concrete subclass such as `dspy.LMRateLimitError`, `dspy.LMAuthError`, or `dspy.LMServerError`. See the [Errors API reference](api/utils/Errors.md) for details.
 
 ## Set Verbose Level
 DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.html) to print logs. If you want to debug your DSPy code, set the logging level to DEBUG with the example code below.
