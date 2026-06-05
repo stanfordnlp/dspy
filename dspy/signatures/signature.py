@@ -1,18 +1,12 @@
-"""Signature class for DSPy.
+"""DSPy `Signature` class and helpers.
 
-You typically subclass the Signature class, like this:
-    class MySignature(dspy.Signature):
-        input: str = InputField(desc="...")
-        output: int = OutputField(desc="...")
+A signature declares the input/output contract for a DSPy module. Define one
+with class syntax when you want field descriptions or validation, or use
+`Signature("question -> answer")` for quick prototypes.
 
-You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
-You can also include instructions, Signature("input -> output", "This is a test").
-But it's generally better to use the make_signature function.
-
-If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
-or a signature, you can use the ensure_signature function.
-
-For compatibility with the legacy dsp format, you can use the signature_to_template function.
+Field-editing methods like `append`, `prepend`, `insert`, `delete`,
+`with_instructions`, and `with_updated_fields` return a new signature class.
+They do not mutate the original.
 """
 
 import ast
@@ -279,44 +273,34 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         """Return a new Signature class with identical fields and new instructions.
 
         This method does not mutate `cls`. It constructs a fresh Signature
-        class using the current fields and the provided `instructions`.
+        class from the current fields and the provided `instructions`.
 
         Args:
-            instructions (str): Instruction text to attach to the new signature.
+            instructions: Instruction text to attach to the new signature.
 
         Returns:
-            A new Signature class whose fields match `cls.fields`
-            and whose instructions equal `instructions`.
-
-        Examples:
-            ```python
-            import dspy
-
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input text")
-                output_text: str = dspy.OutputField(desc="Output text")
-
-            NewSig = MySig.with_instructions("Translate to French.")
-            assert NewSig is not MySig
-            assert NewSig.instructions == "Translate to French."
-            ```
+            (type[Signature]): A new Signature class whose fields match
+                `cls.fields` and whose instructions equal `instructions`.
         """
         return Signature(cls.fields, instructions)
 
     @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
-        """Create a new Signature class with the updated field information.
+        """Return a new Signature class with one field updated.
 
-        Returns a new Signature class with the field, name, updated
-        with fields[name].json_schema_extra[key] = value.
+        Use this to change a field description, constraints, or type without
+        redefining the whole signature.
 
         Args:
-            name: The name of the field to update.
-            type_: The new type of the field.
-            kwargs: The new values for the field.
+            name: Name of the field to update.
+            type_: New type annotation for the field. If `None`, keep the
+                current type.
+            **kwargs: New field settings such as `desc`, `gt`, or
+                `max_length`.
 
         Returns:
-            A new Signature class (not an instance) with the updated field information.
+            (type[Signature]): A new Signature class with the updated field
+                information.
         """
         fields_copy = deepcopy(cls.fields)
         # Update `fields_copy[name].json_schema_extra` with the new kwargs, on conflicts
@@ -334,25 +318,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         """Insert a field at index 0 of the `inputs` or `outputs` section.
 
         Args:
-            name (str): Field name to add.
+            name: Field name to add.
             field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
-                resolved by `insert`.
+            type_: Optional explicit type annotation. If `type_` is `None`,
+                the effective type is resolved by `insert`.
 
         Returns:
-            A new `Signature` class with the field inserted first.
-
-        Examples:
-            ```python
-            import dspy
-
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
-
-            NewSig = MySig.prepend("context", dspy.InputField(desc="Context for translation"))
-            print(list(NewSig.fields.keys()))
-            ```
+            (type[Signature]): A new `Signature` class with the field inserted
+                first.
         """
         return cls.insert(0, name, field, type_)
 
@@ -361,25 +334,13 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         """Insert a field at the end of the `inputs` or `outputs` section.
 
         Args:
-            name (str): Field name to add.
+            name: Field name to add.
             field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
-                resolved by `insert`.
+            type_: Optional explicit type annotation. If `type_` is `None`,
+                the effective type is resolved by `insert`.
 
         Returns:
-            A new Signature class with the field appended.
-
-        Examples:
-            ```python
-            import dspy
-
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
-
-            NewSig = MySig.append("confidence", dspy.OutputField(desc="Translation confidence"))
-            print(list(NewSig.fields.keys()))
-            ```
+            (type[Signature]): A new Signature class with the field appended.
         """
         return cls.insert(-1, name, field, type_)
 
@@ -387,30 +348,15 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def delete(cls, name) -> type["Signature"]:
         """Return a new Signature class without the given field.
 
-        If `name` is not present, the fields are unchanged (no error raised).
+        If `name` is not present, the fields are unchanged and no error is
+        raised.
 
         Args:
-            name (str): Field name to remove.
+            name: Field name to remove.
 
         Returns:
-            A new Signature class with the field removed (or unchanged if the field was absent).
-
-        Examples:
-            ```python
-            import dspy
-
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                temp_field: str = dspy.InputField(desc="Temporary debug field")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
-
-            NewSig = MySig.delete("temp_field")
-            print(list(NewSig.fields.keys()))
-
-            # No error is raised if the field is not present
-            Unchanged = NewSig.delete("nonexistent")
-            print(list(Unchanged.fields.keys()))
-            ```
+            (type[Signature]): A new Signature class with the field removed,
+                or unchanged if the field was absent.
         """
         fields = dict(cls.fields)
 
@@ -422,35 +368,23 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         """Insert a field at a specific position among inputs or outputs.
 
-        Negative indices are supported (e.g., `-1` appends). If `type_` is omitted, the field's
-        existing `annotation` is used; if that is missing, `str` is used.
+        Negative indices are supported, so `-1` appends. If `type_` is
+        omitted, DSPy uses the field's annotation when present and otherwise
+        falls back to `str`.
 
         Args:
-            index (int): Insertion position within the chosen section; negatives append.
-            name (str): Field name to add.
-            field: InputField or OutputField instance to insert.
-            type_ (type | None): Optional explicit type annotation.
+            index: Insertion position within the chosen section. Negative
+                indices append.
+            name: Field name to add.
+            field: `InputField` or `OutputField` instance to insert.
+            type_: Optional explicit type annotation.
 
         Returns:
-            A new Signature class with the field inserted.
+            (type[Signature]): A new Signature class with the field inserted.
 
         Raises:
-            ValueError: If `index` falls outside the valid range for the chosen section.
-
-        Examples:
-            ```python
-            import dspy
-
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
-
-            NewSig = MySig.insert(0, "context", dspy.InputField(desc="Context for translation"))
-            print(list(NewSig.fields.keys()))
-
-            NewSig2 = NewSig.insert(-1, "confidence", dspy.OutputField(desc="Translation confidence"))
-            print(list(NewSig2.fields.keys()))
-            ```
+            ValueError: If `index` falls outside the valid range for the
+                chosen section.
         """
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
@@ -479,7 +413,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def equals(cls, other) -> bool:
-        """Compare the JSON schema of two Signature classes."""
+        """Return `True` when two Signature classes have the same prompt metadata."""
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
         if cls.instructions != other.instructions:
@@ -493,6 +427,12 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def dump_state(cls):
+        """Serialize the signature's mutable prompt state.
+
+        Returns:
+            (dict): A dict containing the current instructions and per-field
+                prompt metadata.
+        """
         state = {"instructions": cls.instructions, "fields": []}
         for field in cls.fields:
             state["fields"].append(
@@ -506,6 +446,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def load_state(cls, state):
+        """Return a new Signature class with state restored from `dump_state`.
+
+        Args:
+            state: Dict previously produced by `dump_state`.
+
+        Returns:
+            (type[Signature]): A new Signature class.
+        """
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
         signature_copy.instructions = state["instructions"]
@@ -517,6 +465,21 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
 
 def ensure_signature(signature: str | type[Signature], instructions=None) -> None | type[Signature]:
+    """Return a Signature class from a string or existing Signature subclass.
+
+    Args:
+        signature: A string like `"question -> answer"`, a `Signature`
+            subclass, or `None`.
+        instructions: Optional instruction text. Only valid when `signature`
+            is a string.
+
+    Returns:
+        (type[Signature] | None): A Signature class, or `None` if `None` was
+            passed.
+
+    Raises:
+        ValueError: If `instructions` is given with a Signature class.
+    """
     if signature is None:
         return None
     if isinstance(signature, str):
@@ -532,39 +495,18 @@ def make_signature(
     signature_name: str = "StringSignature",
     custom_types: dict[str, type] | None = None,
 ) -> type[Signature]:
-    """Create a new Signature subclass with the specified fields and instructions.
+    """Create a new Signature subclass from a string or field dict.
 
     Args:
-        signature: Either a string in the format "input1, input2 -> output1, output2"
-            or a dictionary mapping field names to tuples of (type, FieldInfo).
-        instructions: Optional string containing instructions/prompt for the signature.
-            If not provided, defaults to a basic description of inputs and outputs.
-        signature_name: Optional string to name the generated Signature subclass.
-            Defaults to "StringSignature".
-        custom_types: Optional dictionary mapping type names to their actual type objects.
-            Useful for resolving custom types that aren't built-ins or in the typing module.
+        signature: A string like `"question, context -> answer"` or a dict
+            mapping field names to `(type, FieldInfo)` pairs.
+        instructions: Optional instruction text. If omitted, DSPy builds a
+            default instruction from the field names.
+        signature_name: Name for the generated Signature subclass.
+        custom_types: Types used to resolve annotations in string signatures.
 
     Returns:
-        A new signature class with the specified fields and instructions.
-
-    Examples:
-
-    ```
-    # Using string format
-    sig1 = make_signature("question, context -> answer")
-
-    # Using dictionary format
-    sig2 = make_signature({
-        "question": (str, InputField()),
-        "answer": (str, OutputField())
-    })
-
-    # Using custom types
-    class MyType:
-        pass
-
-    sig3 = make_signature("input: MyType -> output", custom_types={"MyType": MyType})
-    ```
+        (type[Signature]): A new Signature class.
     """
     # Prepare the names dictionary for type resolution
     names = None
