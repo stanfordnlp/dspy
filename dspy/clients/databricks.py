@@ -4,8 +4,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+import httpx
 import orjson
-import requests
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
@@ -64,9 +64,10 @@ class DatabricksProvider(Provider):
 
         headers = {"Context-Type": "text/json", "Authorization": f"Bearer {databricks_token}"}
 
-        optimizable_info = requests.get(
+        optimizable_info = httpx.get(
             url=f"{databricks_host}/api/2.0/serving-endpoints/get-model-optimization-info/{model}/{model_version}",
             headers=headers,
+            follow_redirects=True,
         ).json()
 
         if "optimizable" not in optimizable_info or not optimizable_info["optimizable"]:
@@ -83,8 +84,8 @@ class DatabricksProvider(Provider):
         # Databricks serving endpoint names cannot contain ".".
         model_name = model.replace(".", "_")
 
-        get_endpoint_response = requests.get(
-            url=f"{databricks_host}/api/2.0/serving-endpoints/{model_name}", json={"name": model_name}, headers=headers
+        get_endpoint_response = httpx.get(
+            f"{databricks_host}/api/2.0/serving-endpoints/{model_name}", headers=headers, follow_redirects=True
         )
 
         if get_endpoint_response.status_code == 200:
@@ -102,10 +103,11 @@ class DatabricksProvider(Provider):
                 ]
             }
 
-            response = requests.put(
+            response = httpx.put(
                 url=f"{databricks_host}/api/2.0/serving-endpoints/{model_name}/config",
                 json=data,
                 headers=headers,
+                follow_redirects=True,
             )
         else:
             logger.info(f"Creating serving endpoint {model_name} on Databricks model serving!")
@@ -125,7 +127,7 @@ class DatabricksProvider(Provider):
                 },
             }
 
-            response = requests.post(url=f"{databricks_host}/api/2.0/serving-endpoints", json=data, headers=headers)
+            response = httpx.post(url=f"{databricks_host}/api/2.0/serving-endpoints", json=data, headers=headers, follow_redirects=True)
 
         if response.status_code == 200:
             logger.info(
