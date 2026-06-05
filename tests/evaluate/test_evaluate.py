@@ -33,6 +33,95 @@ def test_evaluate_initialization():
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
     assert not ev.display_progress
+    # Defaults are None so ParallelExecutor's own defaults stay authoritative; the
+    # call-site test below confirms `timeout` and `straggler_limit` are NOT forwarded
+    # when neither the constructor nor the call passed a value.
+    assert ev.timeout is None
+    assert ev.straggler_limit is None
+
+
+def test_evaluate_threads_through_executor_timeout(monkeypatch):
+    # Confirm the new timeout / straggler_limit kwargs reach ParallelExecutor.
+    captured = {}
+
+    from dspy.utils import parallelizer as parallelizer_module
+
+    real_executor = parallelizer_module.ParallelExecutor
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_executor(**kwargs)
+
+    monkeypatch.setattr("dspy.evaluate.evaluate.ParallelExecutor", spy)
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
+
+    Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=600,
+        straggler_limit=5,
+    )(program)
+
+    assert captured["timeout"] == 600
+    assert captured["straggler_limit"] == 5
+
+
+def test_evaluate_defers_to_executor_defaults_when_unset(monkeypatch):
+    # If neither the constructor nor __call__ pass timeout / straggler_limit, they
+    # must NOT appear in the ParallelExecutor kwargs at all. That way the executor's
+    # own defaults stay the source of truth.
+    captured = {}
+
+    from dspy.utils import parallelizer as parallelizer_module
+
+    real_executor = parallelizer_module.ParallelExecutor
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_executor(**kwargs)
+
+    monkeypatch.setattr("dspy.evaluate.evaluate.ParallelExecutor", spy)
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
+
+    Evaluate(devset=devset, metric=answer_exact_match, display_progress=False)(program)
+
+    assert "timeout" not in captured
+    assert "straggler_limit" not in captured
+
+
+def test_evaluate_call_overrides_timeout(monkeypatch):
+    # __call__ overrides should beat the constructor defaults.
+    captured = {}
+
+    from dspy.utils import parallelizer as parallelizer_module
+
+    real_executor = parallelizer_module.ParallelExecutor
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_executor(**kwargs)
+
+    monkeypatch.setattr("dspy.evaluate.evaluate.ParallelExecutor", spy)
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
+
+    Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=120,
+    )(program, timeout=900)
+
+    assert captured["timeout"] == 900
 
 
 def test_evaluate_call():
