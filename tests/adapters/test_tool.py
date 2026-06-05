@@ -752,3 +752,66 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+def test_format_as_litellm_function_call_excludes_default_args_from_required():
+    """Regression test for PR #9887: args with defaults must not appear in 'required'.
+
+    Before the fix, format_as_litellm_function_call() unconditionally placed all
+    parameters in the JSON Schema 'required' array, even when they had Python
+    default values. This caused native function-calling adapters to mark every
+    parameter as required to the LLM provider.
+    """
+
+    def search(query: str, top_k: int = 5, use_cache: bool = True) -> str:
+        """Search the database.
+
+        Args:
+            query: The search query
+            top_k: Number of results to return
+            use_cache: Whether to use the cache
+        """
+        return f"Results for {query}"
+
+    tool = Tool(search)
+    schema = tool.format_as_litellm_function_call()
+
+    # Validate overall structure
+    assert schema["type"] == "function"
+    assert schema["function"]["name"] == "search"
+    params = schema["function"]["parameters"]
+    assert params["type"] == "object"
+    assert set(params["properties"].keys()) == {"query", "top_k", "use_cache"}
+
+    # The core assertion: only 'query' (no default) should be required
+    assert "query" in params["required"]
+    assert "top_k" not in params["required"]
+    assert "use_cache" not in params["required"]
+
+
+def test_format_as_litellm_function_call_all_required_when_no_defaults():
+    """All params should be required when none have defaults."""
+
+    def add(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    tool = Tool(add)
+    schema = tool.format_as_litellm_function_call()
+    required = schema["function"]["parameters"]["required"]
+
+    assert set(required) == {"a", "b"}
+
+
+def test_format_as_litellm_function_call_none_required_when_all_defaults():
+    """No params should be required when all have defaults."""
+
+    def greet(name: str = "world", uppercase: bool = False) -> str:
+        """Greet someone."""
+        return name.upper() if uppercase else name
+
+    tool = Tool(greet)
+    schema = tool.format_as_litellm_function_call()
+    required = schema["function"]["parameters"]["required"]
+
+    assert required == []
