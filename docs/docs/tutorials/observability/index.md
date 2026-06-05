@@ -4,7 +4,7 @@ This guide demonstrates how to debug problems and improve observability in DSPy.
 
 However, as systems grow more sophisticated, the ability to **understand what your system is doing** becomes critical. Without transparency, the prediction process can easily become a black box, making failures or quality issues difficult to diagnose and production maintenance challenging.
 
-By the end of this tutorial, you'll understand how to debug an issue and improve observability using [MLflow Tracing](#tracing). You'll also explore how to build a custom logging solution using callbacks.
+By the end of this tutorial, you'll understand how to debug an issue and improve observability using [MLflow](#tracing) or [Future AGI](#tracing-with-future-agi) tracing. You'll also explore how to build a custom logging solution using callbacks.
 
 
 
@@ -191,6 +191,57 @@ the [MLflow Tracing Guide](https://mlflow.org/docs/3.0.0rc0/tracing).
 !!! info "Learn more about MLflow"
 
     MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/index.md#deploying-with-mlflow).
+
+
+### Tracing with Future AGI
+
+[Future AGI](https://futureagi.com) is an open-source e2e agent engineering and optimization platform that helps you ship self-improving AI agents. The [`traceAI-DSPy`](https://pypi.org/project/traceAI-DSPy/) package auto-instruments DSPy modules (`Predict`, `ChainOfThought`, `ReAct`, retrievers, tools) and exports OpenTelemetry spans to any OTLP-compatible backend, including Future AGI.
+
+Sign up at [app.futureagi.com](https://app.futureagi.com) to get your `FI_API_KEY` and `FI_SECRET_KEY`, then install the integration:
+
+```bash
+pip install traceAI-DSPy dspy
+```
+
+Set up the tracer once at the start of your program. Every DSPy module call after this is captured as a structured span — no per-module wiring required.
+
+```python
+import os
+import dspy
+from fi_instrumentation import register
+from fi_instrumentation.fi_types import ProjectType
+from traceai_dspy import DSPyInstrumentor
+
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+os.environ["FI_API_KEY"] = "your-futureagi-api-key"
+os.environ["FI_SECRET_KEY"] = "your-futureagi-secret-key"
+
+trace_provider = register(
+    project_type=ProjectType.OBSERVE,
+    project_name="dspy_project",
+)
+DSPyInstrumentor().instrument(tracer_provider=trace_provider)
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+
+class BasicQA(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
+
+
+generate_answer = dspy.Predict(BasicQA)
+prediction = generate_answer(question="What is the capital of the United States?")
+print(prediction.answer)
+```
+
+Open your project in the Future AGI dashboard to inspect each `Predict`, `ChatAdapter`, and `LM` call along with prompts, completions, and token usage:
+
+![Future AGI Trace UI for a DSPy Predict call](./future-agi-ui.png)
+
+For the full setup guide and dashboard walkthrough, see the [Future AGI DSPy integration guide](https://docs.futureagi.com/docs/integrations/traceai/dspy).
 
 
 ## Building a Custom Logging Solution
