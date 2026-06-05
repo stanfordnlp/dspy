@@ -120,9 +120,9 @@ class ParallelExecutor:
                 start_time_map[submission_id] = time.time()
 
             # Apply parent's thread-local overrides
-            from dspy.dsp.utils.settings import thread_local_overrides
+            from dspy.dsp.utils.settings import _active_overrides, thread_local_overrides
 
-            original = thread_local_overrides.get()
+            original = _active_overrides(thread_local_overrides.get())
             new_overrides = {**original, **parent_overrides.copy()}
             if new_overrides.get("usage_tracker"):
                 # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
@@ -156,9 +156,9 @@ class ParallelExecutor:
         executor = ThreadPoolExecutor(max_workers=self.num_threads)
         try:
             with interrupt_manager():
-                from dspy.dsp.utils.settings import thread_local_overrides
+                from dspy.dsp.utils.settings import _active_overrides, thread_local_overrides
 
-                parent_overrides = thread_local_overrides.get().copy()
+                parent_overrides = _active_overrides(thread_local_overrides.get()).copy()
 
                 futures_map = {}
                 futures_set = set()
