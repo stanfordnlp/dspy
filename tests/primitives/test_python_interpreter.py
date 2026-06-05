@@ -3,9 +3,15 @@ import os
 import random
 
 import pytest
+from pydantic import BaseModel
 
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
+
+
+class _Hit(BaseModel):
+    document_id: int
+    title: str
 
 pytestmark = pytest.mark.deno
 
@@ -237,6 +243,36 @@ def test_serialize_set_mixed_types():
         assert set(result) == {1, "a"}
 
 
+def test_serialize_pydantic_variable():
+    """Pydantic instances passed via variables= should arrive in the sandbox as dicts."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "hit['document_id']",
+            variables={"hit": _Hit(document_id=7, title="abc")},
+        )
+        assert result == 7
+
+
+def test_serialize_pydantic_nested_in_dict():
+    """Pydantic instances nested inside list/dict variables should be coerced too."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "(data['hit']['document_id'], data['hit']['title'])",
+            variables={"data": {"hit": _Hit(document_id=11, title="nested")}},
+        )
+        assert result == [11, "nested"]
+
+
+def test_serialize_pydantic_in_list_variable():
+    """A list variable whose elements are Pydantic instances should be coerced too."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "sum(h['document_id'] for h in hits)",
+            variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
+        )
+        assert result == 3
+
+
 def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):
@@ -407,6 +443,30 @@ def test_tool_async_def_raises_propagates():
         )
         assert "ValueError" in result
         assert "boom:7" in result
+
+
+def test_tool_returns_pydantic_model():
+    """Pydantic models returned from a tool should arrive in the sandbox as dicts."""
+
+    def search() -> _Hit:
+        return _Hit(document_id=42, title="example")
+
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute("r = search()\n(r['document_id'], r['title'])")
+        assert result == [42, "example"]
+
+
+def test_tool_returns_list_of_pydantic_models():
+    """Lists of Pydantic models from a tool should round-trip as lists of dicts."""
+
+    def search_many() -> list[_Hit]:
+        return [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]
+
+    with PythonInterpreter(tools={"search_many": search_many}) as sandbox:
+        result = sandbox.execute(
+            "hits = search_many()\nsum(h['document_id'] for h in hits)"
+        )
+        assert result == 3
 
 
 
