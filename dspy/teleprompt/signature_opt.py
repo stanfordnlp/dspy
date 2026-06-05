@@ -48,5 +48,5 @@ class SignatureOptimizer(COPRO):
         )
         super().__init__(prompt_model, metric, breadth, depth, init_temperature, verbose, track_stats)
 
-    def compile(self, student, *, devset, eval_kwargs):
+    def compile(self, student, *, devset, eval_kwargs=None):
         return super().compile(student, trainset=devset, eval_kwargs=eval_kwargs)
