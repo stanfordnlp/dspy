@@ -132,3 +132,49 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_bootstrap_demo_duplicate_key():
+    """Bootstrap must not crash when an output field also appears in with_inputs().
+
+    When a field (e.g. 'category') is declared as an OutputField in the signature
+    but is also included in the example's input keys via with_inputs(), the trace
+    captured for each predictor call contains that field in both inputs and outputs.
+    The demo is built from `**inputs, **outputs`; if a key appears in both, Python
+    raises TypeError: got multiple values for keyword argument. The fix merges them
+    first so outputs win (which is correct: the prediction overrides the gold label).
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9472.
+    """
+
+    class ClassifySignature(dspy.Signature):
+        text: str = dspy.InputField()
+        category: str = dspy.OutputField()
+
+    class ClassifyModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(ClassifySignature)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    # Intentionally include 'category' (an OutputField) in with_inputs — this is
+    # what triggers the duplicate-key crash without the fix.
+    clf_trainset = [
+        Example(text="The sky is blue.", category="nature").with_inputs("text", "category"),
+    ]
+
+    def clf_metric(example, prediction, trace=None):
+        return example.category == prediction.category
+
+    student = ClassifyModule()
+    teacher = ClassifyModule()
+
+    lm = DummyLM([{"category": "nature"}])
+    dspy.configure(lm=lm, trace=[])
+
+    bootstrap = BootstrapFewShot(metric=clf_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    # Should not raise TypeError: got multiple values for keyword argument 'category'
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=clf_trainset)
+    assert compiled is not None
