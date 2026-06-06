@@ -96,68 +96,75 @@ def _build_simplified_schema(
     Args:
         pydantic_model: The Pydantic model to build schema for
         indent: Current indentation level
-        seen_models: Set to track visited pydantic models (prevents infinite recursion)
+        seen_models: Set to track models currently being traversed (prevents infinite recursion).
+            Models are added when entering traversal and removed when exiting, allowing the same
+            model to be reused in different branches of the schema without triggering false
+            recursion detection.
     """
     seen_models = seen_models or set()
 
     if pydantic_model in seen_models:
         raise ValueError("BAMLAdapter cannot handle recursive pydantic models, please use a different adapter.")
 
-    # Add `pydantic_model` to `seen_models` with a placeholder value to avoid infinite recursion.
+    # Track this model during traversal to detect true recursion (cycles).
+    # We remove it in the finally block so sibling branches can reuse the same model.
     seen_models.add(pydantic_model)
+    try:
+        lines = []
+        current_indent = INDENTATION * indent
+        next_indent = INDENTATION * (indent + 1)
 
-    lines = []
-    current_indent = INDENTATION * indent
-    next_indent = INDENTATION * (indent + 1)
+        # Add model docstring as a comment above the object if it exists
+        # Only do this for top-level schemas (indent=0), since nested field docstrings
+        # are already added before the field name in the parent schema
+        if indent == 0 and pydantic_model.__doc__:
+            docstring = pydantic_model.__doc__.strip()
+            # Handle multiline docstrings by prefixing each line with the comment symbol
+            for line in docstring.split("\n"):
+                line = line.strip()
+                if line:
+                    lines.append(f"{current_indent}{COMMENT_SYMBOL} {line}")
 
-    # Add model docstring as a comment above the object if it exists
-    # Only do this for top-level schemas (indent=0), since nested field docstrings
-    # are already added before the field name in the parent schema
-    if indent == 0 and pydantic_model.__doc__:
-        docstring = pydantic_model.__doc__.strip()
-        # Handle multiline docstrings by prefixing each line with the comment symbol
-        for line in docstring.split("\n"):
-            line = line.strip()
-            if line:
-                lines.append(f"{current_indent}{COMMENT_SYMBOL} {line}")
+        lines.append(f"{current_indent}{{")
 
-    lines.append(f"{current_indent}{{")
+        fields = pydantic_model.model_fields
+        if not fields:
+            lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
+        for name, field in fields.items():
+            if field.description:
+                lines.append(f"{next_indent}{COMMENT_SYMBOL} {field.description}")
+            elif field.alias and field.alias != name:
+                # If there's an alias but no description, show the alias as a comment
+                lines.append(f"{next_indent}{COMMENT_SYMBOL} alias: {field.alias}")
 
-    fields = pydantic_model.model_fields
-    if not fields:
-        lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
-    for name, field in fields.items():
-        if field.description:
-            lines.append(f"{next_indent}{COMMENT_SYMBOL} {field.description}")
-        elif field.alias and field.alias != name:
-            # If there's an alias but no description, show the alias as a comment
-            lines.append(f"{next_indent}{COMMENT_SYMBOL} alias: {field.alias}")
+            # If the field type is a BaseModel, add its docstring as a comment before the field
+            field_annotation = field.annotation
+            # Handle Optional types
+            origin = get_origin(field_annotation)
+            if origin in (types.UnionType, Union):
+                args = get_args(field_annotation)
+                non_none_args = [arg for arg in args if arg is not type(None)]
+                if len(non_none_args) == 1:
+                    field_annotation = non_none_args[0]
 
-        # If the field type is a BaseModel, add its docstring as a comment before the field
-        field_annotation = field.annotation
-        # Handle Optional types
-        origin = get_origin(field_annotation)
-        if origin in (types.UnionType, Union):
-            args = get_args(field_annotation)
-            non_none_args = [arg for arg in args if arg is not type(None)]
-            if len(non_none_args) == 1:
-                field_annotation = non_none_args[0]
+            if inspect.isclass(field_annotation) and issubclass(field_annotation, BaseModel):
+                if field_annotation.__doc__:
+                    docstring = field_annotation.__doc__.strip()
+                    for line in docstring.split("\n"):
+                        line = line.strip()
+                        if line:
+                            lines.append(f"{next_indent}{COMMENT_SYMBOL} {line}")
 
-        if inspect.isclass(field_annotation) and issubclass(field_annotation, BaseModel):
-            if field_annotation.__doc__:
-                docstring = field_annotation.__doc__.strip()
-                for line in docstring.split("\n"):
-                    line = line.strip()
-                    if line:
-                        lines.append(f"{next_indent}{COMMENT_SYMBOL} {line}")
+            rendered_type = _render_type_str(field.annotation, indent=indent + 1, seen_models=seen_models)
+            line = f"{next_indent}{name}: {rendered_type},"
 
-        rendered_type = _render_type_str(field.annotation, indent=indent + 1, seen_models=seen_models)
-        line = f"{next_indent}{name}: {rendered_type},"
+            lines.append(line)
 
-        lines.append(line)
-
-    lines.append(f"{current_indent}}}")
-    return "\n".join(lines)
+        lines.append(f"{current_indent}}}")
+        return "\n".join(lines)
+    finally:
+        # Remove the model so other branches can reuse it without triggering false recursion.
+        seen_models.remove(pydantic_model)
 
 
 class BAMLAdapter(JSONAdapter):
