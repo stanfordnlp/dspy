@@ -44,10 +44,7 @@ class ReActV2(Module):
                 raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
             return {name: kwargs[name] for name in output_names}
 
-        args = {
-            name: _json_schema_for_annotation(field.annotation)
-            for name, field in output_fields.items()
-        }
+        args = {name: _json_schema_for_annotation(field.annotation) for name, field in output_fields.items()}
         arg_types = {name: field.annotation for name, field in output_fields.items()}
         return Tool(
             submit,
@@ -121,7 +118,7 @@ class ReActV2(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                return Prediction(**{**final_outputs, "history": history, "termination_reason": "submit"})
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
@@ -197,7 +194,7 @@ class ReActV2(Module):
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            return Prediction(**{**final_outputs, "history": history, "termination_reason": "forced_submit"})
 
         return Prediction(history=history, termination_reason=break_reason or "failed")
 
