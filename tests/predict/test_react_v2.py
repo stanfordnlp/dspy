@@ -356,3 +356,33 @@ def test_react_v2_reserved_termination_reason_collision():
     assert pred.answer == "z"
     # The internal field should still reflect the agent's own termination reason.
     assert pred.termination_reason == "submit"
+
+
+def test_react_v2_forced_submit_reserved_key_collision():
+    """_forced_submit should not raise TypeError when a user-declared output
+    field collides with the internally added ``history`` key.  Greptile P2:
+    "No coverage for the _forced_submit collision path"."""
+
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    # First call: empty tool_calls triggers _forced_submit on max_iters.
+    # Second call: submit with both answer and colliding "history" value.
+    lm = ReasoningDummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "x", "history": "user_val"}}]
+                ),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer, history: str", tools=[lookup])(question="q")
+
+    assert pred.answer == "x"
+    assert pred.termination_reason == "forced_submit"
+    assert pred.history is not None

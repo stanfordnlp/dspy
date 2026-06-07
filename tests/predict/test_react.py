@@ -471,3 +471,41 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_trajectory_collision_with_user_output_field():
+    """ReAct (v1) should not raise TypeError when a user-declared output field
+    collides with the internally added ``trajectory`` key.  Greptile P2:
+    "v1 trajectory collision fix has no regression test"."""
+
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to look something up.",
+                "next_tool_name": "lookup",
+                "next_tool_args": {"query": "cats"},
+            },
+            {
+                "next_thought": "I have enough information now.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "I looked up cats and got the result.",
+                "answer": "found cats",
+                "trajectory": "user_trajectory_value",
+            },
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    react = dspy.ReAct("question -> answer, trajectory: str", tools=[lookup])
+    pred = react(question="cats")
+
+    assert pred.answer == "found cats"
+    # The internal trajectory dict should override the user-declared field.
+    assert isinstance(pred.trajectory, dict)
+    assert "thought_0" in pred.trajectory
