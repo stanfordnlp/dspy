@@ -305,23 +305,25 @@ class FlexGEPA(Teleprompter):
 
     Args:
         metric: Standard DSPy metric ``(example, prediction, trace=None) -> float | ScoreWithFeedback``.
+        auto / max_full_evals / max_metric_calls: Budget. Exactly one must be set.
+        reflection_minibatch_size: How many examples per reflection step.
+        candidate_selection_strategy: ``"pareto"`` (default) or ``"current_best"``.
         reflection_lm: ``dspy.LM`` used to author code revisions. Prefer a strong
             model (e.g. ``dspy.LM("openai/gpt-5", temperature=1.0)``).
+        skip_perfect_score: Skip reflection when a candidate already hits ``perfect_score``.
         proposer_type: DSPy primitive class wrapping the reflection LM. Defaults
             to ``dspy.Predict``. Use ``dspy.ChainOfThought`` for more deliberate
             reflection or ``dspy.ReAct`` for tool-using reflection (in which case
             pass ``proposer_kwargs={"tools": [...]}``).
         proposer_kwargs: Extra constructor kwargs for ``proposer_type``. Most
             useful for ``dspy.ReAct`` (``{"tools": [...]}``).
-        auto / max_full_evals / max_metric_calls: Budget. Exactly one must be set.
-        reflection_minibatch_size: How many examples per reflection step.
-        candidate_selection_strategy: ``"pareto"`` (default) or ``"current_best"``.
         component_selector: Which components to update each iteration —
             ``"round_robin"`` (default) or ``"all"``.
         use_merge / max_merge_invocations: GEPA merge configuration.
         num_threads: Evaluation parallelism.
         failure_score / perfect_score: Score range.
-        log_dir / track_stats / seed: Logging + reproducibility.
+        log_dir / track_stats: Logging.
+        seed: Reproducibility.
         gepa_kwargs: Passthrough to ``gepa.optimize``.
     """
 
@@ -329,21 +331,21 @@ class FlexGEPA(Teleprompter):
         self,
         metric: Callable,
         *,
-        reflection_lm: LM | None = None,
-        proposer_type: type = dspy.Predict,
-        proposer_kwargs: dict[str, Any] | None = None,
         auto: Literal["light", "medium", "heavy"] | None = None,
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
+        reflection_lm: LM | None = None,
+        skip_perfect_score: bool = True,
+        proposer_type: type = dspy.Predict,
+        proposer_kwargs: dict[str, Any] | None = None,
         component_selector: str = "round_robin",
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
         num_threads: int | None = None,
         failure_score: float = 0.0,
         perfect_score: float = 1.0,
-        skip_perfect_score: bool = True,
         log_dir: str | None = None,
         track_stats: bool = False,
         seed: int | None = 0,
@@ -357,21 +359,21 @@ class FlexGEPA(Teleprompter):
             )
 
         self.metric_fn = metric
-        self.reflection_lm = reflection_lm
-        self.proposer_type = proposer_type
-        self.proposer_kwargs = proposer_kwargs or {}
         self.auto = auto
         self.max_full_evals = max_full_evals
         self.max_metric_calls = max_metric_calls
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
+        self.reflection_lm = reflection_lm
+        self.skip_perfect_score = skip_perfect_score
+        self.proposer_type = proposer_type
+        self.proposer_kwargs = proposer_kwargs or {}
         self.component_selector = component_selector
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.num_threads = num_threads
         self.failure_score = failure_score
         self.perfect_score = perfect_score
-        self.skip_perfect_score = skip_perfect_score
         self.log_dir = log_dir
         self.track_stats = track_stats
         self.seed = seed

@@ -30,6 +30,10 @@ CANNED_FORWARD = textwrap.dedent("""
 """).strip()
 
 
+def _swap_in_persisted(text: str, old: str, new: str, *, indent: str = "    ") -> str:
+    return text.replace(textwrap.indent(old, indent), textwrap.indent(new, indent))
+
+
 def _read_log(flex_root: Path, flex_id: str) -> list[dict]:
     log_path = flex_root / ".flex" / flex_id / "exploration.jsonl"
     return [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
@@ -72,7 +76,7 @@ def test_load_time_repair_when_predictors_is_none(tmp_path: Path) -> None:
 
     # Break the persisted file: replace the predictors body with `PREDICTORS = None`.
     text = path.read_text()
-    broken_text = text.replace(CANNED_PREDICTORS, "PREDICTORS = None")
+    broken_text = _swap_in_persisted(text, CANNED_PREDICTORS, "PREDICTORS = None")
     assert "PREDICTORS = None" in broken_text  # sanity
     path.write_text(broken_text)
 
@@ -105,7 +109,7 @@ def test_load_time_repair_off_surfaces_error(tmp_path: Path) -> None:
     """With auto_repair=False, a broken persisted file raises on construction."""
     path = _write_initial_flex_file(tmp_path)
     text = path.read_text()
-    path.write_text(text.replace(CANNED_PREDICTORS, "PREDICTORS = None"))
+    path.write_text(_swap_in_persisted(text, CANNED_PREDICTORS, "PREDICTORS = None"))
 
     dspy.configure(lm=DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}]))
     factory = _make_echo_factory(path, auto_repair=False)
@@ -125,7 +129,7 @@ def test_runtime_repair_on_attribute_error(tmp_path: Path) -> None:
             return dspy.Prediction(a=out.a)
     """).strip()
     text = path.read_text()
-    path.write_text(text.replace(CANNED_FORWARD, broken_forward))
+    path.write_text(_swap_in_persisted(text, CANNED_FORWARD, broken_forward))
 
     # The repair LM returns the canned-good forward.
     dspy.configure(
@@ -167,7 +171,7 @@ def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
             return dspy.Prediction(a=out.a)
     """).strip()
     text = path.read_text()
-    path.write_text(text.replace(CANNED_FORWARD, broken_forward))
+    path.write_text(_swap_in_persisted(text, CANNED_FORWARD, broken_forward))
 
     # Repair LM returns the *same* broken forward, so the second call still raises
     # — and Flex should propagate without attempting another repair.
@@ -206,7 +210,7 @@ def test_runtime_does_not_repair_non_user_errors(tmp_path: Path) -> None:
             raise RuntimeError("boom from downstream")
     """).strip()
     text = path.read_text()
-    path.write_text(text.replace(CANNED_FORWARD, broken_forward))
+    path.write_text(_swap_in_persisted(text, CANNED_FORWARD, broken_forward))
 
     # Repair LM is configured but should never be called.
     dspy.configure(lm=DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}]))
@@ -231,7 +235,7 @@ def test_runtime_repair_off_surfaces_error(tmp_path: Path) -> None:
             return dspy.Prediction(a=out.a)
     """).strip()
     text = path.read_text()
-    path.write_text(text.replace(CANNED_FORWARD, broken_forward))
+    path.write_text(_swap_in_persisted(text, CANNED_FORWARD, broken_forward))
 
     dspy.configure(lm=DummyLM([{"a": "x"}]))
     factory = _make_echo_factory(path, auto_repair=False)
