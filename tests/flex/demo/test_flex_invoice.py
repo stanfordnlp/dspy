@@ -9,8 +9,8 @@ from dspy import FlexGEPA, flex
 from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 load_dotenv()
-exec_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=600)
-reflection_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.0, max_tokens=4000)
+exec_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=500)
+reflection_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
 DEMO_DIR = Path(__file__).parent
