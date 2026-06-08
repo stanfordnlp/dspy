@@ -314,17 +314,17 @@ def document_to_openai_blocks(document: LMDocumentPart) -> list[dict[str, Any]]:
 
 
 def video_to_openai(video: LMVideoPart) -> dict[str, Any]:
-    filename = os.path.basename(video.path) if video.path is not None else None
-    return binary_to_openai(
-        LMBinaryPart(
-            data=video.data,
-            url=video.url,
-            file_id=video.file_id,
-            path=video.path,
-            media_type=video.media_type,
-            filename=filename,
-        )
-    )
+    video_data: dict[str, Any] = {}
+    if video.data is not None:
+        video_data["data"] = data_uri(video.media_type, video.data)
+    elif video.path is not None:
+        video_data["data"] = data_uri_from_path(video.path, fallback_media_type=video.media_type)
+    elif video.url is not None:
+        video_data["url"] = video.url
+    if video.file_id is not None:
+        video_data["file_id"] = video.file_id
+    video_data["media_type"] = video.media_type
+    return {"type": "video", "video": video_data}
 
 
 def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
@@ -340,6 +340,18 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
         file_data["file_id"] = binary.file_id
     if binary.filename is not None:
         file_data["filename"] = binary.filename
+    # Restore explicit media_type for file_id-based blocks that had one
+    # in the original input (stored during parsing).
+    meta = getattr(binary, "metadata", {}) or {}
+    stored_media_type = meta.get("_file_media_type")
+    if stored_media_type:
+        file_data["media_type"] = stored_media_type
+    # Restore OpenAI-specific file fields (format, detail, video_metadata)
+    # that were preserved during parsing.
+    for key in ("format", "detail", "video_metadata"):
+        val = meta.get("original_file_block", {}).get(key)
+        if val is not None and key not in file_data:
+            file_data[key] = val
     return {"type": "file", "file": file_data}
 
 

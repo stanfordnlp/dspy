@@ -1888,14 +1888,23 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
+    # Preserve OpenAI-specific file fields (format, detail, video_metadata)
+    # that are not part of LMBinaryPart's schema but must round-trip.
+    _EXTRA_FILE_KEYS = {"format", "detail", "video_metadata"}
+    extra = {k: v for k, v in file.items() if k in _EXTRA_FILE_KEYS and v is not None}
+    metadata = {"original_file_block": extra} if extra else {}
+
     if file.get("file_data") is not None:
         media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
     if file.get("file_id") is not None:
-        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"))
+        # Preserve explicit media_type for file_id-based blocks
+        if file.get("media_type"):
+            metadata["_file_media_type"] = file["media_type"]
+        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"), metadata=metadata)
     raise ValueError("Binary content block requires data, file_data, or file_id.")
 
 

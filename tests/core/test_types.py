@@ -3,6 +3,7 @@ import pytest
 
 from dspy.core.types import (
     LMAudioPart,
+    LMBinaryPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -140,6 +141,64 @@ def test_video_data_round_trips_through_history_messages():
     assert isinstance(round_tripped, LMVideoPart)
     assert round_tripped.data == "YWJj"
     assert round_tripped.media_type == "video/mp4"
+
+
+def test_video_file_id_round_trips_with_media_type():
+    """#9899: video content block with file_id should preserve media_type."""
+    message = User(LMVideoPart(file_id="files/abc123", media_type="video/webm"))
+    content = _history_entry(message).messages[0]["content"][0]
+    round_tripped = LMMessage(role="user", content=[content]).parts[0]
+
+    assert content == {
+        "type": "video",
+        "video": {"file_id": "files/abc123", "media_type": "video/webm"},
+    }
+    assert isinstance(round_tripped, LMVideoPart)
+    assert round_tripped.file_id == "files/abc123"
+    assert round_tripped.media_type == "video/webm"
+
+
+def test_file_block_preserves_format_detail_video_metadata():
+    """#9898: file content block should preserve format, detail, video_metadata."""
+    block = {
+        "type": "file",
+        "file": {
+            "file_id": "files/abc123",
+            "format": "video/webm",
+            "detail": "high",
+            "video_metadata": {"fps": 1.0},
+        },
+    }
+    message = LMMessage(role="user", content=[block])
+    part = message.parts[0]
+    assert isinstance(part, LMBinaryPart)
+    assert part.file_id == "files/abc123"
+
+    # Round-trip through OpenAI format
+    from dspy.clients.openai_format import part_to_openai_blocks
+
+    emitted = part_to_openai_blocks(part)[0]
+    assert emitted["type"] == "file"
+    assert emitted["file"]["file_id"] == "files/abc123"
+    assert emitted["file"]["format"] == "video/webm"
+    assert emitted["file"]["detail"] == "high"
+    assert emitted["file"]["video_metadata"] == {"fps": 1.0}
+
+
+def test_file_block_preserves_media_type_for_file_id():
+    """File blocks with explicit media_type should preserve it on round-trip."""
+    block = {
+        "type": "file",
+        "file": {"file_id": "files/abc123", "media_type": "video/webm"},
+    }
+    message = LMMessage(role="user", content=[block])
+    part = message.parts[0]
+    assert isinstance(part, LMBinaryPart)
+
+    from dspy.clients.openai_format import part_to_openai_blocks
+
+    emitted = part_to_openai_blocks(part)[0]
+    assert emitted["file"]["media_type"] == "video/webm"
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():

@@ -113,10 +113,15 @@ def _legacy_content_block_to_lm_part(block: Any) -> LMPart:
         return LMAudioPart(data=audio.get("data", ""), media_type=f"audio/{audio.get('format', 'wav')}")
     if block_type == "file":
         file = block.get("file", {})
+        _EXTRA_FILE_KEYS = {"format", "detail", "video_metadata"}
+        extra = {k: v for k, v in file.items() if k in _EXTRA_FILE_KEYS and v is not None}
+        metadata = {"legacy_content_block": block, "original_file_block": extra} if extra else {"legacy_content_block": block}
         if file.get("file_data") is not None:
             media_type, data = _split_data_uri(file["file_data"])
-            return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata={"legacy_content_block": block})
-        return LMBinaryPart(file_id=file.get("file_id", ""), filename=file.get("filename"), metadata={"legacy_content_block": block})
+            return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
+        if file.get("media_type"):
+            metadata["_file_media_type"] = file["media_type"]
+        return LMBinaryPart(file_id=file.get("file_id", ""), filename=file.get("filename"), metadata=metadata)
     if block_type == "document":
         source = block.get("source", {})
         return LMDocumentPart(
