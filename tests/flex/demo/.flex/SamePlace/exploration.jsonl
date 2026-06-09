@@ -1,0 +1,7 @@
+{"candidate_id": "67e179a6bffb", "event": "codegen", "ts": "2026-06-09T14:54:00.848737+00:00"}
+{"candidate_id": "67e179a6bffb", "event": "accept", "src_path": "C:\\Users\\ASSAD\\openai\\dspy_private\\tests\\flex\\demo\\conflation_flex_gen.py", "ts": "2026-06-09T14:54:00.871671+00:00", "version_id": 0}
+{"candidate_id": "0206423835c8", "changed_component": "forward_src", "event": "propose", "parents": ["67e179a6bffb"], "ts": "2026-06-09T14:54:30.478185+00:00"}
+{"candidate_id": "67e179a6bffb", "event": "evaluate", "n_examples": 15, "score": 0.6, "ts": "2026-06-09T14:54:30.557168+00:00"}
+{"candidate_id": "67e179a6bffb", "event": "evaluate", "n_examples": 15, "score": 0.6, "ts": "2026-06-09T14:54:30.557168+00:00"}
+{"candidate_id": "0206423835c8", "event": "evaluate", "n_examples": 17, "score": 0.9558823529411765, "ts": "2026-06-09T14:55:11.049935+00:00"}
+{"candidate_id": "0206423835c8", "event": "accept", "score": 1.0, "src_path": "C:\\Users\\ASSAD\\openai\\dspy_private\\tests\\flex\\demo\\conflation_flex_gen.py", "ts": "2026-06-09T14:55:11.074027+00:00", "version_id": 1}

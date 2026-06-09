@@ -1,0 +1,30 @@
+{
+  "flex_modules": {
+    "SamePlace": {
+      "versions": [
+        {
+          "candidate_id": "67e179a6bffb",
+          "id": 0,
+          "notes": "initial codegen",
+          "parents": [],
+          "score": null,
+          "signature_hash": "7e819b7d7752be8e8a124b2f01caf257fc79e7fa67ddd5ba677cb2bdb3924efd",
+          "src_path": "C:\\Users\\ASSAD\\openai\\dspy_private\\tests\\flex\\demo\\conflation_flex_gen.py",
+          "ts": "2026-06-09T14:54:00.861433+00:00"
+        },
+        {
+          "candidate_id": "0206423835c8",
+          "id": 1,
+          "notes": "FlexGEPA optimized",
+          "parents": [
+            "67e179a6bffb"
+          ],
+          "score": 1.0,
+          "signature_hash": "7e819b7d7752be8e8a124b2f01caf257fc79e7fa67ddd5ba677cb2bdb3924efd",
+          "src_path": "C:\\Users\\ASSAD\\openai\\dspy_private\\tests\\flex\\demo\\conflation_flex_gen.py",
+          "ts": "2026-06-09T14:55:11.070000+00:00"
+        }
+      ]
+    }
+  }
+}
