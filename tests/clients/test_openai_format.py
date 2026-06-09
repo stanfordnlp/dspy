@@ -23,6 +23,14 @@ def test_binary_part_emits_format_detail_and_video_metadata():
     ]
 
 
+def test_binary_part_with_inline_data_keeps_media_type_in_data_uri_only():
+    part = LMBinaryPart(data="YWJj", media_type="video/webm")
+
+    assert part_to_openai_blocks(part) == [
+        {"type": "file", "file": {"file_data": "data:video/webm;base64,YWJj"}}
+    ]
+
+
 def test_binary_part_omits_format_for_default_media_type():
     part = LMBinaryPart(file_id="file-abc123", filename="document.bin")
 
