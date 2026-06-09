@@ -5,10 +5,11 @@ import json
 import logging
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import dspy
-from dspy.flex.codegen import FlexContext, generate, repair
+from dspy.flex.codegen import FlexContext, FlexIntentError, assess_intent, generate, repair
+from dspy.flex.dataset import DatasetStore
 from dspy.flex.exploration import ExplorationStore, FlexEvent, candidate_id
 from dspy.flex.manifest import ManifestStore
 from dspy.flex.persistence import PersistedFlex, parse_persisted_file, render_persisted_file
@@ -54,6 +55,17 @@ class Flex(Module):
             implementations by re-invoking the codegen LM with the broken body
             and the exception text. Runs at most once at bind time and at most
             once at runtime per process. Set False to surface errors directly.
+        improver: Optional optimizer used by :meth:`improve` to re-optimize a
+            hand-edited module. Any object with a
+            ``compile(student, *, trainset, valset)`` method — typically a
+            configured ``dspy.FlexGEPA``. May also be set later via
+            :meth:`set_improver`.
+        intent_check: How to handle an ambiguous Signature at generation time
+            (first run or signature change). ``"error"`` (default) raises
+            ``FlexIntentError`` when intent is too vague to implement, warns when
+            it is merely underspecified, and is silent when clear. ``"warn"``
+            never raises (warns instead). ``"off"`` skips the check (no extra LM
+            call).
 
     Persistence layout: when ``persist_to`` is set, the generated source goes
     to that file and bookkeeping goes to ``<persist_to>.parent/.flex/`` —
@@ -71,6 +83,8 @@ class Flex(Module):
         codegen_lm: dspy.LM | None = None,
         flex_id: str | None = None,
         auto_repair: bool = True,
+        improver: Any = None,
+        intent_check: Literal["error", "warn", "off"] = "error",
     ):
         super().__init__()
 
@@ -97,6 +111,11 @@ class Flex(Module):
         self._forward_impl: Any = None
         self._auto_repair = auto_repair
         self._runtime_repair_used = False
+        self._improver = improver
+        self._intent_check = intent_check
+        # Set when a hand edit is detected on load; consumed by improve().
+        self._pending_manual_edit = False
+        self._manual_edit_cid: str | None = None
 
         sig_hash = self._signature_hash()
         self._flex_id = flex_id or getattr(self._signature_cls, "__name__", None) or f"flex_{sig_hash[:8]}"
@@ -144,6 +163,98 @@ class Flex(Module):
             self._bind_code(flex_state["predictors_src"], flex_state["forward_src"])
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+
+    @experimental(version="3.3.0b2")
+    def set_improver(self, improver: Any) -> Flex:
+        """Attach (or replace) the optimizer used by :meth:`improve`.
+
+        ``improver`` is any object exposing ``compile(student, *, trainset, valset)``
+        — typically a configured ``dspy.FlexGEPA``. Returns ``self`` for chaining.
+        """
+        self._improver = improver
+        return self
+
+    @experimental(version="3.3.0b2")
+    def improve(
+        self,
+        *,
+        trainset: list[Any] | None = None,
+        valset: list[Any] | None = None,
+        force: bool = False,
+    ) -> Flex:
+        """Re-optimize this module from its current (possibly hand-edited) code.
+
+        The continuous-improvement loop: when you hand-edit a generated module and
+        re-run, Flex detects and records the edit; calling ``improve()`` then
+        re-runs the configured ``improver`` (e.g. ``dspy.FlexGEPA``) seeded from
+        your edit, using the dataset saved by the last ``FlexGEPA.compile(...)``
+        (or the ``trainset`` / ``valset`` passed here). The best result is written
+        back to the persisted file and bound in place.
+
+        By default this is a no-op unless a manual edit was detected on load; pass
+        ``force=True`` to re-optimize regardless.
+
+        Args:
+            trainset: Examples to optimize against. Defaults to the dataset saved
+                by the last ``FlexGEPA.compile(...)`` for this module.
+            valset: Held-out examples. Defaults to the saved valset (or trainset).
+            force: Re-optimize even when no manual edit was detected.
+
+        Returns:
+            ``self``, rebound to the improved implementation.
+        """
+        if self._improver is None:
+            raise ValueError(
+                f"dspy.Flex {self._flex_id!r}: improve() needs an improver. Pass improver= to "
+                "@flex(...) / Flex(...), or call .set_improver(dspy.FlexGEPA(...)) first."
+            )
+
+        if not self._pending_manual_edit and not force:
+            logger.info(
+                "dspy.Flex %r: improve() found no manual edit to act on; skipping "
+                "(pass force=True to re-optimize anyway).",
+                self._flex_id,
+            )
+            return self
+
+        if trainset is not None:
+            resolved_trainset = trainset
+            resolved_valset = valset if valset is not None else trainset
+        elif self._flex_root is None:
+            raise ValueError(
+                f"dspy.Flex {self._flex_id!r}: improve() has no dataset — this module is in-memory "
+                "(persist_to=None). Pass trainset= explicitly."
+            )
+        else:
+            loaded = DatasetStore(self._flex_root, self._flex_id).load()
+            if loaded is None:
+                raise ValueError(
+                    f"dspy.Flex {self._flex_id!r}: no saved dataset found. Run FlexGEPA.compile(...) "
+                    "once to record one, or pass trainset= to improve()."
+                )
+            resolved_trainset, resolved_valset = loaded
+
+        logger.info(
+            "dspy.Flex %r: re-optimizing from the current implementation "
+            "(%d train / %d val examples).",
+            self._flex_id,
+            len(resolved_trainset),
+            len(resolved_valset),
+        )
+        # Detach the improver while it runs: the optimizer deepcopies the student
+        # (this module) many times, and we don't want to deepcopy the optimizer
+        # (and its reflection LM) along with it on every copy.
+        improver = self._improver
+        self._improver = None
+        try:
+            improved = improver.compile(self, trainset=resolved_trainset, valset=resolved_valset)
+        finally:
+            self._improver = improver
+
+        self._bind_code(improved.predictors_src, improved.forward_src)
+        self._pending_manual_edit = False
+        self._manual_edit_cid = None
+        return self
 
     def _lazy_implement(self, *, force: bool = False) -> None:
         if self._forward_src and self._predictors_src and not force:
@@ -226,6 +337,10 @@ class Flex(Module):
                     "hand-edited" if body_edited else "previous",
                 )
 
+        # Gate on Signature intent before spending a codegen call. Only reached on
+        # generation (initial codegen or signature change) — loads return earlier.
+        self._run_intent_gate()
+
         predictors_src, forward_src = generate(self._flex_ctx, lm=self._codegen_lm, seed=seed)
         seed_parents = [candidate_id(*seed)] if seed is not None else None
         codegen_parents = seed_parents
@@ -288,6 +403,11 @@ class Flex(Module):
         ``manual_edit`` event, rewrite the file so its body hash
         matches again, and append a manifest version.
         """
+        # The hand edit is the trigger for continuous improvement: flag it so a
+        # later improve() call re-optimizes from this edit.
+        self._pending_manual_edit = True
+        self._manual_edit_cid = body_id
+
         self._exploration.record(
             FlexEvent.MANUAL_EDIT,
             predictors_src=stored.predictors_src,
@@ -323,6 +443,30 @@ class Flex(Module):
             self._flex_id,
             self._persist_to,
         )
+
+    def _run_intent_gate(self) -> None:
+        """Assess Signature intent before generating; warn or raise per ``intent_check``.
+
+        Runs only at generation time (initial codegen or signature change), never
+        on a plain load. ``"off"`` skips the LM call; ``"warn"`` downgrades an
+        ``insufficient`` verdict to a warning; ``"error"`` (default) raises
+        ``FlexIntentError`` so the user can clarify the docstring. The judge
+        degrades gracefully — an unclear or failed judgment is treated as
+        ``"clear"`` and never blocks generation.
+        """
+        if self._intent_check == "off":
+            return
+        assessment = assess_intent(self._flex_ctx, lm=self._codegen_lm)
+        if assessment.verdict == "clear":
+            return
+        if assessment.verdict == "insufficient" and self._intent_check == "error":
+            raise FlexIntentError(self._flex_id, assessment.concern, assessment.clarifying_question)
+        msg = f"dspy.Flex {self._flex_id!r}: Signature intent is {assessment.verdict}."
+        if assessment.concern:
+            msg += f" {assessment.concern}"
+        if assessment.clarifying_question:
+            msg += f" Consider clarifying in the docstring: {assessment.clarifying_question}"
+        logger.warning("%s", msg)
 
     def _latest_manifest_parents(self) -> list[str] | None:
         """Candidate IDs of the last accepted manifest entry, for REPAIR parentage."""

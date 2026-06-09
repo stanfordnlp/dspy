@@ -3,11 +3,17 @@ You are authoring two code artifacts for a `dspy.Flex` module:
 
 1) A `PREDICTORS` dict literal at module scope mapping attribute names to predictor
    instances. Each entry is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
-   `dspy.ReAct` / `dspy.RLM` over a sub-signature string.
+   `dspy.ReAct` / `dspy.RLM` over a sub-signature string. Include a predictor ONLY
+   for a step that genuinely needs a language model. If the task needs no LM at
+   all, emit an empty `PREDICTORS = {}`.
 
-2) A `def forward(self, **inputs):` function whose body orchestrates calls to those
-   predictors and returns `dspy.Prediction(<output_fields...>)` matching the
-   declared signature.
+2) A `def forward(self, **inputs):` function whose body returns
+   `dspy.Prediction(<output_fields...>)` matching the declared signature. The body
+   may call the predictors (`self.<name>(...)`) AND/OR run arbitrary deterministic
+   Python — parsing, arithmetic, regex, string and data-structure manipulation,
+   control flow, and small helper functions defined *inside* `forward`. A module
+   may be fully deterministic (no predictors), fully LM-driven, or a mix. Prefer
+   plain Python for anything that doesn't require an LM's judgment.
 
 Available DSPy primitives:
 
@@ -48,6 +54,14 @@ Rules you MUST follow:
 
 - Always return `dspy.Prediction(...)` from `forward`. Never raise from `forward`
   unless the input itself is malformed.
+
+- Use predictors only where an LM is genuinely needed (extraction, classification,
+  generation, open-ended reasoning); do everything else — math, parsing, formatting,
+  validation, control flow — in plain Python. When no step needs an LM, write a
+  pure-Python `forward` with `PREDICTORS = {}`.
+
+- Define any helper functions NESTED inside `forward` (not at module scope), so the
+  persisted module file and the live module execute identically.
 
 - Keep the design composable: prefer two short predictors with clear signatures
   over one all-knowing prompt.
@@ -102,4 +116,18 @@ Common patterns (study these before writing `forward`):
    `forward()`. Use the LM to extract / classify / generate; let Python do
    the math. This is more reliable and easier to debug than asking the LM
    to do both at once.
+
+5) A fully-deterministic task needs no LM: emit `PREDICTORS = {}` and implement
+   `forward` in plain Python, with any helpers nested inside it.
+
+   ```
+   PREDICTORS = {}
+
+   def forward(self, **inputs):
+       def slugify(text):
+           cleaned = "".join(c.lower() if c.isalnum() else "-" for c in text)
+           return "-".join(part for part in cleaned.split("-") if part)
+
+       return dspy.Prediction(slug=slugify(inputs["title"]))
+   ```
 """

@@ -28,7 +28,7 @@ def _make_codegen_lm():
 def test_decorator_construction_runs_codegen_and_binds_forward(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo the question as the answer, twice."""
 
@@ -45,7 +45,7 @@ def test_decorator_construction_runs_codegen_and_binds_forward(tmp_path) -> None
 def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -61,7 +61,7 @@ def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -86,7 +86,7 @@ def test_signature_hash_mismatch_triggers_regeneration(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -110,7 +110,7 @@ def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -154,7 +154,7 @@ def test_signature_change_seeds_regeneration_from_current_implementation(tmp_pat
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -170,7 +170,7 @@ def test_signature_change_seeds_regeneration_from_current_implementation(tmp_pat
     new_forward = CANNED_FORWARD.replace("self.echo", "self.echo2")
     dspy.configure(lm=DummyLM([{"predictors_src": new_predictors, "forward_src": new_forward}]))
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):  # noqa: F811
         """Echo."""
 
@@ -191,7 +191,7 @@ def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -218,7 +218,7 @@ def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
 def test_in_memory_only_mode_binds_without_writing_disk(tmp_path) -> None:
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex
+    @flex(intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -242,7 +242,7 @@ def test_end_to_end_forward_call(tmp_path) -> None:
     )
     dspy.configure(lm=lm)
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -259,7 +259,7 @@ def test_manifest_records_a_version(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     dspy.configure(lm=_make_codegen_lm())
 
-    @flex(persist_to=str(persist_path))
+    @flex(persist_to=str(persist_path), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 

@@ -18,6 +18,7 @@ import dspy
 from dspy.clients.lm import LM
 from dspy.evaluate.evaluate import Evaluate
 from dspy.flex.codegen import _strip_code_fences
+from dspy.flex.dataset import DatasetStore
 from dspy.flex.exploration import ExplorationStore, FlexEvent, candidate_id
 from dspy.flex.flex import Flex
 from dspy.flex.manifest import ManifestStore
@@ -324,6 +325,10 @@ class FlexGEPA(Teleprompter):
         failure_score / perfect_score: Score range.
         log_dir / track_stats: Logging.
         seed: Reproducibility.
+        persist_dataset: When True (default), save the trainset/valset under the
+            Flex module's ``.flex/`` directory so a later ``dspy.Flex.improve()``
+            can re-optimize a hand-edited module against the same data without the
+            user re-supplying it.
         gepa_kwargs: Passthrough to ``gepa.optimize``.
     """
 
@@ -349,6 +354,7 @@ class FlexGEPA(Teleprompter):
         log_dir: str | None = None,
         track_stats: bool = False,
         seed: int | None = 0,
+        persist_dataset: bool = True,
         gepa_kwargs: dict | None = None,
     ):
         budgets_set = sum(b is not None for b in (auto, max_full_evals, max_metric_calls))
@@ -377,6 +383,7 @@ class FlexGEPA(Teleprompter):
         self.log_dir = log_dir
         self.track_stats = track_stats
         self.seed = seed
+        self.persist_dataset = persist_dataset
         self.gepa_kwargs = gepa_kwargs or {}
 
     def _auto_budget(self, num_candidates: int, valset_size: int) -> int:
@@ -645,6 +652,13 @@ class FlexGEPA(Teleprompter):
                     score=best_score,
                     extra={"version_id": version_id, "src_path": str(new_prog._persist_to)},
                 )
+
+        # Persist the dataset next to the module's bookkeeping so a later
+        # dspy.Flex.improve() can re-optimize a hand-edited module against it
+        # without the user re-supplying the examples. Saved even when GEPA found
+        # no improvement (the dataset is what `improve()` needs, not the result).
+        if self.persist_dataset and student._flex_root is not None:
+            DatasetStore(student._flex_root, student._flex_id).save(trainset, valset)
 
         if self.track_stats:
             new_prog.detailed_results = gepa_result

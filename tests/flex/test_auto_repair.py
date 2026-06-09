@@ -48,7 +48,7 @@ def _write_initial_flex_file(tmp_path: Path) -> Path:
     """Generate a clean Flex file on disk, return its path."""
     dspy.configure(lm=DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}]))
 
-    @flex(persist_to=str(tmp_path / "echo.py"))
+    @flex(persist_to=str(tmp_path / "echo.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -60,7 +60,7 @@ def _write_initial_flex_file(tmp_path: Path) -> Path:
 
 
 def _make_echo_factory(persist_to: Path, *, auto_repair: bool = True):
-    @flex(persist_to=str(persist_to), auto_repair=auto_repair)
+    @flex(persist_to=str(persist_to), auto_repair=auto_repair, intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 

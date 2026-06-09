@@ -123,7 +123,7 @@ def test_exploration_store_with_none_root_is_a_noop() -> None:
 def test_codegen_records_event_in_flex_directory(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -143,7 +143,7 @@ def test_codegen_records_event_in_flex_directory(tmp_path) -> None:
 def test_reload_from_disk_records_load_event(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"))
+    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 
@@ -164,7 +164,7 @@ def test_in_memory_flex_writes_no_exploration_files(tmp_path, monkeypatch) -> No
     monkeypatch.chdir(tmp_path)
     dspy.configure(lm=DummyLM([{"predictors_src": PREDICTORS_SRC, "forward_src": FORWARD_SRC}]))
 
-    @flex
+    @flex(intent_check="off")
     class Echo(dspy.Signature):
         """Echo."""
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 import dspy
 from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -83,10 +86,16 @@ class CodegenSignature(dspy.Signature):
 
     - ``predictors_src``: module-scope code that defines a single dict named
       ``PREDICTORS`` mapping attribute names to ``dspy.Predict`` /
-      ``dspy.ChainOfThought`` / ``dspy.ReAct`` instances.
-    - ``forward_src``: a single ``def forward(self, **inputs):`` whose body
-      orchestrates the predictors (via ``self.<name>(...)``) and returns
-      ``dspy.Prediction(<output fields>=...)`` matching the parent signature.
+      ``dspy.ChainOfThought`` / ``dspy.ReAct`` instances. Use a predictor ONLY
+      for a step that genuinely needs a language model (extraction,
+      classification, generation, open-ended reasoning). If the whole task is
+      deterministic, emit ``PREDICTORS = {}`` and do all the work in Python.
+    - ``forward_src``: a single ``def forward(self, **inputs):`` whose body may
+      call the predictors (via ``self.<name>(...)``) AND/OR run arbitrary
+      deterministic Python — parsing, arithmetic, regex, string and
+      data-structure manipulation, and small nested ``def`` helpers defined
+      inside ``forward`` — and returns ``dspy.Prediction(<output fields>=...)``
+      matching the parent signature.
 
     You MUST follow the rules and patterns in ``primitives_catalog`` exactly.
     In particular: every predictor call returns a ``dspy.Prediction`` — read
@@ -117,10 +126,10 @@ class CodegenSignature(dspy.Signature):
         "signature requires."
     )
     predictors_src: str = dspy.OutputField(
-        desc="Python source defining `PREDICTORS = {...}` at module scope."
+        desc="Python source defining `PREDICTORS = {...}` at module scope (use `PREDICTORS = {}` when no LM call is needed)."
     )
     forward_src: str = dspy.OutputField(
-        desc="Python source defining `def forward(self, **inputs):` that returns dspy.Prediction(...)."
+        desc="Python source defining `def forward(self, **inputs):` that returns dspy.Prediction(...). May contain deterministic Python and nested helpers."
     )
 
 
@@ -174,6 +183,124 @@ class RepairSignature(dspy.Signature):
     )
 
 
+class FlexIntentError(Exception):
+    """Raised when a Flex Signature's intent is too vague to implement well.
+
+    Surfaced before any code is generated. Carries the clarity judge's
+    ``concern`` and a concrete ``clarifying_question`` to answer in the
+    Signature docstring, and renders an actionable message.
+    """
+
+    def __init__(self, flex_id: str, concern: str, clarifying_question: str):
+        self.flex_id = flex_id
+        self.concern = concern
+        self.clarifying_question = clarifying_question
+        super().__init__(self._render())
+
+    def _render(self) -> str:
+        concern = self.concern or "the mapping from inputs to outputs is underdetermined."
+        question = self.clarifying_question or (
+            "What exactly should this module do — define the inputs→outputs behavior precisely?"
+        )
+        return (
+            f"dspy.Flex {self.flex_id!r}: the Signature's intent is too ambiguous to "
+            f"generate a reliable implementation.\n\n"
+            f"Concern: {concern}\n\n"
+            f"To fix, expand the Signature docstring to answer this question, then re-run:\n"
+            f"  > {question}\n\n"
+            f'(Pass intent_check="warn" to generate a best-effort module instead of raising, '
+            f'or intent_check="off" to skip this check entirely.)'
+        )
+
+
+class IntentClaritySignature(dspy.Signature):
+    """Judge whether a dspy.Flex module's Signature is specified clearly enough to
+    implement well — BEFORE any code is written.
+
+    You are given the user's Signature (name, objective docstring, input and
+    output fields) and any extra context. Decide whether a competent engineer
+    could implement the intended input→output behavior correctly from this alone.
+
+    Judge INTENT clarity only — NOT whether the task needs a language model. A
+    purely deterministic task (arithmetic, parsing, formatting, sorting) can be
+    perfectly 'clear'. Genuine ambiguity means: the mapping from inputs to
+    outputs is underdetermined, key terms/units/formats are undefined, important
+    edge cases are unspecified, or the objective is missing or self-contradictory.
+    Do NOT nitpick — only flag ambiguity that would actually change the
+    implementation.
+
+    Verdict values:
+    - 'clear': unambiguous enough to implement well.
+    - 'underspecified': implementable, but one or more decisions are guesses a
+      short docstring note should pin down.
+    - 'insufficient': too vague to implement responsibly without guessing the
+      core behavior.
+
+    When the verdict is not 'clear', give a SHORT concrete `concern` and exactly
+    ONE specific `clarifying_question` the user should answer in the docstring to
+    remove the ambiguity. When 'clear', leave both empty.
+    """
+
+    signature_spec: str = dspy.InputField(
+        desc="Rendered description of the user's Signature: name, objective docstring, input and output fields."
+    )
+    context_blurb: str = dspy.InputField(
+        desc="Optional extra context: tools available by name, style notes. May be '(no extra context)'."
+    )
+    verdict: str = dspy.OutputField(
+        desc="Exactly one of: clear, underspecified, insufficient."
+    )
+    concern: str = dspy.OutputField(
+        desc="One short sentence naming the ambiguity, or empty when verdict is 'clear'."
+    )
+    clarifying_question: str = dspy.OutputField(
+        desc="One concrete question to answer in the Signature docstring, or empty when 'clear'."
+    )
+
+
+class IntentAssessment(NamedTuple):
+    """Result of :func:`assess_intent`."""
+
+    verdict: str  # "clear" | "underspecified" | "insufficient"
+    concern: str
+    clarifying_question: str
+
+
+_VALID_VERDICTS = ("insufficient", "underspecified", "clear")
+
+
+def assess_intent(ctx: FlexContext, *, lm: dspy.LM | None = None) -> IntentAssessment:
+    """Ask the codegen LM whether ``ctx``'s Signature is clear enough to implement.
+
+    Degrades gracefully: any LM/parse failure, or an unrecognized verdict, is
+    treated as ``'clear'`` so a flaky judge never blocks code generation. The
+    verdict is matched leniently (most-severe-first) so stray punctuation or
+    surrounding words don't downgrade an 'insufficient' result.
+    """
+    predictor = dspy.Predict(IntentClaritySignature)
+    inputs = {
+        "signature_spec": ctx.render_signature_spec(),
+        "context_blurb": ctx.render_context_blurb(),
+    }
+    try:
+        if lm is not None:
+            with dspy.context(lm=lm):
+                out = predictor(**inputs)
+        else:
+            out = predictor(**inputs)
+        raw = (out.verdict or "").strip().lower()
+        verdict = next((v for v in _VALID_VERDICTS if v in raw), None)
+        if verdict is None:
+            logger.debug("assess_intent: unrecognized verdict %r; treating as 'clear'.", raw)
+            return IntentAssessment("clear", "", "")
+        return IntentAssessment(
+            verdict, (out.concern or "").strip(), (out.clarifying_question or "").strip()
+        )
+    except Exception as err:  # a flaky judge must never block codegen
+        logger.debug("assess_intent: judge failed (%s); treating as 'clear'.", err)
+        return IntentAssessment("clear", "", "")
+
+
 def _strip_code_fences(s: str) -> str:
     s = (s or "").strip()
     if s.startswith("```"):
@@ -182,7 +309,9 @@ def _strip_code_fences(s: str) -> str:
             s = s[nl + 1 :]
         if s.endswith("```"):
             s = s[:-3]
-    return s.strip()
+    # Normalize tabs to spaces: the persistence round-trip indents/dedents these
+    # source regions with textwrap, which mishandles mixed tabs and spaces.
+    return s.strip().expandtabs(4)
 
 
 def generate(

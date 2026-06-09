@@ -67,3 +67,4 @@ docs/docs/**/*.json*
 test_before_pypi/
 .github/.internal_dspyai/dist/
 /.flex/
+/tests/flex/demo/.flex/
