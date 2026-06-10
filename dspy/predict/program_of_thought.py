@@ -162,7 +162,7 @@ class ProgramOfThought(Module):
         if not error:
             output, error = self._execute_code(code)
         hop = 1
-        # Retying code generation and execution until no error or reach max_iters
+        # Retrying code generation and execution until no error or reach max_iters
         while error is not None:
             logger.error(f"Error in code execution: {error}")
             if hop == self.max_iters:
