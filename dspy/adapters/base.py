@@ -421,9 +421,15 @@ class Adapter:
                 history_field_name,
                 inputs_copy,
             )
+        else:
+            signature_without_history = signature
 
         messages = []
-        system_message = self.format_system_message(signature)
+        # The history field is rendered natively as conversation turns (user/assistant
+        # messages), so it must not be advertised in the system prompt's field structure.
+        # Use the history-less signature here to avoid instructing the LM to expect a
+        # `[[ ## history ## ]]` block that it never actually receives in the user turn.
+        system_message = self.format_system_message(signature_without_history)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:

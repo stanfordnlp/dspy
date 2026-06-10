@@ -351,15 +351,11 @@ def test_chat_adapter_format_exact_messages_with_history():
 
     expected_messages = [{"role": "system",
       "content": "Your input fields are:\n"
-                 "1. `history` (History): \n"
-                 "2. `question` (str):\n"
+                 "1. `question` (str):\n"
                  "Your output fields are:\n"
                  "1. `answer` (str):\n"
                  "All interactions will be structured in the following way, with the appropriate "
                  "values filled in.\n"
-                 "\n"
-                 "[[ ## history ## ]]\n"
-                 "{history}\n"
                  "\n"
                  "[[ ## question ## ]]\n"
                  "{question}\n"
@@ -603,18 +599,13 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
+                 '1. `image` (Image): \n'
+                 '2. `tools` (list[Tool]): \n'
+                 '3. `profile` (Profile): \n'
+                 '4. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
+                 'All interactions will be structured in the following way, with the appropriate values filled in.\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -629,10 +620,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '{question}\n'
                  '\n'
                  '[[ ## answer ## ]]\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
-                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
+                 '{answer}        # note: the value you produce must adhere to the JSON schema: {"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, "sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, "required": ["answer", "sources"], "title": "AnswerCard"}\n'
                  '\n'
                  '[[ ## completed ## ]]\n'
                  'In adhering to this structure, your objective is: \n'
@@ -1487,8 +1475,7 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "role": "system",
             "content": "Your input fields are:\n"
             "1. `question` (str): \n"
-            "2. `history` (History): \n"
-            "3. `tools` (list[Tool]):\n"
+            "2. `tools` (list[Tool]):\n"
             "Your output fields are:\n"
             "1. `next_thought` (str): \n"
             "2. `tool_calls` (ToolCalls): \n"
@@ -1499,9 +1486,6 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "\n"
             "[[ ## question ## ]]\n"
             "{question}\n"
-            "\n"
-            "[[ ## history ## ]]\n"
-            "{history}\n"
             "\n"
             "[[ ## tools ## ]]\n"
             "{tools}\n"
@@ -1786,29 +1770,22 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
 
     expected_messages = [{"role": "system",
       "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `audio` (Audio): \n'
-                 '4. `file` (File): \n'
-                 '5. `document` (Document): \n'
-                 '    Type description of Document: A document containing text content that can be '
-                 'referenced and cited. Include the full text content and optionally a title for '
-                 'proper referencing.\n'
-                 '6. `event` (Event): \n'
+                 '1. `image` (Image): \n'
+                 '2. `audio` (Audio): \n'
+                 '3. `file` (File): \n'
+                 '4. `document` (Document): \n'
+                 '    Type description of Document: A document containing text content that can be referenced and cited. Include the full text content and optionally a title for proper referencing.\n'
+                 '5. `event` (Event): \n'
                  '    Type description of Event: An event block.\n'
-                 '7. `tools` (list[Tool]): \n'
-                 '8. `profile` (Profile): \n'
-                 '9. `context` (str): \n'
-                 '10. `question` (str):\n'
+                 '6. `tools` (list[Tool]): \n'
+                 '7. `profile` (Profile): \n'
+                 '8. `context` (str): \n'
+                 '9. `question` (str):\n'
                  'Your output fields are:\n'
                  '1. `answer` (AnswerCard): \n'
                  "2. `verdict` (Literal['yes', 'no']): \n"
                  '3. `confidence` (float):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
+                 'All interactions will be structured in the following way, with the appropriate values filled in.\n'
                  '\n'
                  '[[ ## image ## ]]\n'
                  '{image}\n'
@@ -1838,14 +1815,10 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '{question}\n'
                  '\n'
                  '[[ ## answer ## ]]\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
-                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
+                 '{answer}        # note: the value you produce must adhere to the JSON schema: {"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, "sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, "required": ["answer", "sources"], "title": "AnswerCard"}\n'
                  '\n'
                  '[[ ## verdict ## ]]\n'
-                 '{verdict}        # note: the value you produce must exactly match (no extra '
-                 'characters) one of: yes; no\n'
+                 '{verdict}        # note: the value you produce must exactly match (no extra characters) one of: yes; no\n'
                  '\n'
                  '[[ ## confidence ## ]]\n'
                  '{confidence}        # note: the value you produce must be a single float value\n'
