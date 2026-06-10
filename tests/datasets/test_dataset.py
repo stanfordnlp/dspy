@@ -36,6 +36,30 @@ def csv_file():
         yield tmp_file.name
 
 
+def test_reset_seeds_accepts_zero():
+    dataset = Dataset(train_seed=5, train_size=10, eval_seed=5, dev_size=10, test_size=10)
+    dataset.reset_seeds(train_seed=0, train_size=0, eval_seed=0, dev_size=0, test_size=0)
+
+    assert dataset.train_seed == 0
+    assert dataset.train_size == 0
+    assert dataset.dev_seed == 0
+    assert dataset.dev_size == 0
+    assert dataset.test_seed == 0
+    assert dataset.test_size == 0
+
+
+def test_reset_seeds_keeps_existing_values_when_omitted():
+    dataset = Dataset(train_seed=5, train_size=10, eval_seed=7, dev_size=20, test_size=30)
+    dataset.reset_seeds(train_seed=1)
+
+    assert dataset.train_seed == 1
+    # Unspecified values should be left untouched.
+    assert dataset.train_size == 10
+    assert dataset.dev_seed == 7
+    assert dataset.dev_size == 20
+    assert dataset.test_size == 30
+
+
 @pytest.mark.extra
 def test_input_keys(csv_file):
     dataset = CSVDataset(csv_file, input_keys=["content", "question"])
