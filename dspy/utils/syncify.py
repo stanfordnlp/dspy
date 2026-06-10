@@ -18,7 +18,7 @@ def run_async(coro):
         import nest_asyncio
 
         nest_asyncio.apply()
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return loop.run_until_complete(coro)
     else:
         return asyncio.run(coro)
 
