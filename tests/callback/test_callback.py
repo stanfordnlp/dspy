@@ -1,8 +1,10 @@
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
 import dspy
+from dspy.clients.base_lm import BaseLM
 from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM
 
@@ -216,6 +218,41 @@ async def test_callback_async_module():
         "on_module_end",
         "on_module_end",
     ]
+
+
+def test_direct_base_lm_subclass_routes_to_on_lm_callbacks():
+    """Regression: direct BaseLM subclasses (not dspy.LM) must route to on_lm_start/end.
+
+    Before the fix, _get_on_start_handler checked isinstance(instance, dspy.LM), causing any
+    BaseLM subclass that doesn't inherit from dspy.LM to silently fall through to on_module_start/end.
+    """
+
+    class DirectBaseLM(BaseLM):
+        def __init__(self):
+            super().__init__("direct-test-model", cache=False)
+
+        def forward(self, prompt=None, messages=None, **kwargs):
+            choice = MagicMock()
+            choice.message.content = "response text"
+            choice.message.reasoning_content = None  # must be falsy — MagicMock attrs are truthy by default
+            choice.message.tool_calls = None
+            response = MagicMock()
+            response.choices = [choice]
+            response.usage = {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+            response.model = "direct-test-model"
+            return response
+
+    callback = MyCallback()
+    lm = DirectBaseLM()
+    dspy.configure(callbacks=[callback])
+
+    lm(messages=[{"role": "user", "content": "hello"}])
+
+    handlers = [c["handler"] for c in callback.calls]
+    assert "on_lm_start" in handlers
+    assert "on_lm_end" in handlers
+    assert "on_module_start" not in handlers
+    assert "on_module_end" not in handlers
 
 
 def test_tool_calls():
