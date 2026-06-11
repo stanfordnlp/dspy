@@ -15,6 +15,11 @@ from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
 logger = logging.getLogger(__name__)
 
+# Keys ReActV2 attaches to every returned `Prediction` alongside the user's output fields.
+# A user signature that declares any of these as an output would collide with the keyword
+# expansion at the `Prediction(**final_outputs, history=..., termination_reason=...)` call sites.
+_RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
+
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
@@ -25,6 +30,14 @@ class ReActV2(Module):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        reserved_outputs = _RESERVED_PREDICTION_KEYS.intersection(self.signature.output_fields)
+        if reserved_outputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_outputs))
+            raise ValueError(
+                f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
+                "returned Prediction. Rename these output fields on your signature."
+            )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}
