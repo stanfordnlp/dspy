@@ -480,9 +480,7 @@ def test_tool_calls_can_carry_results_without_formatting_them_for_lm():
 
     assert "tool_call_results" not in tool_calls.format()
     assert tool_calls.model_dump(mode="json")["tool_call_results"] == {
-        "tool_call_results": [
-            {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
-        ]
+        "tool_call_results": [{"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}]
     }
 
 
@@ -524,9 +522,7 @@ def test_tool_call_results_history_serialization_round_trip():
         "messages": [
             {
                 "tool_calls": {
-                    "tool_calls": [
-                        {"name": "search", "args": {"query": "hello"}}
-                    ],
+                    "tool_calls": [{"name": "search", "args": {"query": "hello"}}],
                     "tool_call_results": {
                         "tool_call_results": [
                             {"call_id": "call_1", "name": "search", "value": {"answer": "world"}, "is_error": False}
@@ -556,6 +552,26 @@ def test_tool_call_results_can_round_trip_as_native_tool_result_message():
     assert to_openai_chat_request(request)["messages"] == [
         {"role": "tool", "content": '{"items": ["cat"]}', "tool_call_id": "call_1", "name": "search"}
     ]
+
+
+def test_tool_calls_from_openai_tool_calls_avoids_model_dump():
+    class CachedFunction:
+        name = "search"
+        arguments = '{"query": "hello"}'
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    class CachedToolCall:
+        function = CachedFunction()
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tool_calls = ToolCalls.from_openai_tool_calls([CachedToolCall()])
+
+    assert tool_calls.tool_calls[0].name == "search"
+    assert tool_calls.tool_calls[0].args == {"query": "hello"}
 
 
 def test_toolcalls_vague_match():
@@ -621,9 +637,7 @@ def test_toolcalls_vague_match():
     assert tc.tool_calls[0].args == {"query": "hello"}
 
     # Provider-style nested function.arguments should accept dict and JSON-string values.
-    tc = ToolCalls.model_validate(
-        {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}
-    )
+    tc = ToolCalls.model_validate({"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}})
     assert len(tc.tool_calls) == 1
     assert tc.tool_calls[0].args == {"query": "hello"}
 
@@ -687,8 +701,6 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
     }
 
 
-
-
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
@@ -696,10 +708,7 @@ def test_tool_call_execute():
     def add_numbers(a: int, b: int) -> int:
         return a + b
 
-    tools = [
-        dspy.Tool(get_weather),
-        dspy.Tool(add_numbers)
-    ]
+    tools = [dspy.Tool(get_weather), dspy.Tool(add_numbers)]
 
     tool_call = dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Berlin"})
     result = tool_call.execute(functions=tools)

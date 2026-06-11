@@ -1,7 +1,5 @@
 from typing import Any
 
-import json_repair
-
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
@@ -160,14 +158,7 @@ class TwoStepAdapter(Adapter):
                 ) from e
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+                value[tool_call_output_field_name] = ToolCalls.from_openai_tool_calls(tool_calls)
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs

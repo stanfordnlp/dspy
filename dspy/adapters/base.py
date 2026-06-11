@@ -181,8 +181,7 @@ class Adapter:
                 value.setdefault(field_name, None)
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [_provider_tool_call_to_tool_call_dict(tool_call) for tool_call in tool_calls]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+                value[tool_call_output_field_name] = ToolCalls.from_openai_tool_calls(tool_calls)
 
             # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
             # the real normalized hook, this should not call the legacy
