@@ -25,7 +25,6 @@ def test_tool_observation_preserves_custom_type():
     def make_images():
         return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
 
-
     adapter = SpyChatAdapter()
     lm = DummyLM(
         [
@@ -471,3 +470,26 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_user_signature_trajectory_output_does_not_collide():
+    """Regression for #9853: when the user's signature declares an output named
+    `trajectory`, the user's value must win — previously this raised
+    `TypeError: got multiple values for keyword argument 'trajectory'` because
+    `ReAct.forward` constructed the final `Prediction` with both
+    `trajectory=trajectory` and `**extract` (where `extract` itself contained
+    `trajectory` from the user's signature).
+    """
+    react = dspy.ReAct("question -> answer, trajectory: str", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I will finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "done", "answer": "x", "trajectory": "user-trajectory-value"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    outputs = react(question="q")
+
+    assert outputs.answer == "x"
+    # User signature output takes precedence over the framework-attached `trajectory`.
+    assert outputs.trajectory == "user-trajectory-value"

@@ -23,15 +23,11 @@ def test_react_v2_text_mock_lm_loop_records_inputs_once():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -55,15 +51,11 @@ def test_react_v2_continuation_omits_missing_original_inputs():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -91,9 +83,7 @@ def test_react_v2_text_mode_accepts_top_level_tool_arguments():
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -128,15 +118,11 @@ def test_react_v2_unknown_tool_observation_can_continue():
         [
             {
                 "next_thought": "Try a missing tool.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "missing_tool", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "missing_tool", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "Recover with a final answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             },
         ]
     )
@@ -156,9 +142,7 @@ def test_react_v2_accepts_serialized_history_input():
         [
             {
                 "next_thought": "I can answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             }
         ]
     )
@@ -177,9 +161,7 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
             {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
             {
                 "next_thought": "Forced final.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "forced"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "forced"}}]),
             },
         ]
     )
@@ -310,17 +292,75 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_2",
     ]
     assert [
-        result.call_id
-        for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+        result.call_id for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     ] == [
         "call_provider_1",
         "call_provider_2",
     ]
-    assert [
-        message["tool_call_id"]
-        for message in lm.calls[1]["messages"]
-        if message["role"] == "tool"
-    ] == [
+    assert [message["tool_call_id"] for message in lm.calls[1]["messages"] if message["role"] == "tool"] == [
         "call_provider_1",
         "call_provider_2",
     ]
+
+
+def test_react_v2_user_signature_history_output_does_not_collide():
+    """Regression for #9853: when the user's signature declares an output named
+    `history`, the user's value must win — previously this raised
+    `TypeError: got multiple values for keyword argument 'history'` because
+    `ReActV2` constructed the final `Prediction` with both `**final_outputs`
+    and an explicit `history=...` kwarg.
+    """
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "ready",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "x", "history": "user-history-value"}}]
+                ),
+            },
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer, history: str", tools=[])(question="q")
+
+    assert pred.answer == "x"
+    # User signature output takes precedence over the framework-attached `history`.
+    assert pred.history == "user-history-value"
+
+
+def test_react_v2_user_signature_termination_reason_output_does_not_collide():
+    """Regression for #9853: same as above but for `termination_reason`."""
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "ready",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "x", "termination_reason": "custom"}}]
+                ),
+            },
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer, termination_reason: str", tools=[])(question="q")
+
+    assert pred.answer == "x"
+    assert pred.termination_reason == "custom"
+
+
+def test_react_v2_framework_history_and_termination_preserved_without_collision():
+    """Control: without a user-signature name collision, the framework's
+    `history` and `termination_reason` are still attached as before."""
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "ready",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "x"}}]),
+            },
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="q")
+
+    assert pred.answer == "x"
+    assert pred.termination_reason == "submit"
+    assert isinstance(pred.history, dspy.History)

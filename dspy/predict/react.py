@@ -115,7 +115,10 @@ class ReAct(Module):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        # User signature outputs (from `extract`) take precedence over the
+        # framework-attached `trajectory` to avoid a kwarg-collision `TypeError`
+        # when the user declares an output named `trajectory` (#9853).
+        return dspy.Prediction(**{"trajectory": trajectory, **extract})
 
     async def aforward(self, **input_args):
         trajectory = {}
@@ -140,7 +143,8 @@ class ReAct(Module):
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        # See note in `forward` above: user outputs win over framework `trajectory` (#9853).
+        return dspy.Prediction(**{"trajectory": trajectory, **extract})
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
