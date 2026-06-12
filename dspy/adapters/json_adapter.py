@@ -268,9 +268,20 @@ def _get_structured_outputs_response_format(
     # Generate the initial schema.
     schema = pydantic_model.model_json_schema()
 
-    # Remove any DSPy-specific metadata.
-    for prop in schema.get("properties", {}).values():
-        prop.pop("json_schema_extra", None)
+    def clean_schema(schema_part: dict):
+        for key in list(schema_part.keys()):
+            if key == "json_schema_extra" or key.startswith("x-"):
+                schema_part.pop(key)
+
+        for value in schema_part.values():
+            if isinstance(value, dict):
+                clean_schema(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        clean_schema(item)
+
+    clean_schema(schema)
 
     def enforce_required(schema_part: dict):
         """

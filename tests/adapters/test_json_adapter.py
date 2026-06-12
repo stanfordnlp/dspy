@@ -759,6 +759,41 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
 
 
+def test_json_adapter_strips_vendor_extensions_from_structured_output_schema():
+    class NestedOutput(pydantic.BaseModel):
+        model_config = pydantic.ConfigDict(json_schema_extra={"x-model-tag": "internal"})
+
+        value: str = pydantic.Field(json_schema_extra={"x-provider-note": "internal"})
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: NestedOutput = dspy.OutputField()
+
+    program = dspy.Predict(TestSignature)
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
+    with mock.patch("litellm.completion") as mock_completion:
+        program(question="Test input")
+
+    _, call_kwargs = mock_completion.call_args
+    schema = call_kwargs["response_format"].model_json_schema()
+
+    def collect_x_keys(value):
+        if isinstance(value, dict):
+            keys = [key for key in value if key.startswith("x-")]
+            for child in value.values():
+                keys.extend(collect_x_keys(child))
+            return keys
+        if isinstance(value, list):
+            keys = []
+            for child in value:
+                keys.extend(collect_x_keys(child))
+            return keys
+        return []
+
+    assert collect_x_keys(schema) == []
+
+
 def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model():
     class TestSignature(dspy.Signature):
         input1: str = dspy.InputField()
