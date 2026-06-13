@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
 
@@ -13,6 +15,14 @@ def test_react_v2_submit_tool_returns_original_output_fields():
 
     assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
     assert "tool_call_results" not in react.react.signature.input_fields
+
+
+@pytest.mark.parametrize("reserved", ["history", "termination_reason"])
+def test_react_v2_rejects_reserved_output_field_names(reserved):
+    # Regression test for #9853: a clear error must be raised at construction instead of an
+    # opaque TypeError mid-forward when a user output field collides with ReActV2's metadata.
+    with pytest.raises(ValueError, match="reserves the output field name"):
+        dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
 
 
 def test_react_v2_text_mock_lm_loop_records_inputs_once():
