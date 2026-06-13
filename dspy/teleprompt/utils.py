@@ -137,8 +137,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
 
         return program, mean, key, params
 
-    # If no valid program is found, we return the last valid one that we found
-    return program, mean, key, params
+    raise ValueError("No valid program found in param_score_dict")
 
 
 def calculate_last_n_proposed_quality(
