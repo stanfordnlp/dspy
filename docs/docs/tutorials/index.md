@@ -68,5 +68,6 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Financial Analysis with Yahoo Finance](yahoo_finance_react/index.md)
     - [Automated Code Generation from Documentation](sample_code_generation/index.md)
     - [Building a Creative Text-Based AI Game](ai_text_game/index.md)
+    - [Multi-Agent Systems with Cultural Personalities](cultural_agents/index.ipynb)
 
 
