@@ -78,6 +78,19 @@ def test_submit_with_list():
         assert result.output == {"output": ["The result is", token]}
 
 
+def test_register_malformed_submit_wrapper_returns_error():
+    """Malformed output registration should return a JSON-RPC error instead of killing Deno."""
+    with PythonInterpreter(output_fields=[{"name": "answer", "serialize_code": "x = __VAR__"}]) as interpreter:
+        with pytest.raises(CodeInterpreterError, match="registering tools/outputs"):
+            interpreter.execute('SUBMIT(answer="broken")')
+
+        interpreter.output_fields = [{"name": "answer"}]
+        result = interpreter.execute('SUBMIT(answer="ok")')
+
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"answer": "ok"}
+
+
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 

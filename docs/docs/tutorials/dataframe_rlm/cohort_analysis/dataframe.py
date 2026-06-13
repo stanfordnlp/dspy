@@ -64,7 +64,8 @@ class DataFrame(SandboxSerializable):
 
     # SandboxSerializable methods
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return "import pandas as pd\nimport pyarrow\nimport base64\nimport io"
 
     def to_sandbox(self) -> bytes:
@@ -97,6 +98,22 @@ class DataFrame(SandboxSerializable):
 
         preview = "\n".join(lines)
         return preview[:max_chars] + "..." if len(preview) > max_chars else preview
+
+    # Sandbox -> host (output) methods
+
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        """Convert a bare pandas DataFrame at ``var_name`` to a base64 Parquet string."""
+        return f"base64.b64encode({var_name}.to_parquet(index=False)).decode('ascii')"
+
+    @classmethod
+    def from_sandbox(cls, payload: str) -> "DataFrame":
+        """Reconstruct a DataFrame on the host from a base64 Parquet string."""
+        import io
+
+        import pandas as pd
+
+        return cls(pd.read_parquet(io.BytesIO(base64.b64decode(payload))))
 
     def __repr__(self) -> str:
         return f"DataFrame({self.data.shape[0]} rows x {self.data.shape[1]} cols)"
