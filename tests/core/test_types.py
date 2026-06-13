@@ -3,6 +3,7 @@ import pytest
 
 from dspy.core.types import (
     LMAudioPart,
+    LMBinaryPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -140,6 +141,31 @@ def test_video_data_round_trips_through_history_messages():
     assert isinstance(round_tripped, LMVideoPart)
     assert round_tripped.data == "YWJj"
     assert round_tripped.media_type == "video/mp4"
+
+
+def test_file_block_preserves_provider_specific_fields():
+    """Regression test for #9898.
+
+    Provider-specific `file` fields (e.g. `format`, `detail`, `video_metadata`) must survive the
+    round-trip instead of being silently dropped during message normalization.
+    """
+    from dspy.clients.openai_format import message_to_openai_chat
+
+    block = {
+        "type": "file",
+        "file": {
+            "file_id": "file-123",
+            "format": "video/webm",
+            "detail": "high",
+            "video_metadata": {"fps": 1.0},
+        },
+    }
+    part = LMMessage(role="user", content=[block]).parts[0]
+    assert isinstance(part, LMBinaryPart)
+    assert part.extra_file_fields == {"format": "video/webm", "detail": "high", "video_metadata": {"fps": 1.0}}
+
+    emitted = message_to_openai_chat(LMMessage(role="user", parts=[part]))["content"][0]
+    assert emitted == block
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():

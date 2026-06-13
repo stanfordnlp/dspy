@@ -137,6 +137,9 @@ class LMBinaryPart(LMSourcePart):
     type: Literal["binary"] = "binary"
     media_type: str = "application/octet-stream"
     filename: str | None = None
+    # Provider-specific `file` block fields (e.g. `format`, `detail`, `video_metadata`) that are
+    # not modeled explicitly. They are preserved so they survive the round-trip to the LM.
+    extra_file_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class LMToolCallPart(LMBasePart):
@@ -1887,15 +1890,21 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
     raise ValueError("Audio content block requires data, url, file_id, or path.")
 
 
+_BINARY_FILE_RESERVED_KEYS = frozenset({"file_data", "data", "file_id", "filename"})
+
+
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
+    # Preserve any provider-specific fields (e.g. format, detail, video_metadata) so they are
+    # not silently dropped on the way back out to the LM.
+    extra = {key: value for key, value in file.items() if key not in _BINARY_FILE_RESERVED_KEYS}
     if file.get("file_data") is not None:
         media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), extra_file_fields=extra)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), extra_file_fields=extra)
     if file.get("file_id") is not None:
-        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"))
+        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"), extra_file_fields=extra)
     raise ValueError("Binary content block requires data, file_data, or file_id.")
 
 
