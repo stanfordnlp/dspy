@@ -229,9 +229,16 @@ def streamify(
 
 
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
-    """Convert the async streaming generator to a sync generator."""
-    queue = Queue()  # Queue to hold items from the async generator
-    stop_sentinel = object()  # Sentinel to signal the generator is complete
+    """Convert the async streaming generator to a sync generator.
+
+    Exceptions raised inside the async generator are propagated to the caller
+    of the sync generator.  Previously any exception was silently swallowed
+    because the ``finally`` block placed only the stop sentinel on the queue,
+    giving the consumer no way to distinguish a clean finish from an error.
+    See https://github.com/stanfordnlp/dspy/issues/9142
+    """
+    queue: Queue = Queue()  # Queue to hold items (or a caught exception)
+    stop_sentinel = object()  # Sentinel to signal clean completion
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
@@ -243,8 +250,12 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
-            finally:
-                # Signal completion
+            except Exception as exc:  # noqa: BLE001
+                # Put the live exception on the queue so the consumer can
+                # re-raise it in the calling thread.
+                queue.put(exc)
+            else:
+                # Only place the sentinel when the generator completes cleanly.
                 queue.put(stop_sentinel)
 
         context.run(asyncio.run, runner())
@@ -258,6 +269,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
+        if isinstance(item, Exception):
+            raise item
         yield item
 
 

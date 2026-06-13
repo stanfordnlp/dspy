@@ -2061,3 +2061,42 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for https://github.com/stanfordnlp/dspy/issues/9142
+# ---------------------------------------------------------------------------
+
+
+def test_apply_sync_streaming_propagates_exceptions():
+    """Exceptions raised inside the async generator must not be silently swallowed.
+
+    Before the fix, the producer thread's ``finally`` block placed only the
+    stop sentinel on the queue when an exception occurred, so the consumer
+    saw a clean stop with no indication of the error.
+    """
+    from dspy.streaming.streamify import apply_sync_streaming
+
+    class CustomError(RuntimeError):
+        pass
+
+    async def failing_generator():
+        yield "first"
+        raise CustomError("boom")
+
+    gen = apply_sync_streaming(failing_generator())
+    assert next(gen) == "first"
+    with pytest.raises(CustomError, match="boom"):
+        next(gen)
+
+
+def test_apply_sync_streaming_clean_generator_does_not_raise():
+    """A generator that finishes without error must still work normally."""
+    from dspy.streaming.streamify import apply_sync_streaming
+
+    async def clean_generator():
+        for i in range(3):
+            yield i
+
+    result = list(apply_sync_streaming(clean_generator()))
+    assert result == [0, 1, 2]
