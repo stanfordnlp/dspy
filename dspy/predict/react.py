@@ -41,6 +41,14 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
+        # `trajectory` is attached to every returned `Prediction`; a user output field with that
+        # name would collide with the keyword argument and raise an opaque TypeError mid-forward.
+        if "trajectory" in signature.output_fields:
+            raise ValueError(
+                "ReAct reserves the output field name `trajectory` for its own metadata. "
+                "Please rename the conflicting field in your signature."
+            )
+
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
