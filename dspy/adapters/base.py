@@ -423,7 +423,12 @@ class Adapter:
             )
 
         messages = []
-        system_message = self.format_system_message(signature)
+        # The history field is hijacked and formatted natively into message roles, so it must
+        # not appear in the system instructions. Otherwise the LM is told to expect a
+        # `[[ ## history ## ]]` block that it never actually receives, which wastes tokens and
+        # degrades formatting adherence.
+        system_signature = signature_without_history if history_field_name else signature
+        system_message = self.format_system_message(system_signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:
