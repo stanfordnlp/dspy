@@ -79,7 +79,7 @@ class Evaluate:
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
         failure_score: float = 0.0,
-        timeout: int = 120,
+        timeout: float = 120,
         straggler_limit: int = 3,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
@@ -97,7 +97,7 @@ class Evaluate:
                 stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
-            timeout (int): Per-example straggler timeout, in seconds, passed to the underlying
+            timeout (float): Per-example straggler timeout, in seconds, passed to the underlying
                 parallel executor. When fewer than ``straggler_limit`` examples remain, any that
                 have been running for longer than ``timeout`` are resubmitted once. Set to ``0``
                 to disable straggler resubmission entirely, which is useful for long-running
