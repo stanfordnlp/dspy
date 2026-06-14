@@ -33,6 +33,8 @@ class AIMEAdapter(DatasetAdapter):
         Returns:
             Tuple of (train_set, val_set, test_set) with appropriate input fields.
         """
+        input_fields = self.get_input_fields(("problem",))
+
         # Load training data from previous years (2022-2024)
         train_split = load_dataset("AI-MO/aimo-validation-aime")['train']
         train_split = [
@@ -40,7 +42,7 @@ class AIMEAdapter(DatasetAdapter):
                 "problem": x['problem'],
                 'solution': x.get('solution', ''),  # May not always be present
                 'answer': str(x['answer']),  # Ensure answer is a string
-            }).with_inputs("problem")
+            })
             for x in train_split
         ]
 
@@ -55,9 +57,11 @@ class AIMEAdapter(DatasetAdapter):
             dspy.Example({
                 "problem": x['problem'],
                 'answer': str(x['answer']),  # Ensure answer is a string
-            }).with_inputs("problem")
+            })
             for x in test_split
         ]
+        train_split = self.apply_input_fields(train_split, input_fields)
+        test_split = self.apply_input_fields(test_split, input_fields)
 
         # Apply size configurations
         train_size = self.config.get("train_size", 45)

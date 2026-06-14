@@ -19,6 +19,8 @@ class SBOAdapter(OptimizerAdapter):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
+        self.result = None
+        self.trace = None
 
     def optimize(
         self,
@@ -46,6 +48,12 @@ class SBOAdapter(OptimizerAdapter):
         model_config = kwargs.get("model_config", {})
         model_name = model_config.get("name", "gpt-3.5-turbo")
         api_base = model_config.get("api_base", "http://localhost:11434")
+        model_params = model_config.get("params", {})
+        role_model_params = {
+            key: value
+            for key, value in model_params.items()
+            if key not in {"temperature", "max_tokens", "cache"}
+        }
 
         # Get LM configurations from params
         params = self.config.get("params", {})
@@ -55,8 +63,10 @@ class SBOAdapter(OptimizerAdapter):
         judge_lm = dspy.LM(
             model=judge_lm_name,
             api_base=api_base,
-            temperature=0.0,  # Deterministic for judge
-            max_tokens=10,  # Judge only outputs a number
+            **role_model_params,
+            temperature=params.get("judge_temperature", 0.7),
+            max_tokens=params.get("judge_max_tokens", 10),  # Judge only outputs a number
+            cache=params.get("judge_cache", False),
         )
 
         # Proposer LM (for generating candidates)
@@ -64,8 +74,9 @@ class SBOAdapter(OptimizerAdapter):
         proposer_lm = dspy.LM(
             model=proposer_lm_name,
             api_base=api_base,
+            **role_model_params,
             temperature=params.get("proposer_temperature", 0.7),
-            max_tokens=2048,
+            max_tokens=params.get("proposer_max_tokens", 2048),
         )
 
         # Critic LM (for generating critiques)
@@ -73,8 +84,9 @@ class SBOAdapter(OptimizerAdapter):
         critic_lm = dspy.LM(
             model=critic_lm_name,
             api_base=api_base,
+            **role_model_params,
             temperature=params.get("critic_temperature", 0.7),
-            max_tokens=1024,
+            max_tokens=params.get("critic_max_tokens", 1024),
         )
 
         # Create SBO optimizer
@@ -94,6 +106,14 @@ class SBOAdapter(OptimizerAdapter):
             max_iterations=params.get("max_iterations", 50),
             max_null_steps=params.get("max_null_steps", 5),
             temperature=params.get("temperature", 0.7),
+            judge_temperature=params.get("judge_temperature", 0.7),
+            num_eval_samples=params.get("num_eval_samples", 1),
+            eval_temperature=params.get("eval_temperature", 0.7),
+            eval_cache=params.get("eval_cache", False),
+            parse_failure_retries=params.get("parse_failure_retries", 0),
+            parse_retry_temperature=params.get("parse_retry_temperature"),
+            max_critique_examples=params.get("max_critique_examples", 3),
+            max_critique_field_chars=params.get("max_critique_field_chars"),
             track_stats=params.get("track_stats", True),
         )
 
@@ -106,6 +126,7 @@ class SBOAdapter(OptimizerAdapter):
 
         # Store result for analysis
         self.result = optimizer.result
+        self.trace = optimizer.result.trace if optimizer.result else None
 
         return optimized_program
 

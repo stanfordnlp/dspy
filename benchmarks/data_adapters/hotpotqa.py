@@ -39,11 +39,12 @@ class HotPotQAAdapter(DatasetAdapter):
 
         # Determine input fields based on whether context is used
         use_context = self.config.get("use_context", True)
-        input_fields = ("question", "context") if use_context else ("question",)
+        default_input_fields = ("question", "context") if use_context else ("question",)
+        input_fields = self.get_input_fields(default_input_fields)
         
-        train_set = [ex.with_inputs(*input_fields) for ex in dataset.train]
-        val_set = [ex.with_inputs(*input_fields) for ex in dataset.dev]
-        test_set = [ex.with_inputs(*input_fields) for ex in dataset.test]
+        train_set = self.apply_input_fields(dataset.train, input_fields)
+        val_set = self.apply_input_fields(dataset.dev, input_fields)
+        test_set = self.apply_input_fields(dataset.test, input_fields)
 
         return train_set, val_set, test_set
     

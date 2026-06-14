@@ -72,8 +72,11 @@ test_before_pypi/
 /fix-log/
 
 # Benchmark run outputs
+/results/
 /benchmarks/results/
+/work/
 
 # Local virtualenv
 /.venv/
 /venv/
+/SBO/

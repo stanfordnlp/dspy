@@ -6,4 +6,6 @@ test_repeat: 5  # Repeat test set 5x for statistical stability (total 150)
 train_seed: 1
 eval_seed: 2023
 keep_details: true
-params: {}
+params:
+  input_fields:
+    - problem

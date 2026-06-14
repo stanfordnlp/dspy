@@ -219,6 +219,29 @@ class MathNaive(dspy.Module, BaseProgram):
     @property
     def name(self) -> str:
         return "math_naive"
+
+
+class MathAnswerOnly(dspy.Module, BaseProgram):
+    """Math problem solving program that predicts only the final AIME answer."""
+
+    def __init__(self):
+        super().__init__()
+        self.answer = dspy.Predict(
+            dspy.Signature(
+                "problem -> answer",
+                (
+                    "Solve the given math problem internally. Return only the final numerical answer as an integer. "
+                    "Do not include reasoning, units, markdown, or any additional text."
+                ),
+            )
+        )
+
+    def forward(self, problem: str, **kwargs) -> Prediction:
+        return self.answer(problem=problem)
+
+    @property
+    def name(self) -> str:
+        return "math_answer_only"
     
 class MathCoT(dspy.Module, BaseProgram):
     """Math problem solving program using Chain of Thought.

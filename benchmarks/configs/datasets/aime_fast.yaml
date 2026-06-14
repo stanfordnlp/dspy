@@ -6,4 +6,6 @@ test_repeat: 1   # Single run instead of 5
 train_seed: 1
 eval_seed: 2023
 keep_details: true
-params: {}
+params:
+  input_fields:
+    - problem

@@ -27,8 +27,13 @@ params:
 
   # LM sampling
   temperature: 0.7
+  judge_temperature: 0.7
+  judge_cache: false
   proposer_temperature: 0.7
   critic_temperature: 0.7
+  num_eval_samples: 1
+  eval_temperature: 0.7
+  eval_cache: false
 
   # Tracking
   track_stats: true

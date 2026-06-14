@@ -7,4 +7,6 @@ eval_seed: 2023
 keep_details: true
 params:
   use_context: true
-
+  input_fields:
+    - question
+    - context
