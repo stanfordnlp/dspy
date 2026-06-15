@@ -80,7 +80,7 @@ Holds three internal `ChainOfThought` predictors: `code_generate` produces Pytho
 **`dspy.CodeAct(signature, tools, max_iters=5, interpreter=None)`**
 Multiple inheritance from `ReAct` and `ProgramOfThought`. Tools must be plain `def` functions, not callable objects — the module reads `inspect.getsource(tool.func)` and injects each definition into the sandbox at the start of every `forward`. Each iteration: an inner `codeact` predictor produces Python plus a `finished` boolean; the interpreter runs the code; the trajectory dict gains a `generated_code_i` and `code_output_i` (or `observation_i` on parse/execution error). The loop exits when the LM sets `finished=True` or `max_iters` is reached. A `ChainOfThought` extractor then reads the trajectory and produces the declared outputs.
 
-**`dspy.RLM(signature, max_iterations=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
+**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
 Experimental. A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
 
 ### Running modules in parallel

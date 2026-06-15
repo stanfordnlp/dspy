@@ -16,7 +16,7 @@ A normal `Predict` call puts the whole context into the prompt, so every token c
 
 ### 3. The LLM drives an iterative REPL loop
 
-`dspy.RLM` is not a single call. `forward()` runs up to `max_iterations` turns. On each turn the internal `generate_action` predictor sees the variable metadata and the prior REPL history, then emits reasoning plus one Python code block. The code runs, its output joins the `REPLHistory`, and the next turn begins. State persists across turns because the whole run shares one interpreter session. This is why the instructions push the model to explore first and take small steps: each turn is meant to build on what the last one printed.
+`dspy.RLM` is not a single call. `forward()` runs up to `max_iters` turns. On each turn the internal `generate_action` predictor sees the variable metadata and the prior REPL history, then emits reasoning plus one Python code block. The code runs, its output joins the `REPLHistory`, and the next turn begins. State persists across turns because the whole run shares one interpreter session. This is why the instructions push the model to explore first and take small steps: each turn is meant to build on what the last one printed.
 
 ### 4. Built-in `llm_query` tools give the loop its recursion
 
@@ -40,7 +40,7 @@ Some inputs are not plain strings. A DataFrame, a parsed corpus, or a binary blo
 
 ### 9. An extract pass salvages outputs when the loop ends early
 
-A model can exhaust `max_iterations` without ever submitting final outputs. Rather than return nothing, `dspy.RLM` falls back to a second predictor, the `extract` step, which reads the variable metadata and the full REPL history and produces the signature’s output fields directly. You get the best answer the trajectory supports even when the model never declared itself done.
+A model can exhaust `max_iters` without ever submitting final outputs. Rather than return nothing, `dspy.RLM` falls back to a second predictor, the `extract` step, which reads the variable metadata and the full REPL history and produces the signature’s output fields directly. You get the best answer the trajectory supports even when the model never declared itself done.
 
 ### 10. RLM optimizes like any other module
 
@@ -54,11 +54,11 @@ The class carries the `@experimental` decorator. The hard parts are still settli
 
 ### Defining and running an RLM
 
-**`dspy.RLM(signature, max_iterations=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
+**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
 The constructor parses the signature and builds the two internal predictors, formatting your task instructions, input names, and output-field types into the action prompt and creating a separate extract signature for the fallback. The budgets and the sandbox configuration are all fixed here, so one instance carries one configuration.
 
 **`forward(**inputs)` / `aforward(**inputs)` / `__call__`**
-`forward()` validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iterations`. `aforward()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`.
+`forward()` validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iters`. `aforward()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`.
 
 ### Programming the loop with built-in tools
 
@@ -78,8 +78,8 @@ The only way the model sees a result. REPL stdout is captured, truncated to `max
 
 ### Budgeting iterations and sub-LLM calls
 
-**`max_iterations`, `max_llm_calls`, `max_output_chars`**
-Three independent limits. `max_iterations` bounds REPL turns before the extract fallback fires. `max_llm_calls` bounds recursive sub-LLM calls across the whole run. `max_output_chars` bounds how much of each REPL output reaches the model, keeping a noisy print from flooding the prompt.
+**`max_iters`, `max_llm_calls`, `max_output_chars`**
+Three independent limits. `max_iters` bounds REPL turns before the extract fallback fires. `max_llm_calls` bounds recursive sub-LLM calls across the whole run. `max_output_chars` bounds how much of each REPL output reaches the model, keeping a noisy print from flooding the prompt.
 
 **`sub_lm`**
 The model for `llm_query` and `llm_query_batched`. Left unset it falls back to `dspy.settings.lm`, so by default the loop and its sub-calls share one model.
