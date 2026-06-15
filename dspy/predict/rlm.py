@@ -118,7 +118,7 @@ class RLM(Module):
     Examples:
         ```python
         # Basic usage
-        rlm = dspy.RLM("context, query -> output", max_iterations=10)
+        rlm = dspy.RLM("context, query -> output", max_iters=10)
         result = rlm(context="...very long text...", query="What is the magic number?")
         print(result.output)
         ```
@@ -127,7 +127,7 @@ class RLM(Module):
     def __init__(
         self,
         signature: type[Signature] | str,
-        max_iterations: int = 20,
+        max_iters: int = 20,
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
         verbose: bool = False,
@@ -139,7 +139,7 @@ class RLM(Module):
         Args:
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
-            max_iterations: Maximum REPL interaction iterations.
+            max_iters: Maximum REPL interaction iterations.
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
@@ -151,7 +151,7 @@ class RLM(Module):
         """
         super().__init__()
         self.signature = ensure_signature(signature)
-        self.max_iterations = max_iterations
+        self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
         self.verbose = verbose
@@ -311,7 +311,7 @@ class RLM(Module):
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
-            .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
+            .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
             .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
             .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
         )
@@ -600,11 +600,11 @@ class RLM(Module):
         action = self.generate_action(
             variables_info=variables_info,
             repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iterations}",
+            iteration=f"{iteration + 1}/{self.max_iters}",
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iterations}\n"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
                 f"Reasoning: {action.reasoning}\nCode:\n{action.code}"
             )
 
@@ -643,7 +643,7 @@ class RLM(Module):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
-            for iteration in range(self.max_iterations):
+            for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
                     repl, variables, history, iteration, regular_args, output_field_names
                 )
@@ -689,11 +689,11 @@ class RLM(Module):
         pred = await self.generate_action.acall(
             variables_info=variables_info,
             repl_history=history,
-            iteration=f"{iteration + 1}/{self.max_iterations}",
+            iteration=f"{iteration + 1}/{self.max_iters}",
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iterations}\n"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
                 f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
             )
 
@@ -728,7 +728,7 @@ class RLM(Module):
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
-            for iteration in range(self.max_iterations):
+            for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
                     repl, variables, history, iteration, regular_args, output_field_names
                 )
