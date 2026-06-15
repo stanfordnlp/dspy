@@ -1,0 +1,24 @@
+name: hotpotqa_sbo_light
+description: HotPotQA with SBO - lightweight configuration for quick testing
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: mlflow_base
+logging_ref: logging
+
+# Use smaller dataset for faster iteration
+dataset_overrides:
+  train_size: 50
+  dev_size: 10
+
+# Override optimizer settings for quick test
+optimizer_overrides:
+  params:
+    max_iterations: 10
+    num_candidates: 3
+    num_judge_samples: 2
+
+logging_overrides:
+  save_models: true

@@ -1,0 +1,10 @@
+name: hotpotqa
+train_size: 150 # GEPA paper setting is 150
+dev_size: 50 # GEPA paper setting is 300
+test_size: 0
+train_seed: 1
+eval_seed: 2023
+keep_details: true
+params:
+  use_context: true
+

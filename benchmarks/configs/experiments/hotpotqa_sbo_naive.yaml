@@ -1,0 +1,25 @@
+name: hotpotqa_sbo_naive
+description: HotPotQA with SBO using simple NaiveQA program for fast experimentation
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: naive
+logging_ref: logging
+
+# Use smaller dataset for faster iteration
+dataset_overrides:
+  train_size: 30    # Smaller for quick testing
+  dev_size: 10      # Enough for validation
+
+# Override optimizer settings for quick test
+optimizer_overrides:
+  params:
+    max_iterations: 15
+    num_candidates: 3
+    num_judge_samples: 2
+    max_null_steps: 3
+
+logging_overrides:
+  save_models: true

@@ -1,0 +1,9 @@
+name: gepa
+auto: light
+num_threads: 1
+params:
+  reflection_lm: ollama_chat/qwen3:4b-instruct
+  reflection_minibatch_size: 3 # GEPA paper setting is 3
+  max_metric_calls: 1000
+  track_stats: true
+

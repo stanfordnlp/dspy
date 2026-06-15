@@ -1,0 +1,27 @@
+name: hotpotqa_sbo_ultralight
+description: HotPotQA with SBO - ultralight for VERY fast testing
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: simple_context  # Use context-aware program!
+logging_ref: logging
+
+# Minimal dataset for fastest iteration
+dataset_overrides:
+  train_size: 10    # Minimal training set
+  dev_size: 5       # Minimal validation set (speeds up evaluation!)
+
+# Ultra-light optimizer settings
+optimizer_overrides:
+  params:
+    max_iterations: 5          # Fewer iterations
+    num_candidates: 2          # Fewer candidates to generate
+    num_judge_samples: 1       # Single judge sample (no averaging)
+    max_null_steps: 2
+    temperature: 0.7
+
+logging_overrides:
+  save_models: true
+

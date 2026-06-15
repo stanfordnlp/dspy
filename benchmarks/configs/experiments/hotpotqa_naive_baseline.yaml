@@ -1,0 +1,14 @@
+name: hotpotqa_naive_baseline
+description: HotPotQA baseline with NaiveQA (no optimization)
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: baseline
+program_ref: naive
+logging_ref: logging
+
+# Use same dataset size as SBO experiment for fair comparison
+dataset_overrides:
+  train_size: 30
+  dev_size: 10

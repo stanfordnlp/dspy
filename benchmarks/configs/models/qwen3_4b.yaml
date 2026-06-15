@@ -1,0 +1,5 @@
+name: ollama_chat/qwen3:4b-instruct
+api_base: http://localhost:11434
+cache: true
+params: {}
+

@@ -1,0 +1,34 @@
+name: sbo
+auto: light
+num_threads: 1
+params:
+  # LM configurations (null = use main model)
+  judge_lm: null  # For semantic scoring
+  proposer_lm: null  # For generating candidates
+  critic_lm: null  # For generating critiques
+
+  # Core SBO parameters
+  num_candidates: 5  # N in paper - candidates per iteration
+  num_judge_samples: 3  # J in paper - Monte Carlo samples for Ŝ_J
+  descent_param: 0.1  # m ∈ (0,1) - serious step threshold
+
+  # Sensitivity parameter λ (adaptive)
+  lambda_init: 1.0
+  lambda_min: 0.1
+  lambda_max: 10.0
+  lambda_gamma: 0.3  # EMA smoothing factor
+
+  # Verifier parameters
+  tau_margin: 0.5  # Margin for slack formulation
+
+  # Optimization control
+  max_iterations: 50
+  max_null_steps: 5  # Consecutive null steps before termination
+
+  # LM sampling
+  temperature: 0.7
+  proposer_temperature: 0.7
+  critic_temperature: 0.7
+
+  # Tracking
+  track_stats: true

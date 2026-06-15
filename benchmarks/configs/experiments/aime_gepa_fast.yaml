@@ -1,0 +1,16 @@
+name: aime_gepa_fast
+description: AIME GEPA optimization with reduced dataset for fast iteration (~15 min)
+
+dataset_ref: aime_fast
+model_ref: qwen3_4b_nocache  # Cache disabled for cleaner runs
+optimizer_ref: gepa
+program_ref: math_cot
+logging_ref: logging
+
+logging_overrides:
+  save_models: true
+
+optimizer_overrides:
+  params:
+    reflection_minibatch_size: 1  # Reduce to 1 for faster iteration
+    max_metric_calls: 100          # Limit evaluations for speed

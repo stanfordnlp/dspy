@@ -1,0 +1,5 @@
+name: baseline
+auto: light
+num_threads: 1
+params: {}
+

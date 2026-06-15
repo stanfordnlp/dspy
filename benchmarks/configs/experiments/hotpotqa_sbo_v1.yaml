@@ -1,0 +1,13 @@
+name: hotpotqa_sbo_v1
+description: HotPotQA optimization using Semantic Bundle Optimization (SBO)
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo
+program_ref: mlflow_base
+logging_ref: logging
+
+# Override only what's different from the baseline
+logging_overrides:
+  save_models: true

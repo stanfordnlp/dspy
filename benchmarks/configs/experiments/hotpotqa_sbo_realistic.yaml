@@ -1,0 +1,30 @@
+name: hotpotqa_sbo_realistic
+description: HotPotQA with SBO - realistic setup to verify performance improvement
+
+# Reference shared configs
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: naive  # Context-aware program
+logging_ref: logging
+
+# Realistic dataset sizes
+dataset_overrides:
+  train_size: 20    # Enough for good critique generation
+  dev_size: 10      # Reasonable validation set for robust evaluation
+
+# Realistic optimizer settings
+optimizer_overrides:
+  params:
+    max_iterations: 20      # Enough iterations to see improvement
+    num_candidates: 2       # Generate 3 variations per iteration
+    num_judge_samples: 3    # 3 samples for judge averaging
+    max_null_steps: 5       # Allow 5 consecutive null steps
+    temperature: 0.7
+    lambda_init: 0.1
+    descent_param: 0.05      # Standard descent parameter
+
+logging_overrides:
+  save_models: true
+  log_level: INFO
+

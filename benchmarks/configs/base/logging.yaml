@@ -1,0 +1,7 @@
+level: INFO
+log_to_file: true
+log_dir: results/logs
+include_timestamps: true
+save_models: false
+model_dir: results/models
+
