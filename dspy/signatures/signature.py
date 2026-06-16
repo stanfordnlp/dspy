@@ -308,8 +308,8 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         """Return a new Signature class with identical fields and `instructions` appended to the existing instructions.
 
         This method does not mutate `cls`. It constructs a fresh Signature 
-        using the existing instructions from the signature docstrings followed 
-        by `append_instructions`, joined by a blank line. 
+        using the existing instructions from `cls.instructions` followed 
+        by `instructions`, joined by a blank line. 
         Unlike `with_instructions`, the existing instructions are preserved rather than replaced.
 
         Args:
