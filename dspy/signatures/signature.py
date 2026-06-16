@@ -307,26 +307,27 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def append_instructions(cls, instructions: str) -> type["Signature"]:
         """Return a new Signature class with identical fields and `instructions` appended to the existing instructions.
 
-        This method does not mutate `cls`. It constructs a fresh Signature class using the current fields and
-        the existing instructions followed by `instructions`, joined by a blank line. Unlike
-        `with_instructions`, the existing instructions are preserved rather than replaced.
+        This method does not mutate `cls`. It constructs a fresh Signature 
+        using the existing instructions from the signature docstrings followed 
+        by `append_instructions`, joined by a blank line. 
+        Unlike `with_instructions`, the existing instructions are preserved rather than replaced.
 
         Args:
             instructions (str): Instruction text to append to the existing instructions.
 
         Returns:
-            A new Signature class whose fields match `cls.fields` and whose instructions equal the existing
-            instructions joined to `instructions` by a blank line.
+            A new Signature class whose fields match `cls.fields` and whose instructions
+            equal the existing instructions joined to `instructions` by a blank line.
 
         Examples:
             ```python
             import dspy
 
             MySig = dspy.Signature("input_text -> output_text", "Translate to French.")
-            NewSig = MySig.append_instructions("Use a formal register.")
+            NewSig = MySig.append_instructions("Pass additional context.")
             assert NewSig is not MySig
             assert "Translate to French." in NewSig.instructions
-            assert "Use a formal register." in NewSig.instructions
+            assert "Pass additional context." in NewSig.instructions
             ```
         """
         return Signature(cls.fields, f"{cls.instructions}\n\n{instructions}")
