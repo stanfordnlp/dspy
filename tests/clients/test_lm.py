@@ -1514,6 +1514,38 @@ def test_responses_api_preserves_multi_message_structure():
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
 
 
+def test_convert_chat_request_preserves_tool_calls_and_results():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                        "id": "call_1",
+                    }
+                ],
+            },
+            {"role": "tool", "content": '{"temperature": "22 C"}', "tool_call_id": "call_1", "name": "get_weather"},
+        ],
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+    inputs = result["input"]
+
+    # Should include a function_call item for the assistant tool call
+    assert any(item.get("type") == "function_call" and item.get("name") == "get_weather" for item in inputs)
+
+    # Should include a function_call_output for the tool result with the matching call_id
+    assert any(item.get("type") == "function_call_output" and item.get("call_id") == "call_1" for item in inputs)
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
