@@ -440,6 +440,20 @@ def test_gpt_5_chat_not_reasoning_model():
     assert lm.kwargs["temperature"] == 0.7
 
 
+def test_check_truncation_handles_reasoning_models(monkeypatch):
+    """Reasoning models store max_completion_tokens, so a truncated response must not KeyError."""
+
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        return ModelResponse(
+            choices=[Choices(finish_reason="length", message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model="openai/gpt-5-nano",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    assert dspy.LM("openai/gpt-5-nano")("Query") == ["Hi!"]
+
+
 def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
     callbacks = [object()]
     lm = dspy.BaseLM("custom-model", callbacks=callbacks)

@@ -435,8 +435,9 @@ class LM(BaseLM):
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
+            max_tokens = self.kwargs.get("max_tokens", self.kwargs.get("max_completion_tokens"))
             logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                f"LM response was truncated due to exceeding max_tokens={max_tokens}. "
                 "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
                 "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
                 f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
