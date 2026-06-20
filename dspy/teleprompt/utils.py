@@ -391,7 +391,7 @@ def create_n_fewshot_demo_sets(
         else:
             # shuffled few-shot
             rng.shuffle(trainset_copy)
-            size = rng.randint(min_num_samples, max_bootstrapped_demos)
+            size = rng.randint(min_num_samples, max(min_num_samples, max_bootstrapped_demos))
 
             teleprompter = BootstrapFewShot(
                 metric=metric,
