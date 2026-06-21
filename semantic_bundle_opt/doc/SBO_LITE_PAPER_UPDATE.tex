@@ -1,0 +1,158 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{geometry}
+\usepackage{xcolor}
+
+\geometry{margin=1.15in}
+
+\title{Proposed Paper Update: SBO-Lite With Qualitative Regression Guard}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Motivation}
+
+The current implementation of SBO-Lite uses the qualitative verifier as a
+guardrail against obvious critique regressions. This differs from the latest
+paper draft, where the verifier only reports labels
+\(\{\mathrm{resolved}, \mathrm{partial}, \mathrm{unresolved}\}\) and does not
+participate directly in accept/reject decisions. The implementation is arguably
+more useful for small local models and short validation sets: a candidate may
+improve the current validation batch while visibly undoing an important stored
+critique. In that setting, a qualitative regression guard is a practical
+stability mechanism.
+
+This note proposes a paper-side update that makes SBO-Lite faithful to the
+implemented behavior while keeping the main distinction from full SBO clear:
+SBO-Lite does not use calibrated numerical judge scores, centered baselines
+\(s_i^0\), loss-scale parameters \(\lambda_i\), or the semantic max-envelope
+model \(M_k\).
+
+\section{Revised SBO-Lite Verifier Contract}
+
+For a candidate prompt \(p\), current center \(\hat p\), active critique bundle
+\(\mathcal A_k\), and watchlist \(\mathcal W_k\), the verifier returns a
+qualitative JSON object:
+\[
+    V_k(p)
+    =
+    \{\mathrm{active}, \mathrm{watchlist}, \mathrm{blocking\_regression},
+    \mathrm{summary}\}.
+\]
+Each active or watchlist item receives one of three labels:
+\[
+    r_i(p)\in
+    \{\mathrm{resolved},\mathrm{unclear},\mathrm{regressed}\}.
+\]
+Here:
+\begin{itemize}
+    \item \(\mathrm{resolved}\): the candidate clearly fixes or preserves the
+    critique relative to the current prompt;
+    \item \(\mathrm{unclear}\): the candidate is unrelated to the critique or
+    only partially addresses it;
+    \item \(\mathrm{regressed}\): the candidate reintroduces or worsens the
+    failure mode described by the critique.
+\end{itemize}
+
+The field \(\mathrm{blocking\_regression}\) is true if the verifier identifies
+at least one serious regression on the active bundle or watchlist. This field is
+not a calibrated mathematical constraint; it is a practical guardrail.
+
+\section{Revised Controller}
+
+Let \(\widehat F_k(p)\) be the finite validation estimate used by the
+controller, and define the observed improvement
+\[
+    \widehat\Delta_k(p)
+    =
+    \widehat F_k(\hat p)-\widehat F_k(p).
+\]
+SBO-Lite forms the admissible candidate set
+\[
+    \mathcal G_k^{\mathrm{lite}}
+    =
+    \{p\in\mathcal C_k:
+      \widehat\Delta_k(p)>0
+      \ \mathrm{and}\
+      \mathrm{blocking\_regression}(p)=\mathrm{false}\}.
+\]
+If \(\mathcal G_k^{\mathrm{lite}}\) is nonempty, the controller chooses
+\[
+    p_k^{\star}\in
+    \arg\min_{p\in\mathcal G_k^{\mathrm{lite}}}\widehat F_k(p).
+\]
+If the set is empty, the center remains fixed and the best evaluated candidate
+is used only to refine the critique bundle:
+\[
+    p_k^{\mathrm{refine}}\in
+    \arg\min_{p\in\mathcal C_k}\widehat F_k(p).
+\]
+
+\section{Algorithm Text Replacement}
+
+\begin{algorithm}[H]
+\caption{SBO-Lite With Qualitative Regression Guard}
+\label{alg:sbo_lite_guard}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} initial prompt \(p_0\), proposer \(\pi\), evaluator,
+qualitative verifier, candidate budget \(N\), stopping patience \(H\).
+\STATE \textbf{Initialize:} center \(\hat p=p_0\), critique bundle
+\(\mathcal B_0=\{c_0\}\), null counter \(h=0\).
+\FOR{\(k=1,\ldots,T\)}
+    \STATE Select active critiques \(\mathcal A_k\) and watchlist critiques
+    \(\mathcal W_k\) from \(\mathcal B_k\).
+    \STATE Generate candidates
+    \(\mathcal C_k=\{p_k^{(1)},\ldots,p_k^{(N)}\}\) using
+    \(\pi(\cdot\mid \hat p,\mathcal A_k,\mathcal W_k)\).
+    \STATE For every \(p\in\mathcal C_k\), evaluate \(\widehat F_k(p)\) and
+    ask the verifier for labels against \(\mathcal A_k\cup\mathcal W_k\).
+    \STATE Form
+    \[
+        \mathcal G_k^{\mathrm{lite}}
+        =
+        \{p\in\mathcal C_k:
+        \widehat F_k(p)<\widehat F_k(\hat p)
+        \text{ and no blocking regression is detected}\}.
+    \]
+    \IF{\(\mathcal G_k^{\mathrm{lite}}\neq\emptyset\)}
+        \STATE \textbf{Serious Step:} choose the candidate in
+        \(\mathcal G_k^{\mathrm{lite}}\) with lowest \(\widehat F_k\), set it
+        as the new center, reset \(h\leftarrow0\), and generate/update
+        critiques from remaining validation failures.
+    \ELSE
+        \STATE \textbf{Null Step:} keep the center fixed, set
+        \(h\leftarrow h+1\), and add or promote a critique explaining either
+        failed validation improvement or a verifier-detected regression.
+    \ENDIF
+    \STATE Update \(\mathcal B_{k+1}\) by keeping active unresolved or
+    regressed critiques, newly discovered failure modes, and a small watchlist
+    of historically important critiques.
+    \STATE Stop if \(h\ge H\), no candidate improves validation loss, or the
+    evaluation budget is exhausted.
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\section{Suggested Paper Wording}
+
+SBO-Lite should be described as a qualitative guarded controller rather than a
+calibrated bundle model. The verifier is not estimating a numeric semantic
+inner product and has no theorem-level role analogous to \(M_k\). Instead, it
+provides a conservative regression flag. Acceptance remains validation-loss
+first among candidates that pass this qualitative guard.
+
+The full SBO theory should remain attached only to the calibrated algorithm:
+centered semantic scores, positive loss-scale parameters, and the semantic
+max-envelope model. SBO-Lite should be positioned as a practical agentic
+variant whose stability is heuristic and traceable, not as a direct instance of
+the finite-candidate semantic bundle validity theorem.
+
+\end{document}

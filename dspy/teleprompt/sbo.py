@@ -8,7 +8,9 @@ a "bundle" of historical critiques and using them to construct a cutting-plane m
 """
 
 import logging
+import json
 import random
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -29,6 +31,12 @@ class BundleEntry:
     loss: float  # F̃(p_i) - smoothed/robust loss
     critique: str  # Textual critique c_i
     iteration: int  # When this was added
+    self_score: float = 0.0  # s_i^0 = S(p_i, p_i, c_i)
+    lambda_value: float = 1.0  # λ_i stored with this critique
+    kind: str = "standard"  # standard, null_refinement, lite, etc.
+    exact_cut_signature: Optional[str] = None  # Canonical prompt signature for exact null self-cuts
+    exact_cut_loss: Optional[float] = None  # Exact self-cut target loss, if applicable
+    exact_cut_center_signature: Optional[str] = None  # Center signature where the null cut was generated
 
 
 @dataclass
@@ -108,6 +116,15 @@ class SemanticBundleOptimization(Teleprompter):
         lambda_max: float = 10.0,
         lambda_gamma: float = 0.3,
         tau_margin: float = 0.5,
+        bundle_size: int = 10,
+        active_bundle_size: int = 3,
+        watchlist_size: int = 2,
+        active_tau_margin: float = 0.0,
+        watchlist_tau_margin: float = 0.0,
+        active_violation_tolerance: float = 0.0,
+        watchlist_violation_tolerance: float = 0.0,
+        lambda_stability_epsilon: float = 1e-6,
+        tau_stop: float = 0.0,
         max_iterations: int = 50,
         max_null_steps: int = 5,
         temperature: float = 0.7,
@@ -119,6 +136,9 @@ class SemanticBundleOptimization(Teleprompter):
         parse_retry_temperature: Optional[float] = None,
         max_critique_examples: int = 3,
         max_critique_field_chars: Optional[int] = None,
+        max_bundle_critique_chars: Optional[int] = 900,
+        stop_on_no_improving_candidate: bool = True,
+        enable_exact_null_cuts: bool = True,
         track_stats: bool = True,
     ):
         super().__init__()
@@ -134,6 +154,15 @@ class SemanticBundleOptimization(Teleprompter):
         self.lambda_max = lambda_max
         self.lambda_gamma = lambda_gamma
         self.tau_margin = tau_margin
+        self.bundle_size = max(1, bundle_size)
+        self.active_bundle_size = max(1, active_bundle_size)
+        self.watchlist_size = max(0, watchlist_size)
+        self.active_tau_margin = active_tau_margin
+        self.watchlist_tau_margin = watchlist_tau_margin
+        self.active_violation_tolerance = active_violation_tolerance
+        self.watchlist_violation_tolerance = watchlist_violation_tolerance
+        self.lambda_stability_epsilon = lambda_stability_epsilon
+        self.tau_stop = tau_stop
         self.max_iterations = max_iterations
         self.max_null_steps = max_null_steps
         self.temperature = temperature
@@ -145,6 +174,9 @@ class SemanticBundleOptimization(Teleprompter):
         self.parse_retry_temperature = parse_retry_temperature
         self.max_critique_examples = max(1, max_critique_examples)
         self.max_critique_field_chars = max_critique_field_chars
+        self.max_bundle_critique_chars = max_bundle_critique_chars
+        self.stop_on_no_improving_candidate = stop_on_no_improving_candidate
+        self.enable_exact_null_cuts = enable_exact_null_cuts
         self.track_stats = track_stats
 
         self.result: Optional[SBOResult] = None
@@ -178,6 +210,7 @@ class SemanticBundleOptimization(Teleprompter):
 
         if valset is None or len(valset) == 0:
             raise ValueError("SBO requires a validation set for robust loss estimation")
+        critique_examples = valset
 
         logger.info(f"Starting SBO optimization with {len(trainset)} train, {len(valset)} val examples")
         self.trace = self._new_trace(trainset, valset, judge_lm, proposer_lm, critic_lm)
@@ -195,7 +228,7 @@ class SemanticBundleOptimization(Teleprompter):
 
         initial_critique = self._generate_critique(
             student,
-            trainset,
+            critique_examples,
             original_prompts,
             critic_lm,
             trace_context=self.trace["initial"],
@@ -203,17 +236,29 @@ class SemanticBundleOptimization(Teleprompter):
         logger.info(f"\nINITIAL CRITIQUE:")
         logger.info(f"  {initial_critique}")
         logger.info(f"")
+        initial_self_score_trace: dict[str, Any] = {}
+        initial_self_score = self._compute_semantic_score(
+            original_prompts,
+            original_prompts,
+            initial_critique,
+            judge_lm,
+            trace_context=initial_self_score_trace,
+        )
         self.trace["initial"].update({
             "prompts": original_prompts,
             "loss": original_loss,
             "critique": initial_critique,
+            "self_score": initial_self_score,
+            "self_score_trace": initial_self_score_trace,
         })
 
         bundle = [BundleEntry(
             prompt=original_prompts,
             loss=original_loss,
             critique=initial_critique,
-            iteration=0
+            iteration=0,
+            self_score=initial_self_score,
+            lambda_value=self.lambda_init,
         )]
 
         # Initialize center and sensitivity
@@ -231,12 +276,17 @@ class SemanticBundleOptimization(Teleprompter):
             logger.info(f"Center loss: {bundle[center_idx].loss:.4f}, λ: {lambda_current:.3f}")
             logger.info(f"{'='*60}")
 
-            # Stage 1: Generate candidates (Proposer)
-            logger.info(f"\nCurrent critique for candidate generation:")
-            logger.info(f"  {bundle[center_idx].critique}")
-
             old_center_entry = bundle[center_idx]
             old_center_loss = old_center_entry.loss
+            active_bundle, watchlist_bundle = self._select_active_and_watchlist(bundle, center_idx)
+            logger.info(f"\nActive bundle for candidate generation:")
+            for entry_idx, entry in active_bundle:
+                logger.info(f"  A bundle[{entry_idx}] loss={entry.loss:.4f}: {entry.critique}")
+            if watchlist_bundle:
+                logger.info(f"Watchlist bundle:")
+                for entry_idx, entry in watchlist_bundle:
+                    logger.info(f"  W bundle[{entry_idx}] loss={entry.loss:.4f}: {entry.critique}")
+
             iteration_trace = {
                 "iteration": iteration,
                 "center_idx": center_idx,
@@ -244,13 +294,17 @@ class SemanticBundleOptimization(Teleprompter):
                 "lambda_start": lambda_current,
                 "center_prompt": old_center_entry.prompt,
                 "center_critique": old_center_entry.critique,
+                "active_bundle": self._bundle_refs_for_trace(active_bundle),
+                "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
             }
 
             candidates = self._generate_candidates(
                 center_program,
-                bundle[center_idx].critique,
+                old_center_entry.critique,
                 proposer_lm,
                 trace_context=iteration_trace,
+                active_bundle=active_bundle,
+                watchlist_bundle=watchlist_bundle,
             )
 
             logger.info(f"\nGenerated {len(candidates)} candidate programs")
@@ -264,47 +318,111 @@ class SemanticBundleOptimization(Teleprompter):
                     if prompt_text == bundle[center_idx].prompt.get(pred_name):
                         logger.warning(f"    ⚠ Candidate {i+1} [{pred_name}] is IDENTICAL to center!")
 
-            # Stage 2: Filter candidates (Verifier)
-            best_candidate, best_candidate_prompts = self._select_best_candidate(
+            # Stage 2: Score and evaluate the full finite candidate set C_k.
+            candidate_records = self._score_candidate_batch(
                 candidates,
-                bundle,
+                active_bundle,
+                watchlist_bundle,
                 lambda_current,
                 judge_lm,
                 trace_context=iteration_trace,
             )
 
-            # Evaluate robust loss of selected candidate
-            candidate_loss = self._evaluate_program(
-                best_candidate,
-                valset,
-                eval_name=f"iteration_{iteration}_selected_candidate_val",
-            )
+            for record in candidate_records:
+                candidate_loss = self._evaluate_program(
+                    record["program"],
+                    valset,
+                    eval_name=f"iteration_{iteration}_candidate_{record['candidate_index']}_val",
+                )
+                predicted_improvement = old_center_loss - record["model_value"]
+                positive_predicted_improvement = max(0.0, predicted_improvement)
+                actual_improvement = old_center_loss - candidate_loss
+                serious_threshold = self.descent_param * positive_predicted_improvement
+                record.update({
+                    "loss": candidate_loss,
+                    "predicted_improvement": predicted_improvement,
+                    "positive_predicted_improvement": positive_predicted_improvement,
+                    "actual_improvement": actual_improvement,
+                    "serious_step_threshold": serious_threshold,
+                    "in_serious_set": (
+                        actual_improvement > 0
+                        and actual_improvement >= serious_threshold
+                    ),
+                })
 
-            # Compute predicted improvement
-            model_trace: dict[str, Any] = {}
-            model_value = self._compute_model_value(
-                best_candidate_prompts,
-                bundle,
-                lambda_current,
-                judge_lm,
-                trace_context=model_trace,
-            )
-            predicted_improvement = old_center_loss - model_value
-            actual_improvement = old_center_loss - candidate_loss
-            serious_threshold = self.descent_param * predicted_improvement
-            can_serious_step = (
-                predicted_improvement > 0
-                and actual_improvement > 0
-                and actual_improvement >= serious_threshold
-            )
+            serious_records = [record for record in candidate_records if record["in_serious_set"]]
+            if serious_records:
+                best_record = min(
+                    serious_records,
+                    key=lambda record: (record["loss"], record["model_value"], record["candidate_index"]),
+                )
+                selection_reason = "lowest_loss_in_serious_set"
+            else:
+                best_record = min(
+                    candidate_records,
+                    key=lambda record: (record["loss"], record["model_value"], record["candidate_index"]),
+                )
+                selection_reason = "lowest_loss_for_null_refinement"
+
+            best_candidate = best_record["program"]
+            best_candidate_prompts = best_record["prompts"]
+            candidate_loss = best_record["loss"]
+            model_value = best_record["model_value"]
+            model_trace = best_record["model_value_trace"]
+            violation_trace = {
+                "active": best_record["active_violation_trace"],
+                "watchlist": best_record["watchlist_violation_trace"],
+            }
+            active_violation = best_record["active_violation"]
+            watchlist_violation = best_record["watchlist_violation"]
+            predicted_improvement = best_record["predicted_improvement"]
+            positive_predicted_improvement = best_record["positive_predicted_improvement"]
+            actual_improvement = best_record["actual_improvement"]
+            serious_threshold = best_record["serious_step_threshold"]
+            can_serious_step = bool(serious_records)
+
+            for record in candidate_records:
+                record["selection_role"] = (
+                    "serious_trial"
+                    if record is best_record and can_serious_step
+                    else "null_refinement_trial"
+                    if record is best_record
+                    else "not_selected"
+                )
+
+            trace_candidate_records = [
+                self._candidate_record_for_trace(record)
+                for record in candidate_records
+            ]
+            iteration_trace["candidate_records"] = trace_candidate_records
+            if "verifier" in iteration_trace:
+                iteration_trace["verifier"]["selected_candidate_index"] = best_record["candidate_index"]
+                iteration_trace["verifier"]["selected_model_value"] = model_value
+                iteration_trace["verifier"]["selected_loss"] = candidate_loss
+                iteration_trace["verifier"]["selection_reason"] = selection_reason
+                by_idx = {record["candidate_index"]: record for record in trace_candidate_records}
+                for candidate_trace in iteration_trace["verifier"].get("candidates", []):
+                    candidate_trace.update(by_idx.get(candidate_trace["candidate_index"], {}))
+
             iteration_trace.update({
                 "selected_candidate_prompts": best_candidate_prompts,
+                "selected_candidate_index": best_record["candidate_index"],
+                "selection_reason": selection_reason,
                 "candidate_loss": candidate_loss,
                 "model_value": model_value,
                 "model_value_trace": model_trace,
+                "violation_trace": violation_trace,
+                "active_violation": active_violation,
+                "watchlist_violation": watchlist_violation,
+                "active_violation_tolerance": self.active_violation_tolerance,
+                "watchlist_violation_tolerance": self.watchlist_violation_tolerance,
                 "predicted_improvement": predicted_improvement,
+                "positive_predicted_improvement": positive_predicted_improvement,
                 "actual_improvement": actual_improvement,
                 "serious_step_threshold": serious_threshold,
+                "serious_set_candidate_indices": [
+                    record["candidate_index"] for record in serious_records
+                ],
             })
 
             logger.info(f"\n{'='*60}")
@@ -313,8 +431,12 @@ class SemanticBundleOptimization(Teleprompter):
             logger.info(f"  Candidate loss:        {candidate_loss:.4f}")
             logger.info(f"  Model value:           {model_value:.4f}")
             logger.info(f"  Predicted improvement: {predicted_improvement:.4f}")
+            logger.info(f"  Positive predicted:    {positive_predicted_improvement:.4f}")
             logger.info(f"  Actual improvement:    {actual_improvement:.4f}")
             logger.info(f"  Serious threshold:     {serious_threshold:.4f}")
+            logger.info(f"  Active violation:      {active_violation:.4f} (diagnostic)")
+            logger.info(f"  Watchlist violation:   {watchlist_violation:.4f} (diagnostic)")
+            logger.info(f"  Serious set size:      {len(serious_records)}")
             logger.info(f"\nBest candidate selected:")
             for pred_name, prompt_text in best_candidate_prompts.items():
                 # Check if changed
@@ -343,25 +465,25 @@ class SemanticBundleOptimization(Teleprompter):
                     judge_lm,
                     trace_context=lambda_update_trace,
                 )
+                centered_semantic_score = semantic_score - old_center_entry.self_score
 
-                if abs(semantic_score) > 1e-6:  # Avoid division by zero
-                    lambda_obs = actual_improvement / abs(semantic_score)
-                    lambda_current = max(
-                        self.lambda_min,
-                        min(
-                            self.lambda_max,
-                            (1 - self.lambda_gamma) * lambda_current + self.lambda_gamma * lambda_obs
-                        )
+                lambda_obs = actual_improvement / (
+                    abs(centered_semantic_score) + self.lambda_stability_epsilon
+                )
+                lambda_current = max(
+                    self.lambda_min,
+                    min(
+                        self.lambda_max,
+                        (1 - self.lambda_gamma) * lambda_current + self.lambda_gamma * lambda_obs
                     )
-                    logger.info(f"Updated λ: {lambda_current:.3f} (observed: {lambda_obs:.3f})")
-                else:
-                    lambda_obs = None
+                )
+                logger.info(f"Updated λ: {lambda_current:.3f} (observed: {lambda_obs:.3f})")
 
                 # Generate critique for new center
                 critique_trace: dict[str, Any] = {}
                 critique = self._generate_critique(
                     best_candidate,
-                    trainset,
+                    critique_examples,
                     best_candidate_prompts,
                     critic_lm,
                     trace_context=critique_trace,
@@ -372,6 +494,9 @@ class SemanticBundleOptimization(Teleprompter):
                     "lambda_after": lambda_current,
                     "lambda_observed": lambda_obs,
                     "semantic_score": semantic_score,
+                    "old_center_self_score": old_center_entry.self_score,
+                    "centered_semantic_score": centered_semantic_score,
+                    "lambda_stability_epsilon": self.lambda_stability_epsilon,
                     "semantic_score_trace": lambda_update_trace,
                 }
                 iteration_trace["critique_generation"] = critique_trace
@@ -393,27 +518,72 @@ class SemanticBundleOptimization(Teleprompter):
                     trace_context=critique_trace,
                 )
                 iteration_trace["step_type"] = "null"
+                any_improving_candidate = any(
+                    record["actual_improvement"] > 0 for record in candidate_records
+                )
                 iteration_trace["null_reason"] = (
-                    "non_positive_predicted_improvement"
-                    if predicted_improvement <= 0
-                    else "insufficient_actual_improvement"
+                    "no_candidate_improved_validation_loss"
+                    if not any_improving_candidate
+                    else "insufficient_model_confirmed_improvement"
                 )
                 iteration_trace["critique_generation"] = critique_trace
 
             # Add to bundle (both serious and null steps)
+            new_self_score_trace: dict[str, Any] = {}
+            new_self_score = self._compute_semantic_score(
+                best_candidate_prompts,
+                best_candidate_prompts,
+                critique,
+                judge_lm,
+                trace_context=new_self_score_trace,
+            )
+            entry_kind = "standard" if can_serious_step else "null_self_cut"
+            exact_cut_signature = (
+                self._prompt_signature(best_candidate_prompts)
+                if self.enable_exact_null_cuts and not can_serious_step
+                else None
+            )
+            exact_cut_loss = (
+                candidate_loss
+                if self.enable_exact_null_cuts and not can_serious_step
+                else None
+            )
+            exact_cut_center_signature = (
+                self._prompt_signature(old_center_entry.prompt)
+                if self.enable_exact_null_cuts and not can_serious_step
+                else None
+            )
             bundle.append(BundleEntry(
                 prompt=best_candidate_prompts,
                 loss=candidate_loss,
                 critique=critique,
-                iteration=iteration
+                iteration=iteration,
+                self_score=new_self_score,
+                lambda_value=lambda_current,
+                kind=entry_kind,
+                exact_cut_signature=exact_cut_signature,
+                exact_cut_loss=exact_cut_loss,
+                exact_cut_center_signature=exact_cut_center_signature,
             ))
+            if can_serious_step:
+                center_idx = len(bundle) - 1
+            bundle, center_idx = self._prune_bundle(bundle, center_idx)
             iteration_trace["lambda_end"] = lambda_current
             iteration_trace["bundle_entry_added"] = {
-                "bundle_idx": len(bundle) - 1,
+                "bundle_idx": center_idx if can_serious_step else self._find_bundle_entry_index(bundle, iteration),
                 "loss": candidate_loss,
                 "critique": critique,
                 "prompt": best_candidate_prompts,
+                "self_score": new_self_score,
+                "self_score_trace": new_self_score_trace,
+                "lambda_value": lambda_current,
+                "kind": entry_kind,
+                "exact_cut_signature": exact_cut_signature,
+                "exact_cut_loss": exact_cut_loss,
+                "exact_cut_center_signature": exact_cut_center_signature,
             }
+            iteration_trace["bundle_size_after_prune"] = len(bundle)
+            iteration_trace["center_idx_after_prune"] = center_idx
             iteration_trace["num_serious_steps_so_far"] = num_serious
             iteration_trace["num_null_steps_so_far"] = num_null
             iteration_trace["consecutive_null_steps"] = consecutive_null
@@ -424,10 +594,12 @@ class SemanticBundleOptimization(Teleprompter):
                 logger.info(f"Terminating: {self.max_null_steps} consecutive null steps")
                 break
 
-            # Only terminate on non-positive predicted improvement after a few iterations
-            # This gives the optimizer time to build a useful bundle
-            if iteration >= 3 and predicted_improvement <= 0:
-                logger.info("Terminating: Non-positive predicted improvement (after iteration 3+)")
+            # Algorithm 1 stops when no generated candidate improves validation loss.
+            if (
+                self.stop_on_no_improving_candidate
+                and all(record["actual_improvement"] <= 0 for record in candidate_records)
+            ):
+                logger.info("Terminating: no candidate improved validation loss")
                 break
 
         # Return best program from bundle
@@ -825,21 +997,31 @@ Critique:"""
         critique: str,
         lm: LM,
         trace_context: Optional[dict[str, Any]] = None,
+        active_bundle: Optional[list[tuple[int, BundleEntry]]] = None,
+        watchlist_bundle: Optional[list[tuple[int, BundleEntry]]] = None,
     ) -> list[Module]:
         """Generate N candidate variations addressing the critique (Proposer)."""
         center_prompts = self._extract_prompts(center_program)
         prompt_text = self._format_instruction_prompt(center_prompts)
+        active_bundle = active_bundle or []
+        watchlist_bundle = watchlist_bundle or []
+        active_text = self._format_bundle_for_proposer(active_bundle) if active_bundle else f"A0: {critique}"
+        watchlist_text = self._format_bundle_for_proposer(watchlist_bundle) if watchlist_bundle else "(none)"
 
-        proposer_prompt = f"""You are an intelligent optimizer. Generate {self.num_candidates} variations of the prompt that address the critique while preserving the original intent.
+        proposer_prompt = f"""You are an intelligent local prompt proposer. Generate {self.num_candidates} variations of the prompt that address the active critique bundle while preserving the original task intent and avoiding regressions on the watchlist.
 
 Current Prompt:
 {prompt_text}
 
-Critique: {critique}
+Active Critique Bundle:
+{active_text}
+
+Watchlist of Non-Active Critiques:
+{watchlist_text}
 
 Constraints:
 1. Local edits only: Do not rewrite the entire prompt from scratch. Keep structure similar.
-2. Focus: Address the critique directly
+2. Focus: Address the active critiques directly, prioritizing high-loss or recent critiques. Use the watchlist only as a regression check.
 3. Diversity: Generate {self.num_candidates} distinct variations
 
 Output Format: Return exactly {self.num_candidates} candidate prompts. Each candidate should start with "CANDIDATE N:" on its own line, followed by the improved prompt text.
@@ -865,44 +1047,19 @@ Candidates:"""
         logger.info(f"{response_text}")
         logger.info(f"{'='*60}\n")
 
-        # Parse candidates - improved parsing to handle various LM response formats
         candidates = []
         parsed_candidates = []
-        
-        # Try splitting by "CANDIDATE" keyword first
-        parts = response_text.split('CANDIDATE')
-        
-        for i, part in enumerate(parts):
-            if i == 0 and not part.strip():
-                continue  # Skip empty first part
-            
-            # Remove the candidate number/marker (e.g., "1:", "2:", etc.)
-            lines = part.strip().split('\n')
-            if lines:
-                # Remove first line if it's just a number/colon
-                first_line = lines[0].strip()
-                if first_line and (first_line[0].isdigit() or first_line.startswith(':')):
-                    # Check if there's actual text after the number
-                    colon_idx = first_line.find(':')
-                    if colon_idx >= 0 and len(first_line) > colon_idx + 1:
-                        # Text on same line as "CANDIDATE N:"
-                        lines[0] = first_line[colon_idx + 1:].strip()
-                    else:
-                        # Number/colon only, skip this line
-                        lines = lines[1:]
-            
-            candidate_text = '\n'.join(lines).strip()
-            
-            # Only add if we have non-empty text
-            if candidate_text:
-                logger.info(f"Parsed candidate {len(candidates)+1}: {repr(candidate_text)}")
-                new_prompts = {k: candidate_text for k in center_prompts.keys()}
-                parsed_candidates.append({
-                    "candidate_index": len(candidates),
-                    "candidate_text": candidate_text,
-                    "prompts": new_prompts,
-                })
-                candidates.append(self._build_program_from_prompts(center_program, new_prompts))
+        candidate_texts, parse_warnings = self._parse_candidate_response(response_text)
+
+        for candidate_text in candidate_texts[: self.num_candidates]:
+            logger.info(f"Parsed candidate {len(candidates)+1}: {repr(candidate_text)}")
+            new_prompts = {k: candidate_text for k in center_prompts.keys()}
+            parsed_candidates.append({
+                "candidate_index": len(candidates),
+                "candidate_text": candidate_text,
+                "prompts": new_prompts,
+            })
+            candidates.append(self._build_program_from_prompts(center_program, new_prompts))
 
         # If parsing failed completely, try to extract at least some variations
         if len(candidates) == 0:
@@ -934,12 +1091,50 @@ Candidates:"""
                 "prompt_text": prompt_text,
                 "runtime_inputs_attached": False,
                 "critique": critique,
+                "active_bundle": self._bundle_refs_for_trace(active_bundle),
+                "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
+                "active_bundle_text": active_text,
+                "watchlist_text": watchlist_text,
                 "proposer_prompt": proposer_prompt,
                 "raw_response": response_text,
                 "temperature": self.temperature,
+                "parse_warnings": parse_warnings,
                 "parsed_candidates": parsed_candidates[:self.num_candidates],
             }
         return candidates[:self.num_candidates]
+
+    def _parse_candidate_response(self, response_text: str) -> tuple[list[str], list[str]]:
+        """Parse proposer output while avoiding accidental matches like 'CANDIDATE -3'."""
+        warnings = []
+        texts = []
+
+        candidate_pattern = re.compile(
+            r"(?ms)^\s*CANDIDATE\s+(\d+)\s*:\s*(.*?)(?=^\s*CANDIDATE\s+\d+\s*:|\Z)"
+        )
+        for match in candidate_pattern.finditer(response_text):
+            body = match.group(2).strip()
+            if body:
+                texts.append(body)
+
+        if texts:
+            if re.search(r"(?m)^\s*CANDIDATE\s+-\d+\s*:", response_text):
+                warnings.append("ignored_negative_candidate_marker")
+            return texts, warnings
+
+        numbered_pattern = re.compile(
+            r"(?ms)^\s*(\d+)[\.\)]\s+(.*?)(?=^\s*\d+[\.\)]\s+|\Z)"
+        )
+        for match in numbered_pattern.finditer(response_text):
+            body = match.group(2).strip()
+            if body:
+                texts.append(body)
+
+        if texts:
+            warnings.append("parsed_numbered_list_fallback")
+            return texts, warnings
+
+        warnings.append("no_candidates_parsed")
+        return [], warnings
 
     def _format_instruction_prompt(self, prompts: dict[str, str]) -> str:
         """Format predictor instructions without any example-specific variables."""
@@ -1170,8 +1365,8 @@ Candidate Prompt:
 {candidate_text}
 
 Scoring Rubric:
-• +1.0 (Strong Descent): Candidate completely resolves the issue
-• +0.5 (Weak Descent): Candidate partially fixes the issue
+• +1.0 (Strong Alignment): Candidate completely resolves the issue
+• +0.5 (Weak Alignment): Candidate partially fixes the issue
 • 0.0 (Orthogonal): Candidate ignores the critique
 • -0.5 (Weak Regression): Candidate slightly worsens the issue
 • -1.0 (Strong Regression): Candidate explicitly violates the critique
@@ -1214,80 +1409,220 @@ Score:"""
             return parsed_score, detail
         return parsed_score
 
+    def _score_candidate_batch(
+        self,
+        candidates: list[Module],
+        active_bundle: list[tuple[int, BundleEntry]],
+        watchlist_bundle: list[tuple[int, BundleEntry]],
+        lambda_current: float,
+        lm: LM,
+        trace_context: Optional[dict[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
+        """Score every generated candidate against the active bundle model."""
+        logger.info(f"\n{'='*60}")
+        logger.info(
+            f"VERIFIER: Scoring {len(candidates)} candidates against "
+            f"{len(active_bundle)} active and {len(watchlist_bundle)} watchlist entries"
+        )
+        logger.info(
+            f"  (This requires about "
+            f"{len(candidates) * (len(active_bundle) + len(watchlist_bundle)) * self.num_judge_samples} "
+            "judge LM calls)"
+        )
+        logger.info(f"{'='*60}")
+
+        verifier_trace = {
+            "lambda_current": lambda_current,
+            "tau_margin": self.tau_margin,
+            "active_tau_margin": self.active_tau_margin,
+            "watchlist_tau_margin": self.watchlist_tau_margin,
+            "num_candidates": len(candidates),
+            "active_bundle_size": len(active_bundle),
+            "watchlist_size": len(watchlist_bundle),
+            "active_bundle": self._bundle_refs_for_trace(active_bundle),
+            "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
+            "selection_policy": "paper_loss_first_candidate_set",
+            "candidates": [],
+        }
+
+        records = []
+        for idx, candidate in enumerate(candidates):
+            candidate_prompts = self._extract_prompts(candidate)
+            model_trace: dict[str, Any] = {}
+            model_value = self._compute_model_value(
+                candidate_prompts,
+                active_bundle,
+                lambda_current,
+                lm,
+                trace_context=model_trace,
+            )
+            active_violation_trace: dict[str, Any] = {}
+            active_violation = self._compute_bundle_violation(
+                candidate_prompts,
+                active_bundle,
+                self.active_tau_margin,
+                lm,
+                trace_context=active_violation_trace,
+            )
+            watchlist_violation_trace: dict[str, Any] = {}
+            watchlist_violation = self._compute_bundle_violation(
+                candidate_prompts,
+                watchlist_bundle,
+                self.watchlist_tau_margin,
+                lm,
+                trace_context=watchlist_violation_trace,
+            )
+            total_violation = active_violation + watchlist_violation
+            record = {
+                "candidate_index": idx,
+                "program": candidate,
+                "prompts": candidate_prompts,
+                "model_value": model_value,
+                "model_value_trace": model_trace,
+                "active_violation": active_violation,
+                "watchlist_violation": watchlist_violation,
+                "total_violation": total_violation,
+                "active_violation_trace": active_violation_trace,
+                "watchlist_violation_trace": watchlist_violation_trace,
+                # Keep the historical key name for existing trace readers/tests.
+                "bundle_scores": active_violation_trace.get("entries", []),
+                "active_scores": active_violation_trace.get("entries", []),
+                "watchlist_scores": watchlist_violation_trace.get("entries", []),
+            }
+            records.append(record)
+            verifier_trace["candidates"].append(self._candidate_record_for_trace(record))
+            logger.info(
+                f"  Candidate {idx+1}: model={model_value:.4f}, "
+                f"active_violation={active_violation:.4f}, watchlist_violation={watchlist_violation:.4f}"
+            )
+
+        semantic_ranked = sorted(records, key=lambda item: (item["model_value"], item["total_violation"]))
+        for rank, record in enumerate(semantic_ranked, start=1):
+            record["semantic_rank"] = rank
+
+        if trace_context is not None:
+            trace_context["verifier"] = verifier_trace
+        return records
+
+    def _candidate_record_for_trace(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Remove non-serializable candidate program objects from a candidate record."""
+        return {
+            key: value
+            for key, value in record.items()
+            if key != "program"
+        }
+
     def _select_best_candidate(
         self,
         candidates: list[Module],
-        bundle: list[BundleEntry],
+        active_bundle: list[tuple[int, BundleEntry]],
+        watchlist_bundle: list[tuple[int, BundleEntry]],
         lambda_current: float,
         lm: LM,
         trace_context: Optional[dict[str, Any]] = None,
     ) -> tuple[Module, dict[str, str]]:
         """
-        Select best candidate by minimizing cumulative semantic violation (Verifier).
+        Select best candidate by approximately minimizing the active semantic model.
 
         Returns: (best_program, best_prompts)
         """
         logger.info(f"\n{'='*60}")
-        logger.info(f"VERIFIER: Evaluating {len(candidates)} candidates against bundle of {len(bundle)}")
-        logger.info(f"  (This requires {len(candidates) * len(bundle) * self.num_judge_samples} judge LM calls)")
+        logger.info(
+            f"VERIFIER: Evaluating {len(candidates)} candidates against "
+            f"{len(active_bundle)} active and {len(watchlist_bundle)} watchlist entries"
+        )
+        logger.info(
+            f"  (This requires about "
+            f"{len(candidates) * (len(active_bundle) + len(watchlist_bundle)) * self.num_judge_samples} "
+            "judge LM calls)"
+        )
         logger.info(f"{'='*60}")
 
-        best_violation = float('inf')
+        best_model_value = float('inf')
+        best_total_violation = float('inf')
         best_candidate = candidates[0]
         best_prompts = self._extract_prompts(candidates[0])
         verifier_trace = {
             "lambda_current": lambda_current,
             "tau_margin": self.tau_margin,
+            "active_tau_margin": self.active_tau_margin,
+            "watchlist_tau_margin": self.watchlist_tau_margin,
             "num_candidates": len(candidates),
-            "bundle_size": len(bundle),
+            "active_bundle_size": len(active_bundle),
+            "watchlist_size": len(watchlist_bundle),
+            "active_bundle": self._bundle_refs_for_trace(active_bundle),
+            "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
             "candidates": [],
         }
 
         for idx, candidate in enumerate(candidates):
             candidate_prompts = self._extract_prompts(candidate)
 
-            # Compute cumulative violation against all bundle entries
-            total_violation = 0.0
-            scores_detail = []
+            # Compute the paper's active max-envelope model and diagnostic violations.
+            model_trace: dict[str, Any] = {}
+            model_value = self._compute_model_value(
+                candidate_prompts,
+                active_bundle,
+                lambda_current,
+                lm,
+                trace_context=model_trace,
+            )
+            active_violation_trace: dict[str, Any] = {}
+            active_violation = self._compute_bundle_violation(
+                candidate_prompts,
+                active_bundle,
+                self.active_tau_margin,
+                lm,
+                trace_context=active_violation_trace,
+            )
+            watchlist_violation_trace: dict[str, Any] = {}
+            watchlist_violation = self._compute_bundle_violation(
+                candidate_prompts,
+                watchlist_bundle,
+                self.watchlist_tau_margin,
+                lm,
+                trace_context=watchlist_violation_trace,
+            )
+            total_violation = active_violation + watchlist_violation
             candidate_trace = {
                 "candidate_index": idx,
                 "prompts": candidate_prompts,
-                "bundle_scores": [],
+                "model_value": model_value,
+                "model_value_trace": model_trace,
+                "active_violation": active_violation,
+                "watchlist_violation": watchlist_violation,
+                "total_violation": total_violation,
+                # Keep the historical key name for existing trace readers/tests.
+                "bundle_scores": active_violation_trace.get("entries", []),
+                "active_scores": active_violation_trace.get("entries", []),
+                "watchlist_scores": watchlist_violation_trace.get("entries", []),
             }
-            for entry_idx, entry in enumerate(bundle):
-                score_trace: dict[str, Any] = {}
-                score = self._compute_semantic_score(
-                    candidate_prompts,
-                    entry.prompt,
-                    entry.critique,
-                    lm,
-                    trace_context=score_trace,
+
+            logger.info(
+                f"  Candidate {idx+1}: model={model_value:.4f}, "
+                f"active_violation={active_violation:.4f}, watchlist_violation={watchlist_violation:.4f}"
+            )
+            for item in candidate_trace["active_scores"]:
+                logger.info(
+                    f"    vs active bundle[{item['bundle_idx']}]: "
+                    f"centered={item['centered_score']:.3f}, violation={item['violation']:.3f}"
                 )
-                # Hinge loss: max(0, τ - score)
-                violation = max(0, self.tau_margin - score)
-                total_violation += violation
-                scores_detail.append((score, violation))
-                candidate_trace["bundle_scores"].append({
-                    "bundle_idx": entry_idx,
-                    "bundle_iteration": entry.iteration,
-                    "bundle_loss": entry.loss,
-                    "score": score,
-                    "violation": violation,
-                    "semantic_score_trace": score_trace,
-                })
 
-            logger.info(f"  Candidate {idx+1}: total_violation={total_violation:.4f}")
-            for i, (score, viol) in enumerate(scores_detail):
-                logger.info(f"    vs bundle[{i}]: score={score:.3f}, violation={viol:.3f}")
-
-            if total_violation < best_violation:
-                best_violation = total_violation
+            is_better = (
+                model_value < best_model_value
+                or (model_value == best_model_value and total_violation < best_total_violation)
+            )
+            if is_better:
+                best_model_value = model_value
+                best_total_violation = total_violation
                 best_candidate = candidate
                 best_prompts = candidate_prompts
-            candidate_trace["total_violation"] = total_violation
             verifier_trace["candidates"].append(candidate_trace)
 
-        logger.info(f"\n✓ Selected candidate with violation: {best_violation:.4f}")
+        logger.info(
+            f"\n✓ Selected candidate with model value: {best_model_value:.4f} "
+            f"(total violation: {best_total_violation:.4f})"
+        )
         logger.info(f"{'='*60}\n")
         verifier_trace["selected_candidate_index"] = next(
             (
@@ -1297,7 +1632,8 @@ Score:"""
             ),
             None,
         )
-        verifier_trace["selected_violation"] = best_violation
+        verifier_trace["selected_model_value"] = best_model_value
+        verifier_trace["selected_violation"] = best_total_violation
         if trace_context is not None:
             trace_context["verifier"] = verifier_trace
         return best_candidate, best_prompts
@@ -1305,18 +1641,22 @@ Score:"""
     def _compute_model_value(
         self,
         prompts: dict[str, str],
-        bundle: list[BundleEntry],
+        bundle: list[tuple[int, BundleEntry]] | list[BundleEntry],
         lambda_current: float,
         lm: LM,
         trace_context: Optional[dict[str, Any]] = None,
     ) -> float:
         """
-        Compute cutting-plane model M_k(p) = max_i {F̃_i - λ·Ŝ_J(p, p_i, c_i)}.
+        Compute M_k(p) = max_i {F̃_i - λ_i · [Ŝ_J(p,p_i,c_i)-s_i^0]}.
         """
         model_value = float('-inf')
         terms = []
 
-        for entry_idx, entry in enumerate(bundle):
+        normalized_bundle = self._normalize_bundle_refs(bundle)
+        if not normalized_bundle:
+            model_value = float("inf")
+
+        for entry_idx, entry in normalized_bundle:
             score_trace: dict[str, Any] = {}
             score = self._compute_semantic_score(
                 prompts,
@@ -1325,15 +1665,30 @@ Score:"""
                 lm,
                 trace_context=score_trace,
             )
-            value = entry.loss - lambda_current * score
+            centered_score = score - entry.self_score
+            lambda_value = entry.lambda_value if entry.lambda_value is not None else lambda_current
+            value = entry.loss - lambda_value * centered_score
+            exact_cut_applied = False
+            if (
+                self.enable_exact_null_cuts
+                and entry.exact_cut_signature is not None
+                and entry.exact_cut_loss is not None
+                and self._prompt_signature(prompts) == entry.exact_cut_signature
+            ):
+                value = max(value, entry.exact_cut_loss)
+                exact_cut_applied = True
             model_value = max(model_value, value)
             terms.append({
                 "bundle_idx": entry_idx,
                 "bundle_iteration": entry.iteration,
                 "bundle_loss": entry.loss,
                 "semantic_score": score,
-                "lambda_current": lambda_current,
+                "self_score": entry.self_score,
+                "centered_score": centered_score,
+                "lambda_value": lambda_value,
                 "term_value": value,
+                "exact_cut_applied": exact_cut_applied,
+                "exact_cut_loss": entry.exact_cut_loss,
                 "semantic_score_trace": score_trace,
             })
 
@@ -1341,10 +1696,143 @@ Score:"""
             trace_context.update({
                 "candidate_prompts": prompts,
                 "lambda_current": lambda_current,
+                "model_kind": "centered_active_bundle_max_envelope",
                 "terms": terms,
                 "model_value": model_value,
             })
         return model_value
+
+    def _compute_bundle_violation(
+        self,
+        prompts: dict[str, str],
+        bundle: list[tuple[int, BundleEntry]] | list[BundleEntry],
+        margin: float,
+        lm: LM,
+        trace_context: Optional[dict[str, Any]] = None,
+    ) -> float:
+        """Compute sum_i max(0, tau - centered_score_i) for a bundle subset."""
+        total = 0.0
+        entries = []
+        for entry_idx, entry in self._normalize_bundle_refs(bundle):
+            score_trace: dict[str, Any] = {}
+            raw_score = self._compute_semantic_score(
+                prompts,
+                entry.prompt,
+                entry.critique,
+                lm,
+                trace_context=score_trace,
+            )
+            centered_score = raw_score - entry.self_score
+            violation = max(0.0, margin - centered_score)
+            total += violation
+            entries.append({
+                "bundle_idx": entry_idx,
+                "bundle_iteration": entry.iteration,
+                "bundle_loss": entry.loss,
+                "critique": entry.critique,
+                "raw_score": raw_score,
+                "self_score": entry.self_score,
+                "centered_score": centered_score,
+                "margin": margin,
+                "violation": violation,
+                "semantic_score_trace": score_trace,
+            })
+        if trace_context is not None:
+            trace_context.update({
+                "candidate_prompts": prompts,
+                "margin": margin,
+                "total_violation": total,
+                "entries": entries,
+            })
+        return total
+
+    def _select_active_and_watchlist(
+        self,
+        bundle: list[BundleEntry],
+        center_idx: int,
+    ) -> tuple[list[tuple[int, BundleEntry]], list[tuple[int, BundleEntry]]]:
+        """Select a compact active bundle and watchlist from stored critiques."""
+        indexed = list(enumerate(bundle))
+        center = [(center_idx, bundle[center_idx])] if 0 <= center_idx < len(bundle) else []
+        remaining = [(idx, entry) for idx, entry in indexed if idx != center_idx]
+        # Prefer high-loss and recent critiques for active constraints.
+        remaining_sorted = sorted(
+            remaining,
+            key=lambda item: (item[1].loss, item[1].iteration),
+            reverse=True,
+        )
+        active = (center + remaining_sorted)[: self.active_bundle_size]
+        active_ids = {idx for idx, _ in active}
+        watchlist_pool = [(idx, entry) for idx, entry in remaining_sorted if idx not in active_ids]
+        watchlist = watchlist_pool[: self.watchlist_size]
+        return active, watchlist
+
+    def _normalize_bundle_refs(
+        self,
+        bundle: list[tuple[int, BundleEntry]] | list[BundleEntry],
+    ) -> list[tuple[int, BundleEntry]]:
+        if not bundle:
+            return []
+        first = bundle[0]
+        if isinstance(first, tuple):
+            return bundle  # type: ignore[return-value]
+        return list(enumerate(bundle))  # type: ignore[arg-type]
+
+    def _bundle_refs_for_trace(self, bundle: list[tuple[int, BundleEntry]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "bundle_idx": idx,
+                "iteration": entry.iteration,
+                "loss": entry.loss,
+                "critique": entry.critique,
+                "self_score": entry.self_score,
+                "lambda_value": entry.lambda_value,
+                "kind": entry.kind,
+                "prompt": entry.prompt,
+                "exact_cut_signature": entry.exact_cut_signature,
+                "exact_cut_loss": entry.exact_cut_loss,
+                "exact_cut_center_signature": entry.exact_cut_center_signature,
+            }
+            for idx, entry in bundle
+        ]
+
+    def _format_bundle_for_proposer(self, bundle: list[tuple[int, BundleEntry]]) -> str:
+        if not bundle:
+            return "(none)"
+        lines = []
+        for local_idx, (entry_idx, entry) in enumerate(bundle, start=1):
+            critique = self._clip_for_prompt(entry.critique, self.max_bundle_critique_chars)
+            lines.append(
+                f"{local_idx}. id=bundle[{entry_idx}], iteration={entry.iteration}, "
+                f"loss={entry.loss:.4f}, critique={critique}"
+            )
+        return "\n".join(lines)
+
+    def _prune_bundle(
+        self,
+        bundle: list[BundleEntry],
+        center_idx: int,
+    ) -> tuple[list[BundleEntry], int]:
+        """Keep the center plus recent/high-loss entries up to bundle_size."""
+        if len(bundle) <= self.bundle_size:
+            return bundle, center_idx
+        keep = {center_idx}
+        candidates = [
+            (idx, entry)
+            for idx, entry in enumerate(bundle)
+            if idx != center_idx
+        ]
+        candidates = sorted(candidates, key=lambda item: (item[1].iteration, item[1].loss), reverse=True)
+        keep.update(idx for idx, _ in candidates[: self.bundle_size - 1])
+        kept_pairs = [(idx, entry) for idx, entry in enumerate(bundle) if idx in keep]
+        new_center_idx = next(new_idx for new_idx, (old_idx, _) in enumerate(kept_pairs) if old_idx == center_idx)
+        return [entry for _, entry in kept_pairs], new_center_idx
+
+    def _find_bundle_entry_index(self, bundle: list[BundleEntry], iteration: int) -> Optional[int]:
+        for idx, entry in enumerate(bundle):
+            if entry.iteration == iteration:
+                return idx
+        return None
 
     def _new_trace(
         self,
@@ -1357,6 +1845,7 @@ Score:"""
         """Create an SBO trace container."""
         return {
             "trace_version": 1,
+            "algorithm": "sbo",
             "config": {
                 "num_candidates": self.num_candidates,
                 "num_judge_samples": self.num_judge_samples,
@@ -1366,6 +1855,15 @@ Score:"""
                 "lambda_max": self.lambda_max,
                 "lambda_gamma": self.lambda_gamma,
                 "tau_margin": self.tau_margin,
+                "bundle_size": self.bundle_size,
+                "active_bundle_size": self.active_bundle_size,
+                "watchlist_size": self.watchlist_size,
+                "active_tau_margin": self.active_tau_margin,
+                "watchlist_tau_margin": self.watchlist_tau_margin,
+                "active_violation_tolerance": self.active_violation_tolerance,
+                "watchlist_violation_tolerance": self.watchlist_violation_tolerance,
+                "lambda_stability_epsilon": self.lambda_stability_epsilon,
+                "tau_stop": self.tau_stop,
                 "max_iterations": self.max_iterations,
                 "max_null_steps": self.max_null_steps,
                 "temperature": self.temperature,
@@ -1377,12 +1875,16 @@ Score:"""
                 "parse_retry_temperature": self.parse_retry_temperature,
                 "max_critique_examples": self.max_critique_examples,
                 "max_critique_field_chars": self.max_critique_field_chars,
+                "max_bundle_critique_chars": self.max_bundle_critique_chars,
+                "stop_on_no_improving_candidate": self.stop_on_no_improving_candidate,
+                "enable_exact_null_cuts": self.enable_exact_null_cuts,
                 "track_stats": self.track_stats,
             },
             "dataset": {
                 "train_size": len(trainset),
                 "val_size": len(valset),
                 "input_fields": self._infer_input_fields(trainset or valset),
+                "critique_examples_source": "valset",
             },
             "lms": {
                 "judge": self._lm_trace(judge_lm),
@@ -1427,7 +1929,13 @@ Score:"""
                     "iteration": entry.iteration,
                     "loss": entry.loss,
                     "critique": entry.critique,
+                    "self_score": entry.self_score,
+                    "lambda_value": entry.lambda_value,
+                    "kind": entry.kind,
                     "prompt": entry.prompt,
+                    "exact_cut_signature": entry.exact_cut_signature,
+                    "exact_cut_loss": entry.exact_cut_loss,
+                    "exact_cut_center_signature": entry.exact_cut_center_signature,
                 }
                 for idx, entry in enumerate(bundle)
             ],
@@ -1544,6 +2052,10 @@ Score:"""
             "kwargs": self._safe_serialize(getattr(lm, "kwargs", {})),
         }
 
+    def _prompt_signature(self, prompts: dict[str, str]) -> str:
+        """Canonical prompt signature used only for exact null self-cut matching."""
+        return json.dumps(self._safe_serialize(prompts), sort_keys=True, ensure_ascii=False)
+
     def _infer_input_fields(self, examples: list[Example]) -> list[str]:
         if not examples:
             return []
@@ -1563,3 +2075,346 @@ Score:"""
             return dict(value)
         except Exception:
             return repr(value)
+
+
+@experimental(version="3.1.0")
+class SemanticBundleOptimizationLite(SemanticBundleOptimization):
+    """SBO-Lite: critique-bundle search with qualitative constraint verification."""
+
+    def compile(
+        self,
+        student: Module,
+        *,
+        trainset: list[Example],
+        teacher: Module | None = None,
+        valset: list[Example] | None = None,
+        **kwargs
+    ) -> Module:
+        judge_lm = self.judge_lm or dspy.settings.lm
+        proposer_lm = self.proposer_lm or dspy.settings.lm
+        critic_lm = self.critic_lm or dspy.settings.lm
+
+        if valset is None or len(valset) == 0:
+            raise ValueError("SBO-Lite requires a validation set for robust loss estimation")
+        critique_examples = valset
+
+        logger.info(f"Starting SBO-Lite optimization with {len(trainset)} train, {len(valset)} val examples")
+        self.trace = self._new_trace(trainset, valset, judge_lm, proposer_lm, critic_lm)
+        self.trace["algorithm"] = "sbo_lite"
+        self.trace["config"]["lite_verifier"] = "qualitative_json"
+
+        original_prompts = self._extract_prompts(student)
+        original_loss = self._evaluate_program(student, valset, eval_name="initial_val")
+        initial_critique = self._generate_critique(
+            student,
+            critique_examples,
+            original_prompts,
+            critic_lm,
+            trace_context=self.trace["initial"],
+        )
+        self.trace["initial"].update({
+            "prompts": original_prompts,
+            "loss": original_loss,
+            "critique": initial_critique,
+        })
+
+        bundle = [BundleEntry(
+            prompt=original_prompts,
+            loss=original_loss,
+            critique=initial_critique,
+            iteration=0,
+            self_score=0.0,
+            lambda_value=0.0,
+            kind="lite",
+        )]
+        center_program = student.deepcopy()
+        center_idx = 0
+        num_serious = 0
+        num_null = 0
+        consecutive_null = 0
+        iteration = 0
+
+        for iteration in range(1, self.max_iterations + 1):
+            old_center_entry = bundle[center_idx]
+            old_center_loss = old_center_entry.loss
+            active_bundle, watchlist_bundle = self._select_active_and_watchlist(bundle, center_idx)
+            iteration_trace = {
+                "iteration": iteration,
+                "center_idx": center_idx,
+                "center_loss": old_center_loss,
+                "center_prompt": old_center_entry.prompt,
+                "center_critique": old_center_entry.critique,
+                "active_bundle": self._bundle_refs_for_trace(active_bundle),
+                "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
+                "lite_controller": True,
+            }
+
+            candidates = self._generate_candidates(
+                center_program,
+                old_center_entry.critique,
+                proposer_lm,
+                trace_context=iteration_trace,
+                active_bundle=active_bundle,
+                watchlist_bundle=watchlist_bundle,
+            )
+
+            candidate_records = []
+            for candidate_idx, candidate in enumerate(candidates):
+                candidate_prompts = self._extract_prompts(candidate)
+                candidate_loss = self._evaluate_program(
+                    candidate,
+                    valset,
+                    eval_name=f"lite_iteration_{iteration}_candidate_{candidate_idx}_val",
+                )
+                verifier_trace: dict[str, Any] = {}
+                verifier_result = self._lite_verify_candidate(
+                    current_prompts=old_center_entry.prompt,
+                    candidate_prompts=candidate_prompts,
+                    active_bundle=active_bundle,
+                    watchlist_bundle=watchlist_bundle,
+                    lm=judge_lm,
+                    trace_context=verifier_trace,
+                )
+                improvement = old_center_loss - candidate_loss
+                admissible = improvement > 0 and not verifier_result.get("blocking_regression", True)
+                candidate_records.append({
+                    "candidate_index": candidate_idx,
+                    "program": candidate,
+                    "prompts": candidate_prompts,
+                    "loss": candidate_loss,
+                    "actual_improvement": improvement,
+                    "verifier": verifier_result,
+                    "verifier_trace": verifier_trace,
+                    "admissible": admissible,
+                })
+
+            admissible_records = [record for record in candidate_records if record["admissible"]]
+            best_record = min(
+                admissible_records or candidate_records,
+                key=lambda record: (record["loss"], -record["actual_improvement"]),
+            )
+            iteration_trace["candidates"] = [
+                {k: v for k, v in record.items() if k != "program"}
+                for record in candidate_records
+            ]
+            iteration_trace["selected_candidate_index"] = best_record["candidate_index"]
+            iteration_trace["candidate_loss"] = best_record["loss"]
+            iteration_trace["actual_improvement"] = best_record["actual_improvement"]
+
+            if best_record["admissible"]:
+                logger.info("SBO-Lite serious step: accepting improving candidate with no blocking regression")
+                center_program = best_record["program"]
+                num_serious += 1
+                consecutive_null = 0
+                critique_trace: dict[str, Any] = {}
+                critique = self._generate_critique(
+                    center_program,
+                    critique_examples,
+                    best_record["prompts"],
+                    critic_lm,
+                    trace_context=critique_trace,
+                )
+                bundle.append(BundleEntry(
+                    prompt=best_record["prompts"],
+                    loss=best_record["loss"],
+                    critique=critique,
+                    iteration=iteration,
+                    self_score=0.0,
+                    lambda_value=0.0,
+                    kind="lite_serious",
+                ))
+                center_idx = len(bundle) - 1
+                iteration_trace["step_type"] = "serious"
+                iteration_trace["critique_generation"] = critique_trace
+            else:
+                logger.info("SBO-Lite null step: no admissible improving candidate")
+                num_null += 1
+                consecutive_null += 1
+                critique_trace = {}
+                if best_record["actual_improvement"] > 0 and best_record["verifier"].get("blocking_regression", True):
+                    critique = (
+                        "The candidate improved validation loss but regressed on stored bundle constraints: "
+                        f"{best_record['verifier'].get('summary', 'blocking regression detected')}"
+                    )
+                    null_reason = "blocking_regression"
+                else:
+                    critique = self._generate_failure_critique(
+                        best_record["program"],
+                        valset,
+                        best_record["prompts"],
+                        target_loss=old_center_loss,
+                        critic_lm=critic_lm,
+                        trace_context=critique_trace,
+                    )
+                    null_reason = "no_admissible_improvement"
+                bundle.append(BundleEntry(
+                    prompt=best_record["prompts"],
+                    loss=best_record["loss"],
+                    critique=critique,
+                    iteration=iteration,
+                    self_score=0.0,
+                    lambda_value=0.0,
+                    kind="lite_null_refinement",
+                ))
+                iteration_trace["step_type"] = "null"
+                iteration_trace["null_reason"] = null_reason
+                iteration_trace["critique_generation"] = critique_trace
+
+            bundle, center_idx = self._prune_bundle(bundle, center_idx)
+            iteration_trace["bundle_size_after_prune"] = len(bundle)
+            iteration_trace["center_idx_after_prune"] = center_idx
+            iteration_trace["num_serious_steps_so_far"] = num_serious
+            iteration_trace["num_null_steps_so_far"] = num_null
+            iteration_trace["consecutive_null_steps"] = consecutive_null
+            self._record_iteration(iteration_trace)
+
+            if consecutive_null >= self.max_null_steps:
+                logger.info(f"Terminating SBO-Lite: {self.max_null_steps} consecutive null steps")
+                break
+            if (
+                self.stop_on_no_improving_candidate
+                and not admissible_records
+                and all(record["actual_improvement"] <= 0 for record in candidate_records)
+            ):
+                logger.info("Terminating SBO-Lite: no candidate improved validation loss")
+                break
+
+        best_idx = min(range(len(bundle)), key=lambda i: bundle[i].loss)
+        best_program = self._build_program_from_prompts(student, bundle[best_idx].prompt)
+        self.result = SBOResult(
+            best_program=best_program,
+            bundle=bundle,
+            best_idx=best_idx,
+            val_scores=[b.loss for b in bundle],
+            total_iterations=iteration,
+            num_serious_steps=num_serious,
+            num_null_steps=num_null,
+            trace=self._finalize_trace(bundle, best_idx, iteration, num_serious, num_null),
+        )
+        return best_program
+
+    def _lite_verify_candidate(
+        self,
+        *,
+        current_prompts: dict[str, str],
+        candidate_prompts: dict[str, str],
+        active_bundle: list[tuple[int, BundleEntry]],
+        watchlist_bundle: list[tuple[int, BundleEntry]],
+        lm: LM,
+        trace_context: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        current_text = self._format_instruction_prompt(current_prompts)
+        candidate_text = self._format_instruction_prompt(candidate_prompts)
+        active_text = self._format_bundle_for_lite_verifier(active_bundle, prefix="A")
+        watchlist_text = self._format_bundle_for_lite_verifier(watchlist_bundle, prefix="W")
+        verifier_prompt = f"""You are a constraint verifier for prompt optimization. You will be given a Current Prompt, a Candidate Prompt, an Active Critique Bundle, and a Watchlist of Non-Active Critiques.
+
+Task:
+Evaluate the candidate against all listed critiques in one pass. For each critique, decide whether the candidate resolves, ignores, or regresses on that critique relative to the current prompt. Then give an overall acceptability judgment.
+
+Labels:
+- resolved: the candidate clearly fixes the critique.
+- unclear: the candidate is unrelated to the critique or only partially addresses it.
+- regressed: the candidate makes the critique worse or reintroduces the failure mode.
+
+Current Prompt:
+{current_text}
+
+Candidate Prompt:
+{candidate_text}
+
+Active Critique Bundle:
+{active_text}
+
+Watchlist of Non-Active Critiques:
+{watchlist_text}
+
+Output Format:
+Return a compact JSON object with fields:
+- active: a list of {{id, label}} objects for active critiques.
+- watchlist: a list of {{id, label}} objects for watchlist critiques.
+- blocking_regression: true if any active or watchlist critique is labeled regressed; otherwise false.
+- summary: one short sentence identifying the main remaining failure mode.
+Do not include long reasoning."""
+
+        with dspy.context(lm=lm, temperature=self.judge_temperature):
+            response = lm(
+                verifier_prompt,
+                temperature=self.judge_temperature,
+                rollout_id=self._fresh_rollout_id() if self.judge_temperature and self.judge_temperature > 0 else None,
+                cache=False,
+            )
+        response_text = (response[0] if isinstance(response, list) else response).strip()
+        result = self._parse_lite_verifier_json(response_text)
+        if trace_context is not None:
+            trace_context.update({
+                "current_prompts": current_prompts,
+                "candidate_prompts": candidate_prompts,
+                "active_bundle": self._bundle_refs_for_trace(active_bundle),
+                "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
+                "verifier_prompt": verifier_prompt,
+                "raw_response": self._safe_serialize(response),
+                "response_text": response_text,
+                "parsed": result,
+                "temperature": self.judge_temperature,
+                "cache": False,
+            })
+        return result
+
+    def _parse_lite_verifier_json(self, response_text: str) -> dict[str, Any]:
+        text = response_text.strip()
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if match:
+            text = match.group(0)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            logger.warning(f"Failed to parse SBO-Lite verifier JSON: {response_text}")
+            return {
+                "active": [],
+                "watchlist": [],
+                "blocking_regression": True,
+                "summary": "Verifier output could not be parsed.",
+                "parse_error": True,
+            }
+
+        active = self._normalize_lite_labels(parsed.get("active", []))
+        watchlist = self._normalize_lite_labels(parsed.get("watchlist", []))
+        blocking = bool(parsed.get("blocking_regression", False))
+        blocking = blocking or any(item["label"] == "regressed" for item in active + watchlist)
+        return {
+            "active": active,
+            "watchlist": watchlist,
+            "blocking_regression": blocking,
+            "summary": str(parsed.get("summary", "")),
+        }
+
+    def _normalize_lite_labels(self, items: Any) -> list[dict[str, str]]:
+        if not isinstance(items, list):
+            return []
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", "unclear")).strip().lower()
+            if label not in {"resolved", "unclear", "regressed"}:
+                label = "unclear"
+            normalized.append({
+                "id": str(item.get("id", "")),
+                "label": label,
+            })
+        return normalized
+
+    def _format_bundle_for_lite_verifier(
+        self,
+        bundle: list[tuple[int, BundleEntry]],
+        *,
+        prefix: str,
+    ) -> str:
+        if not bundle:
+            return "(none)"
+        return "\n".join(
+            f"{prefix}{local_idx}: bundle[{entry_idx}], loss={entry.loss:.4f}, "
+            f"critique={self._clip_for_prompt(entry.critique, self.max_bundle_critique_chars)}"
+            for local_idx, (entry_idx, entry) in enumerate(bundle, start=1)
+        )

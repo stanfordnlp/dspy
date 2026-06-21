@@ -1,8 +1,10 @@
+import re
+
 import dspy
 from dspy import Example, Prediction
 from dspy.utils.exceptions import AdapterParseError
 
-from dspy.teleprompt.sbo import SBOProgramCallError, SemanticBundleOptimization
+from dspy.teleprompt.sbo import BundleEntry, SBOProgramCallError, SemanticBundleOptimization, SemanticBundleOptimizationLite
 
 
 class FakeStringLM:
@@ -16,7 +18,13 @@ class FakeStringLM:
     def __call__(self, prompt=None, **kwargs):
         text = prompt or ""
         if "Output ONLY a single number" in text:
+            reference_match = re.search(r"Reference Prompt:\n(.*?)\n\nCritique:", text, flags=re.DOTALL)
+            candidate_match = re.search(r"Candidate Prompt:\n(.*?)\n\nScoring Rubric:", text, flags=re.DOTALL)
+            if reference_match and candidate_match and reference_match.group(1) == candidate_match.group(1):
+                return ["0.0"]
             return [self.judge_score]
+        if "blocking_regression" in text and "Candidate Prompt:" in text:
+            return ['{"active":[{"id":"A1","label":"resolved"}],"watchlist":[],"blocking_regression":false,"summary":"ok"}']
         if "CANDIDATE" in text and "Candidates:" in text:
             return ["CANDIDATE 1:\nimproved instruction"]
         if "Critique:" in text:
@@ -135,15 +143,76 @@ def test_sbo_records_detailed_trace_for_stochastic_samples():
     assert verifier_score_trace["samples"][0]["rollout_id"] is not None
 
 
-def test_sbo_non_positive_predicted_improvement_is_null_step():
+def test_sbo_loss_first_accepts_improvement_with_non_positive_predicted_improvement():
     result = _compile_with_judge_score("-1.0", num_judge_samples=1, num_eval_samples=1)
 
     iteration = result.trace["iterations"][0]
     assert iteration["predicted_improvement"] <= 0
-    assert iteration["step_type"] == "null"
-    assert iteration["null_reason"] == "non_positive_predicted_improvement"
-    assert result.num_serious_steps == 0
-    assert result.num_null_steps == 1
+    assert iteration["positive_predicted_improvement"] == 0.0
+    assert iteration["actual_improvement"] > 0
+    assert iteration["step_type"] == "serious"
+    assert result.num_serious_steps == 1
+    assert result.num_null_steps == 0
+
+
+def test_sbo_parser_ignores_negative_candidate_marker():
+    optimizer = SemanticBundleOptimization(metric=metric)
+    response = """CANDIDATE -3:
+This is commentary, not a valid candidate marker.
+
+CANDIDATE 1:
+valid instruction"""
+
+    texts, warnings = optimizer._parse_candidate_response(response)
+
+    assert texts == ["valid instruction"]
+    assert "ignored_negative_candidate_marker" in warnings
+
+
+def test_sbo_exact_null_self_cut_enforces_candidate_loss():
+    lm = FakeStringLM("-1.0")
+    optimizer = SemanticBundleOptimization(metric=metric, num_judge_samples=1)
+    prompts = {"predictor": "candidate"}
+    entry = BundleEntry(
+        prompt=prompts,
+        loss=0.4,
+        critique="failed to improve",
+        iteration=1,
+        self_score=0.0,
+        lambda_value=1.0,
+        kind="null_self_cut",
+        exact_cut_signature=optimizer._prompt_signature(prompts),
+        exact_cut_loss=0.4,
+    )
+
+    value = optimizer._compute_model_value(prompts, [(0, entry)], 1.0, lm)
+
+    assert value >= 0.4
+
+
+def test_sbo_lite_accepts_improving_candidate_without_blocking_regression():
+    lm = FakeStringLM("1.0")
+    dspy.configure(lm=lm)
+    trainset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
+    valset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
+    optimizer = SemanticBundleOptimizationLite(
+        metric=metric,
+        judge_lm=lm,
+        proposer_lm=lm,
+        critic_lm=lm,
+        num_candidates=1,
+        max_iterations=1,
+        judge_temperature=0.7,
+    )
+
+    optimizer.compile(ToyProgram(), trainset=trainset, valset=valset)
+    result = optimizer.result
+    iteration = result.trace["iterations"][0]
+
+    assert result.num_serious_steps == 1
+    assert result.trace["algorithm"] == "sbo_lite"
+    assert iteration["candidates"][0]["verifier"]["blocking_regression"] is False
+    assert iteration["step_type"] == "serious"
 
 
 def test_program_call_error_preserves_actual_lm_history():

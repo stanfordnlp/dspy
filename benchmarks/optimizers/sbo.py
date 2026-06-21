@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 class SBOAdapter(OptimizerAdapter):
     """Adapter for Semantic Bundle Optimization (SBO)."""
 
+    optimizer_class_name = "SemanticBundleOptimization"
+    optimizer_name = "sbo"
+
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.result = None
@@ -42,7 +45,7 @@ class SBOAdapter(OptimizerAdapter):
         Returns:
             Optimized program.
         """
-        from dspy.teleprompt.sbo import SemanticBundleOptimization
+        from dspy.teleprompt.sbo import SemanticBundleOptimization, SemanticBundleOptimizationLite
 
         # Setup LMs
         model_config = kwargs.get("model_config", {})
@@ -89,8 +92,14 @@ class SBOAdapter(OptimizerAdapter):
             max_tokens=params.get("critic_max_tokens", 1024),
         )
 
+        optimizer_class = (
+            SemanticBundleOptimizationLite
+            if self.optimizer_class_name == "SemanticBundleOptimizationLite"
+            else SemanticBundleOptimization
+        )
+
         # Create SBO optimizer
-        optimizer = SemanticBundleOptimization(
+        optimizer = optimizer_class(
             metric=metric,
             judge_lm=judge_lm,
             proposer_lm=proposer_lm,
@@ -103,6 +112,15 @@ class SBOAdapter(OptimizerAdapter):
             lambda_max=params.get("lambda_max", 10.0),
             lambda_gamma=params.get("lambda_gamma", 0.3),
             tau_margin=params.get("tau_margin", 0.5),
+            bundle_size=params.get("bundle_size", 10),
+            active_bundle_size=params.get("active_bundle_size", 3),
+            watchlist_size=params.get("watchlist_size", 2),
+            active_tau_margin=params.get("active_tau_margin", 0.0),
+            watchlist_tau_margin=params.get("watchlist_tau_margin", 0.0),
+            active_violation_tolerance=params.get("active_violation_tolerance", 0.0),
+            watchlist_violation_tolerance=params.get("watchlist_violation_tolerance", 0.0),
+            lambda_stability_epsilon=params.get("lambda_stability_epsilon", 1e-6),
+            tau_stop=params.get("tau_stop", 0.0),
             max_iterations=params.get("max_iterations", 50),
             max_null_steps=params.get("max_null_steps", 5),
             temperature=params.get("temperature", 0.7),
@@ -114,6 +132,9 @@ class SBOAdapter(OptimizerAdapter):
             parse_retry_temperature=params.get("parse_retry_temperature"),
             max_critique_examples=params.get("max_critique_examples", 3),
             max_critique_field_chars=params.get("max_critique_field_chars"),
+            max_bundle_critique_chars=params.get("max_bundle_critique_chars", 900),
+            stop_on_no_improving_candidate=params.get("stop_on_no_improving_candidate", True),
+            enable_exact_null_cuts=params.get("enable_exact_null_cuts", True),
             track_stats=params.get("track_stats", True),
         )
 
@@ -133,8 +154,15 @@ class SBOAdapter(OptimizerAdapter):
     @property
     def name(self) -> str:
         """Return the optimizer name."""
-        return "sbo"
+        return self.optimizer_name
 
     def supports_gepa_metric(self) -> bool:
         """SBO uses standard metrics, not GEPA-style metrics."""
         return False
+
+
+class SBOLiteAdapter(SBOAdapter):
+    """Adapter for SBO-Lite qualitative critique-bundle optimization."""
+
+    optimizer_class_name = "SemanticBundleOptimizationLite"
+    optimizer_name = "sbo_lite"

@@ -1,0 +1,53 @@
+name: aime_sbo_lite_50_50_50
+description: AIME SBO-Lite run with 50 train, 50 dev, 50 test examples and conservative context settings
+
+dataset_ref: aime_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_lite
+program_ref: math_answer_only
+logging_ref: logging
+
+model_overrides:
+  params:
+    max_tokens: 2048
+
+dataset_overrides:
+  train_size: 50
+  dev_size: 50
+  test_size: 50
+  params:
+    input_fields:
+      - problem
+    test_repeat: 1
+
+optimizer_overrides:
+  params:
+    max_iterations: 10
+    max_null_steps: 10
+    stop_on_no_improving_candidate: false
+    num_candidates: 3
+    descent_param: 0.05
+    num_eval_samples: 1
+    bundle_size: 10
+    active_bundle_size: 2
+    watchlist_size: 2
+    parse_failure_retries: 3
+    parse_retry_temperature: 0.7
+    max_critique_examples: 3
+    max_critique_field_chars: 1800
+    max_bundle_critique_chars: 500
+    judge_max_tokens: 1024
+    proposer_max_tokens: 3072
+    critic_max_tokens: 3072
+    temperature: 0.5
+    judge_temperature: 0.5
+    judge_cache: false
+    proposer_temperature: 0.5
+    critic_temperature: 0.5
+    eval_temperature: 0.7
+    eval_cache: false
+    track_stats: true
+
+logging_overrides:
+  save_models: false
+  level: INFO

@@ -1,0 +1,33 @@
+name: sbo_lite
+auto: light
+num_threads: 1
+params:
+  judge_lm: ollama_chat/qwen3:4b-instruct
+  proposer_lm: ollama_chat/qwen3:4b-instruct
+  critic_lm: ollama_chat/qwen3:4b-instruct
+
+  num_candidates: 3
+  max_iterations: 10
+  max_null_steps: 3
+  bundle_size: 8
+  active_bundle_size: 3
+  watchlist_size: 2
+
+  temperature: 0.5
+  judge_temperature: 0.5
+  judge_cache: false
+  proposer_temperature: 0.5
+  critic_temperature: 0.5
+  num_eval_samples: 1
+  eval_temperature: 0.7
+  eval_cache: false
+
+  parse_failure_retries: 1
+  parse_retry_temperature: 0.7
+  max_critique_examples: 2
+  max_critique_field_chars: 1200
+  judge_max_tokens: 512
+  proposer_max_tokens: 2048
+  critic_max_tokens: 2048
+
+  track_stats: true

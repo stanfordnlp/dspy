@@ -1,0 +1,47 @@
+name: hotpotqa_sbo_lite_nontrivial
+description: Moderate HotPotQA SBO-Lite run with multiple candidates, iterations, and dev examples
+
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_lite
+program_ref: simple_context
+logging_ref: logging
+
+dataset_overrides:
+  train_size: 8
+  dev_size: 2
+  test_size: 0
+  params:
+    use_context: true
+    input_fields:
+      - question
+      - context
+
+model_overrides:
+  params:
+    max_tokens: 256
+
+optimizer_overrides:
+  params:
+    max_iterations: 2
+    max_null_steps: 2
+    stop_on_no_improving_candidate: false
+    num_candidates: 2
+    num_eval_samples: 1
+    bundle_size: 6
+    active_bundle_size: 2
+    watchlist_size: 1
+    max_critique_examples: 2
+    max_critique_field_chars: 1200
+    judge_max_tokens: 512
+    proposer_max_tokens: 2048
+    critic_max_tokens: 2048
+    temperature: 0.4
+    judge_temperature: 0.4
+    proposer_temperature: 0.4
+    critic_temperature: 0.4
+    eval_temperature: 0.7
+    track_stats: true
+
+logging_overrides:
+  save_models: false

@@ -65,7 +65,7 @@ def _register_builtin_adapters() -> None:
     from optimizers.bootstrap import BootstrapAdapter
     from optimizers.copro import CoproAdapter
     from optimizers.baseline import BaselineAdapter
-    from optimizers.sbo import SBOAdapter
+    from optimizers.sbo import SBOAdapter, SBOLiteAdapter
 
     OptimizerRegistry.register("gepa", GepaAdapter)
     OptimizerRegistry.register("mipro", MiproAdapter)
@@ -73,6 +73,7 @@ def _register_builtin_adapters() -> None:
     OptimizerRegistry.register("copro", CoproAdapter)
     OptimizerRegistry.register("baseline", BaselineAdapter)
     OptimizerRegistry.register("sbo", SBOAdapter)
+    OptimizerRegistry.register("sbo_lite", SBOLiteAdapter)
 
 
 # Auto-register on import
