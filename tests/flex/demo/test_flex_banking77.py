@@ -42,11 +42,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 # and it simply wraps these canonical CSVs. We read them directly — same data.
 BANKING77_BASE = "https://raw.githubusercontent.com/PolyAI-LDN/task-specific-datasets/master/banking_data"
 
-pytestmark = pytest.mark.skipif(
-    not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
-    reason="BANKING77 showcase needs a real LM (set OPENAI_API_KEY or ANTHROPIC_API_KEY).",
-)
-
 DEMO_DIR = Path(__file__).parent
 FLEX_PATH = DEMO_DIR / "banking77_flex_gen.py"
 PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
@@ -54,8 +49,8 @@ PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
 # Executor runs the classifier (and the baseline RLM's sub-queries); reflection authors
 # the optimized code (benefits from a strong model). Both override via env; defaults adapt
 # to whichever provider key is present.
-_exec_default = "openai/gpt-4o-mini" if os.getenv("OPENAI_API_KEY") else "anthropic/claude-opus-4-7"
-_reflect_default = "anthropic/claude-opus-4-7" if os.getenv("ANTHROPIC_API_KEY") else "openai/gpt-4o"
+_exec_default = "anthropic/claude-opus-4-7"
+_reflect_default = "anthropic/claude-opus-4-7"
 EXEC_LM = dspy.LM(os.getenv("BANKING_EXEC_LM", _exec_default), max_tokens=2000)
 REFLECTION_LM = dspy.LM(
     os.getenv("BANKING_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000
