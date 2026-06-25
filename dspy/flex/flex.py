@@ -376,7 +376,13 @@ class Flex(Module):
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         output_names = list(cls.output_fields.keys())
-        predictors_src = "PREDICTORS = {\n" f"    {'rlm'!r}: dspy.RLM({sig_str!r}),\n" "}"
+        instructions = (getattr(cls, "instructions", "") or "").strip()
+        # Carry the task instructions/docstring into the baseline RLM (a bare signature
+        # string would drop them). `!r` escapes quotes/newlines into a valid literal, and
+        # the rebuilt signature only references `dspy`, so the persisted file stays
+        # self-contained.
+        rlm_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+        predictors_src = "PREDICTORS = {\n" f"    {'rlm'!r}: dspy.RLM({rlm_arg}),\n" "}"
         returns = ", ".join(f"{name}=result.{name}" for name in output_names)
         forward_src = (
             "def forward(self, **inputs):\n"

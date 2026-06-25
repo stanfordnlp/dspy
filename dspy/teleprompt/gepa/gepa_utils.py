@@ -78,27 +78,44 @@ class PredictorFeedbackFn(Protocol):
 # Code optimization for vibe-marked (dspy.Flex) submodules.
 #
 # A vibe-marked submodule is optimized by rewriting its *source* — the candidate
-# carries `<submodule_path>::predictors_src` / `::forward_src` keys — rather than by
-# tuning a predictor's instructions. The "::" separator never collides with the
-# dotted/bracketed names produced by named_parameters()/named_sub_modules(), so code
-# keys and instruction keys coexist in one candidate dict.
+# carries a single `<submodule_path>::code` key — rather than by tuning a predictor's
+# instructions. The whole module (its PREDICTORS dict AND its forward function) is one
+# component: the two are coupled (forward references predictor names), so they MUST be
+# rewritten together — evolving them independently produces broken, mismatched code.
+# The "::code" suffix never collides with the dotted/bracketed names produced by
+# named_parameters()/named_sub_modules(), so code keys and instruction keys coexist.
 # ---------------------------------------------------------------------------
 
-CODE_COMPONENTS = ("predictors_src", "forward_src")
-_CODE_KEY_SEP = "::"
+_CODE_KEY_SUFFIX = "::code"
 
 
 def _is_code_key(key: str) -> bool:
-    return _CODE_KEY_SEP in key
+    return key.endswith(_CODE_KEY_SUFFIX)
 
 
-def make_code_key(path: str, component: str) -> str:
-    return f"{path}{_CODE_KEY_SEP}{component}"
+def make_code_key(path: str) -> str:
+    return f"{path}{_CODE_KEY_SUFFIX}"
 
 
-def _parse_code_key(key: str) -> tuple[str, str]:
-    path, _, component = key.partition(_CODE_KEY_SEP)
-    return path, component
+def _code_key_path(key: str) -> str:
+    return key[: -len(_CODE_KEY_SUFFIX)]
+
+
+def join_module_code(predictors_src: str, forward_src: str) -> str:
+    """Combine the two code artifacts into one source string (PREDICTORS then forward)."""
+    return f"{(predictors_src or '').strip()}\n\n{(forward_src or '').strip()}"
+
+
+def split_module_code(combined: str) -> tuple[str, str]:
+    """Inverse of :func:`join_module_code`: split on the top-level ``def forward``.
+
+    Robust to the LM dropping any delimiter — everything before the first ``def forward``
+    is the PREDICTORS block, the rest is the forward function.
+    """
+    idx = combined.find("def forward")
+    if idx == -1:
+        return combined.strip(), ""
+    return combined[:idx].strip(), combined[idx:].strip()
 
 
 def enumerate_flex_submodules(root) -> dict[str, Any]:
@@ -163,14 +180,20 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 
 
 class CodeProposalSignature(dspy.Signature):
-    """Revise the source of one code component of a vibe-marked dspy.Flex submodule.
+    """Revise the full source code of a vibe-marked dspy.Flex submodule.
 
-    You receive the submodule's task description, the catalog of allowed primitives plus
-    a good/bad-behavior knowledge base, the current source of one component (the
-    ``PREDICTORS`` dict or the ``forward`` function), the sibling component for context,
-    and a batch of failing examples with feedback. Produce a revised source that fixes
-    the observed failures and follows the catalog. The revised source MUST stay drop-in
-    compatible with the unchanged sibling component.
+    You receive the submodule's task description, the catalog of allowed primitives plus a
+    good/bad-behavior knowledge base, the module's current source, and a batch of failing
+    examples with feedback. Produce a revised source that fixes the observed failures and
+    follows the catalog.
+
+    The source has two coupled parts and you MUST output BOTH, consistent with each other:
+      1. a module-scope ``PREDICTORS = {...}`` dict (use ``PREDICTORS = {}`` if no LM is
+         needed), then
+      2. a ``def forward(self, **inputs):`` that references those predictors as
+         ``self.<name>`` and returns ``dspy.Prediction(<output fields>=...)``.
+    Because ``forward`` calls predictors by name, never rename a predictor in one place
+    without updating the other — emit the entire, internally-consistent module.
     """
 
     task_description: str = dspy.InputField(
@@ -179,17 +202,15 @@ class CodeProposalSignature(dspy.Signature):
     primitives_catalog: str = dspy.InputField(
         desc="Catalog of allowed primitives plus good/bad-behavior guidance to follow."
     )
-    component_name: str = dspy.InputField(
-        desc="Which component is being revised: 'predictors_src' (the PREDICTORS dict) or 'forward_src' (the forward function)."
-    )
-    current_source: str = dspy.InputField(desc="Current source of the component being revised.")
-    sibling_source: str = dspy.InputField(
-        desc="Current source of the OTHER component (read-only context — keep compatible, do not edit)."
+    current_source: str = dspy.InputField(
+        desc="The module's current full source: the PREDICTORS dict followed by the forward function."
     )
     failures: str = dspy.InputField(
-        desc="A batch of failing examples and feedback. Diagnose them and revise the component to fix them."
+        desc="A batch of failing examples and feedback. Diagnose them and revise the module to fix them."
     )
-    revised_source: str = dspy.OutputField(desc="The full revised source of the component.")
+    revised_source: str = dspy.OutputField(
+        desc="The full revised module source: a `PREDICTORS = {...}` dict, then a `def forward(self, **inputs):`."
+    )
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -245,11 +266,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             # A custom instruction proposer overrides only the instruction components;
             # code components always use the code proposer below.
             if self.custom_instruction_proposer:
+                # Pass the FULL candidate/reflective_dataset (a custom proposer may read
+                # sibling components for context); only scope which components to update.
+                # With no code components this is identical to the original GEPA call.
                 with dspy.context(lm=reflection_lm):
                     results.update(
                         self.custom_instruction_proposer(
-                            candidate={k: candidate[k] for k in instr_keys},
-                            reflective_dataset={k: reflective_dataset[k] for k in instr_keys},
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
                             components_to_update=instr_keys,
                         )
                     )
@@ -273,15 +297,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             proposer = dspy.Predict(CodeProposalSignature)
             with dspy.context(lm=reflection_lm):
                 for ckey in code_keys:
-                    path, component = _parse_code_key(ckey)
-                    sibling = "forward_src" if component == "predictors_src" else "predictors_src"
+                    path = _code_key_path(ckey)
                     try:
                         out = proposer(
                             task_description=self._flex_task_descriptions.get(path, path),
                             primitives_catalog=catalog,
-                            component_name=component,
                             current_source=candidate[ckey],
-                            sibling_source=candidate.get(make_code_key(path, sibling), ""),
                             failures=_format_failures(reflective_dataset.get(ckey, [])),
                         )
                         results[ckey] = _strip_code_fences(out.revised_source)
@@ -296,11 +317,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # Rebind code for vibe-marked (Flex) submodules whose source is in the candidate.
         for path, flex in enumerate_flex_submodules(new_prog).items():
-            pkey = make_code_key(path, "predictors_src")
-            fkey = make_code_key(path, "forward_src")
-            if pkey in candidate and fkey in candidate:
+            key = make_code_key(path)
+            if key in candidate:
+                predictors_src, forward_src = split_module_code(candidate[key])
                 flex._auto_repair = False  # a broken proposed candidate must raise, not self-repair
-                flex._bind_code(candidate[pkey], candidate[fkey])
+                flex._bind_code(predictors_src, forward_src)
 
         # Apply instruction updates to predictors. Code keys contain "::" so never match
         # here; predictors *inside* a Flex were excluded from the candidate (their
@@ -338,7 +359,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         return records
 
     def evaluate(self, batch, candidate, capture_traces=False):
-        program = self.build_program(candidate)
+        try:
+            program = self.build_program(candidate)
+        except Exception as e:
+            # A proposed code candidate that fails to bind (broken source) must score as a
+            # failure, not crash the whole optimization run. Instruction candidates always
+            # build, so this only guards the vibe-marked code-optimization path.
+            logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
+            return EvaluationBatch(
+                outputs=[None] * len(batch),
+                scores=[self.failure_score] * len(batch),
+                trajectories=[] if capture_traces else None,
+            )
         callback_metadata = (
             {"metric_key": "eval_full"}
             if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size

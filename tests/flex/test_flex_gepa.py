@@ -24,6 +24,7 @@ from dspy.teleprompt.gepa.gepa_utils import (
     DspyAdapter,
     enumerate_flex_submodules,
     flex_internal_predictor_ids,
+    join_module_code,
     make_code_key,
 )
 from dspy.utils.dummies import DummyLM
@@ -124,10 +125,7 @@ def test_build_program_rebinds_flex_code() -> None:
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
 
-    candidate = {
-        make_code_key("self", "predictors_src"): SIMPLE_PREDICTORS,
-        make_code_key("self", "forward_src"): SIMPLE_FORWARD,
-    }
+    candidate = {make_code_key("self"): join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}
     rebuilt = adapter.build_program(candidate)
 
     assert 'dspy.Predict("q -> a")' in rebuilt.predictors_src
@@ -138,10 +136,7 @@ def test_build_program_rebinds_flex_code() -> None:
 def test_build_program_disables_flex_auto_repair() -> None:
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
-    candidate = {
-        make_code_key("self", "predictors_src"): SIMPLE_PREDICTORS,
-        make_code_key("self", "forward_src"): SIMPLE_FORWARD,
-    }
+    candidate = {make_code_key("self"): join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}
     rebuilt = adapter.build_program(candidate)
     # A broken proposed candidate must surface as an error during search, not silently
     # self-repair and pollute the persisted history.
@@ -152,16 +147,13 @@ def test_build_program_disables_flex_auto_repair() -> None:
 
 
 def test_propose_new_texts_uses_code_proposer_for_code_keys() -> None:
-    reflection = DummyLM([{"revised_source": SIMPLE_PREDICTORS}])
+    reflection = DummyLM([{"revised_source": join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}])
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(
         student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=reflection
     )
-    ckey = make_code_key("self", "predictors_src")
-    candidate = {
-        ckey: student.predictors_src,
-        make_code_key("self", "forward_src"): student.forward_src,
-    }
+    ckey = make_code_key("self")
+    candidate = {ckey: join_module_code(student.predictors_src, student.forward_src)}
     reflective = {ckey: [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
 
     out = adapter.propose_new_texts(candidate, reflective, [ckey])
@@ -201,8 +193,7 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     optimizer.compile(prog, trainset=[ex], valset=[ex])
 
     seed = captured["seed"]
-    assert make_code_key("self.flex", "predictors_src") in seed
-    assert make_code_key("self.flex", "forward_src") in seed
+    assert make_code_key("self.flex") in seed  # one code component for the whole Flex
     assert "sibling" in seed  # the non-vibe predictor's instruction
     # The Flex's internal predictors are NOT separate instruction components.
     assert not any(k.startswith("flex.") for k in seed)

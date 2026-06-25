@@ -493,11 +493,11 @@ class GEPA(Teleprompter):
         from gepa import GEPAResult, optimize
 
         from dspy.teleprompt.gepa.gepa_utils import (
-            CODE_COMPONENTS,
             DspyAdapter,
             LoggerAdapter,
             enumerate_flex_submodules,
             flex_internal_predictor_ids,
+            join_module_code,
             make_code_key,
         )
 
@@ -525,7 +525,7 @@ class GEPA(Teleprompter):
                 "code-synthesized, but instruction optimization requires examples.)"
             )
 
-        num_components = len(instruction_predictors) + len(CODE_COMPONENTS) * len(flex_submodules)
+        num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
@@ -604,8 +604,7 @@ class GEPA(Teleprompter):
         # current source of each vibe-marked submodule's code components.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, flex in flex_submodules.items():
-            seed_candidate[make_code_key(path, "predictors_src")] = flex.predictors_src
-            seed_candidate[make_code_key(path, "forward_src")] = flex.forward_src
+            seed_candidate[make_code_key(path)] = join_module_code(flex.predictors_src, flex.forward_src)
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,

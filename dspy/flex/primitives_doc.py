@@ -156,6 +156,15 @@ What a GOOD optimized module looks like:
 - Self-contained: only uses `dspy`, the declared inputs, and small helpers nested
   inside `forward`. No module-scope helpers, no hidden globals, no I/O.
 
+Giving a predictor task-specific instructions (allowed labels, domain rules, output
+format): build its signature WITH instructions and pass that to the predictor —
+`dspy.Predict(dspy.Signature("text -> intent", "Classify into exactly one of: ..."))`
+(same for `dspy.ChainOfThought`/`dspy.RLM`). Carry over any important guidance (e.g. the
+exact allowed label set) from the task description into the predictor's instructions so the
+model still sees it. Do NOT pass instructions as a second positional argument to
+`dspy.Predict(...)` / `dspy.ChainOfThought(...)` — that argument is not the instructions and
+will raise; instructions belong inside the signature.
+
 Worked example — evolving the RLM baseline for an invoice-total task:
 
 ```

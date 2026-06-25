@@ -77,6 +77,30 @@
           "ts": "2026-06-09T14:55:11.070000+00:00"
         }
       ]
+    },
+    "StringSignature": {
+      "versions": [
+        {
+          "candidate_id": "8634d5aaad4f",
+          "id": 0,
+          "notes": "rlm baseline",
+          "parents": [],
+          "score": null,
+          "signature_hash": "c8d4322c3e040200c9b44ac4ee544a7ab3d2323cde445889240b4eddf7ffe867",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py",
+          "ts": "2026-06-25T20:30:03.708160+00:00"
+        },
+        {
+          "candidate_id": "5df057ebe7c7",
+          "id": 1,
+          "notes": "GEPA optimized",
+          "parents": [],
+          "score": 0.8,
+          "signature_hash": "c8d4322c3e040200c9b44ac4ee544a7ab3d2323cde445889240b4eddf7ffe867",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py",
+          "ts": "2026-06-25T21:19:06.609154+00:00"
+        }
+      ]
     }
   }
 }
