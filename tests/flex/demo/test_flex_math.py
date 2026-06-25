@@ -3,22 +3,25 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import dspy
-from dspy import FlexGEPA, flex
 
 load_dotenv()
 exec_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=500)
 reflection_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
+
+class MathWord(dspy.Signature):
+    """Solve a math word problem."""
+
+    problem: str = dspy.InputField()
+    answer: int = dspy.OutputField()
+
+
 def test_flex() -> None:
-    @flex(persist_to=str(Path(__file__).parent / "math_flex_gen.py"))
-    class MathWord(dspy.Signature):
-        """Solve a math word problem."""
-
-        problem: str = dspy.InputField()
-        answer: int = dspy.OutputField()
-
-    program = MathWord()
+    # Reconfigure here (not just at import) so the test is order-independent: other
+    # tests in the session reconfigure the global LM.
+    dspy.configure(lm=exec_lm)
+    program = dspy.Flex(MathWord, persist_to=str(Path(__file__).parent / "math_flex_gen.py"))
     baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
 
     print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")
@@ -36,13 +39,13 @@ def test_flex() -> None:
         ex("A box has 6 pencils per row and 4 rows. How many pencils total?", 24),
     ]
 
-    def metric(example, prediction, trace=None):
+    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
         try:
-            return 1.0 if int(prediction.answer) == int(example.answer) else 0.0
+            return 1.0 if int(pred.answer) == int(gold.answer) else 0.0
         except (ValueError, TypeError, AttributeError):
             return 0.0
 
-    optimized = FlexGEPA(
+    optimized = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,
         max_metric_calls=15,
@@ -52,4 +55,3 @@ def test_flex() -> None:
 
     pred = optimized(problem="What is 2 plus 2?")
     assert int(pred.answer) == 4
-

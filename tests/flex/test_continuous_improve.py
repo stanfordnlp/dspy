@@ -1,7 +1,7 @@
 """Tests for the continuous-improvement loop: dataset-backed Flex.improve().
 
 Uses lightweight stand-in "improvers" (duck-typed on
-``compile(student, *, trainset, valset)``) instead of a real FlexGEPA, so the
+``compile(student, *, trainset, valset)``) instead of a real dspy.GEPA, so the
 tests stay fast and deterministic. The real optimizer is exercised by
 tests/flex/demo/*.
 """
@@ -15,20 +15,8 @@ from pathlib import Path
 import pytest
 
 import dspy
-from dspy.flex import Flex, flex
+from dspy.flex import Flex
 from dspy.utils.dummies import DummyLM
-
-CANNED_PREDICTORS = textwrap.dedent("""
-    PREDICTORS = {
-        "echo": dspy.Predict("q -> a"),
-    }
-""").strip()
-
-CANNED_FORWARD = textwrap.dedent("""
-    def forward(self, q):
-        out = self.echo(q=q)
-        return dspy.Prediction(a=out.a)
-""").strip()
 
 NEW_PREDICTORS = textwrap.dedent("""
     PREDICTORS = {
@@ -45,30 +33,40 @@ NEW_FORWARD = textwrap.dedent("""
 TRAIN = [dspy.Example(q="x", a="y").with_inputs("q")]
 
 
-def _codegen_lm() -> DummyLM:
-    return DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}])
+class Echo(dspy.Signature):
+    """Echo."""
+
+    q: str = dspy.InputField()
+    a: str = dspy.OutputField()
 
 
 def _echo_factory(persist_to: Path | None, *, improver=None):
-    @flex(persist_to=str(persist_to) if persist_to else None, intent_check="off", improver=improver)
-    class Echo(dspy.Signature):
-        """Echo."""
+    def factory():
+        return Flex(
+            Echo,
+            persist_to=str(persist_to) if persist_to else None,
+            improver=improver,
+        )
 
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    return Echo
+    return factory
 
 
 def _write_initial(tmp_path: Path) -> Path:
-    dspy.configure(lm=_codegen_lm())
-    _echo_factory(tmp_path / "echo.py")()
-    return tmp_path / "echo.py"
+    path = tmp_path / "echo.py"
+    _echo_factory(path)()  # LM-free baseline write
+    # The baseline's in-memory forward_src carries a trailing newline that the
+    # persistence round-trip strips, so the first reload backfills a matching
+    # body hash. Do that reload here so the on-disk file is pristine and a
+    # subsequent construction is not spuriously flagged as a manual edit.
+    dspy.configure(lm=DummyLM([]))
+    _echo_factory(path)()
+    return path
 
 
 def _simulate_manual_edit(path: Path) -> None:
+    # Edit the RLM-baseline body: unwrap-and-uppercase the declared output.
     text = path.read_text()
-    edited = text.replace("out.a)", "out.a.upper())")
+    edited = text.replace("result.a)", "result.a.upper())")
     assert edited != text, "manual-edit simulation did not change the file"
     path.write_text(edited)
 
@@ -85,7 +83,7 @@ class _SpyImprover:
 
 
 class _RewritingImprover:
-    """Mimics FlexGEPA's externally-visible effect: writes the new body to disk."""
+    """Mimics dspy.GEPA's externally-visible effect: writes the new body to disk."""
 
     def __init__(self) -> None:
         self.calls: list = []
@@ -128,7 +126,6 @@ def test_improve_without_dataset_raises(tmp_path: Path) -> None:
 
 
 def test_improve_in_memory_raises(tmp_path: Path) -> None:
-    dspy.configure(lm=_codegen_lm())
     program = _echo_factory(None, improver=_SpyImprover())()  # persist_to=None
     with pytest.raises(ValueError, match="in-memory"):
         program.improve(force=True)
@@ -196,29 +193,10 @@ def test_improve_rewrites_file_so_next_run_sees_no_edit(tmp_path: Path) -> None:
     assert program2.forward_src == NEW_FORWARD
 
 
-# --- improver wiring (decorator / constructor) -------------------------------
-
-
-def test_improver_and_intent_check_thread_through_decorator(tmp_path: Path) -> None:
-    spy = _SpyImprover()
-    dspy.configure(lm=_codegen_lm())
-    factory = _echo_factory(tmp_path / "echo.py", improver=spy)
-    assert factory._flex_improver is spy
-    assert factory._flex_intent_check == "off"
-    program = factory()
-    assert program._improver is spy
-    assert program._intent_check == "off"
+# --- improver wiring (constructor) -------------------------------------------
 
 
 def test_constructor_accepts_improver(tmp_path: Path) -> None:
     spy = _SpyImprover()
-    dspy.configure(lm=_codegen_lm())
-
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    program = Flex(Echo, persist_to=str(tmp_path / "e.py"), intent_check="off", improver=spy)
+    program = Flex(Echo, persist_to=str(tmp_path / "e.py"), improver=spy)
     assert program._improver is spy

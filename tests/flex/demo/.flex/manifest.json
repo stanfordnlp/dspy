@@ -1,5 +1,57 @@
 {
   "flex_modules": {
+    "InvoiceTotal": {
+      "versions": [
+        {
+          "candidate_id": "dd048a1d926b",
+          "id": 0,
+          "notes": "rlm baseline",
+          "parents": [],
+          "score": null,
+          "signature_hash": "2001b8047674f53abecf5194a2d0b2f20c5d132b88bb59c420ad74cd2d87798c",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/invoice_flex_gen.py",
+          "ts": "2026-06-24T23:31:22.479131+00:00"
+        },
+        {
+          "candidate_id": "da386e9b9ba8",
+          "id": 1,
+          "notes": "manual edit",
+          "parents": [
+            "dd048a1d926b"
+          ],
+          "score": null,
+          "signature_hash": "2001b8047674f53abecf5194a2d0b2f20c5d132b88bb59c420ad74cd2d87798c",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/invoice_flex_gen.py",
+          "ts": "2026-06-24T23:31:52.385817+00:00"
+        }
+      ]
+    },
+    "MathWord": {
+      "versions": [
+        {
+          "candidate_id": "b2025a9aec5d",
+          "id": 0,
+          "notes": "rlm baseline",
+          "parents": [],
+          "score": null,
+          "signature_hash": "62c09f2dfa8a4329f227a7ccadfe6e481b38c4ec7a7afe6eb141ee67b8da9ee7",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/math_flex_gen.py",
+          "ts": "2026-06-24T23:31:53.363600+00:00"
+        },
+        {
+          "candidate_id": "58222ed70f12",
+          "id": 1,
+          "notes": "manual edit",
+          "parents": [
+            "b2025a9aec5d"
+          ],
+          "score": null,
+          "signature_hash": "62c09f2dfa8a4329f227a7ccadfe6e481b38c4ec7a7afe6eb141ee67b8da9ee7",
+          "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/math_flex_gen.py",
+          "ts": "2026-06-24T23:32:05.921406+00:00"
+        }
+      ]
+    },
     "SamePlace": {
       "versions": [
         {

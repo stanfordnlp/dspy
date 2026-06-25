@@ -2,6 +2,11 @@
 
 Covers both load-time (bind) failures and runtime failures from
 user-edited code, plus the opt-out (``auto_repair=False``) path.
+
+Construction is LM-free (it binds the deterministic RLM baseline). To exercise
+repair we persist a *plain dspy.Predict* body, break it, and reload with a repair
+DummyLM that returns the good plain-Predict body — never running the heavy RLM
+baseline.
 """
 
 from __future__ import annotations
@@ -13,8 +18,9 @@ from pathlib import Path
 import pytest
 
 import dspy
-from dspy.flex import flex
-from dspy.flex.exploration import FlexEvent
+from dspy.flex import Flex
+from dspy.flex.exploration import FlexEvent, candidate_id
+from dspy.flex.persistence import parse_persisted_file, render_persisted_file
 from dspy.utils.dummies import DummyLM
 
 CANNED_PREDICTORS = textwrap.dedent("""
@@ -28,6 +34,13 @@ CANNED_FORWARD = textwrap.dedent("""
         out = self.echo(q=q)
         return dspy.Prediction(a=out.a)
 """).strip()
+
+
+class Echo(dspy.Signature):
+    """Echo."""
+
+    q: str = dspy.InputField()
+    a: str = dspy.OutputField()
 
 
 def _swap_in_persisted(text: str, old: str, new: str, *, indent: str = "    ") -> str:
@@ -45,29 +58,32 @@ def _manifest_versions(flex_root: Path, flex_id: str) -> list[dict]:
 
 
 def _write_initial_flex_file(tmp_path: Path) -> Path:
-    """Generate a clean Flex file on disk, return its path."""
-    dspy.configure(lm=DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}]))
+    """Construct a Flex (LM-free baseline) and rewrite its body to a plain
+    dspy.Predict implementation, keeping the signature hash intact so it loads
+    as a runnable (non-RLM) body. Returns the persisted file path."""
+    path = tmp_path / "echo.py"
+    Flex(Echo, persist_to=str(path))  # writes the RLM baseline file
 
-    @flex(persist_to=str(tmp_path / "echo.py"), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()  # writes the file
-    return tmp_path / "echo.py"
+    parsed = parse_persisted_file(path.read_text())
+    assert parsed is not None
+    path.write_text(
+        render_persisted_file(
+            signature_hash=parsed.signature_hash,
+            body_hash=candidate_id(CANNED_PREDICTORS, CANNED_FORWARD),
+            flex_id="Echo",
+            signature_name="Echo",
+            predictors_src=CANNED_PREDICTORS,
+            forward_src=CANNED_FORWARD,
+        )
+    )
+    return path
 
 
 def _make_echo_factory(persist_to: Path, *, auto_repair: bool = True):
-    @flex(persist_to=str(persist_to), auto_repair=auto_repair, intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
+    def factory():
+        return Flex(Echo, persist_to=str(persist_to), auto_repair=auto_repair)
 
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    return Echo
+    return factory
 
 
 def test_load_time_repair_when_predictors_is_none(tmp_path: Path) -> None:
@@ -99,7 +115,7 @@ def test_load_time_repair_when_predictors_is_none(tmp_path: Path) -> None:
     assert FlexEvent.CODEGEN.value in events
     assert FlexEvent.ACCEPT.value in events
 
-    # Manifest has 2 versions: the initial write + the repaired one.
+    # Manifest has the initial baseline + the repaired version.
     versions = _manifest_versions(tmp_path, "Echo")
     assert len(versions) >= 2
     assert "auto-repair" in versions[-1]["notes"]

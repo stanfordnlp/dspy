@@ -492,14 +492,43 @@ class GEPA(Teleprompter):
         """
         from gepa import GEPAResult, optimize
 
-        from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
+        from dspy.teleprompt.gepa.gepa_utils import (
+            CODE_COMPONENTS,
+            DspyAdapter,
+            LoggerAdapter,
+            enumerate_flex_submodules,
+            flex_internal_predictor_ids,
+            make_code_key,
+        )
 
-        assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
+        # Vibe-marked (dspy.Flex) submodules get their *code* optimized; every other
+        # predictor keeps the default instruction-only optimization. Predictors that live
+        # inside a vibe submodule are owned by its code, so they are excluded here (by
+        # object identity, since named_sub_modules/named_predictors use different paths).
+        flex_submodules = enumerate_flex_submodules(student)
+        flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
+        instruction_predictors = [
+            (name, pred) for name, pred in student.named_predictors() if id(pred) not in flex_internal_ids
+        ]
+
+        if not trainset:
+            # No data: still spend compute to synthesize better code for a vibe module
+            # from its signature + the knowledge base. Instruction optimization needs
+            # examples to score against, so it still requires a trainset.
+            if flex_submodules and not instruction_predictors:
+                logger.info("GEPA: no trainset provided — running a bounded code-synthesis pass.")
+                return self._code_synthesis_no_data(student)
+            raise ValueError(
+                "Trainset must be provided and non-empty. (A vibe module with no data can be "
+                "code-synthesized, but instruction optimization requires examples.)"
+            )
+
+        num_components = len(instruction_predictors) + len(CODE_COMPONENTS) * len(flex_submodules)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
-                num_preds=len(student.predictors()),
+                num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
             )
@@ -554,7 +583,7 @@ class GEPA(Teleprompter):
 
             return feedback_fn
 
-        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
+        feedback_map = {k: feedback_fn_creator(k, v) for k, v in instruction_predictors}
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
@@ -571,8 +600,12 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: map each predictor name to its current instruction
-        seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        # Build the seed candidate: instruction text per (non-vibe) predictor, plus the
+        # current source of each vibe-marked submodule's code components.
+        seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
+        for path, flex in flex_submodules.items():
+            seed_candidate[make_code_key(path, "predictors_src")] = flex.predictors_src
+            seed_candidate[make_code_key(path, "forward_src")] = flex.forward_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
@@ -608,8 +641,87 @@ class GEPA(Teleprompter):
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
 
+        if flex_submodules:
+            best_score = max(gepa_result.val_aggregate_scores) if gepa_result.val_aggregate_scores else None
+            self._persist_flex_results(new_prog, trainset=trainset, valset=valset, best_score=best_score)
+
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
             new_prog.detailed_results = dspy_gepa_result
 
         return new_prog
+
+    def _code_synthesis_no_data(self, student: Module, rounds: int = 2) -> Module:
+        """Optimize a vibe module's code with no data (bounded, unscored).
+
+        With no examples to score against, the reflection LM rewrites each vibe-marked
+        submodule's RLM baseline using the good/bad-behavior knowledge base + the
+        signature. There is no empirical selection — we accept the last candidate that
+        binds cleanly. This is the "spend compute to write better code" path.
+        """
+        from dspy.flex.codegen import generate
+        from dspy.flex.primitives_doc import KNOWLEDGE_BASE
+        from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
+
+        program = student.deepcopy()
+        for _, flex in enumerate_flex_submodules(program).items():
+            ctx = getattr(flex, "_flex_ctx", None)
+            if ctx is None:
+                continue
+            flex._auto_repair = False
+            current = (flex.predictors_src, flex.forward_src)
+            for _ in range(max(rounds, 1)):
+                try:
+                    proposed = generate(ctx, lm=self.reflection_lm, seed=current, extra_guidance=KNOWLEDGE_BASE)
+                    flex._bind_code(*proposed)  # validate it binds before accepting
+                except Exception as e:
+                    logger.warning("GEPA no-data synthesis: round failed (%s); keeping last good code.", e)
+                    break
+                current = proposed
+            flex._bind_code(*current)  # ensure the accepted (last good) code is bound
+
+        self._persist_flex_results(program, trainset=None, valset=None, best_score=None)
+        return program
+
+    def _persist_flex_results(
+        self, program: Module, *, trainset, valset, best_score: float | None
+    ) -> None:
+        """Write optimized vibe-submodule code back to its persisted ``.py`` + manifest,
+        and save the dataset so a later ``Flex.improve()`` can re-optimize. No-op for
+        in-memory (``persist_to=None``) submodules.
+        """
+        from dspy.flex.dataset import DatasetStore
+        from dspy.flex.exploration import FlexEvent, candidate_id
+        from dspy.flex.manifest import ManifestStore
+        from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
+
+        for _, flex in enumerate_flex_submodules(program).items():
+            persist_to = getattr(flex, "_persist_to", None)
+            flex_root = getattr(flex, "_flex_root", None)
+            if persist_to is None or flex_root is None or not hasattr(flex, "_write_persisted"):
+                continue
+            sig_hash = flex._signature_hash()
+            cid = candidate_id(flex.predictors_src, flex.forward_src)
+            manifest = ManifestStore(flex_root)
+            latest = manifest.latest(flex._flex_id)
+            if not (latest is not None and latest.get("candidate_id") == cid):
+                flex._write_persisted(flex.predictors_src, flex.forward_src, sig_hash)
+                version_id = manifest.append_version(
+                    flex_id=flex._flex_id,
+                    src_path=persist_to,
+                    signature_hash=sig_hash,
+                    candidate_id=cid,
+                    score=best_score,
+                    parents=[],
+                    notes="GEPA optimized",
+                )
+                flex._exploration.record(
+                    FlexEvent.ACCEPT,
+                    predictors_src=flex.predictors_src,
+                    forward_src=flex.forward_src,
+                    signature_hash=sig_hash,
+                    score=best_score,
+                    extra={"version_id": version_id, "src_path": str(persist_to)},
+                )
+            if trainset:
+                DatasetStore(flex_root, flex._flex_id).save(list(trainset), list(valset or trainset))

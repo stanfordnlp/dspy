@@ -36,7 +36,7 @@ def _deserialize_example(rec: dict[str, Any]) -> Example:
 
 
 class DatasetStore:
-    """Persists the train/val examples a ``FlexGEPA`` run optimized against.
+    """Persists the train/val examples a ``dspy.GEPA`` run optimized a Flex against.
 
     Lives at ``<root>/.flex/<flex_id>/dataset.json`` next to the rest of a Flex
     module's bookkeeping. Saving the dataset is what lets a later run re-optimize
@@ -59,7 +59,7 @@ class DatasetStore:
         payload = {
             "flex_id": self.flex_id,
             "trainset": [_serialize_example(ex) for ex in trainset],
-            # A valset that is the same object as the trainset (FlexGEPA's default
+            # A valset that is the same object as the trainset (GEPA's default
             # when no separate valset is passed) is stored as null to avoid
             # duplicating it on disk; load() reuses the trainset in that case.
             "valset": None

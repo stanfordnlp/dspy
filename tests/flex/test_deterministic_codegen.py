@@ -1,66 +1,52 @@
-"""Tests that a generated Flex module may be fully deterministic.
+"""The dspy.Flex baseline is deterministic and LM-free.
 
-Covers an empty ``PREDICTORS = {}`` plus a pure-Python ``forward`` with a nested
-helper: it must bind, run with no LM call, expose no predictors, and survive the
-persistence round-trip.
+Constructing a Flex for a given signature binds the same ``dspy.RLM`` baseline
+source every time, with no LM call — two constructions of the same signature
+produce byte-identical ``predictors_src`` / ``forward_src``, and the baseline
+survives the persistence round-trip.
 """
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
 import dspy
-from dspy.flex import flex
-from dspy.utils.dummies import DummyLM
-
-EMPTY_PREDICTORS = "PREDICTORS = {}"
-
-# A pure-Python forward with a nested helper and a blank line (exercises the
-# indent/dedent round-trip in persistence.py).
-DETERMINISTIC_FORWARD = textwrap.dedent("""
-    def forward(self, value):
-        def double(x):
-            return x * 2
-
-        return dspy.Prediction(result=double(value))
-""").strip()
+from dspy.flex import Flex
 
 
-def _doubler_factory(persist_to: Path):
-    @flex(persist_to=str(persist_to), intent_check="off")
-    class Doubler(dspy.Signature):
-        """Return double the input value."""
+class Doubler(dspy.Signature):
+    """Return double the input value."""
 
-        value: int = dspy.InputField()
-        result: int = dspy.OutputField()
-
-    return Doubler
+    value: int = dspy.InputField()
+    result: int = dspy.OutputField()
 
 
-def test_empty_predictors_binds_and_runs_without_an_lm(tmp_path: Path) -> None:
-    # One codegen response produces the deterministic implementation; after that
-    # NO LM is configured, proving forward() makes no LM calls.
-    dspy.configure(lm=DummyLM([{"predictors_src": EMPTY_PREDICTORS, "forward_src": DETERMINISTIC_FORWARD}]))
-    program = _doubler_factory(tmp_path / "doubler.py")()
+def test_baseline_is_lm_free_and_deterministic(tmp_path: Path) -> None:
+    # No LM configured anywhere: construction must not make any LM call.
+    a = Flex(Doubler, persist_to=str(tmp_path / "a.py"))
+    b = Flex(Doubler, persist_to=str(tmp_path / "b.py"))
 
-    assert program.named_predictors() == []  # no predictors attached
-    result = program(value=21)
-    assert result.result == 42
+    # Byte-identical baseline source for the same signature.
+    assert a.predictors_src == b.predictors_src
+    assert a.forward_src == b.forward_src
+
+    # It's the typed RLM baseline that unwraps the declared output.
+    assert "dspy.RLM(" in a.predictors_src
+    assert "value: int -> result: int" in a.predictors_src
+    assert "result.result" in a.forward_src
 
 
-def test_deterministic_module_roundtrips_through_disk(tmp_path: Path) -> None:
+def test_baseline_roundtrips_through_disk(tmp_path: Path) -> None:
     persist_path = tmp_path / "doubler.py"
-    dspy.configure(lm=DummyLM([{"predictors_src": EMPTY_PREDICTORS, "forward_src": DETERMINISTIC_FORWARD}]))
-    _doubler_factory(persist_path)()
+    program = Flex(Doubler, persist_to=str(persist_path))
 
     text = persist_path.read_text()
-    assert "PREDICTORS = {}" in text
-    assert "def double(x):" in text  # nested helper survived rendering
+    assert "dspy.RLM(" in text
+    assert "def forward" in text
 
-    # Reconstruct with no LM at all — must load the deterministic body from disk
-    # and run identically.
-    dspy.configure(lm=DummyLM([]))
-    program2 = _doubler_factory(persist_path)()
-    assert program2(value=5).result == 10
-    assert program2.named_predictors() == []
+    # Reconstruct with no LM at all — must load the baseline body from disk and
+    # bind the same source (the RLM string signature is preserved).
+    program2 = Flex(Doubler, persist_to=str(persist_path))
+    assert "dspy.RLM(" in program2.predictors_src
+    assert "value: int -> result: int" in program2.predictors_src
+    assert program2.forward_src.strip() == program.forward_src.strip()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from typing import Any, get_origin
 
 import dspy
 from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
@@ -55,6 +55,26 @@ class FlexContext:
             f"Output fields:\n{_fmt(cls.output_fields)}\n"
         )
 
+    def render_signature_string(self) -> str:
+        """Render a parseable ``"in: T, in2 -> out: T2"`` signature string.
+
+        Used to construct the baseline ``dspy.RLM(<this string>)`` deterministically
+        (no LM). ``Signature.signature`` is lossy (names only), so we emit types too —
+        builtins and typing generics are included; an unrecognized/custom annotation is
+        emitted untyped (defaults to ``str`` when parsed), which keeps the baseline
+        constructible rather than failing on a type name the parser can't resolve.
+        """
+        cls = self.signature_cls
+
+        def _render(fields_dict: dict[str, Any]) -> str:
+            parts: list[str] = []
+            for fname, finfo in fields_dict.items():
+                type_str = _parseable_type_str(finfo.annotation)
+                parts.append(f"{fname}: {type_str}" if type_str else fname)
+            return ", ".join(parts)
+
+        return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
+
     def render_context_blurb(self) -> str:
         sections: list[str] = []
         if self.tools:
@@ -77,6 +97,24 @@ def _type_name(t: Any) -> str:
     if name:
         return name
     return str(t).replace("typing.", "")
+
+
+_SIMPLE_TYPES = (str, int, float, bool, list, dict, tuple, set)
+
+
+def _parseable_type_str(annotation: Any) -> str | None:
+    """Return a signature-string type token that DSPy's parser can resolve, or None.
+
+    Builtins map to their name (``int``); typing generics (``list[str]``) map to their
+    string form with the ``typing.`` prefix stripped. Anything else (custom classes,
+    Pydantic models not in the parser's namespace) returns None → render the field
+    untyped so baseline construction never fails on an unresolvable type name.
+    """
+    if annotation in _SIMPLE_TYPES:
+        return annotation.__name__
+    if get_origin(annotation) is not None:
+        return str(annotation).replace("typing.", "")
+    return None
 
 
 class CodegenSignature(dspy.Signature):
@@ -183,124 +221,6 @@ class RepairSignature(dspy.Signature):
     )
 
 
-class FlexIntentError(Exception):
-    """Raised when a Flex Signature's intent is too vague to implement well.
-
-    Surfaced before any code is generated. Carries the clarity judge's
-    ``concern`` and a concrete ``clarifying_question`` to answer in the
-    Signature docstring, and renders an actionable message.
-    """
-
-    def __init__(self, flex_id: str, concern: str, clarifying_question: str):
-        self.flex_id = flex_id
-        self.concern = concern
-        self.clarifying_question = clarifying_question
-        super().__init__(self._render())
-
-    def _render(self) -> str:
-        concern = self.concern or "the mapping from inputs to outputs is underdetermined."
-        question = self.clarifying_question or (
-            "What exactly should this module do — define the inputs→outputs behavior precisely?"
-        )
-        return (
-            f"dspy.Flex {self.flex_id!r}: the Signature's intent is too ambiguous to "
-            f"generate a reliable implementation.\n\n"
-            f"Concern: {concern}\n\n"
-            f"To fix, expand the Signature docstring to answer this question, then re-run:\n"
-            f"  > {question}\n\n"
-            f'(Pass intent_check="warn" to generate a best-effort module instead of raising, '
-            f'or intent_check="off" to skip this check entirely.)'
-        )
-
-
-class IntentClaritySignature(dspy.Signature):
-    """Judge whether a dspy.Flex module's Signature is specified clearly enough to
-    implement well — BEFORE any code is written.
-
-    You are given the user's Signature (name, objective docstring, input and
-    output fields) and any extra context. Decide whether a competent engineer
-    could implement the intended input→output behavior correctly from this alone.
-
-    Judge INTENT clarity only — NOT whether the task needs a language model. A
-    purely deterministic task (arithmetic, parsing, formatting, sorting) can be
-    perfectly 'clear'. Genuine ambiguity means: the mapping from inputs to
-    outputs is underdetermined, key terms/units/formats are undefined, important
-    edge cases are unspecified, or the objective is missing or self-contradictory.
-    Do NOT nitpick — only flag ambiguity that would actually change the
-    implementation.
-
-    Verdict values:
-    - 'clear': unambiguous enough to implement well.
-    - 'underspecified': implementable, but one or more decisions are guesses a
-      short docstring note should pin down.
-    - 'insufficient': too vague to implement responsibly without guessing the
-      core behavior.
-
-    When the verdict is not 'clear', give a SHORT concrete `concern` and exactly
-    ONE specific `clarifying_question` the user should answer in the docstring to
-    remove the ambiguity. When 'clear', leave both empty.
-    """
-
-    signature_spec: str = dspy.InputField(
-        desc="Rendered description of the user's Signature: name, objective docstring, input and output fields."
-    )
-    context_blurb: str = dspy.InputField(
-        desc="Optional extra context: tools available by name, style notes. May be '(no extra context)'."
-    )
-    verdict: str = dspy.OutputField(
-        desc="Exactly one of: clear, underspecified, insufficient."
-    )
-    concern: str = dspy.OutputField(
-        desc="One short sentence naming the ambiguity, or empty when verdict is 'clear'."
-    )
-    clarifying_question: str = dspy.OutputField(
-        desc="One concrete question to answer in the Signature docstring, or empty when 'clear'."
-    )
-
-
-class IntentAssessment(NamedTuple):
-    """Result of :func:`assess_intent`."""
-
-    verdict: str  # "clear" | "underspecified" | "insufficient"
-    concern: str
-    clarifying_question: str
-
-
-_VALID_VERDICTS = ("insufficient", "underspecified", "clear")
-
-
-def assess_intent(ctx: FlexContext, *, lm: dspy.LM | None = None) -> IntentAssessment:
-    """Ask the codegen LM whether ``ctx``'s Signature is clear enough to implement.
-
-    Degrades gracefully: any LM/parse failure, or an unrecognized verdict, is
-    treated as ``'clear'`` so a flaky judge never blocks code generation. The
-    verdict is matched leniently (most-severe-first) so stray punctuation or
-    surrounding words don't downgrade an 'insufficient' result.
-    """
-    predictor = dspy.Predict(IntentClaritySignature)
-    inputs = {
-        "signature_spec": ctx.render_signature_spec(),
-        "context_blurb": ctx.render_context_blurb(),
-    }
-    try:
-        if lm is not None:
-            with dspy.context(lm=lm):
-                out = predictor(**inputs)
-        else:
-            out = predictor(**inputs)
-        raw = (out.verdict or "").strip().lower()
-        verdict = next((v for v in _VALID_VERDICTS if v in raw), None)
-        if verdict is None:
-            logger.debug("assess_intent: unrecognized verdict %r; treating as 'clear'.", raw)
-            return IntentAssessment("clear", "", "")
-        return IntentAssessment(
-            verdict, (out.concern or "").strip(), (out.clarifying_question or "").strip()
-        )
-    except Exception as err:  # a flaky judge must never block codegen
-        logger.debug("assess_intent: judge failed (%s); treating as 'clear'.", err)
-        return IntentAssessment("clear", "", "")
-
-
 def _strip_code_fences(s: str) -> str:
     s = (s or "").strip()
     if s.startswith("```"):
@@ -319,13 +239,17 @@ def generate(
     *,
     lm: dspy.LM | None = None,
     seed: tuple[str, str] | None = None,
+    extra_guidance: str | None = None,
 ) -> tuple[str, str]:
     """Run the codegen LM against ``ctx`` and return ``(predictors_src, forward_src)``.
 
     When ``seed`` is given as ``(predictors_src, forward_src)``, the codegen LM is
     asked to *adapt* that existing implementation to the current signature rather
-    than author one from scratch. Used to carry hand-edited code forward across a
-    signature change.
+    than author one from scratch. Used to carry an existing implementation forward
+    (e.g. the RLM baseline) when synthesizing better code.
+
+    ``extra_guidance`` is appended to the primitives catalog — used to feed the
+    good/bad-behavior knowledge base into the code-synthesis path.
     """
     predictor = dspy.Predict(CodegenSignature)
     if seed is not None:
@@ -338,10 +262,11 @@ def generate(
         )
     else:
         seed_text = "(none)"
+    catalog = PRIMITIVES_CATALOG + (f"\n\n{extra_guidance}" if extra_guidance else "")
     inputs = dict(
         signature_spec=ctx.render_signature_spec(),
         context_blurb=ctx.render_context_blurb(),
-        primitives_catalog=PRIMITIVES_CATALOG,
+        primitives_catalog=catalog,
         seed_implementation=seed_text,
     )
     if lm is not None:

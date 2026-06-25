@@ -5,7 +5,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import dspy
-from dspy import FlexGEPA, flex
 from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 load_dotenv()
@@ -17,7 +16,6 @@ DEMO_DIR = Path(__file__).parent
 FLEX_PATH = DEMO_DIR / "invoice_flex_gen.py"
 
 
-@flex(persist_to=str(FLEX_PATH))
 class InvoiceTotal(dspy.Signature):
     """Read a free-text invoice line and compute the grand total in whole cents."""
 
@@ -43,9 +41,9 @@ valset = [
 heldout = ex("10 pencils at $0.30 each plus $1.50 shipping", 450)
 
 
-def metric(example, prediction, trace=None) -> ScoreWithFeedback:
+def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWithFeedback:
     try:
-        got = int(prediction.total_cents)
+        got = int(pred.total_cents)
     except (ValueError, TypeError, AttributeError):
         return ScoreWithFeedback(
             score=0.0,
@@ -53,7 +51,7 @@ def metric(example, prediction, trace=None) -> ScoreWithFeedback:
             "cents as an int (e.g. $4.50 -> 450).",
         )
 
-    want = int(example.total_cents)
+    want = int(gold.total_cents)
     if got == want:
         return ScoreWithFeedback(score=1.0, feedback="Correct.")
     fb = f"Wrong total: got {got} cents, expected {want} cents. "
@@ -80,10 +78,11 @@ def mean_score(program: dspy.Module, dataset: list[dspy.Example]) -> float:
 
 
 def test_invoice_codegen_then_gepa() -> None:
-    program = InvoiceTotal()
+    dspy.configure(lm=exec_lm)
+    program = dspy.Flex(InvoiceTotal, persist_to=str(FLEX_PATH))
 
     baseline = mean_score(program, valset)
-    optimized = FlexGEPA(
+    optimized = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,
         max_metric_calls=24,
@@ -95,6 +94,7 @@ def test_invoice_codegen_then_gepa() -> None:
 
 
 def test_invoice_manual_edit() -> None:
-    program = InvoiceTotal()
+    dspy.configure(lm=exec_lm)
+    program = dspy.Flex(InvoiceTotal, persist_to=str(FLEX_PATH))
     pred = program(**heldout.inputs())
     print(f"Before manual edit: predicted total_cents = {pred.total_cents}, want {heldout.total_cents}")

@@ -131,3 +131,74 @@ Common patterns (study these before writing `forward`):
        return dspy.Prediction(slug=slugify(inputs["title"]))
    ```
 """
+
+
+KNOWLEDGE_BASE: str = """\
+You are improving the *code* of a dspy.Flex module. The starting point is almost
+always a single trivial `dspy.RLM(...)` call that delegates the whole task to one
+recursive-LM black box. Your job is to spend compute to turn that into a better,
+more reliable program — decomposing the task, moving determinism into plain Python,
+and using focused predictors only where an LM is genuinely needed.
+
+What a GOOD optimized module looks like:
+
+- Decomposed: the task is split into the smallest predictors that each do one
+  clear thing (extract, classify, judge, generate). Each predictor has a tight,
+  well-named sub-signature.
+- Mostly Python: arithmetic, parsing, normalization, sorting, aggregation,
+  validation, and control flow are done in plain Python in `forward`. The LM is
+  reserved for genuine judgment/extraction/generation.
+- Robust: it coerces predictor outputs to the declared types, unwraps every
+  `dspy.Prediction` before composing, and handles obvious edge cases (empty input,
+  missing fields) without raising.
+- Deterministic where possible: if a step can be done without an LM, it is. A fully
+  deterministic task ends up with `PREDICTORS = {}` and a pure-Python `forward`.
+- Self-contained: only uses `dspy`, the declared inputs, and small helpers nested
+  inside `forward`. No module-scope helpers, no hidden globals, no I/O.
+
+Worked example — evolving the RLM baseline for an invoice-total task:
+
+```
+# BASELINE (what you start from): one opaque RLM call.
+PREDICTORS = {"rlm": dspy.RLM("invoice: str -> total_cents: int")}
+
+def forward(self, **inputs):
+    result = self.rlm(invoice=inputs["invoice"])
+    return dspy.Prediction(total_cents=result.total_cents)
+```
+
+```
+# GOOD (a strong optimization): LM extracts the line items, Python does the math.
+PREDICTORS = {
+    "extract": dspy.Predict("invoice: str -> qty: int, unit_price_cents: int, shipping_cents: int"),
+}
+
+def forward(self, **inputs):
+    e = self.extract(invoice=inputs["invoice"])
+    total = int(e.qty) * int(e.unit_price_cents) + int(e.shipping_cents)
+    return dspy.Prediction(total_cents=int(total))
+```
+
+Anti-patterns to AVOID (these are common ways an optimization goes wrong):
+
+- Asking one LM call to both extract AND compute (e.g. "read the invoice and return
+  the total"). Split it: LM extracts the numbers, Python computes. LMs are
+  unreliable at arithmetic.
+- Leaving everything inside a single `dspy.RLM` when the task fits a couple of
+  direct `dspy.Predict` calls — RLM's REPL loop is expensive and overkill for small,
+  well-structured inputs. Only keep RLM when an input field is a large/structured
+  blob that truly needs iterative exploration.
+- Returning a whole `dspy.Prediction` as an output value
+  (`dspy.Prediction(x=self.p(...))`) instead of unwrapping (`...=self.p(...).x`).
+- Not casting to the declared output type, so a string `"42"` is returned where
+  `int` was declared.
+- Hardcoding answers, magic constants, or example values lifted from the task
+  description / failing examples — generalize, don't memorize.
+- Unbounded `while` loops, accessing dunder attributes, or defining helpers at
+  module scope.
+
+When you are given failing examples, diagnose the specific failure (wrong field
+read, missing coercion, an LM step that should be Python, an under-decomposed
+prompt) and make the smallest change that fixes the observed failures while keeping
+the rest of the working structure intact.
+"""

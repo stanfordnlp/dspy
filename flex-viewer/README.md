@@ -33,7 +33,7 @@ npm run dev
 
 ### Live serve mode
 
-To watch a `.flex` dir update in real time (e.g. while a `FlexGEPA` run is
+To watch a `.flex` dir update in real time (e.g. while a `dspy.GEPA` run is
 writing candidates), use serve mode instead of a static export:
 
 ```bash
@@ -84,7 +84,7 @@ else (exporter, UI, host) depends only on those.
   versions** — candidate files themselves carry no parent pointer. Edges are
   deduped across both sources.
 - A node is **accepted** when its `candidate_id` appears as a `manifest.json`
-  version; `manual edit` and `FlexGEPA optimized` show in the version `notes`.
+  version; `manual edit` and `GEPA optimized` show in the version `notes`.
 - The raw artifact types in `src/core/types.ts` mirror the Python writers in
   `dspy/flex/exploration.py` and `dspy/flex/manifest.py` — keep them in sync.
 

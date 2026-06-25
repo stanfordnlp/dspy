@@ -5,10 +5,10 @@ import json
 import logging
 import types
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import dspy
-from dspy.flex.codegen import FlexContext, FlexIntentError, assess_intent, generate, repair
+from dspy.flex.codegen import FlexContext, repair
 from dspy.flex.dataset import DatasetStore
 from dspy.flex.exploration import ExplorationStore, FlexEvent, candidate_id
 from dspy.flex.manifest import ManifestStore
@@ -38,41 +38,50 @@ def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> di
 
 @experimental(version="3.3.0b2")
 class Flex(Module):
-    """A DSPy Module whose ``forward()`` body is authored by an LM from a Signature.
+    """A DSPy Module that starts as a baseline ``dspy.RLM`` and whose code is optimizable.
+
+    Construct it like any other module — ``dspy.Flex(MySignature)``. On first use it
+    binds a deterministic baseline implementation that simply delegates to
+    ``dspy.RLM(<signature>)`` (no codegen LM call). The module is *marked*
+    code-optimizable (``_code_optimizable``): when optimized with ``dspy.GEPA``, the
+    optimizer may rewrite its source (``predictors_src``/``forward_src``) — decomposing
+    the task into focused predictors and plain Python — rather than only tuning
+    instructions. A regular ``dspy.Predict`` in the same program keeps the default
+    instruction-only optimization.
 
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
-        persist_to: Path to a checked-in ``.py`` file holding the generated code.
-            When set, the file is loaded if its signature hash matches; otherwise
-            it is (re-)generated and written. When None, the implementation lives
-            only in memory.
+        persist_to: Path to a checked-in ``.py`` file holding the implementation.
+            When set, the file is loaded if its signature hash matches; otherwise a
+            fresh baseline is written. When None, the implementation lives only in
+            memory.
         context: Optional list of ``dspy.Tool`` / callables / style note strings to
-            inject into codegen and into the runtime exec namespace.
-        codegen_lm: LM to use for generation. Defaults to ``dspy.settings.lm``.
+            inject into the runtime exec namespace (and into code optimization).
+        codegen_lm: LM used for auto-repair of broken code. Defaults to
+            ``dspy.settings.lm``.
         flex_id: Stable identifier in the manifest. Defaults to the Signature class
             name (or a hash of the signature when ``persist_to`` is None).
-        auto_repair: When True (default), Flex tries to recover from broken
-            implementations by re-invoking the codegen LM with the broken body
-            and the exception text. Runs at most once at bind time and at most
-            once at runtime per process. Set False to surface errors directly.
+        auto_repair: When True (default), Flex tries to recover from a broken
+            *persisted/optimized* implementation by re-invoking the codegen LM with
+            the broken body and the exception text. Runs at most once at bind time
+            (on load) and at most once at runtime per process. Set False to surface
+            errors directly. (The deterministic baseline never triggers repair.)
         improver: Optional optimizer used by :meth:`improve` to re-optimize a
             hand-edited module. Any object with a
             ``compile(student, *, trainset, valset)`` method — typically a
-            configured ``dspy.FlexGEPA``. May also be set later via
-            :meth:`set_improver`.
-        intent_check: How to handle an ambiguous Signature at generation time
-            (first run or signature change). ``"error"`` (default) raises
-            ``FlexIntentError`` when intent is too vague to implement, warns when
-            it is merely underspecified, and is silent when clear. ``"warn"``
-            never raises (warns instead). ``"off"`` skips the check (no extra LM
-            call).
+            configured ``dspy.GEPA``. May also be set later via :meth:`set_improver`.
 
-    Persistence layout: when ``persist_to`` is set, the generated source goes
-    to that file and bookkeeping goes to ``<persist_to>.parent/.flex/`` —
-    ``manifest.json`` (shared across all Flexes in that directory) and per-flex
-    history under ``.flex/<flex_id>/``. When ``persist_to=None`` the
-    implementation lives only in memory and no bookkeeping is written.
+    Persistence layout: when ``persist_to`` is set, the source goes to that file and
+    bookkeeping goes to ``<persist_to>.parent/.flex/`` — ``manifest.json`` (shared
+    across all Flexes in that directory) and per-flex history under
+    ``.flex/<flex_id>/``. When ``persist_to=None`` the implementation lives only in
+    memory and no bookkeeping is written.
     """
+
+    # Marker read by ``dspy.GEPA``: this module's code (``predictors_src`` /
+    # ``forward_src``) may be rewritten by the optimizer, instead of only its inner
+    # predictors' instructions. Duck-typed via ``getattr(obj, "_code_optimizable", False)``.
+    _code_optimizable: bool = True
 
     def __init__(
         self,
@@ -84,7 +93,6 @@ class Flex(Module):
         flex_id: str | None = None,
         auto_repair: bool = True,
         improver: Any = None,
-        intent_check: Literal["error", "warn", "off"] = "error",
     ):
         super().__init__()
 
@@ -112,7 +120,6 @@ class Flex(Module):
         self._auto_repair = auto_repair
         self._runtime_repair_used = False
         self._improver = improver
-        self._intent_check = intent_check
         # Set when a hand edit is detected on load; consumed by improve().
         self._pending_manual_edit = False
         self._manual_edit_cid: str | None = None
@@ -169,7 +176,7 @@ class Flex(Module):
         """Attach (or replace) the optimizer used by :meth:`improve`.
 
         ``improver`` is any object exposing ``compile(student, *, trainset, valset)``
-        — typically a configured ``dspy.FlexGEPA``. Returns ``self`` for chaining.
+        — typically a configured ``dspy.GEPA``. Returns ``self`` for chaining.
         """
         self._improver = improver
         return self
@@ -186,8 +193,8 @@ class Flex(Module):
 
         The continuous-improvement loop: when you hand-edit a generated module and
         re-run, Flex detects and records the edit; calling ``improve()`` then
-        re-runs the configured ``improver`` (e.g. ``dspy.FlexGEPA``) seeded from
-        your edit, using the dataset saved by the last ``FlexGEPA.compile(...)``
+        re-runs the configured ``improver`` (e.g. ``dspy.GEPA``) seeded from
+        your edit, using the dataset saved by the last ``dspy.GEPA.compile(...)``
         (or the ``trainset`` / ``valset`` passed here). The best result is written
         back to the persisted file and bound in place.
 
@@ -196,7 +203,7 @@ class Flex(Module):
 
         Args:
             trainset: Examples to optimize against. Defaults to the dataset saved
-                by the last ``FlexGEPA.compile(...)`` for this module.
+                by the last ``dspy.GEPA.compile(...)`` for this module.
             valset: Held-out examples. Defaults to the saved valset (or trainset).
             force: Re-optimize even when no manual edit was detected.
 
@@ -206,7 +213,7 @@ class Flex(Module):
         if self._improver is None:
             raise ValueError(
                 f"dspy.Flex {self._flex_id!r}: improve() needs an improver. Pass improver= to "
-                "@flex(...) / Flex(...), or call .set_improver(dspy.FlexGEPA(...)) first."
+                "Flex(...), or call .set_improver(dspy.GEPA(...)) first."
             )
 
         if not self._pending_manual_edit and not force:
@@ -229,7 +236,7 @@ class Flex(Module):
             loaded = DatasetStore(self._flex_root, self._flex_id).load()
             if loaded is None:
                 raise ValueError(
-                    f"dspy.Flex {self._flex_id!r}: no saved dataset found. Run FlexGEPA.compile(...) "
+                    f"dspy.Flex {self._flex_id!r}: no saved dataset found. Run dspy.GEPA.compile(...) "
                     "once to record one, or pass trainset= to improve()."
                 )
             resolved_trainset, resolved_valset = loaded
@@ -261,10 +268,6 @@ class Flex(Module):
             return
 
         sig_hash = self._signature_hash()
-
-        # Seed for regeneration: the current on-disk body, carried into codegen
-        # when the signature changed so hand edits aren't thrown away.
-        seed: tuple[str, str] | None = None
 
         if self._persist_to and self._persist_to.exists() and not force:
             stored = self._read_persisted()
@@ -315,56 +318,24 @@ class Flex(Module):
                             self._write_persisted(stored.predictors_src, stored.forward_src, sig_hash)
                     return
 
-                # Signature changed — regenerate, seeded from the current body.
-                seed = (stored.predictors_src, stored.forward_src)
-                if body_edited:
-                    # Preserve the hand edit in the ledger so the codegen event's
-                    # parent (the seed) refers to a real candidate.
-                    self._exploration.record(
-                        FlexEvent.MANUAL_EDIT,
-                        predictors_src=stored.predictors_src,
-                        forward_src=stored.forward_src,
-                        signature_hash=stored.signature_hash,
-                        extra={
-                            "source_path": str(self._persist_to),
-                            "reason": "manual edit seeding regeneration",
-                        },
-                    )
+                # Signature changed — discard the old body and reset to a fresh RLM
+                # baseline for the new signature. Re-run dspy.GEPA to re-optimize.
                 logger.info(
-                    "dspy.Flex %r: signature hash mismatch on %s — regenerating from %s implementation.",
+                    "dspy.Flex %r: signature hash mismatch on %s — resetting to RLM baseline.",
                     self._flex_id,
                     self._persist_to,
-                    "hand-edited" if body_edited else "previous",
                 )
 
-        # Gate on Signature intent before spending a codegen call. Only reached on
-        # generation (initial codegen or signature change) — loads return earlier.
-        self._run_intent_gate()
-
-        predictors_src, forward_src = generate(self._flex_ctx, lm=self._codegen_lm, seed=seed)
-        seed_parents = [candidate_id(*seed)] if seed is not None else None
-        codegen_parents = seed_parents
-        notes = "regenerated from seed (signature changed)" if seed is not None else "initial codegen"
-        try:
-            self._bind_code(predictors_src, forward_src)
-        except Exception as err:
-            if not self._auto_repair:
-                raise
-            broken = (predictors_src, forward_src)
-            predictors_src, forward_src = self._repair_after_bind_failure(
-                broken=broken,
-                error=err,
-                signature_hash=sig_hash,
-                parents=seed_parents,
-            )
-            codegen_parents = [candidate_id(*broken)]
-            notes = f"auto-repair after codegen bind error: {type(err).__name__}"
+        # Bind the deterministic RLM baseline (no codegen LM call). Decomposition into
+        # a richer, mostly-Python program happens later via dspy.GEPA.
+        predictors_src, forward_src = self._rlm_baseline_src()
+        self._bind_code(predictors_src, forward_src)
         cid = self._exploration.record(
             FlexEvent.CODEGEN,
             predictors_src=predictors_src,
             forward_src=forward_src,
             signature_hash=sig_hash,
-            parents=codegen_parents,
+            parents=None,
         )
 
         if self._persist_to is not None:
@@ -376,8 +347,8 @@ class Flex(Module):
                 src_path=self._persist_to,
                 signature_hash=sig_hash,
                 candidate_id=cid,
-                parents=codegen_parents,
-                notes=notes,
+                parents=None,
+                notes="rlm baseline",
             )
             self._exploration.record(
                 FlexEvent.ACCEPT,
@@ -386,13 +357,35 @@ class Flex(Module):
                 signature_hash=sig_hash,
                 extra={"version_id": version_id, "src_path": str(self._persist_to)},
             )
-            logger.info("dspy.Flex %r: wrote new implementation to %s", self._flex_id, self._persist_to)
+            logger.info("dspy.Flex %r: wrote RLM baseline to %s", self._flex_id, self._persist_to)
         else:
-            logger.warning(
-                "dspy.Flex %r: persist_to=None — implementation is in-memory only and will be "
-                "regenerated next process start. Set persist_to= for production.",
+            logger.info(
+                "dspy.Flex %r: persist_to=None — RLM baseline is in-memory only.",
                 self._flex_id,
             )
+
+    def _rlm_baseline_src(self) -> tuple[str, str]:
+        """Deterministic baseline source: delegate the whole signature to one dspy.RLM.
+
+        No LM call — emits source that constructs ``dspy.RLM(<signature string>)`` and
+        unwraps its declared outputs. dspy.GEPA later rewrites this into a decomposed,
+        mostly-Python implementation. Uses a signature *string* (not the class) so the
+        persisted file stays self-contained (``_bind_code`` execs with only ``dspy`` and
+        context tools in scope).
+        """
+        cls: Any = self._signature_cls
+        sig_str = self._flex_ctx.render_signature_string()
+        output_names = list(cls.output_fields.keys())
+        predictors_src = "PREDICTORS = {\n" f"    {'rlm'!r}: dspy.RLM({sig_str!r}),\n" "}"
+        returns = ", ".join(f"{name}=result.{name}" for name in output_names)
+        forward_src = (
+            "def forward(self, **inputs):\n"
+            "    result = self.rlm(**inputs)\n"
+            f"    return dspy.Prediction({returns})"
+        )
+        # Match the normalized (stripped) form the persistence round-trip yields, so a
+        # freshly written baseline isn't misread as a hand edit on its first reload.
+        return predictors_src.strip(), forward_src.strip()
 
     def _honor_manual_edit(self, stored: PersistedFlex, sig_hash: str, body_id: str) -> None:
         """Accept a hand-edited file: record it, refresh the body hash, and version it.
@@ -443,30 +436,6 @@ class Flex(Module):
             self._flex_id,
             self._persist_to,
         )
-
-    def _run_intent_gate(self) -> None:
-        """Assess Signature intent before generating; warn or raise per ``intent_check``.
-
-        Runs only at generation time (initial codegen or signature change), never
-        on a plain load. ``"off"`` skips the LM call; ``"warn"`` downgrades an
-        ``insufficient`` verdict to a warning; ``"error"`` (default) raises
-        ``FlexIntentError`` so the user can clarify the docstring. The judge
-        degrades gracefully — an unclear or failed judgment is treated as
-        ``"clear"`` and never blocks generation.
-        """
-        if self._intent_check == "off":
-            return
-        assessment = assess_intent(self._flex_ctx, lm=self._codegen_lm)
-        if assessment.verdict == "clear":
-            return
-        if assessment.verdict == "insufficient" and self._intent_check == "error":
-            raise FlexIntentError(self._flex_id, assessment.concern, assessment.clarifying_question)
-        msg = f"dspy.Flex {self._flex_id!r}: Signature intent is {assessment.verdict}."
-        if assessment.concern:
-            msg += f" {assessment.concern}"
-        if assessment.clarifying_question:
-            msg += f" Consider clarifying in the docstring: {assessment.clarifying_question}"
-        logger.warning("%s", msg)
 
     def _latest_manifest_parents(self) -> list[str] | None:
         """Candidate IDs of the last accepted manifest entry, for REPAIR parentage."""

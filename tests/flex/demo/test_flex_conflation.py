@@ -7,7 +7,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import dspy
-from dspy import FlexGEPA, flex
 from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 load_dotenv()
@@ -26,7 +25,6 @@ N_TEST_POS, N_TEST_NEG = 4, 4
 MAX_METRIC_CALLS = 30
 
 
-@flex(persist_to=str(FLEX_PATH), codegen_lm=STRONG_LM)
 class SamePlace(dspy.Signature):
     """Decide whether two business listings refer to the same physical place.
 
@@ -83,8 +81,9 @@ def _load_splits() -> tuple[list, list, list]:
     return train, val, test
 
 
-def metric(example, prediction, trace=None) -> ScoreWithFeedback:
+def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWithFeedback:
     """Reward correct + deterministic, penalize LLM calls."""
+    example, prediction = gold, pred
     llm_call_penalty = 0.15
     n_calls = len(trace) if trace else 0  # predictor calls during this forward()
     try:
@@ -133,14 +132,15 @@ def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
 
 
 def test_flex_conflation() -> None:
+    dspy.configure(lm=EXEC_LM)
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
-    program = SamePlace()
+    program = dspy.Flex(SamePlace, persist_to=str(FLEX_PATH), codegen_lm=STRONG_LM)
     base_acc, base_calls = _evaluate(program, test)
     print(f"[baseline] test accuracy={base_acc:.2f}, avg LLM calls/example={base_calls:.2f}")
 
-    optimized = FlexGEPA(
+    optimized = dspy.GEPA(
         metric=metric,
         reflection_lm=STRONG_LM,
         max_metric_calls=MAX_METRIC_CALLS,

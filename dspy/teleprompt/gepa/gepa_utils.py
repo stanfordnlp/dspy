@@ -74,6 +74,124 @@ class PredictorFeedbackFn(Protocol):
         ...
 
 
+# ---------------------------------------------------------------------------
+# Code optimization for vibe-marked (dspy.Flex) submodules.
+#
+# A vibe-marked submodule is optimized by rewriting its *source* — the candidate
+# carries `<submodule_path>::predictors_src` / `::forward_src` keys — rather than by
+# tuning a predictor's instructions. The "::" separator never collides with the
+# dotted/bracketed names produced by named_parameters()/named_sub_modules(), so code
+# keys and instruction keys coexist in one candidate dict.
+# ---------------------------------------------------------------------------
+
+CODE_COMPONENTS = ("predictors_src", "forward_src")
+_CODE_KEY_SEP = "::"
+
+
+def _is_code_key(key: str) -> bool:
+    return _CODE_KEY_SEP in key
+
+
+def make_code_key(path: str, component: str) -> str:
+    return f"{path}{_CODE_KEY_SEP}{component}"
+
+
+def _parse_code_key(key: str) -> tuple[str, str]:
+    path, _, component = key.partition(_CODE_KEY_SEP)
+    return path, component
+
+
+def enumerate_flex_submodules(root) -> dict[str, Any]:
+    """Map sub-module path -> module for every vibe-marked (code-optimizable) submodule.
+
+    Duck-typed (no import of dspy.Flex): a submodule qualifies if it exposes the
+    ``_code_optimizable`` marker and a ``_bind_code`` method. Paths use the
+    ``named_sub_modules()`` naming ("self" for a top-level Flex student, "self.extract"
+    for a nested one) and are stable across deepcopy, so the same key identifies the
+    submodule at seed time and at build_program time.
+    """
+    out: dict[str, Any] = {}
+    for name, sub in root.named_sub_modules():
+        if getattr(sub, "_code_optimizable", False) and hasattr(sub, "_bind_code"):
+            out[name] = sub
+    return out
+
+
+def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
+    """Object ids of predictors owned by vibe-marked submodules.
+
+    Their instructions are governed by the submodule's code (rewritten wholesale), so
+    they must be excluded from the instruction-optimization candidate. We key on object
+    identity because named_sub_modules() and named_predictors() use different path
+    formats ("self.flex" vs "flex.rlm.generate_action").
+    """
+    ids: set[int] = set()
+    for flex in flex_submodules.values():
+        for _, pred in flex.named_predictors():
+            ids.add(id(pred))
+    return ids
+
+
+def _short_repr(value: Any, max_len: int = 800) -> str:
+    s = str(value)
+    return s if len(s) <= max_len else s[: max_len - 3] + "..."
+
+
+def _render_prediction(prediction: Any) -> Any:
+    if isinstance(prediction, FailedPrediction):
+        return f"FailedPrediction: {prediction.completion_text[:1000]}"
+    if isinstance(prediction, Prediction):
+        try:
+            return {k: _short_repr(v) for k, v in prediction.items()}
+        except Exception:
+            pass
+    return _short_repr(prediction)
+
+
+def _format_failures(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return "(no failing examples available)"
+    chunks: list[str] = []
+    for i, rec in enumerate(records):
+        chunks.append(
+            f"=== Example {i} ===\n"
+            f"Inputs:\n{rec.get('Inputs')!r}\n"
+            f"Generated Outputs:\n{rec.get('Generated Outputs')!r}\n"
+            f"Feedback:\n{rec.get('Feedback')}"
+        )
+    return "\n\n".join(chunks)
+
+
+class CodeProposalSignature(dspy.Signature):
+    """Revise the source of one code component of a vibe-marked dspy.Flex submodule.
+
+    You receive the submodule's task description, the catalog of allowed primitives plus
+    a good/bad-behavior knowledge base, the current source of one component (the
+    ``PREDICTORS`` dict or the ``forward`` function), the sibling component for context,
+    and a batch of failing examples with feedback. Produce a revised source that fixes
+    the observed failures and follows the catalog. The revised source MUST stay drop-in
+    compatible with the unchanged sibling component.
+    """
+
+    task_description: str = dspy.InputField(
+        desc="The submodule's Signature: name, objective, input and output fields."
+    )
+    primitives_catalog: str = dspy.InputField(
+        desc="Catalog of allowed primitives plus good/bad-behavior guidance to follow."
+    )
+    component_name: str = dspy.InputField(
+        desc="Which component is being revised: 'predictors_src' (the PREDICTORS dict) or 'forward_src' (the forward function)."
+    )
+    current_source: str = dspy.InputField(desc="Current source of the component being revised.")
+    sibling_source: str = dspy.InputField(
+        desc="Current source of the OTHER component (read-only context — keep compatible, do not edit)."
+    )
+    failures: str = dspy.InputField(
+        desc="A batch of failing examples and feedback. Diagnose them and revise the component to fix them."
+    )
+    revised_source: str = dspy.OutputField(desc="The full revised source of the component.")
+
+
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
         self,
@@ -101,6 +219,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
 
+        # Task descriptions for any vibe-marked (Flex) submodules, used when proposing
+        # revised code. Keyed by the same path used in the code candidate keys.
+        self._flex_task_descriptions: dict[str, str] = {}
+        for path, sub in enumerate_flex_submodules(student_module).items():
+            ctx = getattr(sub, "_flex_ctx", None)
+            if ctx is not None and hasattr(ctx, "render_signature_spec"):
+                self._flex_task_descriptions[path] = ctx.render_signature_spec()
+
     def propose_new_texts(
         self,
         candidate: dict[str, str],
@@ -108,39 +234,108 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         components_to_update: list[str],
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
-        # If custom proposer provided, override everything with custom proposer
-        if self.custom_instruction_proposer:
-            with dspy.context(lm=reflection_lm):
-                return self.custom_instruction_proposer(
-                    candidate=candidate,
-                    reflective_dataset=reflective_dataset,
-                    components_to_update=components_to_update,
-                )
+
+        instr_keys = [c for c in components_to_update if not _is_code_key(c)]
+        code_keys = [c for c in components_to_update if _is_code_key(c)]
 
         results: dict[str, str] = {}
 
-        with dspy.context(lm=reflection_lm):
-            for name in components_to_update:
-                base_instruction = candidate[name]
-                dataset_with_feedback = reflective_dataset[name]
-                results[name] = InstructionProposalSignature.run(
-                    lm=(lambda x: self.stripped_lm_call(x)[0]),
-                    input_dict={
-                        "current_instruction_doc": base_instruction,
-                        "dataset_with_feedback": dataset_with_feedback,
-                    },
-                )["new_instruction"]
+        # --- instruction components (default GEPA behavior) ------------------
+        if instr_keys:
+            # A custom instruction proposer overrides only the instruction components;
+            # code components always use the code proposer below.
+            if self.custom_instruction_proposer:
+                with dspy.context(lm=reflection_lm):
+                    results.update(
+                        self.custom_instruction_proposer(
+                            candidate={k: candidate[k] for k in instr_keys},
+                            reflective_dataset={k: reflective_dataset[k] for k in instr_keys},
+                            components_to_update=instr_keys,
+                        )
+                    )
+            else:
+                with dspy.context(lm=reflection_lm):
+                    for name in instr_keys:
+                        results[name] = InstructionProposalSignature.run(
+                            lm=(lambda x: self.stripped_lm_call(x)[0]),
+                            input_dict={
+                                "current_instruction_doc": candidate[name],
+                                "dataset_with_feedback": reflective_dataset[name],
+                            },
+                        )["new_instruction"]
+
+        # --- code components (vibe-marked dspy.Flex submodules) --------------
+        if code_keys:
+            from dspy.flex.codegen import _strip_code_fences
+            from dspy.flex.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
+
+            catalog = PRIMITIVES_CATALOG + "\n\n" + KNOWLEDGE_BASE
+            proposer = dspy.Predict(CodeProposalSignature)
+            with dspy.context(lm=reflection_lm):
+                for ckey in code_keys:
+                    path, component = _parse_code_key(ckey)
+                    sibling = "forward_src" if component == "predictors_src" else "predictors_src"
+                    try:
+                        out = proposer(
+                            task_description=self._flex_task_descriptions.get(path, path),
+                            primitives_catalog=catalog,
+                            component_name=component,
+                            current_source=candidate[ckey],
+                            sibling_source=candidate.get(make_code_key(path, sibling), ""),
+                            failures=_format_failures(reflective_dataset.get(ckey, [])),
+                        )
+                        results[ckey] = _strip_code_fences(out.revised_source)
+                    except Exception as e:
+                        logger.warning("Code proposer failed on %s (%s); keeping original.", ckey, e)
+                        results[ckey] = candidate[ckey]
 
         return results
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
+        # Rebind code for vibe-marked (Flex) submodules whose source is in the candidate.
+        for path, flex in enumerate_flex_submodules(new_prog).items():
+            pkey = make_code_key(path, "predictors_src")
+            fkey = make_code_key(path, "forward_src")
+            if pkey in candidate and fkey in candidate:
+                flex._auto_repair = False  # a broken proposed candidate must raise, not self-repair
+                flex._bind_code(candidate[pkey], candidate[fkey])
+
+        # Apply instruction updates to predictors. Code keys contain "::" so never match
+        # here; predictors *inside* a Flex were excluded from the candidate (their
+        # instructions are owned by the Flex's code), so they are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
 
         return new_prog
+
+    def _code_reflective_records(self, eval_batch) -> list[dict[str, Any]]:
+        """Module-level reflective records for a code component (whole-program I/O).
+
+        Unlike instruction components (per-predictor traces), a Flex submodule's code is
+        reflected on using the whole program's inputs/outputs/feedback per example.
+        """
+        records: list[dict[str, Any]] = []
+        for data in eval_batch.trajectories or []:
+            example = data["example"]
+            prediction = data["prediction"]
+            raw_score = data.get("score")
+            if hasattr(raw_score, "score"):
+                feedback = raw_score.get("feedback") or ""
+                score_val = raw_score["score"]
+            else:
+                feedback = ""
+                score_val = raw_score
+            records.append(
+                {
+                    "Inputs": {k: _short_repr(v) for k, v in example.inputs().items()},
+                    "Generated Outputs": _render_prediction(prediction),
+                    "Feedback": feedback or f"This trajectory got a score of {score_val}.",
+                }
+            )
+        return records
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
@@ -203,6 +398,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
+            # Code components (vibe-marked Flex submodules) reflect on whole-program I/O,
+            # not per-predictor traces.
+            if _is_code_key(pred_name):
+                recs = self._code_reflective_records(eval_batch)
+                if recs:
+                    ret_d[pred_name] = recs
+                continue
+
             # Find the predictor object
             module = None
             for name, m in program.named_predictors():

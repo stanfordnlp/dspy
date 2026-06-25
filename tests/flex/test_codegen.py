@@ -4,133 +4,102 @@ import json
 import textwrap
 
 import dspy
-from dspy.flex import flex
+from dspy.flex import Flex
 from dspy.flex.exploration import ExplorationStore, candidate_id
 from dspy.utils.dummies import DummyLM
 
-CANNED_PREDICTORS = textwrap.dedent("""
+# A plain dspy.Predict body we can persist and actually run with a DummyLM —
+# the RLM baseline that Flex binds at construction is too heavy to execute in a
+# unit test, so end-to-end forward tests use this instead.
+PREDICT_PREDICTORS = textwrap.dedent("""
     PREDICTORS = {
         "echo": dspy.Predict("q -> a"),
     }
 """).strip()
 
-CANNED_FORWARD = textwrap.dedent("""
+PREDICT_FORWARD = textwrap.dedent("""
     def forward(self, q):
         out = self.echo(q=q)
         return dspy.Prediction(a=out.a)
 """).strip()
 
 
-def _make_codegen_lm():
-    return DummyLM([{"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD}])
+class Echo(dspy.Signature):
+    """Echo the question as the answer."""
+
+    q: str = dspy.InputField()
+    a: str = dspy.OutputField()
 
 
-def test_decorator_construction_runs_codegen_and_binds_forward(tmp_path) -> None:
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo the question as the answer, twice."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    program = Echo()
+def test_construction_binds_rlm_baseline(tmp_path) -> None:
+    # Construction is LM-free: it binds the deterministic dspy.RLM baseline.
+    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
     assert program.predictors_src is not None
     assert program.forward_src is not None
-    assert "PREDICTORS" in program.predictors_src
+    assert "dspy.RLM(" in program.predictors_src
+    assert "q: str -> a: str" in program.predictors_src
     assert "def forward" in program.forward_src
+    assert "result.a" in program.forward_src  # unwraps the declared output
 
 
 def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    program = Echo()
+    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
+    # The baseline binds an attribute named `rlm`.
+    assert hasattr(program, "rlm")
     names = [n for n, _ in program.named_predictors()]
-    assert "echo" in names
+    # named_predictors() surfaces the RLM's internal predictors.
+    assert "rlm.generate_action" in names
+    assert "rlm.extract" in names
 
 
 def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
+    Flex(Echo, persist_to=str(persist_path))
     assert persist_path.exists()
     text = persist_path.read_text()
     assert "__FLEX_SIGNATURE_HASH__" in text
     assert "PREDICTORS" in text
+    assert "dspy.RLM(" in text
     assert "def forward" in text
 
     # Re-construct with NO LM configured — must load from disk without LM call.
     dspy.configure(lm=DummyLM([]))
-    program2 = Echo()
+    program2 = Flex(Echo, persist_to=str(persist_path))
     assert program2.predictors_src is not None
-    assert "PREDICTORS" in program2.predictors_src
+    assert "dspy.RLM(" in program2.predictors_src
 
 
-def test_signature_hash_mismatch_triggers_regeneration(tmp_path) -> None:
+def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
+    """A changed signature discards the old body and rebinds a fresh RLM baseline."""
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
+    Flex(Echo, persist_to=str(persist_path))
     original = persist_path.read_text()
     tampered = original.replace("__FLEX_SIGNATURE_HASH__: ", "__FLEX_SIGNATURE_HASH__: nope_")
     persist_path.write_text(tampered)
 
-    new_predictors = CANNED_PREDICTORS.replace('"echo"', '"echo2"')
-    new_forward = CANNED_FORWARD.replace("self.echo", "self.echo2")
-    dspy.configure(lm=DummyLM([{"predictors_src": new_predictors, "forward_src": new_forward}]))
-
-    program = Echo()
-    assert "echo2" in program.predictors_src
+    # No LM needed — the reset to baseline is deterministic and LM-free.
+    dspy.configure(lm=DummyLM([]))
+    program = Flex(Echo, persist_to=str(persist_path))
+    assert "dspy.RLM(" in program.predictors_src
+    assert "q: str -> a: str" in program.predictors_src
 
 
 def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
+    Flex(Echo, persist_to=str(persist_path))
 
     # Hand-edit the forward body. Signature (and its hash) is untouched, so only
     # the body hash goes stale.
     original = persist_path.read_text()
-    edited = original.replace("dspy.Prediction(a=out.a)", "dspy.Prediction(a=out.a.upper())")
+    edited = original.replace("result.a", "result.a.upper()")
     assert edited != original
     persist_path.write_text(edited)
 
     # Reconstruct with NO codegen LM available — the edit must be honored, not
     # regenerated.
     dspy.configure(lm=DummyLM([]))
-    program = Echo()
-    assert "out.a.upper()" in program.forward_src
+    program = Flex(Echo, persist_to=str(persist_path))
+    assert "result.a.upper()" in program.forward_src
 
     # A `manual_edit` event was recorded, and the file's body hash was refreshed
     # so the file reads as pristine again.
@@ -142,7 +111,7 @@ def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
     assert f"# __FLEX_BODY_HASH__: {expected_body_hash}" in refreshed
 
     # The edit is the deployed artifact, so it's appended as a manifest version
-    # (after the initial codegen) and marked as a manual edit.
+    # (after the initial baseline) and marked as a manual edit.
     manifest = json.loads((tmp_path / ".flex" / "manifest.json").read_text())
     versions = manifest["flex_modules"]["Echo"]["versions"]
     assert len(versions) == 2
@@ -150,55 +119,36 @@ def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
     assert versions[-1]["candidate_id"] == expected_body_hash
 
 
-def test_signature_change_seeds_regeneration_from_current_implementation(tmp_path) -> None:
+def test_signature_change_codegen_event_has_no_seed_parent(tmp_path) -> None:
+    """On a signature change Flex resets — the new CODEGEN event has no seed parent."""
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
+    Flex(Echo, persist_to=str(persist_path))
 
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
-    seed_id = candidate_id(CANNED_PREDICTORS, CANNED_FORWARD)
-
-    # Same flex_id (class name "Echo") + same persist_to, but a changed signature
-    # → hash mismatch → regenerate, seeded from the current on-disk body.
-    new_predictors = CANNED_PREDICTORS.replace('"echo"', '"echo2"')
-    new_forward = CANNED_FORWARD.replace("self.echo", "self.echo2")
-    dspy.configure(lm=DummyLM([{"predictors_src": new_predictors, "forward_src": new_forward}]))
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):  # noqa: F811
+    # Same flex_id ("Echo") + same persist_to, but a changed signature → hash
+    # mismatch → reset to a fresh baseline for the new signature.
+    class EchoExtra(dspy.Signature):
         """Echo."""
 
         q: str = dspy.InputField()
         extra: str = dspy.InputField()
         a: str = dspy.OutputField()
 
-    program = Echo()
-    assert "echo2" in program.predictors_src
+    dspy.configure(lm=DummyLM([]))
+    program = Flex(EchoExtra, persist_to=str(persist_path), flex_id="Echo")
+    # Fresh RLM baseline for the new (two-input) signature.
+    assert "dspy.RLM(" in program.predictors_src
+    assert "extra: str" in program.predictors_src
 
-    # The regeneration's codegen event is parented to the prior implementation.
+    # The reset's codegen event is NOT parented to any prior implementation.
     history = ExplorationStore(tmp_path, "Echo").get_history()
     codegen_events = [e for e in history if e["event"] == "codegen"]
-    assert any(e.get("parents") == [seed_id] for e in codegen_events)
+    assert codegen_events  # at least one codegen (baseline) event exists
+    assert all(e.get("parents") is None for e in codegen_events)
 
 
 def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
+    Flex(Echo, persist_to=str(persist_path))
 
     # Simulate a file written before body hashes existed by stripping the line.
     text = persist_path.read_text()
@@ -209,47 +159,51 @@ def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
     assert "# __FLEX_BODY_HASH__:" not in persist_path.read_text()
 
     dspy.configure(lm=DummyLM([]))
-    program = Echo()
-    assert "PREDICTORS" in program.predictors_src
+    program = Flex(Echo, persist_to=str(persist_path))
+    assert "dspy.RLM(" in program.predictors_src
     # The hash is backfilled on load so future edits become detectable.
     assert "# __FLEX_BODY_HASH__:" in persist_path.read_text()
 
 
-def test_in_memory_only_mode_binds_without_writing_disk(tmp_path) -> None:
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    program = Echo()
+def test_in_memory_only_mode_binds_without_writing_disk(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    program = Flex(Echo)  # persist_to=None
     assert program.predictors_src is not None
     assert program.forward_src is not None
-    # In-memory mode never writes the manifest (no persist_to). It DOES still
-    # record codegen events in the exploration log under .flex/Echo/.
+    assert "dspy.RLM(" in program.predictors_src
+    # In-memory mode never writes the manifest (no persist_to).
     assert not (tmp_path / ".flex" / "manifest.json").exists()
 
 
 def test_end_to_end_forward_call(tmp_path) -> None:
-    lm = DummyLM(
-        [
-            {"predictors_src": CANNED_PREDICTORS, "forward_src": CANNED_FORWARD},
-            {"a": "echoed-back"},
-        ]
+    """End-to-end forward: persist a plain dspy.Predict body and run it.
+
+    The RLM baseline needs a code interpreter, so we simulate a hand edit to a
+    Predict-based forward, then run that body with a DummyLM.
+    """
+    persist_path = tmp_path / "echo_flex.py"
+    Flex(Echo, persist_to=str(persist_path))
+
+    # Overwrite the persisted body with a plain dspy.Predict implementation,
+    # leaving the signature hash intact so it's honored as a (manual) edit.
+    from dspy.flex.persistence import parse_persisted_file, render_persisted_file
+
+    parsed = parse_persisted_file(persist_path.read_text())
+    assert parsed is not None
+    persist_path.write_text(
+        render_persisted_file(
+            signature_hash=parsed.signature_hash,
+            body_hash=candidate_id(PREDICT_PREDICTORS, PREDICT_FORWARD),
+            flex_id="Echo",
+            signature_name="Echo",
+            predictors_src=PREDICT_PREDICTORS,
+            forward_src=PREDICT_FORWARD,
+        )
     )
-    dspy.configure(lm=lm)
 
-    @flex(persist_to=str(tmp_path / "echo_flex.py"), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    program = Echo()
+    dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
+    program = Flex(Echo, persist_to=str(persist_path))
+    assert "self.echo" in program.forward_src
     result = program(q="hello")
     assert isinstance(result, dspy.Prediction)
     assert result.a == "echoed-back"
@@ -257,16 +211,7 @@ def test_end_to_end_forward_call(tmp_path) -> None:
 
 def test_manifest_records_a_version(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
-    dspy.configure(lm=_make_codegen_lm())
-
-    @flex(persist_to=str(persist_path), intent_check="off")
-    class Echo(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    Echo()
+    Flex(Echo, persist_to=str(persist_path))
 
     manifest_path = tmp_path / ".flex" / "manifest.json"
     assert manifest_path.exists()
@@ -277,3 +222,4 @@ def test_manifest_records_a_version(tmp_path) -> None:
     assert len(versions) == 1
     assert versions[0]["id"] == 0
     assert versions[0]["signature_hash"]
+    assert versions[0]["notes"] == "rlm baseline"
