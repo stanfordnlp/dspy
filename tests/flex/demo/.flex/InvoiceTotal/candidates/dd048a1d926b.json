@@ -1,0 +1,8 @@
+{
+  "candidate_id": "dd048a1d926b",
+  "first_seen_event": "codegen",
+  "first_seen_ts": "2026-06-24T23:31:22.478705+00:00",
+  "forward_src": "def forward(self, **inputs):\n    result = self.rlm(**inputs)\n    return dspy.Prediction(total_cents=result.total_cents)\n",
+  "predictors_src": "PREDICTORS = {\n    'rlm': dspy.RLM('invoice: str -> total_cents: int'),\n}",
+  "signature_hash": "2001b8047674f53abecf5194a2d0b2f20c5d132b88bb59c420ad74cd2d87798c"
+}

@@ -1,0 +1,70 @@
+{
+  "flex_id": "InvoiceTotal",
+  "trainset": [
+    {
+      "data": {
+        "invoice": "3 widgets at $4.50 each, 2 gadgets at $10 each, plus $5 shipping",
+        "total_cents": 3850
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    },
+    {
+      "data": {
+        "invoice": "Two notebooks for $3 apiece and one pen for $1.25",
+        "total_cents": 725
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    },
+    {
+      "data": {
+        "invoice": "1 keyboard at $30, 1 mouse at $15, $5 off the order",
+        "total_cents": 4000
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    },
+    {
+      "data": {
+        "invoice": "5 stickers at $0.40 each",
+        "total_cents": 200
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    }
+  ],
+  "valset": [
+    {
+      "data": {
+        "invoice": "4 cans of soda at $1.25 each and a $2 deposit",
+        "total_cents": 700
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    },
+    {
+      "data": {
+        "invoice": "1 coffee mug at $7.50",
+        "total_cents": 750
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    },
+    {
+      "data": {
+        "invoice": "8 oranges at $0.75 each",
+        "total_cents": 600
+      },
+      "input_keys": [
+        "invoice"
+      ]
+    }
+  ]
+}
