@@ -36,6 +36,42 @@ class SimpleModule(dspy.Module):
         return self.predictor(**kwargs)
 
 
+class TwoPredictorModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.p1 = Predict("input -> output")
+        self.p2 = Predict("input -> output")
+
+    def forward(self, **kwargs):
+        return self.p2(**self.p1(**kwargs))
+
+
+def test_bootstrap_labeled_demos_sampled_independently_per_predictor():
+    # Each predictor must draw its labeled demos from the FULL validation pool.
+    # Regression: _train reassigned the shared `raw_demos` to the sampled subset
+    # inside the per-predictor loop, so later predictors sampled from the prior
+    # predictor's leftovers -- starving them when an earlier predictor consumed
+    # most of the pool via bootstrapped (augmented) demos.
+    student = TwoPredictorModule()
+    names = [name for name, _ in student.named_predictors()]
+    pool = [Example(input=f"q{i}", output=f"a{i}").with_inputs("input") for i in range(10)]
+    augmented = [Example(input=f"aug{i}", output=f"x{i}").with_inputs("input") for i in range(5)]
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=5, max_labeled_demos=8)
+    bootstrap.student = student
+    bootstrap.validation = pool
+    # First predictor has 5 bootstrapped demos; second has none.
+    bootstrap.name2traces = {names[0]: list(augmented), names[1]: []}
+
+    bootstrap._train()
+
+    p1, p2 = (p for _, p in student.named_predictors())
+    # p1: 5 augmented + 3 labeled = 8
+    assert len(p1.demos) == 8
+    # p2: 0 augmented, so it must still get the full labeled quota from the full pool.
+    assert len(p2.demos) == 8
+
+
 def test_compile_with_predict_instances():
     # Create Predict instances for student and teacher
     # Note that dspy.Predict is not itself a module, so we can't use it directly here
