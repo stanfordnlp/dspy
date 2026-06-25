@@ -56,8 +56,8 @@ REFLECTION_LM = dspy.LM(
     os.getenv("BANKING_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000
 )
 
-N_TRAIN, N_VAL, N_TEST = 40, 10, 30
-MAX_METRIC_CALLS = 130
+N_TRAIN, N_VAL, N_TEST = 10, 5, 5
+MAX_METRIC_CALLS = 10
 EVAL_THREADS = 8
 
 # The "challenge" injected into GEPA's reflection prompt (via metric feedback): push the

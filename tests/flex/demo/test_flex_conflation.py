@@ -12,7 +12,7 @@ from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
-DATA_PATH = DEMO_DIR / "coded.jsonl"
+DATA_PATH = DEMO_DIR / "conflation_coded.jsonl"
 FLEX_PATH = DEMO_DIR / "conflation_flex_gen.py"
 
 EXEC_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=1000)

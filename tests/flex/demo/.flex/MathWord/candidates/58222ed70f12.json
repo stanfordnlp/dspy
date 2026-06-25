@@ -1,8 +1,0 @@
-{
-  "candidate_id": "58222ed70f12",
-  "first_seen_event": "manual_edit",
-  "first_seen_ts": "2026-06-24T23:32:05.921030+00:00",
-  "forward_src": "def forward(self, **inputs):\n    result = self.rlm(**inputs)\n    return dspy.Prediction(answer=result.answer)",
-  "predictors_src": "PREDICTORS = {\n    'rlm': dspy.RLM('problem: str -> answer: int'),\n}",
-  "signature_hash": "62c09f2dfa8a4329f227a7ccadfe6e481b38c4ec7a7afe6eb141ee67b8da9ee7"
-}

@@ -1,7 +1,0 @@
-{"candidate_id": "8634d5aaad4f", "event": "codegen", "ts": "2026-06-25T20:30:03.707795+00:00"}
-{"candidate_id": "8634d5aaad4f", "event": "accept", "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T20:30:03.708692+00:00", "version_id": 0}
-{"candidate_id": "8634d5aaad4f", "event": "load", "source_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T20:36:07.642858+00:00"}
-{"candidate_id": "8634d5aaad4f", "event": "load", "source_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T20:48:40.096259+00:00"}
-{"candidate_id": "8634d5aaad4f", "event": "load", "source_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T20:56:26.662388+00:00"}
-{"candidate_id": "8634d5aaad4f", "event": "load", "source_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T21:02:55.176099+00:00"}
-{"candidate_id": "5df057ebe7c7", "event": "accept", "score": 0.8, "src_path": "/Users/michaelisaac/PycharmProjects/dspy/tests/flex/demo/banking77_flex_gen.py", "ts": "2026-06-25T21:19:06.611222+00:00", "version_id": 1}
