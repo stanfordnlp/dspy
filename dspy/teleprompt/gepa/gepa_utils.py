@@ -75,9 +75,9 @@ class PredictorFeedbackFn(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Code optimization for vibe-marked (dspy.Vibe) submodules.
+# Code optimization for flex-marked (dspy.Flex) submodules.
 #
-# A vibe-marked submodule is optimized by rewriting its *source* — the candidate
+# A flex-marked submodule is optimized by rewriting its *source* — the candidate
 # carries a single `<submodule_path>::code` key whose value is the full `module_src`
 # (one `dspy.Module` subclass) — rather than by tuning a predictor's instructions.
 # The whole class (its `__init__` predictors AND its `forward`) is one component:
@@ -101,11 +101,11 @@ def _code_key_path(key: str) -> str:
     return key[: -len(_CODE_KEY_SUFFIX)]
 
 
-def enumerate_vibe_submodules(root) -> dict[str, Any]:
-    """Map sub-module path -> module for every vibe-marked (code-optimizable) submodule.
+def enumerate_flex_submodules(root) -> dict[str, Any]:
+    """Map sub-module path -> module for every flex-marked (code-optimizable) submodule.
 
     A submodule qualifies if it exposes the ``_code_optimizable`` marker and a ``_bind_code``
-    method. Paths use the ``named_sub_modules()`` naming ("self" for a top-level Vibe student, "self.extract"
+    method. Paths use the ``named_sub_modules()`` naming ("self" for a top-level Flex student, "self.extract"
     for a nested one) and are stable across deepcopy, so the same key identifies the
     submodule at seed time and at build_program time.
     """
@@ -116,15 +116,15 @@ def enumerate_vibe_submodules(root) -> dict[str, Any]:
     return out
 
 
-def vibe_internal_predictor_ids(vibe_submodules: dict[str, Any]) -> set[int]:
-    """Object ids of predictors owned by vibe-marked submodules.
+def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
+    """Object ids of predictors owned by flex-marked submodules.
 
     Their instructions are governed by the submodule's code, so they must be
      excluded from the instruction-optimization candidate.
     """
     ids: set[int] = set()
-    for vibe in vibe_submodules.values():
-        for _, pred in vibe.named_predictors():
+    for flex in flex_submodules.values():
+        for _, pred in flex.named_predictors():
             ids.add(id(pred))
     return ids
 
@@ -160,7 +160,7 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 
 
 class CodeProposalSignature(dspy.Signature):
-    """Revise the full source code of a vibe-marked dspy.Vibe submodule.
+    """Revise the full source code of a flex-marked dspy.Flex submodule.
 
     You receive the submodule's task description (its Signature), the catalog of allowed
     primitives plus a good/bad-behavior knowledge base, the module's current source, and a
@@ -221,13 +221,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        # Task descriptions for any vibe-marked (Vibe) submodules, used when proposing
+        # Task descriptions for any flex-marked (Flex) submodules, used when proposing
         # revised code. Keyed by the same path used in the code candidate keys.
-        self._vibe_task_descriptions: dict[str, str] = {}
-        for path, sub in enumerate_vibe_submodules(student_module).items():
-            ctx = getattr(sub, "_vibe_ctx", None)
+        self._flex_task_descriptions: dict[str, str] = {}
+        for path, sub in enumerate_flex_submodules(student_module).items():
+            ctx = getattr(sub, "_flex_ctx", None)
             if ctx is not None and hasattr(ctx, "render_signature_spec"):
-                self._vibe_task_descriptions[path] = ctx.render_signature_spec()
+                self._flex_task_descriptions[path] = ctx.render_signature_spec()
 
     def propose_new_texts(
         self,
@@ -269,10 +269,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             },
                         )["new_instruction"]
 
-        # --- code components (vibe-marked dspy.Vibe submodules) --------------
+        # --- code components (flex-marked dspy.Flex submodules) --------------
         if code_keys:
-            from dspy.vibe.ctx import _strip_code_fences
-            from dspy.vibe.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
+            from dspy.flex.ctx import _strip_code_fences
+            from dspy.flex.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
 
             catalog = PRIMITIVES_CATALOG + "\n\n" + KNOWLEDGE_BASE
             proposer = dspy.Predict(CodeProposalSignature)
@@ -281,7 +281,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     path = _code_key_path(ckey)
                     try:
                         out = proposer(
-                            task_description=self._vibe_task_descriptions.get(path, path),
+                            task_description=self._flex_task_descriptions.get(path, path),
                             primitives_catalog=catalog,
                             current_source=candidate[ckey],
                             failures=_format_failures(reflective_dataset.get(ckey, [])),
@@ -296,16 +296,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Rebind code for vibe-marked (Vibe) submodules whose source is in the candidate.
-        for path, vibe in enumerate_vibe_submodules(new_prog).items():
+        # Rebind code for flex-marked (Flex) submodules whose source is in the candidate.
+        for path, flex in enumerate_flex_submodules(new_prog).items():
             key = make_code_key(path)
             if key in candidate:
-                vibe._auto_repair = False  # a broken proposed candidate must raise, not self-repair
-                vibe._bind_code(candidate[key])
+                flex._auto_repair = False  # a broken proposed candidate must raise, not self-repair
+                flex._bind_code(candidate[key])
 
         # Apply instruction updates to predictors. Code keys contain "::" so never match
-        # here; predictors *inside* a Vibe were excluded from the candidate (their
-        # instructions are owned by the Vibe's code), so they are left untouched.
+        # here; predictors *inside* a Flex were excluded from the candidate (their
+        # instructions are owned by the Flex's code), so they are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
@@ -315,7 +315,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def _code_reflective_records(self, eval_batch) -> list[dict[str, Any]]:
         """Module-level reflective records for a code component (whole-program I/O).
 
-        Unlike instruction components (per-predictor traces), a Vibe submodule's code is
+        Unlike instruction components (per-predictor traces), a Flex submodule's code is
         reflected on using the whole program's inputs/outputs/feedback per example.
         """
         records: list[dict[str, Any]] = []
@@ -344,7 +344,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         except Exception as e:
             # A proposed code candidate that fails to bind (broken source) must score as a
             # failure, not crash the whole optimization run. Instruction candidates always
-            # build, so this only guards the vibe-marked code-optimization path.
+            # build, so this only guards the flex-marked code-optimization path.
             logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
             return EvaluationBatch(
                 outputs=[None] * len(batch),
@@ -410,7 +410,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
-            # Code components (vibe-marked Vibe submodules) reflect on whole-program I/O,
+            # Code components (flex-marked Flex submodules) reflect on whole-program I/O,
             # not per-predictor traces.
             if _is_code_key(pred_name):
                 recs = self._code_reflective_records(eval_batch)

@@ -495,34 +495,24 @@ class GEPA(Teleprompter):
         from dspy.teleprompt.gepa.gepa_utils import (
             DspyAdapter,
             LoggerAdapter,
-            enumerate_vibe_submodules,
+            enumerate_flex_submodules,
+            flex_internal_predictor_ids,
             make_code_key,
-            vibe_internal_predictor_ids,
         )
 
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
-        # Vibe-marked (dspy.Vibe) submodules get their *code* optimized
-        vibe_submodules = enumerate_vibe_submodules(student)
-        vibe_internal_ids = vibe_internal_predictor_ids(vibe_submodules)
+        # Flex-marked (dspy.Flex) submodules get their *code* optimized
+        flex_submodules = enumerate_flex_submodules(student)
+        flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
         instruction_predictors = [
-            (name, pred) for name, pred in student.named_predictors() if id(pred) not in vibe_internal_ids
+            (name, pred) for name, pred in student.named_predictors() if id(pred) not in flex_internal_ids
         ]
 
-        # TODO: Keep? Or should use ProAct instead?
         if not trainset:
-            # Synthesize better code for a vibe module
-            # from its signature + the knowledge base. Can't optimize instruction tho
-            # because needs examples to score against, so it still requires a trainset.
-            if vibe_submodules and not instruction_predictors:
-                logger.info("GEPA: no trainset provided — running a bounded code-synthesis pass.")
-                return self._code_synthesis_no_data(student)
-            raise ValueError(
-                "Trainset must be provided and non-empty. (A vibe module with no data can be "
-                "code-synthesized, but instruction optimization requires examples.)"
-            )
+            raise ValueError("Trainset must be provided and non-empty.")
 
-        num_components = len(instruction_predictors) + len(vibe_submodules)
+        num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
@@ -597,11 +587,11 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: instruction text per (non-vibe) predictor, plus the
-        # current source (module_src) of each vibe-marked submodule's code component.
+        # Build the seed candidate: instruction text per (non-flex) predictor, plus the
+        # current source (module_src) of each flex-marked submodule's code component.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
-        for path, vibe in vibe_submodules.items():
-            seed_candidate[make_code_key(path)] = vibe.module_src
+        for path, flex in flex_submodules.items():
+            seed_candidate[make_code_key(path)] = flex.module_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
@@ -637,8 +627,8 @@ class GEPA(Teleprompter):
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
 
-        if vibe_submodules:
-            self._persist_vibe_results(new_prog)
+        if flex_submodules:
+            self._persist_flex_results(new_prog)
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
@@ -646,46 +636,14 @@ class GEPA(Teleprompter):
 
         return new_prog
 
-    def _code_synthesis_no_data(self, student: Module, rounds: int = 2) -> Module:
-        """Optimize a vibe module's code with no data (bounded, unscored).
-
-        With no examples to score against, the reflection LM rewrites each vibe-marked
-        submodule's RLM baseline using the good/bad-behavior knowledge base + the
-        signature. There is no empirical selection — we accept the last candidate that
-        binds cleanly. This is the "spend compute to write better code" path.
-        """
-        from dspy.teleprompt.gepa.gepa_utils import enumerate_vibe_submodules
-        from dspy.vibe.ctx import generate
-        from dspy.vibe.primitives_doc import KNOWLEDGE_BASE
-
-        program = student.deepcopy()
-        for _, vibe in enumerate_vibe_submodules(program).items():
-            ctx = getattr(vibe, "_vibe_ctx", None)
-            if ctx is None:
-                continue
-            vibe._auto_repair = False
-            current = vibe.module_src
-            for _ in range(max(rounds, 1)):
-                try:
-                    proposed = generate(ctx, lm=self.reflection_lm, seed=current, extra_guidance=KNOWLEDGE_BASE)
-                    vibe._bind_code(proposed)  # validate it binds before accepting
-                except Exception as e:
-                    logger.warning("GEPA no-data synthesis: round failed (%s); keeping last good code.", e)
-                    break
-                current = proposed
-            vibe._bind_code(current)  # ensure the accepted (last good) code is bound
-
-        self._persist_vibe_results(program)
-        return program
-
-    def _persist_vibe_results(self, program: Module) -> None:
-        """Write optimized vibe-submodule code back to its persisted ``.py`` file.
+    def _persist_flex_results(self, program: Module) -> None:
+        """Write optimized flex-submodule code back to its persisted ``.py`` file.
 
         No-op for in-memory (``persist_to=None``) submodules.
         """
-        from dspy.teleprompt.gepa.gepa_utils import enumerate_vibe_submodules
+        from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
 
-        for _, vibe in enumerate_vibe_submodules(program).items():
-            if getattr(vibe, "_persist_to", None) is None or not hasattr(vibe, "_write_persisted"):
+        for _, flex in enumerate_flex_submodules(program).items():
+            if getattr(flex, "_persist_to", None) is None or not hasattr(flex, "_write_persisted"):
                 continue
-            vibe._write_persisted(vibe.module_src, vibe._signature_hash())
+            flex._write_persisted(flex.module_src, flex._signature_hash())
