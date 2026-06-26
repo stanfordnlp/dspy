@@ -6,9 +6,9 @@ import dspy
 from dspy.flex import Flex
 from dspy.utils.dummies import DummyLM
 
-# A plain dspy.Predict module class we can persist and actually run with a DummyLM — the RLM
+# A plain dspy.Predict module class we can bind and actually run with a DummyLM — the RLM
 # baseline that Flex binds at construction is too heavy to execute in a unit test, so
-# end-to-end forward tests use this instead.
+# end-to-end forward tests bind this instead (standing in for a GEPA-optimized decomposition).
 ECHO_MODULE = textwrap.dedent("""
     class EchoModule(dspy.Module):
         def __init__(self):
@@ -28,9 +28,9 @@ class Echo(dspy.Signature):
     a: str = dspy.OutputField()
 
 
-def test_construction_binds_rlm_baseline(tmp_path) -> None:
+def test_construction_binds_rlm_baseline() -> None:
     # Construction is LM-free: it binds the deterministic dspy.RLM baseline.
-    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
+    program = Flex(Echo)
     assert program.module_src is not None
     assert "class EchoModule(dspy.Module)" in program.module_src
     assert "dspy.RLM(" in program.module_src
@@ -39,8 +39,8 @@ def test_construction_binds_rlm_baseline(tmp_path) -> None:
     assert "result.a" in program.module_src  # unwraps the declared output
 
 
-def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
-    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
+def test_predictors_are_attached_and_discoverable() -> None:
+    program = Flex(Echo)
     # The baseline attaches a predictor named `rlm` directly onto the module.
     assert hasattr(program, "rlm")
     names = [n for n, _ in program.named_predictors()]
@@ -49,95 +49,49 @@ def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
     assert "rlm.extract" in names
 
 
-def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-    assert persist_path.exists()
-    text = persist_path.read_text()
-    assert "__FLEX_SIGNATURE_HASH__" in text
-    assert "__FLEX_SIGNATURE_BEGIN__" in text  # the saved signature record
-    assert "class EchoModule(dspy.Module)" in text
-    assert "dspy.RLM(" in text
-    assert "def forward" in text
-    # Bookkeeping is gone: no body hash, no flex_id, no .flex dir.
-    assert "__FLEX_BODY_HASH__" not in text
-    assert "flex_id" not in text
-    assert not (tmp_path / ".flex").exists()
-
-    # Re-construct with NO LM configured — must load from disk without an LM call.
-    dspy.configure(lm=DummyLM([]))
-    program2 = Flex(Echo, persist_to=str(persist_path))
-    assert program2.module_src is not None
-    assert "dspy.RLM(" in program2.module_src
-
-
-def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
-    """A changed signature discards the old body and rebinds a fresh RLM baseline."""
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-    original = persist_path.read_text()
-    tampered = original.replace("__FLEX_SIGNATURE_HASH__: ", "__FLEX_SIGNATURE_HASH__: nope_")
-    persist_path.write_text(tampered)
-
-    # No LM needed — the reset to baseline is deterministic and LM-free.
-    dspy.configure(lm=DummyLM([]))
-    program = Flex(Echo, persist_to=str(persist_path))
-    assert "dspy.RLM(" in program.module_src
-    assert "q: str -> a: str" in program.module_src
-
-
-def test_hand_edit_is_loaded_when_signature_unchanged(tmp_path) -> None:
-    """A hand-edited body is loaded as-is on the next run (signature unchanged)."""
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-
-    original = persist_path.read_text()
-    edited = original.replace("result.a", "result.a.upper()")
-    assert edited != original
-    persist_path.write_text(edited, encoding="utf-8")
-
-    # Reconstruct with NO codegen LM available — the edit is loaded, not regenerated.
-    dspy.configure(lm=DummyLM([]))
-    program = Flex(Echo, persist_to=str(persist_path))
-    assert "result.a.upper()" in program.module_src
-
-
-def test_in_memory_only_mode_binds_without_writing_disk(tmp_path, monkeypatch) -> None:
+def test_construction_writes_nothing_to_disk(tmp_path, monkeypatch) -> None:
+    # The implementation lives in memory; nothing is written until you call save().
     monkeypatch.chdir(tmp_path)
-    program = Flex(Echo)  # persist_to=None
+    program = Flex(Echo)
     assert program.module_src is not None
     assert "dspy.RLM(" in program.module_src
-    # No persistence and no bookkeeping directory.
-    assert not (tmp_path / ".flex").exists()
+    # Flex itself persists nothing — no module file written until save() is called.
+    # (dspy's global `.dspy_cache` may appear; that's unrelated to Flex persistence.)
     assert not list(tmp_path.glob("*.py"))
+    assert not list(tmp_path.glob("*.json"))
 
 
-def test_end_to_end_forward_call(tmp_path) -> None:
-    """End-to-end forward: persist a plain dspy.Predict module class and run it.
+def test_save_load_roundtrips_generated_code(tmp_path) -> None:
+    """Module.save/load carries the generated code (module_src), like instruction state."""
+    program = Flex(Echo)
+    program._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
 
-    The RLM baseline needs a code interpreter, so we write a Predict-based class to the
-    persisted file (signature hash intact, so it's loaded as-is) and run it with a DummyLM.
-    """
-    from dspy.flex.persistence import parse_persisted_file, render_persisted_file
+    path = tmp_path / "program.json"
+    program.save(path)
 
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
+    # A fresh Flex starts on the RLM baseline...
+    reloaded = Flex(Echo)
+    assert "dspy.RLM(" in reloaded.module_src
+    # ...and load() rebinds the saved code (no LM needed for binding).
+    reloaded.load(path)
+    assert "dspy.RLM(" not in reloaded.module_src
+    assert "self.echo" in reloaded.module_src
+    assert hasattr(reloaded, "echo")
 
-    parsed = parse_persisted_file(persist_path.read_text(encoding="utf-8"))
-    assert parsed is not None
-    persist_path.write_text(
-        render_persisted_file(
-            signature_hash=parsed.signature_hash,
-            signature_name="Echo",
-            module_src=ECHO_MODULE,
-            signature_spec="q: str -> a: str",
-        ),
-        encoding="utf-8",
-    )
+
+def test_end_to_end_forward_after_save_load(tmp_path) -> None:
+    """End-to-end: bind a plain dspy.Predict class, save it, reload into a fresh Flex, run it."""
+    program = Flex(Echo)
+    program._bind_code(ECHO_MODULE)
+
+    path = tmp_path / "program.json"
+    program.save(path)
+
+    reloaded = Flex(Echo)
+    reloaded.load(path)
+    assert "self.echo" in reloaded.module_src
 
     dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
-    program = Flex(Echo, persist_to=str(persist_path))
-    assert "self.echo" in program.module_src
-    result = program(q="hello")
+    result = reloaded(q="hello")
     assert isinstance(result, dspy.Prediction)
     assert result.a == "echoed-back"

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from dotenv import load_dotenv
 
 import dspy
@@ -29,7 +27,7 @@ def test_flex() -> None:
     # Reconfigure here (not just at import) so the test is order-independent: other
     # tests in the session reconfigure the global LM.
     dspy.configure(lm=exec_lm)
-    program = dspy.VibNe(MathWord, persist_to=str(Path(__file__).parent / "math_flex_gen.py")).save()
+    program = dspy.Flex(MathWord)
 
     # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")

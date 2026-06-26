@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 BANKING77_BASE = "https://raw.githubusercontent.com/PolyAI-LDN/task-specific-datasets/master/banking_data"
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "banking77_flex_gen.py"
+SAVE_PATH = DEMO_DIR / "banking77_flex.json"
 PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
 
 # Executor runs the classifier (and the baseline RLM's sub-queries); reflection authors the
@@ -179,7 +179,7 @@ def test_flex_banking77_showcase() -> None:
     print(f"\nBANKING77: {len(labels)} intents | train={len(train)} val={len(val)} test={len(test)}")
 
     # 1. Flex the classifier: a dspy.RLM baseline (a clean dspy.Module subclass), code-optimizable.
-    program = dspy.Flex(_build_signature(labels), persist_to=str(FLEX_PATH))
+    program = dspy.Flex(_build_signature(labels))
     baseline_src = program.module_src
     assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in baseline_src  # the un-optimized flex baseline
@@ -211,6 +211,14 @@ def test_flex_banking77_showcase() -> None:
     if detailed is not None:
         print(f"GEPA val scores explored: {detailed.val_aggregate_scores}")
     _showcase(optimized, "optimized by GEPA")
+
+    # 4b. Persist the optimized program with the standard Module.save/load — the generated
+    # code (module_src) round-trips alongside predictor state, no special on-disk format.
+    optimized.save(str(SAVE_PATH))
+    reloaded = dspy.Flex(_build_signature(labels))
+    reloaded.load(str(SAVE_PATH))
+    assert reloaded.module_src == optimized.module_src
+    print(f"saved + reloaded optimized program -> {SAVE_PATH}")
 
     # 5. Plot the before/after. Two panels: accuracy is the headline (GEPA holds it), while
     # avg LLM calls/example shows the decomposition win (the opaque RLM loop -> focused code).

@@ -13,7 +13,7 @@ reflection_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "invoice_flex_gen.py"
+SAVE_PATH = DEMO_DIR / "invoice_flex.json"
 
 
 class InvoiceTotal(dspy.Signature):
@@ -85,13 +85,12 @@ def _showcase(program: dspy.Module, label: str) -> None:
 
 def test_invoice_codegen_then_gepa() -> None:
     dspy.configure(lm=exec_lm)
-    program = dspy.Flex(InvoiceTotal, persist_to=str(FLEX_PATH))
+    program = dspy.Flex(InvoiceTotal)
 
     # The fresh baseline is a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in program.module_src
     _showcase(program, "baseline (un-optimized flex)")
-    print(f"persisted as a runnable module at: {FLEX_PATH}")
 
     baseline = mean_score(program, valset)
     optimized = dspy.GEPA(
@@ -107,25 +106,25 @@ def test_invoice_codegen_then_gepa() -> None:
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
     assert mean_score(optimized, valset) >= baseline
 
+    # Persist with the standard Module.save/load — the generated code round-trips.
+    optimized.save(str(SAVE_PATH))
+    reloaded = dspy.Flex(InvoiceTotal)
+    reloaded.load(str(SAVE_PATH))
+    assert reloaded.module_src == optimized.module_src
+    print(f"saved + reloaded optimized program -> {SAVE_PATH}")
 
-def test_invoice_manual_edit_is_loaded_and_reseeds_gepa(tmp_path) -> None:
-    """Showcase: the persisted module is a normal file you can hand-edit; the edit is loaded
-    as-is on the next run, and a later dspy.GEPA run seeds from YOUR edited code (not the
-    baseline). The edit/reload here is LM-free."""
+
+def test_invoice_manual_edit_is_saved_and_reseeds_gepa(tmp_path) -> None:
+    """Showcase: edit a Flex module's code in-session, then save/load it through the standard
+    Module API — the edited ``module_src`` round-trips and is what a later dspy.GEPA run seeds
+    from (not the baseline). The edit, save, and reload here are all LM-free."""
     from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
 
-    path = tmp_path / "invoice_flex_gen.py"
     dspy.configure(lm=exec_lm)
-    dspy.Flex(InvoiceTotal, persist_to=str(path))
+    flex = dspy.Flex(InvoiceTotal)
+    assert "dspy.RLM(" in flex.module_src  # fresh baseline
 
-    # The persisted file reads like a normal module: header, saved signature, and the class.
-    persisted = path.read_text(encoding="utf-8")
-    print("\n===== persisted module file =====")
-    print(persisted)
-    assert "__FLEX_SIGNATURE_BEGIN__" in persisted  # the saved Signature record
-    assert "class InvoiceTotalModule(dspy.Module)" in persisted
-
-    # Hand-edit the class (no LM): swap the RLM baseline for a plain dspy.Predict implementation.
+    # Edit the implementation (no LM): swap the RLM baseline for a plain dspy.Predict module.
     edited_class = (
         "class InvoiceTotalModule(dspy.Module):\n"
         "    def __init__(self):\n"
@@ -136,13 +135,15 @@ def test_invoice_manual_edit_is_loaded_and_reseeds_gepa(tmp_path) -> None:
         '        e = self.extract(invoice=inputs["invoice"])\n'
         "        return dspy.Prediction(total_cents=int(e.total_cents))\n"
     )
-    header = persisted.split("# __FLEX_MODULE_BEGIN__")[0]
-    path.write_text(f"{header}# __FLEX_MODULE_BEGIN__\n{edited_class}# __FLEX_MODULE_END__\n", encoding="utf-8")
+    flex._bind_code(edited_class)
 
-    # Reconstruct: the hand-edit is loaded as-is (signature unchanged, no regeneration).
-    reloaded = dspy.Flex(InvoiceTotal, persist_to=str(path))
+    # Save and reload through Module.save / load — the edited code round-trips as module_src.
+    path = tmp_path / "invoice_flex.json"
+    flex.save(path)
+    reloaded = dspy.Flex(InvoiceTotal)
+    reloaded.load(path)
     assert "self.extract" in reloaded.module_src and "dspy.RLM(" not in reloaded.module_src
-    _showcase(reloaded, "after manual edit (loaded as-is)")
+    _showcase(reloaded, "after manual edit (saved + reloaded)")
 
     # A subsequent dspy.GEPA run seeds from THIS edited module_src — it builds on the edit.
     (seed,) = [v.module_src for v in enumerate_flex_submodules(reloaded).values()]

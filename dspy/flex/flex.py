@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import types
-from pathlib import Path
 from typing import Any
 
 import dspy
 from dspy.flex.ctx import FlexContext, repair
-from dspy.flex.persistence import PersistedFlex, parse_persisted_file, render_persisted_file
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
 
@@ -44,26 +40,26 @@ class Flex(Module):
     exposed as ``module_src``) — decomposing the task into predictors and code —
     rather than only tuning instructions.
 
+    Persistence uses the standard ``dspy.Module`` API. ``save`` / ``load`` (and ``dspy.load``)
+    round-trip the generated ``module_src`` together with the inner predictors' state, exactly
+    as instruction-optimized modules are saved — there is no separate on-disk format::
+
+        optimized = dspy.GEPA(...).compile(dspy.Flex(MySignature), trainset=...)
+        optimized.save("program.json")
+        # later:
+        program = dspy.Flex(MySignature)
+        program.load("program.json")   # rebinds the optimized code, then its predictor state
+
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
-        persist_to: Path to a checked-in ``.py`` file holding the implementation. When set,
-            the file is loaded if its signature hash matches; otherwise a fresh baseline is
-            written. ``dspy.GEPA`` writes optimized code back to this same file. When None,
-            the implementation lives only in memory.
         context: Optional list of ``dspy.Tool`` / callables / style note strings to inject
             into the runtime exec namespace (and into code optimization).
-        codegen_lm: LM used for auto-repair of broken code and for the intent check.
-            Defaults to ``dspy.settings.lm``.
-        auto_repair: When True (default), Flex tries to recover from a broken persisted /
+        codegen_lm: LM used for auto-repair of broken code. Defaults to ``dspy.settings.lm``.
+        auto_repair: When True (default), Flex tries to recover from a broken loaded /
             optimized implementation by re-invoking the codegen LM with the broken body and
             the exception text — at most once at bind time (on load) and once at runtime per
             process. Set False to surface errors directly. The deterministic baseline never
             triggers repair.
-
-    Persistence: when ``persist_to`` is set, the implementation is a single self-contained
-    ``.py`` file (a header comment, a signature-hash guard, the recorded Signature, and the
-    generated ``dspy.Module`` subclass in a marked region). You may edit it by hand; on the next
-    run a matching signature loads it as-is, while a changed signature regenerates the baseline.
     """
 
     # Marker read by ``dspy.GEPA``: this module's code (the ``module_src`` class) may be
@@ -75,7 +71,6 @@ class Flex(Module):
         self,
         signature: Any,
         *,
-        persist_to: str | Path | None = None,
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         auto_repair: bool = True,
@@ -86,7 +81,6 @@ class Flex(Module):
 
         self._signature_cls = ensure_signature(signature)
         self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
-        self._persist_to: Path | None = Path(persist_to) if persist_to else None
         self._codegen_lm = codegen_lm
 
         style_notes: list[str] = []
@@ -124,57 +118,28 @@ class Flex(Module):
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
+        # The generated code rides alongside the predictors' state, so a single
+        # Module.save captures both the architecture (module_src) and the tuned predictors.
         state = super().dump_state(json_mode=json_mode)
-        state["_flex"] = {
-            "module_src": self._module_src,
-            "signature_hash": self._signature_hash(),
-        }
+        state["_flex"] = {"module_src": self._module_src}
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
+        # Rebind the saved code FIRST (it defines which predictors exist), then let the base
+        # Module load each predictor's state onto the freshly-bound predictors.
         flex_state = state.pop("_flex", None) if isinstance(state, dict) else None
         if flex_state and flex_state.get("module_src"):
-            self._bind_code(flex_state["module_src"])
+            self._bind_with_repair(flex_state["module_src"])
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     def _lazy_implement(self, *, force: bool = False) -> None:
         if self._module_src and not force:
             return
-
-        sig_hash = self._signature_hash()
-
-        if self._persist_to and self._persist_to.exists() and not force:
-            stored = self._read_persisted()
-            if stored is not None and stored.signature_hash == sig_hash:
-                # Run exactly what's on disk (baseline, GEPA-optimized, or hand-edited).
-                try:
-                    self._bind_code(stored.module_src)
-                except Exception as err:
-                    if not self._auto_repair:
-                        raise
-                    fixed = self._repair_after_bind_failure(broken=stored.module_src, error=err)
-                    self._write_persisted(fixed, sig_hash)
-                logger.info("dspy.Flex %r: loaded implementation from %s", self._name, self._persist_to)
-                return
-            if stored is not None:
-                logger.info(
-                    "dspy.Flex %r: signature changed on %s — resetting to the RLM baseline.",
-                    self._name,
-                    self._persist_to,
-                )
-
-        # This is a fresh generation (no matching persisted impl): a new signature, a changed
-        # one, or in-memory mode.
         # Bind the deterministic RLM baseline (no codegen LM call). Decomposition into a
-        # richer, mostly-Python program happens later via dspy.GEPA.
-        module_src = self._rlm_baseline_src()
-        self._bind_code(module_src)
-        if self._persist_to is not None:
-            self._write_persisted(module_src, sig_hash)
-            logger.info("dspy.Flex %r: wrote RLM baseline to %s", self._name, self._persist_to)
-        else:
-            logger.info("dspy.Flex %r: persist_to=None — RLM baseline is in-memory only.", self._name)
+        # richer, mostly-Python program happens later via dspy.GEPA; the optimized code is
+        # carried across processes by Module.save / load (see dump_state / load_state).
+        self._bind_code(self._rlm_baseline_src())
 
     def _rlm_baseline_src(self) -> str:
         """Deterministic baseline source: a ``dspy.Module`` that delegates to one ``dspy.RLM``.
@@ -182,16 +147,16 @@ class Flex(Module):
         No LM call — emits a class whose ``__init__`` constructs ``dspy.RLM(<signature>)`` and
         whose ``forward`` unwraps its declared outputs. dspy.GEPA later rewrites this into a
         decomposed, mostly-Python module. Carries the signature's instructions into the RLM so
-        the baseline sees the full task description; references only ``dspy`` so the persisted
-        file stays self-contained (``_bind_code`` execs with only ``dspy`` and context tools in
-        scope).
+        the baseline sees the full task description; references only ``dspy`` so the bound
+        module stays self-contained (``_bind_code`` execs with only ``dspy`` and context tools
+        in scope).
         """
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         output_names = list(cls.output_fields.keys())
         instructions = (getattr(cls, "instructions", "") or "").strip()
         # `!r` escapes quotes/newlines into a valid literal, and the rebuilt signature only
-        # references `dspy`, so the persisted file stays self-contained.
+        # references `dspy`, so the source stays self-contained.
         rlm_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
         returns = ", ".join(f"{name}=result.{name}" for name in output_names)
         src = (
@@ -204,8 +169,6 @@ class Flex(Module):
             "        result = self.rlm(**inputs)\n"
             f"        return dspy.Prediction({returns})"
         )
-        # Match the normalized (stripped) form the persistence round-trip yields, so a freshly
-        # written baseline isn't misread as a hand edit on its first reload.
         return src.strip()
 
     def _class_name(self) -> str:
@@ -213,12 +176,26 @@ class Flex(Module):
         base = self._name if (self._name and self._name.isidentifier()) else "Flex"
         return f"{base}Module"
 
+    def _bind_with_repair(self, module_src: str) -> None:
+        """Bind ``module_src``, auto-repairing once if the bind fails (when ``auto_repair`` is on).
+
+        Used on the load path: a saved/optimized — or hand-edited — implementation that no
+        longer execs cleanly is handed to the codegen LM to fix, mirroring the runtime repair
+        in ``forward``. With ``auto_repair=False`` the bind error surfaces directly.
+        """
+        try:
+            self._bind_code(module_src)
+        except Exception as err:
+            if not self._auto_repair:
+                raise
+            self._repair_after_bind_failure(broken=module_src, error=err)
+
     def _repair_after_bind_failure(self, *, broken: str, error: BaseException) -> str:
         """Invoke the repair codegen LM after ``_bind_code`` raised, and bind the fix.
 
         The bind of the *repaired* code is not wrapped — if the repair itself is broken, the
         user sees that as a hard error rather than an infinite repair loop. Returns the fixed
-        ``module_src``; the caller persists it.
+        ``module_src``.
         """
         error_text = f"{type(error).__name__}: {error}"
         logger.warning(
@@ -236,7 +213,7 @@ class Flex(Module):
     def _bind_code(self, module_src: str) -> None:
         """Exec ``module_src`` (a ``dspy.Module`` subclass) and attach its predictors onto ``self``.
 
-        The generated/persisted implementation is a normal ``dspy.Module`` subclass. We exec it,
+        The generated implementation is a normal ``dspy.Module`` subclass. We exec it,
         instantiate it once (LM-free — only predictor *construction* runs), and copy whatever its
         ``__init__`` defined (predictors and any plain attributes) onto this Flex instance, then
         bind its ``forward`` as ``self._forward_impl``. So ``self`` behaves exactly like the
@@ -293,11 +270,12 @@ class Flex(Module):
             return self._forward_impl(*args, **kwargs)
 
     def _repair_after_runtime_failure(self, *, error: BaseException) -> None:
-        """Repair, rebind, and re-persist after a runtime exception in forward().
+        """Repair and rebind after a runtime exception in forward().
 
         Driven by an exception raised while ``_forward_impl`` was running; the broken
         candidate is the currently-bound code. If repair codegen produces another
-        bind-broken body, the bind error propagates — we do not loop on repair.
+        bind-broken body, the bind error propagates — we do not loop on repair. The fix lives
+        in memory; persist it with ``save`` if you want to keep it.
         """
         assert self._module_src is not None
         broken = self._module_src
@@ -312,51 +290,6 @@ class Flex(Module):
             self._flex_ctx, broken=broken, failure_kind="runtime", error_text=error_text, lm=self._codegen_lm
         )
         self._bind_code(fixed)
-        if self._persist_to is not None:
-            self._write_persisted(fixed, self._signature_hash())
-
-    def _read_persisted(self) -> PersistedFlex | None:
-        if self._persist_to is None or not self._persist_to.exists():
-            return None
-        parsed = parse_persisted_file(self._persist_to.read_text(encoding="utf-8"))
-        if parsed is None:
-            logger.warning(
-                "dspy.Flex %r: persisted file at %s is missing expected markers",
-                self._name,
-                self._persist_to,
-            )
-        return parsed
-
-    def _write_persisted(self, module_src: str, sig_hash: str) -> None:
-        assert self._persist_to is not None
-        self._persist_to.parent.mkdir(parents=True, exist_ok=True)
-        body = render_persisted_file(
-            signature_hash=sig_hash,
-            signature_name=self._name,
-            module_src=module_src,
-            signature_spec=self._flex_ctx.render_signature_spec(),
-        )
-        self._persist_to.write_text(body, encoding="utf-8")
-
-    def _signature_hash(self) -> str:
-        cls: Any = self._signature_cls
-        canonical = {
-            "name": getattr(cls, "__name__", ""),
-            "instructions": getattr(cls, "instructions", "") or "",
-            "input_fields": [(n, _annotation_repr(f.annotation)) for n, f in cls.input_fields.items()],
-            "output_fields": [(n, _annotation_repr(f.annotation)) for n, f in cls.output_fields.items()],
-        }
-        blob = json.dumps(canonical, sort_keys=True).encode("utf-8")
-        return hashlib.sha256(blob).hexdigest()
-
-
-def _annotation_repr(t: Any) -> str:
-    if t is None:
-        return "None"
-    name = getattr(t, "__name__", None)
-    if name:
-        return name
-    return str(t).replace("typing.", "")
 
 
 def _find_module_class(ns: dict[str, Any]) -> type:

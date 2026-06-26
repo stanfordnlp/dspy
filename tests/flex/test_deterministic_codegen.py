@@ -2,8 +2,8 @@
 
 Constructing a Flex for a given signature binds the same ``dspy.RLM`` baseline
 source every time, with no LM call — two constructions of the same signature
-produce byte-identical ``module_src``, and the baseline survives the persistence
-round-trip.
+produce byte-identical ``module_src``, and the baseline survives a save/load
+round-trip (Module.save / load carries the code).
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ class Doubler(dspy.Signature):
     result: int = dspy.OutputField()
 
 
-def test_baseline_is_lm_free_and_deterministic(tmp_path: Path) -> None:
+def test_baseline_is_lm_free_and_deterministic() -> None:
     # No LM configured anywhere: construction must not make any LM call.
-    a = Flex(Doubler, persist_to=str(tmp_path / "a.py"))
-    b = Flex(Doubler, persist_to=str(tmp_path / "b.py"))
+    a = Flex(Doubler)
+    b = Flex(Doubler)
 
     # Byte-identical baseline source for the same signature.
     assert a.module_src == b.module_src
@@ -36,18 +36,15 @@ def test_baseline_is_lm_free_and_deterministic(tmp_path: Path) -> None:
     assert "result.result" in a.module_src
 
 
-def test_baseline_roundtrips_through_disk(tmp_path: Path) -> None:
-    persist_path = tmp_path / "doubler.py"
-    program = Flex(Doubler, persist_to=str(persist_path))
+def test_baseline_survives_save_load(tmp_path: Path) -> None:
+    program = Flex(Doubler)
 
-    text = persist_path.read_text()
-    assert "dspy.RLM(" in text
-    assert "def forward" in text
-    assert "class DoublerModule(dspy.Module)" in text
+    path = tmp_path / "doubler.json"
+    program.save(path)
 
-    # Reconstruct with no LM at all — must load the baseline body from disk and
-    # bind the same source (the RLM string signature is preserved).
-    program2 = Flex(Doubler, persist_to=str(persist_path))
-    assert "dspy.RLM(" in program2.module_src
-    assert "value: int -> result: int" in program2.module_src
-    assert program2.module_src.strip() == program.module_src.strip()
+    # Reconstruct with no LM at all — load() must rebind the same baseline source.
+    reloaded = Flex(Doubler)
+    reloaded.load(path)
+    assert reloaded.module_src.strip() == program.module_src.strip()
+    assert "dspy.RLM(" in reloaded.module_src
+    assert "value: int -> result: int" in reloaded.module_src

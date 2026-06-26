@@ -13,7 +13,7 @@ load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
 DATA_PATH = DEMO_DIR / "conflation_coded.jsonl"
-FLEX_PATH = DEMO_DIR / "conflation_flex_gen.py"
+SAVE_PATH = DEMO_DIR / "conflation_flex.json"
 
 EXEC_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=1000)
 STRONG_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=8000)
@@ -155,7 +155,7 @@ def test_flex_conflation() -> None:
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
-    program = dspy.Flex(SamePlace, persist_to=str(FLEX_PATH), codegen_lm=STRONG_LM)
+    program = dspy.Flex(SamePlace, codegen_lm=STRONG_LM)
 
     # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")
@@ -187,6 +187,13 @@ def test_flex_conflation() -> None:
         f"(accuracy={opt_acc:.2f}, avg LLM calls/example={opt_calls:.2f})"
     )
     print(f"score improvement: {opt_score - base_score:+.2f}")
+
+    # Persist the optimized program with the standard Module.save/load (code round-trips).
+    optimized.save(str(SAVE_PATH))
+    reloaded = dspy.Flex(SamePlace, codegen_lm=STRONG_LM)
+    reloaded.load(str(SAVE_PATH))
+    assert reloaded.module_src == optimized.module_src
+    print(f"saved + reloaded optimized program -> {SAVE_PATH}")
 
 
 if __name__ == "__main__":

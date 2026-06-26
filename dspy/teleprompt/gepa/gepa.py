@@ -626,24 +626,11 @@ class GEPA(Teleprompter):
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
-
-        if flex_submodules:
-            self._persist_flex_results(new_prog)
+        # The optimized flex code travels on new_prog.module_src; persist it with
+        # new_prog.save(...) like any other optimized module — GEPA does not write files.
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
             new_prog.detailed_results = dspy_gepa_result
 
         return new_prog
-
-    def _persist_flex_results(self, program: Module) -> None:
-        """Write optimized flex-submodule code back to its persisted ``.py`` file.
-
-        No-op for in-memory (``persist_to=None``) submodules.
-        """
-        from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
-
-        for _, flex in enumerate_flex_submodules(program).items():
-            if getattr(flex, "_persist_to", None) is None or not hasattr(flex, "_write_persisted"):
-                continue
-            flex._write_persisted(flex.module_src, flex._signature_hash())
