@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Any, get_origin
 
 import dspy
 from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
 
-logger = logging.getLogger(__name__)
-
 
 @dataclass
 class FlexContext:
-    """Bundle of inputs the codegen LM gets to author a Flex implementation."""
+    """Signature + user context that the repair and code-optimization prompts render from."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
@@ -56,13 +53,10 @@ class FlexContext:
         )
 
     def render_signature_string(self) -> str:
-        """Render a parseable ``"in: T, in2 -> out: T2"`` signature string.
+        """Render a parseable ``"in: T, in2 -> out: T2"`` string for the baseline ``dspy.RLM``.
 
-        Used to construct the baseline ``dspy.RLM(<this string>)`` deterministically
-        (no LM). ``Signature.signature`` is lossy (names only), so we emit types too —
-        builtins and typing generics are included; an unrecognized/custom annotation is
-        emitted untyped (defaults to ``str`` when parsed), which keeps the baseline
-        constructible rather than failing on a type name the parser can't resolve.
+        Emits types (unlike the names-only ``Signature.signature``); unresolvable annotations
+        are emitted untyped so baseline construction never fails on them.
         """
         cls = self.signature_cls
 
@@ -103,13 +97,7 @@ _SIMPLE_TYPES = (str, int, float, bool, list, dict, tuple, set)
 
 
 def _parseable_type_str(annotation: Any) -> str | None:
-    """Return a signature-string type token that DSPy's parser can resolve, or None.
-
-    Builtins map to their name (``int``); typing generics (``list[str]``) map to their
-    string form with the ``typing.`` prefix stripped. Anything else (custom classes,
-    Pydantic models not in the parser's namespace) returns None → render the field
-    untyped so baseline construction never fails on an unresolvable type name.
-    """
+    """A signature-string type token DSPy's parser can resolve (builtin or typing generic), else None."""
     if annotation in _SIMPLE_TYPES:
         return annotation.__name__
     if get_origin(annotation) is not None:
@@ -173,8 +161,7 @@ def _strip_code_fences(s: str) -> str:
             s = s[nl + 1 :]
         if s.endswith("```"):
             s = s[:-3]
-    # Normalize tabs to spaces: the persistence round-trip indents/dedents these
-    # source regions with textwrap, which mishandles mixed tabs and spaces.
+    # Normalize tabs so exec doesn't choke on mixed tabs/spaces from the LM's output.
     return s.strip().expandtabs(4)
 
 

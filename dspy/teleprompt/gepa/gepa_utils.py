@@ -74,17 +74,11 @@ class PredictorFeedbackFn(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------
-# Code optimization for flex-marked (dspy.Flex) submodules.
-#
-# A flex-marked submodule is optimized by rewriting its *source* — the candidate
-# carries a single `<submodule_path>::code` key whose value is the full `module_src`
-# (one `dspy.Module` subclass) — rather than by tuning a predictor's instructions.
-# The whole class (its `__init__` predictors AND its `forward`) is one component:
-# they are coupled (forward references predictor names), so the class is rewritten as
-# a unit. The "::code" suffix never collides with the dotted/bracketed names produced
-# by named_parameters()/named_sub_modules(), so code keys and instruction keys coexist.
-# ---------------------------------------------------------------------------
+# Code optimization for flex-marked (dspy.Flex) submodules: the candidate carries one
+# `<path>::code` key holding the full `module_src` (a single dspy.Module subclass) instead of
+# a predictor's instructions. __init__ and forward are rewritten together (forward references
+# predictor names). The "::code" suffix can't collide with named_parameters() names, so code
+# and instruction keys coexist.
 
 _CODE_KEY_SUFFIX = "::code"
 
