@@ -35,16 +35,22 @@ class Flex(Module):
 
     Persistence uses the standard ``dspy.Module`` API: ``save`` / ``load`` round-trip the
     generated ``module_src`` together with the inner predictors' state, exactly as
-    instruction-optimized modules are saved::
+    instruction-optimized modules are saved. Reconstruct with the same signature and tools
+    (they are re-provided in code, like any module's architecture — tool callables are not
+    serialized), then load the saved state::
 
-        optimized = dspy.GEPA(...).compile(dspy.Flex(MySignature), trainset=...)
+        optimized = dspy.GEPA(...).compile(dspy.Flex(MySignature, tools=[search]), trainset=...)
         optimized.save("program.json")
-        program = dspy.Flex(MySignature)
+        program = dspy.Flex(MySignature, tools=[search])
         program.load("program.json")   # rebinds the optimized code, then its predictor state
 
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
-        context: ``dspy.Tool`` / callables / style-note strings injected into the runtime
+        tools: ``dspy.Tool`` instances or named callables. They are handed to the baseline's
+            underlying ``dspy.RLM(tools=...)`` and are in scope (by name) for the code GEPA
+            generates, so the optimizer can wire them into ``dspy.RLM`` / ``dspy.ReAct`` or
+            call them directly.
+        context: Style-note strings (and, equivalently, extra tools) injected into the runtime
             exec namespace and the code-optimization prompts.
         codegen_lm: LM used for auto-repair. Defaults to ``dspy.settings.lm``.
         auto_repair: When True (default), a broken loaded or optimized implementation is sent
@@ -59,6 +65,7 @@ class Flex(Module):
         self,
         signature: Any,
         *,
+        tools: list[Any] | None = None,
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         auto_repair: bool = True,
@@ -71,11 +78,11 @@ class Flex(Module):
         self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
         self._codegen_lm = codegen_lm
 
+        all_tools: list[Any] = list(tools or [])
         style_notes: list[str] = []
-        tools: list[Any] = []
         for item in context or []:
-            (style_notes if isinstance(item, str) else tools).append(item)
-        self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=tools, style_notes=style_notes)
+            (style_notes if isinstance(item, str) else all_tools).append(item)
+        self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=all_tools, style_notes=style_notes)
 
         self._module_src: str | None = None
         self._attached_names: list[str] = []
@@ -114,19 +121,22 @@ class Flex(Module):
     def _rlm_baseline_src(self) -> str:
         """LM-free baseline source: a ``dspy.Module`` delegating to one ``dspy.RLM``.
 
-        Carries the signature's instructions into the RLM and references only ``dspy``, so the
-        bound module is self-contained.
+        Carries the signature's instructions and any context ``tools`` into the RLM, and
+        references only ``dspy`` plus those tools (by name), so the bound module is
+        self-contained against the exec namespace ``_bind_code`` provides.
         """
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
         instructions = (getattr(cls, "instructions", "") or "").strip()
         rlm_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+        tool_names = list(self._flex_ctx.context_names())
+        tools_arg = f", tools=[{', '.join(tool_names)}]" if tool_names else ""
         return (
             f"class {self._class_name()}(dspy.Module):\n"
             "    def __init__(self):\n"
             "        super().__init__()\n"
-            f"        self.rlm = dspy.RLM({rlm_arg})\n"
+            f"        self.rlm = dspy.RLM({rlm_arg}{tools_arg})\n"
             "\n"
             "    def forward(self, **inputs):\n"
             "        result = self.rlm(**inputs)\n"

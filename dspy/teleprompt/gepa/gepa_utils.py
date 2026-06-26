@@ -156,9 +156,10 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 class CodeProposalSignature(dspy.Signature):
     """Revise the full source code of a flex-marked dspy.Flex submodule.
 
-    You receive the submodule's task description (its Signature), the catalog of allowed
-    primitives, the module's current source, and a batch of failing examples with feedback.
-    Produce a revised source that fixes the observed failures and follows the catalog.
+    You receive the submodule's task description (its Signature), the available context (tools
+    and style notes), the catalog of allowed primitives, the module's current source, and a
+    batch of failing examples with feedback. Produce a revised source that fixes the observed
+    failures and follows the catalog.
 
     The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output
     the entire, internally-consistent class:
@@ -168,10 +169,18 @@ class CodeProposalSignature(dspy.Signature):
          returns ``dspy.Prediction(<output fields>=...)``.
     Because ``forward`` calls predictors by name, never rename a predictor in one place without
     updating the other.
+
+    Any tools listed in ``available_context`` are in scope by name: wire the useful ones into a
+    ``dspy.RLM(..., tools=[...])`` or ``dspy.ReAct(..., tools=[...])``, or call them directly in
+    ``forward``. Reference them by the exact names given; do not import or redefine them.
     """
 
     task_description: str = dspy.InputField(
         desc="The submodule's Signature: name, objective, input and output fields."
+    )
+    available_context: str = dspy.InputField(
+        desc="Tools (in scope by name) and style notes available to the module. May be "
+        "'(no extra context)'."
     )
     primitives_catalog: str = dspy.InputField(
         desc="Catalog of allowed primitives and conventions the revised code must follow."
@@ -214,13 +223,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        # Task descriptions for any flex-marked (Flex) submodules, used when proposing
-        # revised code. Keyed by the same path used in the code candidate keys.
+        # Per flex-marked (Flex) submodule, the task description (its Signature) and the
+        # available context (tools + style notes) shown to the code proposer. Keyed by the
+        # same path used in the code candidate keys.
         self._flex_task_descriptions: dict[str, str] = {}
+        self._flex_context_blurbs: dict[str, str] = {}
         for path, sub in enumerate_flex_submodules(student_module).items():
             ctx = getattr(sub, "_flex_ctx", None)
             if ctx is not None and hasattr(ctx, "render_signature_spec"):
                 self._flex_task_descriptions[path] = ctx.render_signature_spec()
+                self._flex_context_blurbs[path] = ctx.render_context_blurb()
 
     def propose_new_texts(
         self,
@@ -274,6 +286,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     try:
                         out = proposer(
                             task_description=self._flex_task_descriptions.get(path, path),
+                            available_context=self._flex_context_blurbs.get(path, "(no extra context)"),
                             primitives_catalog=PRIMITIVES_CATALOG,
                             current_source=candidate[ckey],
                             failures=_format_failures(reflective_dataset.get(ckey, [])),
