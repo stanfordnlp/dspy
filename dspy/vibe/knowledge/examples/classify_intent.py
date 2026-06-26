@@ -10,22 +10,22 @@ NOTES = (
     "when the model returns something off-list."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {
-    "classify": dspy.Predict(
-        dspy.Signature(
-            "text -> intent",
-            "Classify the customer's message into exactly one of these intents: "
-            "balance, transfer, dispute, card_lost, other. "
-            "Return only the label, lowercase, with no extra words.",
+
+# === MODULE ===
+class ClassifyIntentModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.classify = dspy.Predict(
+            dspy.Signature(
+                "text -> intent",
+                "Classify the customer's message into exactly one of these intents: "
+                "balance, transfer, dispute, card_lost, other. "
+                "Return only the label, lowercase, with no extra words.",
+            )
         )
-    ),
-}
 
-
-# === FORWARD ===
-def forward(self, **inputs):
-    allowed = {"balance", "transfer", "dispute", "card_lost", "other"}
-    raw = self.classify(text=inputs["text"]).intent
-    label = (raw or "").strip().lower().replace(" ", "_")
-    return dspy.Prediction(intent=label if label in allowed else "other")
+    def forward(self, **inputs):
+        allowed = {"balance", "transfer", "dispute", "card_lost", "other"}
+        raw = self.classify(text=inputs["text"]).intent
+        label = (raw or "").strip().lower().replace(" ", "_")
+        return dspy.Prediction(intent=label if label in allowed else "other")

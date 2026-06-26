@@ -78,12 +78,12 @@ class PredictorFeedbackFn(Protocol):
 # Code optimization for vibe-marked (dspy.Vibe) submodules.
 #
 # A vibe-marked submodule is optimized by rewriting its *source* — the candidate
-# carries a single `<submodule_path>::code` key — rather than by tuning a predictor's
-# instructions. The whole module (its PREDICTORS dict AND its forward function) is one
-# component: the two are coupled (forward references predictor names), so they MUST be
-# rewritten together — evolving them independently produces broken, mismatched code.
-# The "::code" suffix never collides with the dotted/bracketed names produced by
-# named_parameters()/named_sub_modules(), so code keys and instruction keys coexist.
+# carries a single `<submodule_path>::code` key whose value is the full `module_src`
+# (one `dspy.Module` subclass) — rather than by tuning a predictor's instructions.
+# The whole class (its `__init__` predictors AND its `forward`) is one component:
+# they are coupled (forward references predictor names), so the class is rewritten as
+# a unit. The "::code" suffix never collides with the dotted/bracketed names produced
+# by named_parameters()/named_sub_modules(), so code keys and instruction keys coexist.
 # ---------------------------------------------------------------------------
 
 _CODE_KEY_SUFFIX = "::code"
@@ -99,23 +99,6 @@ def make_code_key(path: str) -> str:
 
 def _code_key_path(key: str) -> str:
     return key[: -len(_CODE_KEY_SUFFIX)]
-
-
-def join_module_code(predictors_src: str, forward_src: str) -> str:
-    """Combine the two code artifacts into one source string (PREDICTORS then forward)."""
-    return f"{(predictors_src or '').strip()}\n\n{(forward_src or '').strip()}"
-
-
-def split_module_code(combined: str) -> tuple[str, str]:
-    """Inverse of :func:`join_module_code`: split on the top-level ``def forward``.
-
-    Robust to the LM dropping any delimiter — everything before the first ``def forward``
-    is the PREDICTORS block, the rest is the forward function.
-    """
-    idx = combined.find("def forward")
-    if idx == -1:
-        return combined.strip(), ""
-    return combined[:idx].strip(), combined[idx:].strip()
 
 
 def enumerate_vibe_submodules(root) -> dict[str, Any]:
@@ -182,18 +165,19 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 class CodeProposalSignature(dspy.Signature):
     """Revise the full source code of a vibe-marked dspy.Vibe submodule.
 
-    You receive the submodule's task description, the catalog of allowed primitives plus a
-    good/bad-behavior knowledge base, the module's current source, and a batch of failing
-    examples with feedback. Produce a revised source that fixes the observed failures and
-    follows the catalog.
+    You receive the submodule's task description (its Signature), the catalog of allowed
+    primitives plus a good/bad-behavior knowledge base, the module's current source, and a
+    batch of failing examples with feedback. Produce a revised source that fixes the observed
+    failures and follows the catalog.
 
-    The source has two coupled parts and you MUST output BOTH, consistent with each other:
-      1. a module-scope ``PREDICTORS = {...}`` dict (use ``PREDICTORS = {}`` if no LM is
-         needed), then
-      2. a ``def forward(self, **inputs):`` that references those predictors as
-         ``self.<name>`` and returns ``dspy.Prediction(<output fields>=...)``.
-    Because ``forward`` calls predictors by name, never rename a predictor in one place
-    without updating the other — emit the entire, internally-consistent module.
+    The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output
+    the entire, internally-consistent class:
+      1. ``def __init__(self):`` calling ``super().__init__()`` and assigning the predictors it
+         needs (e.g. ``self.extract = dspy.Predict("...")``); assign none if no LM is needed.
+      2. ``def forward(self, **inputs):`` that calls those predictors as ``self.<name>`` and
+         returns ``dspy.Prediction(<output fields>=...)``.
+    Because ``forward`` calls predictors by name, never rename a predictor in one place without
+    updating the other.
     """
 
     task_description: str = dspy.InputField(
@@ -203,13 +187,13 @@ class CodeProposalSignature(dspy.Signature):
         desc="Catalog of allowed primitives plus good/bad-behavior guidance to follow."
     )
     current_source: str = dspy.InputField(
-        desc="The module's current full source: the PREDICTORS dict followed by the forward function."
+        desc="The module's current full source: one dspy.Module subclass (its __init__ and forward)."
     )
     failures: str = dspy.InputField(
         desc="A batch of failing examples and feedback. Diagnose them and revise the module to fix them."
     )
     revised_source: str = dspy.OutputField(
-        desc="The full revised module source: a `PREDICTORS = {...}` dict, then a `def forward(self, **inputs):`."
+        desc="The full revised module source: one `dspy.Module` subclass with `__init__` (predictors) and `forward`."
     )
 
 
@@ -319,9 +303,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for path, vibe in enumerate_vibe_submodules(new_prog).items():
             key = make_code_key(path)
             if key in candidate:
-                predictors_src, forward_src = split_module_code(candidate[key])
                 vibe._auto_repair = False  # a broken proposed candidate must raise, not self-repair
-                vibe._bind_code(predictors_src, forward_src)
+                vibe._bind_code(candidate[key])
 
         # Apply instruction updates to predictors. Code keys contain "::" so never match
         # here; predictors *inside* a Vibe were excluded from the candidate (their

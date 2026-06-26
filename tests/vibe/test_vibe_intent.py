@@ -61,7 +61,7 @@ def test_no_warning_when_signature_is_clear() -> None:
         warnings.simplefilter("always")
         program = Vibe(Vague)
     assert _vague_warnings(rec) == []
-    assert program.forward_src is not None
+    assert program.module_src is not None
 
 
 def test_skipped_when_no_lm_configured() -> None:
@@ -69,7 +69,7 @@ def test_skipped_when_no_lm_configured() -> None:
         warnings.simplefilter("always")
         program = Vibe(Vague)  # no LM -> intent check skipped, construction stays LM-free
     assert _vague_warnings(rec) == []
-    assert program.forward_src is not None
+    assert program.module_src is not None
 
 
 def test_check_intent_false_disables_the_call() -> None:
@@ -93,4 +93,4 @@ def test_not_rerun_on_plain_reload(tmp_path: Path) -> None:
         warnings.simplefilter("always")
         reloaded = Vibe(Vague, persist_to=str(path))
     assert _vague_warnings(rec) == []
-    assert reloaded.forward_src is not None
+    assert reloaded.module_src is not None

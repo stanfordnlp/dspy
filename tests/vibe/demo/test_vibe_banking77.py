@@ -5,7 +5,7 @@ Flow:
      baseline that delegates to ``dspy.RLM`` (no codegen — the recursive LM in a REPL).
   2. Benchmark that baseline on a held-out test split.
   3. Run ``dspy.GEPA`` over a small train/val split. Because the module is vibe-marked,
-     GEPA optimizes its *code* (``predictors_src``/``forward_src``) — decomposing the
+     GEPA optimizes its *code* (``module_src``) — decomposing the
      task into focused predictors / plain Python.
   4. Benchmark the optimized program on the same test split.
   5. Plot baseline-vs-optimized accuracy to `banking77_improvement.png`.
@@ -146,7 +146,7 @@ def test_vibe_banking77_showcase() -> None:
 
     # 1. Vibe the classifier: a dspy.RLM baseline, marked code-optimizable.
     program = dspy.Vibe(_build_signature(labels), persist_to=str(VIBE_PATH))
-    baseline_src = program.predictors_src
+    baseline_src = program.module_src
     assert "dspy.RLM(" in baseline_src  # the un-optimized vibe baseline
 
     # 2. Benchmark the baseline.
@@ -165,14 +165,14 @@ def test_vibe_banking77_showcase() -> None:
 
     # 4. Benchmark the optimized program on the same test split.
     optimized_acc = _accuracy(optimized, test)
-    code_changed = optimized.predictors_src != baseline_src
+    code_changed = optimized.module_src != baseline_src
     print(f"[optimized / GEPA]    test accuracy = {optimized_acc:.1%}")
     print(f"improvement: {optimized_acc - baseline_acc:+.1%} | GEPA changed the code: {code_changed}")
     detailed = getattr(optimized, "detailed_results", None)
     if detailed is not None:
         print(f"GEPA val scores explored: {detailed.val_aggregate_scores}")
-    print("--- optimized predictors_src ---")
-    print(optimized.predictors_src)
+    print("--- optimized module_src ---")
+    print(optimized.module_src)
 
     # 5. Plot the before/after.
     fig, ax = plt.subplots(figsize=(5, 4))
@@ -196,7 +196,7 @@ def test_vibe_banking77_showcase() -> None:
     # budget, so it's reported and plotted rather than hard-asserted.)
     assert PLOT_PATH.exists()
     assert 0.0 <= baseline_acc <= 1.0 and 0.0 <= optimized_acc <= 1.0
-    assert optimized.predictors_src is not None and optimized.forward_src is not None
+    assert optimized.module_src is not None
 
 
 if __name__ == "__main__":

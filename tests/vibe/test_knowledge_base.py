@@ -13,8 +13,7 @@ import pytest
 import dspy
 from dspy.vibe import Vibe
 from dspy.vibe.knowledge import (
-    FORWARD_MARKER,
-    PREDICTORS_MARKER,
+    MODULE_MARKER,
     build_knowledge_base,
     load_examples,
 )
@@ -52,9 +51,8 @@ def test_examples_are_rendered_without_leaking_markers() -> None:
     for ex in EXAMPLES:
         assert ex.task in kb
         assert ex.signature in kb
-    # The split markers are an authoring detail and must not leak into the prompt text.
-    assert PREDICTORS_MARKER not in kb
-    assert FORWARD_MARKER not in kb
+    # The split marker is an authoring detail and must not leak into the prompt text.
+    assert MODULE_MARKER not in kb
 
 
 def test_examples_loaded_and_well_formed() -> None:
@@ -64,8 +62,8 @@ def test_examples_loaded_and_well_formed() -> None:
     assert {"invoice_total", "slugify", "long_report_qa"} <= names
     for ex in EXAMPLES:
         assert ex.task and ex.signature and ex.notes, f"{ex.name} is missing metadata"
-        assert "PREDICTORS" in ex.predictors_src, f"{ex.name} predictors_src lacks PREDICTORS"
-        assert "def forward" in ex.forward_src, f"{ex.name} forward_src lacks def forward"
+        assert "class " in ex.module_src, f"{ex.name} module_src lacks a class definition"
+        assert "def forward" in ex.module_src, f"{ex.name} module_src lacks def forward"
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
@@ -73,26 +71,25 @@ def test_example_binds_through_vibe(example) -> None:
     """Each example must bind via the real Vibe code path — this guards against rot.
 
     Construction binds the (LM-free) RLM baseline; ``_bind_code`` then execs the example's
-    own ``predictors_src`` / ``forward_src``, constructing its predictors (no LM call) and
-    attaching ``forward``. A drifted example (renamed API, bad signature, missing field)
-    fails here instead of silently misleading the reflection LM.
+    own ``module_src`` (a dspy.Module subclass), constructing its predictors (no LM call) and
+    attaching ``forward``. A drifted example (renamed API, bad signature, missing field) fails
+    here instead of silently misleading the reflection LM.
     """
-    program = Vibe(example.signature)  # persist_to=None: in-memory, LM-free baseline
-    program._bind_code(example.predictors_src, example.forward_src)
+    program = Vibe(example.signature, check_intent=False)  # in-memory, LM-free baseline
+    program._bind_code(example.module_src)
 
-    assert program.predictors_src == example.predictors_src
-    assert program.forward_src == example.forward_src
-    # Every predictor in PREDICTORS was attached as a discoverable attribute on the module.
-    for name in program._predictor_names:
-        assert hasattr(program, name), f"{example.name}: predictor {name!r} not attached"
+    assert program.module_src == example.module_src
+    # Every predictor the class defines was attached as a discoverable attribute on the module.
+    for name in program._attached_names:
+        assert hasattr(program, name), f"{example.name}: attribute {name!r} not attached"
 
 
 def test_deterministic_example_runs_with_no_lm() -> None:
     slugify = next(ex for ex in EXAMPLES if ex.name == "slugify")
-    program = Vibe(slugify.signature)
-    program._bind_code(slugify.predictors_src, slugify.forward_src)
+    program = Vibe(slugify.signature, check_intent=False)
+    program._bind_code(slugify.module_src)
     # A fully-deterministic module attaches no predictors and runs without any LM.
-    assert program._predictor_names == []
+    assert program._attached_names == []
     result = program(title="Hello, World! Two")
     assert isinstance(result, dspy.Prediction)
     assert result.slug == "hello-world-two"

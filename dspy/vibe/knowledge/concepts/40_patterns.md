@@ -14,8 +14,8 @@
 
 4. **Compose by passing unwrapped attributes.** `self.next(x=prev.x)` — never `self.next(x=prev)`.
 
-5. **A fully-deterministic task needs no LM.** Emit `PREDICTORS = {}` and implement `forward` in
-   plain Python, with any helpers nested inside it.
+5. **A fully-deterministic task needs no LM.** Define no predictors in `__init__` and implement
+   `forward` in plain Python, with any helpers nested inside it.
 
 6. **Push task rules into predictor instructions.** Allowed labels, domain rules, and output
    formats go inside the predictor's `dspy.Signature(..., instructions=...)`, then normalize the

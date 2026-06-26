@@ -10,21 +10,21 @@ NOTES = (
     "everything; the loop is bounded with `for _ in range(N)`."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {
-    "draft": dspy.Predict("document: str -> summary: str"),
-    "critique": dspy.ChainOfThought("document: str, summary: str -> approved: bool, issues: str"),
-    "revise": dspy.Predict("document: str, current_summary: str, issues: str -> summary: str"),
-}
 
+# === MODULE ===
+class IterativeRefineModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.draft = dspy.Predict("document: str -> summary: str")
+        self.critique = dspy.ChainOfThought("document: str, summary: str -> approved: bool, issues: str")
+        self.revise = dspy.Predict("document: str, current_summary: str, issues: str -> summary: str")
 
-# === FORWARD ===
-def forward(self, **inputs):
-    document = inputs["document"]
-    summary = self.draft(document=document).summary
-    for _ in range(3):  # bounded refinement
-        review = self.critique(document=document, summary=summary)
-        if bool(review.approved):
-            break
-        summary = self.revise(document=document, current_summary=summary, issues=review.issues).summary
-    return dspy.Prediction(summary=str(summary))
+    def forward(self, **inputs):
+        document = inputs["document"]
+        summary = self.draft(document=document).summary
+        for _ in range(3):  # bounded refinement
+            review = self.critique(document=document, summary=summary)
+            if bool(review.approved):
+                break
+            summary = self.revise(document=document, current_summary=summary, issues=review.issues).summary
+        return dspy.Prediction(summary=str(summary))

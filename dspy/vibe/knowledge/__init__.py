@@ -36,13 +36,11 @@ _HERE = Path(__file__).parent
 _CONCEPTS_DIR = _HERE / "concepts"
 _EXAMPLES_DIR = _HERE / "examples"
 
-# Comment markers that split an example file into the two source artifacts a
-# Vibe module is made of. Everything above the first marker (the module
-# docstring, ``import dspy``, and the ``TASK`` / ``SIGNATURE`` / ``NOTES``
-# metadata) is for humans and the renderer; only the two regions below feed the
-# actual ``predictors_src`` / ``forward_src`` that ``Vibe._bind_code`` runs.
-PREDICTORS_MARKER = "# === PREDICTORS ==="
-FORWARD_MARKER = "# === FORWARD ==="
+# Comment marker that splits an example file into its human-facing preamble (the module
+# docstring, ``import dspy``, and the ``TASK`` / ``SIGNATURE`` / ``NOTES`` metadata) and the
+# generated artifact below it: a single ``dspy.Module`` subclass. Everything after the marker
+# is the ``module_src`` that ``Vibe._bind_code`` runs.
+MODULE_MARKER = "# === MODULE ==="
 
 _META_KEYS = ("TASK", "SIGNATURE", "NOTES")
 
@@ -55,21 +53,15 @@ class KnowledgeExample:
     task: str  # one-line description of what the module does
     signature: str  # the parent signature string, e.g. "invoice: str -> total_cents: int"
     notes: str  # why this design is good (the lesson the example teaches)
-    predictors_src: str  # the `PREDICTORS = {...}` region
-    forward_src: str  # the `def forward(self, **inputs):` region
+    module_src: str  # the generated artifact: one `dspy.Module` subclass
 
 
-def _split_code_regions(source: str) -> tuple[str, str]:
-    """Slice ``(predictors_src, forward_src)`` out of an example file's text."""
-    p_idx = source.find(PREDICTORS_MARKER)
-    f_idx = source.find(FORWARD_MARKER)
-    if p_idx == -1 or f_idx == -1 or f_idx <= p_idx:
-        raise ValueError(
-            f"example is missing the {PREDICTORS_MARKER!r} / {FORWARD_MARKER!r} markers in the expected order"
-        )
-    predictors_src = source[p_idx + len(PREDICTORS_MARKER) : f_idx].strip()
-    forward_src = source[f_idx + len(FORWARD_MARKER) :].strip()
-    return predictors_src, forward_src
+def _extract_module_src(source: str) -> str:
+    """Slice the ``module_src`` (the dspy.Module subclass) out of an example file's text."""
+    idx = source.find(MODULE_MARKER)
+    if idx == -1:
+        raise ValueError(f"example is missing the {MODULE_MARKER!r} marker")
+    return source[idx + len(MODULE_MARKER) :].strip()
 
 
 def _extract_meta(source: str) -> dict[str, str]:
@@ -100,15 +92,13 @@ def load_examples() -> list[KnowledgeExample]:
     for path in sorted(_EXAMPLES_DIR.glob("*.py")):
         source = path.read_text(encoding="utf-8")
         meta = _extract_meta(source)
-        predictors_src, forward_src = _split_code_regions(source)
         examples.append(
             KnowledgeExample(
                 name=path.stem,
                 task=meta.get("TASK", ""),
                 signature=meta.get("SIGNATURE", ""),
                 notes=meta.get("NOTES", ""),
-                predictors_src=predictors_src,
-                forward_src=forward_src,
+                module_src=_extract_module_src(source),
             )
         )
     return examples
@@ -126,8 +116,7 @@ def _render_example(index: int, ex: KnowledgeExample) -> str:
         lines.append(f"Signature: `{ex.signature}`")
     if ex.notes:
         lines.append(f"Why this is a good design: {ex.notes}")
-    lines.append("\n`predictors_src`:\n```python\n" + ex.predictors_src + "\n```")
-    lines.append("\n`forward_src`:\n```python\n" + ex.forward_src + "\n```")
+    lines.append("\n```python\n" + ex.module_src + "\n```")
     return "\n".join(lines)
 
 
@@ -136,7 +125,7 @@ def _render_examples(examples: list[KnowledgeExample]) -> str:
         return ""
     header = (
         "## Worked examples of good dspy.vibe modules\n"
-        "Each is a self-contained reference implementation (validated by the test suite). "
+        "Each is a self-contained `dspy.Module` subclass (validated by the test suite). "
         "Study the decomposition, the Python/LM split, and the output coercion."
     )
     bodies = [_render_example(i, ex) for i, ex in enumerate(examples, start=1)]
@@ -157,6 +146,5 @@ __all__ = [
     "KnowledgeExample",
     "build_knowledge_base",
     "load_examples",
-    "PREDICTORS_MARKER",
-    "FORWARD_MARKER",
+    "MODULE_MARKER",
 ]

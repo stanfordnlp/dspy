@@ -1,25 +1,46 @@
 from dspy.vibe.knowledge import build_knowledge_base
 
 PRIMITIVES_CATALOG: str = """\
-You are authoring two code artifacts for a `dspy.vibe` module:
+You are authoring ONE Python source string: a single `dspy.Module` subclass that
+implements the user's signature. It has exactly two methods:
 
-1) A `PREDICTORS` dict literal at module scope mapping attribute names to predictor
-   instances. Each entry is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
-   `dspy.ReAct` / `dspy.RLM` over a sub-signature string. Include a predictor ONLY
+1) `def __init__(self):` — calls `super().__init__()` and assigns each predictor it
+   needs to an attribute, e.g. `self.classify = dspy.Predict("text -> label")`.
+   Each predictor is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
+   `dspy.ReAct` / `dspy.RLM` over a sub-signature string. Define a predictor ONLY
    for a step that genuinely needs a language model. If the task needs no LM at
-   all, emit an empty `PREDICTORS = {}`.
+   all, define no predictors (an `__init__` with just `super().__init__()`).
 
-2) A `def forward(self, **inputs):` function whose body returns
-   `dspy.Prediction(<output_fields...>)` matching the declared signature. The body
-   may call the predictors (`self.<name>(...)`) AND/OR run arbitrary deterministic
-   Python — parsing, arithmetic, regex, string and data-structure manipulation,
-   control flow, and small helper functions defined *inside* `forward`. A module
-   may be fully deterministic (no predictors), fully LM-driven, or a mix. Prefer
-   plain Python for anything that doesn't require an LM's judgment.
+2) `def forward(self, **inputs):` — returns `dspy.Prediction(<output_fields...>)`
+   matching the declared signature. The body may call the predictors
+   (`self.<name>(...)`) AND/OR run arbitrary deterministic Python — parsing,
+   arithmetic, regex, string and data-structure manipulation, control flow, and
+   small helper functions defined *inside* `forward`. A module may be fully
+   deterministic (no predictors), fully LM-driven, or a mix. Prefer plain Python
+   for anything that doesn't require an LM's judgment.
+
+The whole class is one optimizable unit — `__init__` and `forward` are rewritten
+together, so a predictor renamed in one place must be updated in the other.
+
+Skeleton (the shape of every module you write):
+
+```
+class SolveModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.extract = dspy.Predict("invoice: str -> qty: int, unit_price_cents: int")
+
+    def forward(self, **inputs):
+        e = self.extract(invoice=inputs["invoice"])
+        return dspy.Prediction(total_cents=int(e.qty) * int(e.unit_price_cents))
+```
+
+`dspy` is already in scope — do NOT add `import` statements at module scope (import
+stdlib modules like `re` *inside* `forward` if you need them).
 
 Available DSPy primitives:
 
-- `dspy.Predict("a, b -> c, d")`, one LM call. `result = p(a=x, b=y)` returns a
+- `dspy.Predict("a, b -> c, d")`, one LM call. `result = self.p(a=x, b=y)` returns a
   `dspy.Prediction` object; the declared outputs are attributes on it:
   `result.c`, `result.d`. Signature strings use snake_case names.
 
@@ -46,8 +67,8 @@ Available DSPy primitives:
 
 Rules you MUST follow:
 
-- Reference every predictor as `self.<name>` (e.g. `self.classify`). The PREDICTORS
-  entries will be attached to the `self` instance before `forward` is called.
+- Define every predictor in `__init__` as `self.<name> = dspy.Predict(...)` and call
+  it in `forward` as `self.<name>(...)`.
 
 - Do NOT access dunder attributes (anything matching `__*__`). Use the public API.
 
@@ -60,10 +81,11 @@ Rules you MUST follow:
 - Use predictors only where an LM is genuinely needed (extraction, classification,
   generation, open-ended reasoning); do everything else — math, parsing, formatting,
   validation, control flow — in plain Python. When no step needs an LM, write a
-  pure-Python `forward` with `PREDICTORS = {}`.
+  pure-Python `forward` and define no predictors in `__init__`.
 
-- Define any helper functions NESTED inside `forward` (not at module scope), so the
-  persisted module file and the live module execute identically.
+- Define any helper functions NESTED inside `forward` (not at module scope), and
+  add no module-scope code other than the single class definition, so the persisted
+  module file and the live module execute identically.
 
 - Keep the design composable: prefer two short predictors with clear signatures
   over one all-knowing prompt.
@@ -86,23 +108,22 @@ Common patterns (study these before writing `forward`):
    attributes before composing further calls or the final return.
 
    ```
-   PREDICTORS = {
-       "parse":   dspy.Predict("invoice -> qty: int, unit_price: float"),
-       "shipping": dspy.Predict("invoice -> shipping_dollars: float"),
-   }
+   class TotalModule(dspy.Module):
+       def __init__(self):
+           super().__init__()
+           self.parse = dspy.Predict("invoice -> qty: int, unit_price: float")
+           self.shipping = dspy.Predict("invoice -> shipping_dollars: float")
 
-   # RIGHT — pull fields off each predictor result, then build the final Prediction
-   def forward(self, **inputs):
-       parsed = self.parse(invoice=inputs["invoice"])
-       ship = self.shipping(invoice=inputs["invoice"])
-       cents = round((parsed.qty * parsed.unit_price + ship.shipping_dollars) * 100)
-       return dspy.Prediction(total_cents=int(cents))
+       # RIGHT — pull fields off each predictor result, then build the final Prediction
+       def forward(self, **inputs):
+           parsed = self.parse(invoice=inputs["invoice"])
+           ship = self.shipping(invoice=inputs["invoice"])
+           cents = round((parsed.qty * parsed.unit_price + ship.shipping_dollars) * 100)
+           return dspy.Prediction(total_cents=int(cents))
 
-   # WRONG — passes the whole inner Prediction as the field value, producing
-   # Prediction(total_cents=Prediction(total_cents=...)) at runtime
-   def forward(self, **inputs):
-       result = self.parse(invoice=inputs["invoice"])
-       return dspy.Prediction(total_cents=result)            # bug: no `.field`
+       # WRONG — passing the whole inner Prediction as the field value, producing
+       # Prediction(total_cents=Prediction(total_cents=...)) at runtime:
+       #     return dspy.Prediction(total_cents=self.parse(invoice=inputs["invoice"]))
    ```
 
 2) Coerce to the declared output type. If the parent signature declares
@@ -119,18 +140,20 @@ Common patterns (study these before writing `forward`):
    the math. This is more reliable and easier to debug than asking the LM
    to do both at once.
 
-5) A fully-deterministic task needs no LM: emit `PREDICTORS = {}` and implement
+5) A fully-deterministic task needs no LM: define no predictors and implement
    `forward` in plain Python, with any helpers nested inside it.
 
    ```
-   PREDICTORS = {}
+   class SlugifyModule(dspy.Module):
+       def __init__(self):
+           super().__init__()
 
-   def forward(self, **inputs):
-       def slugify(text):
-           cleaned = "".join(c.lower() if c.isalnum() else "-" for c in text)
-           return "-".join(part for part in cleaned.split("-") if part)
+       def forward(self, **inputs):
+           def slugify(text):
+               cleaned = "".join(c.lower() if c.isalnum() else "-" for c in text)
+               return "-".join(part for part in cleaned.split("-") if part)
 
-       return dspy.Prediction(slug=slugify(inputs["title"]))
+           return dspy.Prediction(slug=slugify(inputs["title"]))
    ```
 """
 

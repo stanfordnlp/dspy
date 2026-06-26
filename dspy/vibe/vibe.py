@@ -41,10 +41,10 @@ class Vibe(Module):
     Construct it like any other module — ``dspy.Vibe(MySignature)``. On first use it binds
     a deterministic baseline that simply delegates to ``dspy.RLM(<signature>)`` (no codegen
     LM call). The module is *marked* code-optimizable (``_code_optimizable``): when optimized
-    with ``dspy.GEPA``, the optimizer may rewrite its source (``predictors_src`` /
-    ``forward_src``) — decomposing the task into focused predictors and plain Python — rather
-    than only tuning instructions. A regular ``dspy.Predict`` in the same program keeps the
-    default instruction-only optimization.
+    with ``dspy.GEPA``, the optimizer may rewrite its source (a single ``dspy.Module`` subclass,
+    exposed as ``module_src``) — decomposing the task into focused predictors and plain Python —
+    rather than only tuning instructions. A regular ``dspy.Predict`` in the same program keeps
+    the default instruction-only optimization.
 
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
@@ -69,13 +69,13 @@ class Vibe(Module):
             available or the check itself errors. Set False to disable the call entirely.
 
     Persistence: when ``persist_to`` is set, the implementation is a single self-contained
-    ``.py`` file (a header comment, a signature-hash guard, and the ``PREDICTORS`` dict +
-    ``forward`` function in marked regions). You may edit it by hand; on the next run a
-    matching signature loads it as-is, while a changed signature regenerates the baseline.
+    ``.py`` file (a header comment, a signature-hash guard, the recorded Signature, and the
+    generated ``dspy.Module`` subclass in a marked region). You may edit it by hand; on the next
+    run a matching signature loads it as-is, while a changed signature regenerates the baseline.
     """
 
-    # Marker read by ``dspy.GEPA``: this module's code (``predictors_src`` / ``forward_src``)
-    # may be rewritten by the optimizer, instead of only its inner predictors' instructions.
+    # Marker read by ``dspy.GEPA``: this module's code (the ``module_src`` class) may be
+    # rewritten by the optimizer, instead of only its inner predictors' instructions.
     # Duck-typed via ``getattr(obj, "_code_optimizable", False)``.
     _code_optimizable: bool = True
 
@@ -109,9 +109,8 @@ class Vibe(Module):
             signature_cls=self._signature_cls, tools=tools, style_notes=style_notes
         )
 
-        self._forward_src: str | None = None
-        self._predictors_src: str | None = None
-        self._predictor_names: list[str] = []
+        self._module_src: str | None = None
+        self._attached_names: list[str] = []
         self._forward_impl: Any = None
         self._auto_repair = auto_repair
         self._check_intent = check_intent
@@ -122,8 +121,7 @@ class Vibe(Module):
     def implement(self, *, force: bool = False) -> None:
         """Explicitly (re-)generate the implementation."""
         if force:
-            self._predictors_src = None
-            self._forward_src = None
+            self._module_src = None
         self._lazy_implement(force=force)
 
     @property
@@ -131,31 +129,27 @@ class Vibe(Module):
         return self._signature_cls
 
     @property
-    def predictors_src(self) -> str | None:
-        return self._predictors_src
-
-    @property
-    def forward_src(self) -> str | None:
-        return self._forward_src
+    def module_src(self) -> str | None:
+        """The generated implementation: source of a single ``dspy.Module`` subclass."""
+        return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
         state = super().dump_state(json_mode=json_mode)
         state["_vibe"] = {
-            "forward_src": self._forward_src,
-            "predictors_src": self._predictors_src,
+            "module_src": self._module_src,
             "signature_hash": self._signature_hash(),
         }
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
         vibe_state = state.pop("_vibe", None) if isinstance(state, dict) else None
-        if vibe_state and vibe_state.get("forward_src") and vibe_state.get("predictors_src"):
-            self._bind_code(vibe_state["predictors_src"], vibe_state["forward_src"])
+        if vibe_state and vibe_state.get("module_src"):
+            self._bind_code(vibe_state["module_src"])
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     def _lazy_implement(self, *, force: bool = False) -> None:
-        if self._forward_src and self._predictors_src and not force:
+        if self._module_src and not force:
             return
 
         sig_hash = self._signature_hash()
@@ -165,14 +159,12 @@ class Vibe(Module):
             if stored is not None and stored.signature_hash == sig_hash:
                 # Run exactly what's on disk (baseline, GEPA-optimized, or hand-edited).
                 try:
-                    self._bind_code(stored.predictors_src, stored.forward_src)
+                    self._bind_code(stored.module_src)
                 except Exception as err:
                     if not self._auto_repair:
                         raise
-                    fixed_p, fixed_f = self._repair_after_bind_failure(
-                        broken=(stored.predictors_src, stored.forward_src), error=err
-                    )
-                    self._write_persisted(fixed_p, fixed_f, sig_hash)
+                    fixed = self._repair_after_bind_failure(broken=stored.module_src, error=err)
+                    self._write_persisted(fixed, sig_hash)
                 logger.info("dspy.Vibe %r: loaded implementation from %s", self._name, self._persist_to)
                 return
             if stored is not None:
@@ -188,10 +180,10 @@ class Vibe(Module):
 
         # Bind the deterministic RLM baseline (no codegen LM call). Decomposition into a
         # richer, mostly-Python program happens later via dspy.GEPA.
-        predictors_src, forward_src = self._rlm_baseline_src()
-        self._bind_code(predictors_src, forward_src)
+        module_src = self._rlm_baseline_src()
+        self._bind_code(module_src)
         if self._persist_to is not None:
-            self._write_persisted(predictors_src, forward_src, sig_hash)
+            self._write_persisted(module_src, sig_hash)
             logger.info("dspy.Vibe %r: wrote RLM baseline to %s", self._name, self._persist_to)
         else:
             logger.info("dspy.Vibe %r: persist_to=None — RLM baseline is in-memory only.", self._name)
@@ -226,14 +218,15 @@ class Vibe(Module):
         logger.warning(message)
         warnings.warn(message, stacklevel=2)
 
-    def _rlm_baseline_src(self) -> tuple[str, str]:
-        """Deterministic baseline source: delegate the whole signature to one dspy.RLM.
+    def _rlm_baseline_src(self) -> str:
+        """Deterministic baseline source: a ``dspy.Module`` that delegates to one ``dspy.RLM``.
 
-        No LM call — emits source that constructs ``dspy.RLM(<signature>)`` and unwraps its
-        declared outputs. dspy.GEPA later rewrites this into a decomposed, mostly-Python
-        implementation. Carries the signature's instructions into the RLM so the baseline
-        sees the full task description; references only ``dspy`` so the persisted file stays
-        self-contained (``_bind_code`` execs with only ``dspy`` and context tools in scope).
+        No LM call — emits a class whose ``__init__`` constructs ``dspy.RLM(<signature>)`` and
+        whose ``forward`` unwraps its declared outputs. dspy.GEPA later rewrites this into a
+        decomposed, mostly-Python module. Carries the signature's instructions into the RLM so
+        the baseline sees the full task description; references only ``dspy`` so the persisted
+        file stays self-contained (``_bind_code`` execs with only ``dspy`` and context tools in
+        scope).
         """
         cls: Any = self._signature_cls
         sig_str = self._vibe_ctx.render_signature_string()
@@ -242,25 +235,32 @@ class Vibe(Module):
         # `!r` escapes quotes/newlines into a valid literal, and the rebuilt signature only
         # references `dspy`, so the persisted file stays self-contained.
         rlm_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
-        predictors_src = "PREDICTORS = {\n" f"    {'rlm'!r}: dspy.RLM({rlm_arg}),\n" "}"
         returns = ", ".join(f"{name}=result.{name}" for name in output_names)
-        forward_src = (
-            "def forward(self, **inputs):\n"
-            "    result = self.rlm(**inputs)\n"
-            f"    return dspy.Prediction({returns})"
+        src = (
+            f"class {self._class_name()}(dspy.Module):\n"
+            "    def __init__(self):\n"
+            "        super().__init__()\n"
+            f"        self.rlm = dspy.RLM({rlm_arg})\n"
+            "\n"
+            "    def forward(self, **inputs):\n"
+            "        result = self.rlm(**inputs)\n"
+            f"        return dspy.Prediction({returns})"
         )
         # Match the normalized (stripped) form the persistence round-trip yields, so a freshly
         # written baseline isn't misread as a hand edit on its first reload.
-        return predictors_src.strip(), forward_src.strip()
+        return src.strip()
 
-    def _repair_after_bind_failure(
-        self, *, broken: tuple[str, str], error: BaseException
-    ) -> tuple[str, str]:
+    def _class_name(self) -> str:
+        """Name for the generated module class, derived from the signature name."""
+        base = self._name if (self._name and self._name.isidentifier()) else "Vibe"
+        return f"{base}Module"
+
+    def _repair_after_bind_failure(self, *, broken: str, error: BaseException) -> str:
         """Invoke the repair codegen LM after ``_bind_code`` raised, and bind the fix.
 
         The bind of the *repaired* code is not wrapped — if the repair itself is broken, the
         user sees that as a hard error rather than an infinite repair loop. Returns the fixed
-        ``(predictors_src, forward_src)``; the caller persists them.
+        ``module_src``; the caller persists it.
         """
         error_text = f"{type(error).__name__}: {error}"
         logger.warning(
@@ -269,42 +269,49 @@ class Vibe(Module):
             self._name,
             error_text,
         )
-        fixed_predictors, fixed_forward = repair(
+        fixed = repair(
             self._vibe_ctx, broken=broken, failure_kind="bind", error_text=error_text, lm=self._codegen_lm
         )
-        self._bind_code(fixed_predictors, fixed_forward)
-        return fixed_predictors, fixed_forward
+        self._bind_code(fixed)
+        return fixed
 
-    def _bind_code(self, predictors_src: str, forward_src: str) -> None:
-        """Exec and attach both source artifacts to ``self``."""
+    def _bind_code(self, module_src: str) -> None:
+        """Exec ``module_src`` (a ``dspy.Module`` subclass) and attach its predictors onto ``self``.
+
+        The generated/persisted implementation is a normal ``dspy.Module`` subclass. We exec it,
+        instantiate it once (LM-free — only predictor *construction* runs), and copy whatever its
+        ``__init__`` defined (predictors and any plain attributes) onto this Vibe instance, then
+        bind its ``forward`` as ``self._forward_impl``. So ``self`` behaves exactly like the
+        generated module — ``self.<predictor>`` and ``named_predictors()`` stay flat — while the
+        source remains a clean, editable class.
+        """
         ctx_names = self._vibe_ctx.context_names()
         ctx_names["dspy"] = dspy
 
-        for old_name in self._predictor_names:
+        # Detach attributes from the previous binding before re-attaching.
+        for old_name in self._attached_names:
             if hasattr(self, old_name):
                 delattr(self, old_name)
-        self._predictor_names = []
+        self._attached_names = []
 
-        pred_ns = _exec_source(predictors_src, context_names=ctx_names)
-        predictors = pred_ns.get("PREDICTORS")
-        if not isinstance(predictors, dict):
-            raise RuntimeError("predictors_src must define a `PREDICTORS = {...}` dict at module scope")
-        for name, predictor in predictors.items():
-            if not isinstance(name, str) or not name.isidentifier():
-                raise RuntimeError(f"PREDICTORS key {name!r} is not a valid Python identifier")
-            setattr(self, name, predictor)
-            self._predictor_names.append(name)
-
-        fwd_ns = _exec_source(forward_src, context_names=ctx_names)
-        forward_fn = fwd_ns.get("forward")
+        ns = _exec_source(module_src, context_names=ctx_names)
+        impl_cls = _find_module_class(ns)
+        forward_fn = impl_cls.__dict__.get("forward")
         if not callable(forward_fn):
-            raise RuntimeError("forward_src must define a `def forward(self, ...)` function")
-        # Bind to `_forward_impl` instead of `forward`. The class-level ``forward`` wraps
-        # this with runtime auto-repair.
-        self._forward_impl = types.MethodType(forward_fn, self)
+            raise RuntimeError("module_src's dspy.Module subclass must define a `forward` method")
 
-        self._predictors_src = predictors_src
-        self._forward_src = forward_src
+        impl = impl_cls()  # LM-free: runs __init__, constructing predictors only
+        baseline_keys = _bare_module_keys()
+        for key, value in list(impl.__dict__.items()):
+            if key in baseline_keys:
+                continue  # internal dspy.Module bookkeeping, not user-defined state
+            setattr(self, key, value)
+            self._attached_names.append(key)
+
+        # Bind the generated forward to `self` (its __globals__ already has `dspy` + tools).
+        # The class-level ``forward`` wraps this with runtime auto-repair.
+        self._forward_impl = types.MethodType(forward_fn, self)
+        self._module_src = module_src
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the LM-authored ``_forward_impl`` with runtime auto-repair.
@@ -334,8 +341,8 @@ class Vibe(Module):
         candidate is the currently-bound code. If repair codegen produces another
         bind-broken body, the bind error propagates — we do not loop on repair.
         """
-        assert self._predictors_src is not None and self._forward_src is not None
-        broken = (self._predictors_src, self._forward_src)
+        assert self._module_src is not None
+        broken = self._module_src
         error_text = f"{type(error).__name__}: {error}"
         logger.warning(
             "dspy.Vibe %r: runtime failure (%s) — running auto-repair. "
@@ -343,12 +350,12 @@ class Vibe(Module):
             self._name,
             error_text,
         )
-        fixed_predictors, fixed_forward = repair(
+        fixed = repair(
             self._vibe_ctx, broken=broken, failure_kind="runtime", error_text=error_text, lm=self._codegen_lm
         )
-        self._bind_code(fixed_predictors, fixed_forward)
+        self._bind_code(fixed)
         if self._persist_to is not None:
-            self._write_persisted(fixed_predictors, fixed_forward, self._signature_hash())
+            self._write_persisted(fixed, self._signature_hash())
 
     def _read_persisted(self) -> PersistedVibe | None:
         if self._persist_to is None or not self._persist_to.exists():
@@ -362,14 +369,14 @@ class Vibe(Module):
             )
         return parsed
 
-    def _write_persisted(self, predictors_src: str, forward_src: str, sig_hash: str) -> None:
+    def _write_persisted(self, module_src: str, sig_hash: str) -> None:
         assert self._persist_to is not None
         self._persist_to.parent.mkdir(parents=True, exist_ok=True)
         body = render_persisted_file(
             signature_hash=sig_hash,
             signature_name=self._name,
-            predictors_src=predictors_src,
-            forward_src=forward_src,
+            module_src=module_src,
+            signature_spec=self._vibe_ctx.render_signature_spec(),
         )
         self._persist_to.write_text(body, encoding="utf-8")
 
@@ -392,3 +399,32 @@ def _annotation_repr(t: Any) -> str:
     if name:
         return name
     return str(t).replace("typing.", "")
+
+
+def _find_module_class(ns: dict[str, Any]) -> type:
+    """Find the generated ``dspy.Module`` subclass in an exec'd namespace.
+
+    Prefers a class that defines its own ``forward`` (the implementation), so an imported or
+    helper base class doesn't win. Raises if none is present.
+    """
+    candidates = [v for v in ns.values() if isinstance(v, type) and issubclass(v, Module) and v is not Module]
+    defined = [c for c in candidates if "forward" in c.__dict__]
+    chosen = defined or candidates
+    if not chosen:
+        raise RuntimeError("module_src must define a dspy.Module subclass with a `forward` method")
+    return chosen[0]
+
+
+_BARE_MODULE_KEYS: set[str] | None = None
+
+
+def _bare_module_keys() -> set[str]:
+    """Instance ``__dict__`` keys a bare ``dspy.Module`` carries (its internal bookkeeping).
+
+    Computed once and cached. ``_bind_code`` copies only the *extra* keys a generated
+    ``__init__`` adds (the predictors and any plain state), never these internals.
+    """
+    global _BARE_MODULE_KEYS
+    if _BARE_MODULE_KEYS is None:
+        _BARE_MODULE_KEYS = set(Module().__dict__.keys())
+    return _BARE_MODULE_KEYS

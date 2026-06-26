@@ -1,9 +1,9 @@
 ## How vibe optimization works (and how to use feedback)
 
 A `dspy.Vibe` module is marked *code-optimizable*. When the program is compiled with
-`dspy.GEPA`, the optimizer may rewrite this module's source (`predictors_src` /
-`forward_src`) — decomposing the task into focused predictors and plain Python — instead of
-only tuning a fixed prompt's instructions. GEPA reflects on the program's execution traces and
+`dspy.GEPA`, the optimizer may rewrite this module's source (`module_src` — the whole
+`dspy.Module` subclass) — decomposing the task into focused predictors and plain Python —
+instead of only tuning a fixed prompt's instructions. GEPA reflects on the program's execution traces and
 on the metric's textual feedback to propose better candidates, keeps the ones that score
 higher on the validation set, and writes the winner back to the persisted file.
 

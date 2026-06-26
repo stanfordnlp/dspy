@@ -496,7 +496,6 @@ class GEPA(Teleprompter):
             DspyAdapter,
             LoggerAdapter,
             enumerate_vibe_submodules,
-            join_module_code,
             make_code_key,
             vibe_internal_predictor_ids,
         )
@@ -601,10 +600,10 @@ class GEPA(Teleprompter):
         )
 
         # Build the seed candidate: instruction text per (non-vibe) predictor, plus the
-        # current source of each vibe-marked submodule's code components.
+        # current source (module_src) of each vibe-marked submodule's code component.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, vibe in vibe_submodules.items():
-            seed_candidate[make_code_key(path)] = join_module_code(vibe.predictors_src, vibe.forward_src)
+            seed_candidate[make_code_key(path)] = vibe.module_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
@@ -667,16 +666,16 @@ class GEPA(Teleprompter):
             if ctx is None:
                 continue
             vibe._auto_repair = False
-            current = (vibe.predictors_src, vibe.forward_src)
+            current = vibe.module_src
             for _ in range(max(rounds, 1)):
                 try:
                     proposed = generate(ctx, lm=self.reflection_lm, seed=current, extra_guidance=KNOWLEDGE_BASE)
-                    vibe._bind_code(*proposed)  # validate it binds before accepting
+                    vibe._bind_code(proposed)  # validate it binds before accepting
                 except Exception as e:
                     logger.warning("GEPA no-data synthesis: round failed (%s); keeping last good code.", e)
                     break
                 current = proposed
-            vibe._bind_code(*current)  # ensure the accepted (last good) code is bound
+            vibe._bind_code(current)  # ensure the accepted (last good) code is bound
 
         self._persist_vibe_results(program)
         return program
@@ -691,4 +690,4 @@ class GEPA(Teleprompter):
         for _, vibe in enumerate_vibe_submodules(program).items():
             if getattr(vibe, "_persist_to", None) is None or not hasattr(vibe, "_write_persisted"):
                 continue
-            vibe._write_persisted(vibe.predictors_src, vibe.forward_src, vibe._signature_hash())
+            vibe._write_persisted(vibe.module_src, vibe._signature_hash())

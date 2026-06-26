@@ -10,16 +10,16 @@ NOTES = (
     "the expensive REPL and use a direct Predict; only long ones pay for RLM."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {
-    "explore": dspy.RLM("report: str, question: str -> answer: str", max_iterations=10),
-    "direct": dspy.Predict("report: str, question: str -> answer: str"),
-}
 
+# === MODULE ===
+class LongReportQAModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.explore = dspy.RLM("report: str, question: str -> answer: str", max_iterations=10)
+        self.direct = dspy.Predict("report: str, question: str -> answer: str")
 
-# === FORWARD ===
-def forward(self, **inputs):
-    report = inputs["report"]
-    question = inputs["question"]
-    predictor = self.explore if len(report) > 8000 else self.direct
-    return dspy.Prediction(answer=str(predictor(report=report, question=question).answer))
+    def forward(self, **inputs):
+        report = inputs["report"]
+        question = inputs["question"]
+        predictor = self.explore if len(report) > 8000 else self.direct
+        return dspy.Prediction(answer=str(predictor(report=report, question=question).answer))

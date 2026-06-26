@@ -10,17 +10,17 @@ NOTES = (
     "extracts the number and coerces to the declared int rather than trusting the raw string."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {
-    "solve": dspy.ChainOfThought("problem: str -> answer: float"),
-}
 
+# === MODULE ===
+class MathWordProblemModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.solve = dspy.ChainOfThought("problem: str -> answer: float")
 
-# === FORWARD ===
-def forward(self, **inputs):
-    import re
+    def forward(self, **inputs):
+        import re
 
-    raw = self.solve(problem=inputs["problem"]).answer
-    match = re.search(r"-?\d+(?:\.\d+)?", str(raw))
-    value = float(match.group()) if match else 0.0
-    return dspy.Prediction(answer=round(value))  # round() of a float yields the declared int
+        raw = self.solve(problem=inputs["problem"]).answer
+        match = re.search(r"-?\d+(?:\.\d+)?", str(raw))
+        value = float(match.group()) if match else 0.0
+        return dspy.Prediction(answer=round(value))  # round() of a float yields the declared int

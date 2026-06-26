@@ -26,7 +26,7 @@ dspy/vibe/knowledge/
     iterative_refine.py  # bounded draft/critique/revise loop, controlled in Python
     long_report_qa.py    # keep RLM for a genuinely large field; route in Python
     math_word_problem.py # ChainOfThought reasons, Python coerces the numeric answer
-    slugify.py           # fully deterministic — PREDICTORS = {}, no LM
+    slugify.py           # fully deterministic — no predictors in __init__, no LM
 ```
 
 The assembled order is: every `concepts/*.md` (sorted by filename) then a "Worked examples"
@@ -53,27 +53,30 @@ TASK = "<one line: what the module does>"
 SIGNATURE = "<the parent signature string, e.g. 'invoice: str -> total_cents: int'>"
 NOTES = "<why this design is good — the lesson it teaches>"
 
-# === PREDICTORS ===
-PREDICTORS = { ... }          # exactly the module-scope predictors region
 
+# === MODULE ===
+class ExampleModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.step = dspy.Predict("...")   # assign predictors here (none if fully deterministic)
 
-# === FORWARD ===
-def forward(self, **inputs):  # exactly the forward region
-    ...
-    return dspy.Prediction(...)
+    def forward(self, **inputs):
+        ...
+        return dspy.Prediction(...)
 ```
 
 Rules for an example file:
 
 - `TASK`, `SIGNATURE`, `NOTES` must be plain string literals (adjacent-string concatenation is
   fine; no f-strings or computed values — they are read statically via `ast`).
-- The two `# === PREDICTORS ===` / `# === FORWARD ===` marker comments must appear verbatim and
-  in that order. The text between/after them becomes the `predictors_src` / `forward_src` that
-  the test binds through the real `Vibe` code path, so each region must be self-contained: it
-  may reference only `dspy`, the declared inputs, and names it defines itself (e.g. a nested
-  helper or an in-`forward` `import re`). No module-scope helpers in the regions.
-- Construction must be LM-free (just `dspy.Predict(...)` / `dspy.RLM(...)` instances) — the
-  validation test binds the example but never calls an LM.
+- The `# === MODULE ===` marker comment must appear verbatim. Everything after it is the
+  `module_src` (a single `dspy.Module` subclass) that the test binds through the real `Vibe`
+  code path, so it must be self-contained: it may reference only `dspy`, the declared inputs,
+  and names it defines itself (e.g. a nested helper in `forward` or an in-`forward` `import re`).
+  No module-scope code other than the class itself; the `import dspy` above the marker is for
+  the standalone file only (`dspy` is injected when the class is bound).
+- Construction must be LM-free (just `dspy.Predict(...)` / `dspy.RLM(...)` instances assigned in
+  `__init__`) — the validation test binds the example but never calls an LM.
 - Prefer examples that teach a *distinct* lesson (decomposition, Python-vs-LM split, output
   coercion, when RLM is right, bounded loops, fully-deterministic). Don't duplicate a lesson.
 

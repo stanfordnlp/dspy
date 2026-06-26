@@ -2,8 +2,8 @@
 
 A **signature** is a declarative spec of a predictor's input/output behavior. Field *names*
 carry meaning — `question` differs from `answer`, `sql_query` from `python_code` — so name
-fields by their semantic role. Each predictor in `PREDICTORS` should get its own tight
-sub-signature describing exactly the one job it does.
+fields by their semantic role. Each predictor you assign in `__init__` should get its own
+tight sub-signature describing exactly the one job it does.
 
 **Inline (string) signatures** are the common case. Names default to type `str`; add types
 where they matter:
@@ -22,13 +22,13 @@ returning from `forward` (LM string outputs do not always arrive as the declared
 constraint, an output format), build a `dspy.Signature` with instructions and pass that:
 
 ```python
-PREDICTORS = {
-    "classify": dspy.Predict(dspy.Signature(
+def __init__(self):
+    super().__init__()
+    self.classify = dspy.Predict(dspy.Signature(
         "text -> intent",
         "Classify the message into exactly one of: balance, transfer, dispute, other. "
         "Return only the label, lowercase, no punctuation.",
-    )),
-}
+    ))
 ```
 
 Carry over any important guidance from the task description (especially the exact allowed

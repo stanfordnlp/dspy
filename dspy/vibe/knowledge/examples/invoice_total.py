@@ -9,14 +9,14 @@ NOTES = (
     "numbers; forward() does the math in plain Python and coerces to the declared int."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {
-    "extract": dspy.Predict("invoice: str -> qty: int, unit_price_cents: int, shipping_cents: int"),
-}
 
+# === MODULE ===
+class InvoiceTotalModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.extract = dspy.Predict("invoice: str -> qty: int, unit_price_cents: int, shipping_cents: int")
 
-# === FORWARD ===
-def forward(self, **inputs):
-    e = self.extract(invoice=inputs["invoice"])
-    total = int(e.qty) * int(e.unit_price_cents) + int(e.shipping_cents)
-    return dspy.Prediction(total_cents=int(total))
+    def forward(self, **inputs):
+        e = self.extract(invoice=inputs["invoice"])
+        total = int(e.qty) * int(e.unit_price_cents) + int(e.shipping_cents)
+        return dspy.Prediction(total_cents=int(total))

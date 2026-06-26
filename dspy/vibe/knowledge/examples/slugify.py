@@ -5,18 +5,20 @@ import dspy
 TASK = "Turn a title into a URL slug."
 SIGNATURE = "title: str -> slug: str"
 NOTES = (
-    "No step needs a language model, so PREDICTORS is empty and forward() is plain Python with "
-    "a nested helper. A pure-Python module is the most reliable outcome optimization can reach."
+    "No step needs a language model, so __init__ defines no predictors and forward() is plain "
+    "Python with a nested helper. A pure-Python module is the most reliable outcome optimization "
+    "can reach."
 )
 
-# === PREDICTORS ===
-PREDICTORS = {}
 
+# === MODULE ===
+class SlugifyModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
 
-# === FORWARD ===
-def forward(self, **inputs):
-    def slugify(text):
-        cleaned = "".join(c.lower() if c.isalnum() else "-" for c in text)
-        return "-".join(part for part in cleaned.split("-") if part)
+    def forward(self, **inputs):
+        def slugify(text):
+            cleaned = "".join(c.lower() if c.isalnum() else "-" for c in text)
+            return "-".join(part for part in cleaned.split("-") if part)
 
-    return dspy.Prediction(slug=slugify(inputs["title"]))
+        return dspy.Prediction(slug=slugify(inputs["title"]))

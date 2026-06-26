@@ -120,20 +120,19 @@ def _parseable_type_str(annotation: Any) -> str | None:
 class CodegenSignature(dspy.Signature):
     """Author the implementation of a dspy.Vibe module from a user-declared Signature.
 
-    Output TWO Python source strings:
+    Output ONE Python source string, ``module_src``, that defines a single
+    ``dspy.Module`` subclass implementing the signature:
 
-    - ``predictors_src``: module-scope code that defines a single dict named
-      ``PREDICTORS`` mapping attribute names to ``dspy.Predict`` /
-      ``dspy.ChainOfThought`` / ``dspy.ReAct`` instances. Use a predictor ONLY
-      for a step that genuinely needs a language model (extraction,
-      classification, generation, open-ended reasoning). If the whole task is
-      deterministic, emit ``PREDICTORS = {}`` and do all the work in Python.
-    - ``forward_src``: a single ``def forward(self, **inputs):`` whose body may
-      call the predictors (via ``self.<name>(...)``) AND/OR run arbitrary
-      deterministic Python — parsing, arithmetic, regex, string and
-      data-structure manipulation, and small nested ``def`` helpers defined
-      inside ``forward`` — and returns ``dspy.Prediction(<output fields>=...)``
-      matching the parent signature.
+    - ``def __init__(self):`` calls ``super().__init__()`` and assigns each
+      predictor it needs to an attribute (e.g. ``self.extract =
+      dspy.Predict("...")``). Define a predictor ONLY for a step that genuinely
+      needs a language model (extraction, classification, generation, open-ended
+      reasoning). If the whole task is deterministic, define no predictors.
+    - ``def forward(self, **inputs):`` calls those predictors via
+      ``self.<name>(...)`` AND/OR runs arbitrary deterministic Python — parsing,
+      arithmetic, regex, string and data-structure manipulation, and small nested
+      ``def`` helpers defined inside ``forward`` — and returns
+      ``dspy.Prediction(<output fields>=...)`` matching the parent signature.
 
     You MUST follow the rules and patterns in ``primitives_catalog`` exactly.
     In particular: every predictor call returns a ``dspy.Prediction`` — read
@@ -143,7 +142,7 @@ class CodegenSignature(dspy.Signature):
     declared output type (``int(...)``, ``float(...)``, etc.) before returning.
 
     When ``seed_implementation`` is not ``'(none)'``, treat it as the starting
-    point — it is an existing implementation (possibly hand-edited by the user)
+    point — it is an existing module class (possibly hand-edited by the user)
     that must be adapted to the *current* signature. Preserve its structure,
     helper logic, and intent; change only what the current signature requires.
     """
@@ -158,25 +157,23 @@ class CodegenSignature(dspy.Signature):
         desc="Catalog of DSPy primitives and conventions the generated code should follow."
     )
     seed_implementation: str = dspy.InputField(
-        desc="An existing implementation to adapt (the current `predictors_src` and "
-        "`forward_src`), or '(none)' for a fresh generation. When not '(none)', "
-        "preserve its structure and intent and change only what the current "
-        "signature requires."
+        desc="An existing module class to adapt (the current `module_src`), or '(none)' for a "
+        "fresh generation. When not '(none)', preserve its structure and intent and change only "
+        "what the current signature requires."
     )
-    predictors_src: str = dspy.OutputField(
-        desc="Python source defining `PREDICTORS = {...}` at module scope (use `PREDICTORS = {}` when no LM call is needed)."
-    )
-    forward_src: str = dspy.OutputField(
-        desc="Python source defining `def forward(self, **inputs):` that returns dspy.Prediction(...). May contain deterministic Python and nested helpers."
+    module_src: str = dspy.OutputField(
+        desc="Python source defining ONE `dspy.Module` subclass (with `__init__` assigning predictors "
+        "and a `forward(self, **inputs)` returning dspy.Prediction(...)). No imports; `dspy` is in scope."
     )
 
 
 class RepairSignature(dspy.Signature):
     """Fix a broken dspy.Vibe implementation.
 
-    The user (or a previous codegen run) produced a ``predictors_src`` /
-    ``forward_src`` pair that either fails to bind or raises at runtime. Your
-    job is to produce a corrected pair that satisfies the parent Signature.
+    The user (or a previous codegen run) produced a ``module_src`` (a single
+    ``dspy.Module`` subclass) that either fails to bind or raises at runtime.
+    Your job is to produce a corrected module class that satisfies the parent
+    Signature.
 
     Preserve as much of the broken implementation's structure and intent as
     possible — touch only what's needed to make the error go away. Honor the
@@ -205,19 +202,16 @@ class RepairSignature(dspy.Signature):
     primitives_catalog: str = dspy.InputField(
         desc="Catalog of DSPy primitives and conventions the generated code should follow."
     )
-    broken_predictors_src: str = dspy.InputField(desc="The current (broken) predictors_src.")
-    broken_forward_src: str = dspy.InputField(desc="The current (broken) forward_src.")
+    broken_module_src: str = dspy.InputField(desc="The current (broken) module class source.")
     failure_kind: str = dspy.InputField(
         desc="Either 'bind' (broken at import/exec) or 'runtime' (raised while forward() was running)."
     )
     error_text: str = dspy.InputField(
         desc="The exception class and message (and a short traceback when available)."
     )
-    predictors_src: str = dspy.OutputField(
-        desc="Corrected Python source defining `PREDICTORS = {...}` at module scope."
-    )
-    forward_src: str = dspy.OutputField(
-        desc="Corrected Python source defining `def forward(self, ...)` returning dspy.Prediction(...)."
+    module_src: str = dspy.OutputField(
+        desc="Corrected Python source defining ONE `dspy.Module` subclass (with `__init__` and "
+        "`forward(self, **inputs)` returning dspy.Prediction(...))."
     )
 
 
@@ -285,30 +279,21 @@ def generate(
     ctx: VibeContext,
     *,
     lm: dspy.LM | None = None,
-    seed: tuple[str, str] | None = None,
+    seed: str | None = None,
     extra_guidance: str | None = None,
-) -> tuple[str, str]:
-    """Run the codegen LM against ``ctx`` and return ``(predictors_src, forward_src)``.
+) -> str:
+    """Run the codegen LM against ``ctx`` and return a ``module_src`` (a dspy.Module subclass).
 
-    When ``seed`` is given as ``(predictors_src, forward_src)``, the codegen LM is
-    asked to *adapt* that existing implementation to the current signature rather
-    than author one from scratch. Used to carry an existing implementation forward
-    (e.g. the RLM baseline) when synthesizing better code.
+    When ``seed`` is given (an existing ``module_src``), the codegen LM is asked to *adapt*
+    that existing module class to the current signature rather than author one from scratch.
+    Used to carry an existing implementation forward (e.g. the RLM baseline) when synthesizing
+    better code.
 
     ``extra_guidance`` is appended to the primitives catalog — used to feed the
     good/bad-behavior knowledge base into the code-synthesis path.
     """
     predictor = dspy.Predict(CodegenSignature)
-    if seed is not None:
-        seed_predictors, seed_forward = seed
-        seed_text = (
-            "# Existing predictors_src:\n"
-            + seed_predictors.strip()
-            + "\n\n# Existing forward_src:\n"
-            + seed_forward.strip()
-        )
-    else:
-        seed_text = "(none)"
+    seed_text = seed.strip() if seed else "(none)"
     catalog = PRIMITIVES_CATALOG + (f"\n\n{extra_guidance}" if extra_guidance else "")
     inputs = dict(
         signature_spec=ctx.render_signature_spec(),
@@ -322,31 +307,29 @@ def generate(
     else:
         out = predictor(**inputs)
 
-    return _strip_code_fences(out.predictors_src), _strip_code_fences(out.forward_src)
+    return _strip_code_fences(out.module_src)
 
 
 def repair(
     ctx: VibeContext,
     *,
-    broken: tuple[str, str],
+    broken: str,
     failure_kind: str,
     error_text: str,
     lm: dspy.LM | None = None,
-) -> tuple[str, str]:
-    """Ask the codegen LM to fix a broken ``(predictors_src, forward_src)`` pair.
+) -> str:
+    """Ask the codegen LM to fix a broken ``module_src`` (a dspy.Module subclass).
 
     ``failure_kind`` is ``'bind'`` (the code didn't import/exec cleanly) or
     ``'runtime'`` (the code bound but ``forward()`` raised). ``error_text``
     should include the exception class and message.
     """
-    broken_predictors, broken_forward = broken
     predictor = dspy.Predict(RepairSignature)
     inputs = dict(
         signature_spec=ctx.render_signature_spec(),
         context_blurb=ctx.render_context_blurb(),
         primitives_catalog=PRIMITIVES_CATALOG,
-        broken_predictors_src=broken_predictors.strip(),
-        broken_forward_src=broken_forward.strip(),
+        broken_module_src=(broken or "").strip(),
         failure_kind=failure_kind,
         error_text=error_text,
     )
@@ -356,4 +339,4 @@ def repair(
     else:
         out = predictor(**inputs)
 
-    return _strip_code_fences(out.predictors_src), _strip_code_fences(out.forward_src)
+    return _strip_code_fences(out.module_src)
