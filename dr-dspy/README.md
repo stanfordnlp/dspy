@@ -68,9 +68,8 @@ Prefer clean boundaries over compatibility shims. This package is early enough
 that breaking changes are acceptable when they make the structure clearer.
 
 Use Postgres as the default event store. `DATABASE_URL` is the standard
-configuration key, and the repo-local `.envrc` sets it to
-`postgresql:///dr_dspy` when it is otherwise unset. SQLite remains available via
-`--event-store sqlite`.
+configuration key, and scripts load the package-local `.env` file before writer
+construction. SQLite remains available via `--event-store sqlite`.
 
 Keep mock infrastructure parallel to, not inside, experiment scripts. The main
 script should stay readable as the real experiment; the mock script should prove
@@ -78,10 +77,10 @@ that the same flow can run with prepared train/dev data and a prepared LM.
 
 ## Local Setup
 
-From the repository root, allow direnv once:
+Create a package-local `.env` from the example:
 
 ```sh
-direnv allow .
+cp .env.example .env
 ```
 
 The default local database URL is:

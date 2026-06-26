@@ -12,6 +12,7 @@ dependencies = [
     "marimo[recommended]>=0.23.11",
     "psycopg>=3.3.4",
     "pytest>=8.4.2",
+    "python-dotenv>=1.1.0",
     "ruff>=0.15.10",
     "ty>=0.0.54",
     "typer>=0.26.7",

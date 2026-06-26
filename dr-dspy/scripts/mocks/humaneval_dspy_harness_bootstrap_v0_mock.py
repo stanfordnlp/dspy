@@ -13,7 +13,7 @@ import typer
 import dspy
 from dr_dspy.event_log import DATABASE_URL_ENV, EventStore
 from dr_dspy.lm_logging import LoggingCallableLM
-from dr_dspy.runtime import configure_multiprocessing
+from dr_dspy.runtime import configure_multiprocessing, load_env_file
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[1]
 if str(SCRIPT_ROOT) not in sys.path:
@@ -160,6 +160,7 @@ def main(
         int, typer.Option("--max-labeled-demos")
     ] = DEFAULT_MAX_LABELED_DEMOS,
 ) -> None:
+    load_env_file()
     logging.getLogger("dspy").setLevel(logging.WARNING)
     config = HarnessConfig(
         event_store=event_store,

@@ -19,6 +19,13 @@ REDACTED_VALUE = "<redacted>"
 __all__ = ["REDACTED_VALUE", "build_run_metadata"]
 
 
+class FieldSignature(pydantic.BaseModel):
+    name: str
+    type: type
+    role: Any
+    description: str | None = None
+
+
 def _redact_argv(
     argv: Sequence[str], *, redacted_options: Sequence[str]
 ) -> list[str]:

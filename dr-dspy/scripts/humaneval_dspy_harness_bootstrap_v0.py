@@ -8,6 +8,7 @@ import sys
 import traceback
 import uuid
 from collections.abc import Mapping
+from enum import Enum
 from typing import Annotated, Any, Protocol, cast
 
 import typer
@@ -29,8 +30,8 @@ from dr_dspy.event_log import (
 )
 from dr_dspy.flow import current_flow, event_flow
 from dr_dspy.lm_logging import LoggingLM
-from dr_dspy.run_metadata import build_run_metadata
-from dr_dspy.runtime import configure_multiprocessing
+from dr_dspy.run_metadata import FieldSignature, build_run_metadata
+from dr_dspy.runtime import configure_multiprocessing, load_env_file
 from dspy.signatures.signature import make_signature
 from dspy.teleprompt import BootstrapFewShot
 
@@ -47,14 +48,29 @@ DEFAULT_SUBPROCESS_TIMEOUT = 15.0
 DEFAULT_SEED = 0
 DEFAULT_MAX_BOOTSTRAPPED_DEMOS = 4
 DEFAULT_MAX_LABELED_DEMOS = 0
+DATASET_NAME = "evalplus/humanevalplus"
+DATASET_SPLIT = "test"
+
+SOLVE_NAME = "Solve"
+SOLVE_FIELDS = [
+    FieldSignature(name="prompt", type=str, role=dspy.InputField()),
+    FieldSignature(name="code", type=dspy.Code, role=dspy.OutputField()),
+]
 SOLVE_INSTRUCTIONS = (
     "Write a self-contained Python function that satisfies the prompt.\n\n"
     "Include any imports inside the function or at the top. Do not include "
     "tests or example calls. Define exactly the function named in the prompt."
 )
+
 MAX_TRACE_SIZE = 10_000
 DISPLAY_TABLE_ROWS = 10
 ZERO_DEMO_EXIT_CODE = 3
+
+
+class FlowStages(str, Enum):
+    EVAL_BASELINE = "eval_baseline"
+    OPTIMIZE = "optimize"
+    EVAL_OPTIMIZED = "eval_optimized"
 
 
 class HarnessConfig(BaseModel):
@@ -74,15 +90,14 @@ class HarnessConfig(BaseModel):
     max_labeled_demos: StrictInt = DEFAULT_MAX_LABELED_DEMOS
 
 
-# Signature and Metric
+# ----------------------------------------
+# --- Signature and Metric
+# ----------------------------------------
 
 Solve = make_signature(
-    {
-        "prompt": (str, dspy.InputField()),
-        "code": (dspy.Code, dspy.OutputField()),
-    },
+    {field.name: (field.type, field.role) for field in SOLVE_FIELDS},
     instructions=SOLVE_INSTRUCTIONS,
-    signature_name="Solve",
+    signature_name=SOLVE_NAME,
 )
 
 
@@ -118,7 +133,9 @@ class HumanEvalMetric:
         return result.score >= 1.0
 
 
-# HumanEval Dataset
+# ----------------------------------------
+# --- HumanEval Dataset
+# ----------------------------------------
 
 HumanEvalRow = Mapping[str, Any]
 
@@ -137,7 +154,7 @@ def build_humaneval_dataset(
 ) -> tuple[list[dspy.Example], list[dspy.Example]]:
     dataset = cast(
         HumanEvalDataset,
-        load_dataset("evalplus/humanevalplus", split="test"),
+        load_dataset(DATASET_NAME, split=DATASET_SPLIT),
     )
     indices = list(range(len(dataset)))
     random.Random(seed).shuffle(indices)
@@ -154,7 +171,9 @@ def build_humaneval_dataset(
     return examples[:train_size], examples[train_size : train_size + dev_size]
 
 
-# Experiment Flow
+# ----------------------------------------
+# --- Experiment Flow
+# ----------------------------------------
 
 
 def build_humaneval_evaluator(
@@ -217,12 +236,12 @@ def run_humaneval_bootstrap_flow(
             devset, metric=metric, num_threads=config.num_threads
         )
 
-        with event_flow(writer, "eval_baseline"):
+        with event_flow(writer, FlowStages.EVAL_BASELINE):
             baseline = evaluate_program_with_async_runner(
                 evaluator, dspy.Predict(Solve)
             )
 
-        with event_flow(writer, "optimize"):
+        with event_flow(writer, FlowStages.OPTIMIZE):
             optimizer = BootstrapFewShot(
                 metric=metric,
                 max_bootstrapped_demos=config.max_bootstrapped_demos,
@@ -240,7 +259,7 @@ def run_humaneval_bootstrap_flow(
                     file=sys.stderr,
                 )
 
-        with event_flow(writer, "eval_optimized"):
+        with event_flow(writer, FlowStages.EVAL_OPTIMIZED):
             optimized = evaluate_program_with_async_runner(evaluator, compiled)
 
         try:
@@ -270,7 +289,9 @@ def run_humaneval_bootstrap_flow(
         return 1
 
 
-# Real Run Setup
+# ----------------------------------------
+# --- Run Setup
+# ----------------------------------------
 
 
 def build_harness_writer(config: HarnessConfig, *, run_id: str) -> EventWriter:
@@ -317,7 +338,9 @@ def run_real_humaneval_bootstrap(config: HarnessConfig) -> int:
         writer.close()
 
 
-# CLI
+# ----------------------------------------
+# --- CLI
+# ----------------------------------------
 
 
 def main(
@@ -358,6 +381,7 @@ def main(
         int, typer.Option("--max-labeled-demos")
     ] = DEFAULT_MAX_LABELED_DEMOS,
 ) -> None:
+    load_env_file()
     logging.getLogger("dspy").setLevel(logging.WARNING)
     config = HarnessConfig(
         event_store=event_store,
