@@ -63,14 +63,20 @@ DEFAULT_MAX_BOOTSTRAPPED_DEMOS = 4
 DEFAULT_MAX_LABELED_DEMOS = 0
 PAYLOAD_MAX_BYTES = 256 * 1024
 REPR_TRUNCATE = 4096
-SANITIZE_KEYS = frozenset({"api_key", "api_base", "base_url", "model_list", "authorization"})
+SANITIZE_KEYS = frozenset(
+    {"api_key", "api_base", "base_url", "model_list", "authorization"}
+)
 
 # --------------------------------------------------------------------------- #
 # Context vars: current flow and call-id parent chain
 # --------------------------------------------------------------------------- #
 
-_current_flow: contextvars.ContextVar[str] = contextvars.ContextVar("dspy_flow", default="unknown")
-_current_call_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("dspy_call_id", default=None)
+_current_flow: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "dspy_flow", default="unknown"
+)
+_current_call_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "dspy_call_id", default=None
+)
 
 # Module-level writer binding so the metric (which is not a method) can log.
 _writer: SQLiteWriter | None = None
@@ -105,7 +111,10 @@ def _sanitize(kwargs: dict[str, Any] | None) -> dict[str, Any]:
     """Strip credential-like keys from an LM kwargs dict before logging."""
     if not kwargs:
         return {}
-    return {k: ("<redacted>" if k.lower() in SANITIZE_KEYS else v) for k, v in kwargs.items()}
+    return {
+        k: ("<redacted>" if k.lower() in SANITIZE_KEYS else v)
+        for k, v in kwargs.items()
+    }
 
 
 def _signature_summary(sig_cls: type[dspy.Signature]) -> dict[str, Any]:
@@ -171,12 +180,18 @@ def _to_jsonable_inner(x: Any, depth: int = 0) -> Any:
         except Exception:
             return repr(x)[:REPR_TRUNCATE]
     # Coroutines / async iterators / generators — never await
-    if inspect.iscoroutine(x) or inspect.isasyncgen(x) or inspect.isgenerator(x):
+    if (
+        inspect.iscoroutine(x)
+        or inspect.isasyncgen(x)
+        or inspect.isgenerator(x)
+    ):
         return f"<{type(x).__name__}>"
     # dotdict and similar mapping-like
     if hasattr(x, "__dict__") and not callable(x):
         try:
-            return {k: _to_jsonable_inner(v, depth + 1) for k, v in vars(x).items()}
+            return {
+                k: _to_jsonable_inner(v, depth + 1) for k, v in vars(x).items()
+            }
         except Exception:
             return repr(x)[:REPR_TRUNCATE]
     return repr(x)[:REPR_TRUNCATE]
@@ -240,7 +255,9 @@ class SQLiteWriter:
         self.path = os.path.abspath(path)
         self.run_id = run_id
         self._q: queue.Queue[dict[str, Any] | object] = queue.Queue()
-        self._thread = threading.Thread(target=self._run, name="sqlite-writer", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="sqlite-writer", daemon=True
+        )
         self._thread.start()
         self._closed = False
 
@@ -258,7 +275,9 @@ class SQLiteWriter:
     ) -> None:
         """Enqueue an event. Non-blocking, never raises."""
         try:
-            payload_json = json.dumps(to_jsonable(payload), ensure_ascii=False, default=repr)
+            payload_json = json.dumps(
+                to_jsonable(payload), ensure_ascii=False, default=repr
+            )
         except Exception as e:
             payload_json = json.dumps({"_serialize_error": repr(e)})
         record: dict[str, Any] = {
@@ -326,7 +345,10 @@ class SQLiteWriter:
                             ],
                         )
                 except Exception as e:
-                    print(f"[SQLiteWriter._run] insert failed: {e!r}", file=sys.stderr)
+                    print(
+                        f"[SQLiteWriter._run] insert failed: {e!r}",
+                        file=sys.stderr,
+                    )
         finally:
             with contextlib.suppress(Exception):
                 conn.close()
@@ -355,12 +377,19 @@ class SQLiteCallback(BaseCallback):
 
     # ----- helpers ----- #
 
-    def _safe_log_start(self, event_type: str, call_id: str, payload: dict[str, Any]) -> None:
+    def _safe_log_start(
+        self, event_type: str, call_id: str, payload: dict[str, Any]
+    ) -> None:
         try:
             parent = _current_call_id.get()
             token = _current_call_id.set(call_id)
             self._tokens[call_id] = token
-            self._writer.put_event(event_type, payload=payload, call_id=call_id, parent_call_id=parent)
+            self._writer.put_event(
+                event_type,
+                payload=payload,
+                call_id=call_id,
+                parent_call_id=parent,
+            )
         except Exception as e:
             print(f"[SQLiteCallback {event_type}] {e!r}", file=sys.stderr)
 
@@ -378,7 +407,9 @@ class SQLiteCallback(BaseCallback):
             if exception is not None:
                 payload["exception"] = repr(exception)
                 err = repr(exception)
-            self._writer.put_event(event_type, payload=payload, call_id=call_id, error=err)
+            self._writer.put_event(
+                event_type, payload=payload, call_id=call_id, error=err
+            )
             if token is not None:
                 _current_call_id.reset(token)
         except Exception as e:
@@ -386,74 +417,116 @@ class SQLiteCallback(BaseCallback):
 
     # ----- module ----- #
 
-    def on_module_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_module_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "module.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_module_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_module_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("module.end", call_id, outputs, exception)
 
     # ----- lm ----- #
 
-    def on_lm_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_lm_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "lm.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_lm_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_lm_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("lm.end", call_id, outputs, exception)
 
     # ----- adapter format ----- #
 
-    def on_adapter_format_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_adapter_format_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "adapter.format.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_adapter_format_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_adapter_format_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("adapter.format.end", call_id, outputs, exception)
 
     # ----- adapter parse ----- #
 
-    def on_adapter_parse_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_adapter_parse_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "adapter.parse.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_adapter_parse_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_adapter_parse_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("adapter.parse.end", call_id, outputs, exception)
 
     # ----- tool ----- #
 
-    def on_tool_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_tool_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "tool.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_tool_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_tool_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("tool.end", call_id, outputs, exception)
 
     # ----- evaluate ----- #
 
-    def on_evaluate_start(self, call_id: str, instance: Any, inputs: dict[str, Any]) -> None:
+    def on_evaluate_start(
+        self, call_id: str, instance: Any, inputs: dict[str, Any]
+    ) -> None:
         self._safe_log_start(
             "evaluate.start",
             call_id,
             {"instance": to_jsonable(instance), "inputs": to_jsonable(inputs)},
         )
 
-    def on_evaluate_end(self, call_id: str, outputs: Any, exception: BaseException | None = None) -> None:
+    def on_evaluate_end(
+        self,
+        call_id: str,
+        outputs: Any,
+        exception: BaseException | None = None,
+    ) -> None:
         self._safe_log_end("evaluate.end", call_id, outputs, exception)
 
 
@@ -504,7 +577,9 @@ class LoggingLM(dspy.LM):
         super().__init__(model, **kwargs)
         self._log = log
 
-    def _log_request(self, req_id: str, messages: Any, kwargs: dict[str, Any]) -> None:
+    def _log_request(
+        self, req_id: str, messages: Any, kwargs: dict[str, Any]
+    ) -> None:
         try:
             self._log(
                 "lm.request",
@@ -521,7 +596,11 @@ class LoggingLM(dspy.LM):
         try:
             self._log(
                 "lm.response",
-                payload={"req_id": req_id, "dt": dt, "response": to_jsonable(resp)},
+                payload={
+                    "req_id": req_id,
+                    "dt": dt,
+                    "response": to_jsonable(resp),
+                },
             )
         except Exception as e:
             print(f"[LoggingLM log_response] {e!r}", file=sys.stderr)
@@ -536,7 +615,9 @@ class LoggingLM(dspy.LM):
         except Exception as e:
             print(f"[LoggingLM log_error] {e!r}", file=sys.stderr)
 
-    def forward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    def forward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         req_id = uuid.uuid4().hex
         t0 = time.time()
         self._log_request(req_id, messages, kwargs)
@@ -548,12 +629,16 @@ class LoggingLM(dspy.LM):
         self._log_response(req_id, resp, time.time() - t0)
         return resp
 
-    async def aforward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    async def aforward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         req_id = uuid.uuid4().hex
         t0 = time.time()
         self._log_request(req_id, messages, kwargs)
         try:
-            resp = await super().aforward(prompt=prompt, messages=messages, **kwargs)
+            resp = await super().aforward(
+                prompt=prompt, messages=messages, **kwargs
+            )
         except BaseException as e:
             self._log_error(req_id, e, time.time() - t0)
             raise
@@ -582,13 +667,19 @@ class CallableLM(dspy.BaseLM):
             output = self._fn(msg_list, kwargs)
         except Exception as e:
             output = {"_error": repr(e)}
-        self.calls.append({"messages": msg_list, "kwargs": dict(kwargs), "output": output})
+        self.calls.append(
+            {"messages": msg_list, "kwargs": dict(kwargs), "output": output}
+        )
         return _wrap_provider_response(output)
 
-    def forward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    def forward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         return self._serve(messages, kwargs)
 
-    async def aforward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    async def aforward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         return self._serve(messages, kwargs)
 
 
@@ -605,7 +696,9 @@ class LoggingCallableLM(CallableLM):
         super().__init__(fn, model=model)
         self._log = log
 
-    def forward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    def forward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         req_id = uuid.uuid4().hex
         t0 = time.time()
         try:
@@ -648,7 +741,9 @@ class LoggingCallableLM(CallableLM):
             print(f"[LoggingCallableLM resp] {e!r}", file=sys.stderr)
         return resp
 
-    async def aforward(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> Any:
+    async def aforward(
+        self, prompt: Any = None, messages: Any = None, **kwargs: Any
+    ) -> Any:
         return self.forward(prompt=prompt, messages=messages, **kwargs)
 
 
@@ -671,9 +766,13 @@ def _worker(
         import signal
 
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(resource.RLIMIT_AS, (mem_limit_bytes, mem_limit_bytes))
+            resource.setrlimit(
+                resource.RLIMIT_AS, (mem_limit_bytes, mem_limit_bytes)
+            )
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit_seconds, cpu_limit_seconds))
+            resource.setrlimit(
+                resource.RLIMIT_CPU, (cpu_limit_seconds, cpu_limit_seconds)
+            )
 
         def _alarm_handler(_sig: int, _frame: Any) -> None:
             raise TimeoutError("CPU alarm fired")
@@ -713,7 +812,14 @@ def _run_in_subprocess(
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
         target=_worker,
-        args=(code, test, entry_point, mem_limit_bytes, cpu_limit_seconds, child_conn),
+        args=(
+            code,
+            test,
+            entry_point,
+            mem_limit_bytes,
+            cpu_limit_seconds,
+            child_conn,
+        ),
     )
     proc.start()
     child_conn.close()  # parent only reads
@@ -782,7 +888,9 @@ def _set_subprocess_timeout(seconds: float) -> None:
     _subprocess_timeout = seconds
 
 
-def humaneval_metric(example: dspy.Example, pred: Any, trace: list[Any] | None = None) -> float | bool:
+def humaneval_metric(
+    example: dspy.Example, pred: Any, trace: list[Any] | None = None
+) -> float | bool:
     """Score one (example, prediction) pair by sandboxed test execution.
 
     Returns a float in {0.0, 1.0} when called by Evaluate (``trace is None``),
@@ -842,7 +950,9 @@ def build_dataset(
     """Load HumanEval+ and produce (trainset, devset). Requires the ``datasets`` lib."""
     from datasets import load_dataset  # type: ignore[import-not-found]
 
-    ds = cast(HumanEvalDataset, load_dataset("evalplus/humanevalplus", split="test"))
+    ds = cast(
+        HumanEvalDataset, load_dataset("evalplus/humanevalplus", split="test")
+    )
     indices = list(range(len(ds)))
     random.Random(seed).shuffle(indices)
     rows = [ds[i] for i in indices]
@@ -863,7 +973,9 @@ def build_dataset(
 # --------------------------------------------------------------------------- #
 
 
-def _run_metadata(args: argparse.Namespace, *, model_id: str) -> dict[str, Any]:
+def _run_metadata(
+    args: argparse.Namespace, *, model_id: str
+) -> dict[str, Any]:
     import dspy as _dspy
 
     return {
@@ -975,13 +1087,17 @@ def _make_mock_dataset() -> tuple[list[dspy.Example], list[dspy.Example]]:
             "task_id": "mock/add",
             "prompt": "def add(a, b):\n    'return a + b'\n",
             "entry_point": "add",
-            "test": ("def check(candidate):\n    assert candidate(1,2)==3\n    assert candidate(-1,1)==0\n"),
+            "test": (
+                "def check(candidate):\n    assert candidate(1,2)==3\n    assert candidate(-1,1)==0\n"
+            ),
         },
         {
             "task_id": "mock/sub",
             "prompt": "def sub(a, b):\n    'return a - b'\n",
             "entry_point": "sub",
-            "test": ("def check(candidate):\n    assert candidate(3,2)==1\n    assert candidate(0,5)==-5\n"),
+            "test": (
+                "def check(candidate):\n    assert candidate(3,2)==1\n    assert candidate(0,5)==-5\n"
+            ),
         },
         {
             "task_id": "mock/mul",
@@ -1001,7 +1117,9 @@ def _make_mock_dataset() -> tuple[list[dspy.Example], list[dspy.Example]]:
     return train, dev
 
 
-def _mock_solver(messages: list[dict[str, Any]], _kwargs: dict[str, Any]) -> dict[str, str]:
+def _mock_solver(
+    messages: list[dict[str, Any]], _kwargs: dict[str, Any]
+) -> dict[str, str]:
     """Heuristic mock LM: read entry_point from the user prompt, emit matching code."""
     text = "\n".join(str(m.get("content", "")) for m in messages)
     body_map = {
@@ -1027,17 +1145,27 @@ def _run_flows(args: argparse.Namespace, *, mock: bool) -> int:
     try:
         cb = SQLiteCallback(writer)
         if mock:
-            lm: dspy.BaseLM = LoggingCallableLM(_mock_solver, log=writer.put_event)
+            lm: dspy.BaseLM = LoggingCallableLM(
+                _mock_solver, log=writer.put_event
+            )
         else:
             lm = LoggingLM(args.model, log=writer.put_event, cache=False)
-        dspy.configure(lm=lm, callbacks=[cb], track_usage=True, max_trace_size=10_000)
+        dspy.configure(
+            lm=lm, callbacks=[cb], track_usage=True, max_trace_size=10_000
+        )
 
-        writer.put_event("run.start", payload=_run_metadata(args, model_id=lm.model))
+        writer.put_event(
+            "run.start", payload=_run_metadata(args, model_id=lm.model)
+        )
 
         if mock:
             trainset, devset = _make_mock_dataset()
         else:
-            trainset, devset = build_dataset(seed=args.seed, train_size=args.train_size, dev_size=args.dev_size)
+            trainset, devset = build_dataset(
+                seed=args.seed,
+                train_size=args.train_size,
+                dev_size=args.dev_size,
+            )
 
         evaluator = _build_eval(devset, args.num_threads)
 
@@ -1097,7 +1225,9 @@ def _run_flows(args: argparse.Namespace, *, mock: bool) -> int:
     except Exception as e:
         traceback.print_exc()
         with contextlib.suppress(Exception):
-            writer.put_event("run.error", payload={"error": repr(e)}, error=repr(e))
+            writer.put_event(
+                "run.error", payload={"error": repr(e)}, error=repr(e)
+            )
         rc = 1
     finally:
         _bind_writer(None)
@@ -1160,10 +1290,16 @@ def test_metric_scoring() -> str:
         ),
     ]
     for name, code, test, ep, expected_score, expected_err_sub in cases:
-        score, err = _run_in_subprocess(code=code, test=test, entry_point=ep, timeout=5.0)
-        assert score == expected_score, f"case {name}: score {score} != {expected_score}"
+        score, err = _run_in_subprocess(
+            code=code, test=test, entry_point=ep, timeout=5.0
+        )
+        assert score == expected_score, (
+            f"case {name}: score {score} != {expected_score}"
+        )
         if expected_err_sub is not None:
-            assert err is not None and expected_err_sub in err, f"case {name}: err {err!r} missing {expected_err_sub!r}"
+            assert err is not None and expected_err_sub in err, (
+                f"case {name}: err {err!r} missing {expected_err_sub!r}"
+            )
     # Timeout case
     t0 = time.time()
     score, err = _run_in_subprocess(
@@ -1182,7 +1318,9 @@ def test_metric_scoring() -> str:
 
 def test_to_jsonable_robustness() -> str:
     # Example / Prediction
-    ex = dspy.Example(question="why?", answer="because").with_inputs("question")
+    ex = dspy.Example(question="why?", answer="because").with_inputs(
+        "question"
+    )
     assert isinstance(to_jsonable(ex), dict)
     pred = dspy.Prediction(code="x")
     assert isinstance(to_jsonable(pred), dict)
@@ -1192,7 +1330,10 @@ def test_to_jsonable_robustness() -> str:
     # LM instance (no network)
     lm = dspy.LM("openai/gpt-4o-mini")
     lm_json = to_jsonable(lm)
-    assert isinstance(lm_json, dict) and lm_json.get("model") == "openai/gpt-4o-mini"
+    assert (
+        isinstance(lm_json, dict)
+        and lm_json.get("model") == "openai/gpt-4o-mini"
+    )
 
     # Coroutine — must NOT be awaited
     async def _coro() -> int:
@@ -1250,7 +1391,9 @@ def test_bootstrap_selects_passing_demos() -> str:
         ]
     ]
 
-    def solver(messages: list[dict[str, Any]], _kw: dict[str, Any]) -> dict[str, str]:
+    def solver(
+        messages: list[dict[str, Any]], _kw: dict[str, Any]
+    ) -> dict[str, str]:
         text = "\n".join(str(m.get("content", "")) for m in messages)
         if re.search(r"\bdef\s+add\s*\(", text):
             return {"code": "def add(a, b):\n    return a + b\n"}
@@ -1261,14 +1404,20 @@ def test_bootstrap_selects_passing_demos() -> str:
         return {"code": "def f():\n    return None\n"}
 
     # Use a tiny SQLite writer just so metric.score events are accepted
-    writer = SQLiteWriter(":memory:" if False else "./.test_runs.db", run_id=uuid.uuid4().hex)
+    writer = SQLiteWriter(
+        ":memory:" if False else "./.test_runs.db", run_id=uuid.uuid4().hex
+    )
     _bind_writer(writer)
     _set_subprocess_timeout(5.0)
     try:
         lm = LoggingCallableLM(solver, log=writer.put_event)
         dspy.configure(lm=lm, callbacks=[])
         student = dspy.Predict(Solve)
-        opt = BootstrapFewShot(metric=humaneval_metric, max_bootstrapped_demos=4, max_labeled_demos=0)
+        opt = BootstrapFewShot(
+            metric=humaneval_metric,
+            max_bootstrapped_demos=4,
+            max_labeled_demos=0,
+        )
         compiled = opt.compile(student=student, trainset=train)
         preds = compiled.named_predictors()
         assert len(preds) == 1, f"expected 1 predictor, got {len(preds)}"
@@ -1280,9 +1429,13 @@ def test_bootstrap_selects_passing_demos() -> str:
         # Demo prompts should all be from the trainset
         train_prompts = {ex.prompt for ex in train}
         for d in demos:
-            assert d.prompt in train_prompts, f"demo not from trainset: {d.prompt!r}"
+            assert d.prompt in train_prompts, (
+                f"demo not from trainset: {d.prompt!r}"
+            )
         # LM should have been called at least once per training example
-        assert len(lm.calls) >= len(train), f"lm.calls={len(lm.calls)} < trainset={len(train)}"
+        assert len(lm.calls) >= len(train), (
+            f"lm.calls={len(lm.calls)} < trainset={len(train)}"
+        )
         return f"{len(demos)} demos selected (lm calls: {len(lm.calls)})"
     finally:
         _bind_writer(None)
@@ -1299,7 +1452,9 @@ def test_logging_lm_captures_payload() -> str:
     _bind_writer(writer)
     try:
 
-        def solver(_msgs: list[dict[str, Any]], _kw: dict[str, Any]) -> dict[str, str]:
+        def solver(
+            _msgs: list[dict[str, Any]], _kw: dict[str, Any]
+        ) -> dict[str, str]:
             return {"code": "def f():\n    return 1\n"}
 
         lm = LoggingCallableLM(solver, log=writer.put_event)
@@ -1318,14 +1473,18 @@ def test_logging_lm_captures_payload() -> str:
             conn.close()
         reqs = [json.loads(p) for et, p in rows if et == "lm.request"]
         resps = [json.loads(p) for et, p in rows if et == "lm.response"]
-        assert len(reqs) >= 1 and len(resps) >= 1, f"requests={len(reqs)} responses={len(resps)}"
+        assert len(reqs) >= 1 and len(resps) >= 1, (
+            f"requests={len(reqs)} responses={len(resps)}"
+        )
         assert reqs[0]["req_id"] == resps[0]["req_id"], "req_id mismatch"
         # messages should be non-empty
         assert reqs[0].get("messages"), "messages empty in lm.request"
         assert "dt" in resps[0] and isinstance(resps[0]["dt"], (int, float))
         req_id_short = reqs[0]["req_id"][:8]
         dt = resps[0]["dt"]
-        return f"req/resp pair matched (req_id={req_id_short}..., dt={dt:.4f}s)"
+        return (
+            f"req/resp pair matched (req_id={req_id_short}..., dt={dt:.4f}s)"
+        )
     finally:
         _bind_writer(None)
         with contextlib.suppress(Exception):
@@ -1356,11 +1515,21 @@ def test_full_harness_smoke() -> str:
     assert os.path.exists(compiled_path), "compiled artifact not created"
     conn = sqlite3.connect(db_path)
     try:
-        types_present = {r[0] for r in conn.execute("SELECT DISTINCT event_type FROM events").fetchall()}
-        flows = {
-            r[0] for r in conn.execute("SELECT DISTINCT flow FROM events WHERE event_type='flow.start'").fetchall()
+        types_present = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT event_type FROM events"
+            ).fetchall()
         }
-        rows = conn.execute("SELECT COUNT(*), MIN(payload IS NULL) FROM events").fetchone()
+        flows = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT flow FROM events WHERE event_type='flow.start'"
+            ).fetchall()
+        }
+        rows = conn.execute(
+            "SELECT COUNT(*), MIN(payload IS NULL) FROM events"
+        ).fetchone()
     finally:
         conn.close()
     required = {
@@ -1378,7 +1547,9 @@ def test_full_harness_smoke() -> str:
     }
     missing = required - types_present
     assert not missing, f"missing event_types: {missing}"
-    assert {"eval_baseline", "optimize", "eval_optimized"} <= flows, f"flows={flows}"
+    assert {"eval_baseline", "optimize", "eval_optimized"} <= flows, (
+        f"flows={flows}"
+    )
     assert rows[0] > 0, "no rows"
     assert rows[1] in (0, None), "found NULL payload"
     # Load compiled artifact back
@@ -1387,14 +1558,19 @@ def test_full_harness_smoke() -> str:
     for p in (db_path, compiled_path):
         with contextlib.suppress(Exception):
             os.remove(p)
-    return f"events={rows[0]}, types={len(types_present)}, flows={sorted(flows)}"
+    return (
+        f"events={rows[0]}, types={len(types_present)}, flows={sorted(flows)}"
+    )
 
 
 ALL_TESTS: list[tuple[str, Callable[[], str | None]]] = [
     ("test_metric_scoring", test_metric_scoring),
     ("test_to_jsonable_robustness", test_to_jsonable_robustness),
     ("test_logging_lm_captures_payload", test_logging_lm_captures_payload),
-    ("test_bootstrap_selects_passing_demos", test_bootstrap_selects_passing_demos),
+    (
+        "test_bootstrap_selects_passing_demos",
+        test_bootstrap_selects_passing_demos,
+    ),
     ("test_full_harness_smoke", test_full_harness_smoke),
 ]
 
@@ -1421,8 +1597,14 @@ def run_tests() -> int:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="HumanEval+ x DSPy harness")
-    p.add_argument("--mock", action="store_true", help="Run with CallableLM mock instead of OpenAI")
-    p.add_argument("--test", action="store_true", help="Run deterministic self-tests")
+    p.add_argument(
+        "--mock",
+        action="store_true",
+        help="Run with CallableLM mock instead of OpenAI",
+    )
+    p.add_argument(
+        "--test", action="store_true", help="Run deterministic self-tests"
+    )
     p.add_argument("--db-path", default=DEFAULT_DB_PATH)
     p.add_argument("--compiled-path", default=DEFAULT_COMPILED_PATH)
     p.add_argument("--model", default=DEFAULT_MODEL)
@@ -1431,8 +1613,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--dev-size", type=int, default=DEFAULT_DEV_SIZE)
     p.add_argument("--num-threads", type=int, default=DEFAULT_NUM_THREADS)
     p.add_argument("--timeout", type=float, default=DEFAULT_SUBPROCESS_TIMEOUT)
-    p.add_argument("--max-bootstrapped-demos", type=int, default=DEFAULT_MAX_BOOTSTRAPPED_DEMOS)
-    p.add_argument("--max-labeled-demos", type=int, default=DEFAULT_MAX_LABELED_DEMOS)
+    p.add_argument(
+        "--max-bootstrapped-demos",
+        type=int,
+        default=DEFAULT_MAX_BOOTSTRAPPED_DEMOS,
+    )
+    p.add_argument(
+        "--max-labeled-demos", type=int, default=DEFAULT_MAX_LABELED_DEMOS
+    )
     return p.parse_args(argv)
 
 
