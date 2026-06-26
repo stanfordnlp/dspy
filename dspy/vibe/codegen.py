@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, get_origin
 
 import dspy
-from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
+from dspy.vibe.primitives_doc import PRIMITIVES_CATALOG
 
 logger = logging.getLogger(__name__)
 

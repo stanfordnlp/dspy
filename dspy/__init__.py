@@ -3,7 +3,7 @@ from dspy.primitives import *
 from dspy.retrievers import *
 from dspy.signatures import *
 from dspy.teleprompt import *
-from dspy.flex import DatasetStore, Flex, FlexContext
+from dspy.vibe import Flex, FlexContext
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip

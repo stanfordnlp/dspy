@@ -641,8 +641,7 @@ class GEPA(Teleprompter):
         new_prog = adapter.build_program(gepa_result.best_candidate)
 
         if flex_submodules:
-            best_score = max(gepa_result.val_aggregate_scores) if gepa_result.val_aggregate_scores else None
-            self._persist_flex_results(new_prog, trainset=trainset, valset=valset, best_score=best_score)
+            self._persist_flex_results(new_prog)
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
@@ -658,9 +657,9 @@ class GEPA(Teleprompter):
         signature. There is no empirical selection — we accept the last candidate that
         binds cleanly. This is the "spend compute to write better code" path.
         """
-        from dspy.flex.codegen import generate
-        from dspy.flex.primitives_doc import KNOWLEDGE_BASE
         from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
+        from dspy.vibe.codegen import generate
+        from dspy.vibe.primitives_doc import KNOWLEDGE_BASE
 
         program = student.deepcopy()
         for _, flex in enumerate_flex_submodules(program).items():
@@ -679,48 +678,17 @@ class GEPA(Teleprompter):
                 current = proposed
             flex._bind_code(*current)  # ensure the accepted (last good) code is bound
 
-        self._persist_flex_results(program, trainset=None, valset=None, best_score=None)
+        self._persist_flex_results(program)
         return program
 
-    def _persist_flex_results(
-        self, program: Module, *, trainset, valset, best_score: float | None
-    ) -> None:
-        """Write optimized vibe-submodule code back to its persisted ``.py`` + manifest,
-        and save the dataset so a later ``Flex.improve()`` can re-optimize. No-op for
-        in-memory (``persist_to=None``) submodules.
+    def _persist_flex_results(self, program: Module) -> None:
+        """Write optimized vibe-submodule code back to its persisted ``.py`` file.
+
+        No-op for in-memory (``persist_to=None``) submodules.
         """
-        from dspy.flex.dataset import DatasetStore
-        from dspy.flex.exploration import FlexEvent, candidate_id
-        from dspy.flex.manifest import ManifestStore
         from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
 
         for _, flex in enumerate_flex_submodules(program).items():
-            persist_to = getattr(flex, "_persist_to", None)
-            flex_root = getattr(flex, "_flex_root", None)
-            if persist_to is None or flex_root is None or not hasattr(flex, "_write_persisted"):
+            if getattr(flex, "_persist_to", None) is None or not hasattr(flex, "_write_persisted"):
                 continue
-            sig_hash = flex._signature_hash()
-            cid = candidate_id(flex.predictors_src, flex.forward_src)
-            manifest = ManifestStore(flex_root)
-            latest = manifest.latest(flex._flex_id)
-            if not (latest is not None and latest.get("candidate_id") == cid):
-                flex._write_persisted(flex.predictors_src, flex.forward_src, sig_hash)
-                version_id = manifest.append_version(
-                    flex_id=flex._flex_id,
-                    src_path=persist_to,
-                    signature_hash=sig_hash,
-                    candidate_id=cid,
-                    score=best_score,
-                    parents=[],
-                    notes="GEPA optimized",
-                )
-                flex._exploration.record(
-                    FlexEvent.ACCEPT,
-                    predictors_src=flex.predictors_src,
-                    forward_src=flex.forward_src,
-                    signature_hash=sig_hash,
-                    score=best_score,
-                    extra={"version_id": version_id, "src_path": str(persist_to)},
-                )
-            if trainset:
-                DatasetStore(flex_root, flex._flex_id).save(list(trainset), list(valset or trainset))
+            flex._write_persisted(flex.predictors_src, flex.forward_src, flex._signature_hash())

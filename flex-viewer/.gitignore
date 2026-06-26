@@ -1,5 +1,0 @@
-node_modules
-dist
-sample/history.json
-*.local
-.vite

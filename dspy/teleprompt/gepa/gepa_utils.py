@@ -290,8 +290,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # --- code components (vibe-marked dspy.Flex submodules) --------------
         if code_keys:
-            from dspy.flex.codegen import _strip_code_fences
-            from dspy.flex.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
+            from dspy.vibe.codegen import _strip_code_fences
+            from dspy.vibe.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
 
             catalog = PRIMITIVES_CATALOG + "\n\n" + KNOWLEDGE_BASE
             proposer = dspy.Predict(CodeProposalSignature)

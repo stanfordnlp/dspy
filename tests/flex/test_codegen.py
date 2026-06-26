@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import json
 import textwrap
 
 import dspy
-from dspy.flex import Flex
-from dspy.flex.exploration import ExplorationStore, candidate_id
 from dspy.utils.dummies import DummyLM
+from dspy.vibe import Flex
 
-# A plain dspy.Predict body we can persist and actually run with a DummyLM —
-# the RLM baseline that Flex binds at construction is too heavy to execute in a
-# unit test, so end-to-end forward tests use this instead.
+# A plain dspy.Predict body we can persist and actually run with a DummyLM — the RLM
+# baseline that Flex binds at construction is too heavy to execute in a unit test, so
+# end-to-end forward tests use this instead.
 PREDICT_PREDICTORS = textwrap.dedent("""
     PREDICTORS = {
         "echo": dspy.Predict("q -> a"),
@@ -61,8 +59,12 @@ def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     assert "PREDICTORS" in text
     assert "dspy.RLM(" in text
     assert "def forward" in text
+    # Bookkeeping is gone: no body hash, no flex_id, no .flex dir.
+    assert "__FLEX_BODY_HASH__" not in text
+    assert "flex_id" not in text
+    assert not (tmp_path / ".flex").exists()
 
-    # Re-construct with NO LM configured — must load from disk without LM call.
+    # Re-construct with NO LM configured — must load from disk without an LM call.
     dspy.configure(lm=DummyLM([]))
     program2 = Flex(Echo, persist_to=str(persist_path))
     assert program2.predictors_src is not None
@@ -84,85 +86,20 @@ def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
     assert "q: str -> a: str" in program.predictors_src
 
 
-def test_manual_edit_is_honored_when_signature_unchanged(tmp_path) -> None:
+def test_hand_edit_is_loaded_when_signature_unchanged(tmp_path) -> None:
+    """A hand-edited body is loaded as-is on the next run (signature unchanged)."""
     persist_path = tmp_path / "echo_flex.py"
     Flex(Echo, persist_to=str(persist_path))
 
-    # Hand-edit the forward body. Signature (and its hash) is untouched, so only
-    # the body hash goes stale.
     original = persist_path.read_text()
     edited = original.replace("result.a", "result.a.upper()")
     assert edited != original
     persist_path.write_text(edited)
 
-    # Reconstruct with NO codegen LM available — the edit must be honored, not
-    # regenerated.
+    # Reconstruct with NO codegen LM available — the edit is loaded, not regenerated.
     dspy.configure(lm=DummyLM([]))
     program = Flex(Echo, persist_to=str(persist_path))
     assert "result.a.upper()" in program.forward_src
-
-    # A `manual_edit` event was recorded, and the file's body hash was refreshed
-    # so the file reads as pristine again.
-    history = ExplorationStore(tmp_path, "Echo").get_history()
-    assert any(e["event"] == "manual_edit" for e in history)
-
-    refreshed = persist_path.read_text()
-    expected_body_hash = candidate_id(program.predictors_src, program.forward_src)
-    assert f"# __FLEX_BODY_HASH__: {expected_body_hash}" in refreshed
-
-    # The edit is the deployed artifact, so it's appended as a manifest version
-    # (after the initial baseline) and marked as a manual edit.
-    manifest = json.loads((tmp_path / ".flex" / "manifest.json").read_text())
-    versions = manifest["flex_modules"]["Echo"]["versions"]
-    assert len(versions) == 2
-    assert versions[-1]["notes"] == "manual edit"
-    assert versions[-1]["candidate_id"] == expected_body_hash
-
-
-def test_signature_change_codegen_event_has_no_seed_parent(tmp_path) -> None:
-    """On a signature change Flex resets — the new CODEGEN event has no seed parent."""
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-
-    # Same flex_id ("Echo") + same persist_to, but a changed signature → hash
-    # mismatch → reset to a fresh baseline for the new signature.
-    class EchoExtra(dspy.Signature):
-        """Echo."""
-
-        q: str = dspy.InputField()
-        extra: str = dspy.InputField()
-        a: str = dspy.OutputField()
-
-    dspy.configure(lm=DummyLM([]))
-    program = Flex(EchoExtra, persist_to=str(persist_path), flex_id="Echo")
-    # Fresh RLM baseline for the new (two-input) signature.
-    assert "dspy.RLM(" in program.predictors_src
-    assert "extra: str" in program.predictors_src
-
-    # The reset's codegen event is NOT parented to any prior implementation.
-    history = ExplorationStore(tmp_path, "Echo").get_history()
-    codegen_events = [e for e in history if e["event"] == "codegen"]
-    assert codegen_events  # at least one codegen (baseline) event exists
-    assert all(e.get("parents") is None for e in codegen_events)
-
-
-def test_legacy_file_without_body_hash_loads_and_backfills(tmp_path) -> None:
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-
-    # Simulate a file written before body hashes existed by stripping the line.
-    text = persist_path.read_text()
-    legacy = "\n".join(
-        line for line in text.splitlines() if not line.startswith("# __FLEX_BODY_HASH__:")
-    )
-    persist_path.write_text(legacy)
-    assert "# __FLEX_BODY_HASH__:" not in persist_path.read_text()
-
-    dspy.configure(lm=DummyLM([]))
-    program = Flex(Echo, persist_to=str(persist_path))
-    assert "dspy.RLM(" in program.predictors_src
-    # The hash is backfilled on load so future edits become detectable.
-    assert "# __FLEX_BODY_HASH__:" in persist_path.read_text()
 
 
 def test_in_memory_only_mode_binds_without_writing_disk(tmp_path, monkeypatch) -> None:
@@ -171,30 +108,27 @@ def test_in_memory_only_mode_binds_without_writing_disk(tmp_path, monkeypatch) -
     assert program.predictors_src is not None
     assert program.forward_src is not None
     assert "dspy.RLM(" in program.predictors_src
-    # In-memory mode never writes the manifest (no persist_to).
-    assert not (tmp_path / ".flex" / "manifest.json").exists()
+    # No persistence and no bookkeeping directory.
+    assert not (tmp_path / ".flex").exists()
+    assert not list(tmp_path.glob("*.py"))
 
 
 def test_end_to_end_forward_call(tmp_path) -> None:
     """End-to-end forward: persist a plain dspy.Predict body and run it.
 
-    The RLM baseline needs a code interpreter, so we simulate a hand edit to a
-    Predict-based forward, then run that body with a DummyLM.
+    The RLM baseline needs a code interpreter, so we write a Predict-based body to the
+    persisted file (signature hash intact, so it's loaded as-is) and run it with a DummyLM.
     """
+    from dspy.vibe.persistence import parse_persisted_file, render_persisted_file
+
     persist_path = tmp_path / "echo_flex.py"
     Flex(Echo, persist_to=str(persist_path))
-
-    # Overwrite the persisted body with a plain dspy.Predict implementation,
-    # leaving the signature hash intact so it's honored as a (manual) edit.
-    from dspy.flex.persistence import parse_persisted_file, render_persisted_file
 
     parsed = parse_persisted_file(persist_path.read_text())
     assert parsed is not None
     persist_path.write_text(
         render_persisted_file(
             signature_hash=parsed.signature_hash,
-            body_hash=candidate_id(PREDICT_PREDICTORS, PREDICT_FORWARD),
-            flex_id="Echo",
             signature_name="Echo",
             predictors_src=PREDICT_PREDICTORS,
             forward_src=PREDICT_FORWARD,
@@ -207,19 +141,3 @@ def test_end_to_end_forward_call(tmp_path) -> None:
     result = program(q="hello")
     assert isinstance(result, dspy.Prediction)
     assert result.a == "echoed-back"
-
-
-def test_manifest_records_a_version(tmp_path) -> None:
-    persist_path = tmp_path / "echo_flex.py"
-    Flex(Echo, persist_to=str(persist_path))
-
-    manifest_path = tmp_path / ".flex" / "manifest.json"
-    assert manifest_path.exists()
-
-    data = json.loads(manifest_path.read_text())
-    assert "Echo" in data["flex_modules"]
-    versions = data["flex_modules"]["Echo"]["versions"]
-    assert len(versions) == 1
-    assert versions[0]["id"] == 0
-    assert versions[0]["signature_hash"]
-    assert versions[0]["notes"] == "rlm baseline"

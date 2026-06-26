@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import dspy
-from dspy.flex import Flex
+from dspy.vibe import Flex
 
 
 class Doubler(dspy.Signature):
