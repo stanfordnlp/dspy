@@ -184,6 +184,35 @@ SQLITE_INSERT_SQL = (
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
+POSTGRES_SCHEMA_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS events (
+        id              BIGSERIAL PRIMARY KEY,
+        ts              DOUBLE PRECISION NOT NULL,
+        run_id          TEXT             NOT NULL,
+        flow            TEXT             NOT NULL,
+        event_type      TEXT             NOT NULL,
+        call_id         TEXT,
+        parent_call_id  TEXT,
+        example_id      TEXT,
+        score           DOUBLE PRECISION,
+        error           TEXT,
+        payload         JSONB            NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_events_run  ON events(run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_events_call ON events(call_id)",
+    "CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_events_ex   ON events(example_id)",
+)
+
+POSTGRES_INSERT_SQL = (
+    "INSERT INTO events "
+    "(ts, run_id, flow, event_type, call_id, parent_call_id, example_id, "
+    "score, error, payload) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+)
+
 
 class SQLiteWriter:
     """Background-thread SQLite writer fed by an unbounded queue."""
@@ -291,6 +320,129 @@ class SQLiteWriter:
                 except Exception as e:
                     print(
                         f"[SQLiteWriter._run] insert failed: {e!r}",
+                        file=sys.stderr,
+                    )
+        finally:
+            with contextlib.suppress(Exception):
+                conn.close()
+
+    def close(self, timeout: float = 10.0) -> None:
+        """Flush queue and join the writer thread."""
+        if self._closed:
+            return
+        self._closed = True
+        self._q.put(self._SENTINEL)
+        self._thread.join(timeout=timeout)
+
+
+class PostgresWriter:
+    """Background-thread Postgres writer fed by an unbounded queue."""
+
+    _SENTINEL: object = object()
+
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        run_id: str,
+        default_flow_fn: DefaultFlowFn = default_flow,
+    ) -> None:
+        self.database_url = database_url
+        self.run_id = run_id
+        self._default_flow_fn = default_flow_fn
+        self._q: queue.Queue[dict[str, Any] | object] = queue.Queue()
+        self._thread = threading.Thread(
+            target=self._run, name="postgres-writer", daemon=True
+        )
+        self._thread.start()
+        self._closed = False
+
+    def put_event(
+        self,
+        event_type: str,
+        payload: Any,
+        *,
+        flow: str | None = None,
+        call_id: str | None = None,
+        parent_call_id: str | None = None,
+        example_id: str | None = None,
+        score: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Enqueue an event. Non-blocking, never raises."""
+        try:
+            payload_value = to_jsonable(payload)
+        except Exception as e:
+            payload_value = {"_serialize_error": repr(e)}
+        record: dict[str, Any] = {
+            "ts": time.time(),
+            "run_id": self.run_id,
+            "flow": flow or self._default_flow_fn(),
+            "event_type": event_type,
+            "call_id": call_id,
+            "parent_call_id": parent_call_id,
+            "example_id": example_id,
+            "score": score,
+            "error": error,
+            "payload": payload_value,
+        }
+        try:
+            self._q.put_nowait(record)
+        except Exception as e:
+            print(f"[PostgresWriter.put_event] {e!r}", file=sys.stderr)
+
+    def _run(self) -> None:
+        try:
+            import psycopg
+            from psycopg.types.json import Jsonb
+
+            conn = psycopg.connect(self.database_url)
+            with conn.cursor() as cur:
+                for stmt in POSTGRES_SCHEMA_SQL:
+                    cur.execute(cast(Any, stmt))
+            conn.commit()
+        except Exception as e:
+            print(f"[PostgresWriter._run] init failed: {e!r}", file=sys.stderr)
+            return
+        try:
+            while True:
+                item = self._q.get()
+                if item is self._SENTINEL:
+                    break
+                batch: list[dict[str, Any]] = [cast(dict[str, Any], item)]
+                for _ in range(BATCH_SIZE - 1):
+                    try:
+                        nxt = self._q.get_nowait()
+                    except queue.Empty:
+                        break
+                    if nxt is self._SENTINEL:
+                        self._q.put(self._SENTINEL)
+                        break
+                    batch.append(cast(dict[str, Any], nxt))
+                try:
+                    with conn.transaction():
+                        with conn.cursor() as cur:
+                            cur.executemany(
+                                POSTGRES_INSERT_SQL,
+                                [
+                                    (
+                                        r["ts"],
+                                        r["run_id"],
+                                        r["flow"],
+                                        r["event_type"],
+                                        r["call_id"],
+                                        r["parent_call_id"],
+                                        r["example_id"],
+                                        r["score"],
+                                        r["error"],
+                                        Jsonb(r["payload"]),
+                                    )
+                                    for r in batch
+                                ],
+                            )
+                except Exception as e:
+                    print(
+                        f"[PostgresWriter._run] insert failed: {e!r}",
                         file=sys.stderr,
                     )
         finally:

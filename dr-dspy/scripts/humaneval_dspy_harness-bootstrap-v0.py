@@ -31,6 +31,7 @@ import time
 import traceback
 import uuid
 from collections.abc import Callable, Iterator, Mapping
+from enum import Enum
 from multiprocessing.connection import Connection
 from typing import Any, Protocol, cast
 
@@ -40,6 +41,7 @@ import dspy
 from dr_dspy.event_log import (
     PAYLOAD_MAX_BYTES,
     EventWriter,
+    PostgresWriter,
     SQLiteWriter,
     _sanitize,
     to_jsonable,
@@ -66,6 +68,12 @@ DEFAULT_CPU_LIMIT_SECONDS = 17
 DEFAULT_SEED = 0
 DEFAULT_MAX_BOOTSTRAPPED_DEMOS = 4
 DEFAULT_MAX_LABELED_DEMOS = 0
+DATABASE_URL_ENV = "DATABASE_URL"
+
+
+class EventStore(str, Enum):
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
 
 # --------------------------------------------------------------------------- #
 # Context vars: current flow and call-id parent chain
@@ -103,14 +111,14 @@ def _flow_context(flow: str) -> Iterator[None]:
 
 
 # --------------------------------------------------------------------------- #
-# DSPy callback → SQLite
+# DSPy callback → event log
 # --------------------------------------------------------------------------- #
 
 
 class SQLiteCallback(BaseCallback):
-    """BaseCallback that writes every DSPy hook to a SQLiteWriter."""
+    """BaseCallback that writes every DSPy hook to an EventWriter."""
 
-    def __init__(self, writer: SQLiteWriter) -> None:
+    def __init__(self, writer: EventWriter) -> None:
         super().__init__()
         self._writer = writer
         self._tokens: dict[str, contextvars.Token[str | None]] = {}
@@ -718,9 +726,20 @@ def _run_metadata(
 ) -> dict[str, Any]:
     import dspy as _dspy
 
+    argv = list(sys.argv)
+    for i, arg in enumerate(argv):
+        if arg == "--database-url" and i + 1 < len(argv):
+            argv[i + 1] = "<redacted>"
+        elif arg.startswith("--database-url="):
+            argv[i] = "--database-url=<redacted>"
+
+    args_payload = vars(args).copy()
+    if args_payload.get("database_url"):
+        args_payload["database_url"] = "<redacted>"
+
     return {
-        "argv": sys.argv,
-        "args": vars(args),
+        "argv": argv,
+        "args": args_payload,
         "model": model_id,
         "dspy_version": getattr(_dspy, "__version__", "?"),
         "python_version": sys.version,
@@ -729,7 +748,7 @@ def _run_metadata(
     }
 
 
-def _check_demos(compiled: dspy.Module, writer: SQLiteWriter) -> int:
+def _check_demos(compiled: dspy.Module, writer: EventWriter) -> int:
     """Return total demo count; log a `bootstrap.no_demos` event if zero."""
     total = 0
     by_predictor: list[tuple[str, int]] = []
@@ -820,6 +839,23 @@ def main_mock(args: argparse.Namespace) -> int:
     return _run_flows(args, mock=True)
 
 
+def _build_writer(args: argparse.Namespace, *, run_id: str) -> EventWriter:
+    event_store = EventStore(args.event_store)
+    if event_store is EventStore.POSTGRES:
+        database_url = args.database_url or os.environ.get(DATABASE_URL_ENV)
+        if not database_url:
+            raise ValueError(
+                "--database-url or DATABASE_URL is required with "
+                "--event-store postgres"
+            )
+        return PostgresWriter(
+            database_url, run_id=run_id, default_flow_fn=_current_flow.get
+        )
+    return SQLiteWriter(
+        args.db_path, run_id=run_id, default_flow_fn=_current_flow.get
+    )
+
+
 def _make_mock_dataset() -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Tiny inline dataset for --mock runs (no HF download)."""
     rows = [
@@ -877,9 +913,11 @@ def _mock_solver(
 
 def _run_flows(args: argparse.Namespace, *, mock: bool) -> int:
     run_id = uuid.uuid4().hex
-    writer = SQLiteWriter(
-        args.db_path, run_id=run_id, default_flow_fn=_current_flow.get
-    )
+    try:
+        writer = _build_writer(args, run_id=run_id)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
     _bind_writer(writer)
     _set_subprocess_timeout(args.timeout)
 
@@ -1240,7 +1278,9 @@ def test_full_harness_smoke() -> str:
         with contextlib.suppress(Exception):
             os.remove(p)
     args = argparse.Namespace(
+        event_store=EventStore.SQLITE.value,
         db_path=db_path,
+        database_url=None,
         compiled_path=compiled_path,
         model="callable/mock",
         seed=0,
@@ -1305,10 +1345,56 @@ def test_full_harness_smoke() -> str:
     )
 
 
+def test_postgres_writer_optional() -> str:
+    database_url = os.environ.get(DATABASE_URL_ENV)
+    if not database_url:
+        return f"skipped ({DATABASE_URL_ENV} not set)"
+
+    run_id = uuid.uuid4().hex
+    writer = PostgresWriter(
+        database_url,
+        run_id=run_id,
+        default_flow_fn=lambda: "postgres_test",
+    )
+    writer.put_event(
+        "test.postgres_writer",
+        payload={"ok": True, "items": [1, 2, 3]},
+        score=1.0,
+    )
+    writer.close()
+
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT flow, event_type, score, payload
+                FROM events
+                WHERE run_id = %s AND event_type = 'test.postgres_writer'
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+            cur.execute("DELETE FROM events WHERE run_id = %s", (run_id,))
+        conn.commit()
+
+    assert row is not None, "postgres event row not found"
+    flow, event_type, score, payload = row
+    assert flow == "postgres_test", f"flow={flow!r}"
+    assert event_type == "test.postgres_writer", f"event_type={event_type!r}"
+    assert score == 1.0, f"score={score!r}"
+    assert isinstance(payload, dict) and payload.get("ok") is True, (
+        f"payload={payload!r}"
+    )
+    return "insert/read/delete passed"
+
+
 ALL_TESTS: list[tuple[str, Callable[[], str | None]]] = [
     ("test_metric_scoring", test_metric_scoring),
     ("test_to_jsonable_robustness", test_to_jsonable_robustness),
     ("test_logging_lm_captures_payload", test_logging_lm_captures_payload),
+    ("test_postgres_writer_optional", test_postgres_writer_optional),
     (
         "test_bootstrap_selects_passing_demos",
         test_bootstrap_selects_passing_demos,
@@ -1347,7 +1433,18 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument(
         "--test", action="store_true", help="Run deterministic self-tests"
     )
+    p.add_argument(
+        "--event-store",
+        choices=[store.value for store in EventStore],
+        default=EventStore.SQLITE.value,
+        help="Event log backend to use",
+    )
     p.add_argument("--db-path", default=DEFAULT_DB_PATH)
+    p.add_argument(
+        "--database-url",
+        default=None,
+        help="Postgres URL for --event-store postgres; defaults to DATABASE_URL",
+    )
     p.add_argument("--compiled-path", default=DEFAULT_COMPILED_PATH)
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--seed", type=int, default=DEFAULT_SEED)
