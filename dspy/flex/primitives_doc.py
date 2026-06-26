@@ -56,7 +56,15 @@ Available DSPy primitives:
    `max_iterations` (REPL steps), `max_llm_calls` (sub-LLM calls), `sub_lm`
    (cheaper LM for sub-queries), `tools` (extra callables for the REPL).
 
-- `dspy.Tool(func)`, wraps a callable as a tool (only used inside ReAct).
+- Tools for `dspy.ReAct` / `dspy.RLM` come from two places, and you should use both:
+  (1) any tools listed in the available context, in scope by name; and (2) tools you
+  AUTHOR yourself — define a plain function (with a docstring and type hints so the model
+  knows how to call it) inside `__init__`, then pass it via `tools=[...]`. Create your own
+  tools whenever a sub-step needs a capability the provided tools don't cover: deterministic
+  lookups, parsing/formatting, calculators, validators, retrieval helpers, etc.
+
+- `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
+   bare function and it is wrapped for you.
 
 - `dspy.Prediction(field_a=value_a, field_b=value_b)`, construct the final return
    value. The keyword names MUST match the parent signature's output_fields

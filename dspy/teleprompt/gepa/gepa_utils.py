@@ -170,9 +170,12 @@ class CodeProposalSignature(dspy.Signature):
     Because ``forward`` calls predictors by name, never rename a predictor in one place without
     updating the other.
 
-    Any tools listed in ``available_context`` are in scope by name: wire the useful ones into a
-    ``dspy.RLM(..., tools=[...])`` or ``dspy.ReAct(..., tools=[...])``, or call them directly in
-    ``forward``. Reference them by the exact names given; do not import or redefine them.
+    Tools come from two places. (1) Any listed in ``available_context`` are in scope by name —
+    wire the useful ones into ``dspy.RLM(..., tools=[...])`` / ``dspy.ReAct(..., tools=[...])`` or
+    call them directly (reference them by the exact names; do not import or redefine them).
+    (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define
+    a documented function inside ``__init__`` and pass it via ``tools=[...]``. Tools you author
+    live in this source, so they are optimized and persisted exactly like the rest of the code.
     """
 
     task_description: str = dspy.InputField(

@@ -93,3 +93,64 @@ def test_gepa_proposer_is_told_about_tools() -> None:
 
     adapter = DspyAdapter(student_module=Flex(Echo, tools=[shout]), metric_fn=_metric, feedback_map={})
     assert "shout" in adapter._flex_context_blurbs["self"]
+
+
+# A module that AUTHORS its own tool (defined in __init__) and hands it to the RLM — what GEPA
+# is encouraged to do. The tool lives in the source, so it persists with the code itself.
+SELF_AUTHORED_TOOL_MODULE = textwrap.dedent("""
+    class EchoModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            def upcase(text: str) -> str:
+                "Uppercase the text."
+                return text.upper()
+            self.rlm = dspy.RLM("q: str -> a: str", tools=[upcase])
+
+        def forward(self, **inputs):
+            result = self.rlm(**inputs)
+            return dspy.Prediction(a=result.a)
+""").strip()
+
+
+def test_self_authored_tool_persists_with_the_code(tmp_path) -> None:
+    # Tools GEPA writes itself live in module_src, so they persist exactly like the code (and
+    # like instructions): reconstructing with ONLY the signature — no tools re-provided — and
+    # loading rebuilds the tool from the saved source.
+    flex = Flex(Echo)  # no user-provided tools
+    flex._bind_code(SELF_AUTHORED_TOOL_MODULE)
+    assert "tools=[upcase]" in flex.module_src
+
+    path = tmp_path / "program.json"
+    flex.save(path)
+
+    reloaded = Flex(Echo)  # still no tools provided
+    reloaded.load(path)
+    assert reloaded.module_src == flex.module_src
+    assert hasattr(reloaded, "rlm")  # rebuilt the RLM whose tool is defined in the code
+
+
+# Instructions baked into the generated code, on an inner predictor.
+INSTR_MODULE = textwrap.dedent("""
+    class EchoModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.p = dspy.Predict(dspy.Signature("q -> a", "Always answer in uppercase."))
+
+        def forward(self, q):
+            return dspy.Prediction(a=self.p(q=q).a)
+""").strip()
+
+
+def test_inner_predictor_instructions_persist(tmp_path) -> None:
+    # The instructions GEPA writes into the code persist through save/load (via module_src and
+    # the predictor's own serialized state), just like a plain optimized Predict.
+    flex = Flex(Echo)
+    flex._bind_code(INSTR_MODULE)
+    assert flex.p.signature.instructions == "Always answer in uppercase."
+
+    path = tmp_path / "program.json"
+    flex.save(path)
+
+    reloaded = Flex(Echo)
+    reloaded.load(path)
+    assert reloaded.p.signature.instructions == "Always answer in uppercase."
