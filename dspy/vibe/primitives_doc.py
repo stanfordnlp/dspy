@@ -1,5 +1,5 @@
 PRIMITIVES_CATALOG: str = """\
-You are authoring two code artifacts for a `dspy.Flex` module:
+You are authoring two code artifacts for a `dspy.vibe` module:
 
 1) A `PREDICTORS` dict literal at module scope mapping attribute names to predictor
    instances. Each entry is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
@@ -134,7 +134,7 @@ Common patterns (study these before writing `forward`):
 
 
 KNOWLEDGE_BASE: str = """\
-You are improving the *code* of a dspy.Flex module. The starting point is almost
+You are improving the *code* of a dspy.vibe module. The starting point is almost
 always a single trivial `dspy.RLM(...)` call that delegates the whole task to one
 recursive-LM black box. Your job is to spend compute to turn that into a better,
 more reliable program — decomposing the task, moving determinism into plain Python,

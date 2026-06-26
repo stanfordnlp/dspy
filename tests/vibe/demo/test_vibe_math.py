@@ -17,11 +17,11 @@ class MathWord(dspy.Signature):
     answer: int = dspy.OutputField()
 
 
-def test_flex() -> None:
+def test_vibe() -> None:
     # Reconfigure here (not just at import) so the test is order-independent: other
     # tests in the session reconfigure the global LM.
     dspy.configure(lm=exec_lm)
-    program = dspy.Flex(MathWord, persist_to=str(Path(__file__).parent / "math_flex_gen.py"))
+    program = dspy.Vibe(MathWord, persist_to=str(Path(__file__).parent / "math_vibe_gen.py"))
     baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
 
     print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")

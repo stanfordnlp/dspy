@@ -1,4 +1,4 @@
-"""Tests for the auto-repair flow in dspy.Flex.
+"""Tests for the auto-repair flow in dspy.Vibe.
 
 Covers load-time (bind) failures and runtime failures from user-edited code, plus the
 opt-out (``auto_repair=False``) path.
@@ -17,7 +17,7 @@ import pytest
 
 import dspy
 from dspy.utils.dummies import DummyLM
-from dspy.vibe import Flex
+from dspy.vibe import Vibe
 from dspy.vibe.persistence import parse_persisted_file, render_persisted_file
 
 CANNED_PREDICTORS = textwrap.dedent("""
@@ -44,12 +44,12 @@ def _swap_in_persisted(text: str, old: str, new: str, *, indent: str = "    ") -
     return text.replace(textwrap.indent(old, indent), textwrap.indent(new, indent))
 
 
-def _write_initial_flex_file(tmp_path: Path) -> Path:
-    """Construct a Flex (LM-free baseline) and rewrite its body to a plain dspy.Predict
+def _write_initial_vibe_file(tmp_path: Path) -> Path:
+    """Construct a Vibe (LM-free baseline) and rewrite its body to a plain dspy.Predict
     implementation, keeping the signature hash intact so it loads as a runnable (non-RLM)
     body. Returns the persisted file path."""
     path = tmp_path / "echo.py"
-    Flex(Echo, persist_to=str(path))  # writes the RLM baseline file
+    Vibe(Echo, persist_to=str(path))  # writes the RLM baseline file
 
     parsed = parse_persisted_file(path.read_text())
     assert parsed is not None
@@ -66,14 +66,14 @@ def _write_initial_flex_file(tmp_path: Path) -> Path:
 
 def _make_echo_factory(persist_to: Path, *, auto_repair: bool = True):
     def factory():
-        return Flex(Echo, persist_to=str(persist_to), auto_repair=auto_repair)
+        return Vibe(Echo, persist_to=str(persist_to), auto_repair=auto_repair)
 
     return factory
 
 
 def test_load_time_repair_when_predictors_is_none(tmp_path: Path) -> None:
     """User clobbers PREDICTORS to None → bind raises → repair runs and rewrites the file."""
-    path = _write_initial_flex_file(tmp_path)
+    path = _write_initial_vibe_file(tmp_path)
 
     text = path.read_text()
     broken_text = _swap_in_persisted(text, CANNED_PREDICTORS, "PREDICTORS = None")
@@ -93,7 +93,7 @@ def test_load_time_repair_when_predictors_is_none(tmp_path: Path) -> None:
 
 def test_load_time_repair_off_surfaces_error(tmp_path: Path) -> None:
     """With auto_repair=False, a broken persisted file raises on construction."""
-    path = _write_initial_flex_file(tmp_path)
+    path = _write_initial_vibe_file(tmp_path)
     text = path.read_text()
     path.write_text(_swap_in_persisted(text, CANNED_PREDICTORS, "PREDICTORS = None"))
 
@@ -105,7 +105,7 @@ def test_load_time_repair_off_surfaces_error(tmp_path: Path) -> None:
 
 def test_runtime_repair_on_attribute_error(tmp_path: Path) -> None:
     """User edits forward() to dereference None → runtime AttributeError → repair runs."""
-    path = _write_initial_flex_file(tmp_path)
+    path = _write_initial_vibe_file(tmp_path)
 
     broken_forward = textwrap.dedent("""
         def forward(self, q):
@@ -135,8 +135,8 @@ def test_runtime_repair_on_attribute_error(tmp_path: Path) -> None:
 
 
 def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
-    """Even if repair returns broken code again, Flex doesn't re-repair in the same process."""
-    path = _write_initial_flex_file(tmp_path)
+    """Even if repair returns broken code again, Vibe doesn't re-repair in the same process."""
+    path = _write_initial_vibe_file(tmp_path)
 
     broken_forward = textwrap.dedent("""
         def forward(self, q):
@@ -148,7 +148,7 @@ def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
     path.write_text(_swap_in_persisted(text, CANNED_FORWARD, broken_forward))
 
     # Repair LM returns the *same* broken forward, so the post-repair re-run still raises
-    # — Flex must propagate without attempting another repair on the next call.
+    # — Vibe must propagate without attempting another repair on the next call.
     dspy.configure(
         lm=DummyLM(
             [
@@ -170,7 +170,7 @@ def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
 
 def test_runtime_does_not_repair_non_user_errors(tmp_path: Path) -> None:
     """A RuntimeError raised inside forward() bypasses auto-repair and propagates."""
-    path = _write_initial_flex_file(tmp_path)
+    path = _write_initial_vibe_file(tmp_path)
     broken_forward = textwrap.dedent("""
         def forward(self, q):
             raise RuntimeError("boom from downstream")
@@ -189,7 +189,7 @@ def test_runtime_does_not_repair_non_user_errors(tmp_path: Path) -> None:
 
 def test_runtime_repair_off_surfaces_error(tmp_path: Path) -> None:
     """auto_repair=False propagates runtime errors from forward() directly."""
-    path = _write_initial_flex_file(tmp_path)
+    path = _write_initial_vibe_file(tmp_path)
     broken_forward = textwrap.dedent("""
         def forward(self, q):
             out = self.echo(q=q)

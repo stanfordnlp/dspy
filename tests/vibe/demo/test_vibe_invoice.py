@@ -13,7 +13,7 @@ reflection_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=4000)
 dspy.configure(lm=exec_lm)
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "invoice_flex_gen.py"
+VIBE_PATH = DEMO_DIR / "invoice_vibe_gen.py"
 
 
 class InvoiceTotal(dspy.Signature):
@@ -79,7 +79,7 @@ def mean_score(program: dspy.Module, dataset: list[dspy.Example]) -> float:
 
 def test_invoice_codegen_then_gepa() -> None:
     dspy.configure(lm=exec_lm)
-    program = dspy.Flex(InvoiceTotal, persist_to=str(FLEX_PATH))
+    program = dspy.Vibe(InvoiceTotal, persist_to=str(VIBE_PATH))
 
     baseline = mean_score(program, valset)
     optimized = dspy.GEPA(
@@ -95,6 +95,6 @@ def test_invoice_codegen_then_gepa() -> None:
 
 def test_invoice_manual_edit() -> None:
     dspy.configure(lm=exec_lm)
-    program = dspy.Flex(InvoiceTotal, persist_to=str(FLEX_PATH))
+    program = dspy.Vibe(InvoiceTotal, persist_to=str(VIBE_PATH))
     pred = program(**heldout.inputs())
     print(f"Before manual edit: predicted total_cents = {pred.total_cents}, want {heldout.total_cents}")

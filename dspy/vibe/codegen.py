@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class FlexContext:
-    """Bundle of inputs the codegen LM gets to author a Flex implementation."""
+class VibeContext:
+    """Bundle of inputs the codegen LM gets to author a Vibe implementation."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
@@ -118,7 +118,7 @@ def _parseable_type_str(annotation: Any) -> str | None:
 
 
 class CodegenSignature(dspy.Signature):
-    """Author the implementation of a dspy.Flex module from a user-declared Signature.
+    """Author the implementation of a dspy.Vibe module from a user-declared Signature.
 
     Output TWO Python source strings:
 
@@ -172,7 +172,7 @@ class CodegenSignature(dspy.Signature):
 
 
 class RepairSignature(dspy.Signature):
-    """Fix a broken dspy.Flex implementation.
+    """Fix a broken dspy.Vibe implementation.
 
     The user (or a previous codegen run) produced a ``predictors_src`` /
     ``forward_src`` pair that either fails to bind or raises at runtime. Your
@@ -235,7 +235,7 @@ def _strip_code_fences(s: str) -> str:
 
 
 def generate(
-    ctx: FlexContext,
+    ctx: VibeContext,
     *,
     lm: dspy.LM | None = None,
     seed: tuple[str, str] | None = None,
@@ -279,7 +279,7 @@ def generate(
 
 
 def repair(
-    ctx: FlexContext,
+    ctx: VibeContext,
     *,
     broken: tuple[str, str],
     failure_kind: str,

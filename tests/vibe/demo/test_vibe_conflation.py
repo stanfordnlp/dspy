@@ -13,7 +13,7 @@ load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
 DATA_PATH = DEMO_DIR / "conflation_coded.jsonl"
-FLEX_PATH = DEMO_DIR / "conflation_flex_gen.py"
+VIBE_PATH = DEMO_DIR / "conflation_vibe_gen.py"
 
 EXEC_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=1000)
 STRONG_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=8000)
@@ -131,12 +131,12 @@ def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
     return correct / len(dataset), calls / len(dataset)
 
 
-def test_flex_conflation() -> None:
+def test_vibe_conflation() -> None:
     dspy.configure(lm=EXEC_LM)
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
-    program = dspy.Flex(SamePlace, persist_to=str(FLEX_PATH), codegen_lm=STRONG_LM)
+    program = dspy.Vibe(SamePlace, persist_to=str(VIBE_PATH), codegen_lm=STRONG_LM)
     base_acc, base_calls = _evaluate(program, test)
     print(f"[baseline] test accuracy={base_acc:.2f}, avg LLM calls/example={base_calls:.2f}")
 
@@ -153,4 +153,4 @@ def test_flex_conflation() -> None:
 
 
 if __name__ == "__main__":
-    test_flex_conflation()
+    test_vibe_conflation()

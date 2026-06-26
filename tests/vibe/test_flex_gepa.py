@@ -1,11 +1,11 @@
-"""Tests for vibe-marked (dspy.Flex) code optimization inside dspy.GEPA.
+"""Tests for vibe-marked (dspy.Vibe) code optimization inside dspy.GEPA.
 
 Covers the new behavior:
-- a freshly constructed dspy.Flex binds a deterministic, LM-free dspy.RLM baseline,
+- a freshly constructed dspy.Vibe binds a deterministic, LM-free dspy.RLM baseline,
 - the module is marked `_code_optimizable` and discoverable as a code-optimizable submodule,
 - GEPA's seed candidate mixes per-submodule *code* components with *instruction*
-  components for non-vibe predictors, excluding predictors that live inside a Flex,
-- the adapter rebinds Flex code from a candidate and routes code components through the
+  components for non-vibe predictors, excluding predictors that live inside a Vibe,
+- the adapter rebinds Vibe code from a candidate and routes code components through the
   code proposer,
 - GEPA with no trainset runs a bounded, unscored code-synthesis pass.
 
@@ -22,10 +22,10 @@ import pytest
 import dspy
 from dspy.teleprompt.gepa.gepa_utils import (
     DspyAdapter,
-    enumerate_flex_submodules,
-    flex_internal_predictor_ids,
+    enumerate_vibe_submodules,
     join_module_code,
     make_code_key,
+    vibe_internal_predictor_ids,
 )
 from dspy.utils.dummies import DummyLM
 
@@ -60,69 +60,69 @@ def _metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
 # --- baseline + marker -------------------------------------------------------
 
 
-def test_flex_baseline_is_rlm_and_lm_free() -> None:
-    # No LM configured: constructing a Flex must not make any LM call — it binds the
+def test_vibe_baseline_is_rlm_and_lm_free() -> None:
+    # No LM configured: constructing a Vibe must not make any LM call — it binds the
     # deterministic dspy.RLM baseline.
-    program = dspy.Flex(Echo)
+    program = dspy.Vibe(Echo)
     assert "dspy.RLM(" in program.predictors_src
     assert "q: str -> a: str" in program.predictors_src  # typed signature string
     assert "result.a" in program.forward_src  # unwraps the declared output
 
 
-def test_flex_is_marked_code_optimizable() -> None:
-    program = dspy.Flex(Echo)
+def test_vibe_is_marked_code_optimizable() -> None:
+    program = dspy.Vibe(Echo)
     assert getattr(program, "_code_optimizable", False) is True
 
 
-def test_enumerate_finds_top_level_and_nested_flex() -> None:
-    top = dspy.Flex(Echo)
-    assert set(enumerate_flex_submodules(top)) == {"self"}
+def test_enumerate_finds_top_level_and_nested_vibe() -> None:
+    top = dspy.Vibe(Echo)
+    assert set(enumerate_vibe_submodules(top)) == {"self"}
 
     class Prog(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.flex = dspy.Flex(Echo)
+            self.vibe = dspy.Vibe(Echo)
             self.sibling = dspy.Predict("x -> y")
 
         def forward(self, **kwargs):
-            return self.flex(**kwargs)
+            return self.vibe(**kwargs)
 
     prog = Prog()
-    flex_paths = enumerate_flex_submodules(prog)
-    assert set(flex_paths) == {"self.flex"}  # the regular Predict is not code-optimizable
+    vibe_paths = enumerate_vibe_submodules(prog)
+    assert set(vibe_paths) == {"self.vibe"}  # the regular Predict is not code-optimizable
 
 
-# --- exclusion of Flex-internal predictors -----------------------------------
+# --- exclusion of Vibe-internal predictors -----------------------------------
 
 
-def test_flex_internal_predictors_excluded_from_instruction_components() -> None:
+def test_vibe_internal_predictors_excluded_from_instruction_components() -> None:
     class Prog(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.flex = dspy.Flex(Echo)
+            self.vibe = dspy.Vibe(Echo)
             self.sibling = dspy.Predict("x -> y")
 
         def forward(self, **kwargs):
-            return self.flex(**kwargs)
+            return self.vibe(**kwargs)
 
     prog = Prog()
-    flex_subs = enumerate_flex_submodules(prog)
-    internal_ids = flex_internal_predictor_ids(flex_subs)
+    vibe_subs = enumerate_vibe_submodules(prog)
+    internal_ids = vibe_internal_predictor_ids(vibe_subs)
 
     instruction_names = [n for n, p in prog.named_predictors() if id(p) not in internal_ids]
-    # Only the sibling Predict gets instruction optimization; the Flex's internal
+    # Only the sibling Predict gets instruction optimization; the Vibe's internal
     # RLM predictors are owned by its code and excluded.
     assert instruction_names == ["sibling"]
     all_names = [n for n, _ in prog.named_predictors()]
-    assert any(n.startswith("flex.") for n in all_names)  # internals exist...
-    assert not any(n.startswith("flex.") for n in instruction_names)  # ...but are excluded
+    assert any(n.startswith("vibe.") for n in all_names)  # internals exist...
+    assert not any(n.startswith("vibe.") for n in instruction_names)  # ...but are excluded
 
 
 # --- adapter: build_program rebinds code, applies instructions ---------------
 
 
-def test_build_program_rebinds_flex_code() -> None:
-    student = dspy.Flex(Echo)
+def test_build_program_rebinds_vibe_code() -> None:
+    student = dspy.Vibe(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
 
     candidate = {make_code_key("self"): join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}
@@ -133,8 +133,8 @@ def test_build_program_rebinds_flex_code() -> None:
     assert "dspy.RLM(" not in rebuilt.predictors_src  # baseline replaced
 
 
-def test_build_program_disables_flex_auto_repair() -> None:
-    student = dspy.Flex(Echo)
+def test_build_program_disables_vibe_auto_repair() -> None:
+    student = dspy.Vibe(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
     candidate = {make_code_key("self"): join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}
     rebuilt = adapter.build_program(candidate)
@@ -148,7 +148,7 @@ def test_build_program_disables_flex_auto_repair() -> None:
 
 def test_propose_new_texts_uses_code_proposer_for_code_keys() -> None:
     reflection = DummyLM([{"revised_source": join_module_code(SIMPLE_PREDICTORS, SIMPLE_FORWARD)}])
-    student = dspy.Flex(Echo)
+    student = dspy.Vibe(Echo)
     adapter = DspyAdapter(
         student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=reflection
     )
@@ -173,11 +173,11 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     class Prog(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.flex = dspy.Flex(Echo)
+            self.vibe = dspy.Vibe(Echo)
             self.sibling = dspy.Predict("x -> y")
 
         def forward(self, **kwargs):
-            return self.flex(**kwargs)
+            return self.vibe(**kwargs)
 
     prog = Prog()
     captured = {}
@@ -193,17 +193,17 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     optimizer.compile(prog, trainset=[ex], valset=[ex])
 
     seed = captured["seed"]
-    assert make_code_key("self.flex") in seed  # one code component for the whole Flex
+    assert make_code_key("self.vibe") in seed  # one code component for the whole Vibe
     assert "sibling" in seed  # the non-vibe predictor's instruction
-    # The Flex's internal predictors are NOT separate instruction components.
-    assert not any(k.startswith("flex.") for k in seed)
+    # The Vibe's internal predictors are NOT separate instruction components.
+    assert not any(k.startswith("vibe.") for k in seed)
 
 
 # --- GEPA.compile: no-data code synthesis ------------------------------------
 
 
 def test_gepa_no_data_runs_bounded_code_synthesis() -> None:
-    student = dspy.Flex(Echo)  # in-memory; baseline RLM
+    student = dspy.Vibe(Echo)  # in-memory; baseline RLM
     calls = {"metric": 0}
 
     def counting_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):

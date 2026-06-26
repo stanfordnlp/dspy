@@ -1,6 +1,6 @@
-"""The dspy.Flex baseline is deterministic and LM-free.
+"""The dspy.Vibe baseline is deterministic and LM-free.
 
-Constructing a Flex for a given signature binds the same ``dspy.RLM`` baseline
+Constructing a Vibe for a given signature binds the same ``dspy.RLM`` baseline
 source every time, with no LM call — two constructions of the same signature
 produce byte-identical ``predictors_src`` / ``forward_src``, and the baseline
 survives the persistence round-trip.
@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import dspy
-from dspy.vibe import Flex
+from dspy.vibe import Vibe
 
 
 class Doubler(dspy.Signature):
@@ -23,8 +23,8 @@ class Doubler(dspy.Signature):
 
 def test_baseline_is_lm_free_and_deterministic(tmp_path: Path) -> None:
     # No LM configured anywhere: construction must not make any LM call.
-    a = Flex(Doubler, persist_to=str(tmp_path / "a.py"))
-    b = Flex(Doubler, persist_to=str(tmp_path / "b.py"))
+    a = Vibe(Doubler, persist_to=str(tmp_path / "a.py"))
+    b = Vibe(Doubler, persist_to=str(tmp_path / "b.py"))
 
     # Byte-identical baseline source for the same signature.
     assert a.predictors_src == b.predictors_src
@@ -38,7 +38,7 @@ def test_baseline_is_lm_free_and_deterministic(tmp_path: Path) -> None:
 
 def test_baseline_roundtrips_through_disk(tmp_path: Path) -> None:
     persist_path = tmp_path / "doubler.py"
-    program = Flex(Doubler, persist_to=str(persist_path))
+    program = Vibe(Doubler, persist_to=str(persist_path))
 
     text = persist_path.read_text()
     assert "dspy.RLM(" in text
@@ -46,7 +46,7 @@ def test_baseline_roundtrips_through_disk(tmp_path: Path) -> None:
 
     # Reconstruct with no LM at all — must load the baseline body from disk and
     # bind the same source (the RLM string signature is preserved).
-    program2 = Flex(Doubler, persist_to=str(persist_path))
+    program2 = Vibe(Doubler, persist_to=str(persist_path))
     assert "dspy.RLM(" in program2.predictors_src
     assert "value: int -> result: int" in program2.predictors_src
     assert program2.forward_src.strip() == program.forward_src.strip()

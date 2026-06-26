@@ -10,16 +10,16 @@ _FORWARD_BEGIN = "# __FLEX_FORWARD_BEGIN__"
 _FORWARD_END = "# __FLEX_FORWARD_END__"
 _CLASS_INDENT = "    "
 
-_FILE_HEADER_DOCSTRING = '''"""Implementation of a dspy.Flex (vibe) module — managed automatically.
+_FILE_HEADER_DOCSTRING = '''"""Implementation of a dspy.Vibe module — managed automatically.
 
 This file starts life as a baseline that delegates to dspy.RLM, and is rewritten in place
 by dspy.GEPA when you optimize the module (decomposing the task into focused predictors and
 plain Python). It is meant to be readable and reviewable.
 
 - You may edit the PREDICTORS dict and the forward() body between the marker comments below;
-  on the next run dspy.Flex parses those regions back out and runs your code as-is.
+  on the next run dspy.Vibe parses those regions back out and runs your code as-is.
 - __FLEX_SIGNATURE_HASH__ guards against stale code: if you change the Signature, the hash
-  no longer matches and dspy.Flex regenerates the baseline for the new Signature (re-run
+  no longer matches and dspy.Vibe regenerates the baseline for the new Signature (re-run
   dspy.GEPA to re-optimize).
 
 Leave the marker comments and the signature-hash line intact.
@@ -27,8 +27,8 @@ Leave the marker comments and the signature-hash line intact.
 '''
 
 
-class PersistedFlex(NamedTuple):
-    """Parsed view of a persisted Flex module file."""
+class PersistedVibe(NamedTuple):
+    """Parsed view of a persisted Vibe module file."""
 
     signature_hash: str
     predictors_src: str
@@ -42,7 +42,7 @@ def render_persisted_file(
     predictors_src: str,
     forward_src: str,
 ) -> str:
-    """Render a complete, self-contained Flex module file."""
+    """Render a complete, self-contained Vibe module file."""
     module_name = f"{signature_name}Module"
     predictors_block = _wrap_with_markers(predictors_src, _PREDICTORS_BEGIN, _PREDICTORS_END)
     forward_block = _wrap_with_markers(forward_src, _FORWARD_BEGIN, _FORWARD_END)
@@ -66,8 +66,8 @@ def render_persisted_file(
     )
 
 
-def parse_persisted_file(text: str) -> PersistedFlex | None:
-    """Extract the signature hash and source regions from a Flex file."""
+def parse_persisted_file(text: str) -> PersistedVibe | None:
+    """Extract the signature hash and source regions from a Vibe file."""
     try:
         signature_hash = text.split(_SIG_HASH_PREFIX, 1)[1].splitlines()[0].strip()
         predictors_raw = text.split(_PREDICTORS_BEGIN, 1)[1].split(_PREDICTORS_END, 1)[0]
@@ -75,7 +75,7 @@ def parse_persisted_file(text: str) -> PersistedFlex | None:
     except IndexError:
         return None
 
-    return PersistedFlex(
+    return PersistedVibe(
         signature_hash=signature_hash,
         predictors_src=textwrap.dedent(predictors_raw).strip("\n"),
         forward_src=textwrap.dedent(forward_raw).strip("\n"),

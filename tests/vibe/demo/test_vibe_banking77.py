@@ -1,7 +1,7 @@
 """End-to-end showcase: vibe a BANKING77 intent classifier, then optimize its code with GEPA.
 
 Flow:
-  1. Write a classification Signature and "vibe" it: ``dspy.Flex(signature)`` binds a
+  1. Write a classification Signature and "vibe" it: ``dspy.Vibe(signature)`` binds a
      baseline that delegates to ``dspy.RLM`` (no codegen — the recursive LM in a REPL).
   2. Benchmark that baseline on a held-out test split.
   3. Run ``dspy.GEPA`` over a small train/val split. Because the module is vibe-marked,
@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 BANKING77_BASE = "https://raw.githubusercontent.com/PolyAI-LDN/task-specific-datasets/master/banking_data"
 
 DEMO_DIR = Path(__file__).parent
-FLEX_PATH = DEMO_DIR / "banking77_flex_gen.py"
+VIBE_PATH = DEMO_DIR / "banking77_vibe_gen.py"
 PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
 
 # Executor runs the classifier (and the baseline RLM's sub-queries); reflection authors
@@ -139,13 +139,13 @@ def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> Scor
     return ScoreWithFeedback(score=1.0 if correct else 0.0, feedback=fb)
 
 
-def test_flex_banking77_showcase() -> None:
+def test_vibe_banking77_showcase() -> None:
     dspy.configure(lm=EXEC_LM)
     labels, train, val, test = _load_splits()
     print(f"\nBANKING77: {len(labels)} intents | train={len(train)} val={len(val)} test={len(test)}")
 
     # 1. Vibe the classifier: a dspy.RLM baseline, marked code-optimizable.
-    program = dspy.Flex(_build_signature(labels), persist_to=str(FLEX_PATH))
+    program = dspy.Vibe(_build_signature(labels), persist_to=str(VIBE_PATH))
     baseline_src = program.predictors_src
     assert "dspy.RLM(" in baseline_src  # the un-optimized vibe baseline
 
@@ -200,4 +200,4 @@ def test_flex_banking77_showcase() -> None:
 
 
 if __name__ == "__main__":
-    test_flex_banking77_showcase()
+    test_vibe_banking77_showcase()
