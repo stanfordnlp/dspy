@@ -104,9 +104,8 @@ def _code_key_path(key: str) -> str:
 def enumerate_vibe_submodules(root) -> dict[str, Any]:
     """Map sub-module path -> module for every vibe-marked (code-optimizable) submodule.
 
-    Duck-typed (no import of dspy.Vibe): a submodule qualifies if it exposes the
-    ``_code_optimizable`` marker and a ``_bind_code`` method. Paths use the
-    ``named_sub_modules()`` naming ("self" for a top-level Vibe student, "self.extract"
+    A submodule qualifies if it exposes the ``_code_optimizable`` marker and a ``_bind_code``
+    method. Paths use the ``named_sub_modules()`` naming ("self" for a top-level Vibe student, "self.extract"
     for a nested one) and are stable across deepcopy, so the same key identifies the
     submodule at seed time and at build_program time.
     """
@@ -120,10 +119,8 @@ def enumerate_vibe_submodules(root) -> dict[str, Any]:
 def vibe_internal_predictor_ids(vibe_submodules: dict[str, Any]) -> set[int]:
     """Object ids of predictors owned by vibe-marked submodules.
 
-    Their instructions are governed by the submodule's code (rewritten wholesale), so
-    they must be excluded from the instruction-optimization candidate. We key on object
-    identity because named_sub_modules() and named_predictors() use different path
-    formats ("self.vibe" vs "vibe.rlm.generate_action").
+    Their instructions are governed by the submodule's code, so they must be
+     excluded from the instruction-optimization candidate.
     """
     ids: set[int] = set()
     for vibe in vibe_submodules.values():
@@ -274,7 +271,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # --- code components (vibe-marked dspy.Vibe submodules) --------------
         if code_keys:
-            from dspy.vibe.codegen import _strip_code_fences
+            from dspy.vibe.ctx import _strip_code_fences
             from dspy.vibe.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
 
             catalog = PRIMITIVES_CATALOG + "\n\n" + KNOWLEDGE_BASE

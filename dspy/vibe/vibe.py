@@ -11,7 +11,7 @@ from typing import Any
 import dspy
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
-from dspy.vibe.codegen import VibeContext, assess_intent, repair
+from dspy.vibe.ctx import VibeContext, assess_intent, repair
 from dspy.vibe.persistence import PersistedVibe, parse_persisted_file, render_persisted_file
 
 # Runtime exceptions that we treat as "the user's code is wrong, not a flaky

@@ -502,20 +502,18 @@ class GEPA(Teleprompter):
 
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
-        # Vibe-marked (dspy.Vibe) submodules get their *code* optimized; every other
-        # predictor keeps the default instruction-only optimization. Predictors that live
-        # inside a vibe submodule are owned by its code, so they are excluded here (by
-        # object identity, since named_sub_modules/named_predictors use different paths).
+        # Vibe-marked (dspy.Vibe) submodules get their *code* optimized
         vibe_submodules = enumerate_vibe_submodules(student)
         vibe_internal_ids = vibe_internal_predictor_ids(vibe_submodules)
         instruction_predictors = [
             (name, pred) for name, pred in student.named_predictors() if id(pred) not in vibe_internal_ids
         ]
 
+        # TODO: Keep? Or should use ProAct instead?
         if not trainset:
-            # No data: still spend compute to synthesize better code for a vibe module
-            # from its signature + the knowledge base. Instruction optimization needs
-            # examples to score against, so it still requires a trainset.
+            # Synthesize better code for a vibe module
+            # from its signature + the knowledge base. Can't optimize instruction tho
+            # because needs examples to score against, so it still requires a trainset.
             if vibe_submodules and not instruction_predictors:
                 logger.info("GEPA: no trainset provided — running a bounded code-synthesis pass.")
                 return self._code_synthesis_no_data(student)
@@ -657,7 +655,7 @@ class GEPA(Teleprompter):
         binds cleanly. This is the "spend compute to write better code" path.
         """
         from dspy.teleprompt.gepa.gepa_utils import enumerate_vibe_submodules
-        from dspy.vibe.codegen import generate
+        from dspy.vibe.ctx import generate
         from dspy.vibe.primitives_doc import KNOWLEDGE_BASE
 
         program = student.deepcopy()
