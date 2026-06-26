@@ -1,0 +1,45 @@
+[project]
+name = "dr-dspy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
+]
+requires-python = ">=3.10, <3.15"
+dependencies = [
+    "dspy",
+    "marimo[recommended]>=0.23.11",
+    "psycopg>=3.3.4",
+    "pytest>=8.4.2",
+    "python-dotenv>=1.1.0",
+    "ruff>=0.15.10",
+    "ty>=0.0.54",
+    "typer>=0.26.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+dspy = { workspace = true }
+
+[tool.ruff]
+include = ["src/**/*.py", "scripts/**/*.py"]
+exclude = ["tests/**/*.py"]
+force-exclude = true
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dr_dspy", "dspy"]
+
+[tool.ty.environment]
+extra-paths = [".."]
+
+[tool.ty.src]
+include = ["src/**/*.py", "scripts/**/*.py"]
