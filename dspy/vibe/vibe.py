@@ -42,9 +42,8 @@ class Vibe(Module):
     a deterministic baseline that simply delegates to ``dspy.RLM(<signature>)`` (no codegen
     LM call). The module is *marked* code-optimizable (``_code_optimizable``): when optimized
     with ``dspy.GEPA``, the optimizer may rewrite its source (a single ``dspy.Module`` subclass,
-    exposed as ``module_src``) — decomposing the task into focused predictors and plain Python —
-    rather than only tuning instructions. A regular ``dspy.Predict`` in the same program keeps
-    the default instruction-only optimization.
+    exposed as ``module_src``) — decomposing the task into predictors and code —
+    rather than only tuning instructions.
 
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.

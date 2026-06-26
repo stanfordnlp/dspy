@@ -14,8 +14,8 @@ _MODULE_END = "# __VIBE_MODULE_END__"
 _FILE_HEADER_DOCSTRING = '''"""Implementation of a dspy.Vibe module -- managed automatically.
 
 This file starts life as a baseline that delegates to dspy.RLM, and is rewritten in place
-by dspy.GEPA when you optimize the module (decomposing the task into focused predictors and
-plain Python). It is a normal, runnable dspy.Module and is meant to be readable and editable.
+by dspy.GEPA when you optimize the module (decomposing the task into predictors and Python code). 
+It is a normal, runnable dspy.Module.
 
 - You may edit the module class between the __VIBE_MODULE_BEGIN__/__VIBE_MODULE_END__ markers;
   on the next run dspy.Vibe parses that class back out and runs your code as-is.
