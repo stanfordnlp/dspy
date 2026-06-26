@@ -17,7 +17,8 @@ This experiment runs a DSPy `BootstrapFewShot` pass over HumanEval Plus. It:
 - asks an LM to emit a single Python function for each prompt;
 - evaluates generated code in a subprocess sandbox;
 - logs run, flow, module, adapter, LM, and metric events;
-- saves the compiled DSPy program artifact.
+- saves the compiled DSPy program artifact to
+  `logs/compiled_humaneval.json` by default.
 
 The script keeps the experiment-defining choices local: dataset, signature,
 metric, optimizer, model setup, run flow, and CLI flags. Shared mechanics are

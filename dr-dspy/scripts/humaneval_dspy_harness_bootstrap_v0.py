@@ -9,6 +9,7 @@ import traceback
 import uuid
 from collections.abc import Mapping
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 
 import typer
@@ -38,7 +39,7 @@ from dspy.teleprompt import BootstrapFewShot
 # Configuration
 
 DEFAULT_DB_PATH = "./runs.db"
-DEFAULT_COMPILED_PATH = "./compiled_humaneval.json"
+DEFAULT_COMPILED_PATH = "./logs/compiled_humaneval.json"
 DEFAULT_EVENT_STORE = EventStore.POSTGRES
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_TRAIN_SIZE = 32
@@ -266,6 +267,9 @@ def run_humaneval_bootstrap_flow(
             optimized = evaluate_program_with_async_runner(evaluator, compiled)
 
         try:
+            Path(config.compiled_path).parent.mkdir(
+                parents=True, exist_ok=True
+            )
             compiled.save(config.compiled_path)
         except Exception as e:
             print(f"[save compiled] {e!r}", file=sys.stderr)

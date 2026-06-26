@@ -42,13 +42,19 @@ def test_bootstrap_selects_passing_demos(
     assert len(lm.calls) >= len(train)
 
 
+def test_default_compiled_path_is_under_logs(humaneval_harness) -> None:
+    assert humaneval_harness.DEFAULT_COMPILED_PATH == (
+        "./logs/compiled_humaneval.json"
+    )
+
+
 def test_full_harness_smoke(
     humaneval_harness,
     humaneval_mock_harness,
     tmp_path,
 ) -> None:
     db_path = tmp_path / "smoke.db"
-    compiled_path = tmp_path / "compiled.json"
+    compiled_path = tmp_path / "logs" / "compiled.json"
     config = humaneval_harness.HarnessConfig(
         event_store=EventStore.SQLITE,
         db_path=str(db_path),
