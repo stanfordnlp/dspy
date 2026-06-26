@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import threading
 import traceback
 from typing import Any
 
@@ -30,38 +29,42 @@ class PredictorDemoCounts(BaseModel):
 
 
 class AsyncProgramRunner:
-    """Sync-callable wrapper that drives ``program.acall`` per thread."""
+    """Drive ``program.acall`` from sync evaluators."""
 
     def __init__(self, program: dspy.Module) -> None:
         self.program = program
-        self._tls = threading.local()
-        self._loops: list[asyncio.AbstractEventLoop] = []
-        self._loops_lock = threading.Lock()
-
-    def _loop(self) -> asyncio.AbstractEventLoop:
-        loop = getattr(self._tls, "loop", None)
-        if loop is None or loop.is_closed():
-            loop = asyncio.new_event_loop()
-            self._tls.loop = loop
-            with self._loops_lock:
-                self._loops.append(loop)
-        return loop
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        loop = self._loop()
-        return loop.run_until_complete(self.program.acall(*args, **kwargs))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self.program.acall(*args, **kwargs))
+        finally:
+            self._close_loop(loop)
 
     def close(self) -> None:
-        """Close every per-thread loop created by this runner."""
-        with self._loops_lock:
-            loops = list(self._loops)
-            self._loops.clear()
-        for loop in loops:
-            try:
-                if not loop.is_closed():
-                    loop.close()
-            except Exception as e:
-                print(f"[AsyncProgramRunner close] {e!r}", file=sys.stderr)
+        """Kept for the evaluator fallback path."""
+
+    @staticmethod
+    def _close_loop(loop: asyncio.AbstractEventLoop) -> None:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception as e:
+            print(
+                f"[AsyncProgramRunner shutdown_asyncgens] {e!r}",
+                file=sys.stderr,
+            )
+        try:
+            loop.run_until_complete(loop.shutdown_default_executor())
+        except Exception as e:
+            print(
+                f"[AsyncProgramRunner shutdown_default_executor] {e!r}",
+                file=sys.stderr,
+            )
+        try:
+            if not loop.is_closed():
+                loop.close()
+        except Exception as e:
+            print(f"[AsyncProgramRunner close] {e!r}", file=sys.stderr)
 
 
 def count_predictor_demos(compiled: dspy.Module) -> PredictorDemoCounts:
