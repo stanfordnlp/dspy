@@ -38,6 +38,7 @@ from dspy.teleprompt import BootstrapFewShot
 
 DEFAULT_DB_PATH = "./runs.db"
 DEFAULT_COMPILED_PATH = "./compiled_humaneval.json"
+DEFAULT_EVENT_STORE = EventStore.POSTGRES
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_TRAIN_SIZE = 32
 DEFAULT_DEV_SIZE = 32
@@ -59,7 +60,7 @@ ZERO_DEMO_EXIT_CODE = 3
 class HarnessConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    event_store: EventStore = EventStore.SQLITE
+    event_store: EventStore = DEFAULT_EVENT_STORE
     db_path: StrictStr = DEFAULT_DB_PATH
     database_url: StrictStr | None = None
     compiled_path: StrictStr = DEFAULT_COMPILED_PATH
@@ -323,7 +324,7 @@ def main(
     event_store: Annotated[
         EventStore,
         typer.Option("--event-store", help="Event log backend to use."),
-    ] = EventStore.SQLITE,
+    ] = DEFAULT_EVENT_STORE,
     db_path: Annotated[str, typer.Option("--db-path")] = DEFAULT_DB_PATH,
     database_url: Annotated[
         str | None,

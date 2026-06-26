@@ -22,6 +22,7 @@ if str(SCRIPT_ROOT) not in sys.path:
 from humaneval_dspy_harness_bootstrap_v0 import (  # noqa: E402
     DEFAULT_COMPILED_PATH,
     DEFAULT_DB_PATH,
+    DEFAULT_EVENT_STORE,
     DEFAULT_MAX_BOOTSTRAPPED_DEMOS,
     DEFAULT_MAX_LABELED_DEMOS,
     DEFAULT_NUM_THREADS,
@@ -131,7 +132,7 @@ def main(
     event_store: Annotated[
         EventStore,
         typer.Option("--event-store", help="Event log backend to use."),
-    ] = EventStore.SQLITE,
+    ] = DEFAULT_EVENT_STORE,
     db_path: Annotated[str, typer.Option("--db-path")] = DEFAULT_DB_PATH,
     database_url: Annotated[
         str | None,
