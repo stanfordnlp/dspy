@@ -17,7 +17,7 @@ SANITIZE_KEYS = frozenset(
 )
 
 
-def _sanitize(kwargs: dict[str, Any] | None) -> dict[str, Any]:
+def sanitize_lm_kwargs(kwargs: dict[str, Any] | None) -> dict[str, Any]:
     """Strip credential-like keys from an LM kwargs dict before logging."""
     if not kwargs:
         return {}
@@ -50,7 +50,7 @@ def _signature_summary(sig_cls: type[dspy.Signature]) -> dict[str, Any]:
 
 
 def _to_jsonable_inner(x: Any, depth: int = 0) -> Any:
-    """Recursive worker for to_jsonable. Depth-bounded to avoid pathological cycles."""
+    """Recursive, depth-bounded worker for to_jsonable."""
     if depth > 12:
         return repr(x)[:REPR_TRUNCATE]
     if x is None or isinstance(x, (bool, int, float, str)):
@@ -78,7 +78,7 @@ def _to_jsonable_inner(x: Any, depth: int = 0) -> Any:
             "_kind": "BaseLM",
             "class": f"{type(x).__module__}.{type(x).__name__}",
             "model": getattr(x, "model", None),
-            "kwargs": _sanitize(getattr(x, "kwargs", {})),
+            "kwargs": sanitize_lm_kwargs(getattr(x, "kwargs", {})),
         }
     if isinstance(x, pydantic.BaseModel):
         try:

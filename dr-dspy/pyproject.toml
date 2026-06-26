@@ -26,7 +26,9 @@ dspy = { workspace = true }
 
 [tool.ruff]
 include = ["src/**/*.py", "scripts/**/*.py"]
-line-length = 120
+exclude = ["tests/**/*.py"]
+force-exclude = true
+line-length = 79
 target-version = "py310"
 
 [tool.ruff.lint]

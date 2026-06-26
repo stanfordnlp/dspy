@@ -11,14 +11,23 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from enum import Enum
 from typing import Any, Protocol, cast
 
 from dr_dspy.serialization import to_jsonable
 
 DEFAULT_FLOW = "unknown"
 BATCH_SIZE = 256
+DATABASE_URL_ENV = "DATABASE_URL"
 
 DefaultFlowFn = Callable[[], str]
+
+
+class EventStore(str, Enum):
+    """Supported event-log backends."""
+
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
 
 
 class EventWriter(Protocol):
@@ -47,6 +56,33 @@ class EventWriter(Protocol):
 def default_flow() -> str:
     """Return the fallback flow label used outside an active harness flow."""
     return DEFAULT_FLOW
+
+
+def build_event_writer(
+    *,
+    event_store: EventStore | str,
+    run_id: str,
+    db_path: str | None = None,
+    database_url: str | None = None,
+    default_flow_fn: DefaultFlowFn = default_flow,
+) -> EventWriter:
+    """Build an event writer from explicit backend configuration."""
+    store = EventStore(event_store)
+    if store is EventStore.POSTGRES:
+        resolved_url = database_url or os.environ.get(DATABASE_URL_ENV)
+        if not resolved_url:
+            raise ValueError(
+                f"--database-url or {DATABASE_URL_ENV} is required with "
+                "--event-store postgres"
+            )
+        return PostgresWriter(
+            resolved_url, run_id=run_id, default_flow_fn=default_flow_fn
+        )
+    if not db_path:
+        raise ValueError("db_path is required with --event-store sqlite")
+    return SQLiteWriter(
+        db_path, run_id=run_id, default_flow_fn=default_flow_fn
+    )
 
 
 SQLITE_SCHEMA_SQL = """

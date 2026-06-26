@@ -1,3 +1,12 @@
+# dr-dspy
+
+.ruff_cache/
+.pytest_cache/
+
+
+
+# ---- Pre-Existing ---- #
+
 /experiments/
 /checkpoints/
 # /data/
@@ -19,6 +28,7 @@ testing/playbook.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 
