@@ -163,9 +163,8 @@ class CodeProposalSignature(dspy.Signature):
     """Revise the full source code of a flex-marked dspy.Flex submodule.
 
     You receive the submodule's task description (its Signature), the catalog of allowed
-    primitives plus a good/bad-behavior knowledge base, the module's current source, and a
-    batch of failing examples with feedback. Produce a revised source that fixes the observed
-    failures and follows the catalog.
+    primitives, the module's current source, and a batch of failing examples with feedback.
+    Produce a revised source that fixes the observed failures and follows the catalog.
 
     The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output
     the entire, internally-consistent class:
@@ -181,7 +180,7 @@ class CodeProposalSignature(dspy.Signature):
         desc="The submodule's Signature: name, objective, input and output fields."
     )
     primitives_catalog: str = dspy.InputField(
-        desc="Catalog of allowed primitives plus good/bad-behavior guidance to follow."
+        desc="Catalog of allowed primitives and conventions the revised code must follow."
     )
     current_source: str = dspy.InputField(
         desc="The module's current full source: one dspy.Module subclass (its __init__ and forward)."
@@ -272,9 +271,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # --- code components (flex-marked dspy.Flex submodules) --------------
         if code_keys:
             from dspy.flex.ctx import _strip_code_fences
-            from dspy.flex.primitives_doc import KNOWLEDGE_BASE, PRIMITIVES_CATALOG
+            from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
 
-            catalog = PRIMITIVES_CATALOG + "\n\n" + KNOWLEDGE_BASE
             proposer = dspy.Predict(CodeProposalSignature)
             with dspy.context(lm=reflection_lm):
                 for ckey in code_keys:
@@ -282,7 +280,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     try:
                         out = proposer(
                             task_description=self._flex_task_descriptions.get(path, path),
-                            primitives_catalog=catalog,
+                            primitives_catalog=PRIMITIVES_CATALOG,
                             current_source=candidate[ckey],
                             failures=_format_failures(reflective_dataset.get(ckey, [])),
                         )
