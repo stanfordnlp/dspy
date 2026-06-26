@@ -1,7 +1,7 @@
 """HumanEval+ x DSPy evaluation / optimization harness.
 
 Single-file harness that runs Evaluate → BootstrapFewShot → Evaluate on
-HumanEval+ using DSPy, logs every observable boundary to a SQLite database,
+HumanEval+ using DSPy, logs every observable boundary to an event log backend,
 sandboxes code execution in subprocesses, and ships with deterministic
 self-tests using a mock LM.
 
@@ -39,10 +39,12 @@ import pydantic
 
 import dspy
 from dr_dspy.event_log import (
-    PAYLOAD_MAX_BYTES,
     EventWriter,
     PostgresWriter,
     SQLiteWriter,
+)
+from dr_dspy.serialization import (
+    PAYLOAD_MAX_BYTES,
     _sanitize,
     to_jsonable,
 )
@@ -115,7 +117,7 @@ def _flow_context(flow: str) -> Iterator[None]:
 # --------------------------------------------------------------------------- #
 
 
-class SQLiteCallback(BaseCallback):
+class EventLogCallback(BaseCallback):
     """BaseCallback that writes every DSPy hook to an EventWriter."""
 
     def __init__(self, writer: EventWriter) -> None:
@@ -139,7 +141,7 @@ class SQLiteCallback(BaseCallback):
                 parent_call_id=parent,
             )
         except Exception as e:
-            print(f"[SQLiteCallback {event_type}] {e!r}", file=sys.stderr)
+            print(f"[EventLogCallback {event_type}] {e!r}", file=sys.stderr)
 
     def _safe_log_end(
         self,
@@ -161,7 +163,7 @@ class SQLiteCallback(BaseCallback):
             if token is not None:
                 _current_call_id.reset(token)
         except Exception as e:
-            print(f"[SQLiteCallback {event_type}] {e!r}", file=sys.stderr)
+            print(f"[EventLogCallback {event_type}] {e!r}", file=sys.stderr)
 
     # ----- module ----- #
 
@@ -923,7 +925,7 @@ def _run_flows(args: argparse.Namespace, *, mock: bool) -> int:
 
     rc = 0
     try:
-        cb = SQLiteCallback(writer)
+        cb = EventLogCallback(writer)
         if mock:
             lm: dspy.BaseLM = LoggingCallableLM(
                 _mock_solver, log=writer.put_event
