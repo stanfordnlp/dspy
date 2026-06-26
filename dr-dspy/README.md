@@ -24,6 +24,13 @@ The script keeps the experiment-defining choices local: dataset, signature,
 metric, optimizer, model setup, run flow, and CLI flags. Shared mechanics are
 imported from `src/dr_dspy/`.
 
+Real HumanEval runs call OpenRouter directly through `LoggingOpenRouterLM`,
+not through LiteLLM. The default model is `openai/gpt-5-nano`, and the script
+sets OpenRouter reasoning to the lowest supported configuration for that model:
+`{"effort": "minimal", "exclude": true}`. Override the model with `--model`;
+set `OPENROUTER_API_KEY` in the environment or package-local `.env` before
+running the real script.
+
 For a deterministic smoke run, use the parallel mock script:
 [`scripts/mocks/humaneval_dspy_harness_bootstrap_v0_mock.py`](scripts/mocks/humaneval_dspy_harness_bootstrap_v0_mock.py).
 It imports the real `run_humaneval_bootstrap_flow` but supplies a tiny mock
@@ -48,6 +55,7 @@ but they own fake datasets, fake solvers, and smoke-test-specific setup.
 - `event_log.py`: SQLite/Postgres event writers and writer construction.
 - `flow.py`: flow context tracking for event logs.
 - `lm_logging.py`: logging LM wrappers.
+- `openrouter_lm.py`: direct OpenRouter chat-completions LM wrapper.
 - `run_metadata.py`: run metadata capture and sanitization.
 - `runtime.py`: shared script runtime setup.
 - `serialization.py`: DSPy-aware JSON-safe serialization.
@@ -82,6 +90,12 @@ Create a package-local `.env` from the example:
 
 ```sh
 cp .env.example .env
+```
+
+For real OpenRouter-backed experiments, add:
+
+```sh
+OPENROUTER_API_KEY=...
 ```
 
 The default local database URL is:
