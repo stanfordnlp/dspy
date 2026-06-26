@@ -118,7 +118,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-include = ["dspy/**/*.py", "tests/**/*.py"]
+include = ["dr-dspy/src/**/*.py", "dr-dspy/scripts/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
   "tests/reliability/*.py",
@@ -168,8 +168,17 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
+[tool.uv.workspace]
+members = ["dr-dspy"]
+
+[tool.ty.environment]
+extra-paths = [".", "dr-dspy/src"]
+
+[tool.ty.src]
+include = ["dr-dspy/src/**/*.py", "dr-dspy/scripts/**/*.py"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["dspy"]
+known-first-party = ["dspy", "dr_dspy"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

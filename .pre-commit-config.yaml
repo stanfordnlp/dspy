@@ -2,14 +2,26 @@ default_stages: [pre-commit]
 default_install_hook_types: [pre-commit]
 
 repos:
+  - repo: local
+    hooks:
+      - id: dr-dspy-ruff-check
+        name: dr-dspy ruff check
+        entry: bash -c 'cd dr-dspy && uv run ruff check'
+        language: system
+        pass_filenames: false
+      - id: dr-dspy-ty-check
+        name: dr-dspy ty check
+        entry: bash -c 'cd dr-dspy && uv run ty check'
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.0
     hooks:
       - id: ruff
         name: ruff (lint)
         types_or: [python, pyi]
-        files: ^(dspy|tests)/.*\.py$
-        exclude: ^(dspy/__metadata__\.py|tests/reliability/.*\.py)$
+        files: ^dr-dspy/(src|scripts)/.*\.py$
         args: [--fix-only]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
