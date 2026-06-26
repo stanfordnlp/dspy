@@ -689,6 +689,39 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
 
 
 
+def test_format_as_litellm_function_call_required_excludes_defaults():
+    """Args with default values must NOT appear in the 'required' list (issue #9882)."""
+
+    def look_up(query: str, state: str = "fresh") -> str:
+        """Look something up."""
+        return f"{query}:{state}"
+
+    tool = Tool(look_up)
+    schema = tool.format_as_litellm_function_call()
+    params = schema["function"]["parameters"]
+
+    # 'query' has no default → must be required
+    assert "query" in params["required"]
+    # 'state' has a default → must NOT be required
+    assert "state" not in params["required"]
+    # The default value itself must still be present in properties
+    assert params["properties"]["state"]["default"] == "fresh"
+
+
+def test_format_as_litellm_function_call_all_required_when_no_defaults():
+    """When no args have defaults, all should appear in 'required'."""
+
+    def add(x: int, y: int) -> int:
+        """Add two numbers."""
+        return x + y
+
+    tool = Tool(add)
+    schema = tool.format_as_litellm_function_call()
+    params = schema["function"]["parameters"]
+
+    assert set(params["required"]) == {"x", "y"}
+
+
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
