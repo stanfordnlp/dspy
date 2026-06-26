@@ -4,13 +4,14 @@ import hashlib
 import json
 import logging
 import types
+import warnings
 from pathlib import Path
 from typing import Any
 
 import dspy
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
-from dspy.vibe.codegen import VibeContext, repair
+from dspy.vibe.codegen import VibeContext, assess_intent, repair
 from dspy.vibe.persistence import PersistedVibe, parse_persisted_file, render_persisted_file
 
 # Runtime exceptions that we treat as "the user's code is wrong, not a flaky
@@ -53,12 +54,19 @@ class Vibe(Module):
             the implementation lives only in memory.
         context: Optional list of ``dspy.Tool`` / callables / style note strings to inject
             into the runtime exec namespace (and into code optimization).
-        codegen_lm: LM used for auto-repair of broken code. Defaults to ``dspy.settings.lm``.
+        codegen_lm: LM used for auto-repair of broken code and for the intent check.
+            Defaults to ``dspy.settings.lm``.
         auto_repair: When True (default), Vibe tries to recover from a broken persisted /
             optimized implementation by re-invoking the codegen LM with the broken body and
             the exception text — at most once at bind time (on load) and once at runtime per
             process. Set False to surface errors directly. The deterministic baseline never
             triggers repair.
+        check_intent: When True (default), the first time a module is created for a signature
+            (a fresh baseline — not a plain reload of a matching persisted file) Vibe makes one
+            best-effort LM call to judge whether the signature is specific enough to implement.
+            If it looks vague or misleading, Vibe emits a warning naming what's unclear and a
+            question to clarify; the module is still built. Skipped silently when no LM is
+            available or the check itself errors. Set False to disable the call entirely.
 
     Persistence: when ``persist_to`` is set, the implementation is a single self-contained
     ``.py`` file (a header comment, a signature-hash guard, and the ``PREDICTORS`` dict +
@@ -79,6 +87,7 @@ class Vibe(Module):
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         auto_repair: bool = True,
+        check_intent: bool = True,
     ):
         super().__init__()
 
@@ -105,6 +114,7 @@ class Vibe(Module):
         self._predictor_names: list[str] = []
         self._forward_impl: Any = None
         self._auto_repair = auto_repair
+        self._check_intent = check_intent
         self._runtime_repair_used = False
 
         self._lazy_implement()
@@ -172,6 +182,10 @@ class Vibe(Module):
                     self._persist_to,
                 )
 
+        # This is a fresh generation (no matching persisted impl): a new signature, a changed
+        # one, or in-memory mode. Pre-flight the signature for clarity before building.
+        self._maybe_warn_intent()
+
         # Bind the deterministic RLM baseline (no codegen LM call). Decomposition into a
         # richer, mostly-Python program happens later via dspy.GEPA.
         predictors_src, forward_src = self._rlm_baseline_src()
@@ -181,6 +195,36 @@ class Vibe(Module):
             logger.info("dspy.Vibe %r: wrote RLM baseline to %s", self._name, self._persist_to)
         else:
             logger.info("dspy.Vibe %r: persist_to=None — RLM baseline is in-memory only.", self._name)
+
+    def _maybe_warn_intent(self) -> None:
+        """Best-effort: warn if the signature looks too vague/misleading to implement well.
+
+        Runs at most one LM call, only on a fresh generation (the caller gates this to the
+        fresh-baseline path, never a plain reload). Skipped when ``check_intent`` is off or no
+        LM is available, and any failure is swallowed — an advisory check must never block
+        construction. The module is built regardless of the verdict.
+        """
+        if not self._check_intent:
+            return
+        lm = self._codegen_lm or dspy.settings.lm
+        if lm is None:
+            return
+        try:
+            is_clear, vague_aspect, clarifying_question = assess_intent(self._vibe_ctx, lm=lm)
+        except Exception as err:  # advisory only — never block construction
+            logger.debug("dspy.Vibe %r: intent check skipped (%s)", self._name, err)
+            return
+        if is_clear:
+            return
+        message = (
+            f"dspy.Vibe {self._name!r}: this signature may be too vague or misleading to "
+            f"implement reliably, so the generated module may be incorrect.\n"
+            f"  What's unclear: {vague_aspect or '(the objective and/or field roles are underspecified)'}\n"
+            f"  Please clarify: {clarifying_question or 'tighten the objective (docstring) and the input/output field descriptions.'}\n"
+            f"  (Pass check_intent=False to dspy.Vibe(...) to silence this check.)"
+        )
+        logger.warning(message)
+        warnings.warn(message, stacklevel=2)
 
     def _rlm_baseline_src(self) -> tuple[str, str]:
         """Deterministic baseline source: delegate the whole signature to one dspy.RLM.

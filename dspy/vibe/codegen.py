@@ -221,6 +221,53 @@ class RepairSignature(dspy.Signature):
     )
 
 
+class IntentSignature(dspy.Signature):
+    """Judge whether a dspy.Vibe module's signature is clear enough to implement correctly.
+
+    A GOOD signature names a concrete task and has input/output fields whose roles and
+    formats are unambiguous, so a competent engineer could implement it without guessing.
+    Flag it as NOT clear when: the objective (docstring) is vague, generic, or missing; a
+    field's meaning, type, or expected format is ambiguous; the outputs do not plausibly
+    follow from the inputs; or the description is internally contradictory or misleading.
+
+    Be specific and conservative — only flag a genuine problem that would likely cause the
+    synthesized module to be wrong, not stylistic nitpicks.
+    """
+
+    signature_spec: str = dspy.InputField(
+        desc="The Vibe module's signature: name, objective docstring, input and output fields."
+    )
+    is_clear: bool = dspy.OutputField(
+        desc="True if the signature is specific enough to implement reliably; False if vague or misleading."
+    )
+    vague_aspect: str = dspy.OutputField(
+        desc="If not clear, the single most problematic aspect: which field or part of the objective "
+        "is vague/misleading and why. Empty string if clear."
+    )
+    clarifying_question: str = dspy.OutputField(
+        desc="If not clear, one concrete question the user should answer to disambiguate the signature. "
+        "Empty string if clear."
+    )
+
+
+def assess_intent(ctx: VibeContext, *, lm: dspy.LM | None = None) -> tuple[bool, str, str]:
+    """Best-effort signature-clarity check for a Vibe module.
+
+    Returns ``(is_clear, vague_aspect, clarifying_question)``. Makes one LM call against
+    ``lm`` (or ``dspy.settings.lm`` when ``lm`` is None). Callers should treat this as
+    advisory and guard the call themselves (skip when no LM is configured); it does not
+    catch its own errors.
+    """
+    predictor = dspy.Predict(IntentSignature)
+    inputs = dict(signature_spec=ctx.render_signature_spec())
+    if lm is not None:
+        with dspy.context(lm=lm):
+            out = predictor(**inputs)
+    else:
+        out = predictor(**inputs)
+    return bool(out.is_clear), (out.vague_aspect or "").strip(), (out.clarifying_question or "").strip()
+
+
 def _strip_code_fences(s: str) -> str:
     s = (s or "").strip()
     if s.startswith("```"):
