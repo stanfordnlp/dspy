@@ -3,11 +3,11 @@ from __future__ import annotations
 import textwrap
 from typing import NamedTuple
 
-_SIG_HASH_PREFIX = "# __FLEX_SIGNATURE_HASH__:"
-_PREDICTORS_BEGIN = "# __FLEX_PREDICTORS_BEGIN__"
-_PREDICTORS_END = "# __FLEX_PREDICTORS_END__"
-_FORWARD_BEGIN = "# __FLEX_FORWARD_BEGIN__"
-_FORWARD_END = "# __FLEX_FORWARD_END__"
+_SIG_HASH_PREFIX = "# __VIBE_SIGNATURE_HASH__:"
+_PREDICTORS_BEGIN = "# __VIBE_PREDICTORS_BEGIN__"
+_PREDICTORS_END = "# __VIBE_PREDICTORS_END__"
+_FORWARD_BEGIN = "# __VIBE_FORWARD_BEGIN__"
+_FORWARD_END = "# __VIBE_FORWARD_END__"
 _CLASS_INDENT = "    "
 
 _FILE_HEADER_DOCSTRING = '''"""Implementation of a dspy.Vibe module — managed automatically.
@@ -18,7 +18,7 @@ plain Python). It is meant to be readable and reviewable.
 
 - You may edit the PREDICTORS dict and the forward() body between the marker comments below;
   on the next run dspy.Vibe parses those regions back out and runs your code as-is.
-- __FLEX_SIGNATURE_HASH__ guards against stale code: if you change the Signature, the hash
+- __VIBE_SIGNATURE_HASH__ guards against stale code: if you change the Signature, the hash
   no longer matches and dspy.Vibe regenerates the baseline for the new Signature (re-run
   dspy.GEPA to re-optimize).
 

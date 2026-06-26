@@ -10,8 +10,8 @@ from typing import Any
 import dspy
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
-from dspy.vibe.codegen import repair
-from dspy.vibe.persistence import parse_persisted_file, render_persisted_file
+from dspy.vibe.codegen import VibeContext, repair
+from dspy.vibe.persistence import PersistedVibe, parse_persisted_file, render_persisted_file
 
 # Runtime exceptions that we treat as "the user's code is wrong, not a flaky
 # downstream call." A bare LM or tool call typically raises a more specific

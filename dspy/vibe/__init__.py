@@ -1,4 +1,4 @@
-from dspy.vibe.codegen import FlexContext
+from dspy.vibe.codegen import VibeContext
 from dspy.vibe.vibe import Vibe
 
-__all__ = ["Vibe", "FlexContext"]
+__all__ = ["Vibe", "VibeContext"]

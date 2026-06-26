@@ -55,12 +55,12 @@ def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     Vibe(Echo, persist_to=str(persist_path))
     assert persist_path.exists()
     text = persist_path.read_text()
-    assert "__FLEX_SIGNATURE_HASH__" in text
+    assert "__VIBE_SIGNATURE_HASH__" in text
     assert "PREDICTORS" in text
     assert "dspy.RLM(" in text
     assert "def forward" in text
     # Bookkeeping is gone: no body hash, no flex_id, no .vibe dir.
-    assert "__FLEX_BODY_HASH__" not in text
+    assert "__VIBE_BODY_HASH__" not in text
     assert "flex_id" not in text
     assert not (tmp_path / ".vibe").exists()
 
@@ -76,7 +76,7 @@ def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
     Vibe(Echo, persist_to=str(persist_path))
     original = persist_path.read_text()
-    tampered = original.replace("__FLEX_SIGNATURE_HASH__: ", "__FLEX_SIGNATURE_HASH__: nope_")
+    tampered = original.replace("__VIBE_SIGNATURE_HASH__: ", "__VIBE_SIGNATURE_HASH__: nope_")
     persist_path.write_text(tampered)
 
     # No LM needed — the reset to baseline is deterministic and LM-free.
