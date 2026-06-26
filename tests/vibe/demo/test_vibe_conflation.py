@@ -39,9 +39,7 @@ class SamePlace(dspy.Signature):
     input_address: str = dspy.InputField(desc="Street address of place A.")
     match_name: str = dspy.InputField(desc="Name of place B.")
     match_address: str = dspy.InputField(desc="Street address of place B.")
-    distance: float = dspy.InputField(
-        desc="Distance between the two coordinates."
-    )
+    distance: float = dspy.InputField(desc="Distance between the two coordinates.")
     is_same: bool = dspy.OutputField(desc="True if A and B are the same physical place, else False.")
 
 
@@ -131,12 +129,26 @@ def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
     return correct / len(dataset), calls / len(dataset)
 
 
+def _showcase(program: dspy.Module, label: str) -> None:
+    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    print(f"\n===== {label} =====")
+    print("predictors on the module:", [n for n, _ in program.named_predictors()])
+    print("--- module_src (a normal dspy.Module subclass) ---")
+    print(program.module_src)
+
+
 def test_vibe_conflation() -> None:
     dspy.configure(lm=EXEC_LM)
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
     program = dspy.Vibe(SamePlace, persist_to=str(VIBE_PATH), codegen_lm=STRONG_LM)
+
+    # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
+    assert program.module_src.lstrip().startswith("class ")
+    assert "dspy.RLM(" in program.module_src
+    _showcase(program, "baseline (un-optimized vibe)")
+
     base_acc, base_calls = _evaluate(program, test)
     print(f"[baseline] test accuracy={base_acc:.2f}, avg LLM calls/example={base_calls:.2f}")
 
@@ -147,6 +159,11 @@ def test_vibe_conflation() -> None:
         reflection_minibatch_size=3,
         num_threads=4,
     ).compile(program, trainset=train, valset=val)
+
+    # The metric penalizes LLM calls, so GEPA should push most logic into plain Python —
+    # watch the module_src shift from one RLM to focused predictors + deterministic code.
+    _showcase(optimized, "optimized by GEPA")
+    print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
     opt_acc, opt_calls = _evaluate(optimized, test)
     print(f"[optimized] test accuracy={opt_acc:.2f}  avg LLM calls/example={opt_calls:.2f}")

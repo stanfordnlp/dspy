@@ -17,13 +17,26 @@ class MathWord(dspy.Signature):
     answer: int = dspy.OutputField()
 
 
+def _showcase(program: dspy.Module, label: str) -> None:
+    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    print(f"\n===== {label} =====")
+    print("predictors on the module:", [n for n, _ in program.named_predictors()])
+    print("--- module_src (a normal dspy.Module subclass) ---")
+    print(program.module_src)
+
+
 def test_vibe() -> None:
     # Reconfigure here (not just at import) so the test is order-independent: other
     # tests in the session reconfigure the global LM.
     dspy.configure(lm=exec_lm)
     program = dspy.Vibe(MathWord, persist_to=str(Path(__file__).parent / "math_vibe_gen.py"))
-    baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
 
+    # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
+    assert program.module_src.lstrip().startswith("class ")
+    assert "dspy.RLM(" in program.module_src
+    _showcase(program, "baseline (un-optimized vibe)")
+
+    baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
     print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")
 
     def ex(p, a):
@@ -52,6 +65,10 @@ def test_vibe() -> None:
         reflection_minibatch_size=2,
         num_threads=1,
     ).compile(program, trainset=trainset, valset=valset)
+
+    # GEPA rewrote the whole class (e.g. into a ChainOfThought + Python coercion).
+    _showcase(optimized, "optimized by GEPA")
+    print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
     pred = optimized(problem="What is 2 plus 2?")
     assert int(pred.answer) == 4

@@ -52,9 +52,7 @@ PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
 _exec_default = "anthropic/claude-opus-4-7"
 _reflect_default = "anthropic/claude-opus-4-7"
 EXEC_LM = dspy.LM(os.getenv("BANKING_EXEC_LM", _exec_default), max_tokens=2000)
-REFLECTION_LM = dspy.LM(
-    os.getenv("BANKING_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000
-)
+REFLECTION_LM = dspy.LM(os.getenv("BANKING_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000)
 
 N_TRAIN, N_VAL, N_TEST = 10, 5, 5
 MAX_METRIC_CALLS = 10
@@ -85,10 +83,7 @@ def _load_splits():
     labels = sorted(train_df["category"].unique())
 
     def to_examples(df):
-        return [
-            dspy.Example(text=r.text, intent=r.category).with_inputs("text")
-            for r in df.itertuples(index=False)
-        ]
+        return [dspy.Example(text=r.text, intent=r.category).with_inputs("text") for r in df.itertuples(index=False)]
 
     pool = train_df.sample(frac=1, random_state=0).reset_index(drop=True)  # disjoint train/val
     train = to_examples(pool.iloc[:N_TRAIN])
@@ -139,15 +134,25 @@ def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> Scor
     return ScoreWithFeedback(score=1.0 if correct else 0.0, feedback=fb)
 
 
+def _showcase(program: dspy.Module, label: str) -> None:
+    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    print(f"\n===== {label} =====")
+    print("predictors on the module:", [n for n, _ in program.named_predictors()])
+    print("--- module_src (a normal dspy.Module subclass) ---")
+    print(program.module_src)
+
+
 def test_vibe_banking77_showcase() -> None:
     dspy.configure(lm=EXEC_LM)
     labels, train, val, test = _load_splits()
     print(f"\nBANKING77: {len(labels)} intents | train={len(train)} val={len(val)} test={len(test)}")
 
-    # 1. Vibe the classifier: a dspy.RLM baseline, marked code-optimizable.
+    # 1. Vibe the classifier: a dspy.RLM baseline (a clean dspy.Module subclass), code-optimizable.
     program = dspy.Vibe(_build_signature(labels), persist_to=str(VIBE_PATH))
     baseline_src = program.module_src
+    assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in baseline_src  # the un-optimized vibe baseline
+    _showcase(program, "baseline (un-optimized vibe)")
 
     # 2. Benchmark the baseline.
     baseline_acc = _accuracy(program, test)
@@ -171,8 +176,7 @@ def test_vibe_banking77_showcase() -> None:
     detailed = getattr(optimized, "detailed_results", None)
     if detailed is not None:
         print(f"GEPA val scores explored: {detailed.val_aggregate_scores}")
-    print("--- optimized module_src ---")
-    print(optimized.module_src)
+    _showcase(optimized, "optimized by GEPA")
 
     # 5. Plot the before/after.
     fig, ax = plt.subplots(figsize=(5, 4))

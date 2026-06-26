@@ -38,7 +38,6 @@ valset = [
     ex("1 coffee mug at $7.50", 750),
     ex("8 oranges at $0.75 each", 600),
 ]
-heldout = ex("10 pencils at $0.30 each plus $1.50 shipping", 450)
 
 
 def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWithFeedback:
@@ -47,8 +46,7 @@ def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWith
     except (ValueError, TypeError, AttributeError):
         return ScoreWithFeedback(
             score=0.0,
-            feedback="`total_cents` was missing or not an integer. Return whole "
-            "cents as an int (e.g. $4.50 -> 450).",
+            feedback="`total_cents` was missing or not an integer. Return whole cents as an int (e.g. $4.50 -> 450).",
         )
 
     want = int(gold.total_cents)
@@ -77,9 +75,23 @@ def mean_score(program: dspy.Module, dataset: list[dspy.Example]) -> float:
     return total / len(dataset)
 
 
+def _showcase(program: dspy.Module, label: str) -> None:
+    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    print(f"\n===== {label} =====")
+    print("predictors on the module:", [n for n, _ in program.named_predictors()])
+    print("--- module_src (a normal dspy.Module subclass) ---")
+    print(program.module_src)
+
+
 def test_invoice_codegen_then_gepa() -> None:
     dspy.configure(lm=exec_lm)
     program = dspy.Vibe(InvoiceTotal, persist_to=str(VIBE_PATH))
+
+    # The fresh baseline is a clean dspy.Module subclass that delegates to one dspy.RLM.
+    assert program.module_src.lstrip().startswith("class ")
+    assert "dspy.RLM(" in program.module_src
+    _showcase(program, "baseline (un-optimized vibe)")
+    print(f"persisted as a runnable module at: {VIBE_PATH}")
 
     baseline = mean_score(program, valset)
     optimized = dspy.GEPA(
@@ -90,11 +102,68 @@ def test_invoice_codegen_then_gepa() -> None:
         num_threads=1,
     ).compile(program, trainset=trainset, valset=valset)
 
+    # GEPA rewrote the whole class; any predictors it introduced are flat on the module.
+    _showcase(optimized, "optimized by GEPA")
+    print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
     assert mean_score(optimized, valset) >= baseline
 
 
-def test_invoice_manual_edit() -> None:
+def test_invoice_manual_edit_is_loaded_and_reseeds_gepa(tmp_path) -> None:
+    """Showcase: the persisted module is a normal file you can hand-edit; the edit is loaded
+    as-is on the next run, and a later dspy.GEPA run seeds from YOUR edited code (not the
+    baseline). The edit/reload here is LM-free."""
+    from dspy.teleprompt.gepa.gepa_utils import enumerate_vibe_submodules
+
+    path = tmp_path / "invoice_vibe_gen.py"
     dspy.configure(lm=exec_lm)
-    program = dspy.Vibe(InvoiceTotal, persist_to=str(VIBE_PATH))
-    pred = program(**heldout.inputs())
-    print(f"Before manual edit: predicted total_cents = {pred.total_cents}, want {heldout.total_cents}")
+    dspy.Vibe(InvoiceTotal, persist_to=str(path), check_intent=False)
+
+    # The persisted file reads like a normal module: header, saved signature, and the class.
+    persisted = path.read_text(encoding="utf-8")
+    print("\n===== persisted module file =====")
+    print(persisted)
+    assert "__VIBE_SIGNATURE_BEGIN__" in persisted  # the saved Signature record
+    assert "class InvoiceTotalModule(dspy.Module)" in persisted
+
+    # Hand-edit the class (no LM): swap the RLM baseline for a plain dspy.Predict implementation.
+    edited_class = (
+        "class InvoiceTotalModule(dspy.Module):\n"
+        "    def __init__(self):\n"
+        "        super().__init__()\n"
+        '        self.extract = dspy.Predict("invoice: str -> total_cents: int")\n'
+        "\n"
+        "    def forward(self, **inputs):\n"
+        '        e = self.extract(invoice=inputs["invoice"])\n'
+        "        return dspy.Prediction(total_cents=int(e.total_cents))\n"
+    )
+    header = persisted.split("# __VIBE_MODULE_BEGIN__")[0]
+    path.write_text(f"{header}# __VIBE_MODULE_BEGIN__\n{edited_class}# __VIBE_MODULE_END__\n", encoding="utf-8")
+
+    # Reconstruct: the hand-edit is loaded as-is (signature unchanged, no regeneration).
+    reloaded = dspy.Vibe(InvoiceTotal, persist_to=str(path), check_intent=False)
+    assert "self.extract" in reloaded.module_src and "dspy.RLM(" not in reloaded.module_src
+    _showcase(reloaded, "after manual edit (loaded as-is)")
+
+    # A subsequent dspy.GEPA run seeds from THIS edited module_src — it builds on the edit.
+    (seed,) = [v.module_src for v in enumerate_vibe_submodules(reloaded).values()]
+    assert "self.extract" in seed
+
+
+def test_intent_warning_on_vague_signature() -> None:
+    """Showcase: dspy.Vibe runs a best-effort intent check at construction and warns if the
+    signature looks too vague/misleading to implement reliably."""
+    import warnings
+
+    class DoStuff(dspy.Signature):
+        """Handle the input appropriately."""
+
+        data: str = dspy.InputField()
+        out: str = dspy.OutputField()
+
+    dspy.configure(lm=exec_lm)
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        dspy.Vibe(DoStuff)  # in-memory fresh generation triggers the intent check
+    flagged = [str(w.message) for w in rec if "vague or misleading" in str(w.message)]
+    print("\n===== intent check on a vague signature =====")
+    print(flagged[0] if flagged else "(model judged the signature clear — no warning)")
