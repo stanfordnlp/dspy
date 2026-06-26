@@ -137,18 +137,10 @@ class LoggingLM(_LoggingMixin, dspy.LM):
     async def aforward(
         self, prompt: Any = None, messages: Any = None, **kwargs: Any
     ) -> Any:
-        req_id = uuid.uuid4().hex
-        t0 = time.time()
-        self._log_request(req_id, messages, kwargs)
-        try:
-            resp = await super().aforward(
-                prompt=prompt, messages=messages, **kwargs
-            )
-        except BaseException as e:
-            self._log_error(req_id, e, time.time() - t0)
-            raise
-        self._log_response(req_id, resp, time.time() - t0)
-        return resp
+        # DSPy's evaluator already limits parallelism with worker threads.
+        # Keeping LiteLLM on its sync path avoids its process-global async
+        # logging worker being shared across per-thread event loops.
+        return self.forward(prompt=prompt, messages=messages, **kwargs)
 
 
 class CallableLM(dspy.BaseLM):

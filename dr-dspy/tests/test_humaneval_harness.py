@@ -83,6 +83,13 @@ def test_full_harness_smoke(
                 "SELECT DISTINCT flow FROM events WHERE event_type='flow.start'"
             ).fetchall()
         }
+        lm_request_flows = {
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT flow FROM events "
+                "WHERE event_type='lm.request'"
+            ).fetchall()
+        }
         row_count, min_payload_is_null = conn.execute(
             "SELECT COUNT(*), MIN(payload IS NULL) FROM events"
         ).fetchone()
@@ -104,6 +111,12 @@ def test_full_harness_smoke(
     }
     assert not required - types_present
     assert {"eval_baseline", "optimize", "eval_optimized"} <= flows
+    assert {
+        "eval_baseline",
+        "optimize",
+        "eval_optimized",
+    } <= lm_request_flows
+    assert "unknown" not in lm_request_flows
     assert row_count > 0
     assert min_payload_is_null in (0, None)
 

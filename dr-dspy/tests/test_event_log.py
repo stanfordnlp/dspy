@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import sqlite3
@@ -9,10 +10,12 @@ import pytest
 
 from dr_dspy.event_log import (
     DATABASE_URL_ENV,
+    DEFAULT_FLOW,
     EventStore,
     PostgresWriter,
     build_event_writer,
 )
+from dr_dspy.flow import current_flow, event_flow
 
 
 def test_build_event_writer_sqlite_uses_default_flow(tmp_path) -> None:
@@ -50,6 +53,17 @@ def test_build_event_writer_postgres_requires_database_url(monkeypatch) -> None:
             event_store=EventStore.POSTGRES,
             run_id=uuid.uuid4().hex,
         )
+
+
+def test_event_flow_is_visible_to_worker_threads() -> None:
+    assert current_flow() == DEFAULT_FLOW
+
+    with event_flow(None, "eval_baseline"):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            worker_flow = executor.submit(current_flow).result()
+
+    assert worker_flow == "eval_baseline"
+    assert current_flow() == DEFAULT_FLOW
 
 
 def test_postgres_writer_optional() -> None:

@@ -57,10 +57,13 @@ SOLVE_FIELDS = [
     FieldSignature(name="code", type=dspy.Code, role=dspy.OutputField()),
 ]
 SOLVE_INSTRUCTIONS = (
-    "Write a self-contained Python function that satisfies the prompt.\n\n"
-    "Include any imports inside the function or at the top. Do not include "
-    "tests or example calls. Define exactly the function named in the prompt."
+    "Write functional code in Python according to the prompt."
 )
+# ( # V0: written during impl, ran 2x
+#    "Write a self-contained Python function that satisfies the prompt.\n\n"
+#    "Include any imports inside the function or at the top. Do not include "
+#    "tests or example calls. Define exactly the function named in the prompt."
+# )
 
 MAX_TRACE_SIZE = 10_000
 DISPLAY_TABLE_ROWS = 10
