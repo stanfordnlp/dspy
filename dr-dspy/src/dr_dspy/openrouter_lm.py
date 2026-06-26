@@ -62,7 +62,7 @@ class OpenRouterLM(dspy.BaseLM):
 
     @property
     def supports_response_schema(self) -> bool:
-        return True
+        return False
 
     @property
     def supports_function_calling(self) -> bool:

@@ -27,9 +27,10 @@ imported from `src/dr_dspy/`.
 Real HumanEval runs call OpenRouter directly through `LoggingOpenRouterLM`,
 not through LiteLLM. The default model is `openai/gpt-5-nano`, and the script
 sets OpenRouter reasoning to the lowest supported configuration for that model:
-`{"effort": "minimal", "exclude": true}`. Override the model with `--model`;
-set `OPENROUTER_API_KEY` in the environment or package-local `.env` before
-running the real script.
+`{"effort": "minimal", "exclude": false}`. It also caps completions with
+`max_completion_tokens=1000` as a safety limit. Override the model with
+`--model`; set `OPENROUTER_API_KEY` in the environment or package-local `.env`
+before running the real script.
 
 For a deterministic smoke run, use the parallel mock script:
 [`scripts/mocks/humaneval_dspy_harness_bootstrap_v0_mock.py`](scripts/mocks/humaneval_dspy_harness_bootstrap_v0_mock.py).

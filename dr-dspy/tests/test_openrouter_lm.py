@@ -43,7 +43,7 @@ def test_openrouter_lm_sends_reasoning_from_configuration() -> None:
     lm = OpenRouterLM(
         "openai/gpt-5-nano",
         client=client,
-        reasoning={"effort": "minimal", "exclude": True},
+        reasoning={"effort": "minimal", "exclude": False},
         cache=False,
         temperature=None,
     )
@@ -61,7 +61,7 @@ def test_openrouter_lm_sends_reasoning_from_configuration() -> None:
             "messages": [{"role": "user", "content": "hello"}],
             "max_tokens": 32,
             "extra_body": {
-                "reasoning": {"effort": "minimal", "exclude": True}
+                "reasoning": {"effort": "minimal", "exclude": False}
             },
         }
     ]
@@ -71,6 +71,13 @@ def test_openrouter_lm_works_through_dspy_legacy_call_path() -> None:
     lm = OpenRouterLM("openai/gpt-5-nano", client=FakeClient())
 
     assert lm("hello") == ["ok"]
+
+
+def test_openrouter_lm_uses_json_mode_not_structured_outputs() -> None:
+    lm = OpenRouterLM("openai/gpt-5-nano", client=FakeClient())
+
+    assert "response_format" in lm.supported_params
+    assert lm.supports_response_schema is False
 
 
 def test_openrouter_lm_uses_openrouter_client_configuration(

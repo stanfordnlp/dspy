@@ -3,9 +3,8 @@ from __future__ import annotations
 import sqlite3
 
 import dspy
-from dspy.teleprompt import BootstrapFewShot
-
 from dr_dspy.event_log import EventStore, SQLiteWriter
+from dspy.teleprompt import BootstrapFewShot
 
 
 def test_bootstrap_selects_passing_demos(
@@ -48,6 +47,29 @@ def test_default_compiled_path_is_under_logs(humaneval_harness) -> None:
     )
 
 
+def test_real_lm_uses_script_level_openrouter_config(
+    humaneval_harness,
+    tmp_path,
+) -> None:
+    writer = SQLiteWriter(str(tmp_path / "runs.db"), run_id="lm-config-test")
+    config = humaneval_harness.HarnessConfig(
+        event_store=EventStore.SQLITE,
+        db_path=str(tmp_path / "runs.db"),
+        database_url=None,
+    )
+    try:
+        lm = humaneval_harness.build_real_lm(config, writer)
+    finally:
+        writer.close()
+
+    assert lm.model == humaneval_harness.DEFAULT_MODEL
+    assert lm.reasoning == humaneval_harness.DEFAULT_OPENROUTER_REASONING
+    assert (
+        lm.kwargs["max_completion_tokens"]
+        == humaneval_harness.DEFAULT_MAX_COMPLETION_TOKENS
+    )
+
+
 def test_full_harness_smoke(
     humaneval_harness,
     humaneval_mock_harness,
@@ -86,7 +108,8 @@ def test_full_harness_smoke(
         flows = {
             row[0]
             for row in conn.execute(
-                "SELECT DISTINCT flow FROM events WHERE event_type='flow.start'"
+                "SELECT DISTINCT flow FROM events "
+                "WHERE event_type='flow.start'"
             ).fetchall()
         }
         lm_request_flows = {

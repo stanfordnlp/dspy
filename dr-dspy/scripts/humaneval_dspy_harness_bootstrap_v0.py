@@ -52,7 +52,8 @@ DEFAULT_DB_PATH = "./runs.db"
 DEFAULT_COMPILED_PATH = "./logs/compiled_humaneval.json"
 DEFAULT_EVENT_STORE = EventStore.POSTGRES
 DEFAULT_MODEL = "openai/gpt-5-nano"
-DEFAULT_OPENROUTER_REASONING = {"effort": "minimal", "exclude": True}
+DEFAULT_OPENROUTER_REASONING = {"effort": "minimal", "exclude": False}
+DEFAULT_MAX_COMPLETION_TOKENS = 1000
 DEFAULT_TRAIN_SIZE = 32
 DEFAULT_DEV_SIZE = 32
 DEFAULT_NUM_THREADS = 8
@@ -99,6 +100,7 @@ class HarnessConfig(BaseModel):
     openrouter_reasoning: dict[str, Any] = Field(
         default_factory=lambda: dict(DEFAULT_OPENROUTER_REASONING)
     )
+    max_completion_tokens: StrictInt = DEFAULT_MAX_COMPLETION_TOKENS
     seed: StrictInt = DEFAULT_SEED
     train_size: StrictInt = DEFAULT_TRAIN_SIZE
     dev_size: StrictInt = DEFAULT_DEV_SIZE
@@ -333,6 +335,7 @@ def build_real_lm(
         log=writer.put_event,
         cache=False,
         reasoning=config.openrouter_reasoning,
+        max_completion_tokens=config.max_completion_tokens,
     )
 
 
@@ -418,6 +421,7 @@ def main(
         compiled_path=compiled_path,
         model=model,
         openrouter_reasoning=dict(DEFAULT_OPENROUTER_REASONING),
+        max_completion_tokens=DEFAULT_MAX_COMPLETION_TOKENS,
         seed=seed,
         train_size=train_size,
         dev_size=dev_size,
