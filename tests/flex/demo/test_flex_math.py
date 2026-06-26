@@ -11,30 +11,30 @@ dspy.configure(lm=exec_lm)
 
 
 class MathWord(dspy.Signature):
-    """Solve a math word problem."""
+    """Solve a problem that I won't tell you about"""
 
-    problem: str = dspy.InputField()
+    idk: str = dspy.InputField()
     answer: int = dspy.OutputField()
 
 
 def _showcase(program: dspy.Module, label: str) -> None:
-    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    """Print the flexed module's clean dspy.Module source and its flat predictors."""
     print(f"\n===== {label} =====")
     print("predictors on the module:", [n for n, _ in program.named_predictors()])
     print("--- module_src (a normal dspy.Module subclass) ---")
     print(program.module_src)
 
 
-def test_vibe() -> None:
+def test_flex() -> None:
     # Reconfigure here (not just at import) so the test is order-independent: other
     # tests in the session reconfigure the global LM.
     dspy.configure(lm=exec_lm)
-    program = dspy.Vibe(MathWord, persist_to=str(Path(__file__).parent / "math_vibe_gen.py"))
+    program = dspy.VibNe(MathWord, persist_to=str(Path(__file__).parent / "math_flex_gen.py")).save()
 
     # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in program.module_src
-    _showcase(program, "baseline (un-optimized vibe)")
+    _showcase(program, "baseline (un-optimized flex)")
 
     baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
     print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")

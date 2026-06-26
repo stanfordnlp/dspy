@@ -3,11 +3,11 @@ from __future__ import annotations
 import textwrap
 
 import dspy
+from dspy.flex import Flex
 from dspy.utils.dummies import DummyLM
-from dspy.vibe import Vibe
 
 # A plain dspy.Predict module class we can persist and actually run with a DummyLM — the RLM
-# baseline that Vibe binds at construction is too heavy to execute in a unit test, so
+# baseline that Flex binds at construction is too heavy to execute in a unit test, so
 # end-to-end forward tests use this instead.
 ECHO_MODULE = textwrap.dedent("""
     class EchoModule(dspy.Module):
@@ -30,7 +30,7 @@ class Echo(dspy.Signature):
 
 def test_construction_binds_rlm_baseline(tmp_path) -> None:
     # Construction is LM-free: it binds the deterministic dspy.RLM baseline.
-    program = Vibe(Echo, persist_to=str(tmp_path / "echo_flex.py"), check_intent=False)
+    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
     assert program.module_src is not None
     assert "class EchoModule(dspy.Module)" in program.module_src
     assert "dspy.RLM(" in program.module_src
@@ -40,7 +40,7 @@ def test_construction_binds_rlm_baseline(tmp_path) -> None:
 
 
 def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
-    program = Vibe(Echo, persist_to=str(tmp_path / "echo_flex.py"), check_intent=False)
+    program = Flex(Echo, persist_to=str(tmp_path / "echo_flex.py"))
     # The baseline attaches a predictor named `rlm` directly onto the module.
     assert hasattr(program, "rlm")
     names = [n for n, _ in program.named_predictors()]
@@ -51,22 +51,22 @@ def test_predictors_are_attached_and_discoverable(tmp_path) -> None:
 
 def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
     persist_path = tmp_path / "echo_flex.py"
-    Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    Flex(Echo, persist_to=str(persist_path))
     assert persist_path.exists()
     text = persist_path.read_text()
-    assert "__VIBE_SIGNATURE_HASH__" in text
-    assert "__VIBE_SIGNATURE_BEGIN__" in text  # the saved signature record
+    assert "__FLEX_SIGNATURE_HASH__" in text
+    assert "__FLEX_SIGNATURE_BEGIN__" in text  # the saved signature record
     assert "class EchoModule(dspy.Module)" in text
     assert "dspy.RLM(" in text
     assert "def forward" in text
-    # Bookkeeping is gone: no body hash, no flex_id, no .vibe dir.
-    assert "__VIBE_BODY_HASH__" not in text
+    # Bookkeeping is gone: no body hash, no flex_id, no .flex dir.
+    assert "__FLEX_BODY_HASH__" not in text
     assert "flex_id" not in text
-    assert not (tmp_path / ".vibe").exists()
+    assert not (tmp_path / ".flex").exists()
 
     # Re-construct with NO LM configured — must load from disk without an LM call.
     dspy.configure(lm=DummyLM([]))
-    program2 = Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    program2 = Flex(Echo, persist_to=str(persist_path))
     assert program2.module_src is not None
     assert "dspy.RLM(" in program2.module_src
 
@@ -74,14 +74,14 @@ def test_persisted_file_is_written_and_reloaded(tmp_path) -> None:
 def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
     """A changed signature discards the old body and rebinds a fresh RLM baseline."""
     persist_path = tmp_path / "echo_flex.py"
-    Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    Flex(Echo, persist_to=str(persist_path))
     original = persist_path.read_text()
-    tampered = original.replace("__VIBE_SIGNATURE_HASH__: ", "__VIBE_SIGNATURE_HASH__: nope_")
+    tampered = original.replace("__FLEX_SIGNATURE_HASH__: ", "__FLEX_SIGNATURE_HASH__: nope_")
     persist_path.write_text(tampered)
 
     # No LM needed — the reset to baseline is deterministic and LM-free.
     dspy.configure(lm=DummyLM([]))
-    program = Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    program = Flex(Echo, persist_to=str(persist_path))
     assert "dspy.RLM(" in program.module_src
     assert "q: str -> a: str" in program.module_src
 
@@ -89,7 +89,7 @@ def test_signature_change_resets_to_fresh_baseline(tmp_path) -> None:
 def test_hand_edit_is_loaded_when_signature_unchanged(tmp_path) -> None:
     """A hand-edited body is loaded as-is on the next run (signature unchanged)."""
     persist_path = tmp_path / "echo_flex.py"
-    Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    Flex(Echo, persist_to=str(persist_path))
 
     original = persist_path.read_text()
     edited = original.replace("result.a", "result.a.upper()")
@@ -98,17 +98,17 @@ def test_hand_edit_is_loaded_when_signature_unchanged(tmp_path) -> None:
 
     # Reconstruct with NO codegen LM available — the edit is loaded, not regenerated.
     dspy.configure(lm=DummyLM([]))
-    program = Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    program = Flex(Echo, persist_to=str(persist_path))
     assert "result.a.upper()" in program.module_src
 
 
 def test_in_memory_only_mode_binds_without_writing_disk(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    program = Vibe(Echo, check_intent=False)  # persist_to=None
+    program = Flex(Echo)  # persist_to=None
     assert program.module_src is not None
     assert "dspy.RLM(" in program.module_src
     # No persistence and no bookkeeping directory.
-    assert not (tmp_path / ".vibe").exists()
+    assert not (tmp_path / ".flex").exists()
     assert not list(tmp_path.glob("*.py"))
 
 
@@ -118,10 +118,10 @@ def test_end_to_end_forward_call(tmp_path) -> None:
     The RLM baseline needs a code interpreter, so we write a Predict-based class to the
     persisted file (signature hash intact, so it's loaded as-is) and run it with a DummyLM.
     """
-    from dspy.vibe.persistence import parse_persisted_file, render_persisted_file
+    from dspy.flex.persistence import parse_persisted_file, render_persisted_file
 
     persist_path = tmp_path / "echo_flex.py"
-    Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    Flex(Echo, persist_to=str(persist_path))
 
     parsed = parse_persisted_file(persist_path.read_text(encoding="utf-8"))
     assert parsed is not None
@@ -136,7 +136,7 @@ def test_end_to_end_forward_call(tmp_path) -> None:
     )
 
     dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
-    program = Vibe(Echo, persist_to=str(persist_path), check_intent=False)
+    program = Flex(Echo, persist_to=str(persist_path))
     assert "self.echo" in program.module_src
     result = program(q="hello")
     assert isinstance(result, dspy.Prediction)

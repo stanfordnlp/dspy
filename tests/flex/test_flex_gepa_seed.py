@@ -1,8 +1,8 @@
 """GEPA re-optimization seeds from the module's CURRENT source (incl. manual edits).
 
-When a user hand-edits a vibed module (or re-runs GEPA on a previously-optimized one) and
+When a user hand-edits a flexed module (or re-runs GEPA on a previously-optimized one) and
 optimizes again, GEPA must build on the current implementation rather than starting over.
-``GEPA.compile`` constructs each vibe submodule's seed candidate as ``vibe.module_src`` (see
+``GEPA.compile`` constructs each flex submodule's seed candidate as ``flex.module_src`` (see
 gepa.py), reading the live source. These LM-free tests lock in that the current/edited source
 is what gets seeded.
 """
@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import dspy
-from dspy.teleprompt.gepa.gepa_utils import enumerate_vibe_submodules, make_code_key
-from dspy.vibe import Vibe
+from dspy.flex import Flex
+from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules, make_code_key
 
 EDITED_MODULE = (
     "class EchoModule(dspy.Module):\n"
@@ -36,7 +36,7 @@ class Echo(dspy.Signature):
 
 def test_gepa_seed_reflects_hand_edited_persisted_file(tmp_path: Path) -> None:
     path = tmp_path / "echo.py"
-    Vibe(Echo, persist_to=str(path), check_intent=False)  # writes the RLM baseline
+    Flex(Echo, persist_to=str(path))  # writes the RLM baseline
 
     # User hand-edits the persisted module (as they might after a prior GEPA run).
     original = path.read_text(encoding="utf-8")
@@ -45,34 +45,34 @@ def test_gepa_seed_reflects_hand_edited_persisted_file(tmp_path: Path) -> None:
     path.write_text(edited, encoding="utf-8")
 
     # Reconstruct with no LM: the edit loads into module_src.
-    reloaded = Vibe(Echo, persist_to=str(path), check_intent=False)
+    reloaded = Flex(Echo, persist_to=str(path))
     assert "result.a.upper()" in reloaded.module_src
 
-    # `vibe.module_src` is exactly the value GEPA.compile uses to seed each vibe submodule,
+    # `flex.module_src` is exactly the value GEPA.compile uses to seed each flex submodule,
     # and exactly what build_program rebinds — so the edit carries straight into the next run.
     assert "result.a.upper()" in reloaded.module_src
     assert "class EchoModule(dspy.Module)" in reloaded.module_src
 
 
 def test_gepa_discovers_edited_submodule_in_a_program(tmp_path: Path) -> None:
-    """Mirror GEPA's discovery: enumerate_vibe_submodules + the per-submodule seed value."""
+    """Mirror GEPA's discovery: enumerate_flex_submodules + the per-submodule seed value."""
     path = tmp_path / "echo.py"
-    vibe = Vibe(Echo, persist_to=str(path), check_intent=False)
+    flex = Flex(Echo, persist_to=str(path))
 
     # Apply a manual edit directly (e.g. an in-session tweak before re-optimizing).
-    vibe._bind_code(EDITED_MODULE)
+    flex._bind_code(EDITED_MODULE)
 
     class Program(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.classifier = vibe
+            self.classifier = flex
 
         def forward(self, **kwargs):
             return self.classifier(**kwargs)
 
     program = Program()
-    submodules = enumerate_vibe_submodules(program)
-    assert submodules, "the vibe submodule should be discoverable by GEPA"
+    submodules = enumerate_flex_submodules(program)
+    assert submodules, "the flex submodule should be discoverable by GEPA"
 
     seed_candidate: dict[str, str] = {}
     for sub_path, sub in submodules.items():

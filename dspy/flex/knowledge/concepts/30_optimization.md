@@ -1,6 +1,6 @@
-## How vibe optimization works (and how to use feedback)
+## How flex optimization works (and how to use feedback)
 
-A `dspy.Vibe` module is marked *code-optimizable*. When the program is compiled with
+A `dspy.Flex` module is marked *code-optimizable*. When the program is compiled with
 `dspy.GEPA`, the optimizer may rewrite this module's source (`module_src` — the whole
 `dspy.Module` subclass) — decomposing the task into focused predictors and plain Python —
 instead of only tuning a fixed prompt's instructions. GEPA reflects on the program's execution traces and

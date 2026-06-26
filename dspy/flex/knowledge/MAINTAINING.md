@@ -1,9 +1,9 @@
-# The dspy.vibe knowledge base
+# The dspy.flex knowledge base
 
-This folder is the curated knowledge that guides `dspy.vibe` **code synthesis**. The loader
+This folder is the curated knowledge that guides `dspy.flex` **code synthesis**. The loader
 (`__init__.py`) assembles it into one string, `build_knowledge_base()`, which
-`dspy/vibe/primitives_doc.py` re-exports as `KNOWLEDGE_BASE`. That string is fed to the
-codegen / reflection LM as `extra_guidance` whenever `dspy.GEPA` optimizes a `dspy.Vibe`
+`dspy/flex/primitives_doc.py` re-exports as `KNOWLEDGE_BASE`. That string is fed to the
+codegen / reflection LM as `extra_guidance` whenever `dspy.GEPA` optimizes a `dspy.Flex`
 module's code. It is distilled from the DSPy docs & tutorials (`docs/docs/learn`,
 `docs/docs/tutorials`, `docs/docs/api/modules`) and cross-checked against
 [dspy.ai](https://dspy.ai).
@@ -11,14 +11,14 @@ module's code. It is distilled from the DSPy docs & tutorials (`docs/docs/learn`
 ## Layout
 
 ```
-dspy/vibe/knowledge/
+dspy/flex/knowledge/
   __init__.py        # loader: build_knowledge_base() = concepts + rendered examples (pure text)
   MAINTAINING.md     # this file
   concepts/          # distilled prose, concatenated in filename order
-    00_overview.md   #   what a good optimized vibe module looks like
+    00_overview.md   #   what a good optimized flex module looks like
     10_modules.md    #   DSPy modules to use inside forward (Predict/CoT/ReAct/RLM/...)
     20_signatures.md #   writing tight sub-signatures + instructions
-    30_optimization.md #  how GEPA/vibe optimization + failure feedback work
+    30_optimization.md #  how GEPA/flex optimization + failure feedback work
     40_patterns.md   #   patterns to follow + anti-patterns to avoid
   examples/          # self-contained, validated reference modules (one task each)
     classify_intent.py   # fixed label set in instructions; normalize output in Python
@@ -70,7 +70,7 @@ Rules for an example file:
 - `TASK`, `SIGNATURE`, `NOTES` must be plain string literals (adjacent-string concatenation is
   fine; no f-strings or computed values — they are read statically via `ast`).
 - The `# === MODULE ===` marker comment must appear verbatim. Everything after it is the
-  `module_src` (a single `dspy.Module` subclass) that the test binds through the real `Vibe`
+  `module_src` (a single `dspy.Module` subclass) that the test binds through the real `Flex`
   code path, so it must be self-contained: it may reference only `dspy`, the declared inputs,
   and names it defines itself (e.g. a nested helper in `forward` or an in-`forward` `import re`).
   No module-scope code other than the class itself; the `import dspy` above the marker is for
@@ -82,6 +82,6 @@ Rules for an example file:
 
 ## Tests
 
-`tests/vibe/test_knowledge_base.py` validates that the base assembles, that every concept and
-example is included, and that **every example binds** via `Vibe._bind_code` — so an example that
+`tests/flex/test_knowledge_base.py` validates that the base assembles, that every concept and
+example is included, and that **every example binds** via `Flex._bind_code` — so an example that
 drifts out of sync with the live API fails CI rather than silently rotting in the prompt.

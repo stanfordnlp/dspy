@@ -13,7 +13,7 @@ load_dotenv()
 
 DEMO_DIR = Path(__file__).parent
 DATA_PATH = DEMO_DIR / "conflation_coded.jsonl"
-VIBE_PATH = DEMO_DIR / "conflation_vibe_gen.py"
+FLEX_PATH = DEMO_DIR / "conflation_flex_gen.py"
 
 EXEC_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=1000)
 STRONG_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=8000)
@@ -113,44 +113,60 @@ def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWith
     return ScoreWithFeedback(score=score, feedback=fb)
 
 
-def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
+def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float, float]:
+    """Return (mean metric score, accuracy, avg LLM calls/example).
+
+    The headline number is the *metric score* the optimizer actually optimizes — accuracy
+    minus the 0.15-per-LLM-call penalty — not raw accuracy. The un-optimized RLM baseline
+    classifies correctly but burns several traced LLM calls per example, so its score is well
+    below 1.0 even at ~100% accuracy. GEPA's win is settling clear cases in deterministic
+    Python (0 calls -> full score), which raw accuracy alone can't show.
+    """
+    total_score = 0.0
     correct = 0
     calls = 0
     for ex in dataset:
         try:
             with dspy.context(trace=[]):
                 pred = program(**ex.inputs())
-                n = len(dspy.settings.trace or [])
+                trace = list(dspy.settings.trace or [])
+            score = float(metric(ex, pred, trace=trace).score)
             ok = _as_bool(pred.is_same) == bool(ex.is_same)
+            n = len(trace)
         except Exception:
-            ok, n = False, 0
+            score, ok, n = 0.0, False, 0
+        total_score += score
         correct += int(ok)
         calls += n
-    return correct / len(dataset), calls / len(dataset)
+    n = len(dataset)
+    return total_score / n, correct / n, calls / n
 
 
 def _showcase(program: dspy.Module, label: str) -> None:
-    """Print the vibed module's clean dspy.Module source and its flat predictors."""
+    """Print the flexed module's clean dspy.Module source and its flat predictors."""
     print(f"\n===== {label} =====")
     print("predictors on the module:", [n for n, _ in program.named_predictors()])
     print("--- module_src (a normal dspy.Module subclass) ---")
     print(program.module_src)
 
 
-def test_vibe_conflation() -> None:
+def test_flex_conflation() -> None:
     dspy.configure(lm=EXEC_LM)
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
-    program = dspy.Vibe(SamePlace, persist_to=str(VIBE_PATH), codegen_lm=STRONG_LM)
+    program = dspy.Flex(SamePlace, persist_to=str(FLEX_PATH), codegen_lm=STRONG_LM)
 
     # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in program.module_src
-    _showcase(program, "baseline (un-optimized vibe)")
+    _showcase(program, "baseline (un-optimized flex)")
 
-    base_acc, base_calls = _evaluate(program, test)
-    print(f"[baseline] test accuracy={base_acc:.2f}, avg LLM calls/example={base_calls:.2f}")
+    base_score, base_acc, base_calls = _evaluate(program, test)
+    print(
+        f"[baseline] score={base_score:.2f} "
+        f"(accuracy={base_acc:.2f}, avg LLM calls/example={base_calls:.2f})"
+    )
 
     optimized = dspy.GEPA(
         metric=metric,
@@ -165,9 +181,13 @@ def test_vibe_conflation() -> None:
     _showcase(optimized, "optimized by GEPA")
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
-    opt_acc, opt_calls = _evaluate(optimized, test)
-    print(f"[optimized] test accuracy={opt_acc:.2f}  avg LLM calls/example={opt_calls:.2f}")
+    opt_score, opt_acc, opt_calls = _evaluate(optimized, test)
+    print(
+        f"[optimized] score={opt_score:.2f} "
+        f"(accuracy={opt_acc:.2f}, avg LLM calls/example={opt_calls:.2f})"
+    )
+    print(f"score improvement: {opt_score - base_score:+.2f}")
 
 
 if __name__ == "__main__":
-    test_vibe_conflation()
+    test_flex_conflation()

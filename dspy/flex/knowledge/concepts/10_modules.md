@@ -18,7 +18,7 @@ A DSPy module abstracts a prompting technique and works over any signature. Pick
   available by name in the module's context.
 
 - **`dspy.ProgramOfThought("a -> b")`** — the LM writes code whose execution dictates the
-  answer. Niche inside vibe: usually prefer to let the LM extract structured values and do the
+  answer. Niche inside flex: usually prefer to let the LM extract structured values and do the
   computation yourself in `forward` (more reliable, easier to debug).
 
 - **`dspy.RLM("context, query -> answer")`** — Recursive Language Model: the LM explores a
@@ -26,7 +26,7 @@ A DSPy module abstracts a prompting technique and works over any signature. Pick
   only the context it needs. Use ONLY when an input field is too large or too structured to fit
   a single prompt (long documents, big JSON, multi-table data). Useful kwargs: `max_iterations`
   (REPL steps, default 20), `max_llm_calls` (default 50), `sub_lm` (a cheaper LM for sub-queries).
-  RLM is the vibe *baseline*; keeping it is right only when the input genuinely needs iterative
+  RLM is the flex *baseline*; keeping it is right only when the input genuinely needs iterative
   exploration — otherwise decompose it into direct predictors + Python.
 
 - **`dspy.Tool(func)`** — wraps a callable as a tool (only meaningful inside `ReAct` / as an

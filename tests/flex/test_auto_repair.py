@@ -1,12 +1,11 @@
-"""Tests for the auto-repair flow in dspy.Vibe.
+"""Tests for the auto-repair flow in dspy.Flex.
 
 Covers load-time (bind) failures and runtime failures from user-edited code, plus the
 opt-out (``auto_repair=False``) path.
 
 Construction is LM-free (it binds the deterministic RLM baseline). To exercise repair we
 persist a *plain dspy.Predict* module class, break it, and reload with a repair DummyLM that
-returns the good plain-Predict class — never running the heavy RLM baseline. Vibe is built
-with ``check_intent=False`` so the unrelated signature intent check never consumes a response.
+returns the good plain-Predict class — never running the heavy RLM baseline.
 """
 
 from __future__ import annotations
@@ -16,9 +15,9 @@ from pathlib import Path
 import pytest
 
 import dspy
+from dspy.flex import Flex
+from dspy.flex.persistence import parse_persisted_file, render_persisted_file
 from dspy.utils.dummies import DummyLM
-from dspy.vibe import Vibe
-from dspy.vibe.persistence import parse_persisted_file, render_persisted_file
 
 # The good forward method, exactly as it appears (4-space indented) in CANNED_MODULE.
 GOOD_FORWARD = "    def forward(self, q):\n        out = self.echo(q=q)\n        return dspy.Prediction(a=out.a)"
@@ -45,12 +44,12 @@ class Echo(dspy.Signature):
     a: str = dspy.OutputField()
 
 
-def _write_initial_vibe_file(tmp_path: Path) -> Path:
-    """Construct a Vibe (LM-free baseline) and rewrite its body to a plain dspy.Predict module
+def _write_initial_flex_file(tmp_path: Path) -> Path:
+    """Construct a Flex (LM-free baseline) and rewrite its body to a plain dspy.Predict module
     class, keeping the signature hash intact so it loads as a runnable (non-RLM) module. Returns
     the persisted file path."""
     path = tmp_path / "echo.py"
-    Vibe(Echo, persist_to=str(path), check_intent=False)  # writes the RLM baseline file
+    Flex(Echo, persist_to=str(path))  # writes the RLM baseline file
 
     parsed = parse_persisted_file(path.read_text(encoding="utf-8"))
     assert parsed is not None
@@ -68,14 +67,14 @@ def _write_initial_vibe_file(tmp_path: Path) -> Path:
 
 def _make_echo_factory(persist_to: Path, *, auto_repair: bool = True):
     def factory():
-        return Vibe(Echo, persist_to=str(persist_to), auto_repair=auto_repair, check_intent=False)
+        return Flex(Echo, persist_to=str(persist_to), auto_repair=auto_repair)
 
     return factory
 
 
 def test_load_time_repair_on_bind_failure(tmp_path: Path) -> None:
     """User breaks the class so it no longer subclasses dspy.Module -> bind raises -> repair runs."""
-    path = _write_initial_vibe_file(tmp_path)
+    path = _write_initial_flex_file(tmp_path)
 
     text = path.read_text(encoding="utf-8")
     broken_text = text.replace("class EchoModule(dspy.Module):", "class EchoModule:")
@@ -95,7 +94,7 @@ def test_load_time_repair_on_bind_failure(tmp_path: Path) -> None:
 
 def test_load_time_repair_off_surfaces_error(tmp_path: Path) -> None:
     """With auto_repair=False, a broken persisted file raises on construction."""
-    path = _write_initial_vibe_file(tmp_path)
+    path = _write_initial_flex_file(tmp_path)
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace("class EchoModule(dspy.Module):", "class EchoModule:"), encoding="utf-8")
 
@@ -107,7 +106,7 @@ def test_load_time_repair_off_surfaces_error(tmp_path: Path) -> None:
 
 def test_runtime_repair_on_attribute_error(tmp_path: Path) -> None:
     """User edits forward() to dereference None -> runtime AttributeError -> repair runs."""
-    path = _write_initial_vibe_file(tmp_path)
+    path = _write_initial_flex_file(tmp_path)
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace(GOOD_FORWARD, BROKEN_FORWARD), encoding="utf-8")
 
@@ -130,14 +129,14 @@ def test_runtime_repair_on_attribute_error(tmp_path: Path) -> None:
 
 
 def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
-    """Even if repair returns broken code again, Vibe doesn't re-repair in the same process."""
-    path = _write_initial_vibe_file(tmp_path)
+    """Even if repair returns broken code again, Flex doesn't re-repair in the same process."""
+    path = _write_initial_flex_file(tmp_path)
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace(GOOD_FORWARD, BROKEN_FORWARD), encoding="utf-8")
 
     broken_module = CANNED_MODULE.replace(GOOD_FORWARD, BROKEN_FORWARD)
     # Repair LM returns the *same* broken module, so the post-repair re-run still raises
-    # — Vibe must propagate without attempting another repair on the next call.
+    # — Flex must propagate without attempting another repair on the next call.
     dspy.configure(
         lm=DummyLM(
             [
@@ -159,7 +158,7 @@ def test_runtime_repair_runs_only_once(tmp_path: Path) -> None:
 
 def test_runtime_does_not_repair_non_user_errors(tmp_path: Path) -> None:
     """A RuntimeError raised inside forward() bypasses auto-repair and propagates."""
-    path = _write_initial_vibe_file(tmp_path)
+    path = _write_initial_flex_file(tmp_path)
     raising_forward = '    def forward(self, q):\n        raise RuntimeError("boom from downstream")'
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace(GOOD_FORWARD, raising_forward), encoding="utf-8")
@@ -175,7 +174,7 @@ def test_runtime_does_not_repair_non_user_errors(tmp_path: Path) -> None:
 
 def test_runtime_repair_off_surfaces_error(tmp_path: Path) -> None:
     """auto_repair=False propagates runtime errors from forward() directly."""
-    path = _write_initial_vibe_file(tmp_path)
+    path = _write_initial_flex_file(tmp_path)
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace(GOOD_FORWARD, BROKEN_FORWARD), encoding="utf-8")
 

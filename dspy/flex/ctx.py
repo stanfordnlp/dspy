@@ -5,14 +5,14 @@ from dataclasses import dataclass, field
 from typing import Any, get_origin
 
 import dspy
-from dspy.vibe.primitives_doc import PRIMITIVES_CATALOG
+from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class VibeContext:
-    """Bundle of inputs the codegen LM gets to author a Vibe implementation."""
+class FlexContext:
+    """Bundle of inputs the codegen LM gets to author a Flex implementation."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
@@ -117,58 +117,8 @@ def _parseable_type_str(annotation: Any) -> str | None:
     return None
 
 
-class CodegenSignature(dspy.Signature):
-    """Author the implementation of a dspy.Vibe module from a user-declared Signature.
-
-    Output ONE Python source string, ``module_src``, that defines a single
-    ``dspy.Module`` subclass implementing the signature:
-
-    - ``def __init__(self):`` calls ``super().__init__()`` and assigns each
-      predictor it needs to an attribute (e.g. ``self.extract =
-      dspy.Predict("...")``). Define a predictor ONLY for a step that genuinely
-      needs a language model (extraction, classification, generation, open-ended
-      reasoning). If the whole task is deterministic, define no predictors.
-    - ``def forward(self, **inputs):`` calls those predictors via
-      ``self.<name>(...)`` AND/OR runs arbitrary deterministic Python — parsing,
-      arithmetic, regex, string and data-structure manipulation, and small nested
-      ``def`` helpers defined inside ``forward`` — and returns
-      ``dspy.Prediction(<output fields>=...)`` matching the parent signature.
-
-    You MUST follow the rules and patterns in ``primitives_catalog`` exactly.
-    In particular: every predictor call returns a ``dspy.Prediction`` — read
-    its declared output fields off as attributes (``result.foo``) before
-    composing them or building the final return. Never pass a whole
-    ``dspy.Prediction`` as the value of an output field. Coerce values to the
-    declared output type (``int(...)``, ``float(...)``, etc.) before returning.
-
-    When ``seed_implementation`` is not ``'(none)'``, treat it as the starting
-    point — it is an existing module class (possibly hand-edited by the user)
-    that must be adapted to the *current* signature. Preserve its structure,
-    helper logic, and intent; change only what the current signature requires.
-    """
-
-    signature_spec: str = dspy.InputField(
-        desc="Rendered description of the user's Signature: name, objective docstring, input and output fields."
-    )
-    context_blurb: str = dspy.InputField(
-        desc="Optional extra context: tools available by name, style notes. May be '(no extra context)'."
-    )
-    primitives_catalog: str = dspy.InputField(
-        desc="Catalog of DSPy primitives and conventions the generated code should follow."
-    )
-    seed_implementation: str = dspy.InputField(
-        desc="An existing module class to adapt (the current `module_src`), or '(none)' for a "
-        "fresh generation. When not '(none)', preserve its structure and intent and change only "
-        "what the current signature requires."
-    )
-    module_src: str = dspy.OutputField(
-        desc="Python source defining ONE `dspy.Module` subclass (with `__init__` assigning predictors "
-        "and a `forward(self, **inputs)` returning dspy.Prediction(...)). No imports; `dspy` is in scope."
-    )
-
-
 class RepairSignature(dspy.Signature):
-    """Fix a broken dspy.Vibe implementation.
+    """Fix a broken dspy.Flex implementation.
 
     The user (or a previous codegen run) produced a ``module_src`` (a single
     ``dspy.Module`` subclass) that either fails to bind or raises at runtime.
@@ -215,53 +165,6 @@ class RepairSignature(dspy.Signature):
     )
 
 
-class IntentSignature(dspy.Signature):
-    """Judge whether a dspy.Vibe module's signature is clear enough to implement correctly.
-
-    A GOOD signature names a concrete task and has input/output fields whose roles and
-    formats are unambiguous, so a competent engineer could implement it without guessing.
-    Flag it as NOT clear when: the objective (docstring) is vague, generic, or missing; a
-    field's meaning, type, or expected format is ambiguous; the outputs do not plausibly
-    follow from the inputs; or the description is internally contradictory or misleading.
-
-    Be specific and conservative — only flag a genuine problem that would likely cause the
-    synthesized module to be wrong, not stylistic nitpicks.
-    """
-
-    signature_spec: str = dspy.InputField(
-        desc="The Vibe module's signature: name, objective docstring, input and output fields."
-    )
-    is_clear: bool = dspy.OutputField(
-        desc="True if the signature is specific enough to implement reliably; False if vague or misleading."
-    )
-    vague_aspect: str = dspy.OutputField(
-        desc="If not clear, the single most problematic aspect: which field or part of the objective "
-        "is vague/misleading and why. Empty string if clear."
-    )
-    clarifying_question: str = dspy.OutputField(
-        desc="If not clear, one concrete question the user should answer to disambiguate the signature. "
-        "Empty string if clear."
-    )
-
-
-def assess_intent(ctx: VibeContext, *, lm: dspy.LM | None = None) -> tuple[bool, str, str]:
-    """Best-effort signature-clarity check for a Vibe module.
-
-    Returns ``(is_clear, vague_aspect, clarifying_question)``. Makes one LM call against
-    ``lm`` (or ``dspy.settings.lm`` when ``lm`` is None). Callers should treat this as
-    advisory and guard the call themselves (skip when no LM is configured); it does not
-    catch its own errors.
-    """
-    predictor = dspy.Predict(IntentSignature)
-    inputs = dict(signature_spec=ctx.render_signature_spec())
-    if lm is not None:
-        with dspy.context(lm=lm):
-            out = predictor(**inputs)
-    else:
-        out = predictor(**inputs)
-    return bool(out.is_clear), (out.vague_aspect or "").strip(), (out.clarifying_question or "").strip()
-
-
 def _strip_code_fences(s: str) -> str:
     s = (s or "").strip()
     if s.startswith("```"):
@@ -275,43 +178,8 @@ def _strip_code_fences(s: str) -> str:
     return s.strip().expandtabs(4)
 
 
-def generate(
-    ctx: VibeContext,
-    *,
-    lm: dspy.LM | None = None,
-    seed: str | None = None,
-    extra_guidance: str | None = None,
-) -> str:
-    """Run the codegen LM against ``ctx`` and return a ``module_src`` (a dspy.Module subclass).
-
-    When ``seed`` is given (an existing ``module_src``), the codegen LM is asked to *adapt*
-    that existing module class to the current signature rather than author one from scratch.
-    Used to carry an existing implementation forward (e.g. the RLM baseline) when synthesizing
-    better code.
-
-    ``extra_guidance`` is appended to the primitives catalog — used to feed the
-    good/bad-behavior knowledge base into the code-synthesis path.
-    """
-    predictor = dspy.Predict(CodegenSignature)
-    seed_text = seed.strip() if seed else "(none)"
-    catalog = PRIMITIVES_CATALOG + (f"\n\n{extra_guidance}" if extra_guidance else "")
-    inputs = dict(
-        signature_spec=ctx.render_signature_spec(),
-        context_blurb=ctx.render_context_blurb(),
-        primitives_catalog=catalog,
-        seed_implementation=seed_text,
-    )
-    if lm is not None:
-        with dspy.context(lm=lm):
-            out = predictor(**inputs)
-    else:
-        out = predictor(**inputs)
-
-    return _strip_code_fences(out.module_src)
-
-
 def repair(
-    ctx: VibeContext,
+    ctx: FlexContext,
     *,
     broken: str,
     failure_kind: str,

@@ -1,12 +1,12 @@
-# Improving a dspy.vibe module
+# Improving a dspy.flex module
 
-You are improving the *code* of a `dspy.vibe` module. The starting point is almost
+You are improving the *code* of a `dspy.flex` module. The starting point is almost
 always a single trivial `dspy.RLM(...)` call that delegates the whole task to one
 recursive-LM black box. Your job is to spend compute to turn that into a better, more
 reliable program — decomposing the task, moving determinism into plain Python, and
 using focused predictors only where an LM is genuinely needed.
 
-A `dspy.Vibe` module's implementation is a single `dspy.Module` subclass you author, with
+A `dspy.Flex` module's implementation is a single `dspy.Module` subclass you author, with
 two methods:
 
 - `__init__(self)`: calls `super().__init__()` and assigns each predictor it needs to an

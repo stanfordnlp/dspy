@@ -4,15 +4,14 @@ import hashlib
 import json
 import logging
 import types
-import warnings
 from pathlib import Path
 from typing import Any
 
 import dspy
+from dspy.flex.ctx import FlexContext, repair
+from dspy.flex.persistence import PersistedFlex, parse_persisted_file, render_persisted_file
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
-from dspy.vibe.ctx import VibeContext, assess_intent, repair
-from dspy.vibe.persistence import PersistedVibe, parse_persisted_file, render_persisted_file
 
 # Runtime exceptions that we treat as "the user's code is wrong, not a flaky
 # downstream call." A bare LM or tool call typically raises a more specific
@@ -28,17 +27,17 @@ logger = logging.getLogger(__name__)
 
 
 def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> dict[str, Any]:
-    code = compile(source, filename="<vibe>", mode="exec")
+    code = compile(source, filename="<flex>", mode="exec")
     globals_ns: dict[str, Any] = dict(context_names or {})
     exec(code, globals_ns)
     return globals_ns
 
 
 @experimental(version="3.3.0b2")
-class Vibe(Module):
+class Flex(Module):
     """A DSPy Module that starts as a baseline ``dspy.RLM`` and whose code is optimizable.
 
-    Construct it like any other module — ``dspy.Vibe(MySignature)``. On first use it binds
+    Construct it like any other module — ``dspy.Flex(MySignature)``. On first use it binds
     a deterministic baseline that simply delegates to ``dspy.RLM(<signature>)`` (no codegen
     LM call). The module is *marked* code-optimizable (``_code_optimizable``): when optimized
     with ``dspy.GEPA``, the optimizer may rewrite its source (a single ``dspy.Module`` subclass,
@@ -55,17 +54,11 @@ class Vibe(Module):
             into the runtime exec namespace (and into code optimization).
         codegen_lm: LM used for auto-repair of broken code and for the intent check.
             Defaults to ``dspy.settings.lm``.
-        auto_repair: When True (default), Vibe tries to recover from a broken persisted /
+        auto_repair: When True (default), Flex tries to recover from a broken persisted /
             optimized implementation by re-invoking the codegen LM with the broken body and
             the exception text — at most once at bind time (on load) and once at runtime per
             process. Set False to surface errors directly. The deterministic baseline never
             triggers repair.
-        check_intent: When True (default), the first time a module is created for a signature
-            (a fresh baseline — not a plain reload of a matching persisted file) Vibe makes one
-            best-effort LM call to judge whether the signature is specific enough to implement.
-            If it looks vague or misleading, Vibe emits a warning naming what's unclear and a
-            question to clarify; the module is still built. Skipped silently when no LM is
-            available or the check itself errors. Set False to disable the call entirely.
 
     Persistence: when ``persist_to`` is set, the implementation is a single self-contained
     ``.py`` file (a header comment, a signature-hash guard, the recorded Signature, and the
@@ -86,14 +79,13 @@ class Vibe(Module):
         context: list[Any] | None = None,
         codegen_lm: dspy.LM | None = None,
         auto_repair: bool = True,
-        check_intent: bool = True,
     ):
         super().__init__()
 
         from dspy.signatures.signature import ensure_signature
 
         self._signature_cls = ensure_signature(signature)
-        self._name = getattr(self._signature_cls, "__name__", None) or "Vibe"
+        self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
         self._persist_to: Path | None = Path(persist_to) if persist_to else None
         self._codegen_lm = codegen_lm
 
@@ -104,7 +96,7 @@ class Vibe(Module):
                 style_notes.append(item)
             else:
                 tools.append(item)
-        self._vibe_ctx = VibeContext(
+        self._flex_ctx = FlexContext(
             signature_cls=self._signature_cls, tools=tools, style_notes=style_notes
         )
 
@@ -112,7 +104,6 @@ class Vibe(Module):
         self._attached_names: list[str] = []
         self._forward_impl: Any = None
         self._auto_repair = auto_repair
-        self._check_intent = check_intent
         self._runtime_repair_used = False
 
         self._lazy_implement()
@@ -134,16 +125,16 @@ class Vibe(Module):
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
         state = super().dump_state(json_mode=json_mode)
-        state["_vibe"] = {
+        state["_flex"] = {
             "module_src": self._module_src,
             "signature_hash": self._signature_hash(),
         }
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
-        vibe_state = state.pop("_vibe", None) if isinstance(state, dict) else None
-        if vibe_state and vibe_state.get("module_src"):
-            self._bind_code(vibe_state["module_src"])
+        flex_state = state.pop("_flex", None) if isinstance(state, dict) else None
+        if flex_state and flex_state.get("module_src"):
+            self._bind_code(flex_state["module_src"])
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
@@ -164,58 +155,26 @@ class Vibe(Module):
                         raise
                     fixed = self._repair_after_bind_failure(broken=stored.module_src, error=err)
                     self._write_persisted(fixed, sig_hash)
-                logger.info("dspy.Vibe %r: loaded implementation from %s", self._name, self._persist_to)
+                logger.info("dspy.Flex %r: loaded implementation from %s", self._name, self._persist_to)
                 return
             if stored is not None:
                 logger.info(
-                    "dspy.Vibe %r: signature changed on %s — resetting to the RLM baseline.",
+                    "dspy.Flex %r: signature changed on %s — resetting to the RLM baseline.",
                     self._name,
                     self._persist_to,
                 )
 
         # This is a fresh generation (no matching persisted impl): a new signature, a changed
-        # one, or in-memory mode. Pre-flight the signature for clarity before building.
-        self._maybe_warn_intent()
-
+        # one, or in-memory mode.
         # Bind the deterministic RLM baseline (no codegen LM call). Decomposition into a
         # richer, mostly-Python program happens later via dspy.GEPA.
         module_src = self._rlm_baseline_src()
         self._bind_code(module_src)
         if self._persist_to is not None:
             self._write_persisted(module_src, sig_hash)
-            logger.info("dspy.Vibe %r: wrote RLM baseline to %s", self._name, self._persist_to)
+            logger.info("dspy.Flex %r: wrote RLM baseline to %s", self._name, self._persist_to)
         else:
-            logger.info("dspy.Vibe %r: persist_to=None — RLM baseline is in-memory only.", self._name)
-
-    def _maybe_warn_intent(self) -> None:
-        """Best-effort: warn if the signature looks too vague/misleading to implement well.
-
-        Runs at most one LM call, only on a fresh generation (the caller gates this to the
-        fresh-baseline path, never a plain reload). Skipped when ``check_intent`` is off or no
-        LM is available, and any failure is swallowed — an advisory check must never block
-        construction. The module is built regardless of the verdict.
-        """
-        if not self._check_intent:
-            return
-        lm = self._codegen_lm or dspy.settings.lm
-        if lm is None:
-            return
-        try:
-            is_clear, vague_aspect, clarifying_question = assess_intent(self._vibe_ctx, lm=lm)
-        except Exception as err:  # advisory only — never block construction
-            logger.debug("dspy.Vibe %r: intent check skipped (%s)", self._name, err)
-            return
-        if is_clear:
-            return
-        message = (
-            f"dspy.Vibe {self._name!r}: this signature may be too vague or misleading to "
-            f"implement reliably, so the generated module may be incorrect.\n"
-            f"  What's unclear: {vague_aspect or '(the objective and/or field roles are underspecified)'}\n"
-            f"  Please clarify: {clarifying_question or 'tighten the objective (docstring) and the input/output field descriptions.'}\n"
-            f"  (Pass check_intent=False to dspy.Vibe(...) to silence this check.)"
-        )
-        logger.warning(message)
-        warnings.warn(message, stacklevel=2)
+            logger.info("dspy.Flex %r: persist_to=None — RLM baseline is in-memory only.", self._name)
 
     def _rlm_baseline_src(self) -> str:
         """Deterministic baseline source: a ``dspy.Module`` that delegates to one ``dspy.RLM``.
@@ -228,7 +187,7 @@ class Vibe(Module):
         scope).
         """
         cls: Any = self._signature_cls
-        sig_str = self._vibe_ctx.render_signature_string()
+        sig_str = self._flex_ctx.render_signature_string()
         output_names = list(cls.output_fields.keys())
         instructions = (getattr(cls, "instructions", "") or "").strip()
         # `!r` escapes quotes/newlines into a valid literal, and the rebuilt signature only
@@ -251,7 +210,7 @@ class Vibe(Module):
 
     def _class_name(self) -> str:
         """Name for the generated module class, derived from the signature name."""
-        base = self._name if (self._name and self._name.isidentifier()) else "Vibe"
+        base = self._name if (self._name and self._name.isidentifier()) else "Flex"
         return f"{base}Module"
 
     def _repair_after_bind_failure(self, *, broken: str, error: BaseException) -> str:
@@ -263,13 +222,13 @@ class Vibe(Module):
         """
         error_text = f"{type(error).__name__}: {error}"
         logger.warning(
-            "dspy.Vibe %r: bind failure (%s) — running auto-repair. "
+            "dspy.Flex %r: bind failure (%s) — running auto-repair. "
             "Set auto_repair=False to surface the error directly.",
             self._name,
             error_text,
         )
         fixed = repair(
-            self._vibe_ctx, broken=broken, failure_kind="bind", error_text=error_text, lm=self._codegen_lm
+            self._flex_ctx, broken=broken, failure_kind="bind", error_text=error_text, lm=self._codegen_lm
         )
         self._bind_code(fixed)
         return fixed
@@ -279,12 +238,12 @@ class Vibe(Module):
 
         The generated/persisted implementation is a normal ``dspy.Module`` subclass. We exec it,
         instantiate it once (LM-free — only predictor *construction* runs), and copy whatever its
-        ``__init__`` defined (predictors and any plain attributes) onto this Vibe instance, then
+        ``__init__`` defined (predictors and any plain attributes) onto this Flex instance, then
         bind its ``forward`` as ``self._forward_impl``. So ``self`` behaves exactly like the
         generated module — ``self.<predictor>`` and ``named_predictors()`` stay flat — while the
         source remains a clean, editable class.
         """
-        ctx_names = self._vibe_ctx.context_names()
+        ctx_names = self._flex_ctx.context_names()
         ctx_names["dspy"] = dspy
 
         # Detach attributes from the previous binding before re-attaching.
@@ -316,13 +275,13 @@ class Vibe(Module):
         """Run the LM-authored ``_forward_impl`` with runtime auto-repair.
 
         If a call raises one of the narrow user-code errors in ``_RUNTIME_REPAIRABLE_ERRORS``
-        and ``auto_repair`` is on, Vibe re-invokes the codegen LM with the broken body + the
+        and ``auto_repair`` is on, Flex re-invokes the codegen LM with the broken body + the
         exception, swaps in the fix, and re-runs the call once. Subsequent failures (or
         non-repairable exceptions like a tool/LM error) propagate unchanged.
         """
         if self._forward_impl is None:
             raise RuntimeError(
-                f"dspy.Vibe {self._name!r}: no implementation bound. Did __init__ or implement() fail?"
+                f"dspy.Flex {self._name!r}: no implementation bound. Did __init__ or implement() fail?"
             )
         try:
             return self._forward_impl(*args, **kwargs)
@@ -344,25 +303,25 @@ class Vibe(Module):
         broken = self._module_src
         error_text = f"{type(error).__name__}: {error}"
         logger.warning(
-            "dspy.Vibe %r: runtime failure (%s) — running auto-repair. "
+            "dspy.Flex %r: runtime failure (%s) — running auto-repair. "
             "Set auto_repair=False to surface the error directly.",
             self._name,
             error_text,
         )
         fixed = repair(
-            self._vibe_ctx, broken=broken, failure_kind="runtime", error_text=error_text, lm=self._codegen_lm
+            self._flex_ctx, broken=broken, failure_kind="runtime", error_text=error_text, lm=self._codegen_lm
         )
         self._bind_code(fixed)
         if self._persist_to is not None:
             self._write_persisted(fixed, self._signature_hash())
 
-    def _read_persisted(self) -> PersistedVibe | None:
+    def _read_persisted(self) -> PersistedFlex | None:
         if self._persist_to is None or not self._persist_to.exists():
             return None
         parsed = parse_persisted_file(self._persist_to.read_text(encoding="utf-8"))
         if parsed is None:
             logger.warning(
-                "dspy.Vibe %r: persisted file at %s is missing expected markers",
+                "dspy.Flex %r: persisted file at %s is missing expected markers",
                 self._name,
                 self._persist_to,
             )
@@ -375,7 +334,7 @@ class Vibe(Module):
             signature_hash=sig_hash,
             signature_name=self._name,
             module_src=module_src,
-            signature_spec=self._vibe_ctx.render_signature_spec(),
+            signature_spec=self._flex_ctx.render_signature_spec(),
         )
         self._persist_to.write_text(body, encoding="utf-8")
 

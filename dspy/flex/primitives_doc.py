@@ -1,4 +1,4 @@
-from dspy.vibe.knowledge import build_knowledge_base
+from dspy.flex.knowledge import build_knowledge_base
 
 PRIMITIVES_CATALOG: str = """\
 You are authoring ONE Python source string: a single `dspy.Module` subclass that
@@ -161,5 +161,5 @@ Common patterns (study these before writing `forward`):
 # The good/bad-behavior knowledge base is curated in the ``knowledge/`` package as
 # small, individually-maintained concept docs and validated example modules. The loader
 # assembles them into one string (pure text — no ``dspy`` import or predictor construction,
-# safe to build during ``import dspy``). See ``dspy/vibe/knowledge/MAINTAINING.md``.
+# safe to build during ``import dspy``). See ``dspy/flex/knowledge/MAINTAINING.md``.
 KNOWLEDGE_BASE: str = build_knowledge_base()

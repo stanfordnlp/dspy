@@ -1,9 +1,9 @@
-"""The dspy.vibe knowledge base assembles correctly and its examples never rot.
+"""The dspy.flex knowledge base assembles correctly and its examples never rot.
 
-The knowledge base (``dspy/vibe/knowledge``) is curated as concept ``.md`` files and
+The knowledge base (``dspy/flex/knowledge``) is curated as concept ``.md`` files and
 example ``.py`` modules, assembled into the ``KNOWLEDGE_BASE`` string that GEPA feeds the
 reflection LM. These tests are LM-free: building the base is pure text processing, and each
-example is validated by binding it through the live ``Vibe`` code path (no LM call).
+example is validated by binding it through the live ``Flex`` code path (no LM call).
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from __future__ import annotations
 import pytest
 
 import dspy
-from dspy.vibe import Vibe
-from dspy.vibe.knowledge import (
+from dspy.flex import Flex
+from dspy.flex.knowledge import (
     MODULE_MARKER,
     build_knowledge_base,
     load_examples,
 )
-from dspy.vibe.primitives_doc import KNOWLEDGE_BASE
+from dspy.flex.primitives_doc import KNOWLEDGE_BASE
 
 EXAMPLES = load_examples()
 
@@ -38,7 +38,7 @@ def test_concepts_are_included() -> None:
         "What a GOOD optimized module looks like",
         "DSPy modules you can use inside",
         "Writing sub-signatures",
-        "How vibe optimization works",
+        "How flex optimization works",
         "Anti-patterns to AVOID",
     ):
         assert marker in kb, f"missing concept content: {marker!r}"
@@ -46,7 +46,7 @@ def test_concepts_are_included() -> None:
 
 def test_examples_are_rendered_without_leaking_markers() -> None:
     kb = build_knowledge_base()
-    assert "## Worked examples of good dspy.vibe modules" in kb
+    assert "## Worked examples of good dspy.flex modules" in kb
     # Every example's task + signature should appear in the rendered base.
     for ex in EXAMPLES:
         assert ex.task in kb
@@ -67,15 +67,15 @@ def test_examples_loaded_and_well_formed() -> None:
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
-def test_example_binds_through_vibe(example) -> None:
-    """Each example must bind via the real Vibe code path — this guards against rot.
+def test_example_binds_through_flex(example) -> None:
+    """Each example must bind via the real Flex code path — this guards against rot.
 
     Construction binds the (LM-free) RLM baseline; ``_bind_code`` then execs the example's
     own ``module_src`` (a dspy.Module subclass), constructing its predictors (no LM call) and
     attaching ``forward``. A drifted example (renamed API, bad signature, missing field) fails
     here instead of silently misleading the reflection LM.
     """
-    program = Vibe(example.signature, check_intent=False)  # in-memory, LM-free baseline
+    program = Flex(example.signature)  # in-memory, LM-free baseline
     program._bind_code(example.module_src)
 
     assert program.module_src == example.module_src
@@ -86,7 +86,7 @@ def test_example_binds_through_vibe(example) -> None:
 
 def test_deterministic_example_runs_with_no_lm() -> None:
     slugify = next(ex for ex in EXAMPLES if ex.name == "slugify")
-    program = Vibe(slugify.signature, check_intent=False)
+    program = Flex(slugify.signature)
     program._bind_code(slugify.module_src)
     # A fully-deterministic module attaches no predictors and runs without any LM.
     assert program._attached_names == []

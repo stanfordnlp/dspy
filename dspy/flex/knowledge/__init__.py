@@ -1,19 +1,19 @@
-"""Curated knowledge base for ``dspy.vibe`` code synthesis.
+"""Curated knowledge base for ``dspy.flex`` code synthesis.
 
 The assembled string (:func:`build_knowledge_base`, exported as
 ``KNOWLEDGE_BASE``) is fed to the codegen / reflection LM as ``extra_guidance``
-when ``dspy.GEPA`` optimizes a ``dspy.Vibe`` module's code (see
-``dspy/vibe/primitives_doc.py`` and ``dspy/teleprompt/gepa``). It distills the
+when ``dspy.GEPA`` optimizes a ``dspy.Flex`` module's code (see
+``dspy/flex/primitives_doc.py`` and ``dspy/teleprompt/gepa``). It distills the
 DSPy docs & tutorials and pairs them with validated example modules.
 
 It is built from two folders that live next to this file:
 
-- ``concepts/*.md`` — distilled, vibe-relevant guidance from the DSPy docs &
+- ``concepts/*.md`` — distilled, flex-relevant guidance from the DSPy docs &
   tutorials (modules, signatures, optimization, patterns). Concatenated in
   filename order, so the numeric prefixes (``00_``, ``10_``, ...) set the order.
 - ``examples/*.py`` — self-contained reference implementations of good
-  ``dspy.Vibe`` module code. Each is a real, lint-clean Python file that is also
-  validated by the test-suite (every example binds through the live ``Vibe``
+  ``dspy.Flex`` module code. Each is a real, lint-clean Python file that is also
+  validated by the test-suite (every example binds through the live ``Flex``
   code path), so the examples cannot rot.
 
 To extend the knowledge base, drop a new ``.md`` in ``concepts/`` or a new
@@ -22,7 +22,7 @@ To extend the knowledge base, drop a new ``.md`` in ``concepts/`` or a new
 IMPORTANT: building the string is pure text processing (``ast`` + string
 slicing). It MUST NOT import ``dspy`` or construct any predictor, because this
 module is imported transitively during ``import dspy`` (via
-``dspy/__init__.py`` -> ``dspy.vibe``), before ``dspy.Predict`` etc. exist.
+``dspy/__init__.py`` -> ``dspy.flex``), before ``dspy.Predict`` etc. exist.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _EXAMPLES_DIR = _HERE / "examples"
 # Comment marker that splits an example file into its human-facing preamble (the module
 # docstring, ``import dspy``, and the ``TASK`` / ``SIGNATURE`` / ``NOTES`` metadata) and the
 # generated artifact below it: a single ``dspy.Module`` subclass. Everything after the marker
-# is the ``module_src`` that ``Vibe._bind_code`` runs.
+# is the ``module_src`` that ``Flex._bind_code`` runs.
 MODULE_MARKER = "# === MODULE ==="
 
 _META_KEYS = ("TASK", "SIGNATURE", "NOTES")
@@ -47,7 +47,7 @@ _META_KEYS = ("TASK", "SIGNATURE", "NOTES")
 
 @dataclass(frozen=True)
 class KnowledgeExample:
-    """One validated, self-contained ``dspy.Vibe`` reference implementation."""
+    """One validated, self-contained ``dspy.Flex`` reference implementation."""
 
     name: str  # the file stem, e.g. "invoice_total"
     task: str  # one-line description of what the module does
@@ -124,7 +124,7 @@ def _render_examples(examples: list[KnowledgeExample]) -> str:
     if not examples:
         return ""
     header = (
-        "## Worked examples of good dspy.vibe modules\n"
+        "## Worked examples of good dspy.flex modules\n"
         "Each is a self-contained `dspy.Module` subclass (validated by the test suite). "
         "Study the decomposition, the Python/LM split, and the output coercion."
     )
