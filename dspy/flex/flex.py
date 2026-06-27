@@ -113,7 +113,7 @@ class Flex(Module):
         if not callable(forward_fn):
             raise RuntimeError("module_src's dspy.Module subclass must define a `forward` method")
 
-        impl = impl_cls()  # LM-free: runs __init__, constructing predictors only
+        impl = impl_cls()  # runs __init__, constructing predictors only
         baseline_keys = _bare_module_keys()
         for key, value in list(impl.__dict__.items()):
             if key in baseline_keys:
