@@ -6,11 +6,10 @@ from typing import Any, get_origin
 
 @dataclass
 class FlexContext:
-    """Signature + user context that the code-optimization prompts render from."""
+    """Signature + tools that the baseline and code-optimization prompts render from."""
 
     signature_cls: type
     tools: list[Any] = field(default_factory=list)
-    style_notes: list[str] = field(default_factory=list)
 
     def context_names(self) -> dict[str, Any]:
         """Names to inject into the exec globals for the generated code."""
@@ -67,18 +66,15 @@ class FlexContext:
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
 
     def render_context_blurb(self) -> str:
-        sections: list[str] = []
-        if self.tools:
-            tool_lines: list[str] = []
-            for tool in self.tools:
-                tname = getattr(tool, "name", None) or getattr(tool, "__name__", "?")
-                tdesc = getattr(tool, "desc", None) or getattr(tool, "__doc__", "") or ""
-                tdesc = (tdesc or "").strip().splitlines()[0] if tdesc else ""
-                tool_lines.append(f"  - {tname}: {tdesc}")
-            sections.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
-        if self.style_notes:
-            sections.append("Style notes:\n" + "\n".join(f"  - {n}" for n in self.style_notes))
-        return "\n\n".join(sections) if sections else "(no extra context)"
+        if not self.tools:
+            return "(no extra context)"
+        tool_lines: list[str] = []
+        for tool in self.tools:
+            tname = getattr(tool, "name", None) or getattr(tool, "__name__", "?")
+            tdesc = getattr(tool, "desc", None) or getattr(tool, "__doc__", "") or ""
+            tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
+            tool_lines.append(f"  - {tname}: {tdesc}")
+        return "Available tools (in scope by name):\n" + "\n".join(tool_lines)
 
 
 def _type_name(t: Any) -> str:

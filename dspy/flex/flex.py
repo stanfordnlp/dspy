@@ -43,8 +43,6 @@ class Flex(Module):
             underlying ``dspy.RLM(tools=...)`` and are in scope (by name) for the code GEPA
             generates, so the optimizer can wire them into ``dspy.RLM`` / ``dspy.ReAct`` or
             call them directly.
-        context: Style-note strings (and, equivalently, extra tools) injected into the runtime
-            exec namespace and the code-optimization prompts.
     """
 
     # Read by ``dspy.GEPA`` (duck-typed): this module's code may be rewritten by the optimizer.
@@ -55,7 +53,6 @@ class Flex(Module):
         signature: Any,
         *,
         tools: list[Any] | None = None,
-        context: list[Any] | None = None,
     ):
         super().__init__()
 
@@ -63,12 +60,7 @@ class Flex(Module):
 
         self._signature_cls = ensure_signature(signature)
         self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
-
-        all_tools: list[Any] = list(tools or [])
-        style_notes: list[str] = []
-        for item in context or []:
-            (style_notes if isinstance(item, str) else all_tools).append(item)
-        self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=all_tools, style_notes=style_notes)
+        self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=list(tools or []))
 
         self._module_src: str | None = None
         self._attached_names: list[str] = []
