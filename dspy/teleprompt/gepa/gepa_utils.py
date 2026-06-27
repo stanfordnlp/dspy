@@ -250,7 +250,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         results: dict[str, str] = {}
 
-        # --- instruction components (default GEPA behavior) ------------------
+        # --- instructions ---
         if instr_keys:
             # A custom instruction proposer overrides only the instruction components;
             # code components always use the code proposer below.
@@ -277,7 +277,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             },
                         )["new_instruction"]
 
-        # --- code components (flex-marked dspy.Flex submodules) --------------
+        # --- code ---
         if code_keys:
             from dspy.flex.ctx import _strip_code_fences
             from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
@@ -365,6 +365,40 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             else {"disable_logging": True}
         )
 
+        # A flex (code) metric can score against the execution trace (e.g. penalize LLM calls to
+        # reward deterministic code over the RLM loop). GEPA otherwise scores in DSPy's eval mode
+        # — metric(gold, pred) with trace=None — which drops that signal from BOTH selection and
+        # reflection feedback. So when a flex submodule is present we capture the trace and call
+        # the metric WITH it, using that single trace-aware result for both the score and the
+        # reflective dataset. (Pure-instruction GEPA keeps the default trace=None scoring below.)
+        if self._flex_task_descriptions:
+            from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+
+            trajs = bootstrap_trace_module.bootstrap_trace_data(
+                program=program,
+                dataset=batch,
+                metric=None,  # capture traces only; we score with the trace just below
+                num_threads=self.num_threads,
+                raise_on_error=False,
+                capture_failed_parses=True,
+                failure_score=self.failure_score,
+                format_failure_score=self.failure_score,
+                callback_metadata=callback_metadata,
+            )
+            outputs = []
+            scores = []
+            for t in trajs:
+                pred = t["prediction"]
+                outputs.append(pred)
+                if isinstance(pred, FailedPrediction):
+                    result = self.failure_score
+                else:
+                    result = self.metric_fn(t["example"], pred, t["trace"])
+                t["score"] = result  # make_reflective_dataset reads this for the (trace-aware) feedback
+                score = result["score"] if hasattr(result, "score") else result
+                scores.append(self.failure_score if score is None else score)
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs if capture_traces else None)
+
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
             from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
@@ -393,22 +427,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     scores.append(score)
 
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
-        else:
-            evaluator = Evaluate(
-                devset=batch,
-                metric=self.metric_fn,
-                num_threads=self.num_threads,
-                return_all_scores=True,
-                failure_score=self.failure_score,
-                provide_traceback=True,
-                max_errors=len(batch) * 100,
-                callback_metadata=callback_metadata,
-            )
-            res = evaluator(program)
-            outputs = [r[1] for r in res.results]
-            scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+
+        evaluator = Evaluate(
+            devset=batch,
+            metric=self.metric_fn,
+            num_threads=self.num_threads,
+            return_all_scores=True,
+            failure_score=self.failure_score,
+            provide_traceback=True,
+            max_errors=len(batch) * 100,
+            callback_metadata=callback_metadata,
+        )
+        res = evaluator(program)
+        outputs = [r[1] for r in res.results]
+        scores = [r[2] for r in res.results]
+        scores = [s["score"] if hasattr(s, "score") else s for s in scores]
+        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update

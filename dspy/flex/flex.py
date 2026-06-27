@@ -21,28 +21,14 @@ class Flex(Module):
     """A DSPy Module that starts as a ``dspy.RLM`` baseline and whose code is optimizable.
 
     Construct it like any module — ``dspy.Flex(MySignature)`` — and on first use it binds a
-    deterministic baseline delegating to ``dspy.RLM(<signature>)`` (no LM call). It is marked
+    deterministic baseline delegating to ``dspy.RLM(<signature>)``. It is marked
     ``_code_optimizable``: ``dspy.GEPA`` may rewrite its source (a single ``dspy.Module``
     subclass, exposed as ``module_src``) into decomposed predictors + code, rather than only
     tuning instructions.
 
-    Persistence uses the standard ``dspy.Module`` API: ``save`` / ``load`` round-trip the
-    generated ``module_src`` together with the inner predictors' state, exactly as
-    instruction-optimized modules are saved. Reconstruct with the same signature and tools
-    (they are re-provided in code, like any module's architecture — tool callables are not
-    serialized), then load the saved state::
-
-        optimized = dspy.GEPA(...).compile(dspy.Flex(MySignature, tools=[search]), trainset=...)
-        optimized.save("program.json")
-        program = dspy.Flex(MySignature, tools=[search])
-        program.load("program.json")   # rebinds the optimized code, then its predictor state
-
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
-        tools: ``dspy.Tool`` instances or named callables. They are handed to the baseline's
-            underlying ``dspy.RLM(tools=...)`` and are in scope (by name) for the code GEPA
-            generates, so the optimizer can wire them into ``dspy.RLM`` / ``dspy.ReAct`` or
-            call them directly.
+        tools: ``dspy.Tool`` instances or named callables.
     """
 
     # Read by ``dspy.GEPA`` (duck-typed): this module's code may be rewritten by the optimizer.
@@ -79,15 +65,11 @@ class Flex(Module):
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
-        # The generated code rides alongside the predictors' state, so one Module.save
-        # captures both the architecture (module_src) and the tuned predictors.
         state = super().dump_state(json_mode=json_mode)
         state["_flex"] = {"module_src": self._module_src}
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
-        # Rebind the saved code first (it defines which predictors exist), then let the base
-        # Module load each predictor's state onto the freshly-bound predictors.
         flex_state = state.pop("_flex", None) if isinstance(state, dict) else None
         if flex_state and flex_state.get("module_src"):
             self._bind_code(flex_state["module_src"])
@@ -95,12 +77,7 @@ class Flex(Module):
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     def _rlm_baseline_src(self) -> str:
-        """LM-free baseline source: a ``dspy.Module`` delegating to one ``dspy.RLM``.
-
-        Carries the signature's instructions and any context ``tools`` into the RLM, and
-        references only ``dspy`` plus those tools (by name), so the bound module is
-        self-contained against the exec namespace ``_bind_code`` provides.
-        """
+        """Baseline source: a ``dspy.Module`` delegating to one ``dspy.RLM``."""
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
@@ -124,13 +101,7 @@ class Flex(Module):
         return f"{base}Module"
 
     def _bind_code(self, module_src: str) -> None:
-        """Exec ``module_src`` and attach the resulting module's predictors onto ``self``.
-
-        Instantiates the class once (LM-free — only predictor construction runs), copies the
-        attributes its ``__init__`` defined onto this Flex, and binds its ``forward``. So
-        ``self.<predictor>`` and ``named_predictors()`` stay flat while the source stays a
-        clean, editable class.
-        """
+        """Exec ``module_src`` and attach the resulting module's predictors onto ``self``."""
         ctx_names = self._flex_ctx.context_names()
         ctx_names["dspy"] = dspy
 
@@ -164,7 +135,7 @@ class Flex(Module):
 
 
 def _find_module_class(ns: dict[str, Any]) -> type:
-    """Find the generated ``dspy.Module`` subclass in an exec'd namespace (prefer one with its own ``forward``)."""
+    """Find the generated ``dspy.Module`` subclass in an exec'd namespace."""
     candidates = [v for v in ns.values() if isinstance(v, type) and issubclass(v, Module) and v is not Module]
     defined = [c for c in candidates if "forward" in c.__dict__]
     chosen = defined or candidates

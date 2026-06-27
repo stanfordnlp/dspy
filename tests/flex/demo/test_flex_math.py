@@ -1,41 +1,46 @@
 from dotenv import load_dotenv
 
 import dspy
+from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 load_dotenv()
-exec_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=500)
-reflection_lm = dspy.LM("anthropic/claude-opus-4-7", max_tokens=4000)
+exec_lm = dspy.LM("anthropic/claude-opus-4-5", max_tokens=500)
+reflection_lm = dspy.LM("anthropic/claude-opus-4-8", max_tokens=4000)
 dspy.configure(lm=exec_lm)
+
+LLM_CALL_PENALTY = 0.15
 
 
 class MathWord(dspy.Signature):
-    """Solve a problem that I won't tell you about"""
+    """Solve a math word problem."""
 
-    idk: str = dspy.InputField()
+    problem: str = dspy.InputField()
     answer: int = dspy.OutputField()
 
 
 def _showcase(program: dspy.Module, label: str) -> None:
-    """Print the flexed module's clean dspy.Module source and its flat predictors."""
-    print(f"\n===== {label} =====")
+    """Print a module's source and its predictors."""
+    print(f"==== {label} =====")
     print("predictors on the module:", [n for n, _ in program.named_predictors()])
-    print("--- module_src (a normal dspy.Module subclass) ---")
     print(program.module_src)
 
 
 def test_flex() -> None:
-    # Reconfigure here (not just at import) so the test is order-independent: other
-    # tests in the session reconfigure the global LM.
     dspy.configure(lm=exec_lm)
+
     program = dspy.Flex(MathWord)
-
-    # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
-    assert program.module_src.lstrip().startswith("class ")
     assert "dspy.RLM(" in program.module_src
-    _showcase(program, "baseline (un-optimized flex)")
+    _showcase(program, "baseline")
 
-    baseline = program(problem="Alice has 3 apples and gets 2 more. How many does she have?")
-    print(f"Baseline answer is: '{baseline.answer}', correct answer is int 5.")
+    program.save("flex_mathword.json")
+    reloaded_baseline = dspy.Flex(MathWord)
+    reloaded_baseline.load("flex_mathword.json")
+    _showcase(reloaded_baseline, "baseline (saved -> loaded)")
+    assert reloaded_baseline.module_src == program.module_src
+
+    alice = "Alice has 3 apples and gets 2 more. How many does she have?"
+    baseline = reloaded_baseline(problem=alice)
+    print(f"[loaded baseline] {alice} -> {baseline.answer} (expected 5)")
 
     def ex(p, a):
         return dspy.Example(problem=p, answer=a).with_inputs("problem")
@@ -50,11 +55,19 @@ def test_flex() -> None:
         ex("A box has 6 pencils per row and 4 rows. How many pencils total?", 24),
     ]
 
-    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> ScoreWithFeedback:
         try:
-            return 1.0 if int(pred.answer) == int(gold.answer) else 0.0
+            correct = int(pred.answer) == int(gold.answer)
         except (ValueError, TypeError, AttributeError):
-            return 0.0
+            return ScoreWithFeedback(score=0.0, feedback="`answer` was missing or not an int. Return an int.")
+        n_calls = len(trace) if trace else 0
+        score = max(0.0, (1.0 if correct else 0.0) - LLM_CALL_PENALTY * n_calls)
+        fb = (
+            f"{'CORRECT' if correct else 'WRONG'}. You used {n_calls} LM call(s) "
+            f"(cost {LLM_CALL_PENALTY * n_calls:.2f}). Prefer a plain code solution to using "
+            f"an LLM when possible."
+        )
+        return ScoreWithFeedback(score=score, feedback=fb)
 
     optimized = dspy.GEPA(
         metric=metric,
@@ -64,9 +77,16 @@ def test_flex() -> None:
         num_threads=1,
     ).compile(program, trainset=trainset, valset=valset)
 
-    # GEPA rewrote the whole class (e.g. into a ChainOfThought + Python coercion).
     _showcase(optimized, "optimized by GEPA")
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
-    pred = optimized(problem="What is 2 plus 2?")
+    optimized.save("flex_mathword_optimized.json")
+    reloaded_optimized = dspy.Flex(MathWord)
+    reloaded_optimized.load("flex_mathword_optimized.json")
+    _showcase(reloaded_optimized, "optimized (saved -> loaded)")
+    assert reloaded_optimized.module_src == optimized.module_src
+
+    # Run an example on the reloaded optimized program.
+    pred = reloaded_optimized(problem="What is 2 plus 2?")
+    print(f"[loaded optimized] What is 2 plus 2? -> {pred.answer} (expected 4)")
     assert int(pred.answer) == 4

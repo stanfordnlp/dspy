@@ -133,6 +133,31 @@ def test_build_program_rebinds_flex_code() -> None:
     assert hasattr(rebuilt, "p")  # the new predictor is attached flat on the module
 
 
+# --- adapter: selection eval passes the trace to a flex metric ---------------
+
+
+def test_selection_eval_passes_trace_to_flex_metric() -> None:
+    """The selection eval (capture_traces=False) must pass the execution trace to the metric
+    when a flex submodule is present, so a trace-dependent score (e.g. an LLM-call penalty that
+    rewards deterministic code) actually drives candidate selection. GEPA's default scoring
+    calls the metric in eval mode (trace=None), which would silently drop that signal."""
+    seen: dict[str, object] = {}
+
+    def trace_aware_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+        seen["n_calls"] = len(trace) if trace is not None else None
+        return 1.0
+
+    student = dspy.Flex(Echo)  # a flex submodule is present
+    adapter = DspyAdapter(student_module=student, metric_fn=trace_aware_metric, feedback_map={})
+    candidate = {make_code_key("self"): SIMPLE_MODULE}  # one dspy.Predict -> one traced call
+    ex = dspy.Example(q="hi", a="hi").with_inputs("q")
+
+    dspy.configure(lm=DummyLM([{"a": "hi"}]))
+    adapter.evaluate([ex], candidate, capture_traces=False)  # the selection path
+
+    assert seen.get("n_calls") == 1  # the metric received the trace, with the one call
+
+
 # --- adapter: propose routes code keys to the code proposer ------------------
 
 
