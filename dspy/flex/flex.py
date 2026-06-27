@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-import logging
 import types
 from typing import Any
 
 import dspy
-from dspy.flex.ctx import FlexContext, repair
+from dspy.flex.ctx import FlexContext
 from dspy.primitives.module import Module
 from dspy.utils.annotation import experimental
-
-# User-code errors auto-repair handles. Downstream LM/tool failures raise more specific
-# subclasses (e.g. anthropic.APIError) and propagate unchanged.
-_RUNTIME_REPAIRABLE_ERRORS: tuple[type[BaseException], ...] = (AttributeError, TypeError, NameError, KeyError)
-
-logger = logging.getLogger(__name__)
 
 
 def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -52,10 +45,6 @@ class Flex(Module):
             call them directly.
         context: Style-note strings (and, equivalently, extra tools) injected into the runtime
             exec namespace and the code-optimization prompts.
-        codegen_lm: LM used for auto-repair. Defaults to ``dspy.settings.lm``.
-        auto_repair: When True (default), a broken loaded or optimized implementation is sent
-            back to the codegen LM to fix — at most once at bind time (on load) and once at
-            runtime per process. Set False to surface errors directly.
     """
 
     # Read by ``dspy.GEPA`` (duck-typed): this module's code may be rewritten by the optimizer.
@@ -67,8 +56,6 @@ class Flex(Module):
         *,
         tools: list[Any] | None = None,
         context: list[Any] | None = None,
-        codegen_lm: dspy.LM | None = None,
-        auto_repair: bool = True,
     ):
         super().__init__()
 
@@ -76,7 +63,6 @@ class Flex(Module):
 
         self._signature_cls = ensure_signature(signature)
         self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
-        self._codegen_lm = codegen_lm
 
         all_tools: list[Any] = list(tools or [])
         style_notes: list[str] = []
@@ -87,8 +73,6 @@ class Flex(Module):
         self._module_src: str | None = None
         self._attached_names: list[str] = []
         self._forward_impl: Any = None
-        self._auto_repair = auto_repair
-        self._runtime_repair_used = False
 
         # Bind the deterministic RLM baseline (no LM call); GEPA may later rewrite this code.
         self._bind_code(self._rlm_baseline_src())
@@ -114,7 +98,7 @@ class Flex(Module):
         # Module load each predictor's state onto the freshly-bound predictors.
         flex_state = state.pop("_flex", None) if isinstance(state, dict) else None
         if flex_state and flex_state.get("module_src"):
-            self._bind_with_repair(flex_state["module_src"])
+            self._bind_code(flex_state["module_src"])
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
@@ -146,31 +130,6 @@ class Flex(Module):
     def _class_name(self) -> str:
         base = self._name if (self._name and self._name.isidentifier()) else "Flex"
         return f"{base}Module"
-
-    def _bind_with_repair(self, module_src: str) -> None:
-        """Bind ``module_src`` on the load path, repairing once if it fails to bind."""
-        try:
-            self._bind_code(module_src)
-        except Exception as err:
-            if not self._auto_repair:
-                raise
-            self._repair_and_bind(broken=module_src, failure_kind="bind", error=err)
-
-    def _repair_and_bind(self, *, broken: str, failure_kind: str, error: BaseException) -> None:
-        """Send ``broken`` to the codegen LM and bind the fix.
-
-        The fixed code is bound unguarded — if the repair is itself broken it raises, so we
-        never loop on repair. The fix lives in memory; persist it with ``save`` to keep it.
-        """
-        error_text = f"{type(error).__name__}: {error}"
-        logger.warning(
-            "dspy.Flex %r: %s failure (%s) — running auto-repair (set auto_repair=False to disable).",
-            self._name,
-            failure_kind,
-            error_text,
-        )
-        fixed = repair(self._flex_ctx, broken=broken, failure_kind=failure_kind, error_text=error_text, lm=self._codegen_lm)
-        self._bind_code(fixed)
 
     def _bind_code(self, module_src: str) -> None:
         """Exec ``module_src`` and attach the resulting module's predictors onto ``self``.
@@ -206,17 +165,10 @@ class Flex(Module):
         self._module_src = module_src
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
-        """Run the bound ``forward``, auto-repairing once on a user-code error (if enabled)."""
+        """Run the bound ``forward``."""
         if self._forward_impl is None:
             raise RuntimeError(f"dspy.Flex {self._name!r}: no implementation bound.")
-        try:
-            return self._forward_impl(*args, **kwargs)
-        except _RUNTIME_REPAIRABLE_ERRORS as err:
-            if not self._auto_repair or self._runtime_repair_used:
-                raise
-            self._runtime_repair_used = True
-            self._repair_and_bind(broken=self._module_src, failure_kind="runtime", error=err)
-            return self._forward_impl(*args, **kwargs)
+        return self._forward_impl(*args, **kwargs)
 
 
 def _find_module_class(ns: dict[str, Any]) -> type:

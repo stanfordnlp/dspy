@@ -304,11 +304,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Rebind code for flex-marked (Flex) submodules whose source is in the candidate.
+        # Rebind code for flex-marked (Flex) submodules whose source is in the candidate. A
+        # broken candidate raises here; evaluate() catches it and scores the batch as a failure.
         for path, flex in enumerate_flex_submodules(new_prog).items():
             key = make_code_key(path)
             if key in candidate:
-                flex._auto_repair = False  # a broken proposed candidate must raise, not self-repair
                 flex._bind_code(candidate[key])
 
         # Apply instruction updates to predictors. Code keys contain "::" so never match

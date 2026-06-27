@@ -79,7 +79,7 @@ def test_load_without_tools_cannot_resolve_them(tmp_path) -> None:
     path = tmp_path / "program.json"
     program.save(path)
 
-    reloaded = Flex(Echo, auto_repair=False)  # tools NOT re-provided
+    reloaded = Flex(Echo)  # tools NOT re-provided
     with pytest.raises(NameError):
         reloaded.load(path)
 

@@ -155,7 +155,7 @@ def test_flex_conflation() -> None:
     train, val, test = _load_splits()
     print(f"splits: train={len(train)} val={len(val)} test={len(test)}")
 
-    program = dspy.Flex(SamePlace, codegen_lm=STRONG_LM)
+    program = dspy.Flex(SamePlace)
 
     # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
     assert program.module_src.lstrip().startswith("class ")
@@ -190,7 +190,7 @@ def test_flex_conflation() -> None:
 
     # Persist the optimized program with the standard Module.save/load (code round-trips).
     optimized.save(str(SAVE_PATH))
-    reloaded = dspy.Flex(SamePlace, codegen_lm=STRONG_LM)
+    reloaded = dspy.Flex(SamePlace)
     reloaded.load(str(SAVE_PATH))
     assert reloaded.module_src == optimized.module_src
     print(f"saved + reloaded optimized program -> {SAVE_PATH}")

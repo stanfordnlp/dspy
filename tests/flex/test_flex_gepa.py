@@ -133,16 +133,6 @@ def test_build_program_rebinds_flex_code() -> None:
     assert hasattr(rebuilt, "p")  # the new predictor is attached flat on the module
 
 
-def test_build_program_disables_flex_auto_repair() -> None:
-    student = dspy.Flex(Echo)
-    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
-    candidate = {make_code_key("self"): SIMPLE_MODULE}
-    rebuilt = adapter.build_program(candidate)
-    # A broken proposed candidate must surface as an error during search, not silently
-    # self-repair and pollute the persisted history.
-    assert rebuilt._auto_repair is False
-
-
 # --- adapter: propose routes code keys to the code proposer ------------------
 
 
