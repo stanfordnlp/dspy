@@ -16,10 +16,11 @@ class FlexContext:
         out: dict[str, Any] = {}
         for tool in self.tools:
             name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
-            if not name:
+            if not name or not name.isidentifier():
                 raise ValueError(
-                    f"Cannot determine a name for context tool {tool!r}. Use a "
-                    f"`dspy.Tool` with `.name`, or a plain function with `__name__`."
+                    f"Tool {tool!r} needs a name that is a valid Python identifier — it is "
+                    f"referenced by name in the generated code — but got {name!r}. Use a `def` "
+                    f"function or `dspy.Tool(func, name='my_tool')`."
                 )
             out[name] = tool
         return out

@@ -52,7 +52,6 @@ class Flex(Module):
         self._attached_names: list[str] = []
         self._forward_impl: Any = None
 
-        # Bind the deterministic RLM baseline (no LM call); GEPA may later rewrite this code.
         self._bind_code(self._rlm_baseline_src())
 
     @property
@@ -61,23 +60,21 @@ class Flex(Module):
 
     @property
     def module_src(self) -> str | None:
-        """Source of the bound implementation (a single ``dspy.Module`` subclass)."""
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
         state = super().dump_state(json_mode=json_mode)
-        state["_flex"] = {"module_src": self._module_src}
+        state["module_src"] = self._module_src
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
-        flex_state = state.pop("_flex", None) if isinstance(state, dict) else None
-        if flex_state and flex_state.get("module_src"):
-            self._bind_code(flex_state["module_src"])
+        module_src = state.pop("module_src", None) if isinstance(state, dict) else None
+        if module_src:
+            self._bind_code(module_src)
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     def _rlm_baseline_src(self) -> str:
-        """Baseline source: a ``dspy.Module`` delegating to one ``dspy.RLM``."""
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)

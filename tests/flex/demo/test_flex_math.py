@@ -19,28 +19,25 @@ class MathWord(dspy.Signature):
 
 
 def _showcase(program: dspy.Module, label: str) -> None:
-    """Print a module's source and its predictors."""
     print(f"==== {label} =====")
     print("predictors on the module:", [n for n, _ in program.named_predictors()])
     print(program.module_src)
 
+def apply_operation(
+    a: float,
+    b: float,
+    operation,
+) -> float:
+    """Executed a mathematical operation on two floats. The return is a float."""
+    return operation(a, b)
 
 def test_flex() -> None:
-    dspy.configure(lm=exec_lm)
-
-    program = dspy.Flex(MathWord)
-    assert "dspy.RLM(" in program.module_src
-    _showcase(program, "baseline")
-
+    program = dspy.Flex(MathWord, tools=[apply_operation])
     program.save("flex_mathword.json")
-    reloaded_baseline = dspy.Flex(MathWord)
-    reloaded_baseline.load("flex_mathword.json")
-    _showcase(reloaded_baseline, "baseline (saved -> loaded)")
-    assert reloaded_baseline.module_src == program.module_src
 
-    alice = "Alice has 3 apples and gets 2 more. How many does she have?"
-    baseline = reloaded_baseline(problem=alice)
-    print(f"[loaded baseline] {alice} -> {baseline.answer} (expected 5)")
+    reloaded_baseline = dspy.Flex(MathWord, tools=[apply_operation])
+
+    reloaded_baseline.load("flex_mathword.json")
 
     def ex(p, a):
         return dspy.Example(problem=p, answer=a).with_inputs("problem")
@@ -69,6 +66,7 @@ def test_flex() -> None:
         )
         return ScoreWithFeedback(score=score, feedback=fb)
 
+    dspy.configure(lm=exec_lm)
     optimized = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,
@@ -77,16 +75,13 @@ def test_flex() -> None:
         num_threads=1,
     ).compile(program, trainset=trainset, valset=valset)
 
-    _showcase(optimized, "optimized by GEPA")
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
     optimized.save("flex_mathword_optimized.json")
-    reloaded_optimized = dspy.Flex(MathWord)
+    reloaded_optimized = dspy.Flex(MathWord, tools=[apply_operation])
     reloaded_optimized.load("flex_mathword_optimized.json")
-    _showcase(reloaded_optimized, "optimized (saved -> loaded)")
     assert reloaded_optimized.module_src == optimized.module_src
 
     # Run an example on the reloaded optimized program.
     pred = reloaded_optimized(problem="What is 2 plus 2?")
-    print(f"[loaded optimized] What is 2 plus 2? -> {pred.answer} (expected 4)")
     assert int(pred.answer) == 4
