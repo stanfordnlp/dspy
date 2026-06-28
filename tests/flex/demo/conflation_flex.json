@@ -1,0 +1,45 @@
+{
+  "classify": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Given the fields `input_name`, `input_address`, `match_name`, `match_address`, `distance`, produce the fields `is_same`.",
+      "fields": [
+        {
+          "prefix": "Input Name:",
+          "description": "${input_name}"
+        },
+        {
+          "prefix": "Input Address:",
+          "description": "${input_address}"
+        },
+        {
+          "prefix": "Match Name:",
+          "description": "${match_name}"
+        },
+        {
+          "prefix": "Match Address:",
+          "description": "${match_address}"
+        },
+        {
+          "prefix": "Distance:",
+          "description": "${distance}"
+        },
+        {
+          "prefix": "Is Same:",
+          "description": "${is_same}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "module_src": "class SamePlaceModule(dspy.Module):\n    def __init__(self):\n        super().__init__()\n        self.classify = dspy.Predict(\n            \"input_name: str, input_address: str, match_name: str, match_address: str, distance: float -> is_same: bool\"\n        )\n\n    def forward(self, **inputs):\n        import re\n\n        def normalize_name(s):\n            s = (s or \"\").lower()\n            # Remove common business suffixes/words\n            stopwords = {\n                \"the\", \"a\", \"an\", \"inc\", \"incorporated\", \"llc\", \"ltd\", \"co\",\n                \"corp\", \"corporation\", \"company\", \"restaurant\", \"cafe\", \"bar\",\n                \"and\", \"&\",\n            }\n            s = re.sub(r\"[^a-z0-9\\s]\", \" \", s)\n            tokens = [t for t in s.split() if t and t not in stopwords]\n            # also strip trailing digits like \"U & I LIQUORS 2\" -> \"u i liquors\"\n            # but keep numeric tokens that aren't trailing\n            while tokens and tokens[-1].isdigit():\n                tokens.pop()\n            return \" \".join(tokens)\n\n        STREET_ABBR = {\n            \"street\": \"st\", \"st\": \"st\",\n            \"avenue\": \"ave\", \"ave\": \"ave\", \"av\": \"ave\",\n            \"boulevard\": \"blvd\", \"blvd\": \"blvd\",\n            \"road\": \"rd\", \"rd\": \"rd\",\n            \"drive\": \"dr\", \"dr\": \"dr\",\n            \"lane\": \"ln\", \"ln\": \"ln\",\n            \"court\": \"ct\", \"ct\": \"ct\",\n            \"place\": \"pl\", \"pl\": \"pl\",\n            \"highway\": \"hwy\", \"hwy\": \"hwy\",\n            \"parkway\": \"pkwy\", \"pkwy\": \"pkwy\",\n            \"terrace\": \"ter\", \"ter\": \"ter\",\n            \"circle\": \"cir\", \"cir\": \"cir\",\n            \"square\": \"sq\", \"sq\": \"sq\",\n            \"north\": \"n\", \"n\": \"n\",\n            \"south\": \"s\", \"s\": \"s\",\n            \"east\": \"e\", \"e\": \"e\",\n            \"west\": \"w\", \"w\": \"w\",\n            \"northeast\": \"ne\", \"ne\": \"ne\",\n            \"northwest\": \"nw\", \"nw\": \"nw\",\n            \"southeast\": \"se\", \"se\": \"se\",\n            \"southwest\": \"sw\", \"sw\": \"sw\",\n        }\n\n        def normalize_address(s):\n            s = (s or \"\").lower()\n            s = re.sub(r\"[^a-z0-9\\s]\", \" \", s)\n            tokens = s.split()\n            tokens = [STREET_ABBR.get(t, t) for t in tokens]\n            return \" \".join(tokens)\n\n        def address_number(s):\n            s = (s or \"\").strip()\n            m = re.match(r\"\\s*(\\d+)\", s)\n            return m.group(1) if m else None\n\n        def address_street_tokens(addr_norm):\n            # tokens minus the leading number\n            toks = addr_norm.split()\n            if toks and toks[0].isdigit():\n                toks = toks[1:]\n            return toks\n\n        def jaccard(a_tokens, b_tokens):\n            sa, sb = set(a_tokens), set(b_tokens)\n            if not sa and not sb:\n                return 1.0\n            if not sa or not sb:\n                return 0.0\n            return len(sa & sb) / len(sa | sb)\n\n        def char_similarity(a, b):\n            # simple Dice coefficient on character bigrams\n            if not a or not b:\n                return 0.0\n            if a == b:\n                return 1.0\n            def bigrams(s):\n                s = s.replace(\" \", \"\")\n                return [s[i:i+2] for i in range(len(s) - 1)]\n            ba, bb = bigrams(a), bigrams(b)\n            if not ba or not bb:\n                return 0.0\n            from collections import Counter\n            ca, cb = Counter(ba), Counter(bb)\n            inter = sum((ca & cb).values())\n            return 2 * inter / (len(ba) + len(bb))\n\n        try:\n            dist = float(inputs.get(\"distance\", 0) or 0)\n        except (TypeError, ValueError):\n            dist = 0.0\n\n        n1 = normalize_name(inputs.get(\"input_name\", \"\"))\n        n2 = normalize_name(inputs.get(\"match_name\", \"\"))\n        a1 = normalize_address(inputs.get(\"input_address\", \"\"))\n        a2 = normalize_address(inputs.get(\"match_address\", \"\"))\n\n        num1 = address_number(a1)\n        num2 = address_number(a2)\n        st1 = address_street_tokens(a1)\n        st2 = address_street_tokens(a2)\n\n        name_sim = char_similarity(n1, n2)\n        name_jacc = jaccard(n1.split(), n2.split())\n        street_jacc = jaccard(st1, st2)\n        addr_sim = char_similarity(a1, a2)\n\n        # Deterministic decision rules.\n        # Rule 1: Very far apart -> definitely different places.\n        if dist >= 150:\n            return dspy.Prediction(is_same=False)\n\n        # Rule 2: Same/very close addresses AND similar names AND close distance -> same.\n        same_address = (\n            a1 == a2\n            or (num1 is not None and num1 == num2 and street_jacc >= 0.5)\n        )\n        if same_address and dist < 100 and (name_sim >= 0.6 or name_jacc >= 0.5 or n1 == n2):\n            return dspy.Prediction(is_same=True)\n\n        # Rule 3: Different street numbers and low name similarity at non-trivial distance -> different.\n        if num1 and num2 and num1 != num2 and name_sim < 0.5 and dist > 30:\n            return dspy.Prediction(is_same=False)\n\n        # Rule 4: Names totally different and addresses totally different.\n        if name_sim < 0.3 and addr_sim < 0.4:\n            return dspy.Prediction(is_same=False)\n\n        # Rule 5: Exact name and address match.\n        if n1 == n2 and a1 == a2:\n            return dspy.Prediction(is_same=True)\n\n        # Ambiguous: fall back to LLM.\n        result = self.classify(**inputs)\n        val = result.is_same\n        if isinstance(val, bool):\n            return dspy.Prediction(is_same=val)\n        if isinstance(val, str):\n            return dspy.Prediction(is_same=val.strip().lower() in (\"true\", \"1\", \"yes\"))\n        return dspy.Prediction(is_same=bool(val))",
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.10",
+      "dspy": "3.3.0b1",
+      "cloudpickle": "3.1"
+    }
+  }
+}
