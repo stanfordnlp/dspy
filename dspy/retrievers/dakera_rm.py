@@ -1,9 +1,11 @@
 """Dakera retrieval module for DSPy.
 
 Dakera is a self-hosted, decay-weighted vector memory server with a REST API.
-Run it locally with:
+Run it locally with the docker-compose in ``dakera-ai/dakera-deploy`` (the server
+image plus the MinIO object store it needs); it listens on port 3000 by default::
 
-    docker run -p 3300:3300 -e DAKERA_API_KEY=demo ghcr.io/dakera-ai/dakera:latest
+    git clone https://github.com/dakera-ai/dakera-deploy && cd dakera-deploy
+    docker compose up -d   # serves http://localhost:3000
 
 Project: https://dakera.ai
 """
@@ -31,7 +33,7 @@ class DakeraRM(dspy.Retrieve):
             Every search and store call is scoped to this agent.
         url (str, optional): Base URL of the Dakera server.
             Defaults to the ``DAKERA_URL`` environment variable, or
-            ``"http://localhost:3300"`` if the variable is not set.
+            ``"http://localhost:3000"`` if the variable is not set.
         api_key (str, optional): Bearer token for authentication.
             Defaults to the ``DAKERA_API_KEY`` environment variable.
         k (int, optional): Number of top memories to retrieve. Default is 5.
@@ -43,18 +45,16 @@ class DakeraRM(dspy.Retrieve):
         ValueError: If ``api_key`` is not supplied and ``DAKERA_API_KEY`` is not set.
 
     Examples:
-        Basic usage as the default DSPy retriever::
+        Basic usage — call the retriever directly and read ``.passages``::
 
             import dspy
             from dspy.retrievers.dakera_rm import DakeraRM
 
-            lm = dspy.LM("openai/gpt-4o-mini")
             rm = DakeraRM(agent_id="my-agent", api_key="demo")
-            dspy.configure(lm=lm, rm=rm)
-
-            retrieve = dspy.Retrieve(k=3)
-            result = retrieve("What did the user say about deadlines?")
-            print(result.passages)
+            result = rm("What did the user say about deadlines?")
+            print(result.passages)     # list[str]
+            print(result.memory_ids)   # list[str], pass to rm.forget(...)
+            print(result.scores)       # list[float]
 
         Inline usage inside a DSPy module::
 
@@ -64,16 +64,14 @@ class DakeraRM(dspy.Retrieve):
                     self.generate = dspy.ChainOfThought("context, question -> answer")
 
                 def forward(self, question):
-                    hits = self.memory(question)
-                    context = [h.long_text for h in hits]
+                    context = self.memory(question).passages
                     return self.generate(context=context, question=question)
 
         Writing a memory then retrieving it::
 
             rm = DakeraRM(agent_id="my-agent", api_key="demo")
             rm.store("The project deadline is next Friday.", tags=["deadline"])
-            hits = rm("When is the project deadline?")
-            print([h.long_text for h in hits])
+            print(rm("When is the project deadline?").passages)
     """
 
     def __init__(
@@ -88,7 +86,7 @@ class DakeraRM(dspy.Retrieve):
         super().__init__(k=k)
 
         self.agent_id = agent_id
-        self.url = (url or os.environ.get("DAKERA_URL") or "http://localhost:3300").rstrip("/")
+        self.url = (url or os.environ.get("DAKERA_URL") or "http://localhost:3000").rstrip("/")
         self.session_id = session_id
         self.timeout = timeout
 
@@ -144,7 +142,7 @@ class DakeraRM(dspy.Retrieve):
         query: str | list[str],
         k: int | None = None,
         session_id: str | None = None,
-    ) -> list[dotdict]:
+    ) -> dspy.Prediction:
         """Search Dakera for memories relevant to *query*.
 
         When *query* is a list of strings every query is issued individually
@@ -158,14 +156,14 @@ class DakeraRM(dspy.Retrieve):
                 when provided.
 
         Returns:
-            A list of :class:`~dspy.dsp.utils.dotdict` objects, each with:
+            A :class:`dspy.Prediction` with three parallel lists (mirroring the
+            built-in :class:`~dspy.retrievers.Embeddings` retriever):
 
-            - ``long_text`` — the memory content string (used by :class:`dspy.Retrieve`)
-            - ``id`` — the Dakera memory ID
-            - ``score`` — the relevance score
+            - ``passages`` — the memory content strings, ordered by relevance
+            - ``memory_ids`` — the Dakera memory IDs (pass to :meth:`forget`)
+            - ``scores`` — the relevance score for each passage
 
-            This format is compatible with ``dspy.Retrieve`` as the configured ``rm``.
-            Access content via ``[h.long_text for h in rm(query)]``.
+            Access content via ``rm(query).passages``.
 
         Raises:
             requests.HTTPError: On non-2xx HTTP responses from the Dakera server.
@@ -199,15 +197,22 @@ class DakeraRM(dspy.Retrieve):
                     continue
                 seen_ids.add(mid)
                 hits.append(
-                    dotdict({
-                        "long_text": mem.get("content", ""),
-                        "id": mid,
-                        "score": float(hit.get("score", 0.0)),
-                    })
+                    dotdict(
+                        {
+                            "long_text": mem.get("content", ""),
+                            "id": mid,
+                            "score": float(hit.get("score", 0.0)),
+                        }
+                    )
                 )
 
         # Cap at k across all queries so multi-query calls stay bounded.
-        return hits[:k]
+        hits = hits[:k]
+        return dspy.Prediction(
+            passages=[h.long_text for h in hits],
+            memory_ids=[h.id for h in hits],
+            scores=[h.score for h in hits],
+        )
 
     # ------------------------------------------------------------------
     # Write helper (not required by DSPy, but useful for pipelines that
@@ -273,7 +278,7 @@ class DakeraRM(dspy.Retrieve):
             "agent_id": self.agent_id,
             "memory_ids": memory_ids,
         }
-        if self.session_id:
+        if self.session_id is not None:
             payload["session_id"] = self.session_id
         return self._post("/v1/memory/forget", payload)
 

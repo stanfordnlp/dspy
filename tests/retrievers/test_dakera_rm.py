@@ -5,11 +5,11 @@ Tests use ``unittest.mock`` to intercept HTTP calls, so no live server is requir
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from dspy.retrievers.dakera_rm import DakeraRM
+import pytest
 
+from dspy.retrievers.dakera_rm import DakeraRM
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -50,7 +50,7 @@ def make_rm(**kwargs) -> DakeraRM:
     """Create a DakeraRM with test defaults."""
     defaults = {
         "agent_id": "test-agent",
-        "url": "http://localhost:3300",
+        "url": "http://localhost:3000",
         "api_key": "test-key",
         "k": 5,
     }
@@ -74,15 +74,15 @@ def mock_post(response_json: dict):
 def test_constructor_explicit_args():
     rm = make_rm(session_id="sess-1", timeout=30.0)
     assert rm.agent_id == "test-agent"
-    assert rm.url == "http://localhost:3300"
+    assert rm.url == "http://localhost:3000"
     assert rm.k == 5
     assert rm.session_id == "sess-1"
     assert rm.timeout == 30.0
 
 
 def test_constructor_url_trailing_slash_stripped():
-    rm = DakeraRM(agent_id="a", url="http://localhost:3300/", api_key="key")
-    assert rm.url == "http://localhost:3300"
+    rm = DakeraRM(agent_id="a", url="http://localhost:3000/", api_key="key")
+    assert rm.url == "http://localhost:3000"
 
 
 def test_constructor_env_fallback(monkeypatch):
@@ -96,7 +96,7 @@ def test_constructor_default_url_when_no_env(monkeypatch):
     monkeypatch.delenv("DAKERA_URL", raising=False)
     monkeypatch.setenv("DAKERA_API_KEY", "env-key")
     rm = DakeraRM(agent_id="env-agent")
-    assert rm.url == "http://localhost:3300"
+    assert rm.url == "http://localhost:3000"
 
 
 def test_constructor_missing_api_key_raises(monkeypatch):
@@ -364,7 +364,7 @@ def test_dump_state_includes_expected_keys():
     state = rm.dump_state()
     assert state["k"] == 7
     assert state["agent_id"] == "test-agent"
-    assert state["url"] == "http://localhost:3300"
+    assert state["url"] == "http://localhost:3000"
     assert state["session_id"] == "sess-x"
     assert state["timeout"] == 20.0
     # api_key must NOT appear in persisted state
@@ -377,14 +377,14 @@ def test_load_state_restores_fields():
     state = {
         "k": 10,
         "agent_id": "loaded-agent",
-        "url": "http://remote:3300",
+        "url": "http://remote:3000",
         "session_id": "s42",
         "timeout": 5.0,
     }
     rm.load_state(state)
     assert rm.k == 10
     assert rm.agent_id == "loaded-agent"
-    assert rm.url == "http://remote:3300"
+    assert rm.url == "http://remote:3000"
     assert rm.session_id == "s42"
     assert rm.timeout == 5.0
 
@@ -395,7 +395,7 @@ def test_load_state_defaults_timeout_when_missing():
         {
             "k": 3,
             "agent_id": "a",
-            "url": "http://localhost:3300",
+            "url": "http://localhost:3000",
         }
     )
     assert rm.timeout == 10.0
