@@ -1,5 +1,7 @@
+import pytest
+
 import dspy
-from dspy.evaluate.auto_evaluation import CompleteAndGrounded, SemanticF1
+from dspy.evaluate.auto_evaluation import CompleteAndGrounded, RAGGroundedRefusal, SemanticF1
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
@@ -189,3 +191,129 @@ def test_semantic_f1_prediction_can_be_compared():
     assert isinstance(result1, Prediction)
     assert isinstance(result2, Prediction)
     assert result2.score > result1.score
+
+
+def test_rag_grounded_refusal_correct_refusal_on_unanswerable():
+    # No LM call is needed for the refusal branches
+    example = dspy.Example(question="Who?", response="not enough information", answerable=False)
+    pred = dspy.Prediction(response="not enough information", context="irrelevant text", refused=True)
+
+    metric = RAGGroundedRefusal()
+    result = metric(example, pred)
+
+    assert result.score == 1.0
+    assert "correctly refused" in result.feedback
+
+
+def test_rag_grounded_refusal_answered_when_unanswerable():
+    example = dspy.Example(question="Who?", response="not enough information", answerable=False)
+    pred = dspy.Prediction(response="Paris", context="irrelevant text", refused=False)
+
+    metric = RAGGroundedRefusal()
+    result = metric(example, pred)
+
+    assert result.score == 0.0
+    assert "should refuse" in result.feedback
+
+
+def test_rag_grounded_refusal_refused_when_answerable():
+    example = dspy.Example(question="What is 1+1?", response="2", answerable=True)
+    pred = dspy.Prediction(response="not enough information", context="1+1 equals 2", refused=True)
+
+    metric = RAGGroundedRefusal()
+    result = metric(example, pred)
+
+    assert result.score == 0.0
+    assert "refused although" in result.feedback
+
+
+def test_rag_grounded_refusal_scores_answerable_answer():
+    # Configure with a dummy LM: first call scores correctness, second scores groundedness
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "reasoning": "Comparing the responses",
+                    "precision": 0.8,
+                    "recall": 0.6,
+                },
+                {
+                    "reasoning": "Checking the claims",
+                    "system_response_claims": "1+1=2",
+                    "discussion": "supported by context",
+                    "groundedness": 1.0,
+                },
+            ]
+        )
+    )
+
+    example = dspy.Example(question="What is 1+1?", response="2", answerable=True)
+    pred = dspy.Prediction(response="2", context="1+1 equals 2", refused=False)
+
+    metric = RAGGroundedRefusal()
+    result = metric(example, pred)
+
+    correctness = 2 * (0.8 * 0.6) / (0.8 + 0.6)
+    expected = 2 * (correctness * 1.0) / (correctness + 1.0)
+    assert abs(result.score - expected) < 0.001
+    assert "correct and grounded" in result.feedback
+
+
+def test_rag_grounded_refusal_feedback_names_ungrounded_claims():
+    # Correct answer, but the groundedness judge finds unsupported claims
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "reasoning": "Comparing the responses",
+                    "precision": 1.0,
+                    "recall": 1.0,
+                },
+                {
+                    "reasoning": "Checking the claims",
+                    "system_response_claims": "several",
+                    "discussion": "not supported",
+                    "groundedness": 0.2,
+                },
+            ]
+        )
+    )
+
+    example = dspy.Example(question="What is 1+1?", response="2", answerable=True)
+    pred = dspy.Prediction(response="2, and the sky is green", context="1+1 equals 2", refused=False)
+
+    metric = RAGGroundedRefusal()
+    result = metric(example, pred)
+
+    assert result.score < 0.66
+    assert "not supported by the retrieved context" in result.feedback
+
+
+def test_rag_grounded_refusal_with_trace_returns_bool():
+    example = dspy.Example(question="Who?", response="not enough information", answerable=False)
+    pred = dspy.Prediction(response="not enough information", context="irrelevant text", refused=True)
+
+    metric = RAGGroundedRefusal(threshold=0.7)
+    result = metric(example, pred, trace=True)
+
+    assert isinstance(result.score, bool)
+    assert result.score is True
+
+
+def test_rag_grounded_refusal_is_refusal_callable():
+    example = dspy.Example(question="Who?", response="not enough information", answerable=False)
+    pred = dspy.Prediction(response="not enough information in the context", context="irrelevant text")
+
+    metric = RAGGroundedRefusal(is_refusal=lambda response: "not enough information" in response)
+    result = metric(example, pred)
+
+    assert result.score == 1.0
+
+
+def test_rag_grounded_refusal_requires_refusal_signal():
+    example = dspy.Example(question="Who?", response="2", answerable=True)
+    pred = dspy.Prediction(response="2", context="context")
+
+    metric = RAGGroundedRefusal()
+    with pytest.raises(ValueError, match="refusal signal"):
+        metric(example, pred)
