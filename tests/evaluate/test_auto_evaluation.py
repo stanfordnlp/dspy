@@ -317,3 +317,12 @@ def test_rag_grounded_refusal_requires_refusal_signal():
     metric = RAGGroundedRefusal()
     with pytest.raises(ValueError, match="refusal signal"):
         metric(example, pred)
+
+
+def test_rag_grounded_refusal_requires_answerable_field():
+    example = dspy.Example(question="Who?", response="2")
+    pred = dspy.Prediction(response="2", context="context", refused=False)
+
+    metric = RAGGroundedRefusal()
+    with pytest.raises(ValueError, match="answerable"):
+        metric(example, pred)

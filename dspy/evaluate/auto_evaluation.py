@@ -137,7 +137,8 @@ class RAGGroundedRefusal(Module):
     Args:
         threshold: Minimum score to accept during optimization. Defaults to 0.66.
         is_refusal: Optional callable applied to ``pred.response`` to detect refusal when
-            ``pred.refused`` is not set.
+            ``pred.refused`` is absent or ``None`` (an explicit ``pred.refused=False`` is
+            trusted and bypasses it).
     """
 
     def __init__(self, threshold=0.66, is_refusal=None):
@@ -147,6 +148,12 @@ class RAGGroundedRefusal(Module):
         self.groundedness_module = ChainOfThought(AnswerGroundedness)
 
     def forward(self, example, pred, trace=None, pred_name=None, pred_trace=None):
+        if not hasattr(example, "answerable"):
+            raise ValueError(
+                "RAGGroundedRefusal requires `example.answerable` (bool): whether the example's "
+                "context supports an answer."
+            )
+
         refused = getattr(pred, "refused", None)
         if refused is None:
             if self.is_refusal is None:
