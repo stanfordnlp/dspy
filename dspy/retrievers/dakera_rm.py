@@ -16,7 +16,7 @@ from typing import Any
 import requests
 
 import dspy
-from dspy.primitives.prediction import Prediction
+from dspy.dsp.utils import dotdict
 
 
 class DakeraRM(dspy.Retrieve):
@@ -64,15 +64,16 @@ class DakeraRM(dspy.Retrieve):
                     self.generate = dspy.ChainOfThought("context, question -> answer")
 
                 def forward(self, question):
-                    context = self.memory(question).passages
+                    hits = self.memory(question)
+                    context = [h.long_text for h in hits]
                     return self.generate(context=context, question=question)
 
         Writing a memory then retrieving it::
 
             rm = DakeraRM(agent_id="my-agent", api_key="demo")
             rm.store("The project deadline is next Friday.", tags=["deadline"])
-            result = rm("When is the project deadline?")
-            print(result.passages)
+            hits = rm("When is the project deadline?")
+            print([h.long_text for h in hits])
     """
 
     def __init__(
@@ -143,7 +144,7 @@ class DakeraRM(dspy.Retrieve):
         query: str | list[str],
         k: int | None = None,
         session_id: str | None = None,
-    ) -> Prediction:
+    ) -> list[dotdict]:
         """Search Dakera for memories relevant to *query*.
 
         When *query* is a list of strings every query is issued individually
@@ -157,10 +158,14 @@ class DakeraRM(dspy.Retrieve):
                 when provided.
 
         Returns:
-            ``dspy.Prediction`` with a ``passages`` attribute — a list of strings,
-            each being the ``content`` field of a retrieved memory.  Additional
-            attributes ``memory_ids`` and ``scores`` parallel ``passages`` and carry
-            the Dakera memory IDs and relevance scores respectively.
+            A list of :class:`~dspy.dsp.utils.dotdict` objects, each with:
+
+            - ``long_text`` — the memory content string (used by :class:`dspy.Retrieve`)
+            - ``id`` — the Dakera memory ID
+            - ``score`` — the relevance score
+
+            This format is compatible with ``dspy.Retrieve`` as the configured ``rm``.
+            Access content via ``[h.long_text for h in rm(query)]``.
 
         Raises:
             requests.HTTPError: On non-2xx HTTP responses from the Dakera server.
@@ -171,9 +176,8 @@ class DakeraRM(dspy.Retrieve):
         queries: list[str] = [query] if isinstance(query, str) else query
 
         seen_ids: set[str] = set()
-        passages: list[str] = []
-        memory_ids: list[str] = []
-        scores: list[float] = []
+        hits: list[dotdict] = []
+        _noid_counter = 0
 
         for q in queries:
             payload: dict[str, Any] = {
@@ -188,15 +192,22 @@ class DakeraRM(dspy.Retrieve):
 
             for hit in result.get("memories", []):
                 mem = hit.get("memory", {})
-                mid = mem.get("id", "")
+                mid = mem.get("id") or f"_noid_{_noid_counter}"
+                if not mem.get("id"):
+                    _noid_counter += 1
                 if mid in seen_ids:
                     continue
                 seen_ids.add(mid)
-                passages.append(mem.get("content", ""))
-                memory_ids.append(mid)
-                scores.append(float(hit.get("score", 0.0)))
+                hits.append(
+                    dotdict({
+                        "long_text": mem.get("content", ""),
+                        "id": mid,
+                        "score": float(hit.get("score", 0.0)),
+                    })
+                )
 
-        return Prediction(passages=passages, memory_ids=memory_ids, scores=scores)
+        # Cap at k across all queries so multi-query calls stay bounded.
+        return hits[:k]
 
     # ------------------------------------------------------------------
     # Write helper (not required by DSPy, but useful for pipelines that
@@ -250,7 +261,7 @@ class DakeraRM(dspy.Retrieve):
         """Delete specific memories from the Dakera server.
 
         Args:
-            memory_ids: List of memory IDs to delete (as returned in ``Prediction.memory_ids``).
+            memory_ids: List of memory IDs to delete (as returned in ``hit.id`` from ``forward()``).
 
         Returns:
             The parsed JSON response from the Dakera server.
@@ -262,6 +273,8 @@ class DakeraRM(dspy.Retrieve):
             "agent_id": self.agent_id,
             "memory_ids": memory_ids,
         }
+        if self.session_id:
+            payload["session_id"] = self.session_id
         return self._post("/v1/memory/forget", payload)
 
     # ------------------------------------------------------------------
