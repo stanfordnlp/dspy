@@ -462,6 +462,13 @@ def test_image_repr():
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
 
+    # A plain URL that merely contains the substring "base64" (but is not a
+    # base64 data URI) must not crash __repr__. Previously the guard checked for
+    # "base64" while the body split on "base64,", raising IndexError.
+    tricky_url = "https://cdn.example.com/base64-banner.jpg"
+    tricky_image = dspy.Image(tricky_url)
+    assert repr(tricky_image) == f"Image(url='{tricky_url}')"
+
 
 def test_from_methods_warn(tmp_path):
     """Deprecated from_* methods emit warnings"""

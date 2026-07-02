@@ -109,7 +109,7 @@ class Image(Type):
         return self.serialize_model()
 
     def __repr__(self):
-        if "base64" in self.url:
+        if "base64," in self.url:
             len_base64 = len(self.url.split("base64,")[1])
             image_type = self.url.split(";")[0].split("/")[-1]
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
