@@ -5,6 +5,7 @@ import string
 import unicodedata
 from collections import Counter
 
+from dspy.adapters.types import ToolCalls
 from dspy.dsp.utils.utils import print_message
 
 
@@ -315,6 +316,44 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
         return _answer_match(pred.answer, example.answer, frac=frac)
 
     raise ValueError(f"Invalid answer type: {type(example.answer)}")
+
+
+def _freeze_tool_call_arg(value):
+    if isinstance(value, dict):
+        return ("dict", tuple((key, _freeze_tool_call_arg(value[key])) for key in sorted(value)))
+    if isinstance(value, list):
+        return ("list", tuple(_freeze_tool_call_arg(item) for item in value))
+    return (type(value).__qualname__, value)
+
+
+def _tool_call_counter(value):
+    try:
+        tool_calls = ToolCalls.model_validate(value).tool_calls
+    except Exception:
+        return None
+
+    return Counter((tool_call.name, _freeze_tool_call_arg(tool_call.args)) for tool_call in tool_calls)
+
+
+def tool_call_exact_match(example, pred, trace=None):
+    """Return whether predicted tool calls exactly match labeled tool calls.
+
+    The comparison accepts any value supported by `dspy.ToolCalls`, ignores provider-generated
+    call IDs and tool call results, and treats multiple calls as an order-independent multiset.
+    Tool names and argument structures must match exactly; no fuzzy matching or type coercion is
+    applied.
+    """
+    example_tool_calls = getattr(example, "tool_calls", None)
+    pred_tool_calls = getattr(pred, "tool_calls", None)
+    if example_tool_calls is None or pred_tool_calls is None:
+        return False
+
+    example_counter = _tool_call_counter(example_tool_calls)
+    pred_counter = _tool_call_counter(pred_tool_calls)
+    if example_counter is None or pred_counter is None:
+        return False
+
+    return example_counter == pred_counter
 
 
 def answer_passage_match(example, pred, trace=None):
