@@ -1,6 +1,6 @@
 # DSPy in Production
 
-<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, JetBlue, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
+<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, Microsoft AI, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
 
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production. To add yours, please [open a PR](https://github.com/stanfordnlp/dspy/edit/main/docs/docs/community/use-cases.md).
 
@@ -8,7 +8,7 @@ This list represents companies that have publicly shared their use cases or have
   <a href="https://www.shopify.com/" title="Shopify"><img class="logo-shopify" src="../../static/img/logos/shopify-wordmark.svg" alt="Shopify"></a>
   <a href="https://www.databricks.com/" title="Databricks"><img class="logo-databricks" src="../../static/img/logos/databricks-wordmark.svg" alt="Databricks"></a>
   <a href="https://www.dropbox.com/" title="Dropbox"><img class="logo-dropbox" src="../../static/img/logos/dropbox-wordmark.svg" alt="Dropbox"></a>
-  <a href="https://www.jetblue.com/" title="JetBlue"><img class="logo-jetblue" src="../../static/img/logos/jetblue.svg" alt="JetBlue"></a>
+  <a href="https://microsoft.ai/" title="Microsoft AI"><img class="logo-microsoft-ai" src="../../static/img/logos/microsoft-ai.svg" alt="Microsoft AI"></a>
   <a href="https://replit.com/" title="Replit"><img class="logo-replit" src="../../static/img/logos/replit.svg" alt="Replit"></a>
   <a href="https://aws.amazon.com/" title="AWS"><img class="logo-aws" src="../../static/img/logos/aws.svg" alt="AWS"></a>
 </div>
@@ -41,6 +41,7 @@ This list represents companies that have publicly shared their use cases or have
 |---|---|
 | **[Shopify](https://www.shopify.com/)** | Structured metadata extraction across all Shopify shops with DSPy + GEPA; reduced yearly costs ~550×. [Talk](https://www.youtube.com/watch?v=bxToahwOVpY) |
 | **[Dropbox](https://www.dropbox.com/)** | Optimized Dash's relevance judge using DSPy across ranking, training data generation, and offline evaluation. [Engineering blog](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy), [Talk](https://www.youtube.com/watch?v=gGGCJWbqHqc) |
+| **[Microsoft AI](https://microsoft.ai/)** | Curated pretraining data for MAI-Thinking-1 with DSPy + GEPA, optimizing LLM judge prompts that score web-page quality from ~2,000 human labels. [Paper](https://microsoft.ai/pdf/mai-thinking-1.pdf), [Blog](https://haroldbenoit.com/blog/ode_to_gepa/) |
 | **[AWS](https://aws.amazon.com/)** | Migrates prompts from larger to smaller models on Amazon Nova while maintaining performance. [Blog](https://aws.amazon.com/blogs/machine-learning/improve-amazon-nova-migration-performance-with-data-aware-prompt-optimization/) |
 | **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
 | **[Replit](https://replit.com/)** | Synthesize diffs using code LLMs using a DSPy pipeline. [Blog](https://blog.replit.com/code-repair) |
