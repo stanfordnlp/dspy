@@ -15,6 +15,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.constants import IS_TYPE_UNDEFINED
+from dspy.utils.trace import record_trace
 
 logger = logging.getLogger(__name__)
 
@@ -232,11 +233,8 @@ class Predict(Module, Parameter):
 
     def _forward_postprocess(self, completions, signature, **kwargs):
         pred = Prediction.from_completions(completions, signature=signature)
-        if kwargs.pop("_trace", True) and settings.trace is not None and settings.max_trace_size > 0:
-            trace = settings.trace
-            if len(trace) >= settings.max_trace_size:
-                trace.pop(0)
-            trace.append((self, {**kwargs}, pred))
+        if kwargs.pop("_trace", True):
+            record_trace(self, kwargs, pred)
         return pred
 
     def _should_stream(self):
