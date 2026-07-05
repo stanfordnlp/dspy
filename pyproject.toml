@@ -64,6 +64,9 @@ test_extras = [
     "pandas>=2.1.1",
     "optuna>=3.4.0",
     "langchain_core",
+    "langdetect>=1.0.9",
+    "nltk>=3.8.1",
+    "immutabledict>=4.0.0",
 ]
 
 [tool.setuptools.packages.find]

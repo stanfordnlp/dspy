@@ -1,0 +1,18 @@
+name: ifeval_sbo_fast
+description: IFEval with SBO-Lite on a tiny split for initial iteration
+
+dataset_ref: ifeval_fast
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: instruction_following
+logging_ref: logging
+
+optimizer_overrides:
+  params:
+    max_iterations: 3
+    num_candidates: 2
+    num_judge_samples: 1
+    max_null_steps: 2
+
+logging_overrides:
+  save_models: true

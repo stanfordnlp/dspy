@@ -72,6 +72,7 @@ def _register_builtin_programs() -> None:
         MathCoT,
         MathNaive,
     )
+    from programs.instruction_following import InstructionFollowing
 
     ProgramRegistry.register("naive", NaiveQA)
     ProgramRegistry.register("reasoning", ReasoningFirstQA)
@@ -83,6 +84,7 @@ def _register_builtin_programs() -> None:
     ProgramRegistry.register("math_answer_only", MathAnswerOnly)
     ProgramRegistry.register("math_cot", MathCoT)
     ProgramRegistry.register("math_naive", MathNaive)
+    ProgramRegistry.register("instruction_following", InstructionFollowing)
 
 # Auto-register on import
 _register_builtin_programs()

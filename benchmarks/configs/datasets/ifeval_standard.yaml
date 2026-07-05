@@ -1,0 +1,12 @@
+name: ifeval
+train_size: 100
+dev_size: 50
+test_size: 50
+train_seed: 1
+eval_seed: 2023
+keep_details: true
+params:
+  train_frac: 0.5
+  val_frac: 0.25
+  split_seed: 1
+  metric: hard

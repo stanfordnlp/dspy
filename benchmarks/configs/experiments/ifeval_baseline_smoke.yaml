@@ -1,0 +1,16 @@
+name: ifeval_baseline_smoke
+description: Minimal IFEval baseline smoke test on qwen3 4b-instruct
+
+dataset_ref: ifeval_fast
+model_ref: qwen3_4b
+optimizer_ref: baseline
+program_ref: instruction_following
+logging_ref: logging
+
+dataset_overrides:
+  train_size: 2
+  dev_size: 2
+  test_size: 2
+
+logging_overrides:
+  save_models: false

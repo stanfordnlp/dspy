@@ -62,9 +62,11 @@ def _register_builtin_adapters() -> None:
     """Register built-in dataset adapters."""
     from data_adapters.hotpotqa import HotPotQAAdapter
     from data_adapters.aime import AIMEAdapter
+    from data_adapters.ifeval import IFEvalAdapter
 
     DatasetRegistry.register("hotpotqa", HotPotQAAdapter)
     DatasetRegistry.register("aime", AIMEAdapter)
+    DatasetRegistry.register("ifeval", IFEvalAdapter)
 
 
 # Auto-register on import

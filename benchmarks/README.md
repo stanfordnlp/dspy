@@ -469,3 +469,100 @@ With defaults (3 candidates, 2 judge samples, dev_size=10) that's ~21 calls iter
 - **Disable cache during debugging** (`cache: false` in model config) to see true LM behavior.
 - Run full evaluations overnight; use fast configs during development.
 
+
+Absolutely — here’s a compact workflow chart plus a call-budget table for your **current config**:
+
+- `train_size (T) = 50`
+- `dev_size (V) = 25`
+- `max_iterations (K) = 15`
+- `num_candidates (N) = 3`
+- `num_judge_samples (J) = 2`
+- `num_threads = 2` (affects wall time, not call count)
+
+```mermaid
+flowchart TD
+    A["run_experiment.py"] --> B["Load config + setup LM + dataset + program"]
+    B --> C["Baseline eval on val set (V calls)"]
+    C --> D["SBO optimize()"]
+    D --> E["Init: val loss eval (V calls) + initial critique (1 critic call)"]
+    E --> F["Iteration i = 1..K"]
+    F --> G["Proposer: 1 LM call"]
+    G --> H["Verifier: N * bundle_size(i) * J judge calls"]
+    H --> I["Candidate val eval: V program calls"]
+    I --> J["Model value: bundle_size(i) * J judge calls"]
+    J --> K{"Serious or Null step?"}
+    K -->|Serious| L["Lambda update: +J judge calls; critique: +1 critic call"]
+    K -->|Null| M["Failure critique: +1 critic call + train eval (T program calls)"]
+    L --> N["Append bundle"]
+    M --> N
+    N --> O{"stop criteria"}
+    O -->|continue| F
+    O -->|done| P["Optimized eval on val set (V calls) + save outputs"]
+```
+
+## 1) Model calls per step (formulas)
+
+| Step | LM type | Calls |
+|---|---|---|
+| Baseline eval (`ExperimentRunner`) | task model | `V` |
+| SBO init val eval (`_evaluate_program`) | task model | `V` |
+| Initial critique generation | critic LM | `1` |
+| Initial critique failure sampling | task model | `S=min(3,T)` |
+| Per iteration proposer | proposer LM | `1` |
+| Per iteration verifier | judge LM | `N * b_i * J` |
+| Per iteration candidate val eval | task model | `V` |
+| Per iteration model-value calc | judge LM | `b_i * J` |
+| Per iteration serious-step lambda update | judge LM | `J` (only if serious) |
+| Per iteration critique (serious branch) | critic LM | `1` + `S` task calls |
+| Per iteration failure critique (null branch) | critic LM | `1` + `T` task calls |
+| Final optimized eval (`ExperimentRunner`) | task model | `V` |
+
+Where `b_i` = bundle size at iteration `i` (starts at 1 and grows by 1 each iter).
+
+---
+
+## 2) Concrete counts with your config
+
+### Per iteration `i`
+- **Judge calls** = `N*b_i*J + b_i*J = 6b_i + 2b_i = 8b_i`
+- **Proposer calls** = `1`
+- **Critic calls** = `1`
+- **Task model calls** = `V (=25)` plus:
+  - serious step: `+3`
+  - null step: `+50`
+
+### If all 15 iterations run
+- `sum(b_i, i=1..15) = 120`
+- **Judge base total** = `8 * 120 = 960`
+- **Judge extra from serious-step lambda updates** = `+2 * (#serious_steps)`
+- **Proposer total** = `15`
+- **Critic total** = `1 (initial) + 15 = 16`
+- **Task model total** =  
+  `50` (baseline+final evals)  
+  `+ 25` (SBO init val)  
+  `+ 25*15` (candidate val evals)  
+  `+ 3` (initial critique sampling)  
+  `+ 3*(#serious_steps) + 50*(#null_steps)`  
+
+So:
+- **Best-ish case (all serious)**: about `498` task-model calls
+- **Null-heavy case (all null)**: about `1203` task-model calls  
+  (often stops earlier due `max_null_steps`, but this is upper-bound if nulls are interleaved)
+
+---
+
+## 3) Prompt components + rough token estimates
+
+| Call type | Prompt components | Input token estimate | Output token estimate |
+|---|---|---:|---:|
+| Task model (`naive` QA) | DSPy scaffold + instruction + question | ~50–180 | ~5–120 |
+| Proposer LM | current prompt + current critique + generation instructions/rubric | ~300–900 | ~150–900 (all candidates text) |
+| Judge LM | reference prompt + candidate prompt + critique + scoring rubric | ~250–700 | ~1–10 |
+| Critique LM (initial/serious) | current prompt + up to 3 failure examples (input/gold/pred/score) + critique instructions | ~700–4000+ (can spike) | ~50–300 |
+| Failure-critique LM (null) | candidate prompt + current/target loss + critique instructions | ~150–600 | ~50–250 |
+
+The **big cost driver** is usually:
+1) many task-model eval calls (`V`, `T` multipliers), and  
+2) occasional very long critique prompts (especially when predictions are verbose).
+
+If you want, I can generate a second table with **estimated total token volume per full run** under “mostly serious” vs “null-heavy” assumptions.
