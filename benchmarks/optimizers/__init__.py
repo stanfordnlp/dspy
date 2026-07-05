@@ -9,7 +9,7 @@ from .mipro import MiproAdapter
 from .bootstrap import BootstrapAdapter
 from .copro import CoproAdapter
 from .baseline import BaselineAdapter
-from .sbo import SBOAdapter
+from .sbo import SBOAdapter, SBOLiteAdapter
 
 __all__ = [
     "OptimizerAdapter",
@@ -20,4 +20,5 @@ __all__ = [
     "CoproAdapter",
     "BaselineAdapter",
     "SBOAdapter",
+    "SBOLiteAdapter",
 ]

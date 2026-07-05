@@ -1,0 +1,37 @@
+name: aime_sbo_smoke
+description: Minimal AIME SBO smoke test to verify local Ollama experiment execution
+
+dataset_ref: aime_fast
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: math_answer_only
+logging_ref: logging
+
+model_overrides:
+  params:
+    max_tokens: 512
+
+dataset_overrides:
+  train_size: 2
+  dev_size: 1
+  test_size: 1
+  params:
+    input_fields:
+      - problem
+    test_repeat: 1
+
+optimizer_overrides:
+  params:
+    max_iterations: 1
+    num_candidates: 1
+    num_judge_samples: 1
+    critic_max_tokens: 2048
+    parse_failure_retries: 2
+    parse_retry_temperature: 0.7
+    max_null_steps: 1
+    temperature: 0.2
+    proposer_temperature: 0.2
+    critic_temperature: 0.2
+
+logging_overrides:
+  save_models: false

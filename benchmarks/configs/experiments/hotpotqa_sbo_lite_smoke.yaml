@@ -1,0 +1,37 @@
+name: hotpotqa_sbo_lite_smoke
+description: Minimal HotPotQA SBO-Lite smoke test for local Ollama execution
+
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_lite
+program_ref: simple_context
+logging_ref: logging
+
+dataset_overrides:
+  train_size: 2
+  dev_size: 1
+  test_size: 0
+  params:
+    use_context: true
+    input_fields:
+      - question
+      - context
+
+optimizer_overrides:
+  params:
+    max_iterations: 1
+    max_null_steps: 1
+    num_candidates: 1
+    bundle_size: 4
+    active_bundle_size: 1
+    watchlist_size: 0
+    max_critique_examples: 1
+    max_critique_field_chars: 800
+    judge_max_tokens: 512
+    temperature: 0.2
+    judge_temperature: 0.2
+    proposer_temperature: 0.2
+    critic_temperature: 0.2
+
+logging_overrides:
+  save_models: false

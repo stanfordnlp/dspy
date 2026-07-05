@@ -65,6 +65,21 @@ class ExperimentRunner:
             len(val_set), 
             len(test_set)
         )
+        final_eval_set = test_set if test_set else val_set
+        final_eval_split = "test" if test_set else "validation"
+        if test_set:
+            self.logger.logger.info(
+                f"Final reporting will use held-out test set ({len(test_set)} examples); "
+                f"optimization will use validation set ({len(val_set)} examples)."
+            )
+        else:
+            self.logger.logger.info(
+                "No test set configured; final reporting will fall back to validation set."
+            )
+        self.logger._add_timeline_event(
+            "final_eval_split_selected",
+            {"split": final_eval_split, "size": len(final_eval_set)}
+        )
         
         # Create program
         program = ProgramRegistry.create_program(
@@ -78,8 +93,13 @@ class ExperimentRunner:
         self.logger.logger.info("=" * 60)
         
         metric = dataset_adapter.get_metric()
-        baseline_results = self._evaluate_program(program, val_set, metric, "Baseline")
-        self.logger.log_baseline_results(baseline_results, len(val_set))
+        baseline_results = self._evaluate_program(
+            program,
+            final_eval_set,
+            metric,
+            f"Baseline ({final_eval_split})",
+        )
+        self.logger.log_baseline_results(baseline_results, len(final_eval_set))
         
         # Run optimization (if not baseline)
         optimized_results = None
@@ -114,6 +134,9 @@ class ExperimentRunner:
                 metric=optimization_metric,
                 model_config=self._model_config_to_dict()
             )
+            optimizer_trace = getattr(optimizer_adapter, "trace", None)
+            if optimizer_trace:
+                self.logger.log_optimizer_trace(optimizer_adapter.name, optimizer_trace)
             
             end_time = time.time()
             self.logger.log_optimization_complete(optimizer_adapter.name, end_time - start_time)
@@ -132,14 +155,17 @@ class ExperimentRunner:
             self.logger.logger.info("=" * 60)
             
             optimized_results = self._evaluate_program(
-                optimized_program, val_set, metric, "Optimized"
+                optimized_program,
+                final_eval_set,
+                metric,
+                f"Optimized ({final_eval_split})",
             )
-            self.logger.log_optimized_results(optimized_results, len(val_set))
+            self.logger.log_optimized_results(optimized_results, len(final_eval_set))
             
             # Log comparison
             baseline_score = sum(score for _, _, score in baseline_results.results)
             optimized_score = sum(score for _, _, score in optimized_results.results)
-            self.logger.log_comparison_summary(baseline_score, optimized_score, len(val_set))
+            self.logger.log_comparison_summary(baseline_score, optimized_score, len(final_eval_set))
             
             # Save optimized program if configured
             if self.config.logging.save_models and optimized_program is not None:
@@ -161,7 +187,8 @@ class ExperimentRunner:
         lm = dspy.LM(
             model=self.config.model.name,
             api_base=self.config.model.api_base,
-            cache=self.config.model.cache
+            cache=self.config.model.cache,
+            **self.config.model.params,
         )
         dspy.configure(lm=lm)
         

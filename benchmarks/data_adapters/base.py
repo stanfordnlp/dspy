@@ -16,6 +16,36 @@ class DatasetAdapter(ABC):
     
     def __init__(self, config: dict[str, Any]):
         self.config = config
+
+    def get_input_fields(self, default: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+        """Return input fields from config, falling back to an adapter default."""
+        configured = self.config.get("input_fields")
+        if configured is None:
+            configured = self.config.get("input_keys")
+        if configured is None:
+            configured = default
+        if isinstance(configured, str):
+            configured = [configured]
+        input_fields = tuple(configured)
+        if not input_fields:
+            raise ValueError(f"{self.name} requires at least one input field")
+        return input_fields
+
+    def apply_input_fields(self, examples: list[Example], input_fields: tuple[str, ...]) -> list[Example]:
+        """Attach input fields to examples after validating field names exist."""
+        missing_by_example = []
+        for idx, ex in enumerate(examples[:10]):
+            missing = [field for field in input_fields if field not in ex]
+            if missing:
+                missing_by_example.append((idx, missing))
+
+        if missing_by_example:
+            details = ", ".join([f"example {idx}: {missing}" for idx, missing in missing_by_example])
+            raise ValueError(
+                f"Configured input_fields {list(input_fields)} are not present in {self.name} examples: {details}"
+            )
+
+        return [ex.with_inputs(*input_fields) for ex in examples]
         
     @abstractmethod
     def load_dataset(self) -> tuple[list[Example], list[Example], list[Example]]:

@@ -157,6 +157,21 @@ class ExperimentLogger:
         """Log that optimized program was saved."""
         self.logger.info(f"Optimized program saved to: {save_path}")
         self._add_timeline_event("program_saved", {"path": save_path})
+
+    def log_optimizer_trace(self, optimizer_name: str, trace: dict[str, Any]) -> None:
+        """Attach a structured optimizer trace to the results JSON."""
+        self.results["optimizer_trace"] = {
+            "optimizer": optimizer_name,
+            "trace": trace,
+        }
+        self.logger.info(f"Structured optimizer trace captured for {optimizer_name}")
+        self._add_timeline_event(
+            "optimizer_trace_captured",
+            {
+                "optimizer": optimizer_name,
+                "trace_version": trace.get("trace_version") if isinstance(trace, dict) else None,
+            },
+        )
     
     def save_results(self) -> str:
         """Save experiment results to JSON file."""

@@ -20,6 +20,15 @@ params:
 
   # Verifier parameters
   tau_margin: 0.5
+  bundle_size: 8
+  active_bundle_size: 3
+  watchlist_size: 2
+  active_tau_margin: 0.0
+  watchlist_tau_margin: 0.0
+  active_violation_tolerance: 0.0
+  watchlist_violation_tolerance: 0.0
+  lambda_stability_epsilon: 0.000001
+  tau_stop: 0.0
 
   # Optimization control (shorter runs)
   max_iterations: 20
@@ -27,8 +36,13 @@ params:
 
   # LM sampling
   temperature: 0.7
+  judge_temperature: 0.7
+  judge_cache: false
   proposer_temperature: 0.7
   critic_temperature: 0.7
+  num_eval_samples: 1
+  eval_temperature: 0.7
+  eval_cache: false
 
   # Tracking
   track_stats: true

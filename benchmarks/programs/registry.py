@@ -68,6 +68,7 @@ def _register_builtin_programs() -> None:
         MLflowBasePromptContextQA,
         MLflowBasePromptContextQAv2,
         SimpleContextQA,
+        MathAnswerOnly,
         MathCoT,
         MathNaive,
     )
@@ -79,6 +80,7 @@ def _register_builtin_programs() -> None:
     ProgramRegistry.register("mlflow_base_prompt", MLflowBasePromptContextQA)
     ProgramRegistry.register("mlflow_v2", MLflowBasePromptContextQAv2)
     ProgramRegistry.register("simple_context", SimpleContextQA)
+    ProgramRegistry.register("math_answer_only", MathAnswerOnly)
     ProgramRegistry.register("math_cot", MathCoT)
     ProgramRegistry.register("math_naive", MathNaive)
 

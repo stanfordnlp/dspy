@@ -1,0 +1,52 @@
+name: hotpotqa_sbo_realistic_20
+description: HotPotQA SBO run with laptop-realistic settings and held-out test reporting
+
+dataset_ref: hotpotqa_standard
+model_ref: qwen3_4b
+optimizer_ref: sbo_light
+program_ref: simple_context
+logging_ref: logging
+
+dataset_overrides:
+  train_size: 20
+  dev_size: 5
+  # DSPy's HotPotQA test split does not include context, so use dev for final
+  # reporting unless/until we add retrieval or make a held-out split from dev.
+  test_size: 0
+  params:
+    use_context: true
+    input_fields:
+      - question
+      - context
+
+model_overrides:
+  params:
+    max_tokens: 256
+
+optimizer_overrides:
+  params:
+    max_iterations: 3
+    max_null_steps: 3
+    num_candidates: 3
+    num_judge_samples: 3
+    num_eval_samples: 3
+    max_critique_examples: 2
+    max_critique_field_chars: 1200
+    descent_param: 0.1
+    lambda_init: 1.0
+    lambda_min: 0.1
+    lambda_max: 10.0
+    lambda_gamma: 0.3
+    tau_margin: 0.5
+    temperature: 0.5
+    judge_temperature: 0.7
+    judge_cache: false
+    proposer_temperature: 0.5
+    critic_temperature: 0.5
+    eval_temperature: 0.7
+    eval_cache: false
+    track_stats: true
+
+logging_overrides:
+  save_models: false
+  level: INFO
