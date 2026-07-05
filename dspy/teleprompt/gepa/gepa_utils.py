@@ -100,6 +100,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        # The program instance whose predictors appear in captured trace
+        # tuples; lets make_reflective_dataset attribute traces by identity.
+        self._trace_program = None
 
     def propose_new_texts(
         self,
@@ -154,6 +157,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             # bootstrap_trace_data-like flow with trace capture
             from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 
+            self._trace_program = program
+
             trajs = bootstrap_trace_module.bootstrap_trace_data(
                 program=program,
                 dataset=batch,
@@ -200,6 +205,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     ) -> dict[str, list[ReflectiveExample]]:
         program = self.build_program(candidate)
 
+        # Trace tuples reference predictors from the program instance that ran
+        # in `evaluate(capture_traces=True)`, not from this fresh copy. Map
+        # those instances back to predictor names by identity; signature
+        # equality is only a fallback, since two different predictors can
+        # carry structurally identical signatures.
+        trace_pred_names: dict[int, str] = {}
+        if self._trace_program is not None:
+            trace_pred_names = {id(p): n for n, p in self._trace_program.named_predictors()}
+
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
@@ -221,7 +235,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if hasattr(module_score, "score"):
                     module_score = module_score["score"]
 
-                trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
+                def _is_pred_trace(t, pred_name=pred_name, module=module):
+                    traced_name = trace_pred_names.get(id(t[0]))
+                    if traced_name is not None:
+                        return traced_name == pred_name
+                    return t[0].signature.equals(module.signature)
+
+                trace_instances = [t for t in trace if _is_pred_trace(t)]
                 if not self.add_format_failure_as_feedback:
                     trace_instances = [t for t in trace_instances if not isinstance(t[2], FailedPrediction)]
                 if len(trace_instances) == 0:
