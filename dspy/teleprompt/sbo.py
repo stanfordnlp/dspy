@@ -61,6 +61,107 @@ class SBOProgramCallError(Exception):
         self.actual_task_lm_calls = actual_task_lm_calls
 
 
+class JudgeSemanticAlignment(dspy.Signature):
+    """Quantify how well a Candidate Prompt addresses the Critique relative to the Reference Prompt.
+
+    Scoring rubric:
+    +1.0 (Strong Alignment): Candidate completely resolves the issue.
+    +0.5 (Weak Alignment): Candidate partially fixes the issue.
+     0.0 (Orthogonal): Candidate ignores the critique.
+    -0.5 (Weak Regression): Candidate slightly worsens the issue.
+    -1.0 (Strong Regression): Candidate explicitly violates the critique.
+
+    Be objective. Output a single number in [-1.0, 1.0].
+    """
+
+    reference_prompt: str = dspy.InputField(desc="The current prompt being compared against.")
+    critique: str = dspy.InputField(desc="The weakness identified in the reference prompt.")
+    candidate_prompt: str = dspy.InputField(desc="A proposed alternative prompt.")
+    score: float = dspy.OutputField(desc="A number in [-1.0, 1.0] following the rubric.")
+
+
+class ProposeCandidates(dspy.Signature):
+    """Generate distinct local edits of the current prompt that address the active critique bundle.
+
+    Each candidate must:
+    1. Make local edits only — do NOT rewrite the prompt from scratch; keep structure similar.
+    2. Address the active critiques directly, prioritizing high-loss or recent critiques.
+    3. Use the watchlist only as a regression check.
+    4. Be meaningfully different from the other candidates.
+    5. Contain only the candidate instruction text — no placeholders, headers, or meta-commentary.
+    """
+
+    current_prompt: str = dspy.InputField(desc="The instruction text currently being optimized.")
+    active_critique_bundle: str = dspy.InputField(desc="Active critiques the candidates must address.")
+    watchlist_critiques: str = dspy.InputField(desc="Non-active critiques to avoid regressing on.")
+    num_candidates: int = dspy.InputField(desc="Exact number of distinct candidate variations to return.")
+    candidates: list[str] = dspy.OutputField(
+        desc="Candidate instruction texts. Length should equal num_candidates."
+    )
+
+
+class DiagnoseWeakness(dspy.Signature):
+    """You are an expert prompt engineer. Analyze the instruction template and failure evidence
+    to identify the SINGLE most critical weakness.
+
+    Steps:
+    1. Analyze why the prompt failed on the given examples.
+    2. Formulate a specific, actionable critique (e.g., "The prompt is too vague about output formatting").
+    3. Do NOT propose a new prompt — state the critique only.
+    """
+
+    instruction_template: str = dspy.InputField(desc="The instruction template being optimized.")
+    task_prompt_snapshots: str = dspy.InputField(
+        desc="Formatted task prompt snapshots sent to the answering LM."
+    )
+    failure_feedback: str = dspy.InputField(desc="Failure feedback for those snapshots.")
+    critique: str = dspy.OutputField(
+        desc="A specific, actionable weakness. Do not propose a fix."
+    )
+
+
+class DiagnoseFailedCandidate(dspy.Signature):
+    """You are an expert prompt engineer. A candidate prompt was tested but did not improve performance.
+
+    Loss interpretation: lower is better. The candidate needed to achieve current_loss < target_loss
+    and did not. Analyze why and provide a specific, actionable critique for the next iteration.
+    Do NOT propose a new prompt — state the critique only.
+    """
+
+    candidate_prompt: str = dspy.InputField(desc="The candidate instruction that failed to improve.")
+    failure_context: str = dspy.InputField(desc="Sampled failure cases, or a note that none were available.")
+    current_loss: float = dspy.InputField(desc="Loss the candidate achieved (lower is better).")
+    target_loss: float = dspy.InputField(desc="Loss the candidate needed to beat.")
+    critique: str = dspy.OutputField(desc="Why the candidate failed. Do not propose a fix.")
+
+
+class LiteConstraintVerifier(dspy.Signature):
+    """You are a constraint verifier for prompt optimization.
+
+    Evaluate the candidate against all listed critiques in one pass. For each critique, decide whether
+    the candidate resolves, ignores, or regresses relative to the current prompt.
+
+    Labels:
+    - resolved: the candidate clearly fixes the critique.
+    - unclear: unrelated or only partially addresses the critique.
+    - regressed: makes the critique worse or reintroduces the failure mode.
+
+    Return a compact JSON object with fields:
+    - active: list of {id, label} for active critiques.
+    - watchlist: list of {id, label} for watchlist critiques.
+    - blocking_regression: true if any critique is labeled regressed; otherwise false.
+    - summary: one short sentence identifying the main remaining failure mode.
+    """
+
+    current_prompt: str = dspy.InputField()
+    candidate_prompt: str = dspy.InputField()
+    active_critique_bundle: str = dspy.InputField()
+    watchlist_critiques: str = dspy.InputField()
+    verification_json: str = dspy.OutputField(
+        desc="Compact JSON with active, watchlist, blocking_regression, summary."
+    )
+
+
 @experimental(version="3.1.0")
 class SemanticBundleOptimization(Teleprompter):
     """
@@ -181,6 +282,12 @@ class SemanticBundleOptimization(Teleprompter):
 
         self.result: Optional[SBOResult] = None
         self.trace: dict[str, Any] = {}
+
+        self._judge = dspy.Predict(JudgeSemanticAlignment)
+        self._propose = dspy.Predict(ProposeCandidates)
+        self._critique = dspy.Predict(DiagnoseWeakness)
+        self._failure_critique = dspy.Predict(DiagnoseFailedCandidate)
+        self._lite_verifier = dspy.Predict(LiteConstraintVerifier)
 
     def compile(
         self,
@@ -801,29 +908,24 @@ class SemanticBundleOptimization(Teleprompter):
         task_prompt_evidence_text = self._format_numbered_blocks(critique_task_prompt_texts)
         feedback_evidence_text = "\n\n".join(feedback_texts)
 
-        critique_prompt = f"""You are an expert prompt engineer. Analyze the following instruction template and failure-specific prompt snapshots to identify the single most critical weakness.
-
-Current Instruction Template:
-{instruction_prompt_text}
-
-Task Prompt Snapshots Sent To The Answering LM:
-{task_prompt_evidence_text}
-
-Failure Feedback For Those Snapshots:
-{feedback_evidence_text}
-
-Instructions:
-1. Analyze why the prompt failed on these examples
-2. Formulate a specific, actionable critique (e.g., "The prompt is too vague about output formatting")
-3. Do NOT suggest a new prompt. Only state the critique.
-
-Critique:"""
+        critique_prompt = (
+            f"instruction_template={instruction_prompt_text!r}; "
+            f"snapshots={len(critique_task_prompt_texts)}; feedback={len(feedback_texts)}"
+        )
 
         with dspy.context(lm=lm, temperature=self.temperature):
-            response = lm(critique_prompt)
-
-        # LM returns a list of completions, get the first one
-        critique = (response[0] if isinstance(response, list) else response).strip()
+            try:
+                result = self._critique(
+                    instruction_template=instruction_prompt_text,
+                    task_prompt_snapshots=task_prompt_evidence_text,
+                    failure_feedback=feedback_evidence_text,
+                )
+                critique = result.critique.strip()
+                raw_response = result
+            except Exception as e:
+                logger.warning("Critique module failed (%s); returning generic critique.", e)
+                critique = "The prompt failed on some examples; refine its specificity."
+                raw_response = None
         if trace_context is not None:
             trace_context["critique_generation"] = {
                 "type": "standard",
@@ -843,7 +945,7 @@ Critique:"""
                     "max_critique_examples": self.max_critique_examples,
                     "max_critique_field_chars": self.max_critique_field_chars,
                 },
-                "raw_response": self._safe_serialize(response),
+                "raw_response": self._safe_serialize(raw_response),
                 "response": critique,
                 "temperature": self.temperature,
             }
@@ -941,30 +1043,27 @@ Critique:"""
         )
         feedback_evidence_text = "\n\n".join(feedback_texts) if feedback_texts else "(No feedback available.)"
 
-        critique_prompt = f"""You are an expert prompt engineer. A candidate prompt was tested but failed to improve performance.
-
-Candidate Instruction Template:
-{instruction_prompt_text}
-
-Candidate Task Prompt Snapshots Sent To The Answering LM:
-{task_prompt_evidence_text}
-
-Failure Feedback For Those Snapshots:
-{feedback_evidence_text}
-
-Current Loss: {current_loss:.4f}
-Target Loss: {target_loss:.4f}
-(Lower is better. Candidate should achieve loss < {target_loss:.4f} but didn't)
-
-Analyze why this candidate failed to improve performance. Provide a specific, actionable critique.
-
-Critique:"""
+        failure_context = (
+            f"Task snapshots:\n{task_prompt_evidence_text}\n\nFeedback:\n{feedback_evidence_text}"
+        )
+        critique_prompt = (
+            f"candidate={instruction_prompt_text!r}; loss={current_loss:.4f}; target={target_loss:.4f}"
+        )
 
         with dspy.context(lm=critic_lm, temperature=self.temperature):
-            response = critic_lm(critique_prompt)
-
-        # LM returns a list of completions, get the first one
-        critique = (response[0] if isinstance(response, list) else response).strip()
+            try:
+                result = self._failure_critique(
+                    candidate_prompt=instruction_prompt_text,
+                    failure_context=failure_context,
+                    current_loss=current_loss,
+                    target_loss=target_loss,
+                )
+                critique = result.critique.strip()
+                raw_response = result
+            except Exception as e:
+                logger.warning("Failure-critique module failed (%s); returning generic critique.", e)
+                critique = "The candidate did not improve loss; revisit how it addresses the prior critique."
+                raw_response = None
         if trace_context is not None:
             trace_context["failure_critique_generation"] = {
                 "instruction_prompt_text": instruction_prompt_text,
@@ -985,7 +1084,7 @@ Critique:"""
                 "target_loss": target_loss,
                 "critique_prompt": critique_prompt,
                 "critic_prompt_text": critique_prompt,
-                "raw_response": self._safe_serialize(response),
+                "raw_response": self._safe_serialize(raw_response),
                 "response": critique,
                 "temperature": self.temperature,
             }
@@ -1008,48 +1107,44 @@ Critique:"""
         active_text = self._format_bundle_for_proposer(active_bundle) if active_bundle else f"A0: {critique}"
         watchlist_text = self._format_bundle_for_proposer(watchlist_bundle) if watchlist_bundle else "(none)"
 
-        proposer_prompt = f"""You are an intelligent local prompt proposer. Generate {self.num_candidates} variations of the prompt that address the active critique bundle while preserving the original task intent and avoiding regressions on the watchlist.
+        proposer_prompt = (
+            f"current_prompt={prompt_text!r}; active={active_text!r}; watchlist={watchlist_text!r}; "
+            f"num_candidates={self.num_candidates}"
+        )
 
-Current Prompt:
-{prompt_text}
-
-Active Critique Bundle:
-{active_text}
-
-Watchlist of Non-Active Critiques:
-{watchlist_text}
-
-Constraints:
-1. Local edits only: Do not rewrite the entire prompt from scratch. Keep structure similar.
-2. Focus: Address the active critiques directly, prioritizing high-loss or recent critiques. Use the watchlist only as a regression check.
-3. Diversity: Generate {self.num_candidates} distinct variations
-
-Output Format: Return exactly {self.num_candidates} candidate prompts. Each candidate should start with "CANDIDATE N:" on its own line, followed by the improved prompt text.
-
-Example format:
-CANDIDATE 1:
-Your first improved prompt text here
-CANDIDATE 2:
-Your second improved prompt text here
-CANDIDATE 3:
-Your third improved prompt text here
-
-Candidates:"""
-
+        response_text = ""
         with dspy.context(lm=lm, temperature=self.temperature):
-            response = lm(proposer_prompt)
-
-        # LM returns a list of completions, get the first one
-        response_text = response[0] if isinstance(response, list) else response
+            try:
+                result = self._propose(
+                    current_prompt=prompt_text,
+                    active_critique_bundle=active_text,
+                    watchlist_critiques=watchlist_text,
+                    num_candidates=self.num_candidates,
+                )
+                structured_candidates = [
+                    text.strip()
+                    for text in (result.candidates or [])
+                    if isinstance(text, str) and text.strip()
+                ]
+                response_text = structured_candidates
+            except Exception as e:
+                logger.warning("Proposer module failed (%s); will fall back to center program.", e)
+                structured_candidates = []
 
         logger.info(f"\n{'='*60}")
-        logger.info(f"PROPOSER RAW RESPONSE:")
+        logger.info("PROPOSER RAW RESPONSE:")
         logger.info(f"{response_text}")
         logger.info(f"{'='*60}\n")
 
         candidates = []
         parsed_candidates = []
-        candidate_texts, parse_warnings = self._parse_candidate_response(response_text)
+        candidate_texts = structured_candidates
+        if not candidate_texts:
+            candidate_texts, parse_warnings = self._parse_candidate_response(
+                response_text if isinstance(response_text, str) else ""
+            )
+        else:
+            parse_warnings = []
 
         for candidate_text in candidate_texts[: self.num_candidates]:
             logger.info(f"Parsed candidate {len(candidates)+1}: {repr(candidate_text)}")
@@ -1351,55 +1446,34 @@ Score: {score:.2f}"""
         return_detail: bool = False,
     ) -> float | tuple[float, dict[str, Any]]:
         """Single judge evaluation (returns [-1, 1])."""
-        candidate_text = "\n\n".join([f"{k}: {v}" for k, v in candidate_prompts.items()])
-        reference_text = "\n\n".join([f"{k}: {v}" for k, v in reference_prompts.items()])
-
-        judge_prompt = f"""You are an objective optimization judge. Quantify how well the Candidate Prompt addresses the Critique relative to the Reference Prompt.
-
-Reference Prompt:
-{reference_text}
-
-Critique: {critique}
-
-Candidate Prompt:
-{candidate_text}
-
-Scoring Rubric:
-• +1.0 (Strong Alignment): Candidate completely resolves the issue
-• +0.5 (Weak Alignment): Candidate partially fixes the issue
-• 0.0 (Orthogonal): Candidate ignores the critique
-• -0.5 (Weak Regression): Candidate slightly worsens the issue
-• -1.0 (Strong Regression): Candidate explicitly violates the critique
-
-Output ONLY a single number between -1.0 and 1.0. No explanation.
-
-Score:"""
+        candidate_text = self._format_instruction_prompt(candidate_prompts)
+        reference_text = self._format_instruction_prompt(reference_prompts)
 
         rollout_id = self._fresh_rollout_id() if self.judge_temperature and self.judge_temperature > 0 else None
+        judge_prompt = (
+            f"reference={reference_text!r}; candidate={candidate_text!r}; critique={critique!r}"
+        )
         with dspy.context(lm=lm, temperature=self.judge_temperature):
-            response = lm(
-                judge_prompt,
-                temperature=self.judge_temperature,
-                rollout_id=rollout_id,
-                cache=False,
-            )
-
-        # LM returns a list of completions, get the first one
-        response_text = (response[0] if isinstance(response, list) else response).strip()
-
-        # Parse score
-        try:
-            score = float(response_text)
-            parsed_score = max(-1.0, min(1.0, score))
-        except:
-            logger.warning(f"Failed to parse judge score: {response_text}")
-            parsed_score = 0.0
+            try:
+                result = self._judge(
+                    reference_prompt=reference_text,
+                    critique=critique,
+                    candidate_prompt=candidate_text,
+                )
+                parsed_score = max(-1.0, min(1.0, float(result.score)))
+                response_text = str(result.score)
+                raw_response = result
+            except Exception as e:
+                logger.warning("Judge module failed (%s); defaulting score to 0.0.", e)
+                parsed_score = 0.0
+                response_text = ""
+                raw_response = None
 
         detail = {
             "sample_idx": sample_idx,
             "rollout_id": rollout_id,
             "judge_prompt": judge_prompt,
-            "raw_response": self._safe_serialize(response),
+            "raw_response": self._safe_serialize(raw_response),
             "response_text": response_text,
             "score": parsed_score,
             "temperature": self.judge_temperature,
@@ -2307,44 +2381,25 @@ class SemanticBundleOptimizationLite(SemanticBundleOptimization):
         candidate_text = self._format_instruction_prompt(candidate_prompts)
         active_text = self._format_bundle_for_lite_verifier(active_bundle, prefix="A")
         watchlist_text = self._format_bundle_for_lite_verifier(watchlist_bundle, prefix="W")
-        verifier_prompt = f"""You are a constraint verifier for prompt optimization. You will be given a Current Prompt, a Candidate Prompt, an Active Critique Bundle, and a Watchlist of Non-Active Critiques.
-
-Task:
-Evaluate the candidate against all listed critiques in one pass. For each critique, decide whether the candidate resolves, ignores, or regresses on that critique relative to the current prompt. Then give an overall acceptability judgment.
-
-Labels:
-- resolved: the candidate clearly fixes the critique.
-- unclear: the candidate is unrelated to the critique or only partially addresses it.
-- regressed: the candidate makes the critique worse or reintroduces the failure mode.
-
-Current Prompt:
-{current_text}
-
-Candidate Prompt:
-{candidate_text}
-
-Active Critique Bundle:
-{active_text}
-
-Watchlist of Non-Active Critiques:
-{watchlist_text}
-
-Output Format:
-Return a compact JSON object with fields:
-- active: a list of {{id, label}} objects for active critiques.
-- watchlist: a list of {{id, label}} objects for watchlist critiques.
-- blocking_regression: true if any active or watchlist critique is labeled regressed; otherwise false.
-- summary: one short sentence identifying the main remaining failure mode.
-Do not include long reasoning."""
+        verifier_prompt = (
+            f"current={current_text!r}; candidate={candidate_text!r}; "
+            f"active={active_text!r}; watchlist={watchlist_text!r}"
+        )
 
         with dspy.context(lm=lm, temperature=self.judge_temperature):
-            response = lm(
-                verifier_prompt,
-                temperature=self.judge_temperature,
-                rollout_id=self._fresh_rollout_id() if self.judge_temperature and self.judge_temperature > 0 else None,
-                cache=False,
-            )
-        response_text = (response[0] if isinstance(response, list) else response).strip()
+            try:
+                result = self._lite_verifier(
+                    current_prompt=current_text,
+                    candidate_prompt=candidate_text,
+                    active_critique_bundle=active_text,
+                    watchlist_critiques=watchlist_text,
+                )
+                response_text = result.verification_json.strip()
+                raw_response = result
+            except Exception as e:
+                logger.warning("Lite verifier module failed (%s); treating as blocking regression.", e)
+                response_text = ""
+                raw_response = None
         result = self._parse_lite_verifier_json(response_text)
         if trace_context is not None:
             trace_context.update({
@@ -2353,7 +2408,7 @@ Do not include long reasoning."""
                 "active_bundle": self._bundle_refs_for_trace(active_bundle),
                 "watchlist_bundle": self._bundle_refs_for_trace(watchlist_bundle),
                 "verifier_prompt": verifier_prompt,
-                "raw_response": self._safe_serialize(response),
+                "raw_response": self._safe_serialize(raw_response),
                 "response_text": response_text,
                 "parsed": result,
                 "temperature": self.judge_temperature,

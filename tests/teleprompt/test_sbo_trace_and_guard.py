@@ -1,41 +1,66 @@
-import re
-
 import dspy
 from dspy import Example, Prediction
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.signatures.field import OutputField
+from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import AdapterParseError
 
 from dspy.teleprompt.sbo import BundleEntry, SBOProgramCallError, SemanticBundleOptimization, SemanticBundleOptimizationLite
 
 
-class FakeStringLM:
-    model = "fake/test"
-    cache = False
-    kwargs = {"temperature": 0.7}
+class SBOTestLM(DummyLM):
+    """Dummy LM that returns structured outputs based on which SBO signature is calling."""
 
     def __init__(self, judge_score: str = "1.0"):
+        super().__init__([], adapter=ChatAdapter())
         self.judge_score = judge_score
 
-    def __call__(self, prompt=None, **kwargs):
-        text = prompt or ""
-        if "Output ONLY a single number" in text:
-            reference_match = re.search(r"Reference Prompt:\n(.*?)\n\nCritique:", text, flags=re.DOTALL)
-            candidate_match = re.search(r"Candidate Prompt:\n(.*?)\n\nScoring Rubric:", text, flags=re.DOTALL)
-            if reference_match and candidate_match and reference_match.group(1) == candidate_match.group(1):
-                return ["0.0"]
-            return [self.judge_score]
-        if "blocking_regression" in text and "Candidate Prompt:" in text:
-            return ['{"active":[{"id":"A1","label":"resolved"}],"watchlist":[],"blocking_regression":false,"summary":"ok"}']
-        if "CANDIDATE" in text and "Candidates:" in text:
-            return ["CANDIDATE 1:\nimproved instruction"]
-        if "Critique:" in text:
-            return ["make the instruction improved"]
-        return ["ok"]
+    def _format_fields(self, field_names_and_values: dict[str, object]) -> str:
+        fields_with_values = {
+            FieldInfoWithName(name=field_name, info=OutputField()): value
+            for field_name, value in field_names_and_values.items()
+        }
+        return self.adapter.format_field_with_value(fields_with_values)
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        text = str(messages or prompt or "")
+        if "verification_json" in text or "LiteConstraintVerifier" in text:
+            payload = (
+                '{"active":[{"id":"A1","label":"resolved"}],'
+                '"watchlist":[],"blocking_regression":false,"summary":"ok"}'
+            )
+            outputs = [self._format_fields({"verification_json": payload})]
+        elif "candidate_prompt" in text and "reference_prompt" in text:
+            outputs = [self._format_fields({"score": self.judge_score})]
+        elif "num_candidates" in text and "active_critique_bundle" in text:
+            outputs = [self._format_fields({"candidates": ["improved instruction"]})]
+        elif "failure_feedback" in text or "failure_context" in text:
+            outputs = [self._format_fields({"critique": "make the instruction improved"})]
+        elif "instruction_template" in text:
+            outputs = [self._format_fields({"critique": "make the instruction improved"})]
+        else:
+            outputs = [self._format_fields({"answer": "ok"})]
+
+        entry = {
+            "prompt": prompt,
+            "messages": messages,
+            "kwargs": {**self.kwargs, **kwargs},
+            "outputs": outputs,
+            "usage": 0,
+            "cost": 0,
+        }
+        self.update_history(entry)
+        return outputs
 
     def copy(self, **kwargs):
-        new_lm = FakeStringLM(self.judge_score)
+        new_lm = SBOTestLM(self.judge_score)
         new_lm.kwargs = {**self.kwargs, **kwargs}
         new_lm.cache = kwargs.get("cache", self.cache)
         return new_lm
+
+
+def _make_sbo_test_lm(judge_score: str = "1.0") -> SBOTestLM:
+    return SBOTestLM(judge_score)
 
 
 class ToyProgram(dspy.Module):
@@ -48,19 +73,21 @@ class ToyProgram(dspy.Module):
         return Prediction(answer="yes" if "improved" in instruction and context else "no")
 
 
-class FakeHistoryLM(FakeStringLM):
-    def __init__(self):
-        super().__init__()
-        self.history = []
-
-    def __call__(self, prompt=None, **kwargs):
-        self.history.append({
-            "messages": [{"role": "user", "content": prompt}],
-            "kwargs": kwargs,
-            "outputs": ["not parseable"],
-            "model": self.model,
-        })
-        return ["not parseable"]
+class FakeHistoryLM(SBOTestLM):
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        if prompt and not messages:
+            outputs = ["not parseable"]
+            entry = {
+                "prompt": prompt,
+                "messages": [{"role": "user", "content": prompt}],
+                "kwargs": {**self.kwargs, **kwargs},
+                "outputs": outputs,
+                "usage": 0,
+                "cost": 0,
+            }
+            self.update_history(entry)
+            return outputs
+        return super().__call__(prompt=prompt, messages=messages, **kwargs)
 
     def copy(self, **kwargs):
         new_lm = FakeHistoryLM()
@@ -98,7 +125,7 @@ def metric(example, pred, trace=None):
 
 
 def _compile_with_judge_score(judge_score: str, **kwargs):
-    lm = FakeStringLM(judge_score)
+    lm = _make_sbo_test_lm(judge_score)
     dspy.configure(lm=lm)
     trainset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
     valset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
@@ -170,7 +197,7 @@ valid instruction"""
 
 
 def test_sbo_exact_null_self_cut_enforces_candidate_loss():
-    lm = FakeStringLM("-1.0")
+    lm = _make_sbo_test_lm("-1.0")
     optimizer = SemanticBundleOptimization(metric=metric, num_judge_samples=1)
     prompts = {"predictor": "candidate"}
     entry = BundleEntry(
@@ -191,7 +218,7 @@ def test_sbo_exact_null_self_cut_enforces_candidate_loss():
 
 
 def test_sbo_lite_accepts_improving_candidate_without_blocking_regression():
-    lm = FakeStringLM("1.0")
+    lm = _make_sbo_test_lm("1.0")
     dspy.configure(lm=lm)
     trainset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
     valset = [Example(context="c", question="q", answer="yes").with_inputs("context", "question")]
