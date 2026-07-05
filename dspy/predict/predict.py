@@ -68,6 +68,22 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
+    @property
+    def instructions(self) -> str:
+        """The learned instruction text — the canonical optimizer read/write target.
+
+        Instructions are predictor state, not part of the signature contract;
+        this property keeps them addressable on the predictor while storing
+        them on the signature, so legacy code that reassigns ``.signature``
+        observes the same state. Subclasses that hold learned state elsewhere
+        (e.g. a non-LM execution backend) can override the pair.
+        """
+        return self.signature.instructions
+
+    @instructions.setter
+    def instructions(self, value: str) -> None:
+        self.signature = self.signature.with_instructions(value)
+
     def dump_state(self, json_mode=True):
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
