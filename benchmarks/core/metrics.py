@@ -72,10 +72,20 @@ def _get_answer(obj: Any, attr: str = "answer") -> str:
 
 
 def _compute_f1_score(pred_answer: str, gold_answer: str | list[str]) -> float:
-    """Compute F1 score, handling both single and multi-reference answers."""
+    """Compute F1 score, handling both single and multi-reference answers.
+
+    `should_extract_yesno=True` is required for HotPotQA yes/no questions:
+    `hotpot_f1_score` returns 0 when the gold is `"yes"` / `"no"` / `"noanswer"`
+    and the prediction is not the bare word, even when the prediction is
+    semantically correct (e.g. `"No, both individuals are not film producers."`
+    vs gold `"no"`).
+    """
     if isinstance(gold_answer, list):
-        return max(smart_hotpot_f1_score(pred_answer, ans) for ans in gold_answer)
-    return smart_hotpot_f1_score(pred_answer, gold_answer)
+        return max(
+            smart_hotpot_f1_score(pred_answer, ans, should_extract_yesno=True)
+            for ans in gold_answer
+        )
+    return smart_hotpot_f1_score(pred_answer, gold_answer, should_extract_yesno=True)
 
 
 # Standard metric functions
