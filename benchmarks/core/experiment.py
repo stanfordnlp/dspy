@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import dspy
@@ -87,19 +88,26 @@ class ExperimentRunner:
             self.config.program.params
         )
         
-        # Evaluate baseline
-        self.logger.logger.info("=" * 60)
-        self.logger.logger.info("BASELINE EVALUATION")
-        self.logger.logger.info("=" * 60)
-        
         metric = dataset_adapter.get_metric()
-        baseline_results = self._evaluate_program(
-            program,
-            final_eval_set,
-            metric,
-            f"Baseline ({final_eval_split})",
-        )
-        self.logger.log_baseline_results(baseline_results, len(final_eval_set))
+
+        # Skip duplicate baseline eval for optimizers — they evaluate on val inside compile().
+        if self.config.optimizer.name == "baseline":
+            self.logger.logger.info("=" * 60)
+            self.logger.logger.info("BASELINE EVALUATION")
+            self.logger.logger.info("=" * 60)
+            baseline_results = self._evaluate_program(
+                program,
+                final_eval_set,
+                metric,
+                f"Baseline ({final_eval_split})",
+            )
+            self.logger.log_baseline_results(baseline_results, len(final_eval_set))
+        else:
+            self.logger.logger.info(
+                "Skipping pre-optimization baseline eval "
+                f"(optimizer={self.config.optimizer.name} evaluates during compile)."
+            )
+            baseline_results = SimpleNamespace(results=[])
         
         # Run optimization (if not baseline)
         optimized_results = None
@@ -162,10 +170,18 @@ class ExperimentRunner:
             )
             self.logger.log_optimized_results(optimized_results, len(final_eval_set))
             
-            # Log comparison
-            baseline_score = sum(score for _, _, score in baseline_results.results)
-            optimized_score = sum(score for _, _, score in optimized_results.results)
-            self.logger.log_comparison_summary(baseline_score, optimized_score, len(final_eval_set))
+            # Log comparison when a pre-optimization baseline was measured
+            if baseline_results.results:
+                baseline_score = sum(score for _, _, score in baseline_results.results)
+                optimized_score = sum(score for _, _, score in optimized_results.results)
+                self.logger.log_comparison_summary(baseline_score, optimized_score, len(final_eval_set))
+            else:
+                optimized_score = sum(score for _, _, score in optimized_results.results)
+                self.logger.logger.info(
+                    f"Optimized score ({final_eval_split}): "
+                    f"{optimized_score:.2f} / {len(final_eval_set)} "
+                    f"({100 * optimized_score / len(final_eval_set):.1f}%)"
+                )
             
             # Save optimized program if configured
             if self.config.logging.save_models and optimized_program is not None:
@@ -228,13 +244,22 @@ class ExperimentRunner:
         self.logger.logger.info(f"Total Score: {total_score:.2f} / {len(dataset)} ({100 * avg_score:.1f}%)")
 
         for i, (example, prediction, score) in enumerate(results.results):
-            # Handle both "question" (HotPotQA) and "problem" (AIME) fields
-            question_text = getattr(example, "question", None) or getattr(example, "problem", "")
+            # Handle question/problem/prompt fields across datasets
+            question_text = (
+                getattr(example, "question", None)
+                or getattr(example, "problem", None)
+                or getattr(example, "prompt", "")
+            )
             question_preview = question_text[:80] if question_text else ""
-            pred_answer = getattr(prediction, "answer", str(prediction))
+            gold_text = getattr(example, "answer", None) or getattr(example, "prompt", "")
+            pred_text = (
+                getattr(prediction, "answer", None)
+                or getattr(prediction, "response", None)
+                or str(prediction)
+            )
             self.logger.logger.info(f"\n[{i + 1}] Q: {question_preview}...")
-            self.logger.logger.info(f"    Gold: {example.answer}")
-            self.logger.logger.info(f"    Pred: {pred_answer}")
+            self.logger.logger.info(f"    Gold: {gold_text[:120]}{'...' if len(gold_text) > 120 else ''}")
+            self.logger.logger.info(f"    Pred: {pred_text[:120]}{'...' if len(str(pred_text)) > 120 else ''}")
             self.logger.logger.info(f"    Score: {score:.3f}")
         
         return results
