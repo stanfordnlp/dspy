@@ -114,7 +114,7 @@ class DspyGEPAResult:
 
     def to_dict(self) -> dict[str, Any]:
         cands = [
-            {name: pred.signature.instructions for name, pred in cand.named_predictors()}
+            {name: pred.instructions for name, pred in cand.named_predictors()}
             for cand in self.candidates
         ]
 
@@ -572,7 +572,7 @@ class GEPA(Teleprompter):
         )
 
         # Build the seed candidate: map each predictor name to its current instruction
-        seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        seed_candidate = {name: pred.instructions for name, pred in student.named_predictors()}
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,

@@ -132,7 +132,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """Return all named Predict modules in this module.
 
         Iterates through all parameters and returns those that are instances
-        of ``dspy.Predict``, along with their names.
+        of ``dspy.Predict``, along with their names. Custom predictors
+        (e.g. ones that execute outside the LM/adapter path) participate by
+        subclassing ``Predict`` and overriding ``forward``; optimizers only
+        rely on ``signature``, ``instructions``, ``demos``, and the trace.
 
         Returns:
             list[tuple[str, Predict]]: A list of (name, predictor) tuples

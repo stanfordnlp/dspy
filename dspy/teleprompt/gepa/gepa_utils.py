@@ -141,7 +141,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         for name, pred in new_prog.named_predictors():
             if name in candidate:
-                pred.signature = pred.signature.with_instructions(candidate[name])
+                pred.instructions = candidate[name]
 
         return new_prog
 
