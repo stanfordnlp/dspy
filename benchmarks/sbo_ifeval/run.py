@@ -113,6 +113,14 @@ def main() -> None:
     )
     parser.add_argument("--iterations", type=int, default=10, help="Max SBO iterations.")
     parser.add_argument("--candidates", type=int, default=3, help="Candidates per iteration.")
+    parser.add_argument(
+        "--candidate-eval-size",
+        type=int,
+        default=None,
+        help="Minibatch size for candidate F̃ scoring (None = full valset). "
+             "Reduces per-iteration cost from N×val_size to N×candidate_eval_size. "
+             "Serious-step winner is always re-evaluated on full valset.",
+    )
     parser.add_argument("--threads", type=int, default=1, help="Evaluation threads.")
     parser.add_argument("--output-json", type=str, help="Save results to JSON.")
     parser.add_argument("--print-io", action="store_true", help="Print every LM input and output.")
@@ -187,6 +195,7 @@ def main() -> None:
             num_candidates=args.candidates,
             max_iterations=args.iterations,
             max_critique_examples=5,
+            candidate_eval_size=args.candidate_eval_size,
         )
         optimizer = SBOLiteOptimizer(task_lm=task_lm, optimizer_lm=optimizer_lm, metric=score, config=config)
     else:
@@ -195,6 +204,7 @@ def main() -> None:
             max_iterations=args.iterations,
             num_judge_samples=2,
             max_critique_examples=5,
+            candidate_eval_size=args.candidate_eval_size,
         )
         optimizer = SBOOptimizer(task_lm=task_lm, optimizer_lm=optimizer_lm, metric=score, config=config)
 

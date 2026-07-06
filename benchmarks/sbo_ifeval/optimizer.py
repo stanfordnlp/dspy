@@ -46,6 +46,7 @@ class SBOConfig:
     enable_exact_null_cuts: bool = True
     lambda_stability_epsilon: float = 1e-6
     include_constraint_detail: bool = True  # show per-constraint pass/fail in critique evidence
+    candidate_eval_size: int | None = None  # minibatch size for F̃; None = full valset
 
 
 @dataclass
@@ -201,13 +202,21 @@ class SBOOptimizer:
             # Stage 1: Generate candidate prompt strings
             candidate_texts = self._generate_candidates(center_entry.prompt, active, watchlist)
 
-            # Stage 2: Score each candidate (bundle model + actual eval)
+            # Stage 2: Score each candidate (bundle model + approximate eval F̃).
+            # Use a minibatch for fast candidate ranking; re-eval winner on full val.
+            if cfg.candidate_eval_size and cfg.candidate_eval_size < len(valset):
+                eval_batch = random.sample(valset, cfg.candidate_eval_size)
+                center_approx_loss = self._evaluate(center_entry.prompt, eval_batch)
+            else:
+                eval_batch = valset
+                center_approx_loss = center_entry.loss
+
             candidate_records = []
             for i, ctext in enumerate(candidate_texts):
                 model_value = self._compute_model_value(ctext, active, lambda_current)
-                cand_loss = self._evaluate(ctext, valset)
+                cand_loss = self._evaluate(ctext, eval_batch)
                 predicted_improvement = center_entry.loss - model_value
-                actual_improvement = center_entry.loss - cand_loss
+                actual_improvement = center_approx_loss - cand_loss
                 serious_threshold = cfg.descent_param * max(0.0, predicted_improvement)
                 candidate_records.append({
                     "text": ctext,
@@ -236,7 +245,13 @@ class SBOOptimizer:
 
             # Stage 4: Serious or null step
             if step_type == "serious":
-                logger.info("✓ SERIOUS STEP: %.4f → %.4f", center_entry.loss, best_loss)
+                # Re-evaluate winner on full valset for accurate center loss.
+                if eval_batch is not valset:
+                    best_loss = self._evaluate(best_text, valset)
+                    actual_improvement = center_entry.loss - best_loss
+                    logger.info("✓ SERIOUS STEP: %.4f → %.4f (full-val re-eval)", center_entry.loss, best_loss)
+                else:
+                    logger.info("✓ SERIOUS STEP: %.4f → %.4f", center_entry.loss, best_loss)
                 num_serious += 1
                 consecutive_null = 0
 
@@ -521,6 +536,7 @@ class SBOLiteConfig:
     max_bundle_critique_chars: int = 900
     stop_on_no_improving_candidate: bool = True
     include_constraint_detail: bool = True  # show per-constraint pass/fail in critique evidence
+    candidate_eval_size: int | None = None  # minibatch size for F̃; None = full valset
 
 
 class SBOLiteOptimizer:
@@ -587,10 +603,21 @@ class SBOLiteOptimizer:
 
             candidate_texts = self._generate_candidates(center_entry.prompt, active, watchlist)
 
+            # Use a minibatch from valset for F̃ (approximate candidate scoring).
+            # This keeps per-iteration cost at N × candidate_eval_size instead of
+            # N × len(valset). The winner is re-evaluated on full valset after selection.
+            if cfg.candidate_eval_size and cfg.candidate_eval_size < len(valset):
+                eval_batch = random.sample(valset, cfg.candidate_eval_size)
+                # Re-scale center loss to the same minibatch for a fair comparison.
+                center_approx_loss = self._evaluate(center_entry.prompt, eval_batch)
+            else:
+                eval_batch = valset
+                center_approx_loss = center_entry.loss
+
             candidate_records = []
             for i, ctext in enumerate(candidate_texts):
-                cand_loss = self._evaluate(ctext, valset)
-                improvement = center_entry.loss - cand_loss
+                cand_loss = self._evaluate(ctext, eval_batch)
+                improvement = center_approx_loss - cand_loss
                 # Single verifier call instead of judge calls
                 verifier = self._lite_verify(center_entry.prompt, ctext, active, watchlist)
                 blocking = verifier.get("blocking_regression", True)
@@ -619,7 +646,12 @@ class SBOLiteOptimizer:
             best_loss = best["loss"]
 
             if step_type == "serious":
-                logger.info("✓ SERIOUS STEP: %.4f → %.4f", center_entry.loss, best_loss)
+                # Re-evaluate winner on full valset for an accurate center loss.
+                if eval_batch is not valset:
+                    best_loss = self._evaluate(best_text, valset)
+                    logger.info("✓ SERIOUS STEP: %.4f → %.4f (full-val re-eval)", center_entry.loss, best_loss)
+                else:
+                    logger.info("✓ SERIOUS STEP: %.4f → %.4f", center_entry.loss, best_loss)
                 num_serious += 1
                 consecutive_null = 0
                 new_critique = self._generate_critique(best_text, critique_examples)
