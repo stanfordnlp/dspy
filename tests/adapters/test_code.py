@@ -87,7 +87,6 @@ def test_nested_code_annotation_does_not_leak_docstring_into_prompt():
 def test_explicit_json_schema_description_is_preserved_on_custom_types():
     """The docstring-stripping hook must only remove descriptions derived from the class
     docstring; explicitly configured schema descriptions are preserved."""
-    import pydantic
 
     class DocumentedType(dspy.Type):
         """Developer docstring that should not reach the schema."""
