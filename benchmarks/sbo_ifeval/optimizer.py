@@ -223,6 +223,20 @@ class SBOOptimizer:
 
             # Stage 1: Generate candidate prompt strings
             candidate_texts = self._generate_candidates(center_entry.prompt, active, watchlist)
+            if not candidate_texts:
+                logger.warning("Skipping iteration %d: proposer returned no candidates.", iteration)
+                num_null += 1
+                consecutive_null += 1
+                bundle.append(BundleEntry(
+                    prompt=center_entry.prompt,
+                    loss=center_entry.loss,
+                    critique="Proposer failed to generate candidates; retry with different phrasing.",
+                    iteration=iteration,
+                    kind="null_self_cut",
+                ))
+                if consecutive_null >= cfg.max_null_steps:
+                    break
+                continue
 
             # Stage 2: Score each candidate (bundle model + approximate eval F̃).
             # Use a minibatch for fast candidate ranking; re-eval winner on full val.
@@ -402,12 +416,14 @@ class SBOOptimizer:
             user=user,
             temperature=cfg.temperature,
         )
+        # Exclude duplicates of the current prompt — verifying an identical candidate
+        # wastes LM calls and produces incoherent verifier feedback.
         candidates = [
-            c.strip() for c in result.get("candidates", []) if isinstance(c, str) and c.strip()
+            c.strip() for c in result.get("candidates", [])
+            if isinstance(c, str) and c.strip() and c.strip() != current_prompt
         ]
-        # Pad with current prompt if proposer returns fewer than requested
-        while len(candidates) < cfg.num_candidates:
-            candidates.append(current_prompt)
+        if not candidates:
+            logger.warning("Proposer returned no usable candidates (parse failure or all duplicates).")
         return candidates[: cfg.num_candidates]
 
     # ── Critic ────────────────────────────────────────────────────────────────
@@ -649,6 +665,21 @@ class SBOLiteOptimizer:
 
             candidate_texts = self._generate_candidates(center_entry.prompt, active, watchlist)
 
+            if not candidate_texts:
+                logger.warning("Skipping iteration %d: proposer returned no candidates.", iteration)
+                num_null += 1
+                consecutive_null += 1
+                bundle.append(BundleEntry(
+                    prompt=center_entry.prompt,
+                    loss=center_entry.loss,
+                    critique="Proposer failed to generate candidates; retry with different phrasing.",
+                    iteration=iteration,
+                    kind="lite_null",
+                ))
+                if consecutive_null >= cfg.max_null_steps:
+                    break
+                continue
+
             # Use a minibatch from valset for F̃ (approximate candidate scoring).
             # This keeps per-iteration cost at N × candidate_eval_size instead of
             # N × len(valset). The winner is re-evaluated on full valset after selection.
@@ -832,10 +863,11 @@ class SBOLiteOptimizer:
             temperature=cfg.temperature,
         )
         candidates = [
-            c.strip() for c in result.get("candidates", []) if isinstance(c, str) and c.strip()
+            c.strip() for c in result.get("candidates", [])
+            if isinstance(c, str) and c.strip() and c.strip() != current_prompt
         ]
-        while len(candidates) < cfg.num_candidates:
-            candidates.append(current_prompt)
+        if not candidates:
+            logger.warning("Proposer returned no usable candidates (parse failure or all duplicates).")
         return candidates[: cfg.num_candidates]
 
     # ── Critic ────────────────────────────────────────────────────────────────

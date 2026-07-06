@@ -177,6 +177,7 @@ def main() -> None:
         api_base=args.api_base,
         temperature=0.7,
         max_tokens=4096,
+        num_ctx=8192,  # Ollama context window — prevents JSON truncation on long proposer prompts
         print_io=args.print_io,
         label="optimizer",
         **extra_kwargs,

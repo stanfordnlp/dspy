@@ -92,28 +92,34 @@ class LMClient:
         system_prompt: str,
         user_message: str,
         temperature: float | None = None,
+        retries: int = 2,
     ) -> dict[str, Any]:
-        """Call LM expecting JSON output. Strips markdown fences; falls back gracefully."""
-        text = self._call(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=temperature,
-        )
-        stripped = text.strip()
-        # Strip ```json ... ``` fences
-        if stripped.startswith("```"):
-            lines = stripped.splitlines()
-            stripped = "\n".join(lines[1:]).rstrip("`").strip()
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError:
-            m = re.search(r"\{.*\}", stripped, re.DOTALL)
-            if m:
-                try:
-                    return json.loads(m.group())
-                except json.JSONDecodeError:
-                    pass
-            logger.warning("JSON parse failed, response: %r", text[:300])
-            return {}
+        """Call LM expecting JSON output. Strips markdown fences; retries on parse failure."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        for attempt in range(1 + retries):
+            text = self._call(messages, temperature=temperature)
+            stripped = text.strip()
+            # Strip ```json ... ``` fences
+            if stripped.startswith("```"):
+                lines = stripped.splitlines()
+                stripped = "\n".join(lines[1:]).rstrip("`").strip()
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                m = re.search(r"\{.*\}", stripped, re.DOTALL)
+                if m:
+                    try:
+                        return json.loads(m.group())
+                    except json.JSONDecodeError:
+                        pass
+            if attempt < retries:
+                logger.warning(
+                    "JSON parse failed (attempt %d/%d), retrying. response: %r",
+                    attempt + 1, 1 + retries, text[:200],
+                )
+            else:
+                logger.warning("JSON parse failed after %d attempts, response: %r", 1 + retries, text[:300])
+        return {}
