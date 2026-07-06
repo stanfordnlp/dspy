@@ -61,3 +61,58 @@ The code is a simple print statement.
 """
     code = dspy.Code(code=dirty_code_with_reasoning)
     assert code.code == "print('Hello, world!')"
+
+
+def test_nested_code_annotation_does_not_leak_docstring_into_prompt():
+    """Regression test for #9251: `dspy.Code`'s class docstring (which contains full code
+    examples) must not leak into the prompt via the pydantic JSON schema when the type
+    appears inside a composite annotation such as `list[dspy.Code]`."""
+
+    class CodeSnippets(dspy.Signature):
+        question: str = dspy.InputField()
+        snippets: list[dspy.Code] = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(CodeSnippets, [], {"question": "reverse a string"})
+    system_content = messages[0]["content"]
+
+    # Docstring content (example code) must not appear in the prompt.
+    assert "sleepsort" not in system_content
+    assert "gpt-4o-mini" not in system_content
+    # The structural JSON schema for the list is still communicated.
+    assert "adhere to the JSON schema" in system_content
+    # The intended, LLM-facing type description is still present.
+    assert "Type description of Code" in system_content
+
+
+def test_explicit_json_schema_description_is_preserved_on_custom_types():
+    """The docstring-stripping hook must only remove descriptions derived from the class
+    docstring; explicitly configured schema descriptions are preserved."""
+    import pydantic
+
+    class DocumentedType(dspy.Type):
+        """Developer docstring that should not reach the schema."""
+
+        model_config = pydantic.ConfigDict(json_schema_extra={"description": "explicit description"})
+
+        value: str
+
+        def format(self):
+            return self.value
+
+    schema = pydantic.TypeAdapter(DocumentedType).json_schema()
+    assert schema.get("description") == "explicit description"
+
+
+def test_docstring_derived_description_is_stripped_from_custom_type_schema():
+    import pydantic
+
+    class DocstringOnlyType(dspy.Type):
+        """Developer docstring that should not reach the schema."""
+
+        value: str
+
+        def format(self):
+            return self.value
+
+    schema = pydantic.TypeAdapter(DocstringOnlyType).json_schema()
+    assert "description" not in schema
