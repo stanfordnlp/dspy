@@ -4,12 +4,34 @@ No DSPy. Task LM is called directly. Optimizer LM uses JSON mode.
 """
 from __future__ import annotations
 
+import json
 import logging
 import random
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _call_optimizer_lm(
+    opt_lm: Any,
+    *,
+    call_type: str,
+    system: str,
+    user: str,
+    temperature: float | None = None,
+) -> dict[str, Any]:
+    """Call optimizer LM (JSON mode) and log the full prompt and parsed response."""
+    logger.info("Optimizer LM [%s] — request", call_type)
+    logger.info("  [system]\n%s", system)
+    logger.info("  [user]\n%s", user)
+    result = opt_lm.json(system, user, temperature=temperature)
+    logger.info(
+        "Optimizer LM [%s] — response\n%s",
+        call_type,
+        json.dumps(result, ensure_ascii=False, indent=2) if result else "(empty / parse failure)",
+    )
+    return result
 
 
 @dataclass
@@ -341,8 +363,14 @@ class SBOOptimizer:
         cfg = self.config
         user = f"Reference prompt:\n{reference}\n\nCritique:\n{critique}\n\nCandidate prompt:\n{candidate}"
         scores: list[float] = []
-        for _ in range(cfg.num_judge_samples):
-            result = self.opt_lm.json(_JUDGE_SYSTEM, user, temperature=cfg.judge_temperature)
+        for sample_i in range(cfg.num_judge_samples):
+            result = _call_optimizer_lm(
+                self.opt_lm,
+                call_type=f"judge ({sample_i + 1}/{cfg.num_judge_samples})",
+                system=_JUDGE_SYSTEM,
+                user=user,
+                temperature=cfg.judge_temperature,
+            )
             try:
                 s = float(result.get("score", 0.0))
                 scores.append(max(-1.0, min(1.0, s)))
@@ -367,7 +395,13 @@ class SBOOptimizer:
             f"Watchlist (avoid regressions):\n{watchlist_text}\n\n"
             f"Generate exactly {cfg.num_candidates} candidate variations."
         )
-        result = self.opt_lm.json(_PROPOSER_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="proposer",
+            system=_PROPOSER_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         candidates = [
             c.strip() for c in result.get("candidates", []) if isinstance(c, str) and c.strip()
         ]
@@ -404,7 +438,13 @@ class SBOOptimizer:
             return "The prompt is performing well on the sampled examples."
 
         user = f"Instruction template:\n{prompt}\n\nFailure evidence:\n" + "\n\n".join(failures)
-        result = self.opt_lm.json(_CRITIC_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="critic",
+            system=_CRITIC_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         return result.get("critique", "The prompt needs refinement on some examples.").strip()
 
     def _generate_failure_critique(self, prompt: str, examples: list[Any], target_loss: float) -> str:
@@ -433,7 +473,13 @@ class SBOOptimizer:
             f"Target loss to beat: {target_loss:.4f}\n\n"
             f"Evidence:\n" + "\n\n".join(evidence)
         )
-        result = self.opt_lm.json(_FAILURE_CRITIC_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="failure_critic",
+            system=_FAILURE_CRITIC_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         return result.get("critique", "The candidate did not improve; revisit approach.").strip()
 
     # ── Bundle model ──────────────────────────────────────────────────────────
@@ -744,7 +790,12 @@ class SBOLiteOptimizer:
             f"Active critiques:\n{active_text}\n\n"
             f"Watchlist critiques:\n{watchlist_text}"
         )
-        result = self.opt_lm.json(_LITE_VERIFIER_SYSTEM, user)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="lite_verifier",
+            system=_LITE_VERIFIER_SYSTEM,
+            user=user,
+        )
         # Recompute blocking_regression from labels — don't trust the model's boolean.
         # Models reliably produce the per-critique labels but often get the derived
         # boolean wrong (e.g. label="regressed" but blocking_regression=false).
@@ -773,7 +824,13 @@ class SBOLiteOptimizer:
             f"Watchlist (avoid regressions):\n{watchlist_text}\n\n"
             f"Generate exactly {cfg.num_candidates} candidate variations."
         )
-        result = self.opt_lm.json(_PROPOSER_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="proposer",
+            system=_PROPOSER_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         candidates = [
             c.strip() for c in result.get("candidates", []) if isinstance(c, str) and c.strip()
         ]
@@ -807,7 +864,13 @@ class SBOLiteOptimizer:
         if not failures:
             return "The prompt is performing well on the sampled examples."
         user = f"Instruction template:\n{prompt}\n\nFailure evidence:\n" + "\n\n".join(failures)
-        result = self.opt_lm.json(_CRITIC_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="critic",
+            system=_CRITIC_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         return result.get("critique", "The prompt needs refinement on some examples.").strip()
 
     def _generate_failure_critique(self, prompt: str, examples: list[Any], target_loss: float) -> str:
@@ -835,7 +898,13 @@ class SBOLiteOptimizer:
             f"Target loss to beat: {target_loss:.4f}\n\n"
             f"Evidence:\n" + "\n\n".join(evidence)
         )
-        result = self.opt_lm.json(_FAILURE_CRITIC_SYSTEM, user, temperature=cfg.temperature)
+        result = _call_optimizer_lm(
+            self.opt_lm,
+            call_type="failure_critic",
+            system=_FAILURE_CRITIC_SYSTEM,
+            user=user,
+            temperature=cfg.temperature,
+        )
         return result.get("critique", "The candidate did not improve; revisit approach.").strip()
 
     # ── Bundle management ─────────────────────────────────────────────────────
