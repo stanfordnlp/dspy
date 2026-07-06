@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # runs on valset. val_size is therefore the primary budget knob.
 PRESETS: dict[str, dict[str, int | None]] = {
     "smoke":    {"train_size": 4,   "val_size": 8,   "test_size": 4},
-    "fast":     {"train_size": 16,  "val_size": 20,  "test_size": 10},
+    "fast":     {"train_size": 16,  "val_size": 50,  "test_size": 15},
     "standard": {"train_size": 100, "val_size": 100, "test_size": 50},
     "full":     {"train_size": None, "val_size": None, "test_size": None},
 }
