@@ -103,8 +103,6 @@ def test_explicit_json_schema_description_is_preserved_on_custom_types():
 
 
 def test_docstring_derived_description_is_stripped_from_custom_type_schema():
-    import pydantic
-
     class DocstringOnlyType(dspy.Type):
         """Developer docstring that should not reach the schema."""
 
