@@ -1,8 +1,0 @@
-name: ollama_chat/qwen3.5:0.8b
-api_base: http://localhost:11434
-cache: true
-# Optional: qwen3.5 is a thinking model in Ollama. Prefer qwen3_4b for smoke tests.
-# If you use this config, keep reasoning_effort: none or responses may parse as None.
-params:
-  max_tokens: 1024
-  reasoning_effort: none

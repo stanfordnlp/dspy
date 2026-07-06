@@ -1,8 +1,0 @@
-name: aime_baseline_fast
-description: AIME baseline with reduced dataset for fast iteration (~2 min)
-
-dataset_ref: aime_fast
-model_ref: qwen3_4b_nocache  # Cache disabled for cleaner runs
-optimizer_ref: baseline
-program_ref: math_naive
-logging_ref: logging

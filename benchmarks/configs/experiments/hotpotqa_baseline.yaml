@@ -1,9 +1,0 @@
-name: hotpotqa_baseline
-description: HotPotQA baseline evaluation without optimization
-
-# Reference shared configs
-dataset_ref: hotpotqa_standard
-model_ref: qwen3_4b
-optimizer_ref: baseline
-program_ref: mlflow_base
-logging_ref: logging

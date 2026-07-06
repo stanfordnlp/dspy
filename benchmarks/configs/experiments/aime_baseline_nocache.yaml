@@ -1,9 +1,0 @@
-name: aime_baseline_nocache
-description: AIME baseline evaluation without optimization (cache disabled for debugging)
-
-# Reference shared configs
-dataset_ref: aime_standard
-model_ref: qwen3_4b_nocache
-optimizer_ref: baseline
-program_ref: math_cot
-logging_ref: logging
