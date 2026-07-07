@@ -92,6 +92,17 @@ def test_tool_call_exact_match_requires_exact_argument_values():
     assert not tool_call_exact_match(example, pred)
 
 
+def test_tool_call_exact_match_returns_false_for_unhashable_argument_values():
+    example = dspy.Example(
+        tool_calls=dspy.ToolCalls(tool_calls=[dspy.ToolCalls.ToolCall(name="search", args={"tags": {"dspy"}})])
+    )
+    pred = dspy.Prediction(
+        tool_calls=dspy.ToolCalls(tool_calls=[dspy.ToolCalls.ToolCall(name="search", args={"tags": {"dspy"}})])
+    )
+
+    assert not tool_call_exact_match(example, pred)
+
+
 def test_tool_call_exact_match_is_exported_from_evaluate():
     from dspy.evaluate import tool_call_exact_match as exported_metric
 

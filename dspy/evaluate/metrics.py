@@ -323,16 +323,15 @@ def _freeze_tool_call_arg(value):
         return ("dict", tuple((key, _freeze_tool_call_arg(value[key])) for key in sorted(value)))
     if isinstance(value, list):
         return ("list", tuple(_freeze_tool_call_arg(item) for item in value))
-    return (type(value).__qualname__, value)
+    return (type(value), value)
 
 
 def _tool_call_counter(value):
     try:
         tool_calls = ToolCalls.model_validate(value).tool_calls
+        return Counter((tool_call.name, _freeze_tool_call_arg(tool_call.args)) for tool_call in tool_calls)
     except Exception:
         return None
-
-    return Counter((tool_call.name, _freeze_tool_call_arg(tool_call.args)) for tool_call in tool_calls)
 
 
 def tool_call_exact_match(example, pred, trace=None):
