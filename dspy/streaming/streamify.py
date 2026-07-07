@@ -171,7 +171,18 @@ def streamify(
         callbacks.append(status_streaming_callback)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+        # Capture the loop that owns `stream` so status callbacks firing on worker
+        # threads (e.g. dspy.Parallel's ThreadPoolExecutor) can deliver back to it.
+        try:
+            stream_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            stream_loop = None
+        with settings.context(
+            send_stream=stream,
+            send_stream_loop=stream_loop,
+            callbacks=callbacks,
+            stream_listeners=stream_listeners,
+        ):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)

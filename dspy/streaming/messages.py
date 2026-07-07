@@ -31,9 +31,20 @@ def sync_send_to_stream(stream, message):
         await stream.send(message)
 
     try:
-        asyncio.get_running_loop()
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
 
-        # If we're in an event loop, offload to a new thread with its own event loop
+    # Status callbacks fire on worker threads: the anyio worker thread that runs an
+    # asyncified program, or a plain ThreadPoolExecutor thread spawned by dspy.Parallel.
+    # Neither has a running loop. Deliver on the loop that owns the stream (captured by
+    # streamify); run_coroutine_threadsafe works from any thread other than that loop's own.
+    stream_loop = settings.send_stream_loop
+    if running_loop is None and stream_loop is not None and stream_loop.is_running():
+        return asyncio.run_coroutine_threadsafe(_send(), stream_loop).result()
+
+    if running_loop is not None:
+        # Called from within an event loop: offload to a new thread with its own loop.
         def run_in_new_loop():
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
@@ -45,9 +56,9 @@ def sync_send_to_stream(stream, message):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(run_in_new_loop)
             return future.result()
-    except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return anyio.from_thread.run(_send)
+
+    # No running loop and no captured stream loop: fall back to the anyio worker-thread portal.
+    return anyio.from_thread.run(_send)
 
 
 class StatusMessageProvider:

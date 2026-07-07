@@ -98,6 +98,39 @@ async def test_default_status_streaming():
 
 
 @pytest.mark.anyio
+async def test_status_streaming_under_parallel():
+    """Status messages emitted from dspy.Parallel worker threads must reach the stream.
+
+    dspy.Parallel runs each module on a plain ThreadPoolExecutor thread, which has no
+    running event loop and is not an anyio worker thread. The status callback there must
+    still deliver to the streaming loop; a regression drops the messages (see #9154).
+    """
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict = dspy.Predict("question->answer")
+
+        def __call__(self, questions):
+            pairs = [(self.predict, dspy.Example(question=q).with_inputs("question")) for q in questions]
+            return dspy.Parallel(num_threads=2)(pairs)[0]
+
+    class MyStatusMessageProvider(StatusMessageProvider):
+        def module_start_status_message(self, instance, inputs):
+            if isinstance(instance, dspy.Predict):
+                return "Predict starting!"
+
+    lm = dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(MyProgram(), status_message_provider=MyStatusMessageProvider())
+        output = program(["sky", "grass"])
+
+        status_messages = [value async for value in output if isinstance(value, StatusMessage)]
+
+    assert len(status_messages) == 2
+    assert all(message.message == "Predict starting!" for message in status_messages)
+
+
+@pytest.mark.anyio
 async def test_custom_status_streaming():
     class MyProgram(dspy.Module):
         def __init__(self):
