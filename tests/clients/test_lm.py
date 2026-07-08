@@ -1547,6 +1547,21 @@ def test_convert_chat_request_to_responses_request_preserves_pydantic_response_f
     assert "text" not in result
 
 
+def test_convert_chat_request_to_responses_request_azure_uses_text_format():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "model": "azure/gpt-4o",
+        "messages": [{"role": "user", "content": "Return JSON"}],
+        "response_format": {"type": "json_object"},
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["text"]["format"] == {"type": "json_object"}
+    assert "response_format" not in result
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
