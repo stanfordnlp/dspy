@@ -55,7 +55,10 @@ class Flex(Module):
         microsandbox / libkrun) or gVisor; the bridge needs the sandbox to call back to the host, so a
         *local* sandbox fits, whereas a *remote/hosted* one (e.g. cloud E2B) would need a callback
         tunnel. Code-executing sub-predictors a rewrite may introduce (``RLM``/``CodeAct``/
-        ``ProgramOfThought``) each run their own inner code in their own isolated default sandbox.
+        ``ProgramOfThought``) run their own inner code in a fresh interpreter from this same factory,
+        so that code runs in the sandbox backend you chose here rather than a separate default one
+        (unless ``interpreter`` was a shared instance, in which case they fall back to their own
+        default sandbox — pass a factory to have them inherit the configured backend).
 
     Args:
         signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
@@ -93,6 +96,12 @@ class Flex(Module):
         # interpreter bridge (dspy/flex/bridge.py) rather than in-process exec(); see the class
         # docstring for what this does and does not protect.
         self._interpreter_factory = self._normalize_interpreter(interpreter)
+        # A bare CodeInterpreter instance is shared across all forward() calls (see
+        # _normalize_interpreter). A code-executing sub-predictor (CodeAct/ProgramOfThought/RLM) shuts
+        # its interpreter down after forward, so it must NOT be handed the shared Flex session — only a
+        # real factory (fresh instances) is safe to inherit into sub-predictors. See
+        # BridgeRuntime._sub_interpreter.
+        self._interpreter_shared = isinstance(interpreter, CodeInterpreter)
         self._max_predictor_calls = max_predictor_calls
         self._bridge: Any = None
         if self._interpreter_factory is not None:

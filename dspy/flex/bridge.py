@@ -42,6 +42,7 @@ See ``dspy/flex/flex.py`` for the full design, threat model, and phasing.
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import logging
 import threading
@@ -57,8 +58,13 @@ logger = logging.getLogger(__name__)
 CONSTRUCT_TOOL = "__dspy_construct__"
 CALL_TOOL = "__dspy_call__"
 
-# dspy predictors the sandbox shim may construct (and the host will build for real).
-BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought")
+# dspy predictors the sandbox shim may construct (and the host will build for real). Two flavours:
+#   * pure LM predictors (Predict/ChainOfThought) — just an LM call bridged to the host;
+#   * tool-calling agents (ReAct/ReActV2) — the LM picks a named tool and the host calls it (tools
+#     must be Flex-level so they resolve on the host); they run NO arbitrary code themselves; and
+#   * code-executing predictors (RLM/CodeAct/ProgramOfThought) — run their own inner code, which the
+#     bridge routes into a fresh interpreter from the Flex factory (see ``_build_predictor``).
+BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2")
 # Marker key produced by the shim's ``dspy.Signature(...)`` so the host can rebuild a Signature.
 SIGNATURE_MARKER = "__dspy_sig__"
 # Marker key the shim uses to pass a tool *by name* (functions can't cross the JSON boundary); the
@@ -96,6 +102,19 @@ def parse_module_class_name(module_src: str) -> str:
     if not chosen:
         raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
     return chosen[0].name
+
+
+def _accepts_interpreter(cls: type) -> bool:
+    """True if ``cls.__init__`` takes an ``interpreter`` parameter.
+
+    The code-executing predictors (``CodeAct``/``ProgramOfThought``/``RLM``) do; ``Predict`` and
+    ``ChainOfThought`` don't. Checked by introspection (not a hardcoded list) so it stays correct if
+    the set of interpreter-taking predictors changes.
+    """
+    try:
+        return "interpreter" in inspect.signature(cls.__init__).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _resolve_signature(signature: Any) -> Any:
@@ -177,9 +196,12 @@ class BridgeRuntime:
     User ``tools`` passed to ``dspy.Flex(tools=...)`` are registered with the interpreter (callable by
     name from sandbox glue) and resolved by name when handed to a bridged sub-predictor. Tools authored
     *inside* the generated module cannot be handed to a (host-side) sub-predictor — they live in the
-    sandbox. Code-executing sub-predictors a rewrite may introduce (RLM/CodeAct/ProgramOfThought) each
-    run their own inner code in their own isolated *default* sandbox; inheriting the Flex-configured
-    backend into sub-predictors is deferred (see the plan).
+    sandbox. Code-executing sub-predictors a rewrite may introduce (RLM/CodeAct/ProgramOfThought) run
+    their own inner code in a **fresh interpreter from the Flex-configured factory**, so that code runs
+    in the same sandbox backend the user chose for Flex rather than a separate *default* (Deno/Pyodide)
+    one — see ``_build_predictor``/``_sub_interpreter``. (A shared bare interpreter instance is the one
+    exception: a sub-predictor shuts its interpreter down after ``forward``, which would tear down the
+    shared Flex session, so there it falls back to its own default sandbox.)
     """
 
     def __init__(self, flex: Any, factory: Callable[[], Any], max_predictor_calls: int | None = 100) -> None:
@@ -294,9 +316,35 @@ class BridgeRuntime:
             return {k: self._decode_tools(v) for k, v in value.items()}
         return value
 
+    def _sub_interpreter(self) -> Any:
+        """A fresh interpreter for a bridged code-executing sub-predictor, or ``None`` to let it use
+        its own default.
+
+        Uses the Flex-configured factory so the sub-predictor's inner code (the LM-authored code a
+        ``CodeAct``/``ProgramOfThought``/``RLM`` runs) executes in the SAME sandbox backend chosen for
+        Flex, not a separate default (Deno/Pyodide) one. Each sub-predictor gets its own instance so it
+        never shares a session with the Flex glue or another sub-predictor.
+
+        Returns ``None`` when the Flex interpreter is a shared bare instance
+        (``dspy.Flex(interpreter=<instance>)``): a code-executing predictor shuts its interpreter down
+        after ``forward``, which would tear down the shared Flex session mid-run — so it falls back to
+        its own default sandbox (still isolated, just not the Flex-chosen backend).
+        """
+        if getattr(self._flex, "_interpreter_shared", False):
+            return None
+        return self._factory()
+
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
+        # Code-executing sub-predictors run their own inner code in an interpreter. Hand them a fresh
+        # instance from the Flex-configured factory so that code runs in the Flex-chosen sandbox
+        # backend (see _sub_interpreter). Only when the constructor accepts `interpreter` and the
+        # sandbox code didn't already pass one (it can't send a live interpreter across the boundary).
+        if "interpreter" not in extra and _accepts_interpreter(cls):
+            sub = self._sub_interpreter()
+            if sub is not None:
+                extra["interpreter"] = sub
         return cls(_resolve_signature(signature), **extra)
 
     def _construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:

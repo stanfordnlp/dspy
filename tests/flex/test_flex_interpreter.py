@@ -136,6 +136,18 @@ def test_construct_rejects_non_bridgeable_kind() -> None:
         flex._bridge._construct("Retrieve", "value -> result", "r", {})
 
 
+def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
+    # ReAct/ReActV2 are tool-calling agents: they run NO inner code (so take no interpreter) and call
+    # named tools on the host. They just need whitelisting; the tools must be Flex-level to resolve.
+    assert "ReAct" in bridge.BRIDGEABLE_KINDS and "ReActV2" in bridge.BRIDGEABLE_KINDS
+    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: MockInterpreter())
+    tools_payload = [{bridge.TOOL_MARKER: "shout"}]
+    flex._bridge._construct("ReAct", "text: str -> out: str", "agent", {"tools": tools_payload})
+    assert isinstance(flex.agent, dspy.ReAct)
+    # No interpreter is injected into a non-code-executing predictor.
+    assert not hasattr(flex.agent, "interpreter")
+
+
 def test_call_runs_predictor_via_host_lm() -> None:
     flex = _bridged_flex()
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
@@ -245,6 +257,56 @@ def test_predictor_call_budget_can_be_disabled() -> None:
     flex._bridge._local.sess.calls = 0
     for _ in range(5):  # no cap -> all calls go through
         flex._bridge._call("solve", {"value": 1})
+
+
+# =============================================================================
+# Code-executing sub-predictors inherit the Flex sandbox backend (no Deno)
+# =============================================================================
+# A bridged CodeAct/ProgramOfThought/RLM runs its OWN inner code. It must run that code in the
+# sandbox backend chosen for Flex (a fresh instance from the factory), not a separate default
+# Deno/Pyodide sandbox — otherwise sandboxing the Flex glue but not the code its sub-predictors
+# execute would be a hole.
+
+
+def test_accepts_interpreter_only_for_code_executing_kinds() -> None:
+    # Introspection-based, not a hardcoded list, so it tracks the real constructors.
+    assert bridge._accepts_interpreter(dspy.CodeAct)
+    assert bridge._accepts_interpreter(dspy.ProgramOfThought)
+    assert bridge._accepts_interpreter(dspy.RLM)  # type: ignore[arg-type]  # dspy re-exports RLM oddly
+    # Pure-LM and tool-calling predictors run no inner code, so no interpreter is injected into them.
+    assert not bridge._accepts_interpreter(dspy.Predict)
+    assert not bridge._accepts_interpreter(dspy.ChainOfThought)
+    assert not bridge._accepts_interpreter(dspy.ReAct)
+    assert not bridge._accepts_interpreter(dspy.ReActV2)  # type: ignore[arg-type]  # re-export quirk
+
+
+def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
+    # CodeAct requires function tools; `shout` is a Flex-level tool, resolvable on the host.
+    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: MockInterpreter())
+    tools_payload = [{bridge.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
+    flex._bridge._construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
+    # The sub-predictor got a fresh interpreter from the Flex factory (the configured backend),
+    # not a default PythonInterpreter.
+    assert isinstance(flex.act, dspy.CodeAct)
+    assert isinstance(flex.act.interpreter, MockInterpreter)
+
+
+def test_sub_interpreter_is_fresh_per_predictor_for_a_factory() -> None:
+    flex = _bridged_flex()  # a real factory (lambda: MockInterpreter())
+    a = flex._bridge._sub_interpreter()
+    b = flex._bridge._sub_interpreter()
+    assert isinstance(a, MockInterpreter) and isinstance(b, MockInterpreter)
+    assert a is not b  # each sub-predictor is isolated in its own interpreter
+
+
+def test_shared_instance_is_not_handed_to_sub_predictors() -> None:
+    # A shared bare instance must NOT be inherited: a sub-predictor shuts its interpreter down after
+    # forward, which would tear down the shared Flex session. It falls back to its own default sandbox.
+    shared = MockInterpreter()
+    with mock_patch("dspy.flex.flex.logger"):  # silence the "shared instance" warning
+        flex = Flex(Doubler, interpreter=shared)
+    assert flex._interpreter_shared is True
+    assert flex._bridge._sub_interpreter() is None
 
 
 # =============================================================================
@@ -389,6 +451,91 @@ def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
         with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
             flex(value=1)
         assert "budget" in str(excinfo.value).lower()
+    finally:
+        flex.close()
+
+
+# A module that constructs and calls a dspy.CodeAct with a Flex-level tool. CodeAct runs its own
+# LM-authored code in an interpreter; under the bridge that interpreter is a fresh instance from the
+# Flex factory, so CodeAct's code runs in the SAME sandbox backend configured for Flex.
+CODEACT_MODULE = textwrap.dedent(
+    """
+    class ShoutModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.act = dspy.CodeAct("text: str -> out: str", tools=[shout])
+
+        def forward(self, **inputs):
+            r = self.act(text=inputs["text"])
+            return dspy.Prediction(out=r.out)
+    """
+).strip()
+
+
+@deno_required
+def test_bridged_codeact_runs_in_flex_sandbox() -> None:
+    # CodeAct generates code that calls the (Flex-level) `shout` tool, then extracts the answer.
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {"generated_code": "```python\nprint(shout('hello'))\n```", "finished": True},
+                {"reasoning": "the code printed HELLO", "out": "HELLO"},
+            ]
+        )
+    )
+
+    def tagged_factory():
+        interp = dspy.PythonInterpreter()
+        interp._flex_tag = "flex-backend"  # marks instances that came from THIS factory
+        return interp
+
+    flex = Flex(ShoutSig, tools=[shout], interpreter=tagged_factory)
+    try:
+        flex._bind_code(CODEACT_MODULE)
+        out = flex(text="hello")
+        assert out.out == "HELLO"
+        # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter.
+        act = flex.act  # bridged predictor, attached dynamically
+        assert getattr(act.interpreter, "_flex_tag", None) == "flex-backend"
+    finally:
+        flex.close()
+
+
+# A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
+# own: the LM picks a tool, the host runs it, and the LM extracts the answer — all bridged from the
+# sandbox where the module's glue runs.
+REACT_MODULE = textwrap.dedent(
+    """
+    class ShoutModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.agent = dspy.ReAct("text: str -> out: str", tools=[shout])
+
+        def forward(self, **inputs):
+            r = self.agent(text=inputs["text"])
+            return dspy.Prediction(out=r.out)
+    """
+).strip()
+
+
+@deno_required
+def test_bridged_react_runs_in_flex_sandbox() -> None:
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {"next_thought": "shout it", "next_tool_name": "shout", "next_tool_args": {"text": "hello"}},
+                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
+                {"reasoning": "the tool returned HELLO", "out": "HELLO"},
+            ]
+        )
+    )
+    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: dspy.PythonInterpreter())
+    try:
+        flex._bind_code(REACT_MODULE)
+        out = flex(text="hello")
+        # The agent's glue ran in the sandbox; the `shout` tool call and every LM call bridged to the host.
+        assert out.out == "HELLO"
+        assert isinstance(flex.agent, dspy.ReAct)
     finally:
         flex.close()
 

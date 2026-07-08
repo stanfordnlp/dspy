@@ -112,7 +112,7 @@ _dspy = _dspy_types.ModuleType("dspy")
 _dspy.Module = _DspyModule
 _dspy.Prediction = _DspyPrediction
 _dspy.Signature = _dspy_signature
-for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought"):
+for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy
 
