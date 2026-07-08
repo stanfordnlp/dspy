@@ -624,6 +624,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
     """
     request = dict(request)
+
+    model = request.get("model", "")
+    provider = model.split("/", 1)[0] if "/" in model else "openai"
     if "messages" in request:
         input_items = []
         for msg in request.pop("messages"):
@@ -651,8 +654,12 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                 "type": "json_schema",
                 "schema": response_format.model_json_schema(),
             }
-        text = request.pop("text", {})
-        request["text"] = {**text, "format": response_format}
+
+        if provider == "openai":
+            text = request.pop("text", {})
+            request["text"] = {**text, "format": response_format}
+        else:
+            request["response_format"] = response_format
 
     return request
 

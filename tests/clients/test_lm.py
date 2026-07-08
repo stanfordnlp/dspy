@@ -1514,6 +1514,21 @@ def test_responses_api_preserves_multi_message_structure():
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
 
 
+def test_convert_chat_request_to_responses_request_preserves_response_format_for_non_openai_models():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "model": "perplexity/google/gemini-3.5-flash",
+        "messages": [{"role": "user", "content": "Return JSON"}],
+        "response_format": {"type": "json_object"},
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["response_format"] == {"type": "json_object"}
+    assert "text" not in result
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
