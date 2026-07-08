@@ -28,14 +28,22 @@ What "kinda similar" means here (JudgeLM, in-domain, from the paper's Table 1 / 
     calls than the RLM baseline reproduces the paper's headline tradeoff: competitive accuracy at a
     fraction of the cost.
 
-    This demo is tuned for the **hybrid** regime — hold accuracy near the LLM judge, codify the clear
-    cases, and route only genuinely ambiguous pairs to the LLM (``LLM_CALL_PENALTY`` small so accuracy
-    strictly dominates; ``REFLECTION_MINIBATCH`` wide so a lucky-on-val degenerate judge can't be
-    selected). Caveat learned empirically: a *single* GEPA program pushed to pure code (higher penalty)
-    tends to overfit and latch onto an anti-correlated heuristic (verbosity — the very bias the paper
-    flags), scoring at/below chance on test. That is expected for one program (the paper's 3-program
-    point is only ~59%); reaching the paper's headline needs many programs aggregated. Raise the
-    penalty knob to trade accuracy for cost and slide toward the paper's cheaper programmatic band.
+    IMPORTANT empirical finding (verified over 5 live runs; see the knobs below to reproduce):
+    a *single* GEPA-synthesized code judge does NOT reproduce the paper's ~63–73% cheap-judge result
+    on JudgeLM. The LLM-as-a-judge baseline reproduces the paper's LLM-judge accuracy (~85%, paper
+    74–83%). But GEPA maximizes the metric, so:
+      * With honest validation (a robust ``N_VAL``/``REFLECTION_MINIBATCH``, as configured), GEPA
+        correctly REFUSES to adopt a cheaper-but-worse code judge and keeps the RLM — accuracy holds,
+        no codification.
+      * Only by starving the val set (small ``N_VAL``) or over-weighting ``LLM_CALL_PENALTY`` can you
+        force codification, and the single program then overfits — latching onto verbosity (the very
+        bias the paper flags) and scoring AT/BELOW chance on held-out test.
+    This is fundamental, not a tuning miss: the paper's own Figure 2 puts 3 programs at ≈59%, so one
+    program is below that and below the LLM judge; the paper's headline is a property of its 52-program
+    Snorkel ENSEMBLE. To actually reproduce the cheap-judge band with this scaffolding, aggregate many
+    synthesized judges (majority / label-model vote) — the natural next step. The current defaults sit
+    in the accuracy-holding regime; ``LLM_CALL_PENALTY`` / ``N_VAL`` / ``REFLECTION_MINIBATCH`` are the
+    knobs that move between "hold accuracy (keep RLM)" and "force codify (collapses for one program)".
 
 Soundness notes:
     * Gold label = JudgeLM's GPT-4 reference scores ``score=[s1, s2]``; winner = A if s1>s2 else B.
