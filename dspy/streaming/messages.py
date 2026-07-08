@@ -41,7 +41,15 @@ def sync_send_to_stream(stream, message):
     # streamify); run_coroutine_threadsafe works from any thread other than that loop's own.
     stream_loop = settings.send_stream_loop
     if running_loop is None and stream_loop is not None and stream_loop.is_running():
-        return asyncio.run_coroutine_threadsafe(_send(), stream_loop).result()
+        future = asyncio.run_coroutine_threadsafe(_send(), stream_loop)
+        try:
+            # Bounded wait: if the stream loop shuts down (e.g. the consumer stops
+            # iterating) after the is_running() check, the future never resolves and
+            # this worker thread would hang. On timeout the message is dropped instead.
+            return future.result(timeout=60)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise
 
     if running_loop is not None:
         # Called from within an event loop: offload to a new thread with its own loop.
