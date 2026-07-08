@@ -282,7 +282,9 @@ def test_lm_wraps_litellm_errors_with_metadata():
     response.status_code = 429
     response.headers = {"x-request-id": "req-123", "retry-after": "2.5"}
 
-    error = litellm.RateLimitError(message="too many requests", llm_provider="openai", model="gpt-4o", response=response)
+    error = litellm.RateLimitError(
+        message="too many requests", llm_provider="openai", model="gpt-4o", response=response
+    )
     wrapped = lm._wrap_litellm_exception(error)
 
     assert isinstance(wrapped, dspy.LMRateLimitError)
@@ -1328,6 +1330,44 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["max_tokens"] == 100
 
 
+def test_responses_api_converts_tools_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request_with_tools = {
+        "model": "openai/gpt-5-mini",
+        "messages": [{"role": "user", "content": "What is the weather?"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get the weather for a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                },
+            }
+        ],
+        "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_tools)
+
+    # Responses API requires flat tool entries, not the Chat Completions
+    # nested {"function": {...}} shape.
+    assert len(result["tools"]) == 1
+    tool = result["tools"][0]
+    assert tool["type"] == "function"
+    assert tool["name"] == "get_weather"
+    assert tool["description"] == "Get the weather for a city"
+    assert tool["parameters"]["properties"] == {"city": {"type": "string"}}
+    assert "function" not in tool
+
+    assert result["tool_choice"] == {"type": "function", "name": "get_weather"}
+
+
 def test_responses_api_converts_images_correctly():
     from dspy.clients.lm import _convert_chat_request_to_responses_request
 
@@ -1704,9 +1744,7 @@ async def test_responses_api_with_none_usage_async():
                     "type": "message",
                     "role": "assistant",
                     "status": "incomplete",
-                    "content": [
-                        {"type": "output_text", "text": "Partial async response", "annotations": []}
-                    ],
+                    "content": [{"type": "output_text", "text": "Partial async response", "annotations": []}],
                 },
             ),
         ],
