@@ -143,6 +143,18 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+
+        For example, TokenLab exposes an OpenAI-compatible `/v1` endpoint:
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM(
+            'openai/claude-sonnet-5',
+            api_key='TOKENLAB_API_KEY',
+            api_base='https://api.tokenlab.sh/v1',
+        )
+        dspy.configure(lm=lm)
+        ```
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
@@ -343,4 +355,3 @@ Use this only for files you trust. The flag also preserves serialized LM endpoin
 DSPy uses `lm.copy(...)` when it needs the same LM with different request parameters, such as a different `temperature` or `rollout_id`. The default `BaseLM.copy()` implementation makes a shallow runtime copy: provider clients, sessions, and local model handles are shared by reference, while DSPy-owned mutable state (`history`, the `callbacks` list, and `kwargs`) is isolated on the copy. The callback list is copied, but callback objects themselves are shared.
 
 If your custom LM stores additional mutable DSPy-owned state that should not be shared across copies, override `copy()` and isolate that state explicitly. Runtime handles that are expensive or unsafe to duplicate should usually continue to be shared by reference.
-
