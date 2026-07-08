@@ -626,6 +626,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     request = dict(request)
 
     model = request.get("model", "")
+
     provider = model.split("/", 1)[0] if "/" in model else "openai"
     if "messages" in request:
         input_items = []
@@ -635,27 +636,24 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                # Convert each content item from Chat API format to Responses API format
                 for item in c:
                     content_blocks.append(_convert_content_item_to_responses_format(item))
             input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
         request["input"] = input_items
-    # Convert `reasoning_effort` to reasoning format supported by the Responses API
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
         request["reasoning"] = {"effort": effort, "summary": "auto"}
 
-    # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:
         response_format = request.pop("response_format")
-        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
-            response_format = {
-                "name": response_format.__name__,
-                "type": "json_schema",
-                "schema": response_format.model_json_schema(),
-            }
-
         if provider == "openai":
+            if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
+                response_format = {
+                    "name": response_format.__name__,
+                    "type": "json_schema",
+                    "schema": response_format.model_json_schema(),
+                }
+
             text = request.pop("text", {})
             request["text"] = {**text, "format": response_format}
         else:

@@ -1529,6 +1529,24 @@ def test_convert_chat_request_to_responses_request_preserves_response_format_for
     assert "text" not in result
 
 
+def test_convert_chat_request_to_responses_request_preserves_pydantic_response_format_for_non_openai():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    class TestModel(pydantic.BaseModel):
+        answer: str
+
+    request = {
+        "model": "perplexity/google/gemini-3.5-flash",
+        "messages": [{"role": "user", "content": "Return JSON"}],
+        "response_format": TestModel,
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["response_format"] is TestModel
+    assert "text" not in result
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
