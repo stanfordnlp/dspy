@@ -45,7 +45,9 @@ def sync_send_to_stream(stream, message):
         try:
             # Bounded wait: if the stream loop shuts down (e.g. the consumer stops
             # iterating) after the is_running() check, the future never resolves and
-            # this worker thread would hang. On timeout the message is dropped instead.
+            # this worker thread would hang. On timeout we cancel and re-raise; the
+            # callback layer swallows it, so the message is dropped rather than the
+            # worker hanging.
             return future.result(timeout=60)
         except concurrent.futures.TimeoutError:
             future.cancel()
