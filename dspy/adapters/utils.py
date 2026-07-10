@@ -184,9 +184,21 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-def parse_value(value, annotation):
+def parse_value(value, annotation, field_info=None):
+    # Field constraints (max_length, ge, le, ...) live in FieldInfo.metadata, not in the bare
+    # annotation, so a TypeAdapter built from the annotation alone silently ignores them. Re-attach
+    # them via Annotated before validating so the constraints are actually enforced (#7925).
+    constraints = list(field_info.metadata) if field_info is not None else []
+
+    def _validate(candidate):
+        target = Annotated[(annotation, *constraints)] if constraints else annotation
+        return TypeAdapter(target).validate_python(candidate)
+
     if annotation is str:
-        return str(value)
+        result = str(value)
+        # Enforce str constraints (e.g. max_length) while keeping the literal-string coercion that
+        # avoids ast.literal_eval turning "1234" into an int.
+        return _validate(result) if constraints else result
 
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
@@ -212,11 +224,11 @@ def parse_value(value, annotation):
             value = v
 
     if not isinstance(value, str):
-        return TypeAdapter(annotation).validate_python(value)
+        return _validate(value)
 
     if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
-        return TypeAdapter(annotation).validate_python(value)
+        return _validate(value)
 
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
@@ -226,12 +238,12 @@ def parse_value(value, annotation):
             candidate = value
 
     try:
-        return TypeAdapter(annotation).validate_python(candidate)
+        return _validate(candidate)
     except pydantic.ValidationError as e:
         if _annotation_is_subclass(annotation, DspyType):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
-                return TypeAdapter(annotation).validate_python(value)
+                return _validate(value)
             except Exception:
                 raise e
         raise

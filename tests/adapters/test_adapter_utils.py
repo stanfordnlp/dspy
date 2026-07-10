@@ -2,9 +2,11 @@
 
 from typing import Literal, Optional, Union
 
+import pydantic
 import pytest
 from pydantic import BaseModel
 
+import dspy
 from dspy.adapters.utils import parse_value
 
 
@@ -115,3 +117,40 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_parse_value_honors_str_max_length_constraint():
+    """#7925: parse_value validated against the bare annotation, dropping pydantic constraints (which
+    live in FieldInfo.metadata). A str OutputField(max_length=N) must now be enforced."""
+
+    class Sig(dspy.Signature):
+        answer: str = dspy.OutputField(max_length=3)
+
+    fi = Sig.output_fields["answer"]
+    assert parse_value("ok", fi.annotation, fi) == "ok"
+    with pytest.raises(pydantic.ValidationError):
+        parse_value("toolong", fi.annotation, fi)
+
+
+def test_parse_value_honors_int_range_constraint():
+    """#7925: numeric ge/le constraints (stored in FieldInfo.metadata) must be enforced."""
+
+    class Sig(dspy.Signature):
+        n: int = dspy.OutputField(ge=1, le=5)
+
+    fi = Sig.output_fields["n"]
+    assert parse_value("3", fi.annotation, fi) == 3
+    with pytest.raises(pydantic.ValidationError):
+        parse_value("9", fi.annotation, fi)
+
+
+def test_parse_value_without_constraints_is_unchanged():
+    """Backward compatibility: no FieldInfo (or a field with no constraints) behaves as before."""
+
+    assert parse_value("toolong", str) == "toolong"
+
+    class Sig(dspy.Signature):
+        answer: str = dspy.OutputField()
+
+    fi = Sig.output_fields["answer"]
+    assert parse_value("anything", fi.annotation, fi) == "anything"
