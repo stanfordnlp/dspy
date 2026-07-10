@@ -114,7 +114,7 @@ class XMLAdapter(ChatAdapter):
                 try:
                     value = self._elements_to_value(elements[name], candidate, schema.get("$defs", {}))
                     try:
-                        fields[name] = parse_value(value, field.annotation)
+                        fields[name] = parse_value(value, field.annotation, field)
                     except pydantic.ValidationError:
                         fields[name] = adapter.validate_python(value, by_name=True)
                     break
