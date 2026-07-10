@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
+from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory, validate_data_format
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,8 @@ class TogetherProvider(Provider):
     ) -> str:
         train_kwargs = train_kwargs or {}
 
-        # --- Step 1: validate/normalize the data format ---
-        # Together infers the actual format from the file, but we reject unknown
-        # formats early so the user gets a clear error instead of a confusing API one.
+        # --- Step 1: normalize the format label, then validate the data matches it ---
+        # First the "spelling check": reject unknown format words early.
         if isinstance(train_data_format, str):
             if train_data_format == "chat":
                 train_data_format = TrainDataFormat.CHAT
@@ -67,6 +66,9 @@ class TogetherProvider(Provider):
                 raise ValueError(
                     f"String `train_data_format` must be 'chat' or 'completion', but received: {train_data_format}."
                 )
+        # Then "open the box": check each training example actually matches the format.
+        if train_data_format is not None:
+            validate_data_format(train_data, train_data_format)
 
         # Lazy import (same optional-dependency pattern as status()).
         try:
@@ -77,10 +79,13 @@ class TogetherProvider(Provider):
             )
         client = Together()
 
-        # --- Step 2: save data to a local .jsonl, then upload it to Together ---
+        # --- Step 2: save data to a local .jsonl, upload it, then clean up the local copy ---
         logger.info("Uploading training data to Together...")
         file_path = _save_data_to_jsonl(train_data)
-        train_file = client.files.upload(file=file_path, purpose="fine-tune")
+        try:
+            train_file = client.files.upload(file=file_path, purpose="fine-tune")
+        finally:
+            os.remove(file_path)  # the local file was only needed for the upload
 
         # --- Step 3: create the fine-tune job; store its id on the claim ticket ---
         logger.info("Starting Together fine-tuning job...")
@@ -99,6 +104,8 @@ class TogetherProvider(Provider):
 
         # --- Step 5: return the fine-tuned model's name, DSPy-prefixed ---
         output_name = client.fine_tuning.retrieve(id=job.job_id).x_model_output_name
+        if not output_name:
+            raise ValueError(f"Together fine-tuning job {job.job_id} completed but returned no model name.")
         return f"together_ai/{output_name}"
 
 
