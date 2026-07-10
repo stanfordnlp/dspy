@@ -9,6 +9,7 @@ from dspy.predict.react import ReAct
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,15 @@ class CodeAct(ReAct, ProgramOfThought):
             trajectory = {}
             max_iters = kwargs.pop("max_iters", self.max_iters)
             for idx in range(max_iters):
-                code_data = self.codeact(trajectory=trajectory, **kwargs)
+                try:
+                    code_data = self.codeact(trajectory=trajectory, **kwargs)
+                except AdapterParseError as err:
+                    # Same failure class as dspy.ReAct (#8377): record the parse
+                    # failure as an observation and let the model self-correct.
+                    logger.warning(f"Failed to parse the LM response for the next step: {err}")
+                    trajectory[f"observation_{idx}"] = self._format_parse_failure_observation(err)
+                    continue
+
                 output = None
                 code, error = self._parse_code(code_data)
 
@@ -136,5 +145,5 @@ class CodeAct(ReAct, ProgramOfThought):
                 if code_data.finished:
                     break
 
-            extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
+            extract = self._call_extract_with_parse_retry(self.extractor, trajectory, **kwargs)
             return dspy.Prediction(trajectory=trajectory, **extract)
