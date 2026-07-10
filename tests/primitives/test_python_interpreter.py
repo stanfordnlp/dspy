@@ -31,6 +31,23 @@ def test_user_variable_definitions():
         assert result == 5, "User variable assignment should work"
 
 
+def test_non_finite_float_variables():
+    """Regression test: inf/-inf/nan variables must be injected as valid Python literals.
+
+    str(float("inf")) is the bare word "inf", which is not a valid Python name, so
+    injecting it as `x = inf` previously raised NameError in the sandbox.
+    """
+    with PythonInterpreter() as interpreter:
+        inf_code = "result = 1 if x == float('inf') else 0\nresult"
+        assert interpreter.execute(inf_code, variables={"x": float("inf")}) == 1
+
+        neg_inf_code = "result = 1 if x == float('-inf') else 0\nresult"
+        assert interpreter.execute(neg_inf_code, variables={"x": float("-inf")}) == 1
+
+        nan_code = "import math\nresult = 1 if math.isnan(x) else 0\nresult"
+        assert interpreter.execute(nan_code, variables={"x": float("nan")}) == 1
+
+
 def test_rejects_python_keywords_as_variable_names():
     """Test that Python keywords are rejected as variable names."""
     with PythonInterpreter() as interpreter:
