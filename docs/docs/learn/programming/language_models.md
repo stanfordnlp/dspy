@@ -149,12 +149,13 @@ dspy.configure(lm=lm)
         ```python linenums="1"
         import dspy
         lm = dspy.LM(
-            'openai/claude-sonnet-5',
+            'openai/claude-sonnet-5',  # TokenLab catalog model ID
             api_key='TOKENLAB_API_KEY',
             api_base='https://api.tokenlab.sh/v1',
         )
         dspy.configure(lm=lm)
         ```
+
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
