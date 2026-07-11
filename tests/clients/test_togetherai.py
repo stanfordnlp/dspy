@@ -14,6 +14,11 @@ def test_is_provider_model():
     assert TogetherProvider.is_provider_model("openai/my-together_ai-clone") is False
 
 
+def test_status_returns_none_before_job_starts():
+    # No job started yet (job_id is None) → status() returns None instead of hitting the API.
+    assert TrainingJobTogether().status() is None
+
+
 def test_finetune_returns_prefixed_model_name(monkeypatch):
     # 1. Build a fake Together client that answers only the calls finetune() makes.
     fake_client = MagicMock()

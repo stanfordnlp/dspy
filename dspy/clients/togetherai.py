@@ -23,6 +23,8 @@ class TrainingJobTogether(TrainingJob):
         self.job_id = job_id  # Together's fine-tune job id, set once we start the job
 
     def status(self):
+        if self.job_id is None:
+            return None  # no job started yet, so there's nothing to check
         # Lazy import: `together` is an optional dependency, only needed by people
         # who actually use Together fine-tuning (see databricks.py for the same pattern).
         try:
