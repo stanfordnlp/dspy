@@ -21,7 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3"
 ]
 dependencies = [
-    "openai>=0.28.1",
+    "openai>=1.66.2",
     "regex>=2023.10.3",
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
