@@ -1,0 +1,108 @@
+name: Dependency Range
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/dependency-range.yml
+
+permissions: {}
+
+jobs:
+  dependency-range:
+    name: Dependencies (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: minimum-direct
+            resolution: lowest-direct
+          - profile: latest
+            resolution: highest
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Deno
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: v2.7.7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.2"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Create environment
+        run: uv venv .venv
+
+      - name: Resolve ${{ matrix.profile }} dependencies
+        env:
+          PROFILE: ${{ matrix.profile }}
+          RESOLUTION: ${{ matrix.resolution }}
+        run: |
+          uv pip compile pyproject.toml \
+            --extra dev \
+            --extra test_extras \
+            --resolution "$RESOLUTION" \
+            --python .venv/bin/python \
+            --refresh \
+            --no-sources \
+            --output-file "$RUNNER_TEMP/requirements-$PROFILE.txt"
+
+          uv pip sync \
+            --strict \
+            --python .venv/bin/python \
+            "$RUNNER_TEMP/requirements-$PROFILE.txt"
+
+          uv pip install \
+            --python .venv/bin/python \
+            --no-deps \
+            --editable .
+
+          uv pip check --python .venv/bin/python
+          uv pip list --python .venv/bin/python
+
+      - name: Run non-live tests
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set +e
+          uv run --frozen --no-sync pytest -q tests/ --extra --deno 2>&1 \
+            | tee "$RUNNER_TEMP/pytest-$PROFILE.log"
+          TEST_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo "## Dependencies ($PROFILE)"
+            echo
+            if [ "$TEST_STATUS" -eq 0 ]; then
+              echo "✅ Non-live test suite passed."
+            else
+              echo "❌ Non-live test suite failed."
+              echo
+              echo '```text'
+              if ! grep -E '^(FAILED|ERROR) |[0-9]+ failed, [0-9]+ passed' "$RUNNER_TEMP/pytest-$PROFILE.log"; then
+                tail -n 20 "$RUNNER_TEMP/pytest-$PROFILE.log"
+              fi
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$TEST_STATUS"
