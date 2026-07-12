@@ -110,6 +110,7 @@ class ParallelExecutor:
         start_time_map = {}
         start_time_lock = threading.Lock()
         resubmitted = set()
+        resubmitted_count = {}
 
         # This is the worker function each thread will run.
         def worker(parent_overrides, submission_id, index, item):
@@ -205,20 +206,29 @@ class ParallelExecutor:
                         for f in list(not_done):
                             if f not in resubmitted:
                                 sid, idx, item = futures_map[f]
+                                if resubmitted_count.get(idx, 0) >= 1:
+                                    continue
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
                                     resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
-                                    futures_map[nf] = (submission_counter, idx, item)
-                                    futures_set.add(nf)
-                                    submission_counter += 1
+                                    resubmitted_count[idx] = resubmitted_count.get(idx, 0) + 1
+                                    if not self.cancel_jobs.is_set():
+                                        try:
+                                            nf = executor.submit(
+                                                worker,
+                                                parent_overrides,
+                                                submission_counter,
+                                                idx,
+                                                item,
+                                            )
+                                            futures_map[nf] = (submission_counter, idx, item)
+                                            futures_set.add(nf)
+                                            submission_counter += 1
+                                        except RuntimeError as e:
+                                            if "shutdown" in str(e).lower():
+                                                break
+                                            raise
 
                 pbar.close()
 
