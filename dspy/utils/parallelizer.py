@@ -227,6 +227,7 @@ class ParallelExecutor:
                                             submission_counter += 1
                                         except RuntimeError as e:
                                             if "shutdown" in str(e).lower():
+                                                self.cancel_jobs.set()
                                                 break
                                             raise
 
