@@ -396,6 +396,11 @@ def test_reasoning_model_token_parameter():
             assert lm.kwargs["max_tokens"] == 1000
 
 
+def test_lm_supports_reasoning_with_litellm_capability_api():
+    lm = dspy.LM("anthropic/claude-3-7-sonnet-20250219")
+    assert lm.supports_reasoning is True
+
+
 @pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
