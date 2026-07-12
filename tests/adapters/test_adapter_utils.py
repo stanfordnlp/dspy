@@ -1,5 +1,6 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
 import pytest
@@ -75,6 +76,50 @@ def test_parse_value_literal():
     # Test invalid literal
     with pytest.raises(ValueError):
         parse_value("invalid", Literal["option1", "option2"])
+
+
+class Grade(enum.Enum):
+    A = 1
+    B = 2
+
+
+class Color(enum.Enum):
+    RED = "red"
+    GREEN = "green"
+
+
+class AutoValued(enum.Enum):
+    X = enum.auto()
+    Y = enum.auto()
+
+
+def test_parse_value_enum():
+    # Int-valued enum: adapters surface the value as text, so "2" must resolve to Grade.B
+    assert parse_value("2", Grade) is Grade.B
+    assert parse_value(2, Grade) is Grade.B
+
+    # String-valued enum: match by value and by member name
+    assert parse_value("red", Color) is Color.RED
+    assert parse_value("RED", Color) is Color.RED
+
+    # Auto-valued enum: match by member name
+    assert parse_value("X", AutoValued) is AutoValued.X
+
+    # Out-of-set values still raise
+    with pytest.raises(ValueError):
+        parse_value("99", Grade)
+
+
+def test_parse_value_optional_enum():
+    # Optional/Union-wrapped enums must resolve names and values the same way a bare enum does
+    assert parse_value("2", Grade | None) is Grade.B
+    assert parse_value("B", Grade | None) is Grade.B
+    assert parse_value("RED", Color | None) is Color.RED
+    assert parse_value("red", Grade | Color) is Color.RED
+
+    # Out-of-set values still raise
+    with pytest.raises(ValueError):
+        parse_value("99", Grade | None)
 
 
 def test_parse_value_union():
