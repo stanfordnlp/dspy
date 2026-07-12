@@ -27,7 +27,7 @@ dependencies = [
     "tqdm>=4.66.1",
     "requests>=2.31.0",
     "pydantic>=2.0",
-    "litellm>=1.64.0",
+    "litellm>=1.65.8",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",
     "tenacity>=8.2.3",  # undeclared runtime dep of litellm, needed for exponential_backoff_retry
@@ -44,7 +44,7 @@ mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
-litellm = ["litellm>=1.64.0"]
+litellm = ["litellm>=1.65.8"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -55,8 +55,8 @@ dev = [
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
     "numpy>=1.26.0",
-    "litellm>=1.64.0; sys_platform == 'win32' or python_version == '3.14'",
-    "litellm[proxy]>=1.64.0; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
+    "litellm>=1.65.8; sys_platform == 'win32' or python_version == '3.14'",
+    "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",
