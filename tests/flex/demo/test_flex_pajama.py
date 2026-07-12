@@ -1,62 +1,24 @@
-"""PAJAMA-style "program-as-a-judge" with ``dspy.Flex`` + ``dspy.GEPA``.
+"""PAJAMA-style "program-as-a-judge" with dspy.Flex + dspy.GEPA on the JudgeLM benchmark.
 
-Reproduces the core idea of PAJAMA — *"Time To Impeach LLM-as-a-Judge: Programs are the Future
-of Evaluation"* (Huang, Vishwakarma & Sala, arXiv:2506.10403) — on a real pairwise-preference
-benchmark (JudgeLM).
+PAJAMA (arXiv:2506.10403) replaces LLM-as-a-judge with an LLM-synthesized Python judge: score each
+response in code (structure, relevance, readability, bias, ...) and pick the higher one, so judging
+runs locally, far cheaper, and stays auditable. dspy.Flex fits because dspy.GEPA can rewrite a Flex
+module's code, not just its prompts, so optimizing a Flex judge is literally program synthesis: it
+starts from an RLM (LLM-as-a-judge) baseline and, guided by accuracy plus a per-LLM-call penalty,
+evolves toward deterministic Python that calls the LLM only for genuinely ambiguous pairs.
 
-PAJAMA in one line: instead of calling an LLM to pick the better of two responses (LLM-as-a-judge),
-have an LLM **synthesize executable Python judging logic** — score each response with code
-(structure, relevance, readability, bias, …) and pick the higher one — which then runs locally,
-orders of magnitude cheaper, and is interpretable/auditable.
+This is the single-program version, not PAJAMA's 52-program ensemble, so compare against the paper's
+few-program regime. Across five live runs, one synthesized judge does not reach the paper's ~63-73%
+cheap-judge band on JudgeLM: with an honest val set GEPA keeps the RLM (accuracy holds around 85%),
+and only starving N_VAL or over-weighting LLM_CALL_PENALTY forces codification, which then overfits
+on verbosity and scores at or below chance on test. Reaching the cheap-judge band needs an ensemble;
+LLM_CALL_PENALTY / N_VAL / REFLECTION_MINIBATCH are the knobs between "hold accuracy (keep RLM)" and
+"force codify".
 
-Why ``dspy.Flex`` + ``dspy.GEPA`` is the natural analog:
-    ``dspy.Flex`` is a module whose *code* (``module_src``) ``dspy.GEPA`` may rewrite (not just its
-    prompts). So the optimizer literally does *program synthesis for the judge*: it starts from an
-    LLM-as-a-judge baseline (``dspy.RLM``) and, guided by accuracy feedback plus a per-LLM-call
-    penalty, evolves the judge toward deterministic Python that scores the two responses and reserves
-    an LLM call only for genuinely ambiguous cases (PAJAMA's "routing" idea). This is the *single-
-    program* version of PAJAMA — we do not build PAJAMA's 52-program Snorkel ensemble — so calibrate
-    expectations against the paper's *few-program* regime, not its full ensemble.
-
-What "kinda similar" means here (JudgeLM, in-domain, from the paper's Table 1 / Fig. 2):
-    * LLM-as-a-judge in-domain accuracy ≈ 74-83%.
-    * PAJAMA's *programmatic* judge in-domain ≈ 63-73% (a few points below the LLM judge) — but ~3
-      orders of magnitude cheaper ($0.053 vs $130-300 to label the set), and it *beats* the LLM judge
-      out-of-domain on RewardBench Chat-Hard (+8.67 on JudgeLM).
-    * With only ~3 programs PAJAMA sits ≈ 59%; it climbs to ≈ 82% with 52 programs.
-    So a single Flex+GEPA code/hybrid judge landing in the ~60-75% band while making far fewer LLM
-    calls than the RLM baseline reproduces the paper's headline tradeoff: competitive accuracy at a
-    fraction of the cost.
-
-    IMPORTANT empirical finding (verified over 5 live runs; see the knobs below to reproduce):
-    a *single* GEPA-synthesized code judge does NOT reproduce the paper's ~63-73% cheap-judge result
-    on JudgeLM. The LLM-as-a-judge baseline reproduces the paper's LLM-judge accuracy (~85%, paper
-    74-83%). But GEPA maximizes the metric, so:
-      * With honest validation (a robust ``N_VAL``/``REFLECTION_MINIBATCH``, as configured), GEPA
-        correctly REFUSES to adopt a cheaper-but-worse code judge and keeps the RLM — accuracy holds,
-        no codification.
-      * Only by starving the val set (small ``N_VAL``) or over-weighting ``LLM_CALL_PENALTY`` can you
-        force codification, and the single program then overfits — latching onto verbosity (the very
-        bias the paper flags) and scoring AT/BELOW chance on held-out test.
-    This is fundamental, not a tuning miss: the paper's own Figure 2 puts 3 programs at ≈59%, so one
-    program is below that and below the LLM judge; the paper's headline is a property of its 52-program
-    Snorkel ENSEMBLE. To actually reproduce the cheap-judge band with this scaffolding, aggregate many
-    synthesized judges (majority / label-model vote) — the natural next step. The current defaults sit
-    in the accuracy-holding regime; ``LLM_CALL_PENALTY`` / ``N_VAL`` / ``REFLECTION_MINIBATCH`` are the
-    knobs that move between "hold accuracy (keep RLM)" and "force codify (collapses for one program)".
-
-Soundness notes:
-    * Gold label = JudgeLM's GPT-4 reference scores ``score=[s1, s2]``; winner = A if s1>s2 else B.
-      We drop the ~5% ties so the task is a clean binary A-vs-B choice (PAJAMA's judge vote is also
-      binary), and we **balance** A-wins and B-wins so the majority-class baseline is 50% and accuracy
-      is meaningful. JudgeLM/GPT-4 gold carries known position bias; balancing avoids a trivial
-      baseline, and an order-invariant code judge is the robust ideal the paper argues for.
-    * Responses are truncated to keep prompts/tokens bounded; the gold was assigned on full responses,
-      a minor source of noise acceptable for a demo.
-
-Needs real LMs + network (HuggingFace ``BAAI/JudgeLM-100K``, cached locally after first run). Skips
-without an API key or the optional ``datasets``/``matplotlib`` deps. Whether GEPA improves the
-tradeoff depends on the live models/budget, so results are reported and plotted, not hard-asserted.
+Gold winner comes from JudgeLM's GPT-4 scores (A if s1>s2 else B); ties are dropped and the classes
+balanced so chance is 50%. Needs real LMs and network (HuggingFace BAAI/JudgeLM-100K, cached after
+the first run), and skips without an API key or the optional datasets/matplotlib deps. Improvement
+depends on the live models and budget, so results are printed and plotted, not asserted.
 """
 
 from __future__ import annotations
@@ -85,38 +47,30 @@ DATA_PATH = DEMO_DIR / "judgelm_pairs.jsonl"  # cached balanced sample (download
 SAVE_PATH = DEMO_DIR / "pajama_flex.json"
 PLOT_PATH = DEMO_DIR / "pajama_improvement.png"
 
-# Executor runs the judge (the baseline RLM's sub-queries, and any LLM fallback the optimized code
-# keeps); reflection authors the optimized judging code. Small executor (Haiku) leaves real accuracy
-# headroom so the LLM-as-judge baseline isn't already perfect on a tiny split; strong reflection
-# (Opus) writes better judging logic. Both override via env.
+# The executor runs the judge (RLM sub-queries plus any LLM fallback the optimized code keeps); the
+# reflection model writes the optimized judging code. A small executor leaves accuracy headroom for
+# the baseline; a strong reflection model writes better logic. Override either via env.
 _exec_default = "anthropic/claude-haiku-4-5"
 _reflect_default = "anthropic/claude-opus-4-8"
 EXEC_LM = dspy.LM(os.getenv("PAJAMA_EXEC_LM", _exec_default), max_tokens=2000)
 REFLECTION_LM = dspy.LM(os.getenv("PAJAMA_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000)
 
-# Balanced splits (equal A-wins / B-wins), so majority-class accuracy = 50%.
-# Bigger train/val than the other demos ON PURPOSE: this is the "codify" regime (push judging into
-# Python), and a single code judge easily overfits a small val set — it aces a handful of examples by
-# luck, keys on an anti-correlated feature (verbosity — the bias the paper flags), and then scores
-# BELOW chance on test. A larger val set (16) makes candidate ACCEPTANCE robust: a ~40% verbosity
-# heuristic is rejected outright, so GEPA can only keep a code judge that genuinely generalizes.
+# Balanced splits (equal A/B wins) so chance is 50%. Train/val are larger than the other demos on
+# purpose: a single code judge easily overfits a small val set (latching onto verbosity), so a wider
+# val set lets GEPA keep only a judge that generalizes.
 N_TRAIN, N_VAL, N_TEST = 24, 16, 40  # must be even (balanced per class)
-MAX_METRIC_CALLS = 70  # GEPA budget; like the paper, judge quality scales with it (3 progs→59%, 52→82%)
-REFLECTION_MINIBATCH = 8  # wide, for the same anti-overfitting reason as the val set
+MAX_METRIC_CALLS = 70  # GEPA budget; judge quality scales with it (paper: 3 programs ~59%, 52 ~82%)
+REFLECTION_MINIBATCH = 8  # wide, same anti-overfitting reason as the val set
 EVAL_THREADS = 8
 MAX_RESP_CHARS = 2000  # truncate each response to bound prompt size
 
-# Per-LLM-call penalty folded into GEPA's score — the knob that trades accuracy for cost. A correct
-# answer (1.0) always beats a wrong one (0.0), so accuracy dominates per example; but the RLM judge
-# traces several calls per pair, so at this penalty its discounted score drops enough that a cheaper
-# codified judge which HOLDS most of the accuracy outscores it — which is what pushes GEPA to codify
-# (PAJAMA's thesis). This is the "codify" regime, reproducing the paper's headline: the programmatic
-# judge lands a few points UNDER the LLM judge (~63-73% vs 74-83%) at a fraction of the cost. Lower it
-# (≤0.02) for the hybrid regime (hold accuracy, keep the LLM); raise it to codify harder/cheaper.
+# Per-LLM-call penalty folded into GEPA's score: the knob trading accuracy for cost. Accuracy still
+# dominates per example, but the RLM judge's several calls per pair discount its score enough that a
+# cheaper code judge holding most of the accuracy can outscore it. Lower it (<=0.02) to keep the LLM;
+# raise it to codify harder.
 LLM_CALL_PENALTY = 0.04
 
-# PAJAMA's six judging criteria (Sec. 2.2), fed to GEPA as the code-proposer guidance. These are the
-# axes the paper's synthesized programs encode as Python.
+# PAJAMA's judging criteria (Sec. 2.2), passed to GEPA as code-proposer guidance.
 CRITERIA = (
     "Encode the judging logic as Python that computes a quality score for EACH response and picks the "
     "higher one. Draw on PAJAMA's judging criteria, all computable in code: (1) Structure — headings, "
@@ -160,8 +114,7 @@ def _winner(pred) -> str:
         return "A"
     if w in ("B", "2"):
         return "B"
-    # Strip noise words ("RESPONSE"/"ANSWER"/...) that themselves contain an A/B before scanning,
-    # e.g. "Answer B" — "ANSWER" contains an A that would otherwise confuse the letter check.
+    # Strip noise words that themselves contain an A/B (e.g. "ANSWER" has an A) before scanning.
     core = w
     for noise in ("RESPONSE", "ANSWER", "OPTION", "CHOICE", "BETTER", "IS", "THE"):
         core = core.replace(noise, "")
@@ -284,8 +237,7 @@ def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> Scor
 
 
 def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
-    """Return (accuracy, avg traced LLM calls/example). Calls make the cost win visible: the RLM
-    baseline burns several LLM calls per pair; a codified judge settles most in 0-1."""
+    """Return (accuracy, avg traced LLM calls per example) on the dataset."""
 
     def run_one(ex):
         try:
@@ -315,7 +267,7 @@ def test_flex_pajama_showcase() -> None:
     train, val, test = _load_splits()
     print(f"\nPAJAMA/JudgeLM pairwise judge | train={len(train)} val={len(val)} test={len(test)} (balanced A/B)")
 
-    # 1. Flex the judge: baseline is a clean dspy.Module delegating to one dspy.RLM = LLM-as-a-judge.
+    # 1. Baseline: a Flex judge delegating to one dspy.RLM, i.e. LLM-as-a-judge.
     program = dspy.Flex(PairwiseJudge)
     baseline_src = program.module_src or ""
     assert baseline_src.lstrip().startswith("class ")
@@ -325,7 +277,7 @@ def test_flex_pajama_showcase() -> None:
     base_acc, base_calls = _evaluate(program, test)
     print(f"[baseline / LLM-as-judge] accuracy = {base_acc:.1%}, avg LLM calls/example = {base_calls:.1f}")
 
-    # 2. GEPA rewrites the judge's CODE — program synthesis toward a deterministic (or hybrid) judge.
+    # 2. GEPA rewrites the judge's code toward a deterministic (or hybrid) judge.
     optimized = dspy.GEPA(
         metric=gepa_metric,
         reflection_lm=REFLECTION_LM,
@@ -348,14 +300,14 @@ def test_flex_pajama_showcase() -> None:
     )
     _showcase(optimized, "optimized by GEPA (program-as-a-judge)")
 
-    # 3. Persist + reload (code round-trips via the standard Module.save/load).
+    # 3. Persist and reload; the code round-trips via Module.save/load.
     optimized.save(str(SAVE_PATH))
     reloaded = dspy.Flex(PairwiseJudge)
     reloaded.load(str(SAVE_PATH))
     assert reloaded.module_src == optimized.module_src
     print(f"saved + reloaded optimized judge -> {SAVE_PATH}")
 
-    # 4. Plot before/after: accuracy (should hold near the LLM judge) + LLM calls (should drop).
+    # 4. Plot before/after: accuracy (should hold) and LLM calls (should drop).
     labels_xy = ["baseline\n(LLM-as-judge)", "optimized\n(program-as-judge)"]
     colors = ["#9aa0a6", "#1a73e8"]
     fig, (ax_acc, ax_calls) = plt.subplots(1, 2, figsize=(8, 4))
@@ -382,8 +334,8 @@ def test_flex_pajama_showcase() -> None:
     plt.close(fig)
     print(f"saved plot -> {PLOT_PATH}")
 
-    # Invariants: the pipeline ran end-to-end and we measured both ends. Improvement depends on the
-    # live models/budget, so it is reported/plotted rather than hard-asserted (like the other demos).
+    # The pipeline ran end to end; improvement depends on the live models/budget, so it's reported
+    # and plotted rather than asserted.
     assert PLOT_PATH.exists()
     assert 0.0 <= base_acc <= 1.0 and 0.0 <= opt_acc <= 1.0
     assert optimized.module_src is not None
