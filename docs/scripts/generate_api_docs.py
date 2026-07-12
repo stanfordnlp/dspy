@@ -317,6 +317,85 @@ def remove_empty_dirs(path: Path):
         path.rmdir()
 
 
+API_INDEX_START = "<!-- START_API_INDEX -->"
+API_INDEX_END = "<!-- END_API_INDEX -->"
+
+
+def read_existing_index_content(file_path: Path) -> tuple[str, str]:
+    """Split an existing index file around the auto-generated link list.
+
+    Returns (content_before_list, content_after_list) so any prose a maintainer
+    added outside the markers is preserved across regenerations.
+    """
+    if not file_path.exists():
+        return "", ""
+
+    content = file_path.read_text()
+
+    start = content.find(API_INDEX_START)
+    if start == -1:
+        return content, ""
+
+    end = content.find(API_INDEX_END)
+    if end == -1:
+        end = len(content)
+    else:
+        end = end + len(API_INDEX_END)
+
+    return content[:start].rstrip(), content[end:].lstrip()
+
+
+def build_index_links(category_dir: Path) -> str:
+    """Build a sorted bullet list of links to every page in a category dir."""
+    entries = []
+    for child in sorted(category_dir.iterdir(), key=lambda p: p.name.lower()):
+        if child.name == "index.md":
+            continue
+        if child.is_dir():
+            # Link to a representative page so mkdocs can resolve the link; the
+            # bare directory URL still works via navigation.indexes / redirects.
+            target = None
+            for candidate in ("index.md", "overview.md"):
+                if (child / candidate).exists():
+                    target = f"{child.name}/{candidate}"
+                    break
+            if target is None:
+                sub_pages = sorted(child.glob("*.md"), key=lambda p: p.name.lower())
+                if not sub_pages:
+                    continue
+                target = f"{child.name}/{sub_pages[0].name}"
+            entries.append(f"- [{child.name}]({target})")
+        elif child.suffix == ".md":
+            entries.append(f"- [{child.stem}]({child.name})")
+    return "\n".join(entries)
+
+
+def generate_category_index(category: str, category_dir: Path):
+    """Write an index.md landing page for an api category directory.
+
+    Without this, directory URLs like ``/api/optimizers/`` return a 404 when a
+    user trims a child page's URL upward. The link list is regenerated between
+    markers; any prose outside the markers is preserved.
+    """
+    if not category_dir.is_dir():
+        return
+
+    links = build_index_links(category_dir)
+    if not links:
+        return
+
+    title = category.capitalize()
+    api_content = f"{API_INDEX_START}\n{links}\n{API_INDEX_END}"
+
+    index_path = category_dir / "index.md"
+    pre_content, post_content = read_existing_index_content(index_path)
+    if not pre_content:
+        pre_content = f"# {title}\n\nAPI reference for DSPy {category}. Select a page below."
+
+    full_content = f"{pre_content}\n\n{api_content}\n{post_content}".strip() + "\n"
+    index_path.write_text(full_content)
+
+
 if __name__ == "__main__":
     api_dir = Path("docs/api")
     api_dir.mkdir(parents=True, exist_ok=True)
@@ -331,3 +410,7 @@ if __name__ == "__main__":
 
     # Clean up empty directories
     remove_empty_dirs(api_dir)
+
+    # Generate a landing page per category so directory URLs don't 404.
+    for category in API_MAPPING.keys():
+        generate_category_index(category, api_dir / category)

@@ -36,9 +36,11 @@ print(result.answer)
 
 RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
 
-You can install Deno with: `curl -fsSL https://deno.land/install.sh | sh` on macOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
+You can install Deno with: `brew install deno` on MacOS or `curl -fsSL https://deno.land/install.sh | sh` on MacOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
 
 After you have installed Deno, **Make sure to restart your shell.**
+
+Deno may get confused by existing `package.json` files it happens to find; use the environment variable `DENO_NO_PACKAGE_JSON=1` to ignore `package.json` entirely and resolve `npm:pyodide` from its own cache, which is what DSPy expects.
 
 Then you can run `dspy.RLM`.
 
@@ -107,7 +109,7 @@ $20,000,000
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `signature` | `str \| Signature` | required | Defines inputs and outputs (e.g., `"context, query -> answer"`) |
-| `max_iterations` | `int` | `20` | Maximum REPL interaction loops before fallback extraction |
+| `max_iters` | `int` | `20` | Maximum REPL interaction loops before fallback extraction |
 | `max_llm_calls` | `int` | `50` | Maximum `llm_query`/`llm_query_batched` calls per execution |
 | `max_output_chars` | `int` | `10_000` | Maximum characters to include from REPL output |
 | `verbose` | `bool` | `False` | Log detailed execution info |
@@ -136,7 +138,7 @@ import dspy
 
 dspy.configure(lm=dspy.LM("openai/gpt-5"))
 
-rlm = dspy.RLM("document, question -> answer", max_iterations=10)
+rlm = dspy.RLM("document, question -> answer", max_iters=10)
 
 with open("large_report.txt") as f:
     document = f.read()  # 500K+ characters

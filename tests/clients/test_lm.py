@@ -515,6 +515,320 @@ def test_base_lm_errors_when_explicit_legacy_forward_returns_lm_response():
         lm._validate_legacy_lm_response(response)
 
 
+def test_base_lm_inherited_legacy_forward_returning_lm_response_errors_on_direct_call():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            return dspy.LMResponse.from_text(
+                "ok",
+                model="custom-model",
+                usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+            )
+
+    lm = CustomLM("custom-model")
+
+    with pytest.raises(TypeError, match="legacy direct path"):
+        lm("Query")
+
+    assert len(lm.history) == 0
+
+
+# BaseLM direct-call compatibility tests.
+#
+# These cover the staged typed LM migration: legacy calls still return lists by default, explicit LMRequest calls and
+# experimental direct calls return LMResponse, and typed-LM subclasses receive normalized LMRequest objects.
+
+
+def test_base_lm_default_call_keeps_legacy_outputs():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            assert prompt == "Query"
+            assert messages is None
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                model="custom-model",
+            )
+
+    assert CustomLM("custom-model")("Query") == ["Hi!"]
+
+
+def test_base_lm_experimental_call_returns_lm_response_through_legacy_bridge():
+    class CustomLM(dspy.BaseLM):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.seen = None
+
+        def forward(self, prompt=None, messages=None, **kwargs):
+            self.seen = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi!"), finish_reason="stop")],
+                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                model="custom-model",
+            )
+
+    lm = CustomLM("custom-model", temperature=0.2)
+    with dspy.context(experimental=True):
+        response = lm("Query", rollout_id=7)
+
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "Hi!"
+    assert response.output.finish_reason == "stop"
+    assert lm.seen["prompt"] == "Query"
+    assert lm.seen["messages"] is None
+    assert lm.seen["kwargs"]["temperature"] == 0.2
+    assert lm.seen["kwargs"]["cache"] is True
+    assert lm.seen["kwargs"]["rollout_id"] == 7
+
+
+def test_base_lm_explicit_lm_request_returns_lm_response_without_experimental():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                usage={},
+                model="custom-model",
+            )
+
+    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
+    response = CustomLM("custom-model")(request)
+
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "Hi!"
+
+
+def test_base_lm_legacy_bridge_records_typed_history_and_usage_once():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+                model="custom-model",
+            )
+
+    lm = CustomLM("custom-model")
+    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
+
+    with track_usage() as usage_tracker:
+        response = lm(request)
+
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "Hi!"
+    assert len(lm.history) == 1
+    assert lm.history[0].request == request
+    assert lm.history[0].response == response
+    total_usage = usage_tracker.get_total_tokens()["custom-model"]
+    assert total_usage["prompt_tokens"] == 1
+    assert total_usage["completion_tokens"] == 2
+    assert total_usage["total_tokens"] == 3
+
+
+def test_base_lm_typed_forward_contract_uses_lm_request():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "typed_lm"
+
+        def forward(self, request):
+            assert isinstance(request, dspy.LMRequest)
+            return dspy.LMResponse.from_text(f"model={request.model}; text={request.messages[0].text}")
+
+    lm = CustomLM("custom-model")
+
+    assert lm("Query") == ["model=custom-model; text=Query"]
+    with dspy.context(experimental=True):
+        response = lm("Query")
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "model=custom-model; text=Query"
+
+
+def test_base_lm_typed_forward_contract_rejects_non_lm_response_at_call_time():
+    class CustomLM(dspy.BaseLM):
+        forward_contract = "typed_lm"
+
+        def forward(self, request):
+            return ["not typed"]
+
+    with pytest.raises(TypeError, match="forward_contract='typed_lm'"):
+        CustomLM("custom-model")("Query")
+
+
+def test_base_lm_request_call_rejects_mixed_inputs():
+    class CustomLM(dspy.BaseLM):
+        def forward(self, prompt=None, messages=None, **kwargs):
+            raise AssertionError("forward should not be called")
+
+    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
+    with pytest.raises(ValueError, match="Pass either an LMRequest or direct-call inputs"):
+        CustomLM("custom-model")(request, "extra")
+
+
+def _model_response(text: str) -> ModelResponse:
+    return ModelResponse(
+        choices=[Choices(message=Message(role="assistant", content=text))],
+        usage={},
+        model="custom-model",
+    )
+
+
+class _TypedContractLM(dspy.BaseLM):
+    """Test double that records normalized requests received through the typed LM contract."""
+
+    forward_contract = "typed_lm"
+
+    def __init__(self, *args, outputs: list[str], **kwargs):
+        super().__init__(*args, **kwargs)
+        self.outputs = outputs
+        self.requests = []
+
+    def forward(self, request):
+        assert isinstance(request, dspy.LMRequest)
+        self.requests.append(request)
+        return dspy.LMResponse.from_text(self.outputs[len(self.requests) - 1], model=request.model)
+
+
+def _direct_lm_case(lm_kind: str, outputs: list[str]):
+    """Return a direct-call test double and helpers for inspecting normalized messages."""
+    if lm_kind == "current_lm":
+        patcher = mock.patch(
+            "dspy.clients.lm.litellm_completion",
+            side_effect=[_model_response(output) for output in outputs],
+        )
+        completion = patcher.start()
+        lm = dspy.LM("custom-model", cache=False)
+
+        def get_messages(index: int) -> list[dict[str, object]]:
+            return completion.call_args_list[index].kwargs["request"]["messages"]
+
+        def get_request(index: int):
+            return None
+
+        return lm, get_messages, get_request, patcher
+
+    if lm_kind == "typed_lm":
+        lm = _TypedContractLM("custom-model", outputs=outputs)
+
+        def get_messages(index: int) -> list[dict[str, object]]:
+            from dspy.clients.openai_format import to_openai_chat_request
+
+            return to_openai_chat_request(lm.requests[index])["messages"]
+
+        def get_request(index: int):
+            return lm.requests[index]
+
+        return lm, get_messages, get_request, None
+
+    raise ValueError(f"Unknown lm_kind: {lm_kind}")
+
+
+@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
+def test_base_lm_experimental_direct_messages_support_system_user_and_assistant_turns(lm_kind):
+    lm, get_messages, get_request, patcher = _direct_lm_case(lm_kind, ["Five-word answer."])
+    try:
+        with dspy.context(experimental=True):
+            response = lm(
+                dspy.System("Be concise."),
+                dspy.User("What is DSPy?"),
+                dspy.Assistant("DSPy is a framework for programming LM pipelines."),
+                dspy.User("Say that in five words."),
+                temperature=0.2,
+            )
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "Five-word answer."
+    assert get_messages(0) == [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "What is DSPy?"},
+        {"role": "assistant", "content": "DSPy is a framework for programming LM pipelines."},
+        {"role": "user", "content": "Say that in five words."},
+    ]
+    if lm_kind == "typed_lm":
+        assert get_request(0).config.temperature == 0.2
+
+
+@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
+def test_base_lm_experimental_direct_messages_support_tool_call_transcripts(lm_kind):
+    lm, get_messages, get_request, patcher = _direct_lm_case(lm_kind, ["It is 22 C in Paris."])
+    try:
+        with dspy.context(experimental=True):
+            response = lm(
+                dspy.User("What is the weather in Paris?"),
+                dspy.Assistant(dspy.ToolCall(id="call_1", name="get_weather", args={"city": "Paris"})),
+                dspy.ToolResult('{"temperature": "22 C"}', call_id="call_1", name="get_weather"),
+                dspy.User("Summarize the result."),
+            )
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+    assert response.text == "It is 22 C in Paris."
+    assert get_messages(0) == [
+        {"role": "user", "content": "What is the weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                    "id": "call_1",
+                }
+            ],
+        },
+        {"role": "tool", "content": '{"temperature": "22 C"}', "tool_call_id": "call_1", "name": "get_weather"},
+        {"role": "user", "content": "Summarize the result."},
+    ]
+    if lm_kind == "typed_lm":
+        assert isinstance(get_request(0), dspy.LMRequest)
+
+
+@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
+def test_base_lm_experimental_direct_messages_can_reuse_lm_response_as_assistant_turn(lm_kind):
+    lm, get_messages, get_request, patcher = _direct_lm_case(
+        lm_kind,
+        ["DSPy programs LM pipelines.", "DSPy programs pipelines."],
+    )
+    try:
+        with dspy.context(experimental=True):
+            first = lm("Explain DSPy in one sentence.")
+            follow_up = lm(
+                dspy.User("Explain DSPy in one sentence."),
+                first,
+                dspy.User("Now make it even shorter."),
+            )
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+    assert first.text == "DSPy programs LM pipelines."
+    assert follow_up.text == "DSPy programs pipelines."
+    assert get_messages(0) == [{"role": "user", "content": "Explain DSPy in one sentence."}]
+    assert get_messages(1) == [
+        {"role": "user", "content": "Explain DSPy in one sentence."},
+        {"role": "assistant", "content": "DSPy programs LM pipelines."},
+        {"role": "user", "content": "Now make it even shorter."},
+    ]
+    if lm_kind == "typed_lm":
+        assert isinstance(get_request(1), dspy.LMRequest)
+
+
+@pytest.mark.asyncio
+async def test_base_lm_async_explicit_lm_request_returns_lm_response():
+    class CustomLM(dspy.BaseLM):
+        async def aforward(self, prompt=None, messages=None, **kwargs):
+            return ModelResponse(
+                choices=[Choices(message=Message(role="assistant", content="Hi async!"))],
+                usage={},
+                model="custom-model",
+            )
+
+    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
+    response = await CustomLM("custom-model").acall(request)
+
+    assert isinstance(response, dspy.LMResponse)
+    assert response.text == "Hi async!"
+
+
 def test_base_lm_tracks_usage_for_custom_subclasses():
     class CustomLM(dspy.BaseLM):
         def forward(self, prompt=None, messages=None, **kwargs):

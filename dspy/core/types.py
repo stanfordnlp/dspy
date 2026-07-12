@@ -1286,18 +1286,16 @@ def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None
     """Create a system message for a direct LM call.
 
     A system message gives model-level instructions, such as tone, scope, or
-    formatting rules. Pass text, media parts, or normalized `LMPart` objects;
-    DSPy stores them as one `LMMessage` with role `"system"`.
+    formatting rules. Pass text or normalized `LMPart` objects; DSPy stores
+    them as one `LMMessage` with role `"system"`.
 
     Args:
-        *parts: Text, DSPy media objects, or normalized LM parts to include in
-            the message.
+        *parts: Text or normalized LM parts to include in the message.
         name: Optional sender name for providers that support named messages.
         metadata: Extra information to keep with the message.
 
     Returns:
-        An `LMMessage` that can be passed to `dspy.LanguageModel`, `dspy.LM`, or
-        `dspy.LMRequest`.
+        An `LMMessage` that can be passed to `dspy.LM` or `dspy.LMRequest`.
 
     Examples:
         System instruction with a user turn:
@@ -1305,10 +1303,12 @@ def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None
         ```python
         import dspy
 
-        lm = dspy.LanguageModel(model="test/model")
-        request = lm.normalize_request(
-            dspy.System("You are concise."),
-            dspy.User("What is DSPy?"),
+        request = dspy.LMRequest.from_call(
+            model="openai/gpt-4o-mini",
+            items=(
+                dspy.System("You are concise."),
+                dspy.User("What is DSPy?"),
+            ),
         )
         ```
 
@@ -1328,8 +1328,7 @@ def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | N
     you want to keep implementation guidance separate from the user's request.
 
     Args:
-        *parts: Text, DSPy media objects, or normalized LM parts to include in
-            the message.
+        *parts: Text or normalized LM parts to include in the message.
         name: Optional sender name for providers that support named messages.
         metadata: Extra information to keep with the message.
 
@@ -1363,12 +1362,11 @@ def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None =
     """Create a user message for a direct LM call.
 
     A user message contains the request or data you want the model to answer.
-    Pass plain text for simple prompts, or mix text with images, audio, documents,
-    binary attachments, and normalized LM parts for multimodal calls.
+    Pass plain text for simple prompts, or mix text with normalized image, audio,
+    document, binary, and other `LMPart` objects for multimodal calls.
 
     Args:
-        *parts: Text, DSPy media objects, or normalized LM parts to include in
-            the message.
+        *parts: Text or normalized LM parts to include in the message.
         name: Optional sender name for providers that support named messages.
         metadata: Extra information to keep with the message.
 
@@ -1382,38 +1380,43 @@ def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None =
         import dspy
 
         lm = dspy.LM("openai/gpt-4o-mini")
-        response = lm(
-            dspy.User("What is DSPy?"),
-            dspy.Assistant("DSPy is a framework for programming LM pipelines."),
-            dspy.User("Say that in five words."),
-        )
+        with dspy.context(experimental=True):
+            response = lm(
+                dspy.User("What is DSPy?"),
+                dspy.Assistant("DSPy is a framework for programming LM pipelines."),
+                dspy.User("Say that in five words."),
+            )
         ```
 
         Multi-turn call with media:
 
         ```python
         import dspy
+        from dspy.core.types import LMImagePart
 
         lm = dspy.LM("openai/gpt-4o-mini")
-        response = lm(
-            dspy.System("Answer in one sentence."),
-            dspy.User(
-                "Describe this image.",
-                dspy.Image("https://example.com/dog.png"),
-            ),
-        )
+        with dspy.context(experimental=True):
+            response = lm(
+                dspy.System("Answer in one sentence."),
+                dspy.User(
+                    "Describe this image.",
+                    LMImagePart(url="https://example.com/dog.png"),
+                ),
+            )
         ```
 
         For a single user turn, pass the parts directly to `lm(...)` instead:
 
         ```python
-        response = lm("Describe this image.", dspy.Image("https://example.com/dog.png"))
+        with dspy.context(experimental=True):
+            response = lm("Describe this image.", LMImagePart(url="https://example.com/dog.png"))
         ```
 
         Explicit `LMRequest` for custom LM authors and advanced users:
 
         ```python
         import dspy
+        from dspy.core.types import LMImagePart
 
         lm = dspy.LM("openai/gpt-4o-mini")
         request = dspy.LMRequest(
@@ -1422,7 +1425,7 @@ def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None =
                 dspy.System("You are concise."),
                 dspy.User(
                     "Describe this image.",
-                    dspy.Image("https://example.com/dog.png"),
+                    LMImagePart(url="https://example.com/dog.png"),
                 ),
             ],
             config=dspy.LMConfig(temperature=0.2, max_tokens=200),

@@ -6,7 +6,15 @@ import uuid
 import warnings
 from typing import Any, Literal, TextIO
 
-from dspy.core.types import LMResponse
+from dspy.clients.openai_format import (
+    completion_to_lm_response,
+    cost_from_response,
+    lm_response_from_legacy_outputs,
+    responses_to_lm_response,
+    to_openai_chat_request,
+    usage_from_response,
+)
+from dspy.core.types import LMHistoryEntry, LMRequest, LMResponse
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -47,56 +55,109 @@ def _import_lm_class(class_path: str) -> type:
 
 
 class BaseLM:
-    """Base class for handling LLM calls.
+    """Base class for DSPy language models.
 
-    Most users can directly use the `dspy.LM` class, which is a subclass of `BaseLM`. Users can also implement their
-    own subclasses of `BaseLM` to support custom LLM providers and inject custom logic. To do so, simply override the
-    `forward` method and make sure the return format is identical to the
-    [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+    Most users should use `dspy.LM`, which is a `BaseLM` subclass.
 
-    Subclasses whose state is captured by `BaseLM.__init__` can use the default `dump_state` and `load_state`
-    methods. Subclasses with extra persistent state should override both methods.
+    For advanced use cases, such as custom language model backends, users can
+    subclass `BaseLM` and implement `forward()`.
 
-    Examples:
+    DSPy is migrating `forward()` from the legacy OpenAI/LiteLLM-shaped
+    contract to a typed DSPy contract. During this migration, subclasses should
+    declare which contract they implement with `forward_contract`:
+
+    - `forward_contract = "typed_lm"`: implement
+      `forward(request: dspy.LMRequest) -> dspy.LMResponse`. This is the
+      preferred contract for new custom LMs.
+    - `forward_contract = "legacy"`: implement
+      `forward(prompt=None, messages=None, **kwargs)` and return an OpenAI-like
+      provider response. This remains the default during the migration.
+
+    `BaseLM.__call__()` is the compatibility boundary. In DSPy 3.3 and 3.4,
+    ordinary calls preserve the legacy public return value, `list[str | dict]`:
 
     ```python
-    from openai import OpenAI
-
-    import dspy
-
-
-    class MyLM(dspy.BaseLM):
-        @property
-        def supports_function_calling(self) -> bool:
-            return self.model.startswith("openai/gpt-4o")
-
-        @property
-        def supports_reasoning(self) -> bool:
-            return self.model.startswith("anthropic/claude-3-7")
-
-        @property
-        def supports_response_schema(self) -> bool:
-            return self.model.startswith("openai/gpt-4o")
-
-        @property
-        def supported_params(self) -> set[str]:
-            if self.model.startswith("openai/gpt-4o"):
-                return {"response_format"}  # accepts response_format=...
-            return set()
-
-        def forward(self, prompt, messages=None, **kwargs):
-            client = OpenAI()
-            return client.chat.completions.create(
-                model=self.model,
-                messages=messages or [{"role": "user", "content": prompt}],
-                **self.kwargs,
-            )
-
-
-    lm = MyLM(model="gpt-4o-mini")
-    dspy.configure(lm=lm)
-    print(dspy.Predict("q->a")(q="Why did the chicken cross the kitchen?"))
+    outputs = lm("What is DSPy?")
+    outputs = lm(messages=[{"role": "user", "content": "What is DSPy?"}])
     ```
+
+    Calls can flow internally through the typed `LMRequest` / `LMResponse` path
+    without changing the public return shape. The typed path is used when the
+    caller passes an explicit `dspy.LMRequest`, when
+    `dspy.context(experimental=True)` is active, or when the subclass declares
+    `forward_contract = "typed_lm"`. It accepts richer direct-call inputs,
+    including `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolResult`,
+    content parts, and prior `dspy.LMResponse` objects. The public return value
+    remains legacy outputs unless the caller explicitly opts into typed output
+    with an `LMRequest` or `experimental=True`.
+
+    Example typed direct call:
+
+    ```python
+    with dspy.context(experimental=True):
+        response = lm(
+            dspy.System("You are concise."),
+            dspy.User("What is DSPy?"),
+        )
+        print(response.text)
+    ```
+
+    `LMResponse` is designed to feel familiar to users of the legacy output
+    list while carrying substantially more structure, including typed outputs,
+    usage, cache status, provider metadata, tool calls, reasoning, citations,
+    and multimodal content.
+
+    LMs must be serializable as part of saved DSPy programs. The default
+    `dump_state()` and `load_state()` implementations support subclasses whose
+    persistent state is fully captured by `BaseLM.__init__()` arguments. If a
+    subclass stores additional persistent state, override both methods.
+
+    Examples:
+        Preferred typed custom LM:
+
+        ```python
+        import dspy
+
+
+        class EchoLM(dspy.BaseLM):
+            forward_contract = "typed_lm"
+
+            def forward(self, request: dspy.LMRequest) -> dspy.LMResponse:
+                return dspy.LMResponse.from_text("hello", model=request.model)
+
+
+        lm = EchoLM(model="test/echo")
+
+        with dspy.context(experimental=True):
+            response = lm(dspy.User("Say hello."))
+            print(response.text)
+        ```
+
+        Legacy custom LM for an OpenAI-like provider:
+
+        ```python
+        from openai import OpenAI
+
+        import dspy
+
+
+        class MyLegacyLM(dspy.BaseLM):
+            forward_contract = "legacy"
+
+            def forward(self, prompt=None, messages=None, **kwargs):
+                client = OpenAI()
+                return client.chat.completions.create(
+                    model=self.model,
+                    messages=messages or [{"role": "user", "content": prompt}],
+                    **self.kwargs,
+                    **kwargs,
+                )
+
+
+        lm = MyLegacyLM(model="gpt-4o-mini")
+        dspy.configure(lm=lm)
+        print(dspy.Predict("q -> a")(q="Why did the chicken cross the kitchen?"))
+        ```
     """
 
     forward_contract: ForwardContract = "legacy"
@@ -260,25 +321,287 @@ class BaseLM:
     @with_callbacks
     def __call__(
         self,
+        *items: Any,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ) -> list[dict[str, Any] | str]:
-        response = self.forward(prompt=prompt, messages=messages, **kwargs)
-        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
+        request: LMRequest | None = None,
+        **kwargs,
+    ) -> LMResponse | list[dict[str, Any] | str]:
+        """Call the language model synchronously.
 
-        return outputs
+        The default call path preserves DSPy's legacy behavior and returns `list[str | dict]`. Calls flow internally
+        through `LMRequest` / `LMResponse` when either:
+
+        - `request=` is provided or the first positional argument is an `LMRequest`, or
+        - `dspy.context(experimental=True)` is active, or
+        - the subclass declares `forward_contract = "typed_lm"`.
+
+        In the typed request path, positional `items` are normalized with `LMRequest.from_call()`. This supports
+        a single prompt string, direct message objects such as `dspy.System(...)`, `dspy.User(...)`, and
+        `dspy.Assistant(...)`, `dspy.ToolResult(...)` tool messages, and prior `LMResponse` values as assistant turns.
+
+        Args:
+            *items: Optional direct-call inputs. In the legacy path this may contain at most one prompt string. In the
+                typed path it may contain normalized messages, message sequences, prior `LMResponse` values, or content
+                parts accepted by `LMRequest.from_call()`.
+            prompt: Optional prompt string. Do not combine with positional prompt input.
+            messages: Optional OpenAI-chat-shaped messages. Do not combine with `items` or `prompt` in the typed path.
+            request: Optional explicit normalized request. Call kwargs override request config when provided.
+            **kwargs: Per-call generation parameters.
+
+        Returns:
+            `LMResponse` for explicit `LMRequest` calls or `experimental=True`; otherwise DSPy's legacy list of output
+            strings or dictionaries, even when a typed LM subclass uses the typed path internally.
+        """
+        return_typed_response, forward_contract, normalized_request = self._prepare_lm_call(
+            items=items,
+            prompt=prompt,
+            messages=messages,
+            request=request,
+            kwargs=kwargs,
+        )
+        if normalized_request is None:
+            return self._legacy_call_direct(*items, prompt=prompt, messages=messages, **kwargs)
+
+        if forward_contract == "typed_lm":
+            response = self.forward(normalized_request)
+            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+        else:
+            response = self._legacy_forward_as_lm_response(normalized_request)
+        if return_typed_response:
+            return response
+        return response.to_legacy_outputs()
 
     @with_callbacks
     async def acall(
         self,
+        *items: Any,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
-        **kwargs
+        request: LMRequest | None = None,
+        **kwargs,
+    ) -> LMResponse | list[dict[str, Any] | str]:
+        """Asynchronously call the language model.
+
+        This is the async equivalent of `__call__()`. It preserves legacy outputs by default and returns
+        `dspy.LMResponse` for explicit `LMRequest` calls or experimental direct calls.
+        """
+        return_typed_response, forward_contract, normalized_request = self._prepare_lm_call(
+            items=items,
+            prompt=prompt,
+            messages=messages,
+            request=request,
+            kwargs=kwargs,
+        )
+        if normalized_request is None:
+            return await self._legacy_acall_direct(*items, prompt=prompt, messages=messages, **kwargs)
+
+        if forward_contract == "typed_lm":
+            response = await self.aforward(normalized_request)
+            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+        else:
+            response = await self._legacy_aforward_as_lm_response(normalized_request)
+        if return_typed_response:
+            return response
+        return response.to_legacy_outputs()
+
+    def _prepare_lm_call(
+        self,
+        *,
+        items: tuple[Any, ...],
+        prompt: str | None,
+        messages: list[dict[str, Any]] | None,
+        request: LMRequest | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[bool, ForwardContract, LMRequest | None]:
+        explicit_request = request is not None or bool(items and isinstance(items[0], LMRequest))
+        return_typed_response = explicit_request or bool(settings.get("experimental", False))
+        forward_contract = self._get_forward_contract()
+        if not return_typed_response and forward_contract != "typed_lm":
+            return return_typed_response, forward_contract, None
+
+        normalized_request = self._normalize_lm_call(
+            *items,
+            prompt=prompt,
+            messages=messages,
+            request=request,
+            **kwargs,
+        )
+        return return_typed_response, forward_contract, normalized_request
+
+    def _legacy_call_direct(
+        self,
+        *items: Any,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
     ) -> list[dict[str, Any] | str]:
+        """Execute the pre-typed synchronous call path and return legacy outputs."""
+        prompt = self._legacy_prompt_from_items(items, prompt=prompt)
+        response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        if isinstance(response, LMResponse):
+            raise TypeError(
+                f"{type(self).__name__}.forward() returned dspy.LMResponse on the legacy direct path. "
+                "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
+            )
+        return self._process_lm_response(response, prompt, messages, **kwargs)
+
+    async def _legacy_acall_direct(
+        self,
+        *items: Any,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> list[dict[str, Any] | str]:
+        """Execute the pre-typed asynchronous call path and return legacy outputs."""
+        prompt = self._legacy_prompt_from_items(items, prompt=prompt)
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
-        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
-        return outputs
+        if isinstance(response, LMResponse):
+            raise TypeError(
+                f"{type(self).__name__}.aforward() returned dspy.LMResponse on the legacy direct path. "
+                "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
+            )
+        return self._process_lm_response(response, prompt, messages, **kwargs)
+
+    def _legacy_prompt_from_items(self, items: tuple[Any, ...], *, prompt: str | None) -> str | None:
+        """Validate and extract the one positional prompt accepted by legacy calls."""
+        if len(items) > 1:
+            raise TypeError(
+                "Legacy BaseLM calls accept at most one positional prompt. "
+                "Use dspy.context(experimental=True) or pass an LMRequest for typed multi-item LM calls."
+            )
+        if items and prompt is not None:
+            raise TypeError("Pass a prompt either positionally or by keyword, not both.")
+        if items and isinstance(items[0], LMRequest):
+            raise TypeError("LMRequest calls require the typed LM path; this should be unreachable.")
+        return items[0] if items else prompt
+
+    def _normalize_lm_call(
+        self,
+        *items: Any,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        request: LMRequest | None = None,
+        **kwargs: Any,
+    ) -> LMRequest:
+        """Normalize direct call inputs or an explicit request into `LMRequest`."""
+        if request is None and items and isinstance(items[0], LMRequest):
+            request = items[0]
+            items = items[1:]
+
+        if request is not None:
+            if items or prompt is not None or messages is not None:
+                raise ValueError(
+                    "Pass either an LMRequest or direct-call inputs, not both. "
+                    "Use call kwargs to override request config."
+                )
+            return request.with_config_overrides(**kwargs) if kwargs else request
+
+        merged_kwargs = {**self.kwargs, **kwargs}
+        merged_kwargs.setdefault("cache", self.cache)
+        return LMRequest.from_call(
+            model=self.model,
+            items=items,
+            prompt=prompt,
+            messages=messages,
+            **merged_kwargs,
+        )
+
+    def _legacy_forward_as_lm_response(self, request: LMRequest) -> LMResponse:
+        """Call a legacy `forward()` implementation and normalize its provider response."""
+        data = self._legacy_forward_kwargs(request)
+        messages = data.pop("messages", None)
+        prompt = self._prompt_from_lm_request(request)
+        if prompt is not None:
+            messages = None
+        response = self.forward(prompt=prompt, messages=messages, **data)
+        typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
+        if typed_response is not None:
+            return self._finalize_lm_response(request, typed_response)
+        with settings.context(disable_history=True, usage_tracker=None):
+            outputs = self._process_lm_response(response, prompt, messages, **data)
+        lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
+        return self._finalize_lm_response(request, lm_response)
+
+    async def _legacy_aforward_as_lm_response(self, request: LMRequest) -> LMResponse:
+        """Async variant of `_legacy_forward_as_lm_response()`."""
+        data = self._legacy_forward_kwargs(request)
+        messages = data.pop("messages", None)
+        prompt = self._prompt_from_lm_request(request)
+        if prompt is not None:
+            messages = None
+        response = await self.aforward(prompt=prompt, messages=messages, **data)
+        typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
+        if typed_response is not None:
+            return self._finalize_lm_response(request, typed_response)
+        with settings.context(disable_history=True, usage_tracker=None):
+            outputs = self._process_lm_response(response, prompt, messages, **data)
+        lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
+        return self._finalize_lm_response(request, lm_response)
+
+    def _legacy_outputs_to_lm_response(
+        self,
+        outputs: list[dict[str, Any] | str | None],
+        *,
+        request: LMRequest,
+        provider_response: Any,
+    ) -> LMResponse:
+        """Convert legacy post-processed outputs and provider metadata into `LMResponse`."""
+        if self.model_type == "responses":
+            response = responses_to_lm_response(provider_response, request)
+        elif self.model_type in {"chat", "text"}:
+            response = completion_to_lm_response(provider_response, request)
+        else:
+            response = lm_response_from_legacy_outputs(outputs, request)
+
+        return response.model_copy(
+            update={
+                "model": getattr(provider_response, "model", None) or response.model,
+                "usage": usage_from_response(provider_response),
+                "cost": cost_from_response(provider_response),
+                "cache_hit": bool(getattr(provider_response, "cache_hit", False)),
+                "provider_response": provider_response,
+            }
+        )
+
+    def _legacy_forward_kwargs(self, request: LMRequest) -> dict[str, Any]:
+        """Convert a normalized request into kwargs for legacy `forward()` implementations."""
+        data = to_openai_chat_request(request)
+        data.pop("model", None)
+        if request.config.cache is not None:
+            if request.config.cache.enabled is not None:
+                data["cache"] = request.config.cache.enabled
+            if request.config.cache.rollout_id is not None:
+                data["rollout_id"] = request.config.cache.rollout_id
+        return data
+
+    def _prompt_from_lm_request(self, request: LMRequest) -> str | None:
+        """Return the legacy prompt when a normalized request is exactly one text user message."""
+        if len(request.messages) != 1:
+            return None
+        message = request.messages[0]
+        if message.role != "user" or len(message.parts) != 1:
+            return None
+        part = message.parts[0]
+        return part.text if getattr(part, "type", None) == "text" else None
+
+    def _finalize_lm_response(self, request: LMRequest, response: LMResponse) -> LMResponse:
+        """Record usage and typed history for a normalized LM response."""
+        if not getattr(response, "cache_hit", False) and settings.usage_tracker:
+            usage = response.usage_as_dict()
+            if usage:
+                settings.usage_tracker.add_usage(self.model, usage)
+
+        if not settings.disable_history:
+            entry = LMHistoryEntry(
+                request=request,
+                response=response,
+                timestamp=datetime.datetime.now().isoformat(),
+                uuid=str(uuid.uuid4()),
+                model_type=getattr(self, "model_type", None),
+            )
+            self.update_history(entry)
+        return response
 
     def forward(
         self,
@@ -288,11 +611,16 @@ class BaseLM:
     ):
         """Forward pass for the language model.
 
-        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        Subclasses must implement this method according to `forward_contract`.
+
+        For `forward_contract = "legacy"`, implement
+        `forward(prompt=None, messages=None, **kwargs)` and return one of these OpenAI-like provider responses:
 
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        For `forward_contract = "typed_lm"`, implement `forward(request: dspy.LMRequest) -> dspy.LMResponse`.
 
         Raises:
             dspy.LMError: Base class for LM configuration, transport, provider,
@@ -313,11 +641,16 @@ class BaseLM:
     ):
         """Async forward pass for the language model.
 
-        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        Subclasses that support async calls must implement this method according to `forward_contract`.
+
+        For `forward_contract = "legacy"`, implement
+        `aforward(prompt=None, messages=None, **kwargs)` and return one of these OpenAI-like provider responses:
 
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        For `forward_contract = "typed_lm"`, implement `aforward(request: dspy.LMRequest) -> dspy.LMResponse`.
 
         Raises:
             dspy.LMError: Base class for LM configuration, transport, provider,

@@ -105,6 +105,9 @@ Every method here returns a new Signature class via deep-copy.
 **`Signature.with_instructions(instructions: str)`**  
 New class, same fields, replaced docstring.
 
+**`Signature.append_instructions(instructions: str)`**  
+New class, same fields, docstring extended by `instructions` (joined with a blank line). Use when you want to layer extra guidance on top of an existing signature (aka docstring) without restating its instructions.
+
 **`Signature.with_updated_fields(name, type_=None, **json_schema_extra)`**  
 Replaces the field’s metadata by merging the keyword arguments onto its existing `json_schema_extra`. Pass `desc=...` to change the description, `prefix=...` to change the label, or any custom key your adapter or optimizer reads. If you change `type_`, the new annotation replaces the old; if you also pass `IS_TYPE_UNDEFINED=False`, you clear the “treat None as empty string” behavior Predict relies on for unannotated string-form fields.
 

@@ -6,6 +6,7 @@
     options:
         members:
             - append
+            - append_instructions
             - delete
             - dump_state
             - equals
