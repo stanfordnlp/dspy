@@ -41,7 +41,7 @@ dependencies = [
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
 mcp = ["mcp; python_version >= '3.10'"]
-langchain = ["langchain_core"]
+langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
 litellm = ["litellm>=1.65.8"]
@@ -63,7 +63,7 @@ test_extras = [
     "datasets>=2.14.6",
     "pandas>=2.1.1",
     "optuna>=3.4.0",
-    "langchain_core",
+    "langchain_core>=0.3.0",
     "numpy>=1.26.0",
 ]
 
