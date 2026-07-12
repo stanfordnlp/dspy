@@ -1,20 +1,15 @@
 """Sandbox-side ``dspy`` shim for the ``dspy.Flex`` run-in-interpreter bridge.
 
-This module's *source* is read as text by ``dspy/flex/bridge.py`` and executed **inside** the sandbox
-(once per session). Running it installs a stand-in ``dspy`` whose predictor constructors/calls and
-``Prediction`` are proxies that bridge back to the host through the registered host tools
-(``__dspy_construct__`` / ``__dspy_call__``) — see ``bridge.py`` for the host side and protocol.
+``bridge.py`` reads this file's source as text and runs it inside the sandbox once per session. It
+installs a stand-in ``dspy`` whose predictor constructors/calls and ``Prediction`` are proxies that
+bridge back to the host through the registered host tools (see ``bridge.py`` for the protocol).
 
-It is kept as a real ``.py`` file (rather than a big interpolated string in ``bridge.py``) so it gets
-normal editor/linter support — mirroring how ``dspy.PythonInterpreter`` ships ``runner.js`` as a file.
-It is NOT meant to be imported on the host; the guard at the bottom keeps an accidental import from
-replacing the real ``dspy`` in ``sys.modules``. The tool-name/marker literals here are asserted to
-match ``bridge.py``'s constants by ``tests/flex/test_flex_interpreter.py``.
+It is a real ``.py`` file (not an interpolated string) so it lints. It is not meant to be imported on
+the host, and the guard at the bottom stops an accidental import from replacing the real ``dspy``.
 """
 
-# This is dynamic shim code that runs inside the sandbox: the generated ``dspy.Module`` subclass
-# supplies ``forward`` at runtime, and the shim ``dspy`` module's attributes are populated dynamically.
-# Those are not statically visible, so the host type checker's attribute checks don't apply here.
+# The shim's attributes are populated dynamically and only exist inside the sandbox, so the host type
+# checker can't see them.
 # pyright: reportAttributeAccessIssue=false
 
 import sys as _dspy_sys

@@ -313,8 +313,8 @@ def test_shared_instance_is_not_handed_to_sub_predictors() -> None:
 # Integration (Deno) — the real run-in-interpreter bridge
 # =============================================================================
 
-# An optimized CoT module with optimizer-authored glue (mirrors tests/flex_mathword_optimized.json):
-# the ChainOfThought call must bridge to the host; the import/regex/int parsing run in the sandbox.
+# An optimized CoT module with optimizer-authored glue: the ChainOfThought call must bridge to the
+# host, while the import/regex/int parsing run in the sandbox.
 COT_GLUE_MODULE = textwrap.dedent(
     """
     class DoublerModule(dspy.Module):

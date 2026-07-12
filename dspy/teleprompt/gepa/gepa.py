@@ -502,7 +502,7 @@ class GEPA(Teleprompter):
 
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
-        # Flex-marked (dspy.Flex) submodules get their *code* optimized
+        # dspy.Flex submodules get their code optimized, not just their instructions.
         flex_submodules = enumerate_flex_submodules(student)
         flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
         instruction_predictors = [
@@ -587,8 +587,8 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: instruction text per (non-flex) predictor, plus the
-        # current source (module_src) of each flex-marked submodule's code component.
+        # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
+        # each dspy.Flex submodule as its code component.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, flex in flex_submodules.items():
             seed_candidate[make_code_key(path)] = flex.module_src
@@ -626,8 +626,8 @@ class GEPA(Teleprompter):
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
-        # The optimized flex code travels on new_prog.module_src; persist it with
-        # new_prog.save(...) like any other optimized module — GEPA does not write files.
+        # The optimized flex code rides on new_prog.module_src; persist it with new_prog.save(...)
+        # like any other optimized module. GEPA writes no files itself.
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)

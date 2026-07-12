@@ -230,14 +230,14 @@ def test_flex_banking77_showcase() -> None:
     ax_acc.set_ylabel("test accuracy")
     ax_acc.set_ylim(0, 1)
     ax_acc.set_title("Accuracy (held)")
-    for bar, acc in zip(acc_bars, [baseline_acc, optimized_acc]):
+    for bar, acc in zip(acc_bars, [baseline_acc, optimized_acc], strict=True):
         ax_acc.text(bar.get_x() + bar.get_width() / 2, acc + 0.02, f"{acc:.1%}", ha="center", va="bottom")
 
     call_bars = ax_calls.bar(labels_xy, [baseline_calls, optimized_calls], color=colors)
     ax_calls.set_ylabel("avg LLM calls / example")
     ax_calls.set_ylim(0, max(baseline_calls, optimized_calls, 1) * 1.2)
     ax_calls.set_title("LLM calls (lower = more deterministic)")
-    for bar, n in zip(call_bars, [baseline_calls, optimized_calls]):
+    for bar, n in zip(call_bars, [baseline_calls, optimized_calls], strict=True):
         ax_calls.text(bar.get_x() + bar.get_width() / 2, n, f"{n:.1f}", ha="center", va="bottom")
 
     fig.suptitle(f"BANKING77 intent classification (n={len(test)})")

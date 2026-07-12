@@ -18,26 +18,20 @@ class MathWord(dspy.Signature):
     answer: int = dspy.OutputField()
 
 
-def _showcase(program: dspy.Module, label: str) -> None:
-    print(f"==== {label} =====")
-    print("predictors on the module:", [n for n, _ in program.named_predictors()])
-    print(program.module_src)
-
-def apply_operation(
-    a: float,
-    b: float,
-    operation,
-) -> float:
-    """Executed a mathematical operation on two floats. The return is a float."""
+def apply_operation(a: float, b: float, operation) -> float:
+    """Apply a mathematical operation to two floats and return the result as a float."""
     return operation(a, b)
 
-def test_flex() -> None:
+
+def test_flex(tmp_path) -> None:
+    baseline_path = tmp_path / "flex_mathword.json"
+    optimized_path = tmp_path / "flex_mathword_optimized.json"
+
     program = dspy.Flex(MathWord, tools=[apply_operation])
-    program.save("flex_mathword.json")
+    program.save(baseline_path)
 
     reloaded_baseline = dspy.Flex(MathWord, tools=[apply_operation])
-
-    reloaded_baseline.load("flex_mathword.json")
+    reloaded_baseline.load(baseline_path)
 
     def ex(p, a):
         return dspy.Example(problem=p, answer=a).with_inputs("problem")
@@ -77,9 +71,9 @@ def test_flex() -> None:
 
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
-    optimized.save("flex_mathword_optimized.json")
+    optimized.save(optimized_path)
     reloaded_optimized = dspy.Flex(MathWord, tools=[apply_operation])
-    reloaded_optimized.load("flex_mathword_optimized.json")
+    reloaded_optimized.load(optimized_path)
     assert reloaded_optimized.module_src == optimized.module_src
 
     # Run an example on the reloaded optimized program.

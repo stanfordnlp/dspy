@@ -74,11 +74,9 @@ class PredictorFeedbackFn(Protocol):
         ...
 
 
-# Code optimization for flex-marked (dspy.Flex) submodules: the candidate carries one
-# `<path>::code` key holding the full `module_src` (a single dspy.Module subclass) instead of
-# a predictor's instructions. __init__ and forward are rewritten together (forward references
-# predictor names). The "::code" suffix can't collide with named_parameters() names, so code
-# and instruction keys coexist.
+# Code optimization for dspy.Flex submodules: the candidate carries one `<path>::code` key holding the
+# whole `module_src` (a dspy.Module subclass) instead of a predictor's instructions. The "::code"
+# suffix can't collide with named_parameters() names, so code and instruction keys coexist.
 
 _CODE_KEY_SUFFIX = "::code"
 
@@ -96,12 +94,11 @@ def _code_key_path(key: str) -> str:
 
 
 def enumerate_flex_submodules(root) -> dict[str, Any]:
-    """Map sub-module path -> module for every flex-marked (code-optimizable) submodule.
+    """Map submodule path -> module for every code-optimizable (dspy.Flex) submodule.
 
-    A submodule qualifies if it exposes the ``_code_optimizable`` marker and a ``_bind_code``
-    method. Paths use the ``named_sub_modules()`` naming ("self" for a top-level Flex student, "self.extract"
-    for a nested one) and are stable across deepcopy, so the same key identifies the
-    submodule at seed time and at build_program time.
+    A submodule qualifies if it has the ``_code_optimizable`` marker and a ``_bind_code`` method.
+    Paths use ``named_sub_modules()`` naming ("self", "self.extract") and are stable across deepcopy,
+    so the same key identifies the submodule at seed time and at build_program time.
     """
     out: dict[str, Any] = {}
     for name, sub in root.named_sub_modules():
@@ -111,10 +108,10 @@ def enumerate_flex_submodules(root) -> dict[str, Any]:
 
 
 def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
-    """Object ids of predictors owned by flex-marked submodules.
+    """Object ids of predictors owned by dspy.Flex submodules.
 
-    Their instructions are governed by the submodule's code, so they must be
-     excluded from the instruction-optimization candidate.
+    Their instructions live in the submodule's code, so they are excluded from the
+    instruction-optimization candidate.
     """
     ids: set[int] = set()
     for flex in flex_submodules.values():
@@ -226,9 +223,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        # Per flex-marked (Flex) submodule, the task description (its Signature) and the
-        # available context (tools + style notes) shown to the code proposer. Keyed by the
-        # same path used in the code candidate keys.
+        # Task description (the Signature) and available context (tools + style notes) shown to the
+        # code proposer, per dspy.Flex submodule, keyed by the path used in its code candidate key.
         self._flex_task_descriptions: dict[str, str] = {}
         self._flex_context_blurbs: dict[str, str] = {}
         for path, sub in enumerate_flex_submodules(student_module).items():
@@ -252,12 +248,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # --- instructions ---
         if instr_keys:
-            # A custom instruction proposer overrides only the instruction components;
-            # code components always use the code proposer below.
+            # A custom proposer handles only instruction components; code always uses the code
+            # proposer below.
             if self.custom_instruction_proposer:
-                # Pass the FULL candidate/reflective_dataset (a custom proposer may read
-                # sibling components for context); only scope which components to update.
-                # With no code components this is identical to the original GEPA call.
+                # Pass the full candidate/reflective_dataset (the proposer may read sibling
+                # components) but scope the update to instruction keys.
                 with dspy.context(lm=reflection_lm):
                     results.update(
                         self.custom_instruction_proposer(
@@ -304,16 +299,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Rebind code for flex-marked (Flex) submodules whose source is in the candidate. A
-        # broken candidate raises here; evaluate() catches it and scores the batch as a failure.
+        # Rebind code for dspy.Flex submodules whose source is in the candidate. A broken candidate
+        # raises here; evaluate() catches it and scores the batch as a failure.
         for path, flex in enumerate_flex_submodules(new_prog).items():
             key = make_code_key(path)
             if key in candidate:
                 flex._bind_code(candidate[key])
 
-        # Apply instruction updates to predictors. Code keys contain "::" so never match
-        # here; predictors *inside* a Flex were excluded from the candidate (their
-        # instructions are owned by the Flex's code), so they are left untouched.
+        # Apply instruction updates. Code keys contain "::" so never match here, and predictors
+        # inside a Flex were excluded from the candidate, so both are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
@@ -350,9 +344,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         try:
             program = self.build_program(candidate)
         except Exception as e:
-            # A proposed code candidate that fails to bind (broken source) must score as a
-            # failure, not crash the whole optimization run. Instruction candidates always
-            # build, so this only guards the flex-marked code-optimization path.
+            # A code candidate that fails to bind (broken source) scores as a failure rather than
+            # crashing the run. Instruction candidates always build, so this only guards flex code.
             logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
             return EvaluationBatch(
                 outputs=[None] * len(batch),
@@ -365,12 +358,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             else {"disable_logging": True}
         )
 
-        # A flex (code) metric can score against the execution trace (e.g. penalize LLM calls to
-        # reward deterministic code over the RLM loop). GEPA otherwise scores in DSPy's eval mode
-        # — metric(gold, pred) with trace=None — which drops that signal from BOTH selection and
-        # reflection feedback. So when a flex submodule is present we capture the trace and call
-        # the metric WITH it, using that single trace-aware result for both the score and the
-        # reflective dataset. (Pure-instruction GEPA keeps the default trace=None scoring below.)
+        # A flex metric may score against the execution trace (e.g. penalize LM calls to reward
+        # deterministic code over the RLM loop). GEPA's default eval scoring passes trace=None and
+        # would drop that signal, so when a flex submodule is present we capture the trace and score
+        # the metric with it, reusing that one result for both the score and the reflective dataset.
         if self._flex_task_descriptions:
             from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 
@@ -452,8 +443,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
-            # Code components (flex-marked Flex submodules) reflect on whole-program I/O,
-            # not per-predictor traces.
+            # Code components (dspy.Flex submodules) reflect on whole-program I/O, not per-predictor
+            # traces.
             if _is_code_key(pred_name):
                 recs = self._code_reflective_records(eval_batch)
                 if recs:

@@ -19,19 +19,19 @@ Why ``dspy.Flex`` + ``dspy.GEPA`` is the natural analog:
     expectations against the paper's *few-program* regime, not its full ensemble.
 
 What "kinda similar" means here (JudgeLM, in-domain, from the paper's Table 1 / Fig. 2):
-    * LLM-as-a-judge in-domain accuracy ≈ 74–83%.
-    * PAJAMA's *programmatic* judge in-domain ≈ 63–73% (a few points below the LLM judge) — but ~3
-      orders of magnitude cheaper ($0.053 vs $130–300 to label the set), and it *beats* the LLM judge
+    * LLM-as-a-judge in-domain accuracy ≈ 74-83%.
+    * PAJAMA's *programmatic* judge in-domain ≈ 63-73% (a few points below the LLM judge) — but ~3
+      orders of magnitude cheaper ($0.053 vs $130-300 to label the set), and it *beats* the LLM judge
       out-of-domain on RewardBench Chat-Hard (+8.67 on JudgeLM).
     * With only ~3 programs PAJAMA sits ≈ 59%; it climbs to ≈ 82% with 52 programs.
-    So a single Flex+GEPA code/hybrid judge landing in the ~60–75% band while making far fewer LLM
+    So a single Flex+GEPA code/hybrid judge landing in the ~60-75% band while making far fewer LLM
     calls than the RLM baseline reproduces the paper's headline tradeoff: competitive accuracy at a
     fraction of the cost.
 
     IMPORTANT empirical finding (verified over 5 live runs; see the knobs below to reproduce):
-    a *single* GEPA-synthesized code judge does NOT reproduce the paper's ~63–73% cheap-judge result
+    a *single* GEPA-synthesized code judge does NOT reproduce the paper's ~63-73% cheap-judge result
     on JudgeLM. The LLM-as-a-judge baseline reproduces the paper's LLM-judge accuracy (~85%, paper
-    74–83%). But GEPA maximizes the metric, so:
+    74-83%). But GEPA maximizes the metric, so:
       * With honest validation (a robust ``N_VAL``/``REFLECTION_MINIBATCH``, as configured), GEPA
         correctly REFUSES to adopt a cheaper-but-worse code judge and keeps the RLM — accuracy holds,
         no codification.
@@ -111,7 +111,7 @@ MAX_RESP_CHARS = 2000  # truncate each response to bound prompt size
 # traces several calls per pair, so at this penalty its discounted score drops enough that a cheaper
 # codified judge which HOLDS most of the accuracy outscores it — which is what pushes GEPA to codify
 # (PAJAMA's thesis). This is the "codify" regime, reproducing the paper's headline: the programmatic
-# judge lands a few points UNDER the LLM judge (~63–73% vs 74–83%) at a fraction of the cost. Lower it
+# judge lands a few points UNDER the LLM judge (~63-73% vs 74-83%) at a fraction of the cost. Lower it
 # (≤0.02) for the hybrid regime (hold accuracy, keep the LLM); raise it to codify harder/cheaper.
 LLM_CALL_PENALTY = 0.04
 
@@ -185,7 +185,7 @@ def _ensure_dataset(per_class: int) -> None:
     s2>s1; ties dropped. We collect ``per_class`` of each so the cached set is class-balanced.
     """
     if DATA_PATH.exists():
-        rows = [l for l in DATA_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+        rows = [line for line in DATA_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
         if len(rows) >= 2 * per_class:
             return
 
@@ -233,7 +233,7 @@ def _load_splits() -> tuple[list, list, list]:
     need_per_class = (N_TRAIN + N_VAL + N_TEST) // 2
     _ensure_dataset(need_per_class)
 
-    rows = [json.loads(l) for l in DATA_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+    rows = [json.loads(line) for line in DATA_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
     a = [r for r in rows if r["winner"] == "A"]
     b = [r for r in rows if r["winner"] == "B"]
     rng = random.Random(0)
@@ -285,7 +285,7 @@ def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> Scor
 
 def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
     """Return (accuracy, avg traced LLM calls/example). Calls make the cost win visible: the RLM
-    baseline burns several LLM calls per pair; a codified judge settles most in 0–1."""
+    baseline burns several LLM calls per pair; a codified judge settles most in 0-1."""
 
     def run_one(ex):
         try:
@@ -343,7 +343,7 @@ def test_flex_pajama_showcase() -> None:
         f"| GEPA changed the code: {code_changed}"
     )
     print(
-        "paper reference (JudgeLM, in-domain): LLM-as-judge ≈ 74–83%, PAJAMA programmatic ≈ 63–73% "
+        "paper reference (JudgeLM, in-domain): LLM-as-judge ≈ 74-83%, PAJAMA programmatic ≈ 63-73% "
         "at ~3 orders of magnitude lower cost."
     )
     _showcase(optimized, "optimized by GEPA (program-as-a-judge)")
@@ -366,14 +366,14 @@ def test_flex_pajama_showcase() -> None:
     ax_acc.axhline(0.5, ls=":", c="#c00", lw=1)
     ax_acc.text(1.5, 0.51, "chance (balanced)", ha="right", va="bottom", fontsize=8, color="#c00")
     ax_acc.set_title("Preference accuracy")
-    for bar, acc in zip(acc_bars, [base_acc, opt_acc]):
+    for bar, acc in zip(acc_bars, [base_acc, opt_acc], strict=True):
         ax_acc.text(bar.get_x() + bar.get_width() / 2, acc + 0.02, f"{acc:.1%}", ha="center", va="bottom")
 
     call_bars = ax_calls.bar(labels_xy, [base_calls, opt_calls], color=colors)
     ax_calls.set_ylabel("avg LLM calls / example")
     ax_calls.set_ylim(0, max(base_calls, opt_calls, 1) * 1.2)
     ax_calls.set_title("LLM calls (lower = cheaper / more codified)")
-    for bar, n in zip(call_bars, [base_calls, opt_calls]):
+    for bar, n in zip(call_bars, [base_calls, opt_calls], strict=True):
         ax_calls.text(bar.get_x() + bar.get_width() / 2, n, f"{n:.1f}", ha="center", va="bottom")
 
     fig.suptitle(f"PAJAMA-style program-as-a-judge on JudgeLM (n={len(test)})")

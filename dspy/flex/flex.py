@@ -23,53 +23,31 @@ def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> di
 
 @experimental(version="3.3.0b2")
 class Flex(Module):
-    """A DSPy Module that starts as a ``dspy.RLM`` baseline and whose code is optimizable.
+    """A module whose implementation is optimizable code, not just a prompt.
 
-    Construct it like any module — ``dspy.Flex(MySignature)`` — and on first use it binds a
-    deterministic baseline delegating to ``dspy.RLM(<signature>)``. It is marked
-    ``_code_optimizable``: ``dspy.GEPA`` may rewrite its source (a single ``dspy.Module``
-    subclass, exposed as ``module_src``) into decomposed predictors + code, rather than only
-    tuning instructions.
+    Construct it like any module (``dspy.Flex(MySignature)``). It starts as a deterministic
+    baseline that delegates to ``dspy.RLM(<signature>)`` and is marked ``_code_optimizable``, so
+    ``dspy.GEPA`` can rewrite its source — a single ``dspy.Module`` subclass, exposed as
+    ``module_src`` — into decomposed predictors plus plain Python instead of only tuning instructions.
 
-    Sandboxing (``interpreter``):
-        Pass ``interpreter`` to run **all** generated code inside a sandbox (a ``CodeInterpreter`` such
-        as ``dspy.PythonInterpreter``) instead of in-process ``exec``. The optimizer-authored glue —
-        ``__init__``/``forward`` bodies, including imports — runs isolated with no filesystem/network
-        beyond what the interpreter enables; only predictor construction and predictor calls bridge
-        back to the host, which performs the real LM calls. This holds even after ``dspy.GEPA`` rewrites
-        the module into a plain ``ChainOfThought``/``Predict``, so the sandbox cannot be optimized away.
-        It does **not** sandbox the host LM calls themselves; treat ``module_src`` with the trust you
-        place in the optimizer/LM that authored it for cost/serialization concerns. ``max_predictor_calls``
-        bounds how many LM calls one sandboxed ``forward`` may drive (runaway/abuse guard).
-
-        Provide a zero-arg **factory** (``interpreter=lambda: dspy.PythonInterpreter(...)``) for
-        isolation under parallel evaluation; a bare instance is shared and warned about. The interpreter
-        is a runtime dependency (like the LM) and is not serialized; re-supply it when reconstructing a
-        Flex before ``load``.
-
-        Backend choice: the bridge is **interpreter-agnostic** — it depends only on the
-        ``CodeInterpreter`` protocol (host tools callable from sandbox code), never on the default
-        Deno/Pyodide internals. ``dspy.PythonInterpreter`` (Deno + Pyodide WASM) is the zero-infra
-        default and is well suited to the *bounded* orchestration glue Flex runs. For stronger,
-        full-CPython isolation, plug in any ``CodeInterpreter`` backed by a **local microVM** (e.g.
-        microsandbox / libkrun) or gVisor; the bridge needs the sandbox to call back to the host, so a
-        *local* sandbox fits, whereas a *remote/hosted* one (e.g. cloud E2B) would need a callback
-        tunnel. Code-executing sub-predictors a rewrite may introduce (``RLM``/``CodeAct``/
-        ``ProgramOfThought``) run their own inner code in a fresh interpreter from this same factory,
-        so that code runs in the sandbox backend you chose here rather than a separate default one
-        (unless ``interpreter`` was a shared instance, in which case they fall back to their own
-        default sandbox — pass a factory to have them inherit the configured backend).
+    Pass ``interpreter`` to run the generated code inside a sandbox rather than with in-process
+    ``exec``. The optimizer-authored glue (control flow, string work, imports) runs isolated; only
+    predictor construction and predictor calls bridge back to the host, which makes the real LM
+    calls. Give a zero-arg factory (``interpreter=lambda: dspy.PythonInterpreter()``) so parallel
+    evaluations each get their own session; a bare instance is shared, and Flex warns about it. The
+    interpreter is a runtime dependency like the LM: it is not serialized, so re-supply it before
+    ``load``. Any ``CodeInterpreter`` backend works — see ``dspy/flex/bridge.py``.
 
     Args:
-        signature: A ``dspy.Signature`` class (or string) declaring inputs/outputs.
+        signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
-        interpreter: Optional ``CodeInterpreter`` instance or zero-arg factory. When set, generated code
-            runs inside the sandbox via the run-in-interpreter bridge (see ``dspy/flex/bridge.py``).
-        max_predictor_calls: Max bridged predictor (LM) calls allowed per sandboxed ``forward``; raises
-            past the cap. ``None`` disables the cap. Ignored when no ``interpreter`` is set.
+        interpreter: A ``CodeInterpreter`` instance or zero-arg factory. When set, generated code
+            runs in the sandbox.
+        max_predictor_calls: Cap on bridged LM calls per sandboxed ``forward`` (a runaway guard);
+            ``None`` disables it. Ignored without an ``interpreter``.
     """
 
-    # Read by ``dspy.GEPA`` (duck-typed): this module's code may be rewritten by the optimizer.
+    # dspy.GEPA reads this marker (duck-typed) to know it may rewrite the module's code.
     _code_optimizable: bool = True
 
     def __init__(
@@ -92,15 +70,9 @@ class Flex(Module):
         self._attached_names: list[str] = []
         self._forward_impl: Any = None
 
-        # Optional sandbox. When set, generated code runs *inside* `interpreter` via the run-in-
-        # interpreter bridge (dspy/flex/bridge.py) rather than in-process exec(); see the class
-        # docstring for what this does and does not protect.
         self._interpreter_factory = self._normalize_interpreter(interpreter)
-        # A bare CodeInterpreter instance is shared across all forward() calls (see
-        # _normalize_interpreter). A code-executing sub-predictor (CodeAct/ProgramOfThought/RLM) shuts
-        # its interpreter down after forward, so it must NOT be handed the shared Flex session — only a
-        # real factory (fresh instances) is safe to inherit into sub-predictors. See
-        # BridgeRuntime._sub_interpreter.
+        # A bare instance is shared across forward() calls, so it can't be handed to a sub-predictor
+        # that shuts its interpreter down after forward (see BridgeRuntime._sub_interpreter).
         self._interpreter_shared = isinstance(interpreter, CodeInterpreter)
         self._max_predictor_calls = max_predictor_calls
         self._bridge: Any = None
@@ -118,8 +90,8 @@ class Flex(Module):
         """Normalize an interpreter instance-or-factory to a zero-arg factory (or ``None``)."""
         if interpreter is None:
             return None
-        # Order matters: a CodeInterpreter instance (e.g. MockInterpreter) may also be callable, so we
-        # must classify it as an instance first and not mistake it for a factory.
+        # Check for an instance before a callable: an interpreter may itself be callable, but it's
+        # an instance to wrap, not a factory to use directly.
         if isinstance(interpreter, CodeInterpreter):
             logger.warning(
                 "dspy.Flex received a CodeInterpreter instance; it will be shared across all forward() "
@@ -211,14 +183,11 @@ class Flex(Module):
         self._module_src = module_src
 
     def _bind_code_bridged(self, module_src: str) -> None:
-        """Bind ``module_src`` for sandboxed execution.
-
-        The host never ``exec``s the optimizer-authored source. Predictors are constructed *inside*
-        the sandbox, which bridges construction back to the host (attaching them onto ``self``), and
-        ``forward`` runs in the sandbox too. We instantiate eagerly here — like the in-process path's
-        ``__init__`` — so ``named_predictors()``/``load_state``/serialization see the predictors.
+        """Bind ``module_src`` for sandboxed execution: the host never ``exec``s the source. The
+        sandbox constructs predictors and bridges them back to attach onto ``self``, and ``forward``
+        runs in the sandbox. We build eagerly so ``named_predictors()``/``load_state`` see them.
         """
-        self._forward_impl = None  # forward is handled by the bridge, not an in-process method
+        self._forward_impl = None  # the bridge runs forward, not an in-process method
         self._bridge.bind(module_src)
         self._module_src = module_src
         self._bridge.ensure_initialized()
@@ -251,11 +220,9 @@ class Flex(Module):
             pass
 
     def __deepcopy__(self, memo):
-        # Each copy must own its sandbox sessions. A reference-shared `_bridge` (deepcopy can't copy
-        # the live interpreters) would let a throwaway copy's __del__ shut down the original's session
-        # — e.g. the trial copy inside Module.load_state. So deep-copy everything except `_bridge` and
-        # give the copy its own session-less BridgeRuntime, seeded to reuse the already-built
-        # predictors (which were deep-copied with their state) instead of rebuilding them.
+        # Each copy needs its own sandbox sessions. Sharing `_bridge` by reference would let a
+        # throwaway copy's __del__ tear down the original's live session, so copy everything else and
+        # give the copy a fresh session-less bridge that reuses the already-copied predictors.
         new = self.__class__.__new__(self.__class__)
         memo[id(self)] = new
         for key, value in self.__dict__.items():
