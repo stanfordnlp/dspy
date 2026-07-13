@@ -123,8 +123,11 @@ fundamental, not a tuning miss.**
   router** — not any single program. (v1's Fig. 2 put **3 programs at ≈59%** on Prometheus, so one
   program sits below even that.) With honest validation, GEPA will never adopt something worse than the
   RLM — which is *correct* behavior.
-- Corollary: there is **no free lunch on JudgeLM**. Nearly every pair genuinely needs the LLM, so an
-  accuracy-preserving hybrid can't save much; PAJAMA's cost win **comes with** an accuracy cost.
+- Corollary (corrected — see §8): a *single* program is weak, but that is **not** a pure-code ceiling.
+  Table 4 of the revised paper puts a **selected + calibrated 21-program committee at 81.13% on JudgeLM
+  (99.2% coverage, pure code)** — between the OLMo-2-7B (76.24%) and 13B (85.68%) LLM judges, at
+  ~30–300× throughput. JudgeLM *is* very learnable in pure code; the ceiling this demo hit came from too
+  few, uncalibrated, correlated judges — not the hypothesis class.
 
 ---
 
@@ -186,8 +189,10 @@ The paper's actual method, implemented natively. GEPA synthesizes K pure-Python 
   train pairs (e.g. `"your post is very good"`, `"i enjoy"`) and add task-specific special-cases (an
   `acronym_bonus`). Expected under a train-accuracy objective on 16 examples; undesirable; and a source
   of the correlation (all overfit the *same* 16 examples).
-- **Pure-code ceiling on JudgeLM:** surface features can't model GPT-4 preference well → individual
-  ceiling ~low-60s. GEPA optimizes *to* the ceiling but cannot exceed the hypothesis class.
+- **Low per-judge accuracy is NOT the committee ceiling:** individual pure-code judges score ~low-60s
+  on JudgeLM — but the paper's calibrated + selected 21-program committee reaches **81.13%** (Table 4).
+  The lift comes from **abstention + selection + a label model** (mechanisms this run lacks), not from
+  stronger individual programs. So the ~62% here is an artifact of the ensemble's construction.
 
 **Run B — N=6, BAGGED (the decorrelation fix; `N_TRAIN=32 N_VAL=20 N_TEST=50`, `BAG_FRAC=0.7`). It worked.**
 - Baseline LLM-as-judge (RLM): **88.0%**. All **6/6 judges codified**; 0 truncations; ~30 min.
@@ -201,10 +206,11 @@ The paper's actual method, implemented natively. GEPA synthesizes K pure-Python 
   are similar and above chance, majority is hard to beat and the weighter can misfire on noisy val.
 - **Verdict:** bagging turned GEPA-optimized judges from *worse-than-sampled* (Run A) into *better*: 6
   optimized+decorrelated judges → 62%, with the accuracy-vs-#programs curve **rising** (58→62%) instead
-  of falling. That's below the revised paper's selected+calibrated JudgeLM committee (21 programs + LLM
-  router) and below the 88% LLM baseline (pure-code ceiling) — but the reliable signal is the **curve
-  shape (up)**, and **the lever was independence, not count**. At n=50 the ±~14pp CI means the 62/60/58
-  gaps are individually within noise.
+  of falling. But that is **well below the revised paper's programs-only JudgeLM committee — 21 programs
+  → 81.13% at 99.2% coverage (Table 4)** — and below our 88% RLM baseline. Within this run, independence
+  (bagging) was the lever that flipped the curve up; but Table 4 shows the **bigger** levers are
+  **selection (80→21), per-program calibration/abstention, and a real label model on enough val** —
+  all of which this run lacks. At n=50 the ±~14pp CI means the 62/60/58 gaps are individually within noise.
 
 ---
 

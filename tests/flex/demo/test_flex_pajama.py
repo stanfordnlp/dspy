@@ -1,24 +1,24 @@
-"""PAJAMA-style "program-as-a-judge" with dspy.Flex + dspy.GEPA on the JudgeLM benchmark.
+"""PAJAMA-style "program-as-a-judge" with dspy.Flex + dspy.GEPA on a pairwise-preference benchmark.
 
-PAJAMA (arXiv:2506.10403) replaces LLM-as-a-judge with an LLM-synthesized Python judge: score each
-response in code (structure, relevance, readability, bias, ...) and pick the higher one, so judging
-runs locally, far cheaper, and stays auditable. dspy.Flex fits because dspy.GEPA can rewrite a Flex
-module's code, not just its prompts, so optimizing a Flex judge is literally program synthesis: it
-starts from an RLM (LLM-as-a-judge) baseline and, guided by accuracy plus a per-LLM-call penalty,
-evolves toward deterministic Python that calls the LLM only for genuinely ambiguous pairs.
+PAJAMA replaces LLM-as-a-judge with an LLM-synthesized Python judge: score each response in code
+(structure, relevance, readability, ...) and pick the higher one, so judging runs locally, far
+cheaper, and stays auditable. dspy.Flex fits because dspy.GEPA can rewrite a Flex module's code, not
+just its prompts, so optimizing a Flex judge is literally program synthesis: it starts from an RLM
+(LLM-as-a-judge) baseline and, guided by accuracy plus a per-LLM-call penalty, evolves toward
+deterministic Python that calls the LLM only for genuinely ambiguous pairs.
 
-This is the single-program version, not PAJAMA's 52-program ensemble, so compare against the paper's
-few-program regime. Across five live runs, one synthesized judge does not reach the paper's ~63-73%
-cheap-judge band on JudgeLM: with an honest val set GEPA keeps the RLM (accuracy holds around 85%),
-and only starving N_VAL or over-weighting LLM_CALL_PENALTY forces codification, which then overfits
-on verbosity and scores at or below chance on test. Reaching the cheap-judge band needs an ensemble;
-LLM_CALL_PENALTY / N_VAL / REFLECTION_MINIBATCH are the knobs between "hold accuracy (keep RLM)" and
-"force codify".
+This is the single-program version, not the paper's committee (which selects + calibrates ~8-21
+programs per dataset and routes hard pairs to an LLM). A single pure-code judge has a real ceiling:
+on JudgeLM it tops out in the ~60s (the paper's individual programs are similar; the 60->81 lift is
+an ensemble effect from abstention + selection + a label model — see pajama_findings.md). So judge a
+single program on cost, not on beating the LLM: GEPA reliably codifies a judge holding ~60s on
+JudgeLM (~70s on the more code-friendly Prometheus) at orders-of-magnitude lower cost. LLM_CALL_PENALTY
+/ N_VAL / REFLECTION_MINIBATCH are the knobs between "hold accuracy (keep RLM)" and "force codify".
 
-Gold winner comes from JudgeLM's GPT-4 scores (A if s1>s2 else B); ties are dropped and the classes
-balanced so chance is 50%. Needs real LMs and network (HuggingFace BAAI/JudgeLM-100K, cached after
-the first run), and skips without an API key or the optional datasets/matplotlib deps. Improvement
-depends on the live models and budget, so results are printed and plotted, not asserted.
+Dataset is selectable via PAJAMA_DATASET (judgelm | prometheus); the gold winner comes from each set's
+scores (ties dropped, classes balanced so chance is 50%). Needs real LMs and network (HuggingFace,
+cached after the first run), and skips without an API key or the optional datasets/matplotlib deps.
+Improvement depends on the live models and budget, so results are printed and plotted, not asserted.
 """
 
 from __future__ import annotations
@@ -43,9 +43,17 @@ mpl.use("Agg")  # headless
 import matplotlib.pyplot as plt  # noqa: E402
 
 DEMO_DIR = Path(__file__).parent
-DATA_PATH = DEMO_DIR / "judgelm_pairs.jsonl"  # cached balanced sample (downloaded once)
-SAVE_PATH = DEMO_DIR / "pajama_flex.json"
-PLOT_PATH = DEMO_DIR / "pajama_improvement.png"
+# Which PAJAMA preference dataset to reproduce. JudgeLM keeps its original artifact names; any other
+# dataset gets a suffix so its cache/outputs never clobber JudgeLM's. Streamers are in _STREAMERS below.
+DATASET = os.getenv("PAJAMA_DATASET", "judgelm").lower()
+_DATASET_LABELS = {"judgelm": "JudgeLM", "prometheus": "Prometheus"}
+if DATASET not in _DATASET_LABELS:
+    raise ValueError(f"PAJAMA_DATASET must be one of {sorted(_DATASET_LABELS)}, got {DATASET!r}")
+DATASET_LABEL = _DATASET_LABELS[DATASET]
+_suffix = "" if DATASET == "judgelm" else f"_{DATASET}"
+DATA_PATH = DEMO_DIR / f"{DATASET}_pairs.jsonl"  # cached balanced sample (downloaded once)
+SAVE_PATH = DEMO_DIR / f"pajama_flex{_suffix}.json"
+PLOT_PATH = DEMO_DIR / f"pajama_improvement{_suffix}.png"
 
 # The executor runs the judge (RLM sub-queries plus any LLM fallback the optimized code keeps); the
 # reflection model writes the optimized judging code. A small executor leaves accuracy headroom for
@@ -55,12 +63,16 @@ _reflect_default = "anthropic/claude-opus-4-8"
 EXEC_LM = dspy.LM(os.getenv("PAJAMA_EXEC_LM", _exec_default), max_tokens=8000)
 REFLECTION_LM = dspy.LM(os.getenv("PAJAMA_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000)
 
-# Balanced splits (equal A/B wins) so chance is 50%. Train/val are larger than the other demos on
-# purpose: a single code judge easily overfits a small val set (latching onto verbosity), so a wider
-# val set lets GEPA keep only a judge that generalizes.
-N_TRAIN, N_VAL, N_TEST = 24, 16, 40  # must be even (balanced per class)
-MAX_METRIC_CALLS = 70  # GEPA budget; judge quality scales with it (paper: 3 programs ~59%, 52 ~82%)
-REFLECTION_MINIBATCH = 8  # wide, same anti-overfitting reason as the val set
+# Balanced splits (equal A/B wins) so chance is 50%. Deliberately larger than the other demos: a
+# single code judge easily overfits a small val set (latching onto verbosity), so wide train/val let
+# GEPA keep only a judge that generalizes. All env-overridable (floored to even to stay balanced).
+# A full run at these defaults is ~$15-25 (dominated by the RLM evals; once GEPA codifies to pure
+# Python the later evals are free), and the paper's own single programs top out in the ~60s on JudgeLM.
+N_TRAIN = int(os.getenv("PAJAMA_N_TRAIN", "200")) // 2 * 2
+N_VAL = int(os.getenv("PAJAMA_N_VAL", "100")) // 2 * 2
+N_TEST = int(os.getenv("PAJAMA_N_TEST", "120")) // 2 * 2
+MAX_METRIC_CALLS = int(os.getenv("PAJAMA_BUDGET", "600"))  # must be several x N_VAL or GEPA never proposes
+REFLECTION_MINIBATCH = int(os.getenv("PAJAMA_MINIBATCH", "8"))  # wide, same anti-overfit reason as val
 EVAL_THREADS = 8
 MAX_RESP_CHARS = 2000  # truncate each response to bound prompt size
 
@@ -131,20 +143,9 @@ def _truncate(text: str) -> str:
     return text if len(text) <= MAX_RESP_CHARS else text[:MAX_RESP_CHARS] + " …[truncated]"
 
 
-def _ensure_dataset(per_class: int) -> None:
-    """Stream JudgeLM-100K once and cache a balanced A-win/B-win sample as JSONL.
-
-    Gold winner is derived from the GPT-4 reference scores (``score=[s1, s2]``): A if s1>s2, B if
-    s2>s1; ties dropped. We collect ``per_class`` of each so the cached set is class-balanced.
-    """
-    if DATA_PATH.exists():
-        rows = [line for line in DATA_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
-        if len(rows) >= 2 * per_class:
-            return
-
+def _stream_judgelm():
+    """Yield balanced-choice pairs from JudgeLM-100K; winner from GPT-4 scores ``score=[s1, s2]``."""
     ds = datasets.load_dataset("BAAI/JudgeLM-100K", split="train", streaming=True)
-    a_rows: list[dict] = []
-    b_rows: list[dict] = []
     for row in ds:
         score = row.get("score")
         if not (isinstance(score, list) and len(score) == 2):
@@ -155,18 +156,53 @@ def _ensure_dataset(per_class: int) -> None:
         q = (row.get("question_body") or "").strip()
         a = _truncate(row.get("answer1_body") or "")
         b = _truncate(row.get("answer2_body") or "")
-        if not (q and a and b):
+        if q and a and b:
+            yield {"question": q, "response_a": a, "response_b": b, "winner": "A" if s1 > s2 else "B"}
+
+
+def _stream_prometheus():
+    """Yield pairs from Prometheus Preference-Collection; winner from ``orig_score_A``/``orig_score_B``."""
+    ds = datasets.load_dataset("prometheus-eval/Preference-Collection", split="train", streaming=True)
+    for row in ds:
+        try:
+            sa, sb = int(row["orig_score_A"]), int(row["orig_score_B"])
+        except (KeyError, TypeError, ValueError):
             continue
-        winner = "A" if s1 > s2 else "B"
-        bucket = a_rows if winner == "A" else b_rows
+        if sa == sb:
+            continue  # drop ties -> clean binary choice
+        q = (row.get("orig_instruction") or "").strip()
+        a = _truncate(row.get("orig_response_A") or "")
+        b = _truncate(row.get("orig_response_B") or "")
+        if q and a and b:
+            yield {"question": q, "response_a": a, "response_b": b, "winner": "A" if sa > sb else "B"}
+
+
+_STREAMERS = {"judgelm": _stream_judgelm, "prometheus": _stream_prometheus}
+
+
+def _ensure_dataset(per_class: int) -> None:
+    """Stream the selected dataset once and cache a balanced A-win/B-win sample as JSONL.
+
+    Each streamer yields ``{question, response_a, response_b, winner}`` with the winner derived from
+    the dataset's gold scores (ties dropped). We keep ``per_class`` of each so the cache is balanced.
+    """
+    if DATA_PATH.exists():
+        rows = [line for line in DATA_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if len(rows) >= 2 * per_class:
+            return
+
+    a_rows: list[dict] = []
+    b_rows: list[dict] = []
+    for pair in _STREAMERS[DATASET]():
+        bucket = a_rows if pair["winner"] == "A" else b_rows
         if len(bucket) < per_class:
-            bucket.append({"question": q, "response_a": a, "response_b": b, "winner": winner})
+            bucket.append(pair)
         if len(a_rows) >= per_class and len(b_rows) >= per_class:
             break
 
     sample = a_rows + b_rows
     if len(sample) < 2 * per_class:
-        raise RuntimeError(f"JudgeLM yielded only {len(sample)} balanced rows; need {2 * per_class}.")
+        raise RuntimeError(f"{DATASET_LABEL} yielded only {len(sample)} balanced rows; need {2 * per_class}.")
     with DATA_PATH.open("w", encoding="utf-8") as f:
         for r in sample:
             f.write(json.dumps(r) + "\n")
@@ -182,7 +218,7 @@ def _to_example(row: dict) -> dspy.Example:
 
 
 def _load_splits() -> tuple[list, list, list]:
-    """Balanced train/val/test drawn deterministically from the cached JudgeLM sample."""
+    """Balanced train/val/test drawn deterministically from the cached preference sample."""
     need_per_class = (N_TRAIN + N_VAL + N_TEST) // 2
     _ensure_dataset(need_per_class)
 
@@ -265,7 +301,7 @@ def _showcase(program: dspy.Module, label: str) -> None:
 def test_flex_pajama_showcase() -> None:
     dspy.configure(lm=EXEC_LM)
     train, val, test = _load_splits()
-    print(f"\nPAJAMA/JudgeLM pairwise judge | train={len(train)} val={len(val)} test={len(test)} (balanced A/B)")
+    print(f"\nPAJAMA/{DATASET_LABEL} pairwise judge | train={len(train)} val={len(val)} test={len(test)} (balanced A/B)")
 
     # 1. Baseline: a Flex judge delegating to one dspy.RLM, i.e. LLM-as-a-judge.
     program = dspy.Flex(PairwiseJudge)
@@ -295,8 +331,13 @@ def test_flex_pajama_showcase() -> None:
         f"| GEPA changed the code: {code_changed}"
     )
     print(
-        "paper reference (JudgeLM, in-domain): LLM-as-judge ≈ 74-83%, PAJAMA programmatic ≈ 63-73% "
-        "at ~3 orders of magnitude lower cost."
+        "paper reference — "
+        + {
+            "judgelm": "JudgeLM (revised): a selected+calibrated 21-program committee reaches 81.13%; "
+            "single programs ~60s. This single judge trades accuracy for ~1000x lower cost.",
+            "prometheus": "Prometheus (revised): an 8-program committee reaches 88.78%; single programs "
+            "run higher than JudgeLM. This single judge trades accuracy for ~1000x lower cost.",
+        }[DATASET]
     )
     _showcase(optimized, "optimized by GEPA (program-as-a-judge)")
 
@@ -328,7 +369,7 @@ def test_flex_pajama_showcase() -> None:
     for bar, n in zip(call_bars, [base_calls, opt_calls], strict=True):
         ax_calls.text(bar.get_x() + bar.get_width() / 2, n, f"{n:.1f}", ha="center", va="bottom")
 
-    fig.suptitle(f"PAJAMA-style program-as-a-judge on JudgeLM (n={len(test)})")
+    fig.suptitle(f"PAJAMA-style program-as-a-judge on {DATASET_LABEL} (n={len(test)})")
     fig.tight_layout()
     fig.savefig(PLOT_PATH, dpi=150)
     plt.close(fig)
