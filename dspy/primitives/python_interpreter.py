@@ -330,8 +330,8 @@ class PythonInterpreter:
                 response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
             else:
                 try:
-                    response = _jsonrpc_result({"value": json.dumps(result), "type": "json"}, request_id)
-                except TypeError:
+                    response = _jsonrpc_result({"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id)
+                except (TypeError, ValueError):
                     response = _jsonrpc_result({"value": str(result), "type": "string"}, request_id)
         except Exception as e:
             error_type = type(e).__name__

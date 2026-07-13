@@ -532,6 +532,37 @@ def test_tool_returning_non_json_serializable():
         assert "custom-object" in result
 
 
+def test_tool_returning_nan_falls_back_to_string():
+    """Test that tools returning float('nan') or float('inf') fall back to string.
+
+    These values are not valid JSON, so they should go through the str()
+    fallback path rather than breaking JSON.parse in the sandbox.
+    """
+
+    def get_nan() -> float:
+        return float("nan")
+
+    def get_inf() -> float:
+        return float("inf")
+
+    with PythonInterpreter(tools={"get_nan": get_nan, "get_inf": get_inf}) as sandbox:
+        result = sandbox.execute(
+            "n = get_nan()\n"
+            "print(type(n).__name__)\n"
+            "print(n)"
+        )
+        assert "str" in result
+        assert "nan" in result
+
+        result = sandbox.execute(
+            "i = get_inf()\n"
+            "print(type(i).__name__)\n"
+            "print(i)"
+        )
+        assert "str" in result
+        assert "inf" in result
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
