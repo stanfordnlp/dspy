@@ -491,7 +491,9 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
 
     if isinstance(arguments, str):
         arguments = json_repair.loads(arguments)
-    elif not isinstance(arguments, dict):
+    # json_repair.loads returns "" for empty or invalid input, so a no-argument
+    # tool call (arguments="") would otherwise leave a non-dict value here.
+    if not isinstance(arguments, dict):
         arguments = {}
 
     return {
