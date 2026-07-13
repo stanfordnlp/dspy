@@ -1214,9 +1214,21 @@ def test_lm_replaces_system_with_developer_role():
         assert mock_completion.call_args.kwargs["request"]["messages"][0]["role"] == "developer"
 
 
-def test_responses_api_tool_calls(litellm_test_server):
+@pytest.mark.parametrize(
+    ("provider_fields", "expected_provider_fields"),
+    [
+        ({}, {}),
+        ({"caller": None, "namespace": None}, {}),
+        (
+            {"caller": {"type": "direct"}, "namespace": "collaboration"},
+            {"caller": {"type": "direct"}, "namespace": "collaboration"},
+        ),
+    ],
+    ids=["legacy", "empty-provider-fields", "populated-provider-fields"],
+)
+def test_responses_api_tool_calls(litellm_test_server, provider_fields, expected_provider_fields):
     api_base, _ = litellm_test_server
-    expected_tool_call = {
+    base_tool_call = {
         "type": "function_call",
         "name": "get_weather",
         "arguments": json.dumps({"city": "Paris"}),
@@ -1224,10 +1236,10 @@ def test_responses_api_tool_calls(litellm_test_server):
         "status": "completed",
         "id": "call_1",
     }
-    expected_response = [{"tool_calls": [expected_tool_call]}]
+    expected_response = [{"tool_calls": [{**base_tool_call, **expected_provider_fields}]}]
 
     api_response = make_response(
-        output_blocks=[expected_tool_call],
+        output_blocks=[{**base_tool_call, **provider_fields}],
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
