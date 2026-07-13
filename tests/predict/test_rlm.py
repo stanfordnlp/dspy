@@ -253,6 +253,52 @@ class TestRLMInitialization:
         assert "b" in str(exc_info.value)
         assert "c" in str(exc_info.value)
 
+    @pytest.mark.parametrize(
+        ("call_args", "expected_context"),
+        [
+            ({"query": "What is DSPy?"}, "default context"),
+            ({"query": "What is DSPy?", "context": "caller context"}, "caller context"),
+        ],
+    )
+    def test_forward_applies_declared_input_defaults(self, call_args, expected_context):
+        import dspy
+
+        class QA(dspy.Signature):
+            context: str = dspy.InputField(default="default context")
+            qualifier: str | None = dspy.InputField(default=None)
+            query: str = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM(QA, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+        ])
+
+        result = rlm.forward(**call_args)
+
+        assert result.answer == "done"
+        assert mock.call_history[0][1] == {
+            **call_args,
+            "context": expected_context,
+            "qualifier": None,
+        }
+
+    def test_optional_input_without_default_remains_required(self):
+        import dspy
+
+        class QA(dspy.Signature):
+            context: str | None = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM(QA, interpreter=mock)
+
+        with pytest.raises(ValueError, match="Missing required inputs: \\['context'\\]"):
+            rlm.forward()
+
+        assert mock.call_history == []
+
     @pytest.mark.parametrize("unexpected_name", ["SUBMIT", "lookup"])
     def test_forward_rejects_undeclared_inputs_before_interpreter_execution(self, unexpected_name):
         def lookup() -> str:

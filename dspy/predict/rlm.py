@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import pydantic
+from pydantic_core import PydanticUndefined
 
 import dspy
 from dspy.adapters.types.tool import Tool
@@ -394,11 +395,15 @@ class RLM(Module):
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
-        """Validate call-time arguments against the signature's input namespace."""
+        """Apply declared defaults and validate inputs against the signature."""
         input_names = set(self.signature.input_fields)
         unexpected = set(input_args) - input_names
         if unexpected:
             raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
+
+        for name, field in self.signature.input_fields.items():
+            if name not in input_args and field.default is not PydanticUndefined:
+                input_args[name] = field.default
 
         missing = input_names - set(input_args)
         if missing:
