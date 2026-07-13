@@ -423,3 +423,30 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_stores_timeout_and_straggler_limit():
+    """Evaluate.__init__ should store custom timeout and straggler_limit."""
+    ev = Evaluate(devset=[], metric=None, timeout=45, straggler_limit=2)
+    assert ev.timeout == 45
+    assert ev.straggler_limit == 2
+
+
+def test_evaluate_forwards_timeout_to_parallel_executor():
+    """Evaluate.__call__ should pass its timeout/straggler_limit to ParallelExecutor."""
+    devset = [new_example("q", "a").with_inputs("question")]
+
+    with dspy.context(lm=DummyLM([{"answer": "a"}])):
+        ev = Evaluate(devset=devset, metric=answer_exact_match, timeout=77, straggler_limit=5,
+                      display_progress=False)
+
+        with patch("dspy.evaluate.evaluate.ParallelExecutor") as mock_executor_cls:
+            mock_instance = mock_executor_cls.return_value
+            mock_instance.execute.return_value = [(None, 1.0)] * len(devset)
+
+            ev(dspy.Predict("question -> answer"))
+
+        _, kwargs = mock_executor_cls.call_args
+        assert kwargs["timeout"] == 77
+        assert kwargs["straggler_limit"] == 5
+
+
