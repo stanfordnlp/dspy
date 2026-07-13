@@ -209,13 +209,25 @@ class ParallelExecutor:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
                                     resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
+                                    try:
+                                        nf = executor.submit(
+                                            worker,
+                                            parent_overrides,
+                                            submission_counter,
+                                            idx,
+                                            item,
+                                        )
+                                    except RuntimeError:
+                                        # The pool is shutting down (e.g. interpreter
+                                        # teardown on long evals). Resubmission is
+                                        # best-effort: skip it rather than crash the
+                                        # whole evaluation with "cannot schedule new
+                                        # futures after shutdown".
+                                        continue
+                                    # Mark the resubmission itself as already
+                                    # resubmitted so we honor "at most once per item"
+                                    # even if it later becomes a straggler too.
+                                    resubmitted.add(nf)
                                     futures_map[nf] = (submission_counter, idx, item)
                                     futures_set.add(nf)
                                     submission_counter += 1
