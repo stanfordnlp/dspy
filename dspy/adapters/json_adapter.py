@@ -58,7 +58,11 @@ class JSONAdapter(ChatAdapter):
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        if (
+            _has_open_ended_mapping(signature)
+            or (not self.use_native_function_calling and has_tool_calls)
+            or not lm.supports_response_schema
+        ):
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -224,8 +228,16 @@ class JSONAdapter(ChatAdapter):
     def format_finetune_data(
         self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
     ) -> dict[str, list[Any]]:
-        # TODO: implement format_finetune_data method in JSONAdapter
-        raise NotImplementedError
+        """Format the call data into finetuning data according to the OpenAI API specifications.
+
+        For the JSON adapter, the system/user messages follow the same chat format, but the
+        assistant message content is a JSON object (matching the structured output format).
+        """
+        system_user_messages = self.format(signature=signature, demos=demos, inputs=inputs)
+        assistant_message_content = self.format_assistant_message_content(signature=signature, outputs=outputs)
+        assistant_message = {"role": "assistant", "content": assistant_message_content}
+        messages = system_user_messages + [assistant_message]
+        return {"messages": messages}
 
 
 def _get_structured_outputs_response_format(
