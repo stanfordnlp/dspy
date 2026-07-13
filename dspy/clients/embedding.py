@@ -165,7 +165,7 @@ def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
         raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
 
 
-@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+@request_cache(ignored_args_for_cache_key=["api_key"])
 def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
     return _compute_embeddings(model, batch_inputs, caching=caching, **kwargs)
 
@@ -181,6 +181,6 @@ async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
         raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
 
 
-@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+@request_cache(ignored_args_for_cache_key=["api_key"])
 async def _cached_acompute_embeddings(model, batch_inputs, caching=True, **kwargs):
     return await _acompute_embeddings(model, batch_inputs, caching=caching, **kwargs)

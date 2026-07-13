@@ -230,7 +230,7 @@ def request_cache(
         enable_memory_cache: Whether to enable in-memory cache at call time. If False, the memory cache will not be
             written to on new data.
     """
-    ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key", "api_base", "base_url"]
+    ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key"]
     # Deprecation notice
     if maxsize is not None:
         logger.warning(
