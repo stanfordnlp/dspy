@@ -389,6 +389,17 @@ def test_sync_streaming(lm_for_test):
     assert all_chunks[-2].predict_name == "predict2"
     assert all_chunks[-2].signature_field_name == "judgement"
 
+def test_sync_streaming_keyboard_interrupt_propagation():
+    """Verifies that BaseExceptions like KeyboardInterrupt are also propagated."""
+    async def interrupt_gen():
+        yield "Starting..."
+        raise KeyboardInterrupt()
+
+    sync_output = dspy.streaming.apply_sync_streaming(interrupt_gen())
+
+    with pytest.raises(KeyboardInterrupt):
+        for _ in sync_output:
+            pass
 
 def test_sync_status_streaming():
     class MyProgram(dspy.Module):
@@ -414,6 +425,31 @@ def test_sync_status_streaming():
     assert status_messages[0].message == "Calling tool generate_question..."
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
+def test_sync_status_streaming_with_error_propagation():
+    class FailingProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.generate_question = dspy.Tool(
+                lambda x: exec('raise RuntimeError("Simulated Tool Failure")'),
+                name="failing_tool"
+            )
+        def forward(self, x: str):
+            return self.generate_question(x=x)
+
+    lm = dspy.utils.DummyLM([])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(FailingProgram(), async_streaming=False)
+        sync_output = program(x="test")
+        status_messages = []
+
+        with pytest.raises(RuntimeError, match="Simulated Tool Failure"):
+            for value in sync_output:
+                if isinstance(value, StatusMessage):
+                    status_messages.append(value)
+
+        # Verify status messages arrived before the crash
+        assert len(status_messages) > 0
+        assert any("failing_tool" in msg.message for msg in status_messages)
 
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
