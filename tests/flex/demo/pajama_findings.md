@@ -9,32 +9,53 @@ findings, the engineering lessons, and the current experiment. Companion to two 
 
 ## 1. The paper
 
-**"Time To Impeach LLM-as-a-Judge: Programs are the Future of Evaluation"** — Tzu-Heng Huang, Harit
-Vishwakarma, Frederic Sala (UW-Madison / SprocketLab). arXiv **2506.10403**. Project page:
-<https://sprocketlab.github.io/PAJAMA/>.
+**PAJAMA = Program-As-a-Judge for Automated Model Assessment** — Tzu-Heng Huang, Harit Vishwakarma,
+Frederic Sala (UW-Madison / SprocketLab).
 
-**PAJAMA = Program-As-a-Judge for Automated Model Assessment.** Instead of calling an LLM to judge
-which of two responses is better (LLM-as-a-judge), have an LLM **synthesize executable Python judging
-programs** that score each response; the programs run locally — orders of magnitude cheaper,
-interpretable, auditable, and less biased.
+> **Two versions exist — this doc tracks the newer one.** The earlier arXiv **2506.10403** (*"Time To
+> Impeach LLM-as-a-Judge"*, Jun 2025) synthesized **52** programs with GPT-4o and combined them with
+> Snorkel only. The **revised** paper
+> (<https://zihengh1.github.io/assets/pdf/programmatic-judges.pdf>) is a substantial rewrite — **80**
+> candidates, **top-k selection**, per-program **threshold calibration**, and an **LLM-fallback
+> router**. Numbers below are the revised version unless marked "(v1)". Project page:
+> <https://sprocketlab.github.io/PAJAMA/>.
+
+**Idea.** Instead of calling an LLM to judge which of two responses is better (LLM-as-a-judge), have an
+LLM **synthesize executable Python judging programs** that score each response; the programs run locally
+— orders of magnitude cheaper, interpretable, auditable, and less biased.
 
 **Task.** Pairwise preference: given a query `x` and two responses `y1, y2`, decide which is better.
-Each judge program `λ_i: (query, response) → [0,1]`; discretized vote `+1` if `λ_i(y1) > λ_i(y2)` else
-`-1` (binary — no tie in the vote).
+Each judge program `f_j: (query, response) → [0,1]`; the quality difference `d = f_j(y1) − f_j(y2)` is
+discretized to a vote `+1 / −1 / 0`, where `0` = **abstain** when `|d|` is under a per-program threshold
+`τ_j` calibrated on validation.
 
-**Pipeline.** (1) *Synthesis*: GPT-4o writes ~**52** judging programs across **6 criteria** —
-Structure, Relevance, Readability, Bias, Factuality, Safety. (2) *Aggregation*: a **Snorkel** label
-model learns per-program reliability weights and combines the votes. (3) *Routing* (optional): distill
-into a reward model for local use.
+**Pipeline (revised).**
+1. *Synthesis* — Claude Opus 4.6 writes **80 candidate programs** from **10 curated rubrics** (Relevance,
+   Readability, Completeness, Coherence, Clarity, Structure, …), prompts seeded with 10 val examples; a
+   text-similarity filter drops near-duplicates.
+2. *Calibration* — each program's abstention threshold `τ_j` is tuned on ~500 val examples.
+3. *Selection* — drop programs scoring below chance (50%) on val; keep the **top-k by val accuracy** →
+   a per-dataset committee. **Retained: JudgeLM 21, PandaLM 14, MultiPref 16, Prometheus 8, Pref-700K 15.**
+4. *Aggregation* — a **Snorkel** label model learns per-program reliability weights and combines votes.
+5. *Routing* — uncertain pairs (high vote variance / aggregator posterior ≈ 0.5) escalate to an LLM
+   judge. The shipped system is a **hybrid**, not programs-only.
 
-**Datasets.** JudgeLM, PandaLM, Prometheus (also MultiPref, Preference-700K).
+**Datasets.** JudgeLM, PandaLM, MultiPref, Prometheus, Preference-700K.
 
-**Headline numbers.**
-- Programmatic judge in-domain ≈ **63–73%** vs LLM-as-judge ≈ **74–83%** (a few points lower) — but
-  at **~3 orders of magnitude lower cost** ($0.053 vs $130–300 to label a set).
-- Scales with #programs: **3 programs ≈ 59%**, **52 ≈ 82.2%** on Prometheus (Fig. 2).
-- Beats LLM-as-judge out-of-domain on RewardBench **Chat-Hard**: +2.19 (Prometheus), +8.67 (JudgeLM).
-- Less biased: +15.83% judgment consistency, −23.7% biased-response win rate vs Qwen2.5-14B.
+**Headline numbers (revised).**
+- The committee **averages 78.11%** (≈ OLMo-2-13B-Instruct / Qwen2.5-3B-Instruct; within 8 pts of GPT-5
+  Thinking's 85.72%) at throughput no LLM judge reaches (~50× faster than Qwen2.5-14B). The paper's own
+  framing: *"a committee of fewer than twenty synthesized programs is sufficient."*
+- **Prometheus: 8 programs → 88.78%**, matching OLMo-2-7B-Instruct.
+- **Hybrid routing** (aggregator-posterior signal) adds **+5.0%** accuracy at **2.9×** throughput over
+  LLM-only on OLMo-2-7B; program-derived signals beat length/random routers.
+- **Reward-model distillation** (Table 1; relabel 20K pairs, fine-tune Qwen2.5-3B, Bradley-Terry):
+  PAJAMA labels **match or beat** GPT-4 labels on RewardBench average at **45–50× lower cost** — JudgeLM
+  Chat-Hard 38.82→**44.52**, Reasoning 65.13→**72.91** (avg +4.49); Prometheus avg +1.67. In-domain,
+  PAJAMA is a touch lower (JudgeLM 90.24→82.79, Prometheus 97.23→92.20).
+- **Bias** (Table 2, five bias types): PAJAMA has the **lowest average flip rate** of any judge family;
+  a **coding agent (Claude Code) patches the programs** to cut it further (flip rate 12.09→7.60) —
+  *"bias is no longer a fixed property of the evaluator, but a bug that can be patched."*
 
 ---
 
@@ -44,7 +65,7 @@ into a reward model for local use.
 So GEPA literally does *program synthesis for the judge*: start from an LLM-as-a-judge baseline
 (`dspy.RLM`) and evolve the judge's Python toward scoring the two responses in code, reserving an LLM
 call only for ambiguous pairs. A single evolved program is the **single-program** analog of PAJAMA
-(which uses a 52-program ensemble).
+(which uses a selected, calibrated per-dataset committee — 21 programs for JudgeLM, from 80 candidates).
 
 ---
 
@@ -86,21 +107,22 @@ call only for ambiguous pairs. A single evolved program is the **single-program*
 
 ## 5. THE KEY FINDING (this is the point)
 
-**A single GEPA-synthesized code judge does NOT reproduce PAJAMA's ~63–73% cheap-judge band on
-JudgeLM — and this is fundamental, not a tuning miss.**
+**A single GEPA-synthesized code judge does NOT match the LLM-as-a-judge on JudgeLM — and this is
+fundamental, not a tuning miss.**
 
-- The **baseline is faithful**: Flex-`RLM` LLM-as-a-judge scores **~68–88%**, matching the paper's
-  LLM-judge band (74–83%).
+- The **baseline is faithful**: Flex-`RLM` LLM-as-a-judge scores **~68–88%** across our runs —
+  consistent with the mid-sized LLM judges the paper benchmarks (its committee averages 78.11%).
 - GEPA maximizes the metric. So the `LLM_CALL_PENALTY` knob has **no stable sweet spot** here:
   - **High penalty / small val** → GEPA codifies, but one program **overfits** and latches onto
     **verbosity/length** (the exact bias the paper flags), scoring **at or below chance** on held-out
     test (runs #1, #3).
   - **Low penalty, or robust val + wide minibatch** → GEPA **correctly refuses** the cheaper-but-worse
     code judge and keeps the accurate RLM (runs #2, #4, #5). Accuracy holds; no codification.
-- Why fundamental: a single code judge genuinely can't beat the LLM on JudgeLM. The paper's own Fig. 2
-  puts **3 programs at ≈59%**, so **one program is below that** and below the LLM judge. The paper's
-  headline is a property of the **52-program Snorkel ensemble**, not any single program. With honest
-  validation, GEPA will never adopt something worse than the RLM — which is *correct* behavior.
+- Why fundamental: a single code judge genuinely can't beat the LLM on JudgeLM. The paper's headline is
+  a property of a **selected, calibrated committee** (21 programs on JudgeLM) plus an **LLM-fallback
+  router** — not any single program. (v1's Fig. 2 put **3 programs at ≈59%** on Prometheus, so one
+  program sits below even that.) With honest validation, GEPA will never adopt something worse than the
+  RLM — which is *correct* behavior.
 - Corollary: there is **no free lunch on JudgeLM**. Nearly every pair genuinely needs the LLM, so an
   accuracy-preserving hybrid can't save much; PAJAMA's cost win **comes with** an accuracy cost.
 
@@ -178,24 +200,38 @@ The paper's actual method, implemented natively. GEPA synthesizes K pure-Python 
   helps when reliabilities genuinely differ (Run A, where it flipped a below-chance judge); when all judges
   are similar and above chance, majority is hard to beat and the weighter can misfire on noisy val.
 - **Verdict:** bagging turned GEPA-optimized judges from *worse-than-sampled* (Run A) into *better*: 6
-  optimized+decorrelated judges → 62%, at/above the paper's ~6-sampled-program point (~low-60s) and touching
-  the bottom of its JudgeLM programmatic band (63–73%) — with far fewer programs. **The lever was
-  independence, not count.** Still below the 88% LLM baseline (pure-code ceiling); at n=50 the ±~14pp CI
-  means the 62/60/58 gaps are individually within noise — the reliable signal is the *curve shape* (up).
+  optimized+decorrelated judges → 62%, with the accuracy-vs-#programs curve **rising** (58→62%) instead
+  of falling. That's below the revised paper's selected+calibrated JudgeLM committee (21 programs + LLM
+  router) and below the 88% LLM baseline (pure-code ceiling) — but the reliable signal is the **curve
+  shape (up)**, and **the lever was independence, not count**. At n=50 the ±~14pp CI means the 62/60/58
+  gaps are individually within noise.
 
 ---
 
-## 9. The reframing: GEPA *optimizes*, the paper *samples*
+## 9. The reframing: GEPA *rewrites* judge code; the paper *selects & calibrates* it
 
-The paper **samples** ~52 programs (no per-program optimization) and leans on Snorkel to combine many
-weak ones. GEPA instead **optimizes** each program — so the DSPy-native thesis is **fewer-but-better
-judges**: a handful of GEPA-optimized, *decorrelated* judges beating many sampled ones **at matched
-#programs**. The right success metric is our accuracy-vs-#programs curve sitting **above** the paper's
-(their 3→59%, 52→82.2% on Prometheus; JudgeLM programmatic 63–73%) — NOT hitting 82%.
+**This framing tightened once the revised paper (§1) surfaced.** v1 genuinely just *sampled* ~52
+programs and Snorkel-combined them, so "paper samples, GEPA optimizes" was a fair contrast. The revised
+paper is more sophisticated — **over-generate (80) → select top-k by val accuracy → calibrate per-program
+thresholds → Snorkel-weight → route uncertain pairs to an LLM** — and §4.4 even uses a **coding agent
+(Claude Code) to patch program code** for bias. It also independently reaches the same **"fewer than
+twenty programs is enough"** conclusion this demo was chasing.
 
-The N=10 run was *below* the paper's low end (≈chance at 3 judges vs their 59%): our optimized judges
-were **worse than independent samples** because they were correlated. Chasing more judges (toward 52)
-abandons the GEPA value prop; the lever is per-judge *independence*, not count.
+So the honest, narrower distinction is the **optimization primitive**, not the program count:
+- **PAJAMA** *selects and calibrates pre-written* programs (and patches specific biases with a coding
+  agent); it never rewrites a program's scoring logic to raise accuracy.
+- **Flex+GEPA** *reflectively rewrites the scoring logic itself* — GEPA reads each judge's failures and
+  proposes new Python against the accuracy objective. §4.4's coding-agent bias-patch is the paper's
+  closest move; GEPA generalizes it from bias-only to full accuracy-driven code evolution. So Flex+GEPA
+  is a natural **complement** — apply it where a fixed, selected program pool hits its ceiling.
+
+The DSPy-native thesis is therefore **fewer-but-*rewritten* judges** (not fewer-but-sampled): a few
+GEPA-optimized, *decorrelated* judges. Success = the accuracy-vs-#programs curve *rising* with
+independence, NOT matching 82%.
+
+The N=10 run was ≈chance: our optimized judges were **worse than independent samples** because they were
+correlated. Chasing more judges abandons the GEPA value prop; the lever is per-judge *independence*, not
+count.
 
 **Decorrelation experiment (`N_JUDGES=6`, bagged) — RAN, and it validated the thesis (see §8 Run B).**
 Keep judges few; invest in independence:
@@ -204,9 +240,9 @@ Keep judges few; invest in independence:
   ensemble. Result: the curve turned **upward** (58→62%) and majority went from 47.5% (Run A) to **62%**.
 - Plus more train data (32), 8 distinct emphases, an explicit **anti-hardcoding** instruction, penalty
   + GEPA weighter kept.
-- **Outcome:** 6 GEPA-optimized + decorrelated judges reach the paper's *matched-N* neighborhood (~low-60s)
-  and the bottom of its JudgeLM band — with far fewer programs than the paper's 52. Confirmed: the lever
-  is per-judge **independence**, not count.
+- **Outcome:** 6 GEPA-optimized + decorrelated judges reach ~62% — well short of the revised paper's
+  selected+calibrated+routed JudgeLM committee (21 programs), but with a curve that *rises* with
+  independence. Confirmed: for GEPA-optimized judges the lever is per-judge **independence**, not count.
 - **Caveats that still hold:** below the 88% LLM baseline (pure-code JudgeLM ceiling); n=50 noise (±~14pp)
   means single-number gaps aren't reliable — trust the curve shape. Pushing higher would want more val
   data for the weighter, more distinct feature families, or a task with more pure-code headroom (Prometheus).
