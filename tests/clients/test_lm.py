@@ -1519,6 +1519,69 @@ def test_responses_api_preserves_multi_message_structure():
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
 
 
+def test_responses_api_converts_chat_function_tools_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "messages": [{"role": "user", "content": "Find the answer"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "Search a knowledge base.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+            },
+            {"type": "web_search_preview"},
+            {
+                "type": "function",
+                "name": "already_flat",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+        "tool_choice": {"type": "function", "function": {"name": "search"}},
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["tools"] == [
+        {
+            "type": "function",
+            "name": "search",
+            "description": "Search a knowledge base.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+        {"type": "web_search_preview"},
+        {
+            "type": "function",
+            "name": "already_flat",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+    assert result["tool_choice"] == {"type": "function", "name": "search"}
+
+
+def test_responses_api_preserves_none_tools():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    result = _convert_chat_request_to_responses_request({"messages": [], "tools": None})
+
+    assert result["tools"] is None
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[

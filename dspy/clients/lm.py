@@ -654,7 +654,23 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         text = request.pop("text", {})
         request["text"] = {**text, "format": response_format}
 
+    # Chat Completions nests function definitions under a `function` key, while
+    # the Responses API expects those fields at the top level. Hosted tools and
+    # values that are already in Responses format are left unchanged.
+    tools = request.get("tools")
+    if tools is not None:
+        request["tools"] = [_convert_chat_function_to_responses_format(tool) for tool in tools]
+    if isinstance(request.get("tool_choice"), dict):
+        request["tool_choice"] = _convert_chat_function_to_responses_format(request["tool_choice"])
+
     return request
+
+
+def _convert_chat_function_to_responses_format(value: dict[str, Any]) -> dict[str, Any]:
+    if value.get("type") == "function" and isinstance(value.get("function"), dict):
+        function = value["function"]
+        return {**{key: item for key, item in value.items() if key != "function"}, **function}
+    return value
 
 
 def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
