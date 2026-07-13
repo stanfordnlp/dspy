@@ -327,11 +327,13 @@ class PythonInterpreter:
             result = self.tools[tool_name](**kwargs)
             if asyncio.iscoroutine(result):
                 result = _await_in_sync(result)
-            is_json = isinstance(result, (list, dict))
-            response = _jsonrpc_result(
-                {"value": json.dumps(result) if is_json else (str(result) if result is not None else ""), "type": "json" if is_json else "string"},
-                request_id
-            )
+            if result is None or isinstance(result, str):
+                response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
+            else:
+                try:
+                    response = _jsonrpc_result({"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id)
+                except (TypeError, ValueError):
+                    response = _jsonrpc_result({"value": str(result), "type": "string"}, request_id)
         except Exception as e:
             error_type = type(e).__name__
             error_code = JSONRPC_APP_ERRORS.get(error_type, JSONRPC_APP_ERRORS["Unknown"])

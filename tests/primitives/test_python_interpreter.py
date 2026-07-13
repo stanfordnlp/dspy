@@ -426,6 +426,159 @@ def test_tool_async_def_raises_propagates():
         assert "boom:7" in result
 
 
+# =============================================================================
+# Tool Return Type Tests
+# =============================================================================
+
+
+def test_tool_returning_int():
+    """Test that tools returning int preserve the type in the sandbox."""
+
+    def count_items(label: str) -> int:
+        return 4
+
+    with PythonInterpreter(tools={"count_items": count_items}) as sandbox:
+        result = sandbox.execute(
+            'n = count_items(label="pages")\n'
+            'print(type(n).__name__)\n'
+            'print(n + 1)'
+        )
+        assert "int" in result
+        assert "5" in result
+
+
+def test_tool_returning_float():
+    """Test that tools returning float preserve the type in the sandbox."""
+
+    def get_score() -> float:
+        return 0.95
+
+    with PythonInterpreter(tools={"get_score": get_score}) as sandbox:
+        result = sandbox.execute(
+            "x = get_score()\n"
+            "print(type(x).__name__)\n"
+            "print(x * 2)"
+        )
+        assert "float" in result
+        assert "1.9" in result
+
+
+def test_tool_returning_bool():
+    """Test that tools returning bool preserve the type in the sandbox."""
+
+    def is_valid() -> bool:
+        return True
+
+    with PythonInterpreter(tools={"is_valid": is_valid}) as sandbox:
+        result = sandbox.execute(
+            'v = is_valid()\n'
+            'print(type(v).__name__)\n'
+            'print(v and "yes")'
+        )
+        assert "bool" in result
+        assert "yes" in result
+
+
+def test_tool_returning_none():
+    """Test that tools returning None yield an empty string in the sandbox.
+
+    Pyodide does not map JS null to Python None (it becomes JsNull), so
+    None results are sent as empty strings to match existing behavior.
+    """
+
+    def do_nothing() -> None:
+        return None
+
+    with PythonInterpreter(tools={"do_nothing": do_nothing}) as sandbox:
+        result = sandbox.execute(
+            "v = do_nothing()\n"
+            "print(type(v).__name__)\n"
+            "print(repr(v))"
+        )
+        assert "str" in result
+        assert "''" in result
+
+
+def test_tool_returning_list():
+    """Test that tools returning list preserve the type in the sandbox."""
+
+    def get_pages() -> list:
+        return [1, 2, 3]
+
+    with PythonInterpreter(tools={"get_pages": get_pages}) as sandbox:
+        result = sandbox.execute(
+            "pages = get_pages()\n"
+            "print(type(pages).__name__)\n"
+            "print(pages[0] + 10)"
+        )
+        assert "list" in result
+        assert "11" in result
+
+
+def test_tool_returning_dict():
+    """Test that tools returning dict preserve the type in the sandbox."""
+
+    def get_info() -> dict:
+        return {"count": 4, "label": "pages"}
+
+    with PythonInterpreter(tools={"get_info": get_info}) as sandbox:
+        result = sandbox.execute(
+            'info = get_info()\n'
+            'print(type(info).__name__)\n'
+            'print(info["count"] + 1)'
+        )
+        assert "dict" in result
+        assert "5" in result
+
+
+def test_tool_returning_non_json_serializable():
+    """Test that tools returning non-JSON-serializable objects fall back to string."""
+
+    class Custom:
+        def __str__(self):
+            return "custom-object"
+
+    def get_custom() -> object:
+        return Custom()
+
+    with PythonInterpreter(tools={"get_custom": get_custom}) as sandbox:
+        result = sandbox.execute(
+            "v = get_custom()\n"
+            "print(v)"
+        )
+        assert "custom-object" in result
+
+
+def test_tool_returning_nan_falls_back_to_string():
+    """Test that tools returning float('nan') or float('inf') fall back to string.
+
+    These values are not valid JSON, so they should go through the str()
+    fallback path rather than breaking JSON.parse in the sandbox.
+    """
+
+    def get_nan() -> float:
+        return float("nan")
+
+    def get_inf() -> float:
+        return float("inf")
+
+    with PythonInterpreter(tools={"get_nan": get_nan, "get_inf": get_inf}) as sandbox:
+        result = sandbox.execute(
+            "n = get_nan()\n"
+            "print(type(n).__name__)\n"
+            "print(n)"
+        )
+        assert "str" in result
+        assert "nan" in result
+
+        result = sandbox.execute(
+            "i = get_inf()\n"
+            "print(type(i).__name__)\n"
+            "print(i)"
+        )
+        assert "str" in result
+        assert "inf" in result
+
 
 # =============================================================================
 # Multi-Output SUBMIT Tests
