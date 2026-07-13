@@ -133,6 +133,11 @@ class TestRLMInitialization:
         assert "query" in rlm.signature.input_fields
         assert "answer" in rlm.signature.output_fields
 
+    @pytest.mark.parametrize("max_output_chars", [0, -1])
+    def test_rejects_non_positive_output_limit(self, max_output_chars):
+        with pytest.raises(ValueError, match="max_output_chars must be greater than 0"):
+            RLM("context -> answer", max_output_chars=max_output_chars)
+
     def test_custom_signature(self):
         """Test RLM with custom signature."""
         rlm = RLM("document, question -> summary, key_facts", max_iters=5)
@@ -547,6 +552,20 @@ class TestREPLTypes:
         # True original length shown in header
         assert "200 chars" in formatted
 
+    @pytest.mark.parametrize(
+        ("limit", "head", "tail"),
+        [(1, "", "f"), (5, "ab", "def")],
+    )
+    def test_repl_entry_truncation_preserves_exact_odd_limit(self, limit, head, tail):
+        formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
+
+        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_repl_entry_rejects_non_positive_limit(self, limit):
+        with pytest.raises(ValueError, match="max_output_chars must be greater than 0"):
+            REPLEntry.format_output("abcdef", max_output_chars=limit)
+
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
         output = "a" * 50
@@ -578,6 +597,20 @@ class TestREPLTypes:
         assert var.preview.startswith("a" * 25)
         assert var.preview.endswith("b" * 25)
         assert "..." in var.preview
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(1, "...f"), (5, "ab...def")],
+    )
+    def test_repl_variable_truncation_preserves_exact_odd_limit(self, limit, expected):
+        var = REPLVariable.from_value("value", "abcdef", preview_chars=limit)
+
+        assert var.preview == expected
+
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_repl_variable_rejects_non_positive_limit(self, limit):
+        with pytest.raises(ValueError, match="preview_chars must be greater than 0"):
+            REPLVariable.from_value("value", "abcdef", preview_chars=limit)
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""

@@ -164,6 +164,8 @@ class RLM(Module):
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
+        if max_output_chars <= 0:
+            raise ValueError("max_output_chars must be greater than 0")
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
