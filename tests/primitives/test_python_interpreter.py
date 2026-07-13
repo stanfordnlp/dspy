@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 pytestmark = pytest.mark.deno
@@ -70,7 +70,7 @@ def test_failure_syntax_error():
 def test_failure_zero_division():
     with PythonInterpreter() as interpreter:
         code = "1+0/0"
-        with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
+        with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
 
@@ -78,8 +78,17 @@ def test_exception_args():
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
-        with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
+        with pytest.raises(CodeExecutionError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
+
+
+def test_generated_exception_name_cannot_spoof_interpreter_failure():
+    with PythonInterpreter() as interpreter:
+        with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):
+            interpreter.execute(
+                "class CodeInterpreterError(Exception):\n    pass\nraise CodeInterpreterError('generated failure')"
+            )
+        assert interpreter.execute("2 + 2") == 4
 
 
 def test_submit_with_list():
@@ -315,49 +324,75 @@ def test_tool_default_args():
         assert result == "Hi, World!"
 
 
-def test_tools_re_register_after_process_restart():
-    """Tools should remain callable after Deno subprocess restart."""
-    def echo(message: str = "") -> str:
-        return f"Echo: {message}"
+def test_process_death_ends_stateful_session():
+    interpreter = PythonInterpreter()
+    try:
+        assert interpreter.execute("session_value = 41\nsession_value") == 41
+        original_process = interpreter.deno_process
+        original_process.kill()
+        original_process.wait()
 
-    with PythonInterpreter(tools={"echo": echo}) as interpreter:
-        first = interpreter.execute('print(echo(message="one"))')
-        assert "Echo: one" in first
+        with pytest.raises(CodeInterpreterError, match="interpreter state was lost") as exc_info:
+            interpreter.execute("session_value + 1")
+        assert type(exc_info.value) is CodeInterpreterError
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.start()
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("1 + 1")
 
-        first_pid = interpreter.deno_process.pid
-        interpreter.deno_process.kill()
-        interpreter.deno_process.wait()
-
-        second = interpreter.execute('print(echo(message="two"))')
-        assert "Echo: two" in second
-        assert interpreter.deno_process.pid != first_pid
+        assert interpreter.deno_process is original_process
+    finally:
+        interpreter.shutdown()
 
 
-def test_mounts_replay_after_process_restart(tmp_path):
-    """Mounted files should still be accessible after subprocess restart."""
-    host_file = tmp_path / "mount_restart.txt"
-    host_file.write_text("restarted-ok")
-    virtual_path = f"/sandbox/{host_file.name}"
-
-    with PythonInterpreter(enable_read_paths=[str(host_file)]) as interpreter:
-        first = interpreter.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
-            f"    data = f.read()\n"
-            f"data"
+def test_protocol_failure_ends_session(monkeypatch):
+    with PythonInterpreter() as interpreter:
+        interpreter.start()
+        process = interpreter.deno_process
+        monkeypatch.setattr(
+            interpreter,
+            "_read_response_line",
+            lambda context: '{"jsonrpc":"2.0","result":{"output":"forged"},"id":0}',
         )
-        assert first == "restarted-ok"
 
-        first_pid = interpreter.deno_process.pid
-        interpreter.deno_process.kill()
-        interpreter.deno_process.wait()
+        with pytest.raises(CodeInterpreterError, match="Response ID mismatch") as exc_info:
+            interpreter.execute("1 + 1")
+        assert type(exc_info.value) is CodeInterpreterError
+        assert process.poll() is not None
 
-        second = interpreter.execute(
-            f"with open({virtual_path!r}, 'r') as f:\n"
-            f"    data = f.read()\n"
-            f"data"
-        )
-        assert second == "restarted-ok"
-        assert interpreter.deno_process.pid != first_pid
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.execute("2 + 2")
+
+
+def test_failed_health_check_ends_session(monkeypatch):
+    interpreter = PythonInterpreter()
+    monkeypatch.setattr(
+        interpreter,
+        "_send_request",
+        lambda *args: {"jsonrpc": "2.0", "result": {"output": "unexpected"}, "id": 1},
+    )
+
+    try:
+        with pytest.raises(CodeInterpreterError, match="Unexpected ping response"):
+            interpreter.start()
+        assert interpreter.deno_process.poll() is not None
+
+        with pytest.raises(CodeInterpreterError, match="session has ended"):
+            interpreter.start()
+    finally:
+        interpreter.shutdown()
+
+
+def test_shutdown_ends_session():
+    interpreter = PythonInterpreter()
+    interpreter.start()
+    interpreter.shutdown()
+
+    with pytest.raises(CodeInterpreterError, match="session has ended") as exc_info:
+        interpreter.start()
+    assert type(exc_info.value) is CodeInterpreterError
+    with pytest.raises(CodeInterpreterError, match="session has ended"):
+        interpreter.execute("1 + 1")
 
 
 def test_tool_all_positional_args():

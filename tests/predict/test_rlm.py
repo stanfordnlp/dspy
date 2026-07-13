@@ -13,7 +13,7 @@ import pytest
 
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -581,7 +581,7 @@ class TestRLMToolExceptions:
             raise RuntimeError("Tool failed!")
 
         mock = MockInterpreter(responses=[
-            CodeInterpreterError("RuntimeError: Tool failed!"),
+            CodeExecutionError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iters=5, interpreter=mock, tools=[failing_tool])
@@ -596,7 +596,7 @@ class TestRLMToolExceptions:
     def test_runtime_error_history_uses_stripped_code(self):
         """Runtime execution failures should preserve stripped code in history."""
         mock = MockInterpreter(responses=[
-            CodeInterpreterError("NameError: name 'x' is not defined"),
+            CodeExecutionError("NameError: name 'x' is not defined"),
             FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iters=5, interpreter=mock)
@@ -640,6 +640,41 @@ class TestRLMToolExceptions:
         result = rlm.forward(query="test")
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error]")
+
+    def test_interpreter_failure_propagates(self):
+        """Process and protocol failures must not fall through to LM extraction."""
+        def fail_generated_code(code, variables):
+            if code == "pass":
+                return ""
+            raise CodeInterpreterError("protocol corrupt")
+
+        mock = MockInterpreter(execute_fn=fail_generated_code)
+        rlm = RLM("query -> answer", max_iters=1, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Try code", "code": "print('test')"},
+        ])
+        rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
+
+        with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
+            rlm.forward(query="test")
+
+    @pytest.mark.asyncio
+    async def test_interpreter_failure_propagates_async(self):
+        """Async process and protocol failures must not fall through to LM extraction."""
+        def fail_generated_code(code, variables):
+            if code == "pass":
+                return ""
+            raise CodeInterpreterError("protocol corrupt")
+
+        mock = MockInterpreter(execute_fn=fail_generated_code)
+        rlm = RLM("query -> answer", max_iters=1, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Try code", "code": "print('test')"},
+        ])
+        rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
+
+        with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
+            await rlm.aforward(query="test")
 
 
 class TestRLMDynamicSignature:
@@ -837,7 +872,7 @@ print(f"Count: {info['count']}")
     def test_runtime_error(self):
         """Test runtime error handling."""
         with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(CodeInterpreterError):
+            with pytest.raises(CodeExecutionError):
                 interp.execute("undefined_variable")
 
 
