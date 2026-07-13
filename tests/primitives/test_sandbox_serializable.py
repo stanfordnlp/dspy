@@ -15,7 +15,8 @@ class ExampleSerializable(SandboxSerializable):
     def __init__(self, data: str = "example_data"):
         self.data = data
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return "import json"
 
     def to_sandbox(self) -> bytes:
@@ -28,18 +29,29 @@ class ExampleSerializable(SandboxSerializable):
         preview = f"ExampleData: {self.data}"
         return preview[:max_chars] + "..." if len(preview) > max_chars else preview
 
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        return f"json.dumps({var_name})"
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        import json
+        return cls(json.loads(payload))
+
 
 class IncompleteSerializable(SandboxSerializable):
-    """Missing the other three abstract methods — should not be instantiable."""
+    """Missing the other abstract methods — should not be instantiable."""
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return ""
 
 
 class NotASubclass:
-    """Implements all four methods but does not subclass — should NOT pass isinstance."""
+    """Implements all six methods but does not subclass — should NOT pass isinstance."""
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return "import json"
 
     def to_sandbox(self) -> bytes:
@@ -50,6 +62,14 @@ class NotASubclass:
 
     def rlm_preview(self, max_chars: int = 500) -> str:
         return "NotASubclass"
+
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        return var_name
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        return cls()
 
 
 # -- ABC enforcement and isinstance() --
@@ -76,7 +96,7 @@ class TestCoreMethods:
     """Smoke tests that a conforming implementation behaves as expected."""
 
     def test_sandbox_setup(self):
-        assert ExampleSerializable().sandbox_setup() == "import json"
+        assert ExampleSerializable.sandbox_setup() == "import json"
 
     def test_to_sandbox_returns_bytes(self):
         payload = ExampleSerializable("hello").to_sandbox()
@@ -147,3 +167,37 @@ class TestSignatureAnnotation:
             answer: str = dspy.OutputField()
 
         assert ExampleSignature.input_fields["data"].annotation is ExampleSerializable
+
+    def test_subclass_supports_output_field_annotation(self):
+        class ExampleSignature(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: ExampleSerializable = dspy.OutputField()
+
+        assert ExampleSignature.output_fields["answer"].annotation is ExampleSerializable
+
+
+class TestOutputDirection:
+    """Sandbox -> host classmethods round-trip a value through the wire format."""
+
+    def test_sandbox_serialize_code_uses_var_name(self):
+        expr = ExampleSerializable.sandbox_serialize_code("my_value")
+        assert "my_value" in expr
+        assert "json.dumps" in expr
+
+    def test_from_sandbox_reconstructs_instance(self):
+        payload = '"hello"'  # json.dumps result for the string "hello"
+        obj = ExampleSerializable.from_sandbox(payload)
+        assert isinstance(obj, ExampleSerializable)
+        assert obj.data == "hello"
+
+    def test_round_trip_serialize_then_reconstruct(self):
+        """Simulate the wire round-trip end-to-end without a real sandbox."""
+        import json
+
+        original = "round-trip"
+        # Sandbox-side: evaluate the serialize expression against the bare value.
+        expr = ExampleSerializable.sandbox_serialize_code("my_value")
+        wire_payload = eval(expr, {"json": json, "my_value": original})
+        # Host-side: reconstruct.
+        reconstructed = ExampleSerializable.from_sandbox(wire_payload)
+        assert reconstructed.data == original

@@ -1203,7 +1203,8 @@ class _StubSerializable(SandboxSerializable):
     def __init__(self, data: str = "stub_data"):
         self.data = data
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return "import json"
 
     def to_sandbox(self) -> bytes:
@@ -1215,11 +1216,20 @@ class _StubSerializable(SandboxSerializable):
     def rlm_preview(self, max_chars: int = 500) -> str:
         return f"StubData({self.data})"
 
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        return f"str({var_name})"
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        return cls(str(payload))
+
 
 class _BinarySerializable(SandboxSerializable):
     """Serializable that emits non-UTF8 bytes to exercise binary payload path."""
 
-    def sandbox_setup(self) -> str:
+    @classmethod
+    def sandbox_setup(cls) -> str:
         return ""
 
     def to_sandbox(self) -> bytes:
@@ -1230,6 +1240,14 @@ class _BinarySerializable(SandboxSerializable):
 
     def rlm_preview(self, max_chars: int = 500) -> str:
         return "BinaryPayload"
+
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        return f"str({var_name})"
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        return cls()
 
 
 class TestBuildVariablesWithSerializable:
@@ -1278,11 +1296,14 @@ class TestPrepareSerializableVars:
         assert regular["query"] == "hello"
         assert "data" not in regular
 
-        # MockInterpreter should have received an execute call for the setup
-        assert mock.call_count == 1
-        code, variables = mock.call_history[0]
-        assert "import json" in code
-        assert "_raw_data" in variables
+        # MockInterpreter should receive setup once, then input assignment.
+        assert mock.call_count == 2
+        setup_code, setup_variables = mock.call_history[0]
+        assignment_code, assignment_variables = mock.call_history[1]
+        assert setup_code == "import json"
+        assert setup_variables == {}
+        assert "_raw_data" in assignment_variables
+        assert "data = _raw_data" in assignment_code
 
     def test_no_serializable_returns_all(self):
         """When no SandboxSerializable values exist, all args are returned."""
@@ -1322,7 +1343,8 @@ class TestPrepareSerializableVars:
         large_text = "x" * (2 * 1024 * 1024)  # 2 MB UTF-8 payload
 
         class _LargeText(SandboxSerializable):
-            def sandbox_setup(self) -> str:
+            @classmethod
+            def sandbox_setup(cls) -> str:
                 return ""
 
             def to_sandbox(self) -> bytes:
@@ -1333,6 +1355,14 @@ class TestPrepareSerializableVars:
 
             def rlm_preview(self, max_chars: int = 500) -> str:
                 return f"LargeText({len(large_text)} chars)"
+
+            @classmethod
+            def sandbox_serialize_code(cls, var_name: str) -> str:
+                return var_name
+
+            @classmethod
+            def from_sandbox(cls, payload):
+                return cls()
 
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
         rlm._prepare_serializable_vars({"data": _LargeText(), "query": "hi"}, mock)
@@ -1348,6 +1378,7 @@ class TestPrepareSerializableVars:
         """Full forward() pass with a SandboxSerializable input."""
         mock = MockInterpreter(responses=[
             "",  # setup execution for _prepare_serializable_vars
+            "",  # input assignment execution
             FinalOutput({"answer": "done"}),
         ])
         rlm = RLM("data, query -> answer", max_iters=3, interpreter=mock)
@@ -1359,8 +1390,176 @@ class TestPrepareSerializableVars:
         result = rlm.forward(data=stub, query="test")
         assert result.answer == "done"
 
-        # First call should be the serializable setup, second should be the iteration
+        # Setup, assignment, then iteration.
+        assert mock.call_count == 3
+
+    def test_output_annotation_setup_runs_without_serializable_input(self):
+        """Output-only SandboxSerializable annotations should set up the sandbox."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _StubSerializable = dspy.OutputField()
+
+        mock = MockInterpreter(responses=[""])
+        rlm = RLM(_Sig, interpreter=mock)
+
+        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
+        regular = rlm._prepare_serializable_vars({"query": "hello"}, mock)
+
+        assert regular == {"query": "hello"}
+        assert mock.call_count == 1
+        code, variables = mock.call_history[0]
+        assert code == "import json"
+        assert variables == {}
+
+    def test_input_and_output_setup_deduplicates(self):
+        """The same setup block should only execute once across inputs and outputs."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            data: _StubSerializable = dspy.InputField()
+            answer: _StubSerializable = dspy.OutputField()
+
+        mock = MockInterpreter(responses=["", ""])
+        rlm = RLM(_Sig, interpreter=mock)
+
+        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
+        rlm._prepare_serializable_vars({"data": _StubSerializable("payload")}, mock)
+
         assert mock.call_count == 2
+        assert mock.call_history[0][0] == "import json"
+        assert "data = _raw_data" in mock.call_history[1][0]
+
+
+class TestSerializableOutputs:
+    """Tests for SandboxSerializable used as OutputField annotations."""
+
+    def test_output_fields_info_includes_serialize_code(self):
+        """SandboxSerializable output annotations should carry a serialize_code template."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _StubSerializable = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+        fields = rlm._get_output_fields_info()
+        answer = next(f for f in fields if f["name"] == "answer")
+        assert "serialize_code" in answer
+        assert "str(__VAR__)" in answer["serialize_code"]
+
+    def test_simple_outputs_do_not_carry_serialize_code(self):
+        """Non-SandboxSerializable outputs should not carry the serialize_code key."""
+        rlm = RLM("query -> answer")
+        fields = rlm._get_output_fields_info()
+        for f in fields:
+            assert "serialize_code" not in f
+
+    def test_generic_annotations_do_not_break_serializable_detection(self):
+        """Generic annotations like list[int] must not raise from issubclass guard."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            items: list[int] = dspy.OutputField()
+            tags: dict[str, str] = dspy.OutputField()
+            answer: str = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+        fields = rlm._get_output_fields_info()
+        # No serialize_code on any of these — they're plain (generic) types.
+        for f in fields:
+            assert "serialize_code" not in f
+        names = {f["name"] for f in fields}
+        assert names == {"items", "tags", "answer"}
+
+    def test_subclass_without_output_methods_raises_clear_error(self):
+        """Subclasses written under the input-only API surface a clear error when
+        accidentally used as OutputField, instead of breaking at instantiation."""
+        import dspy
+
+        class _InputOnly(SandboxSerializable):
+            @classmethod
+            def sandbox_setup(cls) -> str:
+                return ""
+
+            def to_sandbox(self) -> bytes:
+                return b""
+
+            def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+                return f"{var_name} = {data_expr}"
+
+            def rlm_preview(self, max_chars: int = 500) -> str:
+                return "input only"
+
+        # Instantiation must keep working — backward compat for input-only subclasses.
+        instance = _InputOnly()
+        assert isinstance(instance, SandboxSerializable)
+
+        # The error only fires at OutputField construction time.
+        class _Sig(dspy.Signature):
+            answer: _InputOnly = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+        with pytest.raises(NotImplementedError, match="OutputField"):
+            rlm._get_output_fields_info()
+
+    def test_process_final_output_routes_serializable_through_from_sandbox(self):
+        """Marker-tagged payloads should reconstruct via cls.from_sandbox on the host."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _StubSerializable = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+
+        marker = {"__sandbox_serializable__": True, "data": "hello-from-sandbox"}
+        final = FinalOutput({"answer": marker})
+
+        parsed, error = rlm._process_final_output(final, ["answer"])
+
+        assert error is None
+        assert isinstance(parsed["answer"], _StubSerializable)
+        assert parsed["answer"].data == "hello-from-sandbox"
+
+    def test_process_final_output_errors_when_marker_missing(self):
+        """If the agent forgets to wrap a serializable output, surface a clear error."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            answer: _StubSerializable = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+        final = FinalOutput({"answer": "raw_string_without_marker"})
+
+        parsed, error = rlm._process_final_output(final, ["answer"])
+
+        assert parsed is None
+        assert "SandboxSerializable" in error
+        assert "answer" in error
+
+    def test_process_final_output_handles_mixed_outputs(self):
+        """A signature with one SandboxSerializable + one plain output should work end-to-end."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            answer: _StubSerializable = dspy.OutputField()
+            summary: str = dspy.OutputField()
+
+        rlm = RLM(_Sig)
+        final = FinalOutput({
+            "answer": {"__sandbox_serializable__": True, "data": "x"},
+            "summary": "all good",
+        })
+
+        parsed, error = rlm._process_final_output(final, ["answer", "summary"])
+
+        assert error is None
+        assert isinstance(parsed["answer"], _StubSerializable)
+        assert parsed["answer"].data == "x"
+        assert parsed["summary"] == "all good"
 
 
 @pytest.mark.deno
@@ -1372,7 +1571,8 @@ class TestLargeSerializableRoundTrip:
         large_text = "abc123" * (200 * 1024)  # ~1.2 MB UTF-8
 
         class _LargeText(SandboxSerializable):
-            def sandbox_setup(self) -> str:
+            @classmethod
+            def sandbox_setup(cls) -> str:
                 return ""
 
             def to_sandbox(self) -> bytes:
@@ -1384,6 +1584,14 @@ class TestLargeSerializableRoundTrip:
             def rlm_preview(self, max_chars: int = 500) -> str:
                 return f"LargeText({len(large_text)} chars)"
 
+            @classmethod
+            def sandbox_serialize_code(cls, var_name: str) -> str:
+                return var_name
+
+            @classmethod
+            def from_sandbox(cls, payload):
+                return cls()
+
         with PythonInterpreter(tools={}) as interp:
             rlm = RLM("data -> answer", interpreter=interp)
             rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
@@ -1392,6 +1600,159 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+class _RoundTripStr(SandboxSerializable):
+    """SandboxSerializable for str values — exercises both directions through real sandbox."""
+
+    def __init__(self, data: str = ""):
+        self.data = data
+
+    @classmethod
+    def sandbox_setup(cls) -> str:
+        return ""
+
+    def to_sandbox(self) -> bytes:
+        return self.data.encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = {data_expr}"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"RoundTrip({self.data!r})"
+
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        # Round-trip the bare str value through the sandbox unchanged.
+        return f"str({var_name})"
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        return cls(str(payload))
+
+
+class _JsonRoundTrip(SandboxSerializable):
+    """Output setup probe: serialize expression relies on sandbox_setup importing json."""
+
+    def __init__(self, data=None):
+        self.data = data
+
+    @classmethod
+    def sandbox_setup(cls) -> str:
+        return "import json"
+
+    def to_sandbox(self) -> bytes:
+        import json
+        return json.dumps(self.data).encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = json.loads({data_expr})"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"JsonRoundTrip({self.data!r})"
+
+    @classmethod
+    def sandbox_serialize_code(cls, var_name: str) -> str:
+        return f"json.dumps({var_name})"
+
+    @classmethod
+    def from_sandbox(cls, payload):
+        import json
+        return cls(json.loads(payload))
+
+
+@pytest.mark.deno
+class TestSerializableOutputRoundTripThroughSandbox:
+    """End-to-end: a SandboxSerializable output flows from the agent's SUBMIT call,
+    through runner.js's serialize wrapping, across the JSON-RPC wire, and back into
+    a wrapper instance on the host via _process_final_output."""
+
+    def test_submit_wraps_serializable_output_with_marker(self):
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _RoundTripStr = dspy.OutputField()
+
+        with PythonInterpreter(tools={}) as interp:
+            rlm = RLM(_Sig, interpreter=interp)
+            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+            # Agent's code passes a bare str; SUBMIT wrapper should base64-tag it.
+            result = interp.execute('SUBMIT(answer="hello from sandbox")')
+
+        assert isinstance(result, FinalOutput)
+        wire = result.output
+        assert wire["answer"]["__sandbox_serializable__"] is True
+        assert wire["answer"]["data"] == "hello from sandbox"
+
+        # Host-side reconstruction must produce a wrapper instance.
+        parsed, error = rlm._process_final_output(result, ["answer"])
+        assert error is None
+        assert isinstance(parsed["answer"], _RoundTripStr)
+        assert parsed["answer"].data == "hello from sandbox"
+
+    def test_submit_with_mixed_outputs_through_sandbox(self):
+        """Mix of serializable + plain outputs survives the wire end to end."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _RoundTripStr = dspy.OutputField()
+            note: str = dspy.OutputField()
+
+        with PythonInterpreter(tools={}) as interp:
+            rlm = RLM(_Sig, interpreter=interp)
+            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+            result = interp.execute('SUBMIT(answer="payload data", note="some plain text")')
+
+        assert isinstance(result, FinalOutput)
+        parsed, error = rlm._process_final_output(result, ["answer", "note"])
+        assert error is None
+        assert isinstance(parsed["answer"], _RoundTripStr)
+        assert parsed["answer"].data == "payload data"
+        assert parsed["note"] == "some plain text"
+
+    def test_output_only_setup_runs_before_submit_serialization(self):
+        """Output annotation setup should run even without a matching serializable input."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            query: str = dspy.InputField()
+            answer: _JsonRoundTrip = dspy.OutputField()
+            count: int = dspy.OutputField()
+
+        with PythonInterpreter(tools={}) as interp:
+            rlm = RLM(_Sig, interpreter=interp)
+            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+            regular = rlm._prepare_serializable_vars({"query": "hi"}, interp)
+            assert regular == {"query": "hi"}
+            result = interp.execute('SUBMIT(answer={"value": 7}, count=1)')
+
+        assert isinstance(result, FinalOutput)
+        parsed, error = rlm._process_final_output(result, ["answer", "count"])
+        assert error is None
+        assert isinstance(parsed["answer"], _JsonRoundTrip)
+        assert parsed["answer"].data == {"value": 7}
+        assert parsed["count"] == 1
+
+    def test_large_serializable_output_round_trips_through_sandbox(self):
+        """A large serializable output should survive SUBMIT, the wire, and host parsing."""
+        import dspy
+
+        class _Sig(dspy.Signature):
+            answer: _RoundTripStr = dspy.OutputField()
+
+        with PythonInterpreter(tools={}) as interp:
+            rlm = RLM(_Sig, interpreter=interp)
+            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+            result = interp.execute('payload = "abc123" * (200 * 1024)\nSUBMIT(answer=payload)')
+
+        assert isinstance(result, FinalOutput)
+        parsed, error = rlm._process_final_output(result, ["answer"])
+        assert error is None
+        assert isinstance(parsed["answer"], _RoundTripStr)
+        assert len(parsed["answer"].data) == len("abc123") * 200 * 1024
+        assert parsed["answer"].data.startswith("abc123abc123")
 
 
 if __name__ == "__main__":

@@ -100,6 +100,14 @@ def _strip_code_fences(code: str) -> str:
     return remainder[:block_end].strip()
 
 
+def _is_sandbox_serializable_type(annotation: Any) -> bool:
+    """Return True only for concrete SandboxSerializable annotation classes."""
+    try:
+        return isinstance(annotation, type) and issubclass(annotation, SandboxSerializable)
+    except TypeError:
+        return False
+
+
 @experimental
 class RLM(Module):
     """Recursive Language Model module.
@@ -350,8 +358,23 @@ class RLM(Module):
             # Complex types like Literal, Union, etc. are not included
             if annotation in SIMPLE_TYPES:
                 field_info["type"] = annotation.__name__
+            # SandboxSerializable outputs need a sandbox-side serialize expression
+            # that converts the bare value to a wire payload before SUBMIT raises
+            # FinalOutput. The expression uses `__VAR__` as a placeholder that
+            # runner.js substitutes with the parameter name.
+            if _is_sandbox_serializable_type(annotation):
+                field_info["serialize_code"] = annotation.sandbox_serialize_code("__VAR__")
             fields.append(field_info)
         return fields
+
+    def _get_serializable_output_types(self) -> list[type[SandboxSerializable]]:
+        """Return SandboxSerializable output annotation classes in signature order."""
+        output_types = []
+        for field in self.signature.output_fields.values():
+            annotation = getattr(field, "annotation", str)
+            if _is_sandbox_serializable_type(annotation):
+                output_types.append(annotation)
+        return output_types
 
     def _build_variables(self, **input_args: Any) -> list[REPLVariable]:
         """Build REPLVariable list from input arguments with field metadata."""
@@ -381,19 +404,35 @@ class RLM(Module):
     ) -> dict[str, Any]:
         """Inject SandboxSerializable values into the interpreter.
 
-        For each SandboxSerializable value in input_args, serializes it and
-        executes setup + assignment code in the interpreter. Returns the
-        remaining non-serializable args (for per-iteration use).
+        Executes shared setup for SandboxSerializable input values and
+        output annotations, then injects input values. Returns the remaining
+        non-serializable args (for per-iteration use).
         """
         repl.start()
         regular_args = {}
+        serializable_inputs: list[tuple[str, SandboxSerializable]] = []
+        setup_blocks: list[str] = []
+
+        def add_setup(setup: str) -> None:
+            setup = setup.strip()
+            if setup and setup not in setup_blocks:
+                setup_blocks.append(setup)
+
         for name, value in input_args.items():
             if not isinstance(value, SandboxSerializable):
                 regular_args[name] = value
                 continue
+            serializable_inputs.append((name, value))
+            add_setup(value.sandbox_setup())
 
+        for output_type in self._get_serializable_output_types():
+            add_setup(output_type.sandbox_setup())
+
+        if setup_blocks:
+            repl.execute("\n".join(setup_blocks))
+
+        for name, value in serializable_inputs:
             payload = value.to_sandbox()
-            setup = value.sandbox_setup()
             raw_var_name = f"_raw_{name}"
             assignment = value.sandbox_assignment(name, raw_var_name)
             code_lines = []
@@ -411,8 +450,6 @@ class RLM(Module):
             else:
                 payload_vars[raw_var_name] = str(payload)
 
-            if setup:
-                code_lines.append(setup)
             code_lines.append(assignment)
             repl.execute("\n".join(code_lines), variables=payload_vars)
 
@@ -507,12 +544,29 @@ class RLM(Module):
         for name in output_field_names:
             field = self.signature.output_fields[name]
             annotation = getattr(field, "annotation", str)
+            raw_value = raw_output[name]
+
+            # SandboxSerializable outputs arrive as a marker dict produced by
+            # the SUBMIT wrapper in runner.js. Route them through from_sandbox
+            # to reconstruct a wrapper instance on the host.
+            if _is_sandbox_serializable_type(annotation):
+                if not (isinstance(raw_value, dict) and raw_value.get("__sandbox_serializable__")):
+                    type_errors.append(
+                        f"{name}: expected SandboxSerializable payload, got {type(raw_value).__name__}"
+                    )
+                    continue
+                try:
+                    parsed_outputs[name] = annotation.from_sandbox(raw_value["data"])
+                except Exception as e:
+                    type_errors.append(f"{name}: {annotation.__name__}.from_sandbox failed: {e}")
+                continue
+
             try:
-                parsed_outputs[name] = parse_value(raw_output[name], annotation)
+                parsed_outputs[name] = parse_value(raw_value, annotation)
             except (ValueError, pydantic.ValidationError) as e:
                 type_errors.append(
                     f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "
-                    f"got {type(raw_output[name]).__name__}: {e}"
+                    f"got {type(raw_value).__name__}: {e}"
                 )
 
         if type_errors:
