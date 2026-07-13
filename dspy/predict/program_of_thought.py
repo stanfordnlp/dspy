@@ -1,9 +1,18 @@
 import json
 import logging
 import re
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import dspy
-from dspy.primitives.code_interpreter import FinalOutput
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreter,
+    FinalOutput,
+    _create_interpreter,
+    _validate_interpreter,
+    _validate_interpreter_factory,
+)
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
@@ -27,14 +36,21 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: str | type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self,
+        signature: str | type[Signature],
+        max_iters: int = 3,
+        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+    ):
         """
         Args:
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
-            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
+            interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
         """
         super().__init__()
+        _validate_interpreter_factory(interpreter_factory)
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
@@ -59,8 +75,21 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
-        # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self._interpreter_factory = interpreter_factory
+
+    @contextmanager
+    def _interpreter_context(self, interpreter: CodeInterpreter | None) -> Iterator[CodeInterpreter]:
+        """Yield a caller-owned interpreter or manage a factory-created one."""
+        if interpreter is not None:
+            _validate_interpreter(interpreter)
+            yield interpreter
+            return
+
+        interpreter = _create_interpreter(self._interpreter_factory)
+        try:
+            yield interpreter
+        finally:
+            interpreter.shutdown()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -137,44 +166,52 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         return code_block, None
 
-    def _execute_code(self, code):
+    def _execute_code(self, code: str, interpreter: CodeInterpreter):
         """
-        Execute the code using PythonInterpreter and return the output or error.
+        Execute the code using the current interpreter and return the output or error.
         """
         if not code:
             return None, "Error: Empty code before execution."
 
         try:
-            result = self.interpreter.execute(code)
+            result = interpreter.execute(code)
             if isinstance(result, FinalOutput):
                 result = result.output
             # Since it's more complex structure now, just blindly use json to represents all.
             output = json.dumps(result)
             return output, None
-        except Exception as e:
+        except (CodeExecutionError, SyntaxError) as e:
             return None, str(e)
 
-    def forward(self, **kwargs):
-        input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
-        code_data = self.code_generate(**input_kwargs)
-        output = None
-        code, error = self._parse_code(code_data)
-        if not error:
-            output, error = self._execute_code(code)
-        hop = 1
-        # Retrying code generation and execution until no error or reach max_iters
-        while error is not None:
-            logger.error(f"Error in code execution: {error}")
-            if hop == self.max_iters:
-                self.interpreter.shutdown()
-                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
-            input_kwargs.update({"previous_code": code, "error": error})
-            code_data = self.code_regenerate(**input_kwargs)
+    def forward(self, interpreter: CodeInterpreter | None = None, /, **kwargs):
+        """Run the program with a fresh interpreter or a caller-owned override.
+
+        Args:
+            interpreter: Optional caller-owned interpreter, passed positionally. The caller must shut it down.
+            **kwargs: Input values matching the signature's input fields.
+        """
+        if "interpreter" in kwargs and "interpreter" not in self.input_fields:
+            raise TypeError(
+                "To use a caller-owned interpreter, pass it as the first positional argument to forward(...)."
+            )
+        with self._interpreter_context(interpreter) as interpreter:
+            input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
+            code_data = self.code_generate(**input_kwargs)
+            output = None
             code, error = self._parse_code(code_data)
             if not error:
-                output, error = self._execute_code(code)
-            hop += 1
-        input_kwargs.update({"final_generated_code": code, "code_output": output})
-        output_gen_result = self.generate_output(**input_kwargs)
-        self.interpreter.shutdown()
-        return output_gen_result
+                output, error = self._execute_code(code, interpreter)
+            hop = 1
+            # Retrying code generation and execution until no error or reach max_iters
+            while error is not None:
+                logger.error(f"Error in code execution: {error}")
+                if hop == self.max_iters:
+                    raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
+                input_kwargs.update({"previous_code": code, "error": error})
+                code_data = self.code_regenerate(**input_kwargs)
+                code, error = self._parse_code(code_data)
+                if not error:
+                    output, error = self._execute_code(code, interpreter)
+                hop += 1
+            input_kwargs.update({"final_generated_code": code, "code_output": output})
+            return self.generate_output(**input_kwargs)

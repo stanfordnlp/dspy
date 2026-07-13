@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 
-__all__ = ["MockInterpreter"]
+__all__ = ["MockInterpreter", "MockInterpreterFactory"]
 
 
 class MockInterpreter:
@@ -130,3 +130,21 @@ class MockInterpreter:
     ) -> Any:
         """Shorthand for execute()."""
         return self.execute(code, variables)
+
+
+class MockInterpreterFactory:
+    """Callable test provider that records every interpreter it creates."""
+
+    def __init__(
+        self,
+        responses: list[str | FinalOutput | Exception] | None = None,
+        execute_fn: Callable[[str, dict[str, Any]], Any] | None = None,
+    ) -> None:
+        self.responses = list(responses) if responses else []
+        self.execute_fn = execute_fn
+        self.instances: list[MockInterpreter] = []
+
+    def __call__(self) -> MockInterpreter:
+        interpreter = MockInterpreter(responses=self.responses, execute_fn=self.execute_fn)
+        self.instances.append(interpreter)
+        return interpreter

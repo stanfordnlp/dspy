@@ -23,7 +23,15 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreter, FinalOutput
+from dspy.primitives.code_interpreter import (
+    SIMPLE_TYPES,
+    CodeExecutionError,
+    CodeInterpreter,
+    FinalOutput,
+    _create_interpreter,
+    _validate_interpreter,
+    _validate_interpreter_factory,
+)
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -109,12 +117,10 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but you
-    can provide any CodeInterpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
-
-    Note: RLM instances are not thread-safe when using a custom interpreter.
-    Create separate RLM instances for concurrent use, or use the default
-    PythonInterpreter which creates a fresh instance per forward() call.
+    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but
+    ``interpreter_factory`` can create another CodeInterpreter implementation,
+    such as an adapter for a remote sandbox. RLM updates the interpreter's
+    mutable ``tools`` dictionary with invocation-scoped tools before execution.
 
     Examples:
         ```python
@@ -134,7 +140,7 @@ class RLM(Module):
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
-        interpreter: CodeInterpreter | None = None,
+        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
     ):
         """
         Args:
@@ -148,16 +154,19 @@ class RLM(Module):
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
-            interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
+            interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
+                the returned interpreter's mutable ``tools`` dictionary before execution.
         """
         super().__init__()
+        _validate_interpreter_factory(interpreter_factory)
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
         self.verbose = verbose
         self.sub_lm = sub_lm
-        self._interpreter = interpreter
+        self._interpreter_factory = interpreter_factory
         self._user_tools = self._normalize_tools(tools)
         self._validate_tools(self._user_tools)
 
@@ -198,7 +207,7 @@ class RLM(Module):
 
     def _validate_tools(self, tools: dict[str, Tool]) -> None:
         """Validate user-provided tools have valid names."""
-        for name, tool in tools.items():
+        for name in tools:
             if not name.isidentifier():
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
             if name in self._RESERVED_TOOL_NAMES:
@@ -376,6 +385,10 @@ class RLM(Module):
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
         """Raise ValueError if required input fields are missing."""
+        if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
+            raise TypeError(
+                "To use a caller-owned interpreter, pass it as the first positional argument to forward(...)."
+            )
         missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
@@ -448,20 +461,24 @@ class RLM(Module):
             interpreter._tools_registered = False
 
     @contextmanager
-    def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[CodeInterpreter]:
-        """Yield interpreter, creating PythonInterpreter if none provided at init."""
-        if self._interpreter is not None:
-            self._inject_execution_context(self._interpreter, execution_tools)
-            yield self._interpreter
-        else:
-            repl = PythonInterpreter(
-                tools=execution_tools,
-                output_fields=self._get_output_fields_info(),
-            )
-            try:
-                yield repl
-            finally:
-                repl.shutdown()
+    def _interpreter_context(
+        self,
+        execution_tools: dict[str, Callable],
+        interpreter: CodeInterpreter | None,
+    ) -> Iterator[CodeInterpreter]:
+        """Yield a caller-owned interpreter or manage a factory-created one."""
+        if interpreter is not None:
+            _validate_interpreter(interpreter)
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+            return
+
+        interpreter = _create_interpreter(self._interpreter_factory)
+        try:
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+        finally:
+            interpreter.shutdown()
 
     # =========================================================================
     # Execution Core
@@ -625,11 +642,13 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def forward(self, **input_args) -> Prediction:
+    def forward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
-            **input_args: Input values matching the signature's input fields
+            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
+                output metadata into it but does not shut it down.
+            **input_args: Input values matching the signature's input fields.
 
         Returns:
             Prediction with output field(s) from the signature and 'trajectory' for debugging
@@ -644,7 +663,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -711,11 +730,13 @@ class RLM(Module):
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)
 
-    async def aforward(self, **input_args) -> Prediction:
+    async def aforward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
-            **input_args: Input values matching the signature's input fields
+            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
+                output metadata into it but does not shut it down.
+            **input_args: Input values matching the signature's input fields.
 
         Returns:
             Prediction with output field(s) from the signature and 'trajectory' for debugging
@@ -730,7 +751,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
