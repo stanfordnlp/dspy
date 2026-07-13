@@ -41,6 +41,12 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
+        if "trajectory" in self.signature.output_fields:
+            raise ValueError(
+                "Output field name `trajectory` is reserved by ReAct. "
+                "Please rename it in your signature."
+            )
+
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
 
