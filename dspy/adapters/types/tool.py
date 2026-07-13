@@ -264,7 +264,7 @@ class ToolCalls(Type):
     class ToolCall(Type):
         id: str | None = None
         name: str
-        args: dict[str, Any]
+        args: dict[str, Any] = pydantic.Field(json_schema_extra={"additionalProperties": True})
 
         @classmethod
         def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
