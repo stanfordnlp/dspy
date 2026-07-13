@@ -133,8 +133,7 @@ def test_signature_instructions_none():
 
 
 def test_signature_from_dict():
-    signature = Signature(
-        {"input1": InputField(), "input2": InputField(), "output": OutputField()})
+    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
     for k in ["input1", "input2", "output"]:
         assert k in signature.fields
         assert signature.fields[k].annotation == str
@@ -193,8 +192,7 @@ def test_order_preserved_with_mixed_annotations():
 
 
 def test_infer_prefix():
-    assert infer_prefix(
-        "someAttributeName42IsCool") == "Some Attribute Name 42 Is Cool"
+    assert infer_prefix("someAttributeName42IsCool") == "Some Attribute Name 42 Is Cool"
     assert infer_prefix("version2Update") == "Version 2 Update"
     assert infer_prefix("modelT45Enhanced") == "Model T 45 Enhanced"
     assert infer_prefix("someAttributeName") == "Some Attribute Name"
@@ -290,8 +288,7 @@ def test_typed_signatures_basic_types():
 
 
 def test_typed_signatures_generics():
-    sig = Signature(
-        "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
+    sig = Signature("input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
     assert "input_list" in sig.input_fields
     assert sig.input_fields["input_list"].annotation == list[int]
     assert "input_dict" in sig.input_fields
@@ -301,8 +298,7 @@ def test_typed_signatures_generics():
 
 
 def test_typed_signatures_unions_and_optionals():
-    sig = Signature(
-        "input_opt: Optional[str], input_union: Union[int, None] -> output_union: Union[int, str]")
+    sig = Signature("input_opt: Optional[str], input_union: Union[int, None] -> output_union: Union[int, str]")
     assert "input_opt" in sig.input_fields
     # Optional[str] is actually Union[str, None]
     # Depending on the environment, it might resolve to Union[str, None] or Optional[str], either is correct.
@@ -340,8 +336,7 @@ def test_typed_signatures_any():
 
 
 def test_typed_signatures_nested():
-    sig = Signature(
-        "input_nested: list[Union[str, int]] -> output_nested: Tuple[int, Optional[float], list[str]]")
+    sig = Signature("input_nested: list[Union[str, int]] -> output_nested: Tuple[int, Optional[float], list[str]]")
     input_nested_ann = sig.input_fields["input_nested"].annotation
     assert getattr(input_nested_ann, "__origin__", None) is list
     assert len(input_nested_ann.__args__) == 1
@@ -402,18 +397,15 @@ def test_typed_signatures_complex_combinations():
     # Expecting list[str] and dict[str, Any]
     # Because sets don't preserve order, just check membership.
     # Find the list[str] arg
-    list_arg = next(a for a in possible_args if getattr(
-        a, "__origin__", None) is list)
-    dict_arg = next(a for a in possible_args if getattr(
-        a, "__origin__", None) is dict)
+    list_arg = next(a for a in possible_args if getattr(a, "__origin__", None) is list)
+    dict_arg = next(a for a in possible_args if getattr(a, "__origin__", None) is dict)
     assert list_arg.__args__ == (str,)
     k, v = dict_arg.__args__
     assert k == str and v == Any
 
 
 def test_make_signature_from_string():
-    sig = Signature(
-        "input1: int, input2: dict[str, int] -> output1: list[str], output2: Union[int, str]")
+    sig = Signature("input1: int, input2: dict[str, int] -> output1: list[str], output2: Union[int, str]")
     assert "input1" in sig.input_fields
     assert sig.input_fields["input1"].annotation == int
     assert "input2" in sig.input_fields
@@ -446,10 +438,7 @@ def test_basic_custom_type():
     class CustomType(pydantic.BaseModel):
         value: str
 
-    test_signature = dspy.Signature(
-        "input: CustomType -> output: str",
-        custom_types={"CustomType": CustomType}
-    )
+    test_signature = dspy.Signature("input: CustomType -> output: str", custom_types={"CustomType": CustomType})
 
     assert test_signature.input_fields["input"].annotation == CustomType
 
@@ -474,10 +463,9 @@ def test_custom_type_from_different_module():
     pred = dspy.Predict(test_signature)(input=path_obj)
     assert pred.output == "/test/path"
 
+
 def test_pep604_union_type_inline():
-    sig = Signature(
-        "input1: str | None, input2: None | int -> output_union: int | str"
-    )
+    sig = Signature("input1: str | None, input2: None | int -> output_union: int | str")
 
     # input1 and input2 test that both 'T | None' and 'None | T' are interpreted as Optional types,
     # regardless of the order of None in the union expression.
@@ -520,9 +508,7 @@ def test_pep604_union_type_inline_equivalence():
 
 
 def test_pep604_union_type_inline_nested():
-    sig = Signature(
-        "input: str | (int | float) | None -> output: str"
-    )
+    sig = Signature("input: str | (int | float) | None -> output: str")
     assert "input" in sig.input_fields
     input_annotation = sig.input_fields["input"].annotation
 
@@ -595,10 +581,7 @@ def test_pep604_union_type_with_custom_types():
     class CustomType(pydantic.BaseModel):
         value: str
 
-    sig = Signature(
-        "input: CustomType | None -> output: int | str",
-        custom_types={"CustomType": CustomType}
-    )
+    sig = Signature("input: CustomType | None -> output: int | str", custom_types={"CustomType": CustomType})
 
     assert sig.input_fields["input"].annotation == Union[CustomType, None]
     assert sig.output_fields["output"].annotation == Union[int, str]
@@ -614,6 +597,7 @@ def test_pep604_union_type_with_custom_types():
 def test_signature_cloudpickle_roundtrip():
     class MySignature(Signature):
         """Answer the question."""
+
         context: list[str] = InputField()
         question: str = InputField()
         answer: str = OutputField()
@@ -630,6 +614,7 @@ def test_signature_cloudpickle_roundtrip():
 def test_predict_cloudpickle_roundtrip():
     class QA(Signature):
         """Answer the question."""
+
         question: str = InputField()
         answer: str = OutputField()
 
@@ -638,3 +623,75 @@ def test_predict_cloudpickle_roundtrip():
     loaded = pickle.loads(data)
 
     assert list(loaded.signature.fields.keys()) == ["question", "answer"]
+
+
+RESERVED_SIGNATURE_NAMES = ["fields", "input_fields", "instructions", "output_fields", "signature"]
+
+
+@pytest.mark.parametrize("reserved_name", RESERVED_SIGNATURE_NAMES)
+def test_reserved_name_as_field_in_class_signature_raises(reserved_name):
+    with pytest.raises(TypeError, match=f"Field\\(s\\) `{reserved_name}` .* collide with reserved DSPy signature"):
+        type(
+            "ReservedSignature",
+            (Signature,),
+            {
+                "__annotations__": {"question": str, reserved_name: str},
+                "question": InputField(),
+                reserved_name: OutputField(),
+            },
+        )
+
+
+def test_reserved_name_as_field_in_class_body_raises():
+    with pytest.raises(TypeError, match="collide with reserved DSPy signature"):
+
+        class ReservedSignature(Signature):
+            question: str = InputField()
+            instructions: str = OutputField()
+
+
+@pytest.mark.parametrize("reserved_name", RESERVED_SIGNATURE_NAMES)
+def test_reserved_name_as_field_in_string_signature_raises(reserved_name):
+    with pytest.raises(TypeError, match=f"Field\\(s\\) `{reserved_name}` .* collide with reserved DSPy signature"):
+        Signature(f"question -> {reserved_name}")
+
+
+def test_reserved_name_error_explains_the_cause():
+    with pytest.raises(TypeError) as exc_info:
+        Signature("question -> instructions")
+
+    message = str(exc_info.value)
+    # The old error was a `TypeError: 'NoneType' object is not subscriptable` or a complaint about
+    # `json_schema_extra`, neither of which pointed at the actual problem.
+    assert "property" in message
+    assert "json_schema_extra" not in message
+    assert "instructions_text" in message
+
+
+def test_non_reserved_names_that_shadow_signature_methods_still_work():
+    # These are plain methods, not data descriptors, so a field of the same name is still readable. They must keep
+    # working: rejecting them would be a gratuitous breaking change.
+    usable_names = ["prepend", "append", "insert", "delete", "equals", "with_instructions", "dump_state"]
+
+    for name in usable_names:
+        signature = Signature(f"question -> {name}")
+        assert name in signature.output_fields
+
+    signature = Signature("question -> append")
+    extended = Signature.append.__func__(signature, "context", InputField(), str)
+    assert list(extended.fields.keys()) == ["question", "context", "append"]
+    assert list(signature.delete("append").fields.keys()) == ["question"]
+
+
+def test_signature_base_class_and_subclasses_still_construct():
+    assert Signature.fields == {}
+
+    class MySignature(Signature):
+        """Answer the question."""
+
+        question: str = InputField()
+        answer: str = OutputField()
+
+    assert list(MySignature.fields.keys()) == ["question", "answer"]
+    assert MySignature.instructions == "Answer the question."
+    assert list(Signature("question -> answer").fields.keys()) == ["question", "answer"]
