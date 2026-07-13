@@ -165,19 +165,26 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 format_failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
             )
-            scores = []
+            single_scores = []
+            objective_scores = []
             outputs = []
             for t in trajs:
                 outputs.append(t["prediction"])
                 if hasattr(t["prediction"], "__class__") and t.get("score") is None:
-                    scores.append(self.failure_score)
+                    single_scores.append(self.failure_score)
                 else:
                     score = t["score"]
                     if hasattr(score, "score"):
-                        score = score["score"]
-                    scores.append(score)
-
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+                        single_score = score["score"]
+                    if hasattr(score, "objective_score"):
+                        objective_scores.append(score["objective_score"])
+                    single_scores.append(single_score)
+            if len(single_scores) != len(objective_scores):
+                logger.warning(
+                    f"Number of scores and objective_scores mismatched. objective_scores will change {objective_scores} to None"
+                )
+                objective_scores = None
+            return EvaluationBatch(outputs=outputs, scores=single_scores, trajectories=trajs, objective_scores=objective_scores)
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -192,8 +199,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
             scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+            single_scores = [s["score"] if hasattr(s, "score") else s for s in scores]
+            objective_scores = [s["objective_score"] if hasattr(s, "objective_score") else {} for s in scores]
+            if not all(x != {} for x in objective_scores):
+                logger.warning(
+                    f"Number of scores and objective_scores mismatched. objective_scores will change {objective_scores} to None"
+                )
+                objective_scores = None
+            return EvaluationBatch(outputs=outputs, scores=single_scores, trajectories=None, objective_scores=objective_scores)
 
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
