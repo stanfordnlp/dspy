@@ -860,3 +860,56 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+def test_enable_read_paths_accepts_directory(tmp_path):
+    """Directories in enable_read_paths should not crash the sandbox at mount time.
+
+    Files inside the directory are reachable at their host path via Deno's
+    --allow-read=<dir> (using the js.Deno API from inside Pyodide); the directory
+    itself is not mirrored under /sandbox/.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    secret = data_dir / "secret.txt"
+    secret.write_text("from-host-dir")
+
+    with PythonInterpreter(enable_read_paths=[str(data_dir)]) as interpreter:
+        assert interpreter.execute("print('ok')") == "ok\n"
+
+        output = interpreter(
+            "import js\n"
+            f"print(js.Deno.readTextFileSync({str(secret)!r}))"
+        )
+        assert "from-host-dir" in output
+
+        assert interpreter.execute(
+            f"import os\nos.path.exists('/sandbox/{data_dir.name}')"
+        ) is False
+
+
+def test_enable_read_paths_mixed_file_and_directory(tmp_path):
+    """A list mixing files and directories should mount files and skip directories."""
+    file1 = tmp_path / "alpha.txt"
+    file1.write_text("alpha-content")
+
+    data_dir = tmp_path / "extras"
+    data_dir.mkdir()
+    inside = data_dir / "inside.txt"
+    inside.write_text("inside-content")
+
+    with PythonInterpreter(enable_read_paths=[str(file1), str(data_dir)]) as interpreter:
+        mounted = interpreter.execute(
+            "with open('/sandbox/alpha.txt', 'r') as f:\n    data = f.read()\ndata"
+        )
+        assert mounted == "alpha-content"
+
+        host_read = interpreter(
+            "import js\n"
+            f"print(js.Deno.readTextFileSync({str(inside)!r}))"
+        )
+        assert "inside-content" in host_read
+
+        assert interpreter.execute(
+            f"import os\nos.path.exists('/sandbox/{data_dir.name}')"
+        ) is False
