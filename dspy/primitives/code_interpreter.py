@@ -14,26 +14,17 @@ SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
 class CodeInterpreterError(RuntimeError):
-    """Error raised during code interpretation.
+    """Base class for errors reported by a code interpreter.
 
-    This exception covers two distinct failure modes:
-
-    1. **Execution errors**: The sandbox ran user code that failed.
-       - NameError, TypeError, ValueError, etc.
-       - Tool call failures (unknown tool, tool raised exception)
-       - These are normal user code errors.
-
-    2. **Protocol errors**: Communication between host and sandbox failed.
-       - Malformed JSON from sandbox
-       - Sandbox process crashed or became unresponsive
-       - Invalid JSON-RPC message structure
-       - These may indicate a corrupted sandbox needing restart.
-
-    The error message typically includes the original error type (e.g., "NameError: ...")
-    which can help distinguish the failure mode.
-
-    Note: SyntaxError is raised separately (not wrapped) for invalid Python syntax.
+    A bare instance indicates a failure that submitted code cannot repair, such
+    as invalid host-side setup or a process/protocol failure. Recoverable
+    submitted-code failures use :class:`CodeExecutionError`. Implementations
+    should make process/protocol failures terminal for that interpreter session.
     """
+
+
+class CodeExecutionError(CodeInterpreterError):
+    """Recoverable error raised by code running in a healthy interpreter."""
 
 
 class FinalOutput:
@@ -104,7 +95,10 @@ class CodeInterpreter(Protocol):
         For pooling scenarios, call start() on multiple instances to have
         them ready before distributing work.
 
-        Calling start() multiple times should be safe (idempotent).
+        Calling start() multiple times before shutdown should be safe (idempotent).
+        If the underlying interpreter process exits, the session state is lost and
+        the implementation should raise CodeInterpreterError instead of silently
+        starting a new session.
         """
         ...
 
@@ -128,7 +122,8 @@ class CodeInterpreter(Protocol):
             - None: If no output was produced
 
         Raises:
-            CodeInterpreterError: On runtime errors (undefined vars, tool failures, etc.)
+            CodeExecutionError: On runtime errors in the submitted code or a called tool.
+            CodeInterpreterError: If host-side setup or the interpreter process/protocol fails.
             SyntaxError: On invalid Python syntax
 
         Note:
