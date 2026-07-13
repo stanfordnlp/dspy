@@ -438,9 +438,9 @@ def test_tool_returning_float():
 
     with PythonInterpreter(tools={"get_score": get_score}) as sandbox:
         result = sandbox.execute(
-            'x = get_score()\n'
-            'print(type(x).__name__)\n'
-            'print(x * 2)'
+            "x = get_score()\n"
+            "print(type(x).__name__)\n"
+            "print(x * 2)"
         )
         assert "float" in result
         assert "1.9" in result
@@ -474,9 +474,9 @@ def test_tool_returning_none():
 
     with PythonInterpreter(tools={"do_nothing": do_nothing}) as sandbox:
         result = sandbox.execute(
-            'v = do_nothing()\n'
-            'print(type(v).__name__)\n'
-            'print(repr(v))'
+            "v = do_nothing()\n"
+            "print(type(v).__name__)\n"
+            "print(repr(v))"
         )
         assert "str" in result
         assert "''" in result
@@ -490,9 +490,9 @@ def test_tool_returning_list():
 
     with PythonInterpreter(tools={"get_pages": get_pages}) as sandbox:
         result = sandbox.execute(
-            'pages = get_pages()\n'
-            'print(type(pages).__name__)\n'
-            'print(pages[0] + 10)'
+            "pages = get_pages()\n"
+            "print(type(pages).__name__)\n"
+            "print(pages[0] + 10)"
         )
         assert "list" in result
         assert "11" in result
@@ -526,8 +526,8 @@ def test_tool_returning_non_json_serializable():
 
     with PythonInterpreter(tools={"get_custom": get_custom}) as sandbox:
         result = sandbox.execute(
-            'v = get_custom()\n'
-            'print(v)'
+            "v = get_custom()\n"
+            "print(v)"
         )
         assert "custom-object" in result
 
