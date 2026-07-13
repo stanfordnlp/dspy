@@ -143,6 +143,26 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+
+    === "DaoXE (OpenAI-compatible gateway)"
+        [DaoXE](https://daoxe.com) is a multi-model multi-protocol API gateway. For DSPy, use the OpenAI-compatible Chat Completions path with an `openai/` model prefix.
+
+        Set `DAOXE_API_KEY` (or pass `api_key`) and use an exact model ID from your DaoXE account catalog (`GET /v1/models`). Do not hardcode a public model price list.
+
+        ```python linenums="1"
+        import dspy
+        import os
+
+        lm = dspy.LM(
+            f"openai/{os.environ['DAOXE_MODEL']}",  # e.g. openai/YOUR_EXACT_MODEL_ID
+            api_key=os.environ["DAOXE_API_KEY"],
+            api_base="https://daoxe.com/v1",
+            model_type="chat",
+        )
+        dspy.configure(lm=lm)
+        ```
+
+        DaoXE also exposes OpenAI Responses and Anthropic Messages for other clients; DSPy here uses Chat Completions via LiteLLM's OpenAI-compatible route.
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
