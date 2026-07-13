@@ -7,19 +7,7 @@ from dspy.teleprompt import *
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStepAdapter, Image, Audio, File, History, Type, Tool, ToolCalls, ToolCallResults, Code, Reasoning  # isort: skip
-from dspy.core import (  # isort: skip
-    Assistant,
-    Developer,
-    LMConfig,
-    LMMessage,
-    LMRequest,
-    LMResponse,
-    System,
-    ToolCall,
-    ToolResult,
-    User,
-)
-from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
+from dspy.core import LMResponse, System  # isort: skip
 from dspy.utils.exceptions import (
     AdapterParseError,
     ContextWindowExceededError,
@@ -39,13 +27,14 @@ from dspy.utils.exceptions import (
     LMUnsupportedFeatureError,
     LMUnsupportedModelError,
     is_retryable_lm_error,
-)
+)  # isort: skip
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.syncify import syncify
 from dspy.utils.saving import load
 from dspy.streaming.streamify import streamify
 from dspy.utils.usage_tracker import track_usage
+from dspy.utils.cost_tracker import track_cost, CostTracker, BudgetExceededError
 
 from dspy.dsp.utils.settings import settings
 from dspy.dsp.colbertv2 import ColBERTv2
