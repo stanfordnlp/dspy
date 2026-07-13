@@ -2,9 +2,9 @@ import os
 import tempfile
 from io import BytesIO
 
+import httpx
 import pydantic
 import pytest
-import requests
 from PIL import Image as PILImage
 
 import dspy
@@ -16,7 +16,7 @@ from dspy.utils.dummies import DummyLM
 def sample_pil_image():
     """Fixture to provide a sample image for testing"""
     url = "https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg"
-    response = requests.get(url)
+    response = httpx.get(url)
     response.raise_for_status()
     return PILImage.open(BytesIO(response.content))
 
@@ -395,7 +395,7 @@ def test_mime_type_from_response_headers():
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
 
     # Make an actual request to get the content type from headers
-    response = requests.get(pdf_url)
+    response = httpx.get(pdf_url)
     expected_mime_type = response.headers.get("Content-Type", "")
 
     # Should be application/pdf or similar
@@ -413,7 +413,7 @@ def test_pdf_from_file():
     """Test handling a PDF file from disk"""
     # Download a PDF to a temporary file
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    response = requests.get(pdf_url)
+    response = httpx.get(pdf_url)
     response.raise_for_status()
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:

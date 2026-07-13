@@ -4,8 +4,8 @@ import mimetypes
 import os
 from typing import Any, Union
 
+import httpx
 import pydantic
-import requests
 
 from dspy.adapters.types.base_type import Type
 
@@ -60,7 +60,7 @@ class Audio(Type):
         """
         Download an audio file from URL and encode it as base64.
         """
-        response = requests.get(url)
+        response = httpx.get(url, follow_redirects=True)
         response.raise_for_status()
         mime_type = response.headers.get("Content-Type", "audio/wav")
         if not mime_type.startswith("audio/"):
