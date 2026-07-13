@@ -11,6 +11,7 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 from __future__ import annotations
 
 import base64
+import contextvars
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -266,7 +267,10 @@ class RLM(Module):
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {executor.submit(_query_lm, p): i for i, p in enumerate(prompts)}
+                future_to_idx = {
+                    executor.submit(contextvars.copy_context().run, _query_lm, prompt): index
+                    for index, prompt in enumerate(prompts)
+                }
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
