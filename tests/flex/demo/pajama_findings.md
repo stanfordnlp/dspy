@@ -189,10 +189,11 @@ The paper's actual method, implemented natively. GEPA synthesizes K pure-Python 
   train pairs (e.g. `"your post is very good"`, `"i enjoy"`) and add task-specific special-cases (an
   `acronym_bonus`). Expected under a train-accuracy objective on 16 examples; undesirable; and a source
   of the correlation (all overfit the *same* 16 examples).
-- **Low per-judge accuracy is NOT the committee ceiling:** individual pure-code judges score ~low-60s
-  on JudgeLM — but the paper's calibrated + selected 21-program committee reaches **81.13%** (Table 4).
-  The lift comes from **abstention + selection + a label model** (mechanisms this run lacks), not from
-  stronger individual programs. So the ~62% here is an artifact of the ensemble's construction.
+- **Low per-judge accuracy is NOT the committee ceiling:** in our runs, individual pure-code judges
+  score ~low-60s on JudgeLM — while the paper's calibrated + selected 21-program committee reaches
+  **81.13%** (Table 4; the paper does not publish its own per-program accuracies). The lift comes from
+  **abstention + selection + a label model** (mechanisms this run lacks), not from stronger individual
+  programs. So the ~62% here is an artifact of the ensemble's construction.
 
 **Run B — N=6, BAGGED (the decorrelation fix; `N_TRAIN=32 N_VAL=20 N_TEST=50`, `BAG_FRAC=0.7`). It worked.**
 - Baseline LLM-as-judge (RLM): **88.0%**. All **6/6 judges codified**; 0 truncations; ~30 min.

@@ -8,12 +8,14 @@ just its prompts, so optimizing a Flex judge is literally program synthesis: it 
 deterministic Python that calls the LLM only for genuinely ambiguous pairs.
 
 This is the single-program version, not the paper's committee (which selects + calibrates ~8-21
-programs per dataset and routes hard pairs to an LLM). A single pure-code judge has a real ceiling:
-on JudgeLM it tops out in the ~60s (the paper's individual programs are similar; the 60->81 lift is
-an ensemble effect from abstention + selection + a label model — see pajama_findings.md). So judge a
-single program on cost, not on beating the LLM: GEPA reliably codifies a judge holding ~60s on
-JudgeLM (~70s on the more code-friendly Prometheus) at orders-of-magnitude lower cost. LLM_CALL_PENALTY
-/ N_VAL / REFLECTION_MINIBATCH are the knobs between "hold accuracy (keep RLM)" and "force codify".
+programs per dataset and routes hard pairs to an LLM). A single pure-code judge is far weaker than the
+committee: in our own ensemble runs, individual GEPA judges scored ~54-62% on JudgeLM. The paper
+reports only the committee (81.13% on JudgeLM, Table 4) and does NOT publish individual-program
+accuracies; its 81% comes from ensembling (abstention + selection + a label model — see
+pajama_findings.md), not any single strong program. So judge a single program on cost, not on beating
+the LLM: expect GEPA to codify a judge well below the RLM's accuracy but at orders-of-magnitude lower
+cost. LLM_CALL_PENALTY / N_VAL / REFLECTION_MINIBATCH are the knobs between "hold accuracy (keep RLM)"
+and "force codify".
 
 Dataset is selectable via PAJAMA_DATASET (judgelm | prometheus); the gold winner comes from each set's
 scores (ties dropped, classes balanced so chance is 50%). Needs real LMs and network (HuggingFace,
@@ -67,7 +69,8 @@ REFLECTION_LM = dspy.LM(os.getenv("PAJAMA_REFLECTION_LM", _reflect_default), tem
 # single code judge easily overfits a small val set (latching onto verbosity), so wide train/val let
 # GEPA keep only a judge that generalizes. All env-overridable (floored to even to stay balanced).
 # A full run at these defaults is ~$15-25 (dominated by the RLM evals; once GEPA codifies to pure
-# Python the later evals are free), and the paper's own single programs top out in the ~60s on JudgeLM.
+# Python the later evals are free); expect a single pure-code judge well below the RLM (the paper
+# reports only the committee, not per-program accuracy).
 N_TRAIN = int(os.getenv("PAJAMA_N_TRAIN", "200")) // 2 * 2
 N_VAL = int(os.getenv("PAJAMA_N_VAL", "100")) // 2 * 2
 N_TEST = int(os.getenv("PAJAMA_N_TEST", "120")) // 2 * 2
@@ -333,10 +336,12 @@ def test_flex_pajama_showcase() -> None:
     print(
         "paper reference — "
         + {
-            "judgelm": "JudgeLM (revised): a selected+calibrated 21-program committee reaches 81.13%; "
-            "single programs ~60s. This single judge trades accuracy for ~1000x lower cost.",
-            "prometheus": "Prometheus (revised): an 8-program committee reaches 88.78%; single programs "
-            "run higher than JudgeLM. This single judge trades accuracy for ~1000x lower cost.",
+            "judgelm": "JudgeLM (revised, Table 4): a selected+calibrated 21-program committee reaches "
+            "81.13% at 99.2% coverage; the paper does not report individual-program accuracy. Expect this "
+            "single judge well below that, trading accuracy for ~1000x lower cost.",
+            "prometheus": "Prometheus (revised): an 8-program committee reaches 88.78%; the paper does not "
+            "report individual-program accuracy. Expect this single judge well below that, trading "
+            "accuracy for ~1000x lower cost.",
         }[DATASET]
     )
     _showcase(optimized, "optimized by GEPA (program-as-a-judge)")

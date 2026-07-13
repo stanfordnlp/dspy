@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 from dotenv import load_dotenv
 
 import dspy
@@ -11,18 +13,32 @@ from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 load_dotenv()
 
+# dspy registers a lazy numpy proxy in sys.modules; matplotlib's `from numpy.exceptions import ...`
+# trips that proxy into a recursive import. Materialize the real numpy first. (banking77/pajama get
+# this for free by importing pandas/datasets before matplotlib; this demo depends on neither.)
+np = pytest.importorskip("numpy")
+_ = np.ndarray  # force the proxy to load the real module before matplotlib imports it
+mpl = pytest.importorskip("matplotlib")
+mpl.use("Agg")  # headless
+import matplotlib.pyplot as plt  # noqa: E402
+
 DEMO_DIR = Path(__file__).parent
 DATA_PATH = DEMO_DIR / "conflation_coded.jsonl"
 SAVE_PATH = DEMO_DIR / "conflation_flex.json"
+PLOT_PATH = DEMO_DIR / "conflation_improvement.png"
 
 EXEC_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=1000)
 STRONG_LM = dspy.LM("anthropic/claude-opus-4-7", max_tokens=8000)
 dspy.configure(lm=EXEC_LM)
 
-N_TRAIN_POS, N_TRAIN_NEG = 6, 6
-N_VAL_POS, N_VAL_NEG = 3, 3
-N_TEST_POS, N_TEST_NEG = 4, 4
-MAX_METRIC_CALLS = 30
+# A larger, class-balanced test split (40 = 20 pos + 20 neg) gives a stable accuracy/cost estimate
+# with headroom; a tiny n=8 too easily lands on a fluke. Chance stays 50% (balanced). Splits are
+# disjoint slices of the shuffled pools, so neg usage (8+5+20=33) stays well under the 260 available.
+N_TRAIN_POS, N_TRAIN_NEG = 8, 8
+N_VAL_POS, N_VAL_NEG = 5, 5
+N_TEST_POS, N_TEST_NEG = 20, 20
+MAX_METRIC_CALLS = 45
+EVAL_THREADS = 8
 
 
 class SamePlace(dspy.Signature):
@@ -122,32 +138,36 @@ def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float, float]
     below 1.0 even at ~100% accuracy. GEPA's win is settling clear cases in deterministic
     Python (0 calls -> full score), which raw accuracy alone can't show.
     """
-    total_score = 0.0
-    correct = 0
-    calls = 0
-    for ex in dataset:
+    def run_one(ex):
         try:
             with dspy.context(trace=[]):
                 pred = program(**ex.inputs())
                 trace = list(dspy.settings.trace or [])
             score = float(metric(ex, pred, trace=trace).score)
             ok = _as_bool(pred.is_same) == bool(ex.is_same)
-            n = len(trace)
+            return score, int(ok), len(trace)
         except Exception:
-            score, ok, n = 0.0, False, 0
-        total_score += score
-        correct += int(ok)
-        calls += n
+            return 0.0, 0, 0
+
+    with ThreadPoolExecutor(max_workers=EVAL_THREADS) as pool:
+        results = list(pool.map(run_one, dataset))
     n = len(dataset)
+    total_score = sum(s for s, _, _ in results)
+    correct = sum(ok for _, ok, _ in results)
+    calls = sum(c for _, _, c in results)
     return total_score / n, correct / n, calls / n
 
 
 def _showcase(program: dspy.Module, label: str) -> None:
     """Print the flexed module's clean dspy.Module source and its flat predictors."""
-    print(f"\n===== {label} =====")
     print("predictors on the module:", [n for n, _ in program.named_predictors()])
-    print("--- module_src (a normal dspy.Module subclass) ---")
     print(program.module_src)
+
+
+def test_loader():
+    program = dspy.Flex(SamePlace)
+    program.load(str(SAVE_PATH))
+    return program
 
 
 def test_flex_conflation() -> None:
@@ -173,7 +193,7 @@ def test_flex_conflation() -> None:
         reflection_lm=STRONG_LM,
         max_metric_calls=MAX_METRIC_CALLS,
         reflection_minibatch_size=3,
-        num_threads=4,
+        num_threads=EVAL_THREADS,
     ).compile(program, trainset=train, valset=val)
 
     # The metric penalizes LLM calls, so GEPA should push most logic into plain Python —
@@ -194,6 +214,41 @@ def test_flex_conflation() -> None:
     reloaded.load(str(SAVE_PATH))
     assert reloaded.module_src == optimized.module_src
     print(f"saved + reloaded optimized program -> {SAVE_PATH}")
+
+    # Plot the before/after (a la banking77), one panel per metric. Score is the headline GEPA
+    # optimizes (accuracy − 0.15/LLM-call); accuracy shows it's held; LLM calls/example shows the
+    # decomposition win (the opaque RLM loop -> deterministic Python that settles clear cases).
+    labels_xy = ["baseline\n(flex / RLM)", "optimized\n(GEPA code)"]
+    colors = ["#9aa0a6", "#1a73e8"]
+    fig, (ax_score, ax_acc, ax_calls) = plt.subplots(1, 3, figsize=(11, 4))
+
+    score_bars = ax_score.bar(labels_xy, [base_score, opt_score], color=colors)
+    ax_score.set_ylabel("mean metric score")
+    ax_score.set_ylim(0, 1.1)  # headroom so the on-bar labels clear the title at ~1.0
+    ax_score.set_title("Score (accuracy − call penalty)")
+    for bar, s in zip(score_bars, [base_score, opt_score], strict=True):
+        ax_score.text(bar.get_x() + bar.get_width() / 2, s + 0.02, f"{s:.2f}", ha="center", va="bottom")
+
+    acc_bars = ax_acc.bar(labels_xy, [base_acc, opt_acc], color=colors)
+    ax_acc.set_ylabel("test accuracy")
+    ax_acc.set_ylim(0, 1.1)  # headroom so the on-bar labels clear the title at 100%
+    ax_acc.set_title("Accuracy (held)")
+    for bar, a in zip(acc_bars, [base_acc, opt_acc], strict=True):
+        ax_acc.text(bar.get_x() + bar.get_width() / 2, a + 0.02, f"{a:.1%}", ha="center", va="bottom")
+
+    call_bars = ax_calls.bar(labels_xy, [base_calls, opt_calls], color=colors)
+    ax_calls.set_ylabel("avg LLM calls / example")
+    ax_calls.set_ylim(0, max(base_calls, opt_calls, 1) * 1.2)
+    ax_calls.set_title("LLM calls (lower = more deterministic)")
+    for bar, n in zip(call_bars, [base_calls, opt_calls], strict=True):
+        ax_calls.text(bar.get_x() + bar.get_width() / 2, n, f"{n:.1f}", ha="center", va="bottom")
+
+    fig.suptitle(f"Conflation: same-place matching (n={len(test)})")
+    fig.tight_layout()
+    fig.savefig(PLOT_PATH, dpi=150)
+    plt.close(fig)
+    print(f"saved plot -> {PLOT_PATH}")
+    assert PLOT_PATH.exists()
 
 
 if __name__ == "__main__":
