@@ -86,6 +86,7 @@ class Predict(Module, Parameter):
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None
+        state["config"] = dict(self.config)  # copy so mutating the dumped state can't alter self.config
         return state
 
     def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
