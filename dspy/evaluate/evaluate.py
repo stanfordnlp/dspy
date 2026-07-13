@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 import tqdm
 
 import dspy
+
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
@@ -18,9 +19,7 @@ from dspy.utils.parallelizer import ParallelExecutor
 try:
     from IPython.display import HTML
     from IPython.display import display as display
-
 except ImportError:
-
     def display(obj: Any):
         """
         Display the specified Python object in the console.
@@ -48,6 +47,7 @@ logger = logging.getLogger(__name__)
 class EvaluationResult(Prediction):
     """
     A class that represents the result of an evaluation.
+
     It is a subclass of `dspy.Prediction` that contains the following fields
 
     - score: An float value (e.g., 67.30) representing the overall performance
@@ -66,6 +66,7 @@ class Evaluate:
 
     This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and
     a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
+
     """
 
     def __init__(
@@ -81,6 +82,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int = 120,
+        straggler_limit: int = 3,
         **kwargs,
     ):
         """
@@ -97,7 +100,12 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
-
+            timeout (int): Seconds before a straggler task is resubmitted. Defaults to 120.
+                Set to 0 to disable straggler resubmission entirely. Increase this when individual
+                examples take longer than 2 minutes (e.g. slow LLM calls, large inputs), to avoid
+                the ``RuntimeError: cannot schedule new futures after shutdown`` error.
+            straggler_limit (int): Only resubmit stragglers when at most this many tasks remain
+                unfinished. Defaults to 3. Has no effect when ``timeout=0``.
         """
         self.devset = devset
         self.metric = metric
@@ -109,6 +117,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +135,8 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -138,12 +150,15 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[int]): Seconds before a straggler task is resubmitted. If not provided, use
+                ``self.timeout``. Set to 0 to disable straggler resubmission.
+            straggler_limit (Optional[int]): Only resubmit stragglers when at most this many tasks remain
+                unfinished. If not provided, use ``self.straggler_limit``.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
 
             - score: A float percentage score (e.g., 67.30) representing overall performance
-
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
@@ -153,6 +168,8 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
@@ -165,6 +182,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=timeout,
+            straggler_limit=straggler_limit,
         )
 
         def process_item(example):
@@ -177,17 +196,17 @@ class Evaluate:
 
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
-        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
+        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
                 # Rename the 'correct' column to the name of the metric object
                 metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
-
                 self._display_result_table(result_df, display_table, metric_name)
             else:
                 logger.warning("Skipping table display since `pandas` is not installed.")
@@ -199,14 +218,13 @@ class Evaluate:
                 else metric.__class__.__name__
             )
             data = self._prepare_results_output(results, metric_name)
-
             with open(save_as_csv, "w", newline="") as csvfile:
                 fieldnames = data[0].keys()
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
                 writer.writeheader()
                 for row in data:
                     writer.writerow(row)
+
         if save_as_json:
             metric_name = (
                 metric.__name__
@@ -215,8 +233,8 @@ class Evaluate:
             )
             data = self._prepare_results_output(results, metric_name)
             with open(
-                    save_as_json,
-                    "w",
+                save_as_json,
+                "w",
             ) as f:
                 json.dump(data, f)
 
@@ -227,7 +245,7 @@ class Evaluate:
 
     @staticmethod
     def _prepare_results_output(
-            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
     ):
         return [
             (
@@ -243,6 +261,7 @@ class Evaluate:
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
+
         Let's not try to change the name of this method as it may be patched by external tracing tools.
 
         Args:
@@ -280,7 +299,6 @@ class Evaluate:
             truncated_rows = len(result_df) - display_table
 
         df_to_display = stylize_metric_name(df_to_display, metric_name)
-
         display_dataframe(df_to_display)
 
         if truncated_rows > 0:
@@ -317,13 +335,11 @@ def merge_dicts(d1, d2) -> dict:
             merged[f"example_{k}"] = v
         else:
             merged[k] = v
-
     for k, v in d2.items():
         if k in d1:
             merged[f"pred_{k}"] = v
         else:
             merged[k] = v
-
     return merged
 
 
@@ -342,6 +358,7 @@ def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
     :param df: The pandas DataFrame for which to stylize cell contents.
     :param metric_name: The name of the metric for which to stylize DataFrame cell contents.
     """
+
     def format_metric(x):
         if isinstance(x, float):
             return f"✔️ [{x:.3f}]"
@@ -349,6 +366,7 @@ def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
             return f"✔️ [{x}]"
         else:
             return ""
+
     df[metric_name] = df[metric_name].apply(format_metric)
     return df
 
