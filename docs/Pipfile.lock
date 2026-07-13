@@ -473,11 +473,11 @@
         },
         "click": {
             "hashes": [
-                "sha256:398329ad4837b2ff7cbe1dd166a4c0f8900c3ca3a218de04466f38f6497f18a2",
-                "sha256:a2bf429bb3033c89fa4936ffb35d5cb471e3719e1f3c8a7c3fff0b8314305613"
+                "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6",
+                "sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==8.3.3"
+            "version": "==8.4.2"
         },
         "cloudpickle": {
             "hashes": [
@@ -836,11 +836,11 @@
         },
         "griffelib": {
             "hashes": [
-                "sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e",
-                "sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1"
+                "sha256:762a186d2c6fd6794d4ea20d428d597ffb857cb56b66421651cbba15bdd5e813",
+                "sha256:cc7b3d2d2865ad0b909fcc38086e3f554b5ea7acbaa7bbb7ecaa3f5dfb7d9f00"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==2.0.2"
+            "version": "==2.1.0"
         },
         "h11": {
             "hashes": [
@@ -1323,12 +1323,12 @@
         },
         "mkdocstrings-python": {
             "hashes": [
-                "sha256:0b83513478bdfd803ff05aa43e9b1fca9dd22bcd9471f09ca6257f009bc5ee12",
-                "sha256:c518632751cc869439b31c9d3177678ad2bfa5c21b79b863956ad68fc92c13b8"
+                "sha256:30c837bbff016549f659fcba6539ac351303f0fd7e713c89a040611072236e9d",
+                "sha256:3a4d92556ad39637e88af94a5374213af9a8e3040c3824ceaed04b486c017594"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==2.0.3"
+            "version": "==2.0.5"
         },
         "multidict": {
             "hashes": [
@@ -1749,11 +1749,11 @@
         },
         "platformdirs": {
             "hashes": [
-                "sha256:3bfa75b0ad0db84096ae777218481852c0ebc6c727b3168c1b9e0118e458cf0a",
-                "sha256:e61adb1d5e5cb3441b4b7710bea7e4c12250ca49439228cc1021c00dcfac0917"
+                "sha256:31e761a6a0ca04faf7353ea759bdba55652be214725111e5aac52dfa29d4bef7",
+                "sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==4.9.6"
+            "version": "==4.10.0"
         },
         "prompt-toolkit": {
             "hashes": [
@@ -2096,11 +2096,11 @@
         },
         "pymdown-extensions": {
             "hashes": [
-                "sha256:72cfcf55f07aea0d4af2c4f11dd4e52466ddfb1bb819673146398e0bd3a77354",
-                "sha256:d7a5d08014fc571e80ca21dd6f854e31f94c489800350564d55d15b3c41e76b6"
+                "sha256:8269cef0247f9e2d0a62fcea10860aba05c1cbab5470fd4b63230b96434dc589",
+                "sha256:fbc4acb641814fa9d17521bbd21a5240ef739a662f11c06330c4b78c93e954d6"
             ],
-            "markers": "python_version >= '3.9'",
-            "version": "==10.21.3"
+            "markers": "python_version >= '3.10'",
+            "version": "==11.0"
         },
         "python-dateutil": {
             "hashes": [
