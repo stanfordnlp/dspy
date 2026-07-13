@@ -52,7 +52,7 @@ PLOT_PATH = DEMO_DIR / "pajama_improvement.png"
 # the baseline; a strong reflection model writes better logic. Override either via env.
 _exec_default = "anthropic/claude-haiku-4-5"
 _reflect_default = "anthropic/claude-opus-4-8"
-EXEC_LM = dspy.LM(os.getenv("PAJAMA_EXEC_LM", _exec_default), max_tokens=2000)
+EXEC_LM = dspy.LM(os.getenv("PAJAMA_EXEC_LM", _exec_default), max_tokens=8000)
 REFLECTION_LM = dspy.LM(os.getenv("PAJAMA_REFLECTION_LM", _reflect_default), temperature=1.0, max_tokens=8000)
 
 # Balanced splits (equal A/B wins) so chance is 50%. Train/val are larger than the other demos on
