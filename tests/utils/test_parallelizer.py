@@ -166,3 +166,44 @@ def test_sequential_compare_results():
     results = executor.execute(task, data)
 
     assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
+
+
+def test_straggler_resubmitted_at_most_once_per_index():
+    """A straggler task must be resubmitted at most once, even if the resubmission itself
+    also exceeds the timeout.  Tracking by index (not by future) prevents an
+    unbounded resubmission chain that would otherwise grow until executor shutdown."""
+    call_counts: dict[int, int] = {}
+    lock = threading.Lock()
+    stall_item = 99
+
+    def task(item):
+        with lock:
+            call_counts[item] = call_counts.get(item, 0) + 1
+        if item == stall_item:
+            # Sleep longer than the straggler timeout so every submission of
+            # this item looks like a straggler from the monitor's perspective.
+            time.sleep(10)
+        return item
+
+    # Use a short timeout so the test completes quickly; straggler_limit=1 so
+    # stragglers are checked when only this one item is still pending.
+    executor = ParallelExecutor(
+        num_threads=4,
+        timeout=0.05,
+        straggler_limit=1,
+        max_errors=1,
+        disable_progress_bar=True,
+    )
+
+    try:
+        executor.execute(task, [1, 2, 3, stall_item])
+    except Exception:
+        pass  # cancellation due to max_errors is expected
+
+    with lock:
+        stall_runs = call_counts.get(stall_item, 0)
+
+    # The stalling item should be submitted exactly twice: the original run
+    # and one resubmission.  Without the fix it would be submitted N times
+    # (once every timeout interval until the executor shuts down).
+    assert stall_runs <= 2, f"Expected at most 2 runs for stall item, got {stall_runs}"

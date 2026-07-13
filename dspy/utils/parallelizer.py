@@ -106,10 +106,11 @@ class ParallelExecutor:
         results = [None] * len(data)
         job_cancelled = "cancelled"
 
-        # We resubmit at most once per item.
+        # Track which data indices have already been resubmitted so that a
+        # resubmitted future cannot itself spawn another resubmission.
         start_time_map = {}
         start_time_lock = threading.Lock()
-        resubmitted = set()
+        resubmitted_indices: set[int] = set()
 
         # This is the worker function each thread will run.
         def worker(parent_overrides, submission_id, index, item):
@@ -203,12 +204,12 @@ class ParallelExecutor:
                     if 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
-                            if f not in resubmitted:
-                                sid, idx, item = futures_map[f]
+                            sid, idx, item = futures_map[f]
+                            if idx not in resubmitted_indices:
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
-                                    resubmitted.add(f)
+                                    resubmitted_indices.add(idx)
                                     nf = executor.submit(
                                         worker,
                                         parent_overrides,
