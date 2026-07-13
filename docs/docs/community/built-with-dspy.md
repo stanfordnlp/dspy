@@ -21,8 +21,8 @@ Open-source projects, research papers, language ports, and integrations from the
 | **[Co-STORM](https://arxiv.org/pdf/2408.15232)** | Collaborative STORM: Generate Wikipedia-like articles through collaborative discourse among users and multiple LM agents |
 | **[MedVAL](https://arxiv.org/abs/2507.03152)** | Expert-level validation of AI-generated medical text with scalable language models |
 | **[Neural @ ArchEHR-QA 2025](https://aclanthology.org/2025.bionlp-share.13.pdf)** | Runner up method at 2025 BioNLP Shared Task Workshop |
-
-This list is regularly updated with new research publications using DSPy.
+| **[Unleashing the Power of Open Source Large Language Models for Cybersecurity: Key Insights and Challenges](https://doi.org/10.1002/spy2.70223)** | use DSPy Framework optimized prompt engineering workflows to boost the performance of small models (less than 8B), narrowing the performance gap with larger ones (greater than 44B) which broadens deployment possibilitie |
+This list is regularly updated with new research publications .
 
 ## Open-Source Projects
 
