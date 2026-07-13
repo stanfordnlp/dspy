@@ -19,9 +19,9 @@ import threading
 from os import PathLike
 from typing import Any, Callable
 
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
 
-__all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
+__all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
@@ -587,8 +587,9 @@ class PythonInterpreter:
 
                 if error_code == JSONRPC_APP_ERRORS["SyntaxError"]:
                     raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
-                else:
-                    raise CodeInterpreterError(f"{error_type}: {error_data.get('args') or error_message}")
+                if error_code in JSONRPC_APP_ERRORS.values():
+                    raise CodeExecutionError(f"{error_type}: {error_data.get('args') or error_message}")
+                raise CodeInterpreterError(f"{error_type}: {error_data.get('args') or error_message}")
 
             # Unexpected message format - neither a recognized method nor a response
             raise CodeInterpreterError(f"Unexpected message format from sandbox: {msg}")

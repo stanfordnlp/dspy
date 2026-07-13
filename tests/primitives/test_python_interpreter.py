@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 pytestmark = pytest.mark.deno
@@ -70,7 +70,7 @@ def test_failure_syntax_error():
 def test_failure_zero_division():
     with PythonInterpreter() as interpreter:
         code = "1+0/0"
-        with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
+        with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
 
@@ -78,8 +78,17 @@ def test_exception_args():
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
-        with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
+        with pytest.raises(CodeExecutionError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
+
+
+def test_generated_exception_name_cannot_spoof_interpreter_failure():
+    with PythonInterpreter() as interpreter:
+        with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):
+            interpreter.execute(
+                "class CodeInterpreterError(Exception):\n    pass\nraise CodeInterpreterError('generated failure')"
+            )
+        assert interpreter.execute("2 + 2") == 4
 
 
 def test_submit_with_list():

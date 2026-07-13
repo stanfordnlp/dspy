@@ -14,26 +14,15 @@ SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
 class CodeInterpreterError(RuntimeError):
-    """Error raised during code interpretation.
+    """Base class for errors reported by a code interpreter.
 
-    This exception covers two distinct failure modes:
-
-    1. **Execution errors**: The sandbox ran user code that failed.
-       - NameError, TypeError, ValueError, etc.
-       - Tool call failures (unknown tool, tool raised exception)
-       - These are normal user code errors.
-
-    2. **Protocol errors**: Communication between host and sandbox failed.
-       - Malformed JSON from sandbox
-       - Sandbox process crashed or became unresponsive
-       - Invalid JSON-RPC message structure
-       - These may indicate a corrupted sandbox needing restart.
-
-    The error message typically includes the original error type (e.g., "NameError: ...")
-    which can help distinguish the failure mode.
-
-    Note: SyntaxError is raised separately (not wrapped) for invalid Python syntax.
+    A bare instance indicates that the interpreter process or protocol failed.
+    Recoverable submitted-code failures use :class:`CodeExecutionError`.
     """
+
+
+class CodeExecutionError(CodeInterpreterError):
+    """Recoverable error raised by code running in a healthy interpreter."""
 
 
 class FinalOutput:
@@ -128,7 +117,8 @@ class CodeInterpreter(Protocol):
             - None: If no output was produced
 
         Raises:
-            CodeInterpreterError: On runtime errors (undefined vars, tool failures, etc.)
+            CodeExecutionError: On runtime errors in the submitted code or a called tool.
+            CodeInterpreterError: If the interpreter process or communication protocol fails.
             SyntaxError: On invalid Python syntax
 
         Note:

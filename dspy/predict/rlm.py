@@ -22,7 +22,7 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreter, FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -583,7 +583,7 @@ class RLM(Module):
         """Execute code in the interpreter, returning the result or an error string."""
         try:
             return repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {e}"
 
     def _execute_iteration(
@@ -632,6 +632,7 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            CodeInterpreterError: If the interpreter process or protocol fails
         """
         self._validate_inputs(input_args)
 
@@ -717,6 +718,7 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            CodeInterpreterError: If the interpreter process or protocol fails
         """
         self._validate_inputs(input_args)
 
