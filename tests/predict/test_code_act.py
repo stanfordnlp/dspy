@@ -1,3 +1,4 @@
+import threading
 from unittest.mock import Mock
 
 import pytest
@@ -143,7 +144,15 @@ def test_codeact_code_execution_failure():
 
 
 def test_codeact_evaluate_creates_one_interpreter_per_example():
-    factory = MockInterpreterFactory(responses=["", "2\n"])
+    tool_registration_barrier = threading.Barrier(4)
+
+    def execute(code, variables):
+        if code.startswith("def add"):
+            tool_registration_barrier.wait(timeout=30)
+            return ""
+        return "2\n"
+
+    factory = MockInterpreterFactory(execute_fn=execute)
     program = CodeAct(BasicQA, tools=[add], interpreter_factory=factory)
     program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
     program.extractor = StaticPredictor(answer="2")
@@ -193,6 +202,11 @@ def test_codeact_rejects_keyword_interpreter_override():
     assert factory.instances == []
 
 
+def test_codeact_rejects_removed_constructor_interpreter_keyword():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'interpreter'"):
+        CodeAct(BasicQA, tools=[add], interpreter=MockInterpreter())
+
+
 def test_codeact_does_not_shutdown_caller_owned_interpreter():
     factory = MockInterpreterFactory()
     program = CodeAct(BasicQA, tools=[add], interpreter_factory=factory)
@@ -201,7 +215,7 @@ def test_codeact_does_not_shutdown_caller_owned_interpreter():
     interpreter = MockInterpreter(responses=["", "2\n"])
 
     try:
-        result = program.forward(interpreter, question="What is 1+1?")
+        result = program(interpreter, question="What is 1+1?")
 
         assert result.answer == "2"
         assert factory.instances == []

@@ -221,8 +221,12 @@ class TestRLMInitialization:
         assert "c" in str(exc_info.value)
 
     def test_interpreter_instance_is_rejected_as_factory(self):
-        with pytest.raises(TypeError, match=r"first positional argument to forward\(\.\.\.\)"):
+        with pytest.raises(TypeError, match="first positional argument when calling the module"):
             RLM("context -> answer", interpreter_factory=MockInterpreter())
+
+    def test_constructor_interpreter_keyword_is_removed(self):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'interpreter'"):
+            RLM("context -> answer", interpreter=MockInterpreter())
 
     def test_factory_return_value_is_validated(self):
         rlm = RLM("query -> answer", interpreter_factory=lambda: None)
@@ -334,8 +338,8 @@ class TestRLMInterpreterLifecycle:
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
         ])
 
-        sync_result = rlm.forward(query="sync")
-        async_result = await rlm.aforward(query="async")
+        sync_result = rlm(query="sync")
+        async_result = await rlm.acall(query="async")
 
         assert sync_result.answer == "42"
         assert async_result.answer == "42"
@@ -346,7 +350,7 @@ class TestRLMInterpreterLifecycle:
                 interpreter.execute("print('closed')")
 
     @pytest.mark.asyncio
-    async def test_caller_owned_interpreter_can_be_reused_across_calls(self):
+    async def test_caller_owned_interpreter_can_be_reused_across_sequential_calls(self):
         factory = MockInterpreterFactory()
         interpreter = MockInterpreter(
             responses=[
@@ -360,8 +364,8 @@ class TestRLMInterpreterLifecycle:
         ])
 
         try:
-            sync_result = rlm.forward(interpreter, query="sync")
-            async_result = await rlm.aforward(interpreter, query="async")
+            sync_result = rlm(interpreter, query="sync")
+            async_result = await rlm.acall(interpreter, query="async")
 
             assert sync_result.answer == "first"
             assert async_result.answer == "second"
@@ -380,7 +384,7 @@ class TestRLMInterpreterLifecycle:
         rlm.generate_action = RaisingPredictor()
 
         with pytest.raises(ValueError, match="unexpected predictor failure"):
-            rlm.forward(query="test")
+            rlm(query="test")
 
         assert len(factory.instances) == 1
         with pytest.raises(CodeInterpreterError, match="shutdown"):

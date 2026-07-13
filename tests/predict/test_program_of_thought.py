@@ -162,6 +162,11 @@ def test_pot_rejects_keyword_interpreter_override():
     assert factory.instances == []
 
 
+def test_pot_rejects_removed_constructor_interpreter_keyword():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'interpreter'"):
+        ProgramOfThought(BasicQA, interpreter=MockInterpreter())
+
+
 def test_pot_does_not_shutdown_caller_owned_interpreter():
     factory = MockInterpreterFactory()
     pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
@@ -170,7 +175,7 @@ def test_pot_does_not_shutdown_caller_owned_interpreter():
     interpreter = MockInterpreter(responses=[FinalOutput({"answer": "2"})])
 
     try:
-        result = pot.forward(interpreter, question="What is 1+1?")
+        result = pot(interpreter, question="What is 1+1?")
 
         assert result.answer == "2"
         assert factory.instances == []

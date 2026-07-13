@@ -57,8 +57,8 @@ The class carries the `@experimental` decorator. The hard parts are still settli
 **`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter_factory=PythonInterpreter)`**
 The constructor parses the signature and builds the two internal predictors, formatting your task instructions, input names, and output-field types into the action prompt and creating a separate extract signature for the fallback. The budgets and the sandbox configuration are all fixed here, so one instance carries one configuration.
 
-**`forward([interpreter], **inputs)` / `aforward([interpreter], **inputs)` / `__call__`**
-`forward()` validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iters`. `aforward()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`. An interpreter passed as the first positional argument is caller-owned: RLM updates its execution context but does not shut it down.
+**`__call__([interpreter], **inputs)` / `acall([interpreter], **inputs)`**
+The public call validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iters`. `acall()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`. An interpreter passed as the first positional argument is caller-owned: RLM updates its execution context but does not shut it down.
 
 ### Programming the loop with built-in tools
 
@@ -92,8 +92,8 @@ A list of plain functions or `dspy.Tool` objects. RLM normalizes each to a `Tool
 **`interpreter_factory=...`**
 A zero-argument callable that returns a fresh `CodeInterpreter` for one invocation. RLM may call the factory concurrently, and it always shuts down the returned interpreter. A class such as `PythonInterpreter` is already a factory; use `functools.partial` or a callable provider object when construction needs configuration. RLM adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol.
 
-**`forward(interpreter, **inputs)` / `aforward(interpreter, **inputs)`**
-An escape hatch for a caller-owned interpreter, supplied as the first positional argument. RLM mutates its `tools` dictionary and, when supported, its output-field metadata, but does not shut down the instance. Calls can deliberately share its state. `PythonInterpreter` may be reused only on the thread where it was first used; other implementations must follow their own concurrency rules.
+**`__call__(interpreter, **inputs)` / `acall(interpreter, **inputs)`**
+An escape hatch for a caller-owned interpreter, supplied as the first positional argument. RLM mutates its `tools` dictionary and, when supported, its output-field metadata, but does not shut down or restore the instance. Reuse is supported only for sequential calls to the same RLM instance, so retained variables and tool registrations stay within one program and trust boundary. Use `interpreter_factory` for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
 **`dspy.SandboxSerializable`**
 The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.

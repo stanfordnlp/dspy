@@ -203,7 +203,7 @@ rlm = dspy.RLM(
 )
 ```
 
-RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument: `rlm.forward(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut it down.
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
 
 ### Custom Sandbox-Serializable Inputs
 
@@ -234,7 +234,7 @@ import asyncio
 rlm = dspy.RLM("context, query -> answer")
 
 async def process():
-    result = await rlm.aforward(context=data, query="Summarize this")
+    result = await rlm.acall(context=data, query="Summarize this")
     return result.answer
 
 answer = asyncio.run(process())
@@ -265,7 +265,7 @@ RLM returns a `Prediction` with:
     RLM is marked as experimental. The API may change in future releases.
 
 !!! note "Thread Safety"
-    `interpreter_factory` may be called concurrently and must return a fresh interpreter each time. An interpreter passed as the first positional argument to `forward()` or `aforward()` is caller-owned. `PythonInterpreter` can be reused only on the thread where it was first used; other implementations must follow their own concurrency rules.
+    `interpreter_factory` may be called concurrently and must return a fresh interpreter each time. An interpreter passed as the first positional argument to `rlm(...)` or `rlm.acall(...)` is caller-owned and may be reused only for sequential calls to the same RLM instance. `PythonInterpreter` must also stay on the thread where it was first used.
 
 !!! note "Interpreter Requirements"
     The default `PythonInterpreter` requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.

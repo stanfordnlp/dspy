@@ -148,7 +148,7 @@ def _validate_interpreter_factory(factory: Any) -> None:
     if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
         raise TypeError(
             "interpreter_factory must create a new CodeInterpreter, not be an interpreter instance. "
-            "Pass an existing instance as the first positional argument to forward(...) instead."
+            "Pass an existing instance as the first positional argument when calling the module instead."
         )
     if not callable(factory):
         raise TypeError(

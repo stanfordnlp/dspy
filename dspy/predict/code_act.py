@@ -104,7 +104,7 @@ class CodeAct(ReAct, ProgramOfThought):
         """
         if "interpreter" in kwargs and "interpreter" not in self.signature.input_fields:
             raise TypeError(
-                "To use a caller-owned interpreter, pass it as the first positional argument to forward(...)."
+                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
         with self._interpreter_context(interpreter) as interpreter:
             # Define the tool functions in the interpreter

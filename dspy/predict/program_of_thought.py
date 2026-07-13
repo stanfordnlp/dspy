@@ -192,7 +192,7 @@ class ProgramOfThought(Module):
         """
         if "interpreter" in kwargs and "interpreter" not in self.input_fields:
             raise TypeError(
-                "To use a caller-owned interpreter, pass it as the first positional argument to forward(...)."
+                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
         with self._interpreter_context(interpreter) as interpreter:
             input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}

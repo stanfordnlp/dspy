@@ -74,7 +74,7 @@ The constructor mutates the input signature: it prepends one output field (a syn
 
 For tasks where the answer is best computed, not narrated.
 
-Each module accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. Passing an interpreter as the first positional argument to `forward()` instead uses that caller-owned instance without shutting it down. A `PythonInterpreter` override can be reused only on the thread where it was first used.
+Each module accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. Passing an interpreter as the first positional argument when calling the module, such as `program(interpreter, **inputs)`, instead uses that caller-owned instance without shutting it down. Caller-owned reuse is sequential; use the factory path for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
 **`dspy.ProgramOfThought(signature, max_iters=3, interpreter_factory=PythonInterpreter)`**
 Holds three internal `ChainOfThought` predictors: `code_generate` produces Python, `code_regenerate` rewrites it after an execution error, and `generate_output` extracts the declared output fields from the run’s printed result. The forward loop asks `code_generate` for code, runs it through the `PythonInterpreter`, and on error feeds the error message back to `code_regenerate` for up to `max_iters` rounds. Once execution succeeds, `generate_output` produces the signature’s output fields. If `max_iters` is exhausted, the module raises.

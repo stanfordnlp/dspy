@@ -121,6 +121,8 @@ class RLM(Module):
     ``interpreter_factory`` can create another CodeInterpreter implementation,
     such as an adapter for a remote sandbox. RLM updates the interpreter's
     mutable ``tools`` dictionary with invocation-scoped tools before execution.
+    A caller-owned interpreter may be reused sequentially with the same RLM
+    instance, but must not be shared by overlapping invocations.
 
     Examples:
         ```python
@@ -387,7 +389,7 @@ class RLM(Module):
         """Raise ValueError if required input fields are missing."""
         if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
             raise TypeError(
-                "To use a caller-owned interpreter, pass it as the first positional argument to forward(...)."
+                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
         missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
         if missing:
@@ -647,7 +649,8 @@ class RLM(Module):
 
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down.
+                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
+                this RLM instance.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -735,7 +738,8 @@ class RLM(Module):
 
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down.
+                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
+                this RLM instance.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
