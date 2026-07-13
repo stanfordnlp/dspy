@@ -73,7 +73,7 @@ include = ["dspy", "dspy.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-dspy = ["primitives/*.js"]
+dspy = ["py.typed", "primitives/*.js"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
