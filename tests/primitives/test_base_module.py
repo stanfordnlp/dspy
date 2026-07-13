@@ -105,9 +105,7 @@ def test_save_and_load_with_pkl(tmp_path):
     ]
     trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
 
-    dspy.configure(
-        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
-    )
+    dspy.configure(lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10))
 
     cot = dspy.ChainOfThought(MySignature)
     cot(current_date=datetime.date(2024, 1, 1), target_date=datetime.date(2024, 1, 2))
@@ -356,9 +354,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
             program.acall(question="What is the capital of France?"),
         ]
-        with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
-        ):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()):
             results = await asyncio.gather(*coroutines)
 
         assert results[0].get_lm_usage() is not None
@@ -542,3 +538,34 @@ def test_forward_through_call_no_warning(capsys):
     module(x="test")
     captured = capsys.readouterr()
     assert "directly is discouraged" not in captured.err
+
+
+def test_module_call_attaches_usage_to_each_prediction_in_list_output():
+    """Regression for #9201.
+
+    When a `dspy.Module`'s `forward` returns a `list[Prediction]` (the
+    natural shape when calling `dspy.Parallel` inside `forward`),
+    `Module.__call__` previously only handled scalar `Prediction` and
+    `(Prediction, ...)` tuples, so the captured token totals never got
+    attached and `get_lm_usage()` returned `None` on each item. Verify
+    usage now lands on every prediction in the list.
+    """
+    predict = dspy.Predict("q -> a")
+    lm = DummyLM([{"a": "Paris"}, {"a": "Hanoi"}])
+
+    class ParallelMod(dspy.Module):
+        def forward(self):
+            return dspy.Parallel(num_threads=1, max_errors=0)(
+                [
+                    (predict, {"q": "Capital of France?"}),
+                    (predict, {"q": "Capital of Vietnam?"}),
+                ],
+            )
+
+    with dspy.settings.context(lm=lm, track_usage=True):
+        results = ParallelMod()()
+
+    assert isinstance(results, list) and len(results) == 2
+    for result in results:
+        usage = result.get_lm_usage()
+        assert usage, "Expected non-empty usage on each list-returned prediction"
