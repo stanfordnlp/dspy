@@ -233,6 +233,31 @@ class TestRLMInitialization:
         assert results[0].startswith("[ERROR]")
         assert "LM failed" in results[0]
 
+    def test_batched_query_inherits_request_context(self):
+        import contextvars
+
+        import dspy
+
+        request_marker = contextvars.ContextVar("request_marker", default="global")
+
+        class TaggedLM:
+            def __init__(self, tag):
+                self.tag = tag
+
+            def __call__(self, prompt):
+                return [f"{self.tag}:{request_marker.get()}"]
+
+        dspy.configure(lm=TaggedLM("global"))
+        tools = RLM("context -> answer")._make_llm_tools()
+
+        with dspy.context(lm=TaggedLM("request-local")):
+            request_marker.set("request-local")
+            assert tools["llm_query"]("one") == "request-local:request-local"
+            assert tools["llm_query_batched"](["one", "two"]) == [
+                "request-local:request-local",
+                "request-local:request-local",
+            ]
+
     def test_tools_call_counter_is_thread_safe(self):
         """Test that the LLM call counter is thread-safe for concurrent llm_query_batched calls.
 
