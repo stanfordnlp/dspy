@@ -14,6 +14,7 @@ import base64
 import contextvars
 import functools
 import inspect
+import keyword
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -172,7 +173,7 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
         self._user_tools = self._normalize_tools(tools)
-        self._validate_tools(self._user_tools)
+        self._validate_namespace(self._user_tools)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
@@ -183,8 +184,9 @@ class RLM(Module):
     # Tool Creation and Validation
     # =========================================================================
 
-    # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    # Names owned by RLM rather than the user-provided signature or tools.
+    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_RESULT_NAMES = frozenset({"trajectory", "final_reasoning"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -205,17 +207,34 @@ class RLM(Module):
                 raise TypeError(f"Tool {func!r} must be callable, got {type(func).__name__}")
             return Tool(func)
 
-        # List of callables/Tools -> normalize to Tool objects
-        tool_list = [to_tool(t) for t in tools]
-        return {tool.name: tool for tool in tool_list}
+        normalized = {}
+        for value in tools:
+            tool = to_tool(value)
+            if tool.name in normalized:
+                raise ValueError(f"Duplicate tool name '{tool.name}'")
+            normalized[tool.name] = tool
+        return normalized
 
-    def _validate_tools(self, tools: dict[str, Tool]) -> None:
-        """Validate user-provided tools have valid names."""
+    def _validate_namespace(self, tools: dict[str, Tool]) -> None:
+        """Validate names owned by the RLM result and sandbox APIs."""
         for name in tools:
-            if not name.isidentifier():
-                raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
-            if name in self._RESERVED_TOOL_NAMES:
+            if not name.isidentifier() or keyword.iskeyword(name):
+                raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
+            if name in self._RESERVED_SANDBOX_NAMES:
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
+
+        input_names = set(self.signature.input_fields)
+        reserved_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
+        if reserved_inputs:
+            raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
+
+        tool_inputs = sorted(input_names & tools.keys())
+        if tool_inputs:
+            raise ValueError(f"Input fields conflict with user tools: {tool_inputs}")
+
+        reserved_outputs = sorted(set(self.signature.output_fields) & self._RESERVED_RESULT_NAMES)
+        if reserved_outputs:
+            raise ValueError(f"Output fields conflict with RLM result metadata: {reserved_outputs}")
 
     def _format_tool_docs(self, tools: dict[str, Tool]) -> str:
         """Format user-provided tools for inclusion in instructions."""
@@ -398,12 +417,17 @@ class RLM(Module):
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
-        """Raise ValueError if required input fields are missing."""
+        """Validate call-time arguments against the signature's input namespace."""
         if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
             raise TypeError(
                 "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
-        missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
+        input_names = set(self.signature.input_fields)
+        unexpected = set(input_args) - input_names
+        if unexpected:
+            raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
+
+        missing = input_names - set(input_args)
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
