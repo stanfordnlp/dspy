@@ -181,6 +181,18 @@ def test_enable_write_flag(tmp_path):
         assert f.read() == "original_content", "File should not be changed when sync_files is False"
 
 
+def test_sync_failure_is_reported(tmp_path):
+    testfile_path = tmp_path / "sync_failure.txt"
+    testfile_path.write_text("original_content")
+    virtual_path = f"/sandbox/{testfile_path.name}"
+
+    with PythonInterpreter(enable_write_paths=[testfile_path]) as interpreter:
+        with pytest.raises(CodeInterpreterError, match="Failed to sync file"):
+            interpreter.execute(f"import os\nos.remove({virtual_path!r})")
+
+    assert testfile_path.read_text() == "original_content"
+
+
 def test_enable_net_flag():
     test_url = "https://example.com"
 

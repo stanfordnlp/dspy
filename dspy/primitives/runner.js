@@ -244,16 +244,19 @@ while (true) {
   const requestId = input.id; // May be undefined for notifications
 
   // Handle notifications (no response expected)
+  if (method === "shutdown") break;
+
   if (method === "sync_file") {
+    const virtualPath = params.virtual_path;
+    const hostPath = params.host_path || virtualPath;
     try {
-      const virtualPath = params.virtual_path;
-      const hostPath = params.host_path || virtualPath;
       await Deno.writeFile(hostPath, pyodide.FS.readFile(virtualPath));
-    } catch (e) { /* ignore sync errors */ }
+      console.log(jsonrpcResult({ synced: virtualPath }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to sync file: ${e.message}`, requestId));
+    }
     continue;
   }
-
-  if (method === "shutdown") break;
 
   // Handle requests (expect response)
   if (method === "mount_file") {

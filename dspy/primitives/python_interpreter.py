@@ -266,9 +266,11 @@ class PythonInterpreter:
         for path in self.enable_write_paths:
             virtual_path = f"/sandbox/{os.path.basename(str(path))}"
             host_path = _canonicalize_path(path)
-            sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": host_path})
-            self.deno_process.stdin.write(sync_msg + "\n")
-            self.deno_process.stdin.flush()
+            self._send_request(
+                "sync_file",
+                {"virtual_path": virtual_path, "host_path": host_path},
+                f"syncing {path}",
+            )
 
     def _extract_parameters(self, fn: Callable) -> list[dict]:
         """Extract parameter info from a callable for sandbox registration."""
