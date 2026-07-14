@@ -58,11 +58,13 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
-        if restrict is not None and not any(seed in restrict for seed in range(-3, self.num_candidate_sets)):
-            raise ValueError(
-                f"`restrict` {restrict!r} does not match any candidate seed in "
-                f"range(-3, {self.num_candidate_sets}); no candidate programs would be evaluated."
-            )
+        if restrict is not None:
+            restrict = set(restrict)
+            if not restrict.intersection(range(-3, self.num_candidate_sets)):
+                raise ValueError(
+                    f"`restrict` {restrict!r} does not match any candidate seed in "
+                    f"range(-3, {self.num_candidate_sets}); no candidate programs would be evaluated."
+                )
 
         effective_max_errors = self.max_errors if self.max_errors is not None else dspy.settings.max_errors
 
