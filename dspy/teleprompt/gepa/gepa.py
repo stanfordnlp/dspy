@@ -500,10 +500,8 @@ class GEPA(Teleprompter):
             make_code_key,
         )
 
+        assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
-
-        if not trainset:
-            raise ValueError("Trainset must be provided and non-empty.")
 
         # dspy.Flex submodules get their code optimized, not just their instructions.
         flex_submodules = enumerate_flex_submodules(student)
@@ -626,8 +624,6 @@ class GEPA(Teleprompter):
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
-        # The optimized flex code rides on new_prog.module_src; persist it with new_prog.save(...)
-        # like any other optimized module. GEPA writes no files itself.
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)

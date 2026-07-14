@@ -8,7 +8,7 @@ Covers the behavior:
   *instruction* components for non-flex predictors, excluding predictors that live inside a Flex,
 - the adapter rebinds Flex code from a candidate and routes code components through the
   code proposer,
-- GEPA requires a non-empty trainset (there is no data-free path).
+- GEPA requires a non-empty trainset.
 """
 
 from __future__ import annotations
@@ -215,11 +215,11 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
 
 
 def test_gepa_flex_module_requires_trainset() -> None:
-    # There is no data-free synthesis path: a Flex with no trainset must raise, like any
-    # other module — GEPA needs examples to score candidates against.
+    # A Flex with no trainset must raise, like any other module — GEPA needs examples to
+    # score candidates against.
     student = dspy.Flex(Echo)  # in-memory; baseline Predict
     optimizer = dspy.GEPA(metric=_metric, reflection_lm=DummyLM([]), max_metric_calls=10)
-    with pytest.raises(ValueError, match=r"[Tt]rainset"):
+    with pytest.raises(AssertionError, match=r"[Tt]rainset"):
         optimizer.compile(student, trainset=[])
 
 
@@ -233,5 +233,5 @@ def test_gepa_plain_module_requires_trainset() -> None:
             return self.p(**kwargs)
 
     optimizer = dspy.GEPA(metric=_metric, reflection_lm=DummyLM([]), max_metric_calls=10)
-    with pytest.raises(ValueError, match=r"[Tt]rainset"):
+    with pytest.raises(AssertionError, match=r"[Tt]rainset"):
         optimizer.compile(Plain(), trainset=[])
