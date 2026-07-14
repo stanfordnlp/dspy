@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, get_origin
+from typing import Any
 
 import json_repair
 import pydantic
@@ -24,16 +24,48 @@ from dspy.utils.exceptions import AdapterParseError, LMError
 logger = logging.getLogger(__name__)
 
 
-def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
-    """
-    Check whether any output field in the signature has an open-ended mapping type,
-    such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
-    are incompatible.
-    """
-    for field in signature.output_fields.values():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
+class _OpenEndedMappingError(ValueError):
+    """Raised when a response schema permits arbitrary object keys."""
+
+
+def _schema_has_open_ended_mapping(schema: Any) -> bool:
+    if not isinstance(schema, dict):
+        return False
+
+    schema_type = schema.get("type")
+    has_object_type = schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type)
+    has_object_keywords = any(
+        keyword in schema
+        for keyword in ("properties", "patternProperties", "additionalProperties", "propertyNames", "unevaluatedProperties")
+    )
+    if has_object_type or (schema_type is None and has_object_keywords):
+        if "patternProperties" in schema:
             return True
+        if "propertyNames" in schema and schema.get("additionalProperties") is not False:
+            return True
+        if schema.get("additionalProperties") not in (None, False):
+            return True
+        if schema.get("unevaluatedProperties") not in (None, False):
+            return True
+        if has_object_type and "properties" not in schema and schema.get("additionalProperties") is not False:
+            return True
+
+    for keyword in ("properties", "$defs", "definitions", "dependentSchemas"):
+        subschemas = schema.get(keyword)
+        if isinstance(subschemas, dict) and any(
+            _schema_has_open_ended_mapping(subschema) for subschema in subschemas.values()
+        ):
+            return True
+
+    for keyword in ("items", "contains", "additionalProperties", "unevaluatedProperties", "not", "if", "then", "else"):
+        if _schema_has_open_ended_mapping(schema.get(keyword)):
+            return True
+
+    for keyword in ("prefixItems", "allOf", "anyOf", "oneOf"):
+        subschemas = schema.get(keyword)
+        if isinstance(subschemas, list) and any(_schema_has_open_ended_mapping(subschema) for subschema in subschemas):
+            return True
+
     return False
 
 
@@ -58,7 +90,7 @@ class JSONAdapter(ChatAdapter):
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        if (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -81,6 +113,9 @@ class JSONAdapter(ChatAdapter):
                 signature, self.use_native_function_calling
             )
             lm_kwargs["response_format"] = structured_output_model
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except _OpenEndedMappingError:
+            lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except LMError:
             # Provider/backend failures should propagate; the fallback below is only for local structured-output
@@ -108,6 +143,9 @@ class JSONAdapter(ChatAdapter):
                 signature, self.use_native_function_calling
             )
             lm_kwargs["response_format"] = structured_output_model
+            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        except _OpenEndedMappingError:
+            lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except LMError:
             # Provider/backend failures should propagate; the fallback below is only for local structured-output
@@ -237,18 +275,10 @@ def _get_structured_outputs_response_format(
     is compatible with OpenAI Structured Outputs (all objects have a "required" key listing every property,
     and additionalProperties is always false).
 
-    IMPORTANT: If any field's annotation is an open-ended mapping (e.g. dict[str, Any]), then a structured
-    schema cannot be generated since all properties must be explicitly declared. In that case, an exception
-    is raised so that the caller can fall back to using a plain "json_object" response_format.
+    IMPORTANT: If the generated schema contains an open-ended mapping (e.g. dict[str, Any]), then a structured
+    schema cannot be generated since all properties must be explicitly declared. In that case, an exception is
+    raised so that the caller can use a plain "json_object" response format.
     """
-    # Although we've already performed an early check, we keep this here as a final guard.
-    for name, field in signature.output_fields.items():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
-            raise ValueError(
-                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
-            )
-
     fields = {}
     for name, field in signature.output_fields.items():
         annotation = field.annotation
@@ -267,6 +297,9 @@ def _get_structured_outputs_response_format(
 
     # Generate the initial schema.
     schema = pydantic_model.model_json_schema()
+
+    if _schema_has_open_ended_mapping(schema):
+        raise _OpenEndedMappingError("Open-ended mappings are not supported by Structured Outputs.")
 
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
