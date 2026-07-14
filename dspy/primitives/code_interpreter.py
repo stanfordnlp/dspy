@@ -14,26 +14,17 @@ SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
 class CodeInterpreterError(RuntimeError):
-    """Error raised during code interpretation.
+    """Base class for errors reported by a code interpreter.
 
-    This exception covers two distinct failure modes:
-
-    1. **Execution errors**: The sandbox ran user code that failed.
-       - NameError, TypeError, ValueError, etc.
-       - Tool call failures (unknown tool, tool raised exception)
-       - These are normal user code errors.
-
-    2. **Protocol errors**: Communication between host and sandbox failed.
-       - Malformed JSON from sandbox
-       - Sandbox process crashed or became unresponsive
-       - Invalid JSON-RPC message structure
-       - These may indicate a corrupted sandbox needing restart.
-
-    The error message typically includes the original error type (e.g., "NameError: ...")
-    which can help distinguish the failure mode.
-
-    Note: SyntaxError is raised separately (not wrapped) for invalid Python syntax.
+    A bare instance indicates a failure that submitted code cannot repair, such
+    as invalid host-side setup or a process/protocol failure. Recoverable
+    submitted-code failures use :class:`CodeExecutionError`. Implementations
+    should make process/protocol failures terminal for that interpreter session.
     """
+
+
+class CodeExecutionError(CodeInterpreterError):
+    """Recoverable error raised by code running in a healthy interpreter."""
 
 
 class FinalOutput:
@@ -104,7 +95,10 @@ class CodeInterpreter(Protocol):
         For pooling scenarios, call start() on multiple instances to have
         them ready before distributing work.
 
-        Calling start() multiple times should be safe (idempotent).
+        Calling start() multiple times before shutdown should be safe (idempotent).
+        If the underlying interpreter process exits, the session state is lost and
+        the implementation should raise CodeInterpreterError instead of silently
+        starting a new session.
         """
         ...
 
@@ -128,7 +122,8 @@ class CodeInterpreter(Protocol):
             - None: If no output was produced
 
         Raises:
-            CodeInterpreterError: On runtime errors (undefined vars, tool failures, etc.)
+            CodeExecutionError: On runtime errors in the submitted code or a called tool.
+            CodeInterpreterError: If host-side setup or the interpreter process/protocol fails.
             SyntaxError: On invalid Python syntax
 
         Note:
@@ -146,3 +141,35 @@ class CodeInterpreter(Protocol):
         A new instance should be created for a fresh session.
         """
         ...
+
+
+def _validate_interpreter_factory(factory: Any) -> None:
+    """Validate the configured provider without invoking it."""
+    if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
+        raise TypeError(
+            "interpreter_factory received an object that already implements CodeInterpreter, so its ownership "
+            "is ambiguous. Pass an existing interpreter as the first positional argument when calling the module. "
+            "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
+        )
+    if not callable(factory):
+        raise TypeError(
+            "interpreter_factory must be a zero-argument callable that creates a CodeInterpreter, "
+            f"not {type(factory).__name__}."
+        )
+
+
+def _create_interpreter(factory: Callable[[], CodeInterpreter]) -> CodeInterpreter:
+    """Create an interpreter and validate the factory's return value."""
+    interpreter = factory()
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(
+            "interpreter_factory must return a CodeInterpreter, "
+            f"not {type(interpreter).__name__}."
+        )
+    return interpreter
+
+
+def _validate_interpreter(interpreter: Any) -> None:
+    """Validate a caller-owned interpreter."""
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(f"interpreter must implement CodeInterpreter, not {type(interpreter).__name__}.")

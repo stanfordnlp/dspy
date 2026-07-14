@@ -470,6 +470,7 @@ def test_tool_calls_json_schema_omits_internal_id_field():
 
     assert "tool_call_results" not in schema["properties"]
     assert "id" not in schema["$defs"]["ToolCall"]["properties"]
+    assert schema["$defs"]["ToolCall"]["properties"]["args"]["additionalProperties"] is True
     assert schema["$defs"]["ToolCall"]["required"] == ["name", "args"]
 
 

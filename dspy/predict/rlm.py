@@ -11,6 +11,10 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 from __future__ import annotations
 
 import base64
+import contextvars
+import functools
+import inspect
+import keyword
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,7 +26,15 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    SIMPLE_TYPES,
+    CodeExecutionError,
+    CodeInterpreter,
+    FinalOutput,
+    _create_interpreter,
+    _validate_interpreter,
+    _validate_interpreter_factory,
+)
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -108,12 +120,12 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but you
-    can provide any CodeInterpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
-
-    Note: RLM instances are not thread-safe when using a custom interpreter.
-    Create separate RLM instances for concurrent use, or use the default
-    PythonInterpreter which creates a fresh instance per forward() call.
+    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but
+    ``interpreter_factory`` can create another CodeInterpreter implementation,
+    such as an adapter for a remote sandbox. RLM updates the interpreter's
+    mutable ``tools`` dictionary with invocation-scoped tools before execution.
+    A caller-owned interpreter may be reused sequentially with the same RLM
+    instance, but must not be shared by overlapping invocations.
 
     Examples:
         ```python
@@ -133,7 +145,7 @@ class RLM(Module):
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
-        interpreter: CodeInterpreter | None = None,
+        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
     ):
         """
         Args:
@@ -147,18 +159,21 @@ class RLM(Module):
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
-            interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
+            interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
+                the returned interpreter's mutable ``tools`` dictionary before execution.
         """
         super().__init__()
+        _validate_interpreter_factory(interpreter_factory)
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
         self.verbose = verbose
         self.sub_lm = sub_lm
-        self._interpreter = interpreter
+        self._interpreter_factory = interpreter_factory
         self._user_tools = self._normalize_tools(tools)
-        self._validate_tools(self._user_tools)
+        self._validate_namespace(self._user_tools)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
@@ -169,8 +184,9 @@ class RLM(Module):
     # Tool Creation and Validation
     # =========================================================================
 
-    # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    # Names owned by RLM rather than the user-provided signature or tools.
+    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_RESULT_NAMES = frozenset({"trajectory", "final_reasoning"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -191,17 +207,34 @@ class RLM(Module):
                 raise TypeError(f"Tool {func!r} must be callable, got {type(func).__name__}")
             return Tool(func)
 
-        # List of callables/Tools -> normalize to Tool objects
-        tool_list = [to_tool(t) for t in tools]
-        return {tool.name: tool for tool in tool_list}
+        normalized = {}
+        for value in tools:
+            tool = to_tool(value)
+            if tool.name in normalized:
+                raise ValueError(f"Duplicate tool name '{tool.name}'")
+            normalized[tool.name] = tool
+        return normalized
 
-    def _validate_tools(self, tools: dict[str, Tool]) -> None:
-        """Validate user-provided tools have valid names."""
-        for name, tool in tools.items():
-            if not name.isidentifier():
-                raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
-            if name in self._RESERVED_TOOL_NAMES:
+    def _validate_namespace(self, tools: dict[str, Tool]) -> None:
+        """Validate names owned by the RLM result and sandbox APIs."""
+        for name in tools:
+            if not name.isidentifier() or keyword.iskeyword(name):
+                raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
+            if name in self._RESERVED_SANDBOX_NAMES:
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
+
+        input_names = set(self.signature.input_fields)
+        reserved_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
+        if reserved_inputs:
+            raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
+
+        tool_inputs = sorted(input_names & tools.keys())
+        if tool_inputs:
+            raise ValueError(f"Input fields conflict with user tools: {tool_inputs}")
+
+        reserved_outputs = sorted(set(self.signature.output_fields) & self._RESERVED_RESULT_NAMES)
+        if reserved_outputs:
+            raise ValueError(f"Output fields conflict with RLM result metadata: {reserved_outputs}")
 
     def _format_tool_docs(self, tools: dict[str, Tool]) -> str:
         """Format user-provided tools for inclusion in instructions."""
@@ -242,14 +275,24 @@ class RLM(Module):
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
-                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+                raise dspy.LMNotConfiguredError(
+                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
+                )
             response = target_lm(prompt)
-            if isinstance(response, list) and response:
-                item = response[0]
-                if isinstance(item, dict) and "text" in item:
-                    return item["text"]
-                return item
-            return str(response)
+            if isinstance(response, dspy.LMResponse):
+                text = response.text
+            elif isinstance(response, list) and response:
+                first_output = response[0]
+                text = first_output.get("text") if isinstance(first_output, dict) else first_output
+            else:
+                raise TypeError(
+                    "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
+                    f"got {type(response).__name__}."
+                )
+
+            if not isinstance(text, str):
+                raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
+            return text
 
         def llm_query(prompt: str) -> str:
             """Query the LLM with a prompt string."""
@@ -259,19 +302,22 @@ class RLM(Module):
             return _query_lm(prompt)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query the LLM with multiple prompts concurrently."""
+            """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {executor.submit(_query_lm, p): i for i, p in enumerate(prompts)}
+                future_to_idx = {
+                    executor.submit(contextvars.copy_context().run, _query_lm, prompt): index
+                    for index, prompt in enumerate(prompts)
+                }
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
                         results[idx] = future.result()
-                    except Exception as e:
+                    except dspy.LMError as e:
                         results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
@@ -371,8 +417,17 @@ class RLM(Module):
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
-        """Raise ValueError if required input fields are missing."""
-        missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
+        """Validate call-time arguments against the signature's input namespace."""
+        if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
+            raise TypeError(
+                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
+            )
+        input_names = set(self.signature.input_fields)
+        unexpected = set(input_args) - input_names
+        if unexpected:
+            raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
+
+        missing = input_names - set(input_args)
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
@@ -422,11 +477,23 @@ class RLM(Module):
     # CodeInterpreter Lifecycle
     # =========================================================================
 
+    def _make_interpreter_tool(self, tool: Tool) -> Callable:
+        """Preserve function metadata while routing execution through Tool."""
+        if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
+            async def invoke(**kwargs):
+                return await tool.acall(**kwargs)
+        else:
+            def invoke(**kwargs):
+                return tool(**kwargs)
+
+        functools.update_wrapper(invoke, tool.func)
+        invoke.__signature__ = inspect.signature(tool.func)
+        return invoke
+
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
         execution_tools = self._make_llm_tools()
-        # Extract underlying functions from Tool objects for the interpreter
-        execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
+        execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 
     def _inject_execution_context(self, interpreter: CodeInterpreter, execution_tools: dict[str, Callable]) -> None:
@@ -444,20 +511,24 @@ class RLM(Module):
             interpreter._tools_registered = False
 
     @contextmanager
-    def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[CodeInterpreter]:
-        """Yield interpreter, creating PythonInterpreter if none provided at init."""
-        if self._interpreter is not None:
-            self._inject_execution_context(self._interpreter, execution_tools)
-            yield self._interpreter
-        else:
-            repl = PythonInterpreter(
-                tools=execution_tools,
-                output_fields=self._get_output_fields_info(),
-            )
-            try:
-                yield repl
-            finally:
-                repl.shutdown()
+    def _interpreter_context(
+        self,
+        execution_tools: dict[str, Callable],
+        interpreter: CodeInterpreter | None,
+    ) -> Iterator[CodeInterpreter]:
+        """Yield a caller-owned interpreter or manage a factory-created one."""
+        if interpreter is not None:
+            _validate_interpreter(interpreter)
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+            return
+
+        interpreter = _create_interpreter(self._interpreter_factory)
+        try:
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+        finally:
+            interpreter.shutdown()
 
     # =========================================================================
     # Execution Core
@@ -583,7 +654,7 @@ class RLM(Module):
         """Execute code in the interpreter, returning the result or an error string."""
         try:
             return repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {e}"
 
     def _execute_iteration(
@@ -621,17 +692,21 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def forward(self, **input_args) -> Prediction:
+    def forward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
-            **input_args: Input values matching the signature's input fields
+            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
+                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
+                this RLM instance.
+            **input_args: Input values matching the signature's input fields.
 
         Returns:
             Prediction with output field(s) from the signature and 'trajectory' for debugging
 
         Raises:
             ValueError: If required input fields are missing
+            CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
 
@@ -639,7 +714,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -706,17 +781,21 @@ class RLM(Module):
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)
 
-    async def aforward(self, **input_args) -> Prediction:
+    async def aforward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
-            **input_args: Input values matching the signature's input fields
+            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
+                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
+                this RLM instance.
+            **input_args: Input values matching the signature's input fields.
 
         Returns:
             Prediction with output field(s) from the signature and 'trajectory' for debugging
 
         Raises:
             ValueError: If required input fields are missing
+            CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
 
@@ -724,7 +803,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 

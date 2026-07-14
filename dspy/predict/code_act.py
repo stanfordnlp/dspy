@@ -6,6 +6,7 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
+from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 
@@ -16,7 +17,13 @@ class CodeAct(ReAct, ProgramOfThought):
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self,
+        signature: str | type[Signature],
+        tools: list[Callable],
+        max_iters: int = 5,
+        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
+    ):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -24,7 +31,8 @@ class CodeAct(ReAct, ProgramOfThought):
             signature (Union[str, Type[Signature]]): The signature of the module.
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
-            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
+            interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
         Examples:
             ```python
             from dspy.predict import CodeAct
@@ -37,6 +45,7 @@ class CodeAct(ReAct, ProgramOfThought):
             act(n=5) # 120
             ```
         """
+        _validate_interpreter_factory(interpreter_factory)
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.history = []
@@ -65,8 +74,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.tools: dict[str, Tool] = tools
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
-        # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self._interpreter_factory = interpreter_factory
 
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
@@ -87,33 +95,46 @@ class CodeAct(ReAct, ProgramOfThought):
 
         return instructions
 
-    def forward(self, **kwargs):
-        # Define the tool functions in the interpreter
-        for tool in self.tools.values():
-            self.interpreter(inspect.getsource(tool.func))
+    def forward(self, interpreter: CodeInterpreter | None = None, /, **kwargs):
+        """Run the program with a fresh interpreter or a caller-owned override.
 
-        trajectory = {}
-        max_iters = kwargs.pop("max_iters", self.max_iters)
-        for idx in range(max_iters):
-            code_data = self.codeact(trajectory=trajectory, **kwargs)
-            output = None
-            code, error = self._parse_code(code_data)
+        Args:
+            interpreter: Optional caller-owned interpreter, passed positionally. The caller must shut it down.
+            **kwargs: Input values matching the signature's input fields.
 
-            if error:
-                trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
-                continue
+        Raises:
+            CodeInterpreterError: If interpreter setup, process, or protocol fails.
+        """
+        if "interpreter" in kwargs and "interpreter" not in self.signature.input_fields:
+            raise TypeError(
+                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
+            )
+        with self._interpreter_context(interpreter) as interpreter:
+            # Define the tool functions in the interpreter
+            for tool in self.tools.values():
+                interpreter.execute(inspect.getsource(tool.func))
 
-            trajectory[f"generated_code_{idx}"] = code
-            output, error = self._execute_code(code)
+            trajectory = {}
+            max_iters = kwargs.pop("max_iters", self.max_iters)
+            for idx in range(max_iters):
+                code_data = self.codeact(trajectory=trajectory, **kwargs)
+                output = None
+                code, error = self._parse_code(code_data)
 
-            if not error:
-                trajectory[f"code_output_{idx}"] = output
-            else:
-                trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
+                if error:
+                    trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
+                    continue
 
-            if code_data.finished:
-                break
+                trajectory[f"generated_code_{idx}"] = code
+                output, error = self._execute_code(code, interpreter)
 
-        extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
-        return dspy.Prediction(trajectory=trajectory, **extract)
+                if not error:
+                    trajectory[f"code_output_{idx}"] = output
+                else:
+                    trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
+
+                if code_data.finished:
+                    break
+
+            extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
+            return dspy.Prediction(trajectory=trajectory, **extract)
