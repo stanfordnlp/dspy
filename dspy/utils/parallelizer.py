@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import copy
 import logging
 import signal
@@ -165,7 +166,12 @@ class ParallelExecutor:
                 submission_counter = 0
 
                 for idx, item in enumerate(data):
-                    f = executor.submit(worker, parent_overrides, submission_counter, idx, item)
+                    # Run each worker inside a copy of the submitting thread's context so
+                    # contextvars (e.g. OpenTelemetry context, ACTIVE_CALL_ID) propagate
+                    # into the pool threads. Each submission needs its own copy because a
+                    # Context cannot be entered concurrently.
+                    ctx = contextvars.copy_context()
+                    f = executor.submit(ctx.run, worker, parent_overrides, submission_counter, idx, item)
                     futures_map[f] = (submission_counter, idx, item)
                     futures_set.add(f)
                     submission_counter += 1
@@ -210,6 +216,7 @@ class ParallelExecutor:
                                 if st and (now - st) >= self.timeout:
                                     resubmitted.add(f)
                                     nf = executor.submit(
+                                        contextvars.copy_context().run,
                                         worker,
                                         parent_overrides,
                                         submission_counter,
