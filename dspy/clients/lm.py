@@ -680,6 +680,7 @@ def _chat_tool_to_responses_tool(t: dict[str, Any]) -> dict[str, Any]:
     Passes already-flat / hosted tools through unchanged.
     """
     if t.get("type") == "function" and "function" in t:
+        t = dict(t)  # copy to avoid mutating the caller's tool dict
         fn = t.pop("function")
         t.update(fn)  # hoist name/description/parameters/strict to top level
     return t
