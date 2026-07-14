@@ -36,6 +36,7 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
     class MockPredictor:
         def __init__(self):
             self.idx = 0
+            self.calls = []
 
         def _next_response(self):
             result = responses[self.idx % len(responses)]
@@ -43,9 +44,11 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
             return Prediction(**result)
 
         def __call__(self, **kwargs):
+            self.calls.append(kwargs)
             return self._next_response()
 
         async def acall(self, **kwargs):
+            self.calls.append(kwargs)
             return self._next_response()
 
     return MockPredictor()
@@ -967,6 +970,110 @@ class TestRLMToolExceptions:
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
             await rlm.aforward(mock, query="test")
+
+
+class TestRLMMalformedActions:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("run_async", [False, True], ids=["sync", "async"])
+    @pytest.mark.parametrize(
+        ("malformed_action", "expected_entry"),
+        [
+            pytest.param(
+                {"reasoning": None, "code": None},
+                {
+                    "reasoning": "",
+                    "code": "",
+                    "output": (
+                        "[Error] Malformed RLM action: `reasoning` must be a non-empty string. "
+                        "`code` must contain non-empty Python code."
+                    ),
+                },
+                id="null-fields",
+            ),
+            pytest.param(
+                {"code": 'SUBMIT("must-not-run")'},
+                {
+                    "reasoning": "",
+                    "code": 'SUBMIT("must-not-run")',
+                    "output": "[Error] Malformed RLM action: `reasoning` must be a non-empty string.",
+                },
+                id="missing-reasoning",
+            ),
+            pytest.param(
+                {"reasoning": " \t", "code": 'SUBMIT("must-not-run")'},
+                {
+                    "reasoning": "",
+                    "code": 'SUBMIT("must-not-run")',
+                    "output": "[Error] Malformed RLM action: `reasoning` must be a non-empty string.",
+                },
+                id="blank-reasoning",
+            ),
+            pytest.param(
+                {"reasoning": "Inspect the data", "code": " \n\t"},
+                {
+                    "reasoning": "Inspect the data",
+                    "code": "",
+                    "output": "[Error] Malformed RLM action: `code` must contain non-empty Python code.",
+                },
+                id="blank-code",
+            ),
+            pytest.param(
+                {"reasoning": "Inspect the data", "code": "```python\n \n```"},
+                {
+                    "reasoning": "Inspect the data",
+                    "code": "",
+                    "output": "[Error] Malformed RLM action: `code` must contain non-empty Python code.",
+                },
+                id="empty-fenced-code",
+            ),
+        ],
+    )
+    async def test_malformed_action_is_visible_and_recoverable(self, run_async, malformed_action, expected_entry):
+        recovery_reasoning = "Retry with a complete action"
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "recovered"})])
+        rlm = RLM("query -> answer", max_iters=2, verbose=True)
+        predictor = make_mock_predictor([
+            malformed_action,
+            {"reasoning": recovery_reasoning, "code": 'SUBMIT("recovered")'},
+        ])
+        rlm.generate_action = predictor
+
+        result = await rlm.aforward(mock, query="test") if run_async else rlm.forward(mock, query="test")
+
+        assert result.answer == "recovered"
+        assert result.final_reasoning == recovery_reasoning
+        assert len(result.trajectory) == 2
+        assert result.trajectory[0] == expected_entry
+        assert result.trajectory[1]["reasoning"] == recovery_reasoning
+        assert result.trajectory[1]["code"] == 'SUBMIT("recovered")'
+        assert mock.call_history == [
+            ("pass", {"query": "test"}),
+            ('SUBMIT("recovered")', {}),
+        ]
+        assert [call["iteration"] for call in predictor.calls] == ["1/2", "2/2"]
+        assert [entry.model_dump() for entry in predictor.calls[1]["repl_history"]] == [expected_entry]
+
+    @pytest.mark.parametrize(
+        ("action", "expected_error"),
+        [
+            ({"reasoning": 42, "code": "pass"}, "RLM action field `reasoning` must be str, got int"),
+            ({"reasoning": "Inspect the data", "code": []}, "RLM action field `code` must be str, got list"),
+        ],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("run_async", [False, True], ids=["sync", "async"])
+    async def test_unexpected_action_field_types_fail_fast(self, run_async, action, expected_error):
+        mock = MockInterpreter(responses=[""])
+        rlm = RLM("query -> answer", max_iters=1)
+        rlm.generate_action = make_mock_predictor([action])
+
+        with pytest.raises(TypeError, match=expected_error):
+            if run_async:
+                await rlm.aforward(mock, query="test")
+            else:
+                rlm.forward(mock, query="test")
+
+        assert mock.call_history == [("pass", {"query": "test"})]
 
 
 class TestRLMDynamicSignature:
