@@ -417,7 +417,7 @@ class RLM(Module):
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
-        """Validate call-time arguments against the signature's input namespace."""
+        """Apply declared defaults and validate inputs against the signature."""
         if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
             raise TypeError(
                 "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
@@ -426,6 +426,10 @@ class RLM(Module):
         unexpected = set(input_args) - input_names
         if unexpected:
             raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
+
+        for name, field in self.signature.input_fields.items():
+            if name not in input_args and not field.is_required():
+                input_args[name] = field.default_factory() if field.default_factory is not None else field.default
 
         missing = input_names - set(input_args)
         if missing:
