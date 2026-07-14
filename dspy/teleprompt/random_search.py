@@ -2,7 +2,12 @@ import random
 
 import dspy
 from dspy.evaluate.evaluate import Evaluate
+from dspy.teleprompt.events import (
+    CandidateSelected,
+    RandomSearchCandidateProposed,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.callback import _emit_optimizer_event
 
 from .bootstrap import BootstrapFewShot
 from .vanilla import LabeledFewShot
@@ -76,6 +81,27 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             if (restrict is not None) and (seed not in restrict):
                 continue
 
+            candidate_index = len(scores)
+            if seed == -3:
+                candidate_kind = "zero_shot"
+            elif seed == -2:
+                candidate_kind = "labeled_few_shot"
+            elif seed == -1:
+                candidate_kind = "unshuffled_bootstrap"
+            else:
+                assert seed >= 0, seed
+                candidate_kind = "shuffled_bootstrap"
+                size = random.Random(seed).randint(self.min_num_samples, self.max_num_samples)
+
+            _emit_optimizer_event(
+                self,
+                RandomSearchCandidateProposed(
+                    candidate_index=candidate_index,
+                    seed=seed,
+                    kind=candidate_kind,
+                ),
+            )
+
             trainset_copy = list(self.trainset)
 
             if seed == -3:
@@ -104,7 +130,6 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 assert seed >= 0, seed
 
                 random.Random(seed).shuffle(trainset_copy)
-                size = random.Random(seed).randint(self.min_num_samples, self.max_num_samples)
 
                 optimizer = BootstrapFewShot(
                     metric=self.metric,
@@ -127,15 +152,23 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 display_progress=True,
             )
 
-            result = evaluate(program)
+            result = evaluate(
+                program,
+                callback_metadata={
+                    "metric_key": "eval_full",
+                    "candidate_index": candidate_index,
+                },
+            )
 
             score, subscores = result.score, [output[2] for output in result.results]
 
             all_subscores.append(subscores)
 
-            if len(scores) == 0 or score > max(scores):
+            became_best = len(scores) == 0 or score > max(scores)
+            if became_best:
                 print("New best score:", score, "for seed", seed)
                 best_program = program
+                best_candidate_index = candidate_index
 
             scores.append(score)
             print(f"Scores so far: {scores}")
@@ -154,6 +187,14 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         )
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
+
+        _emit_optimizer_event(
+            self,
+            CandidateSelected(
+                candidate_index=best_candidate_index,
+                score=max(scores),
+            ),
+        )
 
         return best_program
 
