@@ -26,7 +26,7 @@ The signature `reward_fn(args, pred) -> float` mirrors the inference-time metric
 
 ### 5. `ProgramOfThought` and `CodeAct` ship with a Python interpreter
 
-Both rely on `PythonInterpreter`, which runs LM-generated code in a sandbox via Deno’s WASM runtime. Deno isolation is the reason: the LM’s code runs in a process with no filesystem or network access by default, so executing untrusted output is bounded. Installing Deno is a hard dependency for both modules; the constructor raises if Deno isn’t available.
+Both rely on `PythonInterpreter`, which runs LM-generated code in a sandbox via Deno’s WASM runtime. Deno isolation is the reason: the LM’s code runs in a process with no filesystem or network access by default, so executing untrusted output is bounded. Each invocation gets a fresh interpreter, while retries and iterations within that invocation share its state.
 
 ### 6. `CodeAct` is `ReAct` plus a code sandbox
 
@@ -74,13 +74,15 @@ The constructor mutates the input signature: it prepends one output field (a syn
 
 For tasks where the answer is best computed, not narrated.
 
-**`dspy.ProgramOfThought(signature, max_iters=3, interpreter=None)`**
-Holds three internal `ChainOfThought` predictors: `code_generate` produces Python, `code_regenerate` rewrites it after an execution error, and `generate_output` extracts the declared output fields from the run’s printed result. The forward loop asks `code_generate` for code, runs it through the `PythonInterpreter`, and on error feeds the error message back to `code_regenerate` for up to `max_iters` rounds. Once execution succeeds, `generate_output` produces the signature’s output fields. If `max_iters` is exhausted, the module raises.
+Each module accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. Passing an interpreter as the first positional argument when calling the module, such as `program(interpreter, **inputs)`, instead uses that caller-owned instance without shutting it down. Caller-owned reuse is sequential; use the factory path for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
-**`dspy.CodeAct(signature, tools, max_iters=5, interpreter=None)`**
-Multiple inheritance from `ReAct` and `ProgramOfThought`. Tools must be plain `def` functions, not callable objects — the module reads `inspect.getsource(tool.func)` and injects each definition into the sandbox at the start of every `forward`. Each iteration: an inner `codeact` predictor produces Python plus a `finished` boolean; the interpreter runs the code; the trajectory dict gains a `generated_code_i` and `code_output_i` (or `observation_i` on parse/execution error). The loop exits when the LM sets `finished=True` or `max_iters` is reached. A `ChainOfThought` extractor then reads the trajectory and produces the declared outputs.
+**`dspy.ProgramOfThought(signature, max_iters=3, interpreter_factory=PythonInterpreter)`**
+Holds three internal `ChainOfThought` predictors: `code_generate` produces Python, `code_regenerate` rewrites it after a recoverable execution error, and `generate_output` extracts the declared output fields from the run’s printed result. The forward loop asks `code_generate` for code, runs it through the `PythonInterpreter`, and feeds `CodeExecutionError` or `SyntaxError` back to `code_regenerate` for up to `max_iters` rounds. A terminal `CodeInterpreterError` propagates immediately. Once execution succeeds, `generate_output` produces the signature’s output fields. If `max_iters` is exhausted, the module raises.
 
-**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
+**`dspy.CodeAct(signature, tools, max_iters=5, interpreter_factory=PythonInterpreter)`**
+Multiple inheritance from `ReAct` and `ProgramOfThought`. Tools must be plain `def` functions, not callable objects — the module reads `inspect.getsource(tool.func)` and injects each definition into the sandbox at the start of every `forward`. Each iteration: an inner `codeact` predictor produces Python plus a `finished` boolean; the interpreter runs the code; the trajectory dict gains a `generated_code_i` and `code_output_i` (or `observation_i` on a parse or recoverable execution error). Terminal interpreter failures propagate. The loop exits when the LM sets `finished=True` or `max_iters` is reached. A `ChainOfThought` extractor then reads the trajectory and produces the declared outputs.
+
+**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter_factory=PythonInterpreter)`**
 Experimental. A REPL-style code agent that exposes two built-in tools — `llm_query` and `llm_query_batched` — so generated code can call a separate `sub_lm` mid-execution. A shared counter across iterations enforces `max_llm_calls`; tool names are validated as Python identifiers; `SandboxSerializable` inputs encode into the sandbox so large contexts don’t have to be re-marshalled each turn. If the loop ends without an explicit submission, the extractor pass produces the final outputs from the trajectory.
 
 ### Running modules in parallel

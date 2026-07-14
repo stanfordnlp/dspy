@@ -141,3 +141,35 @@ class CodeInterpreter(Protocol):
         A new instance should be created for a fresh session.
         """
         ...
+
+
+def _validate_interpreter_factory(factory: Any) -> None:
+    """Validate the configured provider without invoking it."""
+    if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
+        raise TypeError(
+            "interpreter_factory received an object that already implements CodeInterpreter, so its ownership "
+            "is ambiguous. Pass an existing interpreter as the first positional argument when calling the module. "
+            "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
+        )
+    if not callable(factory):
+        raise TypeError(
+            "interpreter_factory must be a zero-argument callable that creates a CodeInterpreter, "
+            f"not {type(factory).__name__}."
+        )
+
+
+def _create_interpreter(factory: Callable[[], CodeInterpreter]) -> CodeInterpreter:
+    """Create an interpreter and validate the factory's return value."""
+    interpreter = factory()
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(
+            "interpreter_factory must return a CodeInterpreter, "
+            f"not {type(interpreter).__name__}."
+        )
+    return interpreter
+
+
+def _validate_interpreter(interpreter: Any) -> None:
+    """Validate a caller-owned interpreter."""
+    if not isinstance(interpreter, CodeInterpreter):
+        raise TypeError(f"interpreter must implement CodeInterpreter, not {type(interpreter).__name__}.")
