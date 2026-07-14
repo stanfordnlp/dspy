@@ -418,22 +418,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     scores.append(score)
 
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
-
-        evaluator = Evaluate(
-            devset=batch,
-            metric=self.metric_fn,
-            num_threads=self.num_threads,
-            return_all_scores=True,
-            failure_score=self.failure_score,
-            provide_traceback=True,
-            max_errors=len(batch) * 100,
-            callback_metadata=callback_metadata,
-        )
-        res = evaluator(program)
-        outputs = [r[1] for r in res.results]
-        scores = [r[2] for r in res.results]
-        scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+        else:
+            evaluator = Evaluate(
+                devset=batch,
+                metric=self.metric_fn,
+                num_threads=self.num_threads,
+                return_all_scores=True,
+                failure_score=self.failure_score,
+                provide_traceback=True,
+                max_errors=len(batch) * 100,
+                callback_metadata=callback_metadata,
+            )
+            res = evaluator(program)
+            outputs = [r[1] for r in res.results]
+            scores = [r[2] for r in res.results]
+            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
