@@ -256,14 +256,24 @@ class RLM(Module):
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
-                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+                raise dspy.LMNotConfiguredError(
+                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
+                )
             response = target_lm(prompt)
-            if isinstance(response, list) and response:
-                item = response[0]
-                if isinstance(item, dict) and "text" in item:
-                    return item["text"]
-                return item
-            return str(response)
+            if isinstance(response, dspy.LMResponse):
+                text = response.text
+            elif isinstance(response, list) and response:
+                first_output = response[0]
+                text = first_output.get("text") if isinstance(first_output, dict) else first_output
+            else:
+                raise TypeError(
+                    "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
+                    f"got {type(response).__name__}."
+                )
+
+            if not isinstance(text, str):
+                raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
+            return text
 
         def llm_query(prompt: str) -> str:
             """Query the LLM with a prompt string."""
@@ -273,7 +283,7 @@ class RLM(Module):
             return _query_lm(prompt)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query the LLM with multiple prompts concurrently."""
+            """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
@@ -288,7 +298,7 @@ class RLM(Module):
                     idx = future_to_idx[future]
                     try:
                         results[idx] = future.result()
-                    except Exception as e:
+                    except dspy.LMError as e:
                         results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 

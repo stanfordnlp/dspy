@@ -240,12 +240,51 @@ class TestRLMInitialization:
         with pytest.raises(TypeError, match="first positional argument"):
             rlm(query="test", interpreter=MockInterpreter())
 
+    def test_llm_query_returns_legacy_response_text(self):
+        from dspy.utils.dummies import DummyLM
+
+        tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "legacy answer"}]))._make_llm_tools()
+
+        assert tools["llm_query"]("test prompt") == "[[ ## answer ## ]]\nlegacy answer"
+
+    def test_llm_query_returns_typed_response_text(self):
+        import dspy
+        from dspy.utils.dummies import DummyLM
+
+        tools = RLM("context -> answer", sub_lm=DummyLM([{"answer": "typed answer"}]))._make_llm_tools()
+
+        with dspy.context(experimental=True):
+            result = tools["llm_query"]("test prompt")
+
+        assert result == "[[ ## answer ## ]]\ntyped answer"
+
+    def test_llm_query_rejects_unsupported_response_shape(self):
+        from unittest.mock import MagicMock
+
+        tools = RLM("context -> answer", sub_lm=MagicMock(return_value="untyped response"))._make_llm_tools()
+
+        with pytest.raises(TypeError, match="Sub-LM must return dspy.LMResponse or a non-empty list"):
+            tools["llm_query"]("test prompt")
+
+    def test_llm_query_reports_textless_response_type(self):
+        from unittest.mock import MagicMock
+
+        tools = RLM(
+            "context -> answer",
+            sub_lm=MagicMock(return_value=[{"tool_calls": []}]),
+        )._make_llm_tools()
+
+        with pytest.raises(TypeError, match="Sub-LM response must contain text, got NoneType"):
+            tools["llm_query"]("test prompt")
+
     def test_batched_query_errors_have_clear_markers(self):
         """Test that errors in llm_query_batched are prefixed with [ERROR]."""
         from unittest.mock import MagicMock
 
+        import dspy
+
         mock_lm = MagicMock()
-        mock_lm.side_effect = RuntimeError("LM failed")
+        mock_lm.side_effect = dspy.LMTransportError("LM failed")
 
         rlm = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)
         tools = rlm._make_llm_tools()
@@ -254,6 +293,25 @@ class TestRLMInitialization:
         assert len(results) == 1
         assert results[0].startswith("[ERROR]")
         assert "LM failed" in results[0]
+
+    def test_batched_query_marks_missing_lm_configuration(self):
+        import dspy
+
+        with dspy.context(lm=None):
+            tools = RLM("context -> answer")._make_llm_tools()
+            results = tools["llm_query_batched"](["test prompt"])
+
+        assert results == ["[ERROR] No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."]
+
+    def test_batched_query_propagates_programming_errors(self):
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock()
+        mock_lm.side_effect = TypeError("invalid LM implementation")
+        tools = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)._make_llm_tools()
+
+        with pytest.raises(TypeError, match="invalid LM implementation"):
+            tools["llm_query_batched"](["test prompt"])
 
     def test_batched_query_inherits_request_context(self):
         import contextvars
