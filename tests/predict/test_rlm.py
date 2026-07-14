@@ -327,7 +327,7 @@ class TestRLMInitialization:
             query: str = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "done"})])
         rlm = RLM(QA)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
@@ -361,8 +361,8 @@ class TestRLMInitialization:
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
         ])
-        default_mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
-        explicit_mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        default_mock = MockInterpreter(responses=["", FinalOutput({"answer": "done"})])
+        explicit_mock = MockInterpreter(responses=["", FinalOutput({"answer": "done"})])
 
         rlm.forward(default_mock, query="uses default")
         rlm.forward(explicit_mock, context=["caller context"], query="uses caller value")
@@ -502,7 +502,7 @@ class TestRLMInitialization:
 
 class TestRLMInterpreterLifecycle:
     def test_interpreter_remains_available_as_signature_input(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
+        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return input", "code": "SUBMIT(interpreter)"},
@@ -515,7 +515,7 @@ class TestRLMInterpreterLifecycle:
 
     @pytest.mark.asyncio
     async def test_factory_creates_and_shuts_down_one_interpreter_per_call(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -537,7 +537,9 @@ class TestRLMInterpreterLifecycle:
         factory = MockInterpreterFactory()
         interpreter = MockInterpreter(
             responses=[
+                "",
                 FinalOutput({"answer": "first"}),
+                "",
                 FinalOutput({"answer": "second"}),
             ]
         )
@@ -553,6 +555,12 @@ class TestRLMInterpreterLifecycle:
             assert sync_result.answer == "first"
             assert async_result.answer == "second"
             assert factory.instances == []
+            assert interpreter.call_history[:4] == [
+                ("pass", {"query": "sync"}),
+                ("SUBMIT(answer)", {}),
+                ("pass", {"query": "async"}),
+                ("SUBMIT(answer)", {}),
+            ]
             assert interpreter.execute("print('still open')") == ""
         finally:
             interpreter.shutdown()
@@ -815,7 +823,7 @@ class TestRLMCallMethod:
 
     def test_call_is_alias_for_forward(self):
         """Test that __call__ is an alias for forward()."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -831,6 +839,7 @@ class TestRLMMaxIterationsFallback:
     def test_max_iters_triggers_extract(self):
         """Test that reaching max_iters uses extract fallback."""
         mock = MockInterpreter(responses=[
+            "",
             "exploring...",
             "still exploring...",
             "more exploring...",
@@ -860,6 +869,7 @@ class TestRLMToolExceptions:
             raise RuntimeError("Tool failed!")
 
         mock = MockInterpreter(responses=[
+            "",
             CodeExecutionError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -875,6 +885,7 @@ class TestRLMToolExceptions:
     def test_runtime_error_history_uses_stripped_code(self):
         """Runtime execution failures should preserve stripped code in history."""
         mock = MockInterpreter(responses=[
+            "",
             CodeExecutionError("NameError: name 'x' is not defined"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -892,6 +903,7 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_execute_is_recoverable(self):
         """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
         mock = MockInterpreter(responses=[
+            "",
             SyntaxError("invalid syntax"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -908,6 +920,7 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_strip_code_fences_is_recoverable(self):
         """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
         mock = MockInterpreter(responses=[
+            "",
             FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iters=5)
@@ -1207,7 +1220,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -1219,7 +1232,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
+        mock = MockInterpreter(responses=["", FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
@@ -1233,6 +1246,7 @@ class TestRLMAsyncMock:
     async def test_aforward_multi_iteration_mock(self):
         """Test aforward() handles multiple iterations before SUBMIT (MockInterpreter)."""
         mock = MockInterpreter(responses=[
+            "",
             "explored data",
             FinalOutput({"answer": "done"}),
         ])
@@ -1258,7 +1272,7 @@ class TestRLMTypeCoercionMock:
     ])
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
+        mock = MockInterpreter(responses=["", FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
@@ -1270,6 +1284,7 @@ class TestRLMTypeCoercionMock:
     def test_type_error_retries(self):
         """Test RLM retries when type validation fails (MockInterpreter)."""
         mock = MockInterpreter(responses=[
+            "",
             FinalOutput({"answer": "maybe"}),  # Invalid for Literal
             FinalOutput({"answer": "yes"}),    # Valid
         ])
@@ -1459,6 +1474,17 @@ class TestRLMWithDummyLM:
             result = rlm.forward(numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+    def test_input_mutations_persist_between_iterations(self):
+        """Input variables share the same persistent namespace as generated variables."""
+        with dummy_lm_context([
+            {"reasoning": "Extend the input", "code": "numbers.append(4)\nprint(numbers)"},
+            {"reasoning": "Return the updated sum", "code": "SUBMIT(sum(numbers))"},
+        ]):
+            rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
+            result = rlm.forward(numbers=[1, 2, 3])
+
+        assert result.total == 10
 
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
@@ -1659,41 +1685,32 @@ class TestBuildVariablesWithSerializable:
         assert "plain text" in variables[0].preview
 
 
-class TestPrepareSerializableVars:
-    """Tests for _prepare_serializable_vars with MockInterpreter."""
+class TestInitializeInputs:
+    """Tests for one-time interpreter input initialization."""
 
-    def test_separates_serializable_from_regular(self):
-        """Serializable values are injected; regular values are returned."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+    def test_initializes_serializable_and_regular_inputs_once(self):
+        mock = MockInterpreter(responses=["", ""])
         rlm = RLM("data, query -> answer", max_iters=3)
 
         stub = _StubSerializable("payload")
 
-        # Manually call _prepare_serializable_vars
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"data": stub, "query": "hello"}, mock)
+        rlm._initialize_inputs({"data": stub, "query": "hello"}, mock)
 
-        # Regular args should only contain non-serializable values
-        assert "query" in regular
-        assert regular["query"] == "hello"
-        assert "data" not in regular
-
-        # MockInterpreter should have received an execute call for the setup
-        assert mock.call_count == 1
+        assert mock.call_count == 2
         code, variables = mock.call_history[0]
         assert "import json" in code
         assert "_raw_data" in variables
+        assert mock.call_history[1] == ("pass", {"query": "hello"})
 
-    def test_no_serializable_returns_all(self):
-        """When no SandboxSerializable values exist, all args are returned."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+    def test_regular_inputs_are_initialized_once(self):
+        mock = MockInterpreter(responses=["", ""])
         rlm = RLM("query -> answer", max_iters=3)
 
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"query": "hello"}, mock)
+        rlm._initialize_inputs({"query": "hello"}, mock)
 
-        assert regular == {"query": "hello"}
-        assert mock.call_count == 0
+        assert mock.call_history == [("pass", {"query": "hello"})]
 
     def test_binary_payload_uses_base64_transport(self):
         """Non-UTF8 bytes should be transported via base64 and decoded in sandbox code."""
@@ -1702,12 +1719,13 @@ class TestPrepareSerializableVars:
 
         payload = _BinarySerializable()
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        rlm._prepare_serializable_vars({"data": payload, "query": "hello"}, mock)
+        rlm._initialize_inputs({"data": payload, "query": "hello"}, mock)
 
-        assert mock.call_count == 1
+        assert mock.call_count == 2
         code, variables = mock.call_history[0]
         assert "_raw_data = base64.b64decode(_raw_data_base64)" in code
         assert variables["_raw_data_base64"] == base64.b64encode(b"\xff\xfe\xfd").decode("ascii")
+        assert mock.call_history[1] == ("pass", {"query": "hello"})
 
     def test_large_payload_not_inlined_in_code(self):
         """Large payloads should ride in the variables kwarg, not the code string.
@@ -1716,7 +1734,7 @@ class TestPrepareSerializableVars:
         subsequent prompt and could blow past sandbox limits. The transport
         contract is: code stays small, payload travels as a named variable.
         """
-        mock = MockInterpreter(responses=[""])
+        mock = MockInterpreter(responses=["", ""])
         rlm = RLM("data, query -> answer")
 
         large_text = "x" * (2 * 1024 * 1024)  # 2 MB UTF-8 payload
@@ -1735,19 +1753,21 @@ class TestPrepareSerializableVars:
                 return f"LargeText({len(large_text)} chars)"
 
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        rlm._prepare_serializable_vars({"data": _LargeText(), "query": "hi"}, mock)
+        rlm._initialize_inputs({"data": _LargeText(), "query": "hi"}, mock)
 
-        assert mock.call_count == 1
+        assert mock.call_count == 2
         code, variables = mock.call_history[0]
         # Payload must be in variables, not the code string.
         assert variables["_raw_data"] == large_text
+        assert mock.call_history[1] == ("pass", {"query": "hi"})
         assert large_text not in code
         assert len(code) < 1000
 
     def test_forward_with_serializable(self):
         """Full forward() pass with a SandboxSerializable input."""
         mock = MockInterpreter(responses=[
-            "",  # setup execution for _prepare_serializable_vars
+            "",  # serializable setup
+            "",  # regular input initialization
             FinalOutput({"answer": "done"}),
         ])
         rlm = RLM("data, query -> answer", max_iters=3)
@@ -1759,8 +1779,8 @@ class TestPrepareSerializableVars:
         result = rlm.forward(mock, data=stub, query="test")
         assert result.answer == "done"
 
-        # First call should be the serializable setup, second should be the iteration
-        assert mock.call_count == 2
+        # Setup and ordinary inputs run once before model-generated code.
+        assert mock.call_count == 3
 
 
 @pytest.mark.deno
@@ -1787,7 +1807,7 @@ class TestLargeSerializableRoundTrip:
         with PythonInterpreter(tools={}) as interp:
             rlm = RLM("data -> answer")
             rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-            rlm._prepare_serializable_vars({"data": _LargeText()}, interp)
+            rlm._initialize_inputs({"data": _LargeText()}, interp)
             result = interp.execute("print(len(data)); print(data[:6])")
 
         assert str(len(large_text)) in result
