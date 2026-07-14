@@ -143,6 +143,18 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+
+        **DaoXE example** ([DaoXE](https://daoxe.com) is a multi-model multi-protocol API gateway; this path uses OpenAI-compatible Chat Completions. Model IDs are account-scoped. Not available in mainland China.):
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM(
+            "openai/YOUR_DAOXE_MODEL_ID",
+            api_key="YOUR_DAOXE_API_KEY",
+            api_base="https://daoxe.com/v1",
+        )
+        dspy.configure(lm=lm)
+        ```
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
