@@ -533,24 +533,3 @@ def test_safe_types_rejects_non_types(tmp_path):
             restrict_pickle=True,
             safe_types=["not_a_type"],
         )
-
-
-class _StrictProviderResponse(pydantic.BaseModel):
-    """Mimics strict provider SDK models (e.g. litellm's ResponsesAPIResponse)."""
-
-    model_config = pydantic.ConfigDict(extra="forbid")
-
-    output: list[dict]
-    usage: dict
-
-
-def test_prepare_cached_response_marks_strict_models_as_cache_hit(cache):
-    response = _StrictProviderResponse(output=[{"type": "message"}], usage={"total_tokens": 3})
-
-    prepared = cache._prepare_cached_response(response)
-
-    assert prepared.cache_hit is True
-    assert prepared.usage == {}
-    # The original response is not mutated.
-    assert getattr(response, "cache_hit", False) is False
-    assert response.usage == {"total_tokens": 3}

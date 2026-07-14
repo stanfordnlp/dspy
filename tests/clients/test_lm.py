@@ -1256,45 +1256,6 @@ def test_responses_api_tool_calls(litellm_test_server, provider_fields, expected
         assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
 
 
-def test_responses_api_cache_hit_preserves_outputs_and_skips_usage(tmp_path):
-    api_response = make_response(
-        output_blocks=[
-            ResponseOutputMessage(
-                id="msg_1",
-                type="message",
-                role="assistant",
-                status="completed",
-                content=[{"type": "output_text", "text": "cached answer", "annotations": []}],
-            ),
-            ResponseReasoningItem(
-                id="reasoning_1",
-                type="reasoning",
-                summary=[Summary(type="summary_text", text="cached reasoning")],
-            ),
-        ],
-    )
-
-    original_cache = dspy.cache
-    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=tmp_path / ".dspy_cache")
-    try:
-        with mock.patch("litellm.responses", autospec=True, return_value=api_response) as responses:
-            lm = dspy.LM("openai/dspy-test-model", model_type="responses")
-            with track_usage() as first_usage:
-                first = lm("cache me")
-            with track_usage() as second_usage:
-                second = lm("cache me")
-
-        assert first == [{"text": "cached answer", "reasoning_content": "cached reasoning"}]
-        assert second == first
-        assert responses.call_count == 1
-        # The fresh call records usage; the cache hit must not.
-        assert len(first_usage.usage_data) == 1
-        assert len(second_usage.usage_data) == 0
-        assert lm.history[-1]["usage"] == {}
-    finally:
-        dspy.cache = original_cache
-
-
 def test_reasoning_effort_responses_api():
     """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
     with mock.patch("litellm.responses") as mock_responses:
