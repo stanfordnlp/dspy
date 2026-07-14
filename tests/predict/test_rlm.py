@@ -160,7 +160,15 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="must be a valid Python identifier"):
             RLM("context -> answer", tools=[tool])
 
-    @pytest.mark.parametrize("tool_name", ["llm_query", "SUBMIT", "print"])
+    def test_tool_validation_rejects_python_keyword(self):
+        def my_tool() -> str:
+            return "result"
+
+        tool = Tool(my_tool, name="for")
+        with pytest.raises(ValueError, match="not a keyword"):
+            RLM("context -> answer", tools=[tool])
+
+    @pytest.mark.parametrize("tool_name", ["llm_query", "llm_query_batched", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
         """Test RLM rejects tool names that conflict with built-in functions."""
         def my_tool() -> str:
@@ -183,6 +191,33 @@ class TestRLMInitialization:
 
         with pytest.raises(TypeError, match="tools must be a list, not a dict"):
             RLM("context -> answer", tools={"my_tool": my_tool})
+
+    def test_duplicate_tool_names_rejected(self):
+        def first() -> str:
+            return "first"
+
+        def second() -> str:
+            return "second"
+
+        with pytest.raises(ValueError, match="Duplicate tool name 'lookup'"):
+            RLM("context -> answer", tools=[Tool(first, name="lookup"), Tool(second, name="lookup")])
+
+    @pytest.mark.parametrize("input_name", ["llm_query", "llm_query_batched", "SUBMIT", "print"])
+    def test_input_names_cannot_shadow_sandbox_functions(self, input_name):
+        with pytest.raises(ValueError, match="Input fields conflict with built-in sandbox functions"):
+            RLM(f"{input_name} -> answer")
+
+    def test_input_name_cannot_shadow_user_tool(self):
+        def lookup() -> str:
+            return "result"
+
+        with pytest.raises(ValueError, match="Input fields conflict with user tools: \\['lookup'\\]"):
+            RLM("lookup -> answer", tools=[lookup])
+
+    @pytest.mark.parametrize("output_name", ["trajectory", "final_reasoning"])
+    def test_output_names_cannot_shadow_result_metadata(self, output_name):
+        with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
+            RLM(f"context -> {output_name}")
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -276,6 +311,21 @@ class TestRLMInitialization:
 
         with pytest.raises(TypeError, match="Sub-LM response must contain text, got NoneType"):
             tools["llm_query"]("test prompt")
+    @pytest.mark.parametrize("unexpected_name", ["SUBMIT", "lookup", "tools"])
+    def test_forward_rejects_undeclared_inputs_before_interpreter_execution(self, unexpected_name):
+        def lookup() -> str:
+            return "tool result"
+
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM("context -> answer", tools=[lookup], interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+        ])
+
+        with pytest.raises(ValueError, match=f"Unexpected inputs not declared in the signature: \\['{unexpected_name}'\\]"):
+            rlm(context="some context", **{unexpected_name: "shadowed value"})
+
+        assert factory.instances == []
 
     def test_batched_query_errors_have_clear_markers(self):
         """Test that errors in llm_query_batched are prefixed with [ERROR]."""
@@ -1065,6 +1115,19 @@ print(json.dumps(data))
 
 class TestRLMAsyncMock:
     """Unit tests for RLM aforward() using MockInterpreter (no Deno required)."""
+
+    @pytest.mark.asyncio
+    async def test_aforward_rejects_undeclared_inputs_before_interpreter_execution(self):
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM("context -> answer", interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+        ])
+
+        with pytest.raises(ValueError, match="Unexpected inputs not declared in the signature: \\['SUBMIT'\\]"):
+            await rlm.acall(context="some context", SUBMIT="shadowed value")
+
+        assert factory.instances == []
 
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
