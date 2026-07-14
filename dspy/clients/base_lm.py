@@ -862,35 +862,12 @@ class BaseLM:
 
         Returns:
             List of processed outputs, which is always of size 1 because the Response API only supports one output.
+            Each output is a dictionary in the same shape the chat path produces: `text` is always present, and
+            `reasoning_content`, `tool_calls`, `citations`, and `logprobs` appear when present.
         """
-        text_outputs = []
-        tool_calls = []
-        reasoning_contents = []
-
-        for output_item in response.output:
-            output_item_type = output_item.type
-            if output_item_type == "message":
-                for content_item in output_item.content:
-                    text_outputs.append(content_item.text)
-            elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump(exclude_none=True))
-            elif output_item_type == "reasoning":
-                if getattr(output_item, "content", None) and len(output_item.content) > 0:
-                    for content_item in output_item.content:
-                        reasoning_contents.append(content_item.text)
-                elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
-                    for summary_item in output_item.summary:
-                        reasoning_contents.append(summary_item.text)
-
-        result = {}
-        if len(text_outputs) > 0:
-            result["text"] = "".join(text_outputs)
-        if len(tool_calls) > 0:
-            result["tool_calls"] = tool_calls
-        if len(reasoning_contents) > 0:
-            result["reasoning_content"] = "".join(reasoning_contents)
-        # All `response.output` items map to one answer, so we return a list of size 1.
-        return [result]
+        request = LMRequest(model=self.model, messages=[])
+        lm_response = responses_to_lm_response(response, request)
+        return [output.to_output_dict() for output in lm_response.outputs]
 
 
 def inspect_history(n: int = 1, file: "TextIO | None" = None) -> None:

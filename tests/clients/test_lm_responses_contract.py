@@ -4,10 +4,12 @@ from unittest import mock
 import pydantic
 import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
+from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
+from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
-from dspy.clients.openai_format import to_openai_responses_request
-from dspy.core.types import LMRequest
+from dspy.clients.openai_format import responses_to_lm_response, to_openai_responses_request
+from dspy.core.types import LMRequest, LMThinkingPart
 
 
 def _responses_response(output_blocks, *, usage=None):
@@ -162,10 +164,19 @@ def test_lm_responses_direct_native_tool_calling_uses_responses_tool_shape():
         lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
         outputs = lm("What is the weather in Paris?", tools=[_chat_shaped_weather_tool()])
 
-    # The legacy Responses output shape is unchanged: raw function_call dumps.
-    assert outputs[0]["tool_calls"][0]["name"] == "get_weather"
-    assert outputs[0]["tool_calls"][0]["arguments"] == json.dumps({"city": "Paris"})
-    assert outputs[0]["tool_calls"][0]["call_id"] == "call_1"
+    # Legacy Responses outputs use the chat-unified tool-call shape.
+    assert outputs == [
+        {
+            "text": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                    "id": "call_1",
+                }
+            ],
+        }
+    ]
     assert responses.call_args.kwargs["tools"] == [
         {
             "type": "function",
@@ -199,6 +210,62 @@ async def test_lm_responses_async_native_tool_calling_matches_sync_contract():
         lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
         outputs = await lm.acall("What is the weather in Paris?", tools=[_chat_shaped_weather_tool()])
 
-    assert outputs[0]["tool_calls"][0]["name"] == "get_weather"
+    assert outputs[0]["tool_calls"][0]["function"]["name"] == "get_weather"
     assert responses.call_args.kwargs["tools"][0]["name"] == "get_weather"
     assert "function" not in responses.call_args.kwargs["tools"][0]
+
+
+def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls():
+    response = _responses_response(
+        [
+            ResponseOutputMessage(
+                id="msg_1",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "I should use weather.", "annotations": []}],
+            ),
+            {
+                "type": "function_call",
+                "name": "get_weather",
+                "arguments": '{"city": "Paris",}',
+                "call_id": "call_1",
+                "id": "fc_1",
+                "status": "completed",
+            },
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="Need live weather.")],
+            ),
+        ]
+    )
+
+    lm_response = responses_to_lm_response(response, LMRequest(model="openai/dspy-test-model", messages=[]))
+    output = lm_response.outputs[0]
+
+    assert output.text == "I should use weather."
+    assert output.reasoning_content == "Need live weather."
+    assert output.tool_calls[0].id == "call_1"
+    assert output.tool_calls[0].name == "get_weather"
+    assert output.tool_calls[0].args == {}
+    assert output.tool_calls[0].provider_data["raw_arguments"] == '{"city": "Paris",}'
+    assert "arguments_parse_error" in output.tool_calls[0].provider_data
+    assert lm_response.usage.total_tokens == 3
+
+
+def test_lm_responses_reasoning_output_uses_thinking_part_in_normalized_response():
+    response = _responses_response(
+        [
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="think first")],
+            )
+        ]
+    )
+
+    lm_response = responses_to_lm_response(response, LMRequest(model="openai/dspy-test-model", messages=[]))
+
+    assert lm_response.outputs[0].parts == [LMThinkingPart(text="think first")]
+    assert lm_response.to_legacy_outputs() == [{"text": None, "reasoning_content": "think first"}]
