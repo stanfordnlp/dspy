@@ -4,6 +4,7 @@ import pytest
 
 import dspy
 from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback, with_callbacks
+from dspy.utils.callback_context import _bind_active_call_id
 from dspy.utils.dummies import DummyLM
 
 
@@ -52,6 +53,26 @@ class MyCallback(BaseCallback):
 
     def on_tool_end(self, call_id, outputs, exception):
         self.calls.append({"handler": "on_tool_end", "outputs": outputs, "exception": exception})
+
+
+def test_bind_active_call_id_restores_context_after_exception():
+    observed_call_ids = []
+
+    def fail():
+        observed_call_ids.append(ACTIVE_CALL_ID.get())
+        raise ValueError("boom")
+
+    token = ACTIVE_CALL_ID.set("parent-call")
+    try:
+        bound = _bind_active_call_id(fail)
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    with pytest.raises(ValueError, match="boom"):
+        bound()
+
+    assert observed_call_ids == ["parent-call"]
+    assert ACTIVE_CALL_ID.get() is None
 
 
 @pytest.mark.parametrize(

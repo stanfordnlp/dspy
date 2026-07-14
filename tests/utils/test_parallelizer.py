@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+from dspy.utils.callback import ACTIVE_CALL_ID
 from dspy.utils.parallelizer import ParallelExecutor
 
 
@@ -16,6 +17,21 @@ def test_worker_threads_independence():
     results = executor.execute(task, data)
 
     assert results == [2, 4, 6, 8, 10]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_workers_inherit_active_callback_call_id(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads)
+
+    for parent_call_id in ["first-parent", "second-parent"]:
+        token = ACTIVE_CALL_ID.set(parent_call_id)
+        try:
+            observed_call_ids = executor.execute(lambda _: ACTIVE_CALL_ID.get(), range(5))
+
+            assert observed_call_ids == [parent_call_id] * 5
+            assert ACTIVE_CALL_ID.get() == parent_call_id
+        finally:
+            ACTIVE_CALL_ID.reset(token)
 
 
 def test_parallel_execution_speed():

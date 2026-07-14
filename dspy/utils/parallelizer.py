@@ -10,6 +10,9 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import tqdm
 
+from dspy.dsp.utils.settings import settings, thread_local_overrides
+from dspy.utils.callback_context import _bind_active_call_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,11 +28,9 @@ class ParallelExecutor:
         straggler_limit=3,
     ):
         """
-        Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
-        Handles also straggler timeouts.
+        Propagates DSPy settings and callback ancestry into each task while isolating task-local changes,
+        irrespective of whether num_threads == 1 or > 1. Handles also straggler timeouts.
         """
-        from dspy.dsp.utils.settings import settings
-
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.disable_progress_bar = disable_progress_bar
@@ -46,7 +47,7 @@ class ParallelExecutor:
 
     def execute(self, function, data):
         tqdm.tqdm._instances.clear()
-        wrapped = self._wrap_function(function)
+        wrapped = self._wrap_function(_bind_active_call_id(function))
         if self.num_threads == 1:
             return self._execute_sequential(wrapped, data)
         return self._execute_parallel(wrapped, data)
@@ -120,8 +121,6 @@ class ParallelExecutor:
                 start_time_map[submission_id] = time.time()
 
             # Apply parent's thread-local overrides
-            from dspy.dsp.utils.settings import thread_local_overrides
-
             original = thread_local_overrides.get()
             new_overrides = {**original, **parent_overrides.copy()}
             if new_overrides.get("usage_tracker"):
@@ -156,8 +155,6 @@ class ParallelExecutor:
         executor = ThreadPoolExecutor(max_workers=self.num_threads)
         try:
             with interrupt_manager():
-                from dspy.dsp.utils.settings import thread_local_overrides
-
                 parent_overrides = thread_local_overrides.get().copy()
 
                 futures_map = {}
