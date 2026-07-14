@@ -157,7 +157,7 @@ class Adapter:
             text = output
 
             if isinstance(output, dict):
-                text = output["text"]
+                text = output.get("text")
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
@@ -733,7 +733,9 @@ def _provider_value(value: Any, key: str, default: Any = None) -> Any:
 
 def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
     function = _provider_value(tool_call, "function", {}) or {}
-    arguments = _provider_value(function, "arguments", {})
+    # Responses API tool calls carry `arguments` at the top level rather than
+    # under `function`.
+    arguments = _provider_value(function, "arguments", None) or _provider_value(tool_call, "arguments", {})
     if isinstance(arguments, str):
         parsed_arguments = json_repair.loads(arguments)
     elif isinstance(arguments, dict):
@@ -742,7 +744,9 @@ def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
         parsed_arguments = {}
 
     return {
-        "id": _provider_value(tool_call, "id") or _provider_value(tool_call, "call_id"),
+        # Responses API items carry both an item `id` ("fc_...") and the
+        # `call_id` that tool results must reference; prefer `call_id`.
+        "id": _provider_value(tool_call, "call_id") or _provider_value(tool_call, "id"),
         "name": _provider_value(function, "name") or _provider_value(tool_call, "name"),
         "args": parsed_arguments,
     }

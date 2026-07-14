@@ -1888,9 +1888,11 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
+    legacy_block = {"type": "file", "file": dict(file)} if file.get("file_data") is not None and file.get("file_id") is not None else None
     if file.get("file_data") is not None:
         media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        metadata = {"legacy_content_block": legacy_block} if legacy_block is not None else {}
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
         return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
