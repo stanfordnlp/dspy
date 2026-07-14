@@ -2648,6 +2648,27 @@ def test_chat_adapter_parses_float_with_underscores():
         assert result[0]["score"].score == 123456.789
 
 
+def test_chat_adapter_parse_handles_indented_field_header():
+    """
+    Regression test: when a field header line is indented (e.g. emitted inside a
+    markdown list or quoted block), ``parse`` matched the header against the
+    stripped line but sliced the original, unstripped line. This shifted the
+    slice start into the trailing ``## ]]`` marker and leaked marker characters
+    into the parsed value. The offset must be applied to the same stripped line.
+    """
+    adapter = dspy.ChatAdapter()
+    signature = dspy.Signature("question -> answer")
+
+    # Control: a non-indented header parses correctly.
+    assert adapter.parse(signature, "[[ ## answer ## ]] Paris") == {"answer": "Paris"}
+
+    # Indented header must not leak the ``]]`` marker into the value.
+    assert adapter.parse(signature, "  [[ ## answer ## ]] Paris") == {"answer": "Paris"}
+
+    # Indented header followed by the value on the next line.
+    assert adapter.parse(signature, "\t[[ ## answer ## ]]\nParis") == {"answer": "Paris"}
+
+
 def test_format_system_message():
     class MySignature(dspy.Signature):
         """Answer the question with multiple answers and scores"""
