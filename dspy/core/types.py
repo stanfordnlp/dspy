@@ -296,6 +296,7 @@ class LMToolSpec(BaseModel):
     name: str
     description: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    strict: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     provider_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -1888,9 +1889,11 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
+    legacy_block = {"type": "file", "file": dict(file)} if file.get("file_data") is not None and file.get("file_id") is not None else None
     if file.get("file_data") is not None:
         media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        metadata = {"legacy_content_block": legacy_block} if legacy_block is not None else {}
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
         return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
@@ -1970,8 +1973,14 @@ def _coerce_tool_spec(tool: Any) -> LMToolSpec:
                 name=function.get("name"),
                 description=function.get("description"),
                 parameters=function.get("parameters", {}),
+                strict=function.get("strict"),
                 provider_data=provider_data,
             )
+        known_fields = {"type", "name", "description", "parameters", "strict", "metadata", "provider_data"}
+        extras = {key: value for key, value in tool.items() if key not in known_fields}
+        if extras:
+            tool = {key: value for key, value in tool.items() if key in known_fields}
+            tool["provider_data"] = {**tool.get("provider_data", {}), **extras}
         return LMToolSpec(**tool)
     raise TypeError(f"Cannot convert {type(tool)!r} to LMToolSpec.")
 

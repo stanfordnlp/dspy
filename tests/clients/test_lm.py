@@ -1345,6 +1345,46 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["max_tokens"] == 100
 
 
+def test_responses_api_converts_tools_to_responses_shape():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    result = _convert_chat_request_to_responses_request(
+        {
+            "model": "openai/gpt-4o-mini",
+            "messages": [{"role": "user", "content": "What is the weather?"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get weather.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"city": {"type": "string"}},
+                            "required": ["city"],
+                        },
+                    },
+                }
+            ],
+            "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+        }
+    )
+
+    assert result["tools"] == [
+        {
+            "type": "function",
+            "name": "get_weather",
+            "description": "Get weather.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        }
+    ]
+    assert result["tool_choice"] == {"type": "function", "name": "get_weather"}
+
+
 def test_responses_api_converts_images_correctly():
     from dspy.clients.lm import _convert_chat_request_to_responses_request
 

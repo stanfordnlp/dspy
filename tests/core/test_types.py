@@ -3,6 +3,7 @@ import pytest
 
 from dspy.core.types import (
     LMAudioPart,
+    LMBinaryPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -140,6 +141,133 @@ def test_video_data_round_trips_through_history_messages():
     assert isinstance(round_tripped, LMVideoPart)
     assert round_tripped.data == "YWJj"
     assert round_tripped.media_type == "video/mp4"
+
+
+def test_tool_dicts_coerce_strict_and_extras_into_tool_spec():
+    nested = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "strict": True}}],
+    ).tools[0]
+    assert nested.strict is True
+
+    flat = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "name": "f", "parameters": {}, "strict": False, "custom_field": "x"}],
+    ).tools[0]
+    assert flat.strict is False
+    assert flat.provider_data == {"custom_field": "x"}
+
+
+def test_tool_spec_strict_emits_in_provider_shapes():
+    from dspy.clients.openai_format import to_openai_chat_request, to_openai_responses_request
+
+    request = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "strict": True}}],
+    )
+
+    chat_tool = to_openai_chat_request(request)["tools"][0]
+    assert chat_tool["function"]["strict"] is True
+    assert "strict" not in chat_tool
+
+    responses_tool = to_openai_responses_request(request)["tools"][0]
+    assert responses_tool["strict"] is True
+    assert "function" not in responses_tool
+
+
+def test_file_content_blocks_normalize_to_binary_parts():
+    data_message = LMMessage(
+        role="user",
+        content=[
+            {
+                "type": "file",
+                "file": {
+                    "file_data": "data:text/plain;base64,SGVsbG8=",
+                    "filename": "hello.txt",
+                },
+            }
+        ],
+    )
+    data_part = data_message.parts[0]
+
+    assert isinstance(data_part, LMBinaryPart)
+    assert data_part.data == "SGVsbG8="
+    assert data_part.media_type == "text/plain"
+    assert data_part.filename == "hello.txt"
+
+    id_message = LMMessage(
+        role="user",
+        content=[{"type": "file", "file": {"file_id": "file_123", "filename": "report.pdf"}}],
+    )
+    id_part = id_message.parts[0]
+
+    assert isinstance(id_part, LMBinaryPart)
+    assert id_part.file_id == "file_123"
+    assert id_part.filename == "report.pdf"
+
+
+def test_file_content_block_with_data_and_id_round_trips_losslessly_to_responses_format():
+    from dspy.clients.openai_format import to_openai_responses_request
+
+    message = LMMessage(
+        role="user",
+        content=[
+            {
+                "type": "file",
+                "file": {
+                    "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+                    "file_id": "file_123",
+                    "filename": "report.pdf",
+                },
+            }
+        ],
+    )
+    part = message.parts[0]
+
+    assert isinstance(part, LMBinaryPart)
+    assert part.metadata["legacy_content_block"] == {
+        "type": "file",
+        "file": {
+            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+            "file_id": "file_123",
+            "filename": "report.pdf",
+        },
+    }
+
+    request = LMRequest(model="model", messages=[message])
+    content = to_openai_responses_request(request)["input"][0]["content"]
+
+    assert content == [
+        {
+            "type": "input_file",
+            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+            "file_id": "file_123",
+            "filename": "report.pdf",
+        }
+    ]
+
+
+def test_tool_result_message_content_list_normalizes_to_parts():
+    message = LMMessage(
+        role="tool",
+        tool_call_id="call_1",
+        name="search",
+        content=[
+            {"type": "text", "text": "see this"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
+        ],
+    )
+    result = message.parts[0]
+
+    assert isinstance(result, LMToolResultPart)
+    assert result.call_id == "call_1"
+    assert result.name == "search"
+    assert len(result.content) == 2
+    assert result.content[0].text == "see this"
+    assert result.content[1].url == "https://example.com/cat.png"
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():
