@@ -187,7 +187,15 @@ class JSONAdapter(ChatAdapter):
         # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
             if k in signature.output_fields:
-                fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                try:
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                except Exception as e:
+                    raise AdapterParseError(
+                        adapter_name="JSONAdapter",
+                        signature=signature,
+                        lm_response=completion,
+                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                    )
 
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
