@@ -909,6 +909,10 @@ class LMResponse(BaseModel):
         for output in self.outputs:
             if _requires_output_dict(output):
                 outputs.append(output.to_output_dict())
+            elif output.text is not None:
+                # Join text parts so legacy outputs stay `str`, never a list,
+                # when an output carries multiple text (or text + media) parts.
+                outputs.append(output.text)
             else:
                 outputs.append(output.to_value())
         return outputs
