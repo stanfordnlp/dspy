@@ -142,18 +142,32 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ollama-data
-          key: ollama-llama3.2-3b-${{ runner.os }}-v1
+          key: ollama-llama3.2-3b-${{ runner.os }}-ollama0.31.2-v2
       - name: Start Ollama service
         run: |
           mkdir -p ollama-data
           docker run -d --name ollama \
             -p 11434:11434 \
             -v "$GITHUB_WORKSPACE/ollama-data:/root/.ollama" \
-            ollama/ollama:latest
+            ollama/ollama:0.31.2
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
       - name: Pull LLM
         if: steps.cache-ollama.outputs.cache-hit != 'true'
         run: docker exec ollama ollama pull llama3.2:3b
+      - name: Warm up LLM
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS http://localhost:11434/api/generate \
+              -d '{"model":"llama3.2:3b","prompt":"ping","stream":false}'; then
+              echo "Ollama warm-up succeeded"
+              exit 0
+            fi
+            echo "Warm-up attempt $i failed; retrying..."
+            sleep 5
+          done
+          echo "Ollama failed to serve llama3.2:3b after 3 attempts"
+          docker logs ollama || true
+          exit 1
       - name: Set LM environment variable
         run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> "$GITHUB_ENV"
       - name: Run tests
