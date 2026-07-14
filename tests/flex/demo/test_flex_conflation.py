@@ -133,10 +133,10 @@ def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float, float]
     """Return (mean metric score, accuracy, avg LLM calls/example).
 
     The headline number is the *metric score* the optimizer actually optimizes — accuracy
-    minus the 0.15-per-LLM-call penalty — not raw accuracy. The un-optimized RLM baseline
-    classifies correctly but burns several traced LLM calls per example, so its score is well
-    below 1.0 even at ~100% accuracy. GEPA's win is settling clear cases in deterministic
-    Python (0 calls -> full score), which raw accuracy alone can't show.
+    minus the 0.15-per-LLM-call penalty — not raw accuracy. The un-optimized Predict baseline
+    classifies with one traced LLM call per example, so its score is capped below 1.0 (accuracy
+    minus the per-call penalty) even at high accuracy. GEPA's win is settling clear cases in
+    deterministic Python (0 calls -> full score), which raw accuracy alone can't show.
     """
     def run_one(ex):
         try:
@@ -177,9 +177,9 @@ def test_flex_conflation() -> None:
 
     program = dspy.Flex(SamePlace)
 
-    # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.RLM.
+    # Fresh baseline: a clean dspy.Module subclass that delegates to one dspy.Predict.
     assert program.module_src.lstrip().startswith("class ")
-    assert "dspy.RLM(" in program.module_src
+    assert "dspy.Predict(" in program.module_src
     _showcase(program, "baseline (un-optimized flex)")
 
     base_score, base_acc, base_calls = _evaluate(program, test)
@@ -197,7 +197,7 @@ def test_flex_conflation() -> None:
     ).compile(program, trainset=train, valset=val)
 
     # The metric penalizes LLM calls, so GEPA should push most logic into plain Python —
-    # watch the module_src shift from one RLM to focused predictors + deterministic code.
+    # watch the module_src shift from one Predict to focused predictors + deterministic code.
     _showcase(optimized, "optimized by GEPA")
     print(f"GEPA changed the code: {optimized.module_src != program.module_src}")
 
@@ -217,8 +217,8 @@ def test_flex_conflation() -> None:
 
     # Plot the before/after (a la banking77), one panel per metric. Score is the headline GEPA
     # optimizes (accuracy − 0.15/LLM-call); accuracy shows it's held; LLM calls/example shows the
-    # decomposition win (the opaque RLM loop -> deterministic Python that settles clear cases).
-    labels_xy = ["baseline\n(flex / RLM)", "optimized\n(GEPA code)"]
+    # decomposition win (the one-call Predict -> deterministic Python that settles clear cases).
+    labels_xy = ["baseline\n(flex / Predict)", "optimized\n(GEPA code)"]
     colors = ["#9aa0a6", "#1a73e8"]
     fig, (ax_score, ax_acc, ax_calls) = plt.subplots(1, 3, figsize=(11, 4))
 

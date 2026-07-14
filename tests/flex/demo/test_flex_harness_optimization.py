@@ -11,10 +11,10 @@ dspy.Flex + dspy.GEPA is the DSPy realization of exactly that: a Flex module's c
 harness, and GEPA rewrites that code (not just prompts). This demo is deliberately NATIVE — no seeding,
 no hand-written starter:
 
-    harness = dspy.Flex(LegalDeliverable)          # starts as the RLM baseline (an LLM-as-agent harness)
+    harness = dspy.Flex(LegalDeliverable)          # starts as a single-call dspy.Predict harness
     optimized = dspy.GEPA(metric=rubric_score, ...).compile(harness, trainset=..., valset=...)
 
-GEPA evolves the RLM harness (decompose the work, structure the deliverable, ground claims in the
+GEPA evolves that harness code (decompose the work, structure the deliverable, ground claims in the
 documents, address each criterion) with the executor model frozen. The proposer is Opus (mirroring the
 article's Opus 4.8); the frozen model is a cheap executor (Haiku).
 
@@ -37,7 +37,7 @@ Honest adaptations (so a single Flex module can stand in for LAB's multi-file ag
   * Documents are extracted best-effort (needs python-docx / pypdf / openpyxl for Office/PDF; text
     formats always work) and truncated to bound tokens.
 
-Cost is dominated by the RLM harness (multi-call) over the documents, so the defaults are tiny — a small
+Cost is dominated by the harness's LLM calls over the (long) documents, so the defaults are tiny — a small
 trainset, capped criteria, capped document length. Everything scales via env. Don't expect the article's
 numbers at this scale; the point is the native loop and whether GEPA moves the pooled rate. Results are
 reported, not asserted. Skips if HARVEY_LABS_DIR is unset or has no tasks.
@@ -77,8 +77,8 @@ EXEC_LM = dspy.LM(os.getenv("HARVEY_EXEC_LM", "anthropic/claude-haiku-4-5"), max
 REFLECTION_LM = dspy.LM(os.getenv("HARVEY_REFLECTION_LM", "anthropic/claude-opus-4-8"), temperature=1.0, max_tokens=8000)
 JUDGE_LM = dspy.LM(os.getenv("HARVEY_JUDGE_LM", "anthropic/claude-sonnet-4-6"), max_tokens=4000)
 
-# Small defaults: cost is ~ (train+val eval rollouts + GEPA budget) RLM forwards, each a multi-call loop
-# over the documents. Keep these tiny for a first run; scale via env once you've seen the cost.
+# Small defaults: cost is ~ (train+val eval rollouts + GEPA budget) harness forwards over the (long)
+# documents. Keep these tiny for a first run; scale via env once you've seen the cost.
 N_TRAIN = int(os.getenv("HARVEY_N_TRAIN", "3"))
 N_VAL = int(os.getenv("HARVEY_N_VAL", "2"))
 N_TEST = int(os.getenv("HARVEY_N_TEST", "3"))
@@ -284,11 +284,11 @@ def test_flex_harvey_lab_harness() -> None:
     for e in train + val + test:
         _log(f"  {e.task_id}: {len(e.criteria)} criteria, {len(e.documents)} doc chars")
 
-    # 1. Native baseline: dspy.Flex starts as the RLM harness (an LLM-as-agent). No seeding.
+    # 1. Native baseline: dspy.Flex starts as a single-call dspy.Predict harness. No seeding.
     harness = dspy.Flex(LegalDeliverable)
-    assert "dspy.RLM(" in (harness.module_src or ""), "expected the native RLM baseline harness"
+    assert "dspy.Predict(" in (harness.module_src or ""), "expected the native Predict baseline harness"
     base_pooled, base_allpass = _evaluate(harness, test)
-    _log(f"[baseline RLM harness] pooled={base_pooled:.1%}  all-pass={base_allpass:.1%}")
+    _log(f"[baseline Predict harness] pooled={base_pooled:.1%}  all-pass={base_allpass:.1%}")
 
     # 2. GEPA evolves the harness CODE (module_src); the executor model stays frozen.
     _log("evolving the harness with GEPA (Opus proposes; Haiku frozen)...")

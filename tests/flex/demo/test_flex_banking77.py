@@ -2,7 +2,7 @@
 
 Flow:
   1. Write a classification Signature and "flex" it: ``dspy.Flex(signature)`` binds a
-     baseline that delegates to ``dspy.RLM`` (no codegen — the recursive LM in a REPL).
+     baseline that delegates to ``dspy.Predict`` (no codegen — a single LM call).
   2. Benchmark that baseline on a held-out test split.
   3. Run ``dspy.GEPA`` over a small train/val split. Because the module is flex-marked,
      GEPA optimizes its *code* (``module_src``) — decomposing the
@@ -46,12 +46,12 @@ DEMO_DIR = Path(__file__).parent
 SAVE_PATH = DEMO_DIR / "banking77_flex.json"
 PLOT_PATH = DEMO_DIR / "banking77_improvement.png"
 
-# Executor runs the classifier (and the baseline RLM's sub-queries); reflection authors the
-# optimized code. We deliberately make the executor a SMALL model (Haiku) and the reflection
-# model a STRONG one (Opus): a weak executor leaves real accuracy headroom on a hard 77-way
-# task, so the RLM baseline is well below 100% and GEPA's decomposition has something to lift.
-# (With a strong executor on a tiny test split, even the un-optimized RLM baseline scores ~100%
-# and the demo shows no improvement.) Both override via env.
+# Executor runs the classifier (baseline and optimized); reflection authors the optimized code.
+# We deliberately make the executor a SMALL model (Haiku) and the reflection model a STRONG one
+# (Opus): a weak executor leaves real accuracy headroom on a hard 77-way task, so the Predict
+# baseline is well below 100% and GEPA's decomposition has something to lift. (With a strong
+# executor on a tiny test split, even the un-optimized Predict baseline scores ~100% and the
+# demo shows no improvement.) Both override via env.
 _exec_default = "anthropic/claude-haiku-4-5"
 _reflect_default = "anthropic/claude-opus-4-7"
 EXEC_LM = dspy.LM(os.getenv("BANKING_EXEC_LM", _exec_default), max_tokens=2000)
@@ -65,10 +65,10 @@ EVAL_THREADS = 8
 
 # Small per-LLM-call penalty folded into GEPA's score. Accuracy stays the dominant term (a
 # correct answer is worth 1.0), but among equally-accurate programs the one that makes fewer
-# LM calls scores higher. Without this, the metric is pure accuracy: the RLM baseline already
-# maxes it, so GEPA has no score reason to replace the opaque RLM with a decomposed program —
-# its decomposition *feedback* is then overridden by its score-based acceptance, and the code
-# never changes. This makes "decompose into focused, deterministic predictors" actually pay.
+# LM calls scores higher. Without this, the metric is pure accuracy, so among equally-accurate
+# programs GEPA has no score reason to prefer a leaner one — its decomposition *feedback* is then
+# overridden by its score-based acceptance. This makes "decompose into focused, deterministic
+# predictors" actually pay.
 # Kept small (0.02) so it only breaks ties: a decomposition must *hold* accuracy to win — it
 # can never beat a strictly-more-accurate program, so the accuracy headline can't regress.
 LLM_CALL_PENALTY = 0.02
@@ -121,10 +121,10 @@ def _build_signature(labels: list[str]):
 def _evaluate(program: dspy.Module, dataset: list) -> tuple[float, float]:
     """Return (test accuracy, avg traced LLM calls/example).
 
-    The call count makes the determinism win visible: the RLM baseline makes several traced
-    predictor calls per example (one per REPL iteration, plus extract), whereas a GEPA-
-    decomposed program typically settles each case in one focused call (or zero, in pure
-    Python). Accuracy is the headline; calls show *how* the answer was reached.
+    The call count shows *how* the answer was reached: the Predict baseline makes one traced
+    call per example, whereas a GEPA-decomposed program may settle some cases in plain Python
+    (zero calls) or route through focused predictors. Accuracy is the headline; calls show the
+    mechanism.
     """
     def run_one(ex):
         try:
@@ -154,7 +154,7 @@ def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> Scor
         fb = (
             f"CORRECT — predicted '{predicted}', which matches the true intent {cost}. {CHALLENGE} "
             "Even though this one was right, prove the reasoning was sound and not luck, and settle "
-            "clear cases in fewer (ideally one) focused predictor calls — the opaque RLM loop is "
+            "clear cases in fewer (ideally one) focused predictor calls — extra LM calls are "
             "penalized per call."
         )
     else:
@@ -178,16 +178,16 @@ def test_flex_banking77_showcase() -> None:
     labels, train, val, test = _load_splits()
     print(f"\nBANKING77: {len(labels)} intents | train={len(train)} val={len(val)} test={len(test)}")
 
-    # 1. Flex the classifier: a dspy.RLM baseline (a clean dspy.Module subclass), code-optimizable.
+    # 1. Flex the classifier: a dspy.Predict baseline (a clean dspy.Module subclass), code-optimizable.
     program = dspy.Flex(_build_signature(labels))
     baseline_src = program.module_src
     assert program.module_src.lstrip().startswith("class ")
-    assert "dspy.RLM(" in baseline_src  # the un-optimized flex baseline
+    assert "dspy.Predict(" in baseline_src  # the un-optimized flex baseline
     _showcase(program, "baseline (un-optimized flex)")
 
     # 2. Benchmark the baseline.
     baseline_acc, baseline_calls = _evaluate(program, test)
-    print(f"[baseline / flex-RLM] test accuracy = {baseline_acc:.1%}, avg LLM calls/example = {baseline_calls:.1f}")
+    print(f"[baseline / flex-Predict] test accuracy = {baseline_acc:.1%}, avg LLM calls/example = {baseline_calls:.1f}")
 
     # 3. Optimize the module's CODE with GEPA (challenging feedback drives the reflection).
     optimized = dspy.GEPA(
@@ -221,8 +221,8 @@ def test_flex_banking77_showcase() -> None:
     print(f"saved + reloaded optimized program -> {SAVE_PATH}")
 
     # 5. Plot the before/after. Two panels: accuracy is the headline (GEPA holds it), while
-    # avg LLM calls/example shows the decomposition win (the opaque RLM loop -> focused code).
-    labels_xy = ["baseline\n(flex / RLM)", "optimized\n(GEPA code)"]
+    # avg LLM calls/example shows the decomposition win (the single Predict call -> focused code).
+    labels_xy = ["baseline\n(flex / Predict)", "optimized\n(GEPA code)"]
     colors = ["#9aa0a6", "#1a73e8"]
     fig, (ax_acc, ax_calls) = plt.subplots(1, 2, figsize=(8, 4))
 

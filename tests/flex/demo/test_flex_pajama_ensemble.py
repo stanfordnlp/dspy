@@ -63,8 +63,8 @@ def _log(msg: str) -> None:
 # OPTIMIZES each program, so the thesis is FEWER-but-better judges: a handful of GEPA-optimized,
 # decorrelated judges beating many sampled ones at matched #programs (i.e. our accuracy-vs-#programs
 # curve sitting ABOVE the paper's). So keep N_JUDGES small and invest in per-judge independence and
-# quality (bagging + enough train), not in judge count. Cost ~ baseline RLM eval + N_JUDGES * (RLM seed
-# eval on N_VAL); dial N_JUDGES / N_VAL down via env to cut it.
+# quality (bagging + enough train), not in judge count. Cost ~ baseline LLM-judge eval + N_JUDGES *
+# (seed eval on N_VAL); dial N_JUDGES / N_VAL down via env to cut it.
 N_JUDGES = int(os.getenv("PAJAMA_N_JUDGES", "6"))  # FEW GEPA-optimized judges (the point), not many sampled ones
 N_TRAIN = int(os.getenv("PAJAMA_N_TRAIN", "32"))  # even; bigger train feeds bagging + curbs overfitting
 N_VAL = int(os.getenv("PAJAMA_N_VAL", "20"))  # even; more val -> steadier weights, but drives per-judge cost
@@ -167,7 +167,8 @@ def _synthesize_judges(train: list, val: list) -> list:
             seed=i,
         ).compile(dspy.Flex(seed), trainset=bag, valset=val)
         judges.append(optimized)
-        codified = "dspy.RLM(" not in (optimized.module_src or "")
+        src = optimized.module_src or ""
+        codified = not any(k in src for k in ("dspy.Predict(", "dspy.ChainOfThought(", "dspy.RLM(", "dspy.ReAct("))
         _log(f"  judge {i + 1}/{N_JUDGES} done (codified to pure Python: {codified})")
     return judges
 
@@ -351,7 +352,7 @@ def test_flex_pajama_ensemble_showcase() -> None:
     _log(f"PAJAMA ensemble | judges={N_JUDGES} train={len(train)} val={len(val)} test={len(test)} (balanced A/B)")
 
     # LLM-as-a-judge reference (the single-program baseline), for the plot's comparison line.
-    _log("evaluating the LLM-as-judge baseline on the test set (runs the RLM, the slow part)...")
+    _log("evaluating the LLM-as-judge baseline on the test set (runs the LLM judge, the slow part)...")
     base_acc, base_calls = _evaluate(dspy.Flex(PairwiseJudge), test)
     _log(f"baseline: accuracy={base_acc:.1%}, avg LLM calls/example={base_calls:.1f}")
 

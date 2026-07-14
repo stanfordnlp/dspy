@@ -75,15 +75,15 @@ def parse_module_class_name(module_src: str) -> str:
     return chosen[0].name
 
 
-def _accepts_interpreter(cls: type) -> bool:
-    """True if ``cls.__init__`` takes an ``interpreter`` parameter.
+def _accepts_interpreter_factory(cls: type) -> bool:
+    """True if ``cls.__init__`` takes an ``interpreter_factory`` parameter.
 
     The code-executing predictors (``CodeAct``/``ProgramOfThought``/``RLM``) do; ``Predict`` and
     ``ChainOfThought`` don't. Checked by introspection (not a hardcoded list) so it stays correct if
     the set of interpreter-taking predictors changes.
     """
     try:
-        return "interpreter" in inspect.signature(cls.__init__).parameters
+        return "interpreter_factory" in inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):
         return False
 
@@ -165,7 +165,7 @@ class BridgeRuntime:
     live in the sandbox and can't be. A code-executing sub-predictor (RLM/CodeAct/ProgramOfThought)
     gets a fresh interpreter from the same factory, so its inner code runs in the backend chosen for
     Flex — except a shared bare instance, which it can't reuse (that would shut the session down after
-    ``forward``), so there it falls back to its own default sandbox. See ``_sub_interpreter``.
+    ``forward``), so there it falls back to its own default sandbox. See ``_sub_interpreter_factory``.
     """
 
     def __init__(self, flex: Any, factory: Callable[[], Any], max_predictor_calls: int | None = 100) -> None:
@@ -280,26 +280,28 @@ class BridgeRuntime:
             return {k: self._decode_tools(v) for k, v in value.items()}
         return value
 
-    def _sub_interpreter(self) -> Any:
-        """A fresh interpreter (from the Flex factory) for a bridged code-executing sub-predictor, so
-        its inner code runs in the same backend chosen for Flex. Each gets its own instance.
+    def _sub_interpreter_factory(self) -> Any:
+        """The Flex interpreter factory, handed to a bridged code-executing sub-predictor so its inner
+        code runs in the same backend chosen for Flex. The sub-predictor creates and tears down a fresh
+        interpreter per ``forward`` from this factory, isolating each rollout.
 
         Returns ``None`` for a shared bare instance: the sub-predictor shuts its interpreter down after
         ``forward``, which would tear down the shared Flex session, so it uses its own default sandbox.
         """
         if getattr(self._flex, "_interpreter_shared", False):
             return None
-        return self._factory()
+        return self._factory
 
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
-        # Give a code-executing sub-predictor a sandbox from the Flex factory, unless the sandbox code
-        # already passed one (it can't, since a live interpreter can't cross the boundary).
-        if "interpreter" not in extra and _accepts_interpreter(cls):
-            sub = self._sub_interpreter()
-            if sub is not None:
-                extra["interpreter"] = sub
+        # A code-executing sub-predictor should run its inner code in the backend chosen for Flex, so
+        # hand it the Flex interpreter factory (it makes and tears down a fresh interpreter per forward).
+        # The sandbox code can't set this itself, since a live interpreter can't cross the boundary.
+        if "interpreter_factory" not in extra and _accepts_interpreter_factory(cls):
+            factory = self._sub_interpreter_factory()
+            if factory is not None:
+                extra["interpreter_factory"] = factory
         return cls(_resolve_signature(signature), **extra)
 
     def _construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:

@@ -57,8 +57,8 @@ def test_no_interpreter_keeps_in_process_path() -> None:
     flex = Flex(Doubler)
     assert flex._bridge is None
     assert flex._interpreter_factory is None
-    # Unchanged baseline behavior.
-    assert flex.module_src and "dspy.RLM(" in flex.module_src
+    # In-process baseline: with no tools, a single dspy.Predict.
+    assert flex.module_src and "dspy.Predict(" in flex.module_src
 
 
 def test_instance_is_wrapped_as_factory_with_warning() -> None:
@@ -263,21 +263,21 @@ def test_predictor_call_budget_can_be_disabled() -> None:
 # Code-executing sub-predictors inherit the Flex sandbox backend (no Deno)
 # =============================================================================
 # A bridged CodeAct/ProgramOfThought/RLM runs its OWN inner code. It must run that code in the
-# sandbox backend chosen for Flex (a fresh instance from the factory), not a separate default
+# sandbox backend chosen for Flex (via the Flex interpreter factory), not a separate default
 # Deno/Pyodide sandbox — otherwise sandboxing the Flex glue but not the code its sub-predictors
 # execute would be a hole.
 
 
-def test_accepts_interpreter_only_for_code_executing_kinds() -> None:
+def test_accepts_interpreter_factory_only_for_code_executing_kinds() -> None:
     # Introspection-based, not a hardcoded list, so it tracks the real constructors.
-    assert bridge._accepts_interpreter(dspy.CodeAct)
-    assert bridge._accepts_interpreter(dspy.ProgramOfThought)
-    assert bridge._accepts_interpreter(dspy.RLM)  # type: ignore[arg-type]  # dspy re-exports RLM oddly
-    # Pure-LM and tool-calling predictors run no inner code, so no interpreter is injected into them.
-    assert not bridge._accepts_interpreter(dspy.Predict)
-    assert not bridge._accepts_interpreter(dspy.ChainOfThought)
-    assert not bridge._accepts_interpreter(dspy.ReAct)
-    assert not bridge._accepts_interpreter(dspy.ReActV2)  # type: ignore[arg-type]  # re-export quirk
+    assert bridge._accepts_interpreter_factory(dspy.CodeAct)
+    assert bridge._accepts_interpreter_factory(dspy.ProgramOfThought)
+    assert bridge._accepts_interpreter_factory(dspy.RLM)  # type: ignore[arg-type]  # dspy re-exports RLM oddly
+    # Pure-LM and tool-calling predictors run no inner code, so no interpreter factory is injected.
+    assert not bridge._accepts_interpreter_factory(dspy.Predict)
+    assert not bridge._accepts_interpreter_factory(dspy.ChainOfThought)
+    assert not bridge._accepts_interpreter_factory(dspy.ReAct)
+    assert not bridge._accepts_interpreter_factory(dspy.ReActV2)  # type: ignore[arg-type]  # re-export quirk
 
 
 def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
@@ -285,18 +285,20 @@ def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
     flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: MockInterpreter())
     tools_payload = [{bridge.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
     flex._bridge._construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
-    # The sub-predictor got a fresh interpreter from the Flex factory (the configured backend),
-    # not a default PythonInterpreter.
+    # The sub-predictor makes its per-forward interpreter from the Flex factory (the configured
+    # backend), not a default PythonInterpreter.
     assert isinstance(flex.act, dspy.CodeAct)
-    assert isinstance(flex.act.interpreter, MockInterpreter)
+    assert flex.act._interpreter_factory is flex._bridge._factory
+    assert isinstance(flex.act._interpreter_factory(), MockInterpreter)
 
 
-def test_sub_interpreter_is_fresh_per_predictor_for_a_factory() -> None:
+def test_sub_interpreter_factory_makes_a_fresh_interpreter_per_call() -> None:
     flex = _bridged_flex()  # a real factory (lambda: MockInterpreter())
-    a = flex._bridge._sub_interpreter()
-    b = flex._bridge._sub_interpreter()
+    factory = flex._bridge._sub_interpreter_factory()
+    assert factory is flex._bridge._factory  # the sub-predictor gets the Flex factory itself
+    a, b = factory(), factory()
     assert isinstance(a, MockInterpreter) and isinstance(b, MockInterpreter)
-    assert a is not b  # each sub-predictor is isolated in its own interpreter
+    assert a is not b  # so each forward is isolated in its own interpreter
 
 
 def test_shared_instance_is_not_handed_to_sub_predictors() -> None:
@@ -306,7 +308,7 @@ def test_shared_instance_is_not_handed_to_sub_predictors() -> None:
     with mock_patch("dspy.flex.flex.logger"):  # silence the "shared instance" warning
         flex = Flex(Doubler, interpreter=shared)
     assert flex._interpreter_shared is True
-    assert flex._bridge._sub_interpreter() is None
+    assert flex._bridge._sub_interpreter_factory() is None
 
 
 # =============================================================================
@@ -484,19 +486,18 @@ def test_bridged_codeact_runs_in_flex_sandbox() -> None:
         )
     )
 
-    def tagged_factory():
-        interp = dspy.PythonInterpreter()
-        interp._flex_tag = "flex-backend"  # marks instances that came from THIS factory
-        return interp
+    def backend_factory():
+        return dspy.PythonInterpreter()
 
-    flex = Flex(ShoutSig, tools=[shout], interpreter=tagged_factory)
+    flex = Flex(ShoutSig, tools=[shout], interpreter=backend_factory)
     try:
         flex._bind_code(CODEACT_MODULE)
         out = flex(text="hello")
         assert out.out == "HELLO"
-        # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter.
+        # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter:
+        # it builds its per-forward interpreter from the very factory Flex was given.
         act = flex.act  # bridged predictor, attached dynamically
-        assert getattr(act.interpreter, "_flex_tag", None) == "flex-backend"
+        assert act._interpreter_factory is backend_factory
     finally:
         flex.close()
 

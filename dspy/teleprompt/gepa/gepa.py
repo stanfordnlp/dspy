@@ -502,15 +502,15 @@ class GEPA(Teleprompter):
 
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
+        if not trainset:
+            raise ValueError("Trainset must be provided and non-empty.")
+
         # dspy.Flex submodules get their code optimized, not just their instructions.
         flex_submodules = enumerate_flex_submodules(student)
         flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
         instruction_predictors = [
             (name, pred) for name, pred in student.named_predictors() if id(pred) not in flex_internal_ids
         ]
-
-        if not trainset:
-            raise ValueError("Trainset must be provided and non-empty.")
 
         num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:

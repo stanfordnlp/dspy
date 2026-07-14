@@ -25,10 +25,11 @@ def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> di
 class Flex(Module):
     """A module whose implementation is optimizable code, not just a prompt.
 
-    Construct it like any module (``dspy.Flex(MySignature)``). It starts as a deterministic
-    baseline that delegates to ``dspy.RLM(<signature>)`` and is marked ``_code_optimizable``, so
-    ``dspy.GEPA`` can rewrite its source — a single ``dspy.Module`` subclass, exposed as
-    ``module_src`` — into decomposed predictors plus plain Python instead of only tuning instructions.
+    Construct it like any module (``dspy.Flex(MySignature)``). It starts as a baseline that delegates
+    to a single ``dspy.Predict`` over the signature — or ``dspy.RLM`` when ``tools`` are given, so the
+    baseline can call them — and is marked ``_code_optimizable``, so ``dspy.GEPA`` can rewrite its
+    source — a single ``dspy.Module`` subclass, exposed as ``module_src`` — into decomposed predictors
+    plus plain Python instead of only tuning instructions.
 
     Pass ``interpreter`` to run the generated code inside a sandbox rather than with in-process
     ``exec``. The optimizer-authored glue (control flow, string work, imports) runs isolated; only
@@ -72,7 +73,7 @@ class Flex(Module):
 
         self._interpreter_factory = self._normalize_interpreter(interpreter)
         # A bare instance is shared across forward() calls, so it can't be handed to a sub-predictor
-        # that shuts its interpreter down after forward (see BridgeRuntime._sub_interpreter).
+        # that shuts its interpreter down after forward (see BridgeRuntime._sub_interpreter_factory).
         self._interpreter_shared = isinstance(interpreter, CodeInterpreter)
         self._max_predictor_calls = max_predictor_calls
         self._bridge: Any = None
@@ -81,7 +82,7 @@ class Flex(Module):
 
             self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
 
-        self._bind_code(self._rlm_baseline_src())
+        self._bind_code(self._baseline_src())
 
     @staticmethod
     def _normalize_interpreter(
@@ -127,22 +128,30 @@ class Flex(Module):
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
-    def _rlm_baseline_src(self) -> str:
+    def _baseline_src(self) -> str:
+        """Starting source: one predictor over the whole signature, wrapped in a ``dspy.Module``.
+
+        Uses ``dspy.RLM`` when tools are provided, so the baseline can call them through its REPL;
+        otherwise a single ``dspy.Predict``, which runs with just an LM and no code interpreter.
+        """
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
         instructions = (getattr(cls, "instructions", "") or "").strip()
-        rlm_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
         tool_names = list(self._flex_ctx.context_names())
-        tools_arg = f", tools=[{', '.join(tool_names)}]" if tool_names else ""
+        if tool_names:
+            attr, ctor = "rlm", f"dspy.RLM({sig_arg}, tools=[{', '.join(tool_names)}])"
+        else:
+            attr, ctor = "predict", f"dspy.Predict({sig_arg})"
         return (
             f"class {self._class_name()}(dspy.Module):\n"
             "    def __init__(self):\n"
             "        super().__init__()\n"
-            f"        self.rlm = dspy.RLM({rlm_arg}{tools_arg})\n"
+            f"        self.{attr} = {ctor}\n"
             "\n"
             "    def forward(self, **inputs):\n"
-            "        result = self.rlm(**inputs)\n"
+            f"        result = self.{attr}(**inputs)\n"
             f"        return dspy.Prediction({returns})"
         )
 

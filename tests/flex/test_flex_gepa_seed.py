@@ -33,7 +33,7 @@ class Echo(dspy.Signature):
 
 
 def test_gepa_seed_reflects_edited_source() -> None:
-    flex = Flex(Echo)  # RLM baseline
+    flex = Flex(Echo)  # Predict baseline
     # Apply an edit directly (an in-session tweak, or the result of a prior GEPA run).
     flex._bind_code(EDITED_MODULE)
 

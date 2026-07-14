@@ -1,17 +1,14 @@
 """Tests for flex-marked (dspy.Flex) code optimization inside dspy.GEPA.
 
 Covers the behavior:
-- a freshly constructed dspy.Flex binds a deterministic, LM-free dspy.RLM baseline (a
-  dspy.Module subclass),
+- a freshly constructed dspy.Flex binds a deterministic, LM-free baseline (a dspy.Module subclass;
+  a single dspy.Predict when no tools are given),
 - the module is marked `_code_optimizable` and discoverable as a code-optimizable submodule,
 - GEPA's seed candidate mixes per-submodule *code* components (each a full `module_src`) with
   *instruction* components for non-flex predictors, excluding predictors that live inside a Flex,
 - the adapter rebinds Flex code from a candidate and routes code components through the
   code proposer,
 - GEPA requires a non-empty trainset (there is no data-free path).
-
-These deliberately avoid executing the RLM baseline (which needs a code interpreter):
-optimized/synthesized candidates use plain dspy.Predict, which binds without an LM.
 """
 
 from __future__ import annotations
@@ -58,11 +55,11 @@ def _metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
 # --- baseline + marker -------------------------------------------------------
 
 
-def test_flex_baseline_is_rlm_and_lm_free() -> None:
-    # No LM configured: constructing a Flex must not make any LM call — it binds the
-    # deterministic dspy.RLM baseline (a dspy.Module subclass).
+def test_flex_baseline_is_predict_and_lm_free() -> None:
+    # No LM configured: constructing a Flex must not make any LM call — with no tools it binds the
+    # deterministic dspy.Predict baseline (a dspy.Module subclass).
     program = dspy.Flex(Echo)
-    assert "dspy.RLM(" in program.module_src
+    assert "dspy.Predict(" in program.module_src
     assert "q: str -> a: str" in program.module_src  # typed signature string
     assert "result.a" in program.module_src  # unwraps the declared output
     assert "class EchoModule(dspy.Module)" in program.module_src
@@ -110,7 +107,7 @@ def test_flex_internal_predictors_excluded_from_instruction_components() -> None
 
     instruction_names = [n for n, p in prog.named_predictors() if id(p) not in internal_ids]
     # Only the sibling Predict gets instruction optimization; the Flex's internal
-    # RLM predictors are owned by its code and excluded.
+    # predictors are owned by its code and excluded.
     assert instruction_names == ["sibling"]
     all_names = [n for n, _ in prog.named_predictors()]
     assert any(n.startswith("flex.") for n in all_names)  # internals exist...
@@ -220,7 +217,7 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
 def test_gepa_flex_module_requires_trainset() -> None:
     # There is no data-free synthesis path: a Flex with no trainset must raise, like any
     # other module — GEPA needs examples to score candidates against.
-    student = dspy.Flex(Echo)  # in-memory; baseline RLM
+    student = dspy.Flex(Echo)  # in-memory; baseline Predict
     optimizer = dspy.GEPA(metric=_metric, reflection_lm=DummyLM([]), max_metric_calls=10)
     with pytest.raises(ValueError, match=r"[Tt]rainset"):
         optimizer.compile(student, trainset=[])

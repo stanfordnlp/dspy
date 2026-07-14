@@ -87,9 +87,9 @@ def test_invoice_codegen_then_gepa() -> None:
     dspy.configure(lm=exec_lm)
     program = dspy.Flex(InvoiceTotal)
 
-    # The fresh baseline is a clean dspy.Module subclass that delegates to one dspy.RLM.
+    # The fresh baseline is a clean dspy.Module subclass that delegates to one dspy.Predict.
     assert program.module_src.lstrip().startswith("class ")
-    assert "dspy.RLM(" in program.module_src
+    assert "dspy.Predict(" in program.module_src
     _showcase(program, "baseline (un-optimized flex)")
 
     baseline = mean_score(program, valset)
@@ -122,9 +122,9 @@ def test_invoice_manual_edit_is_saved_and_reseeds_gepa(tmp_path) -> None:
 
     dspy.configure(lm=exec_lm)
     flex = dspy.Flex(InvoiceTotal)
-    assert "dspy.RLM(" in flex.module_src  # fresh baseline
+    assert "dspy.Predict(" in flex.module_src  # fresh baseline
 
-    # Edit the implementation (no LM): swap the RLM baseline for a plain dspy.Predict module.
+    # Edit the implementation (no LM): replace the baseline with a hand-written extraction module.
     edited_class = (
         "class InvoiceTotalModule(dspy.Module):\n"
         "    def __init__(self):\n"
@@ -142,7 +142,7 @@ def test_invoice_manual_edit_is_saved_and_reseeds_gepa(tmp_path) -> None:
     flex.save(path)
     reloaded = dspy.Flex(InvoiceTotal)
     reloaded.load(path)
-    assert "self.extract" in reloaded.module_src and "dspy.RLM(" not in reloaded.module_src
+    assert "self.extract" in reloaded.module_src and "self.predict" not in reloaded.module_src
     _showcase(reloaded, "after manual edit (saved + reloaded)")
 
     # A subsequent dspy.GEPA run seeds from THIS edited module_src — it builds on the edit.
