@@ -314,17 +314,22 @@ def document_to_openai_blocks(document: LMDocumentPart) -> list[dict[str, Any]]:
 
 
 def video_to_openai(video: LMVideoPart) -> dict[str, Any]:
-    filename = os.path.basename(video.path) if video.path is not None else None
-    return binary_to_openai(
-        LMBinaryPart(
-            data=video.data,
-            url=video.url,
-            file_id=video.file_id,
-            path=video.path,
-            media_type=video.media_type,
-            filename=filename,
-        )
-    )
+    # Emit a `video` content block (symmetric with `_media_dict_to_video_part`) rather
+    # than collapsing into a `file` block, so `media_type` survives the round-trip.
+    # Without it, providers such as Gemini/Vertex must HTTP-fetch the source to infer
+    # the MIME type.
+    payload: dict[str, Any] = {"media_type": video.media_type}
+    if video.data is not None:
+        payload["data"] = data_uri(video.media_type, video.data)
+    elif video.path is not None:
+        payload["data"] = data_uri_from_path(video.path, fallback_media_type=video.media_type)
+    elif video.url is not None:
+        payload["url"] = video.url
+    elif video.file_id is not None:
+        payload["file_id"] = video.file_id
+    else:
+        raise ValueError("OpenAI-format video input requires data, path, url, or file_id.")
+    return {"type": "video", "video": payload}
 
 
 def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
