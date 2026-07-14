@@ -1,17 +1,3 @@
-"""Sandbox-side ``dspy`` shim for the ``dspy.Flex`` run-in-interpreter bridge.
-
-``bridge.py`` reads this file's source as text and runs it inside the sandbox once per session. It
-installs a stand-in ``dspy`` whose predictor constructors/calls and ``Prediction`` are proxies that
-bridge back to the host through the registered host tools (see ``bridge.py`` for the protocol).
-
-It is a real ``.py`` file (not an interpolated string) so it lints. It is not meant to be imported on
-the host, and the guard at the bottom stops an accidental import from replacing the real ``dspy``.
-"""
-
-# The shim's attributes are populated dynamically and only exist inside the sandbox, so the host type
-# checker can't see them.
-# pyright: reportAttributeAccessIssue=false
-
 import sys as _dspy_sys
 import types as _dspy_types
 
