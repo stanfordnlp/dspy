@@ -2797,3 +2797,23 @@ def test_provider_tool_calls_preserve_id_and_repair_arguments():
             dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
         ]
     )
+
+
+def test_parse_handles_indented_field_headers():
+    """A field header line with leading whitespace should not corrupt the parsed value.
+
+    `parse()` matches the header pattern against `line.strip()`, but previously sliced the
+    remaining content out of the *unstripped* `line` using the match offset from the *stripped*
+    string -- when the line had leading whitespace, the offsets no longer lined up, so the parsed
+    value retained trailing characters of the header marker itself.
+    """
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    completion = "  [[ ## answer ## ]] Paris is the capital of France\n\n[[ ## completed ## ]]\n"
+
+    result = dspy.ChatAdapter().parse(MySignature, completion)
+
+    assert result == {"answer": "Paris is the capital of France"}
