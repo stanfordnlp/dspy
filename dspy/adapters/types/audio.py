@@ -7,6 +7,7 @@ from typing import Any, Union
 import pydantic
 import requests
 
+from dspy.adapters.types._url_safety import DEFAULT_DOWNLOAD_TIMEOUT, assert_public_url
 from dspy.adapters.types.base_type import Type
 
 try:
@@ -30,6 +31,29 @@ class Audio(Type):
         frozen=True,
         extra="forbid",
     )
+
+    def __init__(
+        self,
+        source: Any = None,
+        *,
+        download: bool = False,
+        verify: bool = True,
+        timeout: float = DEFAULT_DOWNLOAD_TIMEOUT,
+        **data: Any,
+    ):
+        """Construct an Audio from a file path, data URI, bytes, numpy array,
+        dict, or (with ``download=True``) a URL.
+
+        Downloading from a URL is opt-in for security. A bare ``Audio(url)`` or
+        a string coerced into an ``Audio``-typed field will NOT fetch; it raises
+        and points you at ``Audio.from_url(url)``. Pass ``download=True`` to opt
+        in. ``verify`` toggles SSL verification and ``timeout`` bounds the
+        request; both flow through to the download.
+        """
+        if source is not None and "data" not in data:
+            encoded = encode_audio(source, download=download, verify=verify, timeout=timeout)
+            data = {**data, **encoded}
+        super().__init__(**data)
 
     def format(self) -> list[dict[str, Any]]:
         try:
@@ -56,11 +80,16 @@ class Audio(Type):
         return encode_audio(values)
 
     @classmethod
-    def from_url(cls, url: str) -> "Audio":
+    def from_url(cls, url: str, *, verify: bool = True, timeout: float = DEFAULT_DOWNLOAD_TIMEOUT) -> "Audio":
         """
         Download an audio file from URL and encode it as base64.
+
+        The destination is validated against the SSRF guard (rejects loopback,
+        private, and link-local addresses), the request is bounded by ``timeout``
+        seconds, and ``verify`` toggles SSL certificate verification.
         """
-        response = requests.get(url)
+        assert_public_url(url)
+        response = requests.get(url, verify=verify, timeout=timeout)
         response.raise_for_status()
         mime_type = response.headers.get("Content-Type", "audio/wav")
         if not mime_type.startswith("audio/"):
@@ -122,11 +151,25 @@ class Audio(Type):
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
-def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
+def encode_audio(
+    audio: Union[str, bytes, dict, "Audio", Any],
+    sampling_rate: int = 16000,
+    format: str = "wav",
+    *,
+    download: bool = False,
+    verify: bool = True,
+    timeout: float = DEFAULT_DOWNLOAD_TIMEOUT,
+) -> dict:
     """
     Encode audio to a dict with 'data' and 'audio_format'.
-    
+
     Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
+
+    Downloading from a URL is opt-in (``download=True``) for security: this
+    function runs from ``Audio``'s ``before`` validator, so any string coerced
+    into an ``Audio`` field would otherwise trigger an implicit outbound request
+    (an SSRF and hanging-host DoS surface). With ``download=False`` (the default)
+    an ``http(s)`` string raises and points at ``Audio.from_url(url)``.
     """
     if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
         return audio
@@ -147,7 +190,15 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
         a = Audio.from_file(audio)
         return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, str) and audio.startswith("http"):
-        a = Audio.from_url(audio)
+        if not download:
+            raise ValueError(
+                "Audio will not download from a URL by default, because this "
+                "runs from a validator and any string coerced into an Audio "
+                "field would trigger an implicit outbound request (SSRF / "
+                "hanging-host DoS). To download intentionally, call "
+                "Audio.from_url(url), or opt in with Audio(url, download=True)."
+            )
+        a = Audio.from_url(audio, verify=verify, timeout=timeout)
         return {"data": a.data, "audio_format": a.audio_format}
     elif SF_AVAILABLE and hasattr(audio, "shape"):
         a = Audio.from_array(audio, sampling_rate=sampling_rate, format=format)
