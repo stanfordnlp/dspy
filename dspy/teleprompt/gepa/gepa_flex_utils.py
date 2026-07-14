@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any
 
@@ -54,7 +55,8 @@ def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
         ctx = getattr(sub, "_flex_ctx", None)
         if ctx is not None and hasattr(ctx, "render_signature_spec"):
             task_descriptions[path] = ctx.render_signature_spec()
-            context_blurbs[path] = ctx.render_context_blurb()
+            sandboxed = getattr(sub, "_bridge", None) is not None
+            context_blurbs[path] = ctx.render_context_blurb(sandboxed=sandboxed)
     return task_descriptions, context_blurbs
 
 
@@ -211,6 +213,15 @@ def code_reflective_records(eval_batch) -> list[dict[str, Any]]:
     return records
 
 
+def _metric_accepts_trace(metric_fn) -> bool:
+    """True if ``metric_fn`` can be called with a third positional (the trace)."""
+    try:
+        inspect.signature(metric_fn).bind(None, None, None)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def evaluate_with_trace(
     program,
     batch,
@@ -239,6 +250,7 @@ def evaluate_with_trace(
         format_failure_score=failure_score,
         callback_metadata=callback_metadata,
     )
+    accepts_trace = _metric_accepts_trace(metric_fn)
     outputs = []
     scores = []
     for t in trajs:
@@ -246,8 +258,10 @@ def evaluate_with_trace(
         outputs.append(pred)
         if isinstance(pred, FailedPrediction):
             result = failure_score
-        else:
+        elif accepts_trace:
             result = metric_fn(t["example"], pred, t["trace"])
+        else:
+            result = metric_fn(t["example"], pred)
         t["score"] = result  # make_reflective_dataset reads this for the (trace-aware) feedback
         score = result["score"] if hasattr(result, "score") else result
         scores.append(failure_score if score is None else score)

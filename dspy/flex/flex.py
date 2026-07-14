@@ -122,6 +122,7 @@ class Flex(Module):
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
+        state = dict(state) if isinstance(state, dict) else state
         module_src = state.pop("module_src", None) if isinstance(state, dict) else None
         if module_src:
             self._bind_code(module_src)

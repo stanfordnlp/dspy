@@ -66,16 +66,23 @@ class FlexContext:
 
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
 
-    def render_context_blurb(self) -> str:
-        if not self.tools:
-            return "(no extra context)"
-        tool_lines: list[str] = []
-        for tool in self.tools:
-            tname = getattr(tool, "name", None) or getattr(tool, "__name__", "?")
-            tdesc = getattr(tool, "desc", None) or getattr(tool, "__doc__", "") or ""
-            tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
-            tool_lines.append(f"  - {tname}: {tdesc}")
-        return "Available tools (in scope by name):\n" + "\n".join(tool_lines)
+    def render_context_blurb(self, sandboxed: bool = False) -> str:
+        parts: list[str] = []
+        if self.tools:
+            tool_lines: list[str] = []
+            for tool in self.tools:
+                tname = getattr(tool, "name", None) or getattr(tool, "__name__", "?")
+                tdesc = getattr(tool, "desc", None) or getattr(tool, "__doc__", "") or ""
+                tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
+                tool_lines.append(f"  - {tname}: {tdesc}")
+            parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
+        if sandboxed:
+            parts.append(
+                "This module runs in a sandbox: only the tools listed above may be passed to "
+                "dspy.ReAct/dspy.RLM (their functions live on the host). A function you define inside "
+                "the module can be called directly in forward, but cannot be handed to those predictors."
+            )
+        return "\n\n".join(parts) if parts else "(no extra context)"
 
 
 def _type_name(t: Any) -> str:
