@@ -1531,6 +1531,83 @@ def test_responses_api_preserves_multi_message_structure():
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
 
 
+def test_responses_api_flattens_chat_tools() -> None:
+    """Chat-format tools are flattened to Responses-API shape."""
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "Search a knowledge base.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                    },
+                },
+            },
+        ],
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert "tools" in result
+    assert len(result["tools"]) == 1
+    tool = result["tools"][0]
+    assert tool["type"] == "function"
+    assert tool["name"] == "search"
+    assert tool["description"] == "Search a knowledge base."
+    assert "function" not in tool
+
+
+def test_responses_api_flattens_tool_choice_object() -> None:
+    """Chat-format tool_choice object is flattened to Responses-API shape."""
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [{"type": "function", "function": {"name": "search", "parameters": {"type": "object"}}}],
+        "tool_choice": {"type": "function", "function": {"name": "search"}},
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["tool_choice"] == {"type": "function", "name": "search"}
+
+
+def test_responses_api_preserves_string_tool_choice() -> None:
+    """String tool_choice values pass through unchanged."""
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    for choice in ("auto", "required", "none"):
+        request = {
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {"type": "object"}}}],
+            "tool_choice": choice,
+        }
+        result = _convert_chat_request_to_responses_request(request)
+        assert result["tool_choice"] == choice, f"failed for tool_choice={choice!r}"
+
+
+def test_responses_api_no_tools_passes_through() -> None:
+    """Request without tools is unaffected by the tools conversion."""
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "messages": [{"role": "user", "content": "What is 2+2?"}],
+        "reasoning_effort": "low",
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert "tools" not in result
+    assert "tool_choice" not in result
+    assert result["input"][0]["content"][0]["text"] == "What is 2+2?"
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
