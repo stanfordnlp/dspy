@@ -1,20 +1,3 @@
-"""Run-in-interpreter bridge for ``dspy.Flex``.
-
-When a ``dspy.Flex`` is given an ``interpreter``, its ``module_src`` runs inside the sandbox rather
-than in-process. The optimizer-authored glue (control flow, string work, ``import re``) stays
-isolated; only two operations cross back to the trusted host:
-
-1. constructing a predictor (``dspy.Predict(...)``, ``dspy.ChainOfThought(...)``, ...), and
-2. calling one (``self.solve(problem=...)``), which makes the real LM call.
-
-Predictors are real objects on the host, so ``dspy.GEPA`` can still optimize them and save/load still
-work. The bridge is backend-agnostic: its only sandbox->host primitive is "call a registered host tool
-by name" (the ``CodeInterpreter.tools`` contract), so any interpreter honoring that contract can drive
-it — Deno/Pyodide (``dspy.PythonInterpreter``, the zero-infra default) or a local microVM/gVisor
-backend. The sandbox must call back to the host for LM calls, so a local sandbox fits; a remote one
-would need a callback tunnel.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -34,10 +17,7 @@ logger = logging.getLogger(__name__)
 CONSTRUCT_TOOL = "__dspy_construct__"
 CALL_TOOL = "__dspy_call__"
 
-# Predictors the sandbox shim may construct and the host builds for real: pure-LM predictors
-# (Predict/ChainOfThought), code-executing predictors (RLM/CodeAct/ProgramOfThought), which run their
-# inner code in a fresh interpreter from the Flex factory, and tool-calling agents (ReAct/ReActV2),
-# which call named Flex-level tools on the host.
+# Predictors the sandbox shim may construct and the host builds
 BRIDGEABLE_KINDS = ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2")
 # The shim's dspy.Signature(...) emits this marker so the host can rebuild a Signature.
 SIGNATURE_MARKER = "__dspy_sig__"
@@ -53,17 +33,12 @@ _OUT_VAR = "__dspy_flex_out"
 _JSON_VAR = "__dspy_flex_json"
 
 
-# The sandbox-side dspy shim, injected as text once per session. It's a real sibling .py file (so it
-# lints) whose literals are kept in sync with the constants above by the test suite.
+# The sandbox-side dspy shim, injected as text once per session.
 SHIM_SETUP = (Path(__file__).parent / "_sandbox_shim.py").read_text(encoding="utf-8")
 
 
 def parse_module_class_name(module_src: str) -> str:
-    """Return the name of the generated ``dspy.Module`` subclass in ``module_src``.
-
-    Mirrors ``flex._find_module_class``'s heuristic (prefer a class defining ``forward``) but works on
-    source text, since under the bridge we never exec ``module_src`` on the host.
-    """
+    """Return the name of the generated ``dspy.Module`` subclass in ``module_src``."""
     tree = ast.parse(module_src)
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
     with_forward = [
@@ -76,12 +51,7 @@ def parse_module_class_name(module_src: str) -> str:
 
 
 def _accepts_interpreter_factory(cls: type) -> bool:
-    """True if ``cls.__init__`` takes an ``interpreter_factory`` parameter.
-
-    The code-executing predictors (``CodeAct``/``ProgramOfThought``/``RLM``) do; ``Predict`` and
-    ``ChainOfThought`` don't. Checked by introspection (not a hardcoded list) so it stays correct if
-    the set of interpreter-taking predictors changes.
-    """
+    """True if ``cls.__init__`` takes an ``interpreter_factory`` parameter."""
     try:
         return "interpreter_factory" in inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):
@@ -160,9 +130,9 @@ class BridgeRuntime:
     construction is idempotent across sessions, so the host predictors are built once and shared.
     ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
 
-    User ``tools`` are registered with the interpreter (callable by name from sandbox glue) and
+    User ``tools`` are registered with the interpreter (callable by name from sandbox) and
     resolved by name when passed to a bridged sub-predictor; tools authored inside the generated module
-    live in the sandbox and can't be. A code-executing sub-predictor (RLM/CodeAct/ProgramOfThought)
+    live in the sandbox. A code-executing sub-predictor (RLM/CodeAct/ProgramOfThought)
     gets a fresh interpreter from the same factory, so its inner code runs in the backend chosen for
     Flex — except a shared bare instance, which it can't reuse (that would shut the session down after
     ``forward``), so there it falls back to its own default sandbox. See ``_sub_interpreter_factory``.
@@ -254,7 +224,7 @@ class BridgeRuntime:
             except Exception:
                 logger.warning("dspy.Flex: interpreter.shutdown() raised during close", exc_info=True)
 
-    # -- host-side bridge callbacks (invoked from the sandbox) --------------
+    # -- host-side bridge callbacks --------------
 
     def _tool_callables(self) -> dict[str, Callable[..., Any]]:
         """User tools as ``name -> underlying callable`` to register so sandbox code can call them."""
@@ -283,11 +253,7 @@ class BridgeRuntime:
     def _sub_interpreter_factory(self) -> Any:
         """The Flex interpreter factory, handed to a bridged code-executing sub-predictor so its inner
         code runs in the same backend chosen for Flex. The sub-predictor creates and tears down a fresh
-        interpreter per ``forward`` from this factory, isolating each rollout.
-
-        Returns ``None`` for a shared bare instance: the sub-predictor shuts its interpreter down after
-        ``forward``, which would tear down the shared Flex session, so it uses its own default sandbox.
-        """
+        interpreter per ``forward`` from this factory, isolating each rollout."""
         if getattr(self._flex, "_interpreter_shared", False):
             return None
         return self._factory

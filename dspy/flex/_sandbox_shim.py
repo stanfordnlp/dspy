@@ -98,6 +98,6 @@ for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "R
 dspy = _dspy
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
-# present in globals(). On the host (accidental import) this is skipped, so the real dspy is untouched.
+# present in globals().
 if "__dspy_construct__" in globals():
     _dspy_sys.modules["dspy"] = _dspy
