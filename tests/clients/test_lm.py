@@ -16,6 +16,7 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
+from dspy.clients.cache import Cache
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -98,6 +99,40 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     assert len(usage_tracker.usage_data) == 0
 
     dspy.cache = original_cache
+
+
+@pytest.mark.parametrize("endpoint_key", ["api_base", "base_url"])
+def test_lm_cache_uses_endpoint_but_ignores_api_key(monkeypatch, endpoint_key):
+    endpoint_a = "https://endpoint-a.example/v1"
+    endpoint_b = "https://endpoint-b.example/v1"
+    calls = []
+
+    def fake_completion(*, request, num_retries, cache):
+        calls.append(request.copy())
+        return ModelResponse(
+            choices=[Choices(message=Message(content=request[endpoint_key]))],
+            model=request["model"],
+        )
+
+    monkeypatch.setattr(
+        dspy,
+        "cache",
+        Cache(enable_disk_cache=False, enable_memory_cache=True, disk_cache_dir=None),
+    )
+    monkeypatch.setattr("dspy.clients.lm.litellm_completion", fake_completion)
+    lm = dspy.LM(model="openai/dspy-test-model")
+
+    first = lm("Query", **{endpoint_key: endpoint_a, "api_key": "key-a"})
+    cached = lm("Query", **{endpoint_key: endpoint_a, "api_key": "key-b"})
+    second_endpoint = lm("Query", **{endpoint_key: endpoint_b, "api_key": "key-b"})
+
+    assert first == [endpoint_a]
+    assert cached == [endpoint_a]
+    assert second_endpoint == [endpoint_b]
+    assert [(call[endpoint_key], call["api_key"]) for call in calls] == [
+        (endpoint_a, "key-a"),
+        (endpoint_b, "key-b"),
+    ]
 
 
 def test_disabled_cache_skips_cache_key(monkeypatch):

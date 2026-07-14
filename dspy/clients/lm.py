@@ -170,7 +170,7 @@ class LM(BaseLM):
             self._warned_zero_temp_rollout = True
 
     def _get_cached_completion_fn(self, completion_fn, cache):
-        ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
+        ignored_args_for_cache_key = ["api_key"]
         if cache:
             completion_fn = request_cache(
                 cache_arg_name="request",

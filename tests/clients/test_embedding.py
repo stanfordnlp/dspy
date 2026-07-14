@@ -59,6 +59,32 @@ def test_litellm_embedding(cache):
         np.testing.assert_allclose(result, mock_embeddings)
 
 
+@pytest.mark.parametrize("endpoint_key", ["api_base", "base_url"])
+def test_embedding_cache_uses_endpoint_but_ignores_api_key(cache, endpoint_key):
+    endpoint_a = "https://endpoint-a.example/v1"
+    endpoint_b = "https://endpoint-b.example/v1"
+    calls = []
+
+    def fake_embedding(**kwargs):
+        calls.append(kwargs.copy())
+        value = 1.0 if kwargs[endpoint_key] == endpoint_a else 2.0
+        return MockEmbeddingResponse([[value]])
+
+    with patch("litellm.embedding", side_effect=fake_embedding):
+        embedding = Embedder("text-embedding-ada-002", caching=True)
+        first = embedding(["hello"], **{endpoint_key: endpoint_a, "api_key": "key-a"})
+        cached = embedding(["hello"], **{endpoint_key: endpoint_a, "api_key": "key-b"})
+        second_endpoint = embedding(["hello"], **{endpoint_key: endpoint_b, "api_key": "key-b"})
+
+    np.testing.assert_allclose(first, [[1.0]])
+    np.testing.assert_allclose(cached, [[1.0]])
+    np.testing.assert_allclose(second_endpoint, [[2.0]])
+    assert [(call[endpoint_key], call["api_key"]) for call in calls] == [
+        (endpoint_a, "key-a"),
+        (endpoint_b, "key-b"),
+    ]
+
+
 def test_callable_embedding(cache):
     inputs = ["hello", "world", "test"]
 
@@ -151,6 +177,33 @@ async def test_async_embedding():
 
         assert len(result) == len(inputs)
         np.testing.assert_allclose(result, mock_embeddings)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint_key", ["api_base", "base_url"])
+async def test_async_embedding_cache_uses_endpoint_but_ignores_api_key(cache, endpoint_key):
+    endpoint_a = "https://endpoint-a.example/v1"
+    endpoint_b = "https://endpoint-b.example/v1"
+    calls = []
+
+    async def fake_embedding(**kwargs):
+        calls.append(kwargs.copy())
+        value = 1.0 if kwargs[endpoint_key] == endpoint_a else 2.0
+        return MockEmbeddingResponse([[value]])
+
+    with patch("litellm.aembedding", side_effect=fake_embedding):
+        embedding = Embedder("text-embedding-ada-002", caching=True)
+        first = await embedding.acall(["hello"], **{endpoint_key: endpoint_a, "api_key": "key-a"})
+        cached = await embedding.acall(["hello"], **{endpoint_key: endpoint_a, "api_key": "key-b"})
+        second_endpoint = await embedding.acall(["hello"], **{endpoint_key: endpoint_b, "api_key": "key-b"})
+
+    np.testing.assert_allclose(first, [[1.0]])
+    np.testing.assert_allclose(cached, [[1.0]])
+    np.testing.assert_allclose(second_endpoint, [[2.0]])
+    assert [(call[endpoint_key], call["api_key"]) for call in calls] == [
+        (endpoint_a, "key-a"),
+        (endpoint_b, "key-b"),
+    ]
 
 
 def test_call_caching_false_overrides_instance_true(cache):

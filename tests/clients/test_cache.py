@@ -291,6 +291,34 @@ def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
         assert result3 != result4
 
 
+@pytest.mark.parametrize("endpoint_key", ["api_base", "base_url"])
+def test_request_cache_default_uses_endpoint_but_ignores_api_key(cache, endpoint_key):
+    from dspy.clients.cache import request_cache
+
+    calls = []
+    endpoint_a = "https://endpoint-a.example/v1"
+    endpoint_b = "https://endpoint-b.example/v1"
+
+    with patch("dspy.cache", cache):
+
+        @request_cache()
+        def test_function(**kwargs):
+            calls.append(kwargs.copy())
+            return kwargs[endpoint_key]
+
+        first = test_function(**{endpoint_key: endpoint_a, "api_key": "key-a"})
+        cached = test_function(**{endpoint_key: endpoint_a, "api_key": "key-b"})
+        second_endpoint = test_function(**{endpoint_key: endpoint_b, "api_key": "key-b"})
+
+    assert first == endpoint_a
+    assert cached == endpoint_a
+    assert second_endpoint == endpoint_b
+    assert [(call[endpoint_key], call["api_key"]) for call in calls] == [
+        (endpoint_a, "key-a"),
+        (endpoint_b, "key-b"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_request_cache_decorator_async(cache):
     """Test the request_cache decorator with async functions."""
