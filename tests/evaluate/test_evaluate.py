@@ -56,6 +56,19 @@ def test_evaluate_call():
     assert score.score == 100.0
 
 
+def test_evaluate_empty_devset_raises_clear_error():
+    """An empty devset should raise a clear ValueError instead of a raw ZeroDivisionError
+    when computing the percentage score."""
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=[],
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    with pytest.raises(ValueError, match="devset"):
+        ev(program)
+
+
 def test_evaluate_single_thread_runs_in_main_thread():
     """Evaluate with num_threads=1 should run in the main thread."""
     dspy.configure(
