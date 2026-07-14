@@ -4,7 +4,6 @@ import types
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -183,9 +182,9 @@ class Predict(Module, Parameter):
                 config["prediction"] = kwargs.pop("prediction")
 
         # Populate default values for missing input fields.
-        for k, v in signature.input_fields.items():
-            if k not in kwargs and v.default is not PydanticUndefined:
-                kwargs[k] = v.default
+        for name, field in signature.input_fields.items():
+            if name not in kwargs and not field.is_required():
+                kwargs[name] = field.default_factory() if field.default_factory is not None else field.default
 
         # Check and warn for extra fields not in signature
         extra_fields = [k for k in kwargs if k not in signature.input_fields]

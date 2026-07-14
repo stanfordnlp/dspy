@@ -311,6 +311,81 @@ class TestRLMInitialization:
 
         with pytest.raises(TypeError, match="Sub-LM response must contain text, got NoneType"):
             tools["llm_query"]("test prompt")
+    @pytest.mark.parametrize(
+        ("call_args", "expected_context"),
+        [
+            ({"query": "What is DSPy?"}, "default context"),
+            ({"query": "What is DSPy?", "context": "caller context"}, "caller context"),
+        ],
+    )
+    def test_forward_applies_declared_input_defaults(self, call_args, expected_context):
+        import dspy
+
+        class QA(dspy.Signature):
+            context: str = dspy.InputField(default="default context")
+            qualifier: str | None = dspy.InputField(default=None)
+            query: str = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM(QA)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+        ])
+
+        result = rlm.forward(mock, **call_args)
+
+        assert result.answer == "done"
+        assert mock.call_history[0][1] == {
+            **call_args,
+            "context": expected_context,
+            "qualifier": None,
+        }
+
+    def test_forward_calls_declared_default_factory_only_when_input_is_omitted(self):
+        import dspy
+
+        generated_contexts = []
+
+        def make_context():
+            context = [f"factory context {len(generated_contexts) + 1}"]
+            generated_contexts.append(context)
+            return context
+
+        class QA(dspy.Signature):
+            context: list[str] = dspy.InputField(default_factory=make_context)
+            query: str = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        rlm = RLM(QA)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("done")'},
+        ])
+        default_mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+        explicit_mock = MockInterpreter(responses=[FinalOutput({"answer": "done"})])
+
+        rlm.forward(default_mock, query="uses default")
+        rlm.forward(explicit_mock, context=["caller context"], query="uses caller value")
+
+        assert generated_contexts == [["factory context 1"]]
+        assert default_mock.call_history[0][1]["context"] == ["factory context 1"]
+        assert explicit_mock.call_history[0][1]["context"] == ["caller context"]
+
+    def test_optional_input_without_default_remains_required(self):
+        import dspy
+
+        class QA(dspy.Signature):
+            context: str | None = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM(QA, interpreter_factory=factory)
+
+        with pytest.raises(ValueError, match="Missing required inputs: \\['context'\\]"):
+            rlm()
+
+        assert factory.instances == []
+
     @pytest.mark.parametrize("unexpected_name", ["SUBMIT", "lookup", "tools"])
     def test_forward_rejects_undeclared_inputs_before_interpreter_execution(self, unexpected_name):
         def lookup() -> str:

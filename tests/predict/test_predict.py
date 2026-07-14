@@ -1061,6 +1061,7 @@ def test_per_module_history_disabled():
         program(question="What is the capital of France?")
     assert len(program.history) == 0
 
+
 def test_input_field_default_value():
     class SpyLM(dspy.LM):
         def __init__(self):
@@ -1084,11 +1085,50 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+
+def test_input_field_default_factory_runs_once_per_omitted_call():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages})
+            return ["[[ ## answer ## ]]\ntest"]
+
+    generated_contexts = []
+
+    def make_context():
+        context = f"FACTORY_CONTEXT_{len(generated_contexts) + 1}"
+        generated_contexts.append(context)
+        return context
+
+    class SignatureWithFactory(dspy.Signature):
+        context: str = dspy.InputField(default_factory=make_context)
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+    predictor = Predict(SignatureWithFactory)
+
+    predictor(question="first")
+    predictor(question="second")
+    predictor(context="EXPLICIT_CONTEXT", question="third")
+
+    user_messages = [call["messages"][-1]["content"] for call in lm.calls]
+    assert generated_contexts == ["FACTORY_CONTEXT_1", "FACTORY_CONTEXT_2"]
+    assert "FACTORY_CONTEXT_1" in user_messages[0]
+    assert "FACTORY_CONTEXT_2" in user_messages[1]
+    assert "EXPLICIT_CONTEXT" in user_messages[2]
+
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
     dspy_logger = logging.getLogger("dspy")
     dspy_logger.propagate = True
+
 
 def test_extra_fields_warning(caplog):
     """Test that extra fields not in signature generate a warning."""
