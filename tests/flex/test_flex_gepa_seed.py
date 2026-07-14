@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import dspy
 from dspy.flex import Flex
-from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules, make_code_key
+from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules, make_code_key
 
 EDITED_MODULE = (
     "class EchoModule(dspy.Module):\n"

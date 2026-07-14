@@ -118,7 +118,7 @@ def test_invoice_manual_edit_is_saved_and_reseeds_gepa(tmp_path) -> None:
     """Showcase: edit a Flex module's code in-session, then save/load it through the standard
     Module API — the edited ``module_src`` round-trips and is what a later dspy.GEPA run seeds
     from (not the baseline). The edit, save, and reload here are all LM-free."""
-    from dspy.teleprompt.gepa.gepa_utils import enumerate_flex_submodules
+    from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 
     dspy.configure(lm=exec_lm)
     flex = dspy.Flex(InvoiceTotal)

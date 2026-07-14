@@ -18,12 +18,12 @@ import textwrap
 import pytest
 
 import dspy
-from dspy.teleprompt.gepa.gepa_utils import (
-    DspyAdapter,
+from dspy.teleprompt.gepa.gepa_flex_utils import (
     enumerate_flex_submodules,
     flex_internal_predictor_ids,
     make_code_key,
 )
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 
 # A plain dspy.Predict module class that binds without an LM (no RLM interpreter needed).

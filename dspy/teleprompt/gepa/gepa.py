@@ -492,13 +492,12 @@ class GEPA(Teleprompter):
         """
         from gepa import GEPAResult, optimize
 
-        from dspy.teleprompt.gepa.gepa_utils import (
-            DspyAdapter,
-            LoggerAdapter,
+        from dspy.teleprompt.gepa.gepa_flex_utils import (
             enumerate_flex_submodules,
             flex_internal_predictor_ids,
             make_code_key,
         )
+        from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
