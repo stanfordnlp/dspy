@@ -529,6 +529,8 @@ class GEPA(Teleprompter):
 
         rng = random.Random(self.seed)
 
+        warned_empty_feedback_predictors: set[str] = set()
+
         def feedback_fn_creator(pred_name: str, predictor) -> "PredictorFeedbackFn":
             def feedback_fn(
                 predictor_output: dict[str, Any],
@@ -546,7 +548,15 @@ class GEPA(Teleprompter):
                     trace_for_pred,
                 )
                 if hasattr(o, "feedback"):
-                    if o["feedback"] is None:
+                    feedback = o["feedback"]
+                    if feedback is None or (isinstance(feedback, str) and not feedback.strip()):
+                        if pred_name not in warned_empty_feedback_predictors:
+                            logger.warning(
+                                f"Metric for predictor '{pred_name}' returned empty feedback. "
+                                "GEPA relies on textual feedback for optimization. "
+                                "Using default score-based feedback."
+                            )
+                            warned_empty_feedback_predictors.add(pred_name)
                         o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
