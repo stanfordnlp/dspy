@@ -70,3 +70,28 @@ def test_unbatchify_timeout_trigger():
     assert results == [101, 201]
 
     unbatcher.close()
+
+
+def test_unbatchify_honors_max_wait_time_under_trickling_input():
+    """A batch must flush within max_wait_time of the FIRST item arriving, even if
+    later items keep trickling in just under max_wait_time apart from each other.
+    Each queue.get() must wait only the time remaining in the window, not the full
+    max_wait_time again - otherwise the total wait can be a multiple of the budget."""
+    batch_fn_mock = MagicMock(wraps=simple_batch_processor)
+    wait_time = 0.1
+    unbatcher = Unbatchify(batch_fn=batch_fn_mock, max_batch_size=10, max_wait_time=wait_time)
+
+    start = time.time()
+    future_1 = unbatcher.submit(1)
+    time.sleep(wait_time * 0.8)  # arrives well within the window, but close to its edge
+    future_2 = unbatcher.submit(2)
+
+    results = [future_1.result(timeout=2), future_2.result(timeout=2)]
+    elapsed = time.time() - start
+
+    assert results == [2, 3]
+    # Generous slack for scheduling jitter, but must stay well under 2x the budget
+    # (which is what the unfixed code produces for this timing).
+    assert elapsed < wait_time * 1.5
+
+    unbatcher.close()
