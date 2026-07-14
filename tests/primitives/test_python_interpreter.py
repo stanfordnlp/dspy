@@ -1,11 +1,34 @@
 import asyncio
+import json
 import os
 import random
+from datetime import datetime
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
+
+
+class _Hit(BaseModel):
+    document_id: int
+    title: str
+
+
+class _TimestampedHit(_Hit):
+    created_at: datetime
+
+
+class _UnserializableValue:
+    pass
+
+
+class _UnserializableModel(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    value: _UnserializableValue
+
 
 pytestmark = pytest.mark.deno
 
@@ -261,6 +284,70 @@ def test_serialize_set_mixed_types():
         result = interpreter.execute("x", variables={"x": {1, "a"}})
         assert isinstance(result, list)
         assert set(result) == {1, "a"}
+
+
+def test_serialize_pydantic_variable():
+    """Pydantic instances passed via variables= should arrive in the sandbox as dicts."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "hit['document_id']",
+            variables={"hit": _Hit(document_id=7, title="abc")},
+        )
+        assert result == 7
+
+
+def test_serialize_pydantic_nested_in_dict():
+    """Pydantic instances nested inside list/dict variables should be coerced too."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "(data['hit']['document_id'], data['hit']['title'])",
+            variables={"data": {"hit": _Hit(document_id=11, title="nested")}},
+        )
+        assert result == [11, "nested"]
+
+
+def test_serialize_pydantic_in_list_variable():
+    """A list variable whose elements are Pydantic instances should be coerced too."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "sum(h['document_id'] for h in hits)",
+            variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
+        )
+        assert result == 3
+
+
+def test_pydantic_json_values_are_compatible_with_large_variable_injection(monkeypatch):
+    """The large-variable path should serialize Pydantic's JSON-mode values."""
+    value = _TimestampedHit(
+        document_id=7,
+        title="dated",
+        created_at=datetime(2026, 5, 14, 8, 7, 27),
+    )
+    expected = {
+        "document_id": 7,
+        "title": "dated",
+        "created_at": "2026-05-14T08:07:27",
+    }
+    interpreter = PythonInterpreter()
+
+    assert interpreter._to_json_compatible(value) == expected
+
+    monkeypatch.setattr("dspy.primitives.python_interpreter.LARGE_VAR_THRESHOLD", 0)
+    code = interpreter._inject_variables("hit", {"hit": value})
+    assert "hit = json.loads" in code
+    assert json.loads(interpreter._pending_large_vars["hit"]) == expected
+
+
+def test_unserializable_pydantic_variable_raises_code_interpreter_error():
+    """Invalid host variables should fail before the interpreter process starts."""
+    interpreter = PythonInterpreter()
+    value = _UnserializableModel(value=_UnserializableValue())
+
+    with pytest.raises(CodeInterpreterError, match="Unable to serialize _UnserializableModel as JSON") as exc_info:
+        interpreter.execute("value", variables={"value": value})
+
+    assert type(exc_info.value) is CodeInterpreterError
+    assert interpreter.deno_process is None
 
 
 def test_deno_command_dict_raises_type_error():
@@ -613,6 +700,48 @@ def test_tool_returning_nan_falls_back_to_string():
         )
         assert "str" in result
         assert "inf" in result
+
+
+def test_tool_returns_pydantic_model():
+    """Pydantic models returned from a tool should arrive in the sandbox as dicts."""
+
+    def search() -> _TimestampedHit:
+        return _TimestampedHit(
+            document_id=42,
+            title="example",
+            created_at=datetime(2026, 5, 14, 8, 7, 27),
+        )
+
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute("r = search()\n(r['document_id'], r['title'], r['created_at'])")
+        assert result == [42, "example", "2026-05-14T08:07:27"]
+
+
+def test_tool_returns_list_of_pydantic_models():
+    """Lists of Pydantic models from a tool should round-trip as lists of dicts."""
+
+    def search_many() -> list[_Hit]:
+        return [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]
+
+    with PythonInterpreter(tools={"search_many": search_many}) as sandbox:
+        result = sandbox.execute(
+            "hits = search_many()\nsum(h['document_id'] for h in hits)"
+        )
+        assert result == 3
+
+
+def test_tool_returning_unserializable_pydantic_model_raises_execution_error():
+    """A BaseModel that cannot honor JSON transport should remain a visible tool error."""
+
+    def get_value() -> _UnserializableModel:
+        return _UnserializableModel(value=_UnserializableValue())
+
+    with PythonInterpreter(tools={"get_value": get_value}) as sandbox:
+        with pytest.raises(
+            CodeExecutionError,
+            match="CodeInterpreterError.*Unable to serialize _UnserializableModel as JSON",
+        ):
+            sandbox.execute("get_value()")
 
 
 # =============================================================================
