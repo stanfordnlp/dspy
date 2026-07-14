@@ -1277,6 +1277,54 @@ class TestRLMWithDummyLM:
 
             assert result.color == "red"
 
+    def test_dspy_tool_execution_semantics_e2e(self):
+        import inspect
+
+        from pydantic import BaseModel
+
+        import dspy
+        from dspy.utils.callback import BaseCallback
+
+        class Payload(BaseModel):
+            value: int
+
+        received = []
+        callback_events = []
+
+        async def score(payload: Payload, factor: int = 2):
+            received.append((payload, factor))
+            return payload.value * factor
+
+        class Recorder(BaseCallback):
+            def on_tool_start(self, call_id, instance, inputs):
+                callback_events.append(("start", instance))
+
+            def on_tool_end(self, call_id, outputs, exception):
+                callback_events.append(("end", outputs, exception))
+
+        tool = Tool(score, name="score_payload")
+        rlm = RLM("query -> answer: int", max_iters=1, tools=[tool])
+        execution_tool = rlm._prepare_execution_tools()["score_payload"]
+
+        assert execution_tool.__name__ == score.__name__
+        assert inspect.signature(execution_tool) == inspect.signature(score)
+
+        with dummy_lm_context([
+            {
+                "reasoning": "Call the tool",
+                "code": 'result = score_payload({"value": 3})\nSUBMIT(result)',
+            },
+        ]):
+            with dspy.context(callbacks=[Recorder()]):
+                result = rlm.forward(query="test")
+
+        assert result.answer == 6
+        assert len(received) == 1
+        assert isinstance(received[0][0], Payload)
+        assert received[0][0].value == 3
+        assert received[0][1] == 2
+        assert callback_events == [("start", tool), ("end", 6, None)]
+
     @pytest.mark.asyncio
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""

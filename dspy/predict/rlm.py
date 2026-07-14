@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import base64
 import contextvars
+import functools
+import inspect
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -441,11 +443,23 @@ class RLM(Module):
     # CodeInterpreter Lifecycle
     # =========================================================================
 
+    def _make_interpreter_tool(self, tool: Tool) -> Callable:
+        """Preserve function metadata while routing execution through Tool."""
+        if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
+            async def invoke(**kwargs):
+                return await tool.acall(**kwargs)
+        else:
+            def invoke(**kwargs):
+                return tool(**kwargs)
+
+        functools.update_wrapper(invoke, tool.func)
+        invoke.__signature__ = inspect.signature(tool.func)
+        return invoke
+
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
         execution_tools = self._make_llm_tools()
-        # Extract underlying functions from Tool objects for the interpreter
-        execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
+        execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 
     def _inject_execution_context(self, interpreter: CodeInterpreter, execution_tools: dict[str, Callable]) -> None:
