@@ -83,7 +83,7 @@ def _showcase(program: dspy.Module, label: str) -> None:
     print(program.module_src)
 
 
-def test_invoice_codegen_then_gepa() -> None:
+def test_invoice_baseline_then_gepa() -> None:
     dspy.configure(lm=exec_lm)
     program = dspy.Flex(InvoiceTotal)
 

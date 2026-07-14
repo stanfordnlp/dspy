@@ -40,14 +40,21 @@ TOOL_MODULE = textwrap.dedent("""
 """).strip()
 
 
-def test_baseline_rlm_gets_the_tools() -> None:
-    program = Flex(Echo, tools=[shout])
-    assert "dspy.RLM(" in program.module_src
-    assert "tools=[shout]" in program.module_src
+def test_baseline_is_rlm_with_tools() -> None:
+    # With tools, the baseline delegates to dspy.RLM (which can call them via its REPL), not Predict,
+    # and the tools are wired into its constructor by name.
+    src = Flex(Echo, tools=[shout]).module_src
+    assert "dspy.RLM(" in src
+    assert "tools=[shout]" in src
+    assert "dspy.Predict(" not in src
 
 
-def test_no_tools_means_no_tools_arg() -> None:
-    assert "tools=[" not in Flex(Echo).module_src
+def test_baseline_is_predict_without_tools() -> None:
+    # Without tools, the baseline is a single dspy.Predict (no RLM, no tools arg, no interpreter).
+    src = Flex(Echo).module_src
+    assert "dspy.Predict(" in src
+    assert "dspy.RLM(" not in src
+    assert "tools=[" not in src
 
 
 def test_tool_is_in_scope_for_bound_code() -> None:

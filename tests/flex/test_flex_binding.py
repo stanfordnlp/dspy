@@ -1,3 +1,12 @@
+"""dspy.Flex binds a module's source (``module_src``) and makes it usable like any dspy.Module.
+
+Binding a source — the deterministic baseline at construction, or a GEPA-optimized decomposition —
+attaches its predictors flat on the module (so they are discoverable and optimizable), writes nothing
+to disk, and round-trips through Module.save / load so the generated code can be persisted and rerun.
+(The baseline's RLM-vs-Predict shape is covered in test_tools.py; GEPA's code rewriting in
+test_flex_gepa.py.)
+"""
+
 from __future__ import annotations
 
 import textwrap
@@ -25,17 +34,6 @@ class Echo(dspy.Signature):
 
     q: str = dspy.InputField()
     a: str = dspy.OutputField()
-
-
-def test_construction_binds_predict_baseline() -> None:
-    # Construction is LM-free: with no tools it binds the deterministic dspy.Predict baseline.
-    program = Flex(Echo)
-    assert program.module_src is not None
-    assert "class EchoModule(dspy.Module)" in program.module_src
-    assert "dspy.Predict(" in program.module_src
-    assert "q: str -> a: str" in program.module_src
-    assert "def forward" in program.module_src
-    assert "result.a" in program.module_src  # unwraps the declared output
 
 
 def test_predictors_are_attached_and_discoverable() -> None:
