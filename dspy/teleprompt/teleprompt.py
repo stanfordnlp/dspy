@@ -1,11 +1,19 @@
 from typing import Any
 
 from dspy.primitives import Example, Module
+from dspy.utils.callback import with_callbacks
 
 
 class Teleprompter:
     def __init__(self):
         pass
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+
+        compile_method = cls.__dict__.get("compile")
+        if compile_method is not None:
+            cls.compile = with_callbacks(compile_method, _callback_kind="optimizer")
 
     def compile(self, student: Module, *, trainset: list[Example], teacher: Module | None = None, valset: list[Example] | None = None, **kwargs) -> Module:
         """
