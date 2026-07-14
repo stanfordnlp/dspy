@@ -32,21 +32,11 @@ class Echo(dspy.Signature):
     a: str = dspy.OutputField()
 
 
-def test_gepa_seed_reflects_edited_source() -> None:
-    flex = Flex(Echo)  # Predict baseline
-    # Apply an edit directly (an in-session tweak, or the result of a prior GEPA run).
-    flex._bind_code(EDITED_MODULE)
-
-    # `flex.module_src` is exactly the value GEPA.compile uses to seed each flex submodule,
-    # and exactly what build_program rebinds — so the edit carries straight into the next run.
-    assert "out.a.upper()" in flex.module_src
-    assert "class EchoModule(dspy.Module)" in flex.module_src
-
-
 def test_gepa_discovers_edited_submodule_in_a_program() -> None:
-    """Mirror GEPA's discovery: enumerate_flex_submodules + the per-submodule seed value."""
+    """A manual edit (or a prior GEPA run's output) is what gets seeded next time: mirror GEPA's
+    discovery — enumerate_flex_submodules + the per-submodule seed value (flex.module_src)."""
     flex = Flex(Echo)
-    flex._bind_code(EDITED_MODULE)
+    flex._bind_code(EDITED_MODULE)  # an in-session tweak, or the result of a prior GEPA run
 
     class Program(dspy.Module):
         def __init__(self) -> None:
