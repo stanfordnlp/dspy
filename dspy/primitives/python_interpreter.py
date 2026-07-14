@@ -19,6 +19,9 @@ import threading
 from os import PathLike
 from typing import Any, Callable, NoReturn
 
+from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError
+
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
@@ -93,6 +96,27 @@ def _await_in_sync(coroutine: Any) -> Any:
     if loop is None:
         return asyncio.run(coroutine)
     return loop.run_until_complete(coroutine)
+
+
+def _dump_pydantic(value: BaseModel) -> Any:
+    """Dump a Pydantic model to JSON-compatible values."""
+    try:
+        return value.model_dump(mode="json")
+    except PydanticSerializationError as e:
+        raise CodeInterpreterError(f"Unable to serialize {type(value).__name__} as JSON: {e}") from e
+
+
+def _coerce_pydantic(value: Any) -> Any:
+    """Recursively convert Pydantic ``BaseModel`` instances to JSON-compatible values."""
+    if isinstance(value, BaseModel):
+        return _coerce_pydantic(_dump_pydantic(value))
+    if isinstance(value, dict):
+        return {k: _coerce_pydantic(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_coerce_pydantic(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_coerce_pydantic(v) for v in value)
+    return value
 
 
 class PythonInterpreter:
@@ -359,6 +383,7 @@ class PythonInterpreter:
             result = self.tools[tool_name](**kwargs)
             if asyncio.iscoroutine(result):
                 result = _await_in_sync(result)
+            result = _coerce_pydantic(result)
             if result is None or isinstance(result, str):
                 response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
             else:
@@ -478,6 +503,8 @@ class PythonInterpreter:
         """Recursively convert Python values to JSON-compatible types."""
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
+        elif isinstance(value, BaseModel):
+            return self._to_json_compatible(_dump_pydantic(value))
         elif isinstance(value, dict):
             return {k: self._to_json_compatible(v) for k, v in value.items()}
         elif isinstance(value, (list, tuple)):
@@ -534,6 +561,8 @@ class PythonInterpreter:
             return f"float('{value}')"
         elif isinstance(value, (int, float)):
             return str(value)
+        elif isinstance(value, BaseModel):
+            return self._serialize_value(_dump_pydantic(value))
         elif isinstance(value, (list, tuple)):
             # Tuples become lists for JSON compatibility
             items = ", ".join(self._serialize_value(item) for item in value)
