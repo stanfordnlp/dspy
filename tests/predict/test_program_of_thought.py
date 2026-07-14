@@ -140,6 +140,23 @@ def test_pot_evaluate_creates_one_interpreter_per_example():
     assert all(interpreter.deno_process is None for interpreter in factory.instances)
 
 
+def test_pot_factory_creates_fresh_interpreter_per_sequential_call():
+    factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "2"})])
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
+    pot.generate_output = StaticPredictor(answer="2")
+
+    first = pot(question="What is 1+1?")
+    second = pot(question="What is 1+1 again?")
+
+    assert first.answer == second.answer == "2"
+    assert len(factory.instances) == 2
+    assert factory.instances[0] is not factory.instances[1]
+    for interpreter in factory.instances:
+        with pytest.raises(CodeInterpreterError, match="shutdown"):
+            interpreter.execute("print('closed')")
+
+
 def test_pot_allows_interpreter_as_signature_input():
     factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
     pot = ProgramOfThought("interpreter -> answer", interpreter_factory=factory)
@@ -190,6 +207,19 @@ def test_pot_shuts_down_factory_interpreter_when_execution_raises():
     pot.code_generate = StaticPredictor(generated_code="raise ValueError")
 
     with pytest.raises(ValueError, match="unexpected interpreter failure"):
+        pot(question="What is 1+1?")
+
+    assert len(factory.instances) == 1
+    with pytest.raises(CodeInterpreterError, match="shutdown"):
+        factory.instances[0].execute("print('closed')")
+
+
+def test_pot_propagates_terminal_interpreter_failure_and_shuts_down():
+    factory = MockInterpreterFactory(responses=[CodeInterpreterError("protocol corrupt")])
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="print('test')")
+
+    with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
         pot(question="What is 1+1?")
 
     assert len(factory.instances) == 1

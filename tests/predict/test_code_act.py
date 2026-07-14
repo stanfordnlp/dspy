@@ -177,6 +177,23 @@ def test_codeact_evaluate_creates_one_interpreter_per_example():
             interpreter.execute("print('closed')")
 
 
+def test_codeact_factory_creates_fresh_interpreter_per_sequential_call():
+    factory = MockInterpreterFactory(responses=["", "2\n"])
+    program = CodeAct(BasicQA, tools=[add], interpreter_factory=factory)
+    program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
+    program.extractor = StaticPredictor(answer="2")
+
+    first = program(question="What is 1+1?")
+    second = program(question="What is 1+1 again?")
+
+    assert first.answer == second.answer == "2"
+    assert len(factory.instances) == 2
+    assert factory.instances[0] is not factory.instances[1]
+    for interpreter in factory.instances:
+        with pytest.raises(CodeInterpreterError, match="shutdown"):
+            interpreter.execute("print('closed')")
+
+
 def test_codeact_allows_interpreter_as_signature_input():
     factory = MockInterpreterFactory(responses=["", "CPython\n"])
     program = CodeAct("interpreter -> answer", tools=[add], interpreter_factory=factory)
@@ -231,6 +248,19 @@ def test_codeact_shuts_down_factory_interpreter_when_extractor_raises():
     program.extractor = RaisingPredictor()
 
     with pytest.raises(ValueError, match="unexpected extractor failure"):
+        program(question="What is 1+1?")
+
+    assert len(factory.instances) == 1
+    with pytest.raises(CodeInterpreterError, match="shutdown"):
+        factory.instances[0].execute("print('closed')")
+
+
+def test_codeact_propagates_terminal_interpreter_failure_and_shuts_down():
+    factory = MockInterpreterFactory(responses=["", CodeInterpreterError("protocol corrupt")])
+    program = CodeAct(BasicQA, tools=[add], interpreter_factory=factory)
+    program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
+
+    with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
         program(question="What is 1+1?")
 
     assert len(factory.instances) == 1

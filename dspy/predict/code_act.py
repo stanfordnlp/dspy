@@ -101,6 +101,9 @@ class CodeAct(ReAct, ProgramOfThought):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. The caller must shut it down.
             **kwargs: Input values matching the signature's input fields.
+
+        Raises:
+            CodeInterpreterError: If interpreter setup, process, or protocol fails.
         """
         if "interpreter" in kwargs and "interpreter" not in self.signature.input_fields:
             raise TypeError(

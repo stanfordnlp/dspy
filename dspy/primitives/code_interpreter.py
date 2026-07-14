@@ -147,8 +147,9 @@ def _validate_interpreter_factory(factory: Any) -> None:
     """Validate the configured provider without invoking it."""
     if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
         raise TypeError(
-            "interpreter_factory must create a new CodeInterpreter, not be an interpreter instance. "
-            "Pass an existing instance as the first positional argument when calling the module instead."
+            "interpreter_factory received an object that already implements CodeInterpreter, so its ownership "
+            "is ambiguous. Pass an existing interpreter as the first positional argument when calling the module. "
+            "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
         )
     if not callable(factory):
         raise TypeError(
