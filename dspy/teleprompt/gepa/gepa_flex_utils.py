@@ -1,16 +1,3 @@
-"""Code optimization for ``dspy.Flex`` submodules inside ``dspy.GEPA``.
-
-``dspy.GEPA`` optimizes the *instruction* text of ordinary predictors. A ``dspy.Flex`` submodule
-instead has its whole source (``module_src``, one ``dspy.Module`` subclass) rewritten. This module
-holds the flex-specific machinery that ``DspyAdapter`` (``gepa_utils.py``) and ``GEPA.compile``
-(``gepa.py``) hook into, kept separate so the flex feature can be reviewed on its own — the base
-GEPA adapter only gains a handful of thin delegating calls.
-
-A flex submodule contributes one candidate key ``<path>::code`` holding its ``module_src``, alongside
-the instruction keys of the non-flex predictors. The ``"::code"`` suffix can't collide with predictor
-names (dotted attribute paths), so code and instruction keys coexist in one candidate dict.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -40,12 +27,7 @@ def code_key_path(key: str) -> str:
 
 
 def enumerate_flex_submodules(root) -> dict[str, Any]:
-    """Map submodule path -> module for every code-optimizable (``dspy.Flex``) submodule.
-
-    A submodule qualifies if it has the ``_code_optimizable`` marker and a ``_bind_code`` method.
-    Paths use ``named_sub_modules()`` naming ("self", "self.extract") and are stable across deepcopy,
-    so the same key identifies the submodule at seed time and at build_program time.
-    """
+    """Map submodule path -> module for every code-optimizable (``dspy.Flex``) submodule."""
     out: dict[str, Any] = {}
     for name, sub in root.named_sub_modules():
         if getattr(sub, "_code_optimizable", False) and hasattr(sub, "_bind_code"):
@@ -54,11 +36,7 @@ def enumerate_flex_submodules(root) -> dict[str, Any]:
 
 
 def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
-    """Object ids of predictors owned by ``dspy.Flex`` submodules.
-
-    Their instructions live in the submodule's code, so they are excluded from the
-    instruction-optimization candidate.
-    """
+    """Object ids of predictors owned by ``dspy.Flex`` submodules."""
     ids: set[int] = set()
     for flex in flex_submodules.values():
         for _, pred in flex.named_predictors():
@@ -113,23 +91,29 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 class CodeProposalSignature(dspy.Signature):
     """Revise the full source code of a flex-marked dspy.Flex submodule.
 
-    You receive the submodule's task description (its Signature), the available context (tools
-    and style notes), the catalog of allowed primitives, the module's current source, and a
-    batch of failing examples with feedback. Produce a revised source that fixes the observed
-    failures and follows the catalog.
+    You receive the submodule's task description (its Signature), the available context (any tools
+    and style notes), the catalog of allowed primitives, the module's current source, and a batch
+    of failing examples with feedback. Produce a revised source that fixes the observed failures
+    and follows the catalog.
 
-    The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output
-    the entire, internally-consistent class:
+    The source is ONE ``dspy.Module`` subclass with two coupled methods, and you MUST output the
+    entire, internally-consistent class:
       1. ``def __init__(self):`` calling ``super().__init__()`` and assigning the predictors it
-         needs (e.g. ``self.extract = dspy.Predict("...")``); assign none if no LM is needed.
+         needs. Pick the simplest primitive that fits each step: ``dspy.Predict("...")`` for a
+         direct call (the common default), ``dspy.ChainOfThought("...")`` when explicit reasoning
+         helps, and ``dspy.RLM`` / ``dspy.ReAct`` when the step must call tools or explore a
+         large/structured input. Assign no predictors at all if the task needs no LM.
       2. ``def forward(self, **inputs):`` that calls those predictors as ``self.<name>`` and
          returns ``dspy.Prediction(<output fields>=...)``.
     Because ``forward`` calls predictors by name, never rename a predictor in one place without
     updating the other.
 
-    Tools come from two places. (1) Any listed in ``available_context`` are in scope by name —
-    wire the useful ones into ``dspy.RLM(..., tools=[...])`` / ``dspy.ReAct(..., tools=[...])`` or
-    call them directly (reference them by the exact names; do not import or redefine them).
+    Tools are OPTIONAL — use them only when a step genuinely needs one; many good modules are just
+    a ``dspy.Predict`` or two plus plain Python. When you do use tools, they come from two places.
+    (1) Any listed in ``available_context`` are in scope by name — wire the useful ones into
+    ``dspy.RLM(..., tools=[...])`` / ``dspy.ReAct(..., tools=[...])`` or call them directly
+    (reference them by the exact names; do not import or redefine them). If ``available_context``
+    is '(no extra context)', no tools were provided — don't reference any.
     (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define
     a documented function inside ``__init__`` and pass it via ``tools=[...]``. Tools you author
     live in this source, so they are optimized and persisted exactly like the rest of the code.
@@ -240,7 +224,7 @@ def evaluate_with_trace(
     """Trace-capturing evaluation used when a flex submodule is present.
 
     A flex metric may score against the execution trace (e.g. penalize LM calls to reward
-    deterministic code over the RLM loop).
+    deterministic code).
     """
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 
