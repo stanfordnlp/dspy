@@ -6,6 +6,7 @@ API reference for DSPy modules. Select a page below.
 - [BestOfN](BestOfN.md)
 - [ChainOfThought](ChainOfThought.md)
 - [CodeAct](CodeAct.md)
+- [Flex](Flex.md)
 - [Module](Module.md)
 - [MultiChainComparison](MultiChainComparison.md)
 - [Parallel](Parallel.md)

@@ -48,6 +48,10 @@ A plain function — no LM call, no signature, no `dspy.Module`. It tallies comp
 
 The class is decorated with `@experimental` and the interface is still in flux. It composes a code sandbox with built-in `llm_query` / `llm_query_batched` tools that let generated code call a separate sub-LM mid-execution. The mental model is a Python REPL the LM drives, with another LM available as a callable inside. Useful, but the boundary conditions — max call counts, sandbox lifetime, error recovery — are still being worked out.
 
+### 11. `Flex` puts the module's code into the optimization search space
+
+Every other module of DSPy fixes its structure at construction time; `Flex` doesn't. It holds its implementation as source code (`module_src`) and marks itself optimizable, so `dspy.GEPA` rewrites the *whole program* — how many predictors, which primitives, what runs in Python instead of an LM — against your metric, rather than only tuning instructions. Start it from a signature like any module (it begins as a one-call RLM or Predict baseline), then let optimization discover the decomposition. Also experimental. It has its own deep dive: [Flex: LLM-generating a module's code](flex.md).
+
 ## API walkthrough
 
 Grouped by what you’re trying to do.
@@ -101,4 +105,5 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
 - [Tools, ReAct, and MCP](tools-react-and-mcp.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery as `ReAct`.
 - [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
+- [Flex: LLM-generating a module's code](flex.md) — the deep dive on the experimental code-optimizable module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.

@@ -33,6 +33,7 @@ class GEPAFeedbackMetric(Protocol):
         trace: Optional["DSPyTrace"],
         pred_name: str | None,
         pred_trace: Optional["DSPyTrace"],
+        program_trace: Optional["DSPyTrace"] = None,
     ) -> Union[float, "ScoreWithFeedback"]:
         """
         This function is called with the following arguments:
@@ -42,6 +43,10 @@ class GEPAFeedbackMetric(Protocol):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The full execution trace of the program, supplied at scoring time when a
+            `dspy.Flex` submodule is being optimized. Declare this parameter to score against how an answer was
+            produced (e.g. `len(program_trace)` as an LM-call count), rather than only whether it was correct.
+            Unlike `trace`, it is populated during candidate *scoring*.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -174,6 +179,7 @@ class GEPA(Teleprompter):
         trace: Optional[DSPyTrace] = None,
         pred_name: Optional[str] = None,
         pred_trace: Optional[DSPyTrace] = None,
+        program_trace: Optional[DSPyTrace] = None,
     ) -> float | ScoreWithFeedback:
         \"""
         This function is called with the following arguments:
@@ -183,6 +189,9 @@ class GEPA(Teleprompter):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The program's execution trace, supplied at scoring time when a `dspy.Flex`
+            submodule is being optimized. Declare it to score against how the answer was produced (e.g. an
+            LM-call penalty). Defaults to None.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -374,8 +383,10 @@ class GEPA(Teleprompter):
             inspect.signature(metric).bind(None, None, None, None, None)
         except TypeError as e:
             raise TypeError(
-                "GEPA metric must accept five arguments: (gold, pred, trace, pred_name, pred_trace). "
-                "See https://dspy.ai/api/optimizers/GEPA for details."
+                "GEPA metric must accept five positional arguments: "
+                "(gold, pred, trace, pred_name, pred_trace). It may also declare an optional sixth "
+                "parameter, program_trace=None, to receive the execution trace at scoring time (used "
+                "when optimizing a dspy.Flex submodule). See https://dspy.ai/api/optimizers/GEPA for details."
             ) from e
 
         self.metric_fn = metric
