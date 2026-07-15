@@ -105,3 +105,20 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_parse_value_preserves_none_in_markdown_fenced_dict():
+    """#8181: an LM may wrap a dict/list output value in a markdown code fence
+    (```python ... ```). ast.literal_eval can't parse the fence, so parse_value
+    used to fall through to json_repair, which coerces the Python literal ``None``
+    to the string ``"None"``. The fence must be stripped so ``None`` survives."""
+    fenced = '```python\n{"memory_text": "x", "memory_url_info": None}\n```'
+    result = parse_value(fenced, dict)
+    assert result == {"memory_text": "x", "memory_url_info": None}
+    assert result["memory_url_info"] is None  # not the string "None"
+
+
+def test_parse_value_plain_fence_without_language():
+    """A code fence without a language tag must also be unwrapped."""
+    fenced = "```\n[1, None, 3]\n```"
+    assert parse_value(fenced, list) == [1, None, 3]
