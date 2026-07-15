@@ -165,7 +165,13 @@ class CodeAct(ReAct, ProgramOfThought):
                 "The trajectory is empty, so it cannot be truncated to fit the context window."
             )
 
-        iteration_indices = {int(key.rsplit("_", 1)[-1]) for key in keys}
+        # Non-indexed entries (e.g. the prompt-only "parse_feedback" key added by the extractor
+        # parse retry) are not iteration steps: skip them when computing indices and never pop them.
+        iteration_indices = {
+            int(key.rsplit("_", 1)[-1])
+            for key in keys
+            if key.rsplit("_", 1)[-1].isdigit()
+        }
         if len(iteration_indices) < 2:
             # Only one iteration is present; dropping it would leave no context (same spirit as
             # ReAct's single-tool-call guard).
@@ -176,7 +182,8 @@ class CodeAct(ReAct, ProgramOfThought):
 
         oldest = min(iteration_indices)
         for key in keys:
-            if int(key.rsplit("_", 1)[-1]) == oldest:
+            suffix = key.rsplit("_", 1)[-1]
+            if suffix.isdigit() and int(suffix) == oldest:
                 trajectory.pop(key)
 
         return trajectory

@@ -323,3 +323,28 @@ def test_codeact_truncate_trajectory_single_iteration_raises():
     program = CodeAct("question -> answer", tools=[_simple_tool])
     with pytest.raises(ValueError):
         program.truncate_trajectory({"generated_code_0": "print(1)", "code_output_0": "1"})
+
+
+def test_codeact_truncate_trajectory_skips_non_indexed_keys():
+    """The extractor parse retry adds a prompt-only ``parse_feedback`` key (no iteration index).
+    Truncation must skip non-indexed keys when computing iteration indices (``int("feedback")``
+    used to raise ValueError) and must never pop them: the feedback survives the trim."""
+    program = CodeAct("question -> answer", tools=[_simple_tool])
+    trajectory = {
+        "observation_0": "parse failure",
+        "observation_1": "parse failure",
+        "parse_feedback": "fix your output",
+    }
+    out = program.truncate_trajectory(trajectory)
+
+    assert "observation_0" not in out
+    assert out["observation_1"] == "parse failure"
+    assert out["parse_feedback"] == "fix your output"
+
+
+def test_codeact_truncate_trajectory_only_feedback_and_single_iteration_raises():
+    """A non-indexed key alone does not make a trajectory truncatable: with one real iteration
+    plus ``parse_feedback``, the single-iteration guard must still raise."""
+    program = CodeAct("question -> answer", tools=[_simple_tool])
+    with pytest.raises(ValueError):
+        program.truncate_trajectory({"observation_0": "parse failure", "parse_feedback": "fix"})
