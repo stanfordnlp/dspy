@@ -6,9 +6,19 @@ from typing import Any, Callable
 
 import dspy
 from dspy.utils.callback_context import ACTIVE_CALL_ID as ACTIVE_CALL_ID
-from dspy.utils.callback_context import _active_call_context, _normalize_active_call_context
+from dspy.utils.callback_context import (
+    _active_call_context,
+    _is_active_optimizer_call,
+    _normalize_active_call_context,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class OptimizerEvent:
+    """Base class for typed events emitted by an optimizer."""
+
+    __slots__ = ()
 
 
 class BaseCallback:
@@ -283,6 +293,48 @@ class BaseCallback:
         """
         pass
 
+    def on_optimizer_event(
+        self,
+        call_id: str,
+        instance: Any,
+        event: OptimizerEvent,
+    ):
+        """A handler triggered for a typed event during optimizer compilation.
+
+        Args:
+            call_id: The identifier of the optimizer call emitting the event.
+            instance: The Teleprompter instance.
+            event: The optimizer event.
+        """
+        pass
+
+
+def _get_active_callbacks(instance: Any) -> list[Any]:
+    """Get combined global and instance-level callbacks."""
+    return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+
+
+def _emit_optimizer_event(instance: Any, event: OptimizerEvent) -> None:
+    """Emit an event from optimizer coordinator code."""
+    handlers = []
+    for callback in _get_active_callbacks(instance):
+        handler = getattr(callback, "on_optimizer_event", None)
+        if handler is not None and getattr(handler, "__func__", None) is not BaseCallback.on_optimizer_event:
+            handlers.append((callback, handler))
+
+    if not handlers:
+        return
+
+    call_id = ACTIVE_CALL_ID.get()
+    if call_id is None or not _is_active_optimizer_call():
+        raise RuntimeError("Optimizer events must be emitted directly from an active optimizer compile callback.")
+
+    for callback, handler in handlers:
+        try:
+            handler(call_id=call_id, instance=instance, event=event)
+        except Exception as e:
+            logger.warning(f"Error when calling callback {callback}: {e}")
+
 
 def with_callbacks(fn, *, _callback_kind: str | None = None):
     """Decorator to add callback functionality to instance methods."""
@@ -317,10 +369,6 @@ def with_callbacks(fn, *, _callback_kind: str | None = None):
             except Exception as e:
                 logger.warning(f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}.")
 
-    def _get_active_callbacks(instance):
-        """Get combined global and instance-level callbacks."""
-        return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
-
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
@@ -338,7 +386,7 @@ def with_callbacks(fn, *, _callback_kind: str | None = None):
             exception = None
             try:
                 # Active ID must be set right before the function is called, not before calling the callbacks.
-                with _active_call_context(call_id):
+                with _active_call_context(call_id, is_optimizer=is_optimizer_callback):
                     results = await fn(instance, *args, **kwargs)
                 return results
             except BaseException as e:
@@ -367,7 +415,7 @@ def with_callbacks(fn, *, _callback_kind: str | None = None):
             exception = None
             try:
                 # Active ID must be set right before the function is called, not before calling the callbacks.
-                with _active_call_context(call_id):
+                with _active_call_context(call_id, is_optimizer=is_optimizer_callback):
                     results = fn(instance, *args, **kwargs)
                 return results
             except BaseException as e:

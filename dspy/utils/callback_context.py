@@ -8,12 +8,20 @@ _ACTIVE_CALL = ContextVar("active_call", default=None)
 
 
 class _ActiveCall:
-    __slots__ = ("call_id", "is_active", "parent", "parent_call_id")
+    __slots__ = ("call_id", "is_active", "is_optimizer", "parent", "parent_call_id")
 
-    def __init__(self, call_id: str, parent_call_id: str | None, parent: "_ActiveCall | None"):
+    def __init__(
+        self,
+        call_id: str,
+        parent_call_id: str | None,
+        parent: "_ActiveCall | None",
+        *,
+        is_optimizer: bool,
+    ):
         self.call_id = call_id
         self.parent_call_id = parent_call_id
         self.parent = parent
+        self.is_optimizer = is_optimizer
         self.is_active = True
 
 
@@ -45,11 +53,22 @@ def _normalize_active_call_context() -> str | None:
     return live_call_id
 
 
+def _is_active_optimizer_call() -> bool:
+    call_id = ACTIVE_CALL_ID.get()
+    active_call = _ACTIVE_CALL.get()
+    return (
+        active_call is not None
+        and active_call.call_id == call_id
+        and active_call.is_active
+        and active_call.is_optimizer
+    )
+
+
 @contextmanager
-def _active_call_context(call_id: str):
+def _active_call_context(call_id: str, *, is_optimizer: bool = False):
     parent_call_id = _normalize_active_call_context()
     parent = _ACTIVE_CALL.get()
-    active_call = _ActiveCall(call_id, parent_call_id, parent)
+    active_call = _ActiveCall(call_id, parent_call_id, parent, is_optimizer=is_optimizer)
     call_id_token = ACTIVE_CALL_ID.set(call_id)
     active_call_token = _ACTIVE_CALL.set(active_call)
 
