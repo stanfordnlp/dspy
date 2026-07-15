@@ -383,8 +383,8 @@ class GEPA(Teleprompter):
             inspect.signature(metric).bind(None, None, None, None, None)
         except TypeError as e:
             raise TypeError(
-                "GEPA metric must accept five positional arguments: "
-                "(gold, pred, trace, pred_name, pred_trace). See https://dspy.ai/api/optimizers/GEPA for details."
+                "GEPA metric must accept five arguments: (gold, pred, trace, pred_name, pred_trace). "
+                "See https://dspy.ai/api/optimizers/GEPA for details."
             ) from e
 
         self.metric_fn = metric
