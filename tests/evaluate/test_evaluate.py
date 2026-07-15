@@ -423,3 +423,14 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_raises_on_empty_devset():
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=[],
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    with pytest.raises(ValueError, match="devset"):
+        ev(program)
+

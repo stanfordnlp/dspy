@@ -154,6 +154,9 @@ class Evaluate:
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
 
+        if not devset:
+            raise ValueError("devset must contain at least one example, got an empty devset.")
+
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
 
