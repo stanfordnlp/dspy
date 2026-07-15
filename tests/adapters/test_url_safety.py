@@ -26,6 +26,7 @@ from dspy.adapters.types.image import _encode_image_from_url
     "http://172.16.0.1/x",                         # private
     "http://[::1]/x",                              # ipv6 loopback
     "http://0.0.0.0/x",                            # unspecified
+    "http://100.64.0.1/x",                         # CGNAT / RFC 6598 (mislabeled global on <3.11)
 ])
 def test_guard_rejects_non_public_addresses(url):
     with pytest.raises(ValueError):

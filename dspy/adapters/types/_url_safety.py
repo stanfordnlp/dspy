@@ -22,7 +22,9 @@ Known limitation: `assert_public_url` validates at resolution time and does not
 defend against DNS rebinding (a host that resolves public here and private when
 the socket actually connects). Closing that requires resolving once and
 connecting to the pinned IP with the original host in the SNI/Host header, which
-is a deeper change than a media loader should own.
+is a deeper change than a media loader should own. (The CGNAT / RFC 6598 range
+that older Pythons mislabel as global is handled explicitly; see
+`_EXTRA_BLOCKED_NETS`.)
 """
 from __future__ import annotations
 
@@ -35,6 +37,13 @@ import requests
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 MAX_REDIRECTS = 5
+
+# Ranges some Python versions mislabel as globally routable, checked explicitly
+# so the guard is correct regardless of interpreter version. Python < 3.11
+# reports 100.64.0.0/10 (CGNAT / RFC 6598 shared address space) as
+# ``is_global`` = True (CPython bpo-38655); DSPy supports 3.10, so we reject it
+# here rather than rely on ``is_global`` alone.
+_EXTRA_BLOCKED_NETS = [ipaddress.ip_network("100.64.0.0/10")]
 
 
 def _resolve(host: str, port: int, timeout: float):
@@ -85,7 +94,8 @@ def assert_public_url(url: str, *, dns_timeout: float = DEFAULT_DOWNLOAD_TIMEOUT
     addrinfos = _resolve(host, parsed.port or (443 if parsed.scheme == "https" else 80), dns_timeout)
     for info in addrinfos:
         ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global or ip.is_multicast or ip.is_reserved:
+        extra_blocked = any(ip.version == net.version and ip in net for net in _EXTRA_BLOCKED_NETS)
+        if not ip.is_global or ip.is_multicast or ip.is_reserved or extra_blocked:
             raise ValueError(
                 f"Refusing to download from {url!r}: host {host!r} resolves to "
                 f"non-public address {ip} (SSRF guard). If this is intentional "
