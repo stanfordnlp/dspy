@@ -275,3 +275,51 @@ class CustomTool:
 def test_codeact_tool_validation():
     with pytest.raises(ValueError, match=r"CodeAct only accepts functions and not callable objects."):
         CodeAct(BasicQA, tools=[CustomTool()])
+
+
+def _simple_tool(x: int) -> int:
+    return x
+
+
+def test_codeact_truncate_trajectory_drops_oldest_iteration_boundary_aware():
+    """CodeAct steps have a variable key count (1 on failure: observation_i; 2 on success:
+    generated_code_i + code_output_i|observation_i), unlike ReAct's fixed 4 keys/step. Popping
+    ReAct's fixed keys[:4] slice cuts across iteration boundaries and desynchronizes the
+    trajectory. CodeAct must drop exactly the earliest iteration's keys."""
+    program = CodeAct("question -> answer", tools=[_simple_tool])
+    trajectory = {
+        "generated_code_0": "print(1)",   # iter 0: success -> 2 keys
+        "code_output_0": "1",
+        "observation_1": "parse failure",  # iter 1: failure -> 1 key
+        "generated_code_2": "print(2)",    # iter 2: execution error -> 2 keys
+        "observation_2": "exec error",
+    }
+    out = program.truncate_trajectory(trajectory)
+
+    # Oldest iteration (0) fully removed; every later iteration is preserved intact.
+    assert "generated_code_0" not in out
+    assert "code_output_0" not in out
+    assert out["observation_1"] == "parse failure"
+    assert out["generated_code_2"] == "print(2)"
+    assert out["observation_2"] == "exec error"
+    assert out is trajectory
+
+
+def test_codeact_truncate_trajectory_parse_failure_only_steps():
+    """Consecutive AdapterParseError iterations leave observation-only entries (one key each).
+    The inherited ReAct truncation (fixed keys[:4] slice, <4 keys -> ValueError) could not trim
+    such a trajectory; CodeAct's iteration-boundary truncation must drop the oldest step."""
+    program = CodeAct("question -> answer", tools=[_simple_tool])
+    trajectory = {"observation_0": "parse failure", "observation_1": "parse failure"}
+    out = program.truncate_trajectory(trajectory)
+
+    assert "observation_0" not in out
+    assert out["observation_1"] == "parse failure"
+
+
+def test_codeact_truncate_trajectory_single_iteration_raises():
+    """A trajectory with only one iteration cannot be truncated (dropping it leaves no context),
+    mirroring ReAct's single-tool-call guard."""
+    program = CodeAct("question -> answer", tools=[_simple_tool])
+    with pytest.raises(ValueError):
+        program.truncate_trajectory({"generated_code_0": "print(1)", "code_output_0": "1"})
