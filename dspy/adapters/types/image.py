@@ -8,9 +8,8 @@ from typing import Any, Union
 from urllib.parse import urlparse
 
 import pydantic
-import requests
 
-from dspy.adapters.types._url_safety import DEFAULT_DOWNLOAD_TIMEOUT, assert_public_url
+from dspy.adapters.types._url_safety import DEFAULT_DOWNLOAD_TIMEOUT, safe_get
 from dspy.adapters.types.base_type import Type
 
 try:
@@ -205,12 +204,12 @@ def _encode_image_from_url(image_url: str, verify: bool = True, timeout: float =
         timeout: Seconds to wait for the request before giving up.
 
     The destination is validated against the SSRF guard (rejects loopback,
-    private, and link-local addresses) before the request is made. Even though
-    downloading is already opt-in, an explicit ``download=True`` can still point
-    at an internal address if the URL came from untrusted input.
+    private, and link-local addresses) at every redirect hop before the request
+    is made. Even though downloading is already opt-in, an explicit
+    ``download=True`` can still point at an internal address if the URL came from
+    untrusted input.
     """
-    assert_public_url(image_url)
-    response = requests.get(image_url, verify=verify, timeout=timeout)
+    response = safe_get(image_url, verify=verify, timeout=timeout)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "")
 

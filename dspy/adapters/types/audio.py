@@ -5,9 +5,8 @@ import os
 from typing import Any, Union
 
 import pydantic
-import requests
 
-from dspy.adapters.types._url_safety import DEFAULT_DOWNLOAD_TIMEOUT, assert_public_url
+from dspy.adapters.types._url_safety import DEFAULT_DOWNLOAD_TIMEOUT, safe_get
 from dspy.adapters.types.base_type import Type
 
 try:
@@ -85,11 +84,11 @@ class Audio(Type):
         Download an audio file from URL and encode it as base64.
 
         The destination is validated against the SSRF guard (rejects loopback,
-        private, and link-local addresses), the request is bounded by ``timeout``
-        seconds, and ``verify`` toggles SSL certificate verification.
+        private, and link-local addresses) at every redirect hop, the request is
+        bounded by ``timeout`` seconds, and ``verify`` toggles SSL certificate
+        verification.
         """
-        assert_public_url(url)
-        response = requests.get(url, verify=verify, timeout=timeout)
+        response = safe_get(url, verify=verify, timeout=timeout)
         response.raise_for_status()
         mime_type = response.headers.get("Content-Type", "audio/wav")
         if not mime_type.startswith("audio/"):

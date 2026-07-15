@@ -3,9 +3,12 @@
 All tests are offline: the SSRF guard and the opt-in gate both raise before any
 network request is made, so no real download happens.
 """
-import pytest
+from unittest import mock
 
-from dspy.adapters.types._url_safety import assert_public_url
+import pytest
+import requests
+
+from dspy.adapters.types._url_safety import assert_public_url, safe_get
 from dspy.adapters.types.audio import Audio, encode_audio
 from dspy.adapters.types.image import _encode_image_from_url
 
@@ -85,3 +88,56 @@ def test_audio_non_url_paths_still_work():
 def test_image_from_url_applies_ssrf_guard():
     with pytest.raises(ValueError):
         _encode_image_from_url("http://169.254.169.254/latest/meta-data/")
+
+
+# ---------------------------------------------------------------------------
+# Redirect bypass: a public URL that redirects to a private one must be refused
+# ---------------------------------------------------------------------------
+
+def _redirect_resp(location, url="http://8.8.8.8/start"):
+    r = requests.Response()
+    r.status_code = 302
+    r.url = url
+    r.headers["Location"] = location
+    return r
+
+
+def _ok_resp(url="http://8.8.8.8/x"):
+    r = requests.Response()
+    r.status_code = 200
+    r.url = url
+    r._content = b"ok"
+    return r
+
+
+@mock.patch("dspy.adapters.types._url_safety.requests.get")
+def test_safe_get_blocks_redirect_to_private(mock_get):
+    # First hop is a public literal IP (passes the guard); it 302-redirects to
+    # the metadata endpoint, which must be caught before it is followed.
+    mock_get.return_value = _redirect_resp("http://169.254.169.254/latest/meta-data/")
+    with pytest.raises(ValueError):
+        safe_get("http://8.8.8.8/start")
+
+
+@mock.patch("dspy.adapters.types._url_safety.requests.get")
+def test_safe_get_follows_public_redirect(mock_get):
+    # A redirect to another public address is allowed.
+    mock_get.side_effect = [_redirect_resp("http://1.1.1.1/next"), _ok_resp("http://1.1.1.1/next")]
+    resp = safe_get("http://8.8.8.8/start")
+    assert resp.status_code == 200
+
+
+@mock.patch("dspy.adapters.types._url_safety.requests.get")
+def test_safe_get_caps_redirects(mock_get):
+    # An endless public redirect loop terminates instead of hanging.
+    mock_get.return_value = _redirect_resp("http://8.8.8.8/loop")
+    with pytest.raises(ValueError, match="Too many redirects"):
+        safe_get("http://8.8.8.8/start", max_redirects=3)
+
+
+def test_dns_resolution_is_bounded():
+    # assert_public_url must not hang on a dead resolver; a tiny timeout raises.
+    with mock.patch("dspy.adapters.types._url_safety.socket.getaddrinfo",
+                    side_effect=lambda *a, **k: __import__("time").sleep(5)):
+        with pytest.raises(ValueError, match="timed out"):
+            assert_public_url("http://example.com/x", dns_timeout=0.2)
