@@ -92,14 +92,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     @with_callbacks
     def __call__(self, *args, **kwargs) -> Prediction:
-        from dspy.dsp.utils.settings import thread_local_overrides
+        from dspy.dsp.utils.settings import _active_overrides, thread_local_overrides
 
         caller_modules = settings.caller_modules or []
         caller_modules = list(caller_modules)
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
+            if settings.track_usage and _active_overrides(thread_local_overrides.get()).get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
@@ -111,14 +111,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     @with_callbacks
     async def acall(self, *args, **kwargs) -> Prediction:
-        from dspy.dsp.utils.settings import thread_local_overrides
+        from dspy.dsp.utils.settings import _active_overrides, thread_local_overrides
 
         caller_modules = settings.caller_modules or []
         caller_modules = list(caller_modules)
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
+            if settings.track_usage and _active_overrides(thread_local_overrides.get()).get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = await self.aforward(*args, **kwargs)
                     tokens = usage_tracker.get_total_tokens()
@@ -329,8 +329,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:
-            logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
-
+            logger.warning(
+                "Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking."
+            )
 
     def __getattribute__(self, name):
         attr = super().__getattribute__(name)

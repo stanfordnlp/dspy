@@ -1,4 +1,6 @@
 import asyncio
+import contextvars
+import importlib
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +10,9 @@ import pytest
 from litellm import Choices, Message, ModelResponse
 
 import dspy
+from dspy.dsp.utils.utils import dotdict
+
+settings_utils = importlib.import_module("dspy.dsp.utils.settings")
 
 
 def test_basic_dspy_settings():
@@ -21,7 +26,7 @@ def test_forbid_configure_call_in_child_thread():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     def worker():
-        with pytest.raises(RuntimeError, match="Cannot call dspy.configure"):
+        with pytest.raises(RuntimeError, match=r"dspy\.settings can only be changed"):
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
 
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -36,6 +41,56 @@ def test_dspy_context():
 
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert len(dspy.settings.callbacks) == 1
+
+
+@pytest.mark.asyncio
+async def test_dspy_context_closes_async_generator_in_different_context():
+    with dspy.context(lm="outer"):
+
+        async def stream():
+            with dspy.context(lm="inner"):
+                yield dspy.settings.lm
+
+        generator = stream()
+        assert await generator.__anext__() == "inner"
+
+        close_task = contextvars.Context().run(asyncio.create_task, generator.aclose())
+        await close_task
+
+        assert dspy.settings.lm == "outer"
+
+
+def test_dspy_context_parent_snapshot_is_stable():
+    with dspy.context(lm="outer"):
+        parent_overrides = settings_utils.thread_local_overrides.get()
+        with dspy.context(lm="inner"):
+            inner_overrides = settings_utils.thread_local_overrides.get()
+            parent_snapshot = getattr(inner_overrides, settings_utils._CONTEXT_PARENT_ATTR)
+
+    assert parent_snapshot == parent_overrides
+    assert parent_snapshot is not parent_overrides
+
+
+def test_dspy_context_reraises_non_context_token_value_error(monkeypatch):
+    class RaisingResetContextVar:
+        def __init__(self):
+            self.current = dotdict()
+
+        def get(self):
+            return self.current
+
+        def set(self, value):
+            self.current = value
+            return object()
+
+        def reset(self, token):
+            raise ValueError("Token was created by a different ContextVar")
+
+    monkeypatch.setattr(settings_utils, "thread_local_overrides", RaisingResetContextVar())
+
+    with pytest.raises(ValueError, match="different ContextVar"):
+        with dspy.context(lm="inner"):
+            pass
 
 
 def test_dspy_context_parallel():
@@ -218,7 +273,6 @@ def test_dspy_settings_save_exclude_keys(tmp_path):
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert dspy.settings.adapter is None
     assert not dspy.settings.track_usage
-
 
 
 def test_settings_save_with_extra_modules(tmp_path):
