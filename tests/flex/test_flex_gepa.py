@@ -133,15 +133,15 @@ def test_build_program_rebinds_flex_code() -> None:
 # --- adapter: selection eval passes the trace to a flex metric ---------------
 
 
-def test_selection_eval_passes_trace_to_flex_metric() -> None:
-    """The selection eval (capture_traces=False) must pass the execution trace to the metric
-    when a flex submodule is present, so a trace-dependent score (e.g. an LLM-call penalty that
-    rewards deterministic code) actually drives candidate selection. GEPA's default scoring
-    calls the metric in eval mode (trace=None), which would silently drop that signal."""
+def test_selection_eval_passes_program_trace_to_declaring_metric() -> None:
+    """The selection eval (capture_traces=False) must pass the execution trace to a metric that
+    declares `program_trace`, so a trace-dependent score (e.g. an LLM-call penalty that rewards
+    deterministic code) actually drives candidate selection."""
     seen: dict[str, object] = {}
 
-    def trace_aware_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
-        seen["n_calls"] = len(trace) if trace is not None else None
+    def trace_aware_metric(gold, pred, trace=None, pred_name=None, pred_trace=None, program_trace=None):
+        seen["trace"] = trace
+        seen["n_calls"] = len(program_trace) if program_trace is not None else None
         return 1.0
 
     student = dspy.Flex(Echo)  # a flex submodule is present
@@ -153,6 +153,69 @@ def test_selection_eval_passes_trace_to_flex_metric() -> None:
     adapter.evaluate([ex], candidate, capture_traces=False)  # the selection path
 
     assert seen.get("n_calls") == 1  # the metric received the trace, with the one call
+    assert seen.get("trace") is None  # eval-mode semantics of the `trace` argument are preserved
+
+
+def test_selection_eval_keeps_vanilla_semantics_for_legacy_metric() -> None:
+    seen: dict[str, object] = {}
+
+    def legacy_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+        seen["trace"] = trace
+        if trace is not None:
+            return getattr(pred, "a", None) == gold.a  # bootstrapping mode: strict bool
+        return 0.75  # eval mode: continuous score
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=legacy_metric, feedback_map={})
+    candidate = {make_code_key("self"): SIMPLE_MODULE}
+    ex = dspy.Example(q="hi", a="hi").with_inputs("q")
+
+    dspy.configure(lm=DummyLM([{"a": "hi"}]))
+    batch = adapter.evaluate([ex], candidate, capture_traces=False)
+
+    assert seen.get("trace") is None  # never fed the trace through the bootstrapping channel
+    assert batch.scores == [0.75]
+
+
+# --- adapter: scores stay aligned to the batch when examples crash ------------
+
+CRASHY_MODULE = textwrap.dedent(
+    """
+    class CrashyModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, **inputs):
+            if inputs["q"] == "boom":
+                raise RuntimeError("runtime crash on this input")
+            return dspy.Prediction(a=inputs["q"])
+    """
+).strip()
+
+
+def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
+    """A code candidate that binds fine but raises at runtime on one input gets dropped from
+    bootstrap_trace_data's results. Scores must still come back one-per-example, aligned by
+    position — the gepa engine pairs scores with example ids positionally, so a short list would
+    credit example N+1's score to example N (and crash its state bookkeeping)."""
+
+    def exact_match(gold, pred, trace=None, pred_name=None, pred_trace=None):
+        return 1.0 if getattr(pred, "a", None) == gold.a else 0.0
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=exact_match, feedback_map={})
+    candidate = {make_code_key("self"): CRASHY_MODULE}
+    batch = [
+        dspy.Example(q="hi", a="hi").with_inputs("q"),
+        dspy.Example(q="boom", a="boom").with_inputs("q"),  # raises inside forward
+        dspy.Example(q="yo", a="yo").with_inputs("q"),
+    ]
+
+    result = adapter.evaluate(batch, candidate, capture_traces=False)
+
+    assert result.scores == [1.0, 0.0, 1.0]  # crashed example scores as a failure, in place
+    assert result.outputs[1] is None  # no prediction for the crashed example
+    assert getattr(result.outputs[2], "a", None) == "yo"  # later examples keep their own results
 
 
 # --- adapter: propose routes code keys to the code proposer ------------------

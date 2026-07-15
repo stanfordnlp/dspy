@@ -194,8 +194,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             else {"disable_logging": True}
         )
 
-        # When a dspy.Flex submodule is present, score with the execution trace so a trace-aware
-        # flex metric (e.g. an LM-call penalty) is possible.
+        # When a dspy.Flex submodule is present, capture the execution trace at scoring time so a
+        # metric that declares a `program_trace` parameter can score against it (e.g. an LM-call
+        # penalty).
         if self._flex_task_descriptions:
             return evaluate_with_trace(
                 program,
