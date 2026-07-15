@@ -1,4 +1,5 @@
 import logging
+import pickle
 import random
 import threading
 
@@ -250,7 +251,11 @@ class BootstrapFewShot(Teleprompter):
                 if len(demos) > 1:
                     from dspy.utils.hasher import Hasher
 
-                    rng = random.Random(Hasher.hash(tuple(demos)))
+                    try:
+                        seed = Hasher.hash(tuple(demos))
+                    except (AttributeError, TypeError, pickle.PickleError):
+                        seed = Hasher.hash(tuple(demo.toDict() for demo in demos))
+                    rng = random.Random(seed)
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
                 self.name2traces[name].extend(demos)
 
