@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import pickle
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
@@ -16,6 +17,28 @@ if TYPE_CHECKING:
     from langchain.tools import BaseTool
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+class _UnpicklableToolFunc:
+    """Stand-in for a ``Tool.func`` that could not be pickled.
+
+    Local closures and lambdas cannot be pickled, so a ``Tool`` wrapping one is replaced
+    with this sentinel when the tool is pickled (see ``Tool.__getstate__``). It preserves
+    the original function's qualname for debugging and raises a clear error if the restored
+    tool is ever called, instead of silently doing nothing.
+    """
+
+    __slots__ = ("qualname",)
+
+    def __init__(self, qualname: str):
+        self.qualname = qualname
+
+    def __call__(self, *args, **kwargs):
+        raise RuntimeError(
+            f"This dspy.Tool was restored from a pickle that could not include its function "
+            f"({self.qualname!r}); the tool's metadata survived but it is no longer callable. "
+            f"Re-create the Tool from the live function to call it."
+        )
 
 
 class Tool(Type):
@@ -250,6 +273,31 @@ class Tool(Type):
         from dspy.utils.langchain_tool import convert_langchain_tool
 
         return convert_langchain_tool(tool)
+
+    def __getstate__(self):
+        """Make ``Tool`` safe to pickle even when ``func`` is a local closure or lambda.
+
+        dspy pickles and hashes demos in several places — ``BootstrapFewShot`` seeds its
+        demo shuffle by hashing the trace, ``program.save()`` pickles the program, and the
+        LM cache and multiprocessing paths pickle too. A tool backed by a local closure
+        (e.g. one capturing a client or session) would otherwise crash all of these with
+        ``AttributeError: Can't get local object '...'``.
+
+        When ``func`` can't be pickled it is replaced with a metadata-preserving sentinel,
+        so the tool round-trips everywhere. A module-level ``func`` is left untouched and
+        stays fully callable after unpickling; only a genuinely-unpicklable closure
+        degrades, and calling the restored tool then raises a clear error rather than
+        silently returning nothing.
+        """
+        state = super().__getstate__()
+        store = state.get("__dict__") or {}
+        func = store.get("func")
+        try:
+            pickle.dumps(func)
+        except Exception:
+            qualname = getattr(func, "__qualname__", getattr(func, "__name__", repr(func)))
+            state = {**state, "__dict__": {**store, "func": _UnpicklableToolFunc(qualname)}}
+        return state
 
     def __repr__(self):
         return f"Tool(name={self.name}, desc={self.desc}, args={self.args})"
