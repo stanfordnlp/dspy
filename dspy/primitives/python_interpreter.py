@@ -117,8 +117,11 @@ def _make_jsonable(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return _make_jsonable(_dump_pydantic(value))
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return _make_jsonable(dataclasses.asdict(value))
-    if hasattr(value, "_asdict") and callable(value._asdict):
+        try:
+            return _make_jsonable(dataclasses.asdict(value))
+        except Exception:
+            return value  # fall through to json.dumps/str fallback
+    if isinstance(value, tuple) and hasattr(value, "_fields") and hasattr(value, "_asdict"):
         return _make_jsonable(value._asdict())
     if isinstance(value, dict):
         return {k: _make_jsonable(v) for k, v in value.items()}

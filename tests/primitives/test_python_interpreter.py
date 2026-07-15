@@ -836,6 +836,23 @@ def test_tool_returns_collections_namedtuple():
         assert result == 7.0
 
 
+def test_tool_returns_dataclass_with_unserializable_field_falls_back():
+    """Dataclass with non-serializable fields should fall back to str() gracefully."""
+    import threading
+
+    @dataclasses.dataclass
+    class _Holder:
+        name: str
+        lock: threading.Lock
+
+    def get_holder() -> _Holder:
+        return _Holder(name="test", lock=threading.Lock())
+
+    with PythonInterpreter(tools={"get_holder": get_holder}) as sandbox:
+        result = sandbox.execute("h = get_holder()\ntype(h).__name__")
+        assert result == "str"
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
