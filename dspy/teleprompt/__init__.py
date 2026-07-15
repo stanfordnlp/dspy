@@ -31,5 +31,6 @@ __all__ = [
     "LabeledFewShot",
     "InferRules",
     "SIMBA",
+    "Teleprompter",
     "bootstrap_trace_data",
 ]

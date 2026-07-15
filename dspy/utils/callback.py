@@ -5,7 +5,8 @@ import uuid
 from typing import Any, Callable
 
 import dspy
-from dspy.utils.callback_context import ACTIVE_CALL_ID
+from dspy.utils.callback_context import ACTIVE_CALL_ID as ACTIVE_CALL_ID
+from dspy.utils.callback_context import _active_call_context, _normalize_active_call_context
 
 logger = logging.getLogger(__name__)
 
@@ -252,9 +253,40 @@ class BaseCallback:
         """
         pass
 
+    def on_optimizer_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: dict[str, Any],
+    ):
+        """A handler triggered when an optimizer starts compiling a program.
 
-def with_callbacks(fn):
+        Args:
+            call_id: A unique identifier for the optimizer call.
+            instance: The Teleprompter instance.
+            inputs: The arguments passed to the optimizer's ``compile`` method.
+        """
+        pass
+
+    def on_optimizer_end(
+        self,
+        call_id: str,
+        outputs: Any | None,
+        exception: BaseException | None = None,
+    ):
+        """A handler triggered after an optimizer finishes compiling a program.
+
+        Args:
+            call_id: The identifier shared with the corresponding start handler.
+            outputs: The compiled program, or None if compilation failed.
+            exception: The exception raised by compilation, if any.
+        """
+        pass
+
+
+def with_callbacks(fn, *, _callback_kind: str | None = None):
     """Decorator to add callback functionality to instance methods."""
+    is_optimizer_callback = _callback_kind == "optimizer"
 
     def _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs):
         """Execute all start callbacks for a function call."""
@@ -265,7 +297,11 @@ def with_callbacks(fn):
             inputs.pop("instance")
         for callback in callbacks:
             try:
-                _get_on_start_handler(callback, instance, fn)(call_id=call_id, instance=instance, inputs=inputs)
+                _get_on_start_handler(callback, instance, fn, is_optimizer_callback)(
+                    call_id=call_id,
+                    instance=instance,
+                    inputs=inputs,
+                )
             except Exception as e:
                 logger.warning(f"Error when calling callback {callback}: {e}")
 
@@ -273,7 +309,7 @@ def with_callbacks(fn):
         """Execute all end callbacks for a function call."""
         for callback in callbacks:
             try:
-                _get_on_end_handler(callback, instance, fn)(
+                _get_on_end_handler(callback, instance, fn, is_optimizer_callback)(
                     call_id=call_id,
                     outputs=results,
                     exception=exception,
@@ -295,22 +331,21 @@ def with_callbacks(fn):
 
             call_id = uuid.uuid4().hex
 
+            _normalize_active_call_context()
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
-
-            # Active ID must be set right before the function is called, not before calling the callbacks.
-            parent_call_id = ACTIVE_CALL_ID.get()
-            ACTIVE_CALL_ID.set(call_id)
 
             results = None
             exception = None
             try:
-                results = await fn(instance, *args, **kwargs)
+                # Active ID must be set right before the function is called, not before calling the callbacks.
+                with _active_call_context(call_id):
+                    results = await fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
-                exception = e
-                raise exception
+            except BaseException as e:
+                if is_optimizer_callback or isinstance(e, Exception):
+                    exception = e
+                raise
             finally:
-                ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
         return async_wrapper
@@ -325,29 +360,36 @@ def with_callbacks(fn):
 
             call_id = uuid.uuid4().hex
 
+            _normalize_active_call_context()
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
-
-            # Active ID must be set right before the function is called, not before calling the callbacks.
-            parent_call_id = ACTIVE_CALL_ID.get()
-            ACTIVE_CALL_ID.set(call_id)
 
             results = None
             exception = None
             try:
-                results = fn(instance, *args, **kwargs)
+                # Active ID must be set right before the function is called, not before calling the callbacks.
+                with _active_call_context(call_id):
+                    results = fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
-                exception = e
-                raise exception
+            except BaseException as e:
+                if is_optimizer_callback or isinstance(e, Exception):
+                    exception = e
+                raise
             finally:
-                ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
         return sync_wrapper
 
 
-def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
+def _get_on_start_handler(
+    callback: BaseCallback,
+    instance: Any,
+    fn: Callable,
+    is_optimizer_callback: bool,
+) -> Callable:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
+    if is_optimizer_callback:
+        return callback.on_optimizer_start
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
@@ -368,8 +410,16 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
     return callback.on_module_start
 
 
-def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
+def _get_on_end_handler(
+    callback: BaseCallback,
+    instance: Any,
+    fn: Callable,
+    is_optimizer_callback: bool,
+) -> Callable:
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
+    if is_optimizer_callback:
+        return callback.on_optimizer_end
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
