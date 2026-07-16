@@ -46,6 +46,7 @@ from dspy.utils.syncify import syncify
 from dspy.utils.saving import load
 from dspy.streaming.streamify import streamify
 from dspy.utils.usage_tracker import track_usage
+from dspy.utils.otel import OtelCallback, enable_otel_tracing
 
 from dspy.dsp.utils.settings import settings
 from dspy.dsp.colbertv2 import ColBERTv2
