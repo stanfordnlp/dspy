@@ -491,6 +491,83 @@ def _get_stream_completion_fn(
         return async_stream_completion
 
 
+def _responses_stream_event_to_chunk(event: Any):
+    """Convert a Responses API streaming event into a chat-style `ModelResponseStream` chunk.
+
+    Only text and reasoning deltas carry streamable content. Other events (item lifecycle,
+    tool call arguments, completion, etc.) return `None` so the rest of the streaming pipeline
+    (`streamify` and `StreamListener`) can reuse the chat-completion code path unchanged.
+    """
+    litellm = _get_litellm()
+    delta = getattr(event, "delta", None)
+    if delta is None:
+        return None
+
+    event_type = getattr(event, "type", None)
+    if event_type == "response.output_text.delta":
+        delta_payload = {"content": delta}
+    elif event_type == "response.reasoning_summary_text.delta":
+        delta_payload = {"reasoning_content": delta}
+    else:
+        return None
+
+    return litellm.ModelResponseStream(
+        model=getattr(event, "model", None) or "",
+        choices=[litellm.StreamingChoices(delta=delta_payload)],
+    )
+
+
+def _get_stream_responses_fn(
+    request: dict[str, Any],
+    cache_kwargs: dict[str, Any],
+    sync=True,
+    headers: dict[str, Any] | None = None,
+):
+    stream = dspy.settings.send_stream
+    caller_predict = dspy.settings.caller_predict
+
+    if stream is None:
+        return None
+
+    # The stream is already opened, and will be closed by the caller.
+    stream = cast(MemoryObjectSendStream, stream)
+    caller_predict_id = id(caller_predict) if caller_predict else None
+
+    async def stream_responses(request: dict[str, Any], cache_kwargs: dict[str, Any]):
+        response = await _get_litellm().aresponses(
+            cache=cache_kwargs,
+            stream=True,
+            headers=headers,
+            **request,
+        )
+        final_response = None
+        async for event in response:
+            if getattr(event, "type", None) == "response.completed":
+                # The Responses API delivers the aggregated response in the completion event, so we don't
+                # need to rebuild it from individual deltas the way `stream_chunk_builder` does for chat.
+                final_response = getattr(event, "response", None)
+
+            chunk = _responses_stream_event_to_chunk(event)
+            if chunk is None:
+                continue
+            if caller_predict_id:
+                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
+                chunk.predict_id = caller_predict_id
+            await stream.send(chunk)
+        return final_response
+
+    def sync_stream_responses():
+        return anyio.from_thread.run(functools.partial(stream_responses, request, cache_kwargs))
+
+    async def async_stream_responses():
+        return await stream_responses(request, cache_kwargs)
+
+    if sync:
+        return sync_stream_responses
+    else:
+        return async_stream_responses
+
+
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -589,14 +666,18 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     request = _convert_chat_request_to_responses_request(request)
+
+    stream_responses = _get_stream_responses_fn(request, cache, sync=True, headers=headers)
+    if stream_responses is not None:
+        return stream_responses()
 
     return _get_litellm().responses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
+        headers=headers,
         **request,
     )
 
@@ -605,14 +686,18 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     request = _convert_chat_request_to_responses_request(request)
+
+    stream_responses = _get_stream_responses_fn(request, cache, sync=False, headers=headers)
+    if stream_responses is not None:
+        return await stream_responses()
 
     return await _get_litellm().aresponses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
+        headers=headers,
         **request,
     )
 
