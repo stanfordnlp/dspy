@@ -10,6 +10,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
+from dspy.primitives.base_module import _METADATA_KEY, _artifact_metadata_from_state
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
@@ -86,7 +87,7 @@ class Predict(Module, Parameter):
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None
-        return state
+        return self._state_with_artifact_metadata(state)
 
     def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
         """Load the saved state of a `Predict` object.
@@ -99,7 +100,8 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        artifact_metadata = _artifact_metadata_from_state(state)
+        excluded_keys = ["signature", "extended_signature", "lm", _METADATA_KEY]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
@@ -116,6 +118,7 @@ class Predict(Module, Parameter):
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
 
+        self._dspy_artifact_metadata = artifact_metadata
         return self
 
     def _get_positional_args_error_message(self):

@@ -40,15 +40,19 @@ When you call `Module.load_state(state)`, DSPy runs the load against a deep copy
 
 Both are runtime-only: callbacks are hooks the caller registers per process, and history is a growing log of LM calls. They’re dropped in `__getstate__` so they don’t ride along with pickled programs and don’t bloat state files. After loading, re-register callbacks if you need them; history starts fresh.
 
-### 9. Metadata sits in a separate file
+### 9. Artifact metadata is opaque integration state
+
+`Module.artifact_metadata` lets integrations attach artifact provenance and similar state without making it an optimizable parameter. It maps integration-owned string namespaces to JSON objects. DSPy persists this data but does not interpret it; each integration owns its namespace, schema, and compatibility policy. Attach it to the top-level program passed to `dump_state` or `save`; state-only serialization does not independently preserve metadata attached to intermediate container modules.
+
+### 10. Dependency metadata sits in a separate file
 
 When you save a full program, the directory contains `program.pkl` and `metadata.json`. The metadata file holds dependency versions (Python, DSPy, cloudpickle) so you can read them without unpickling. State-only JSON saves embed the same metadata under a `"metadata"` key in the JSON dict.
 
-### 10. Version mismatches warn, don’t block
+### 11. Version mismatches warn, don’t block
 
 If you load a program saved under an older DSPy, you get a warning logged with the version delta — but the load proceeds. The save format aims for backward compatibility, and a hard version check would force users to keep stale virtualenvs around to load old programs.
 
-### 11. `modules_to_serialize` embeds user-defined classes by value
+### 12. `modules_to_serialize` embeds user-defined classes by value
 
 By default, cloudpickle serializes user classes by import path (`mymodule.MyClass`). If the loading side doesn’t have `mymodule` importable, the load fails. Passing `modules_to_serialize=[MyClass.__module__]` (or the module object) registers it with `cloudpickle.register_pickle_by_value`, embedding the class code in the pickle. Useful when you’re saving a program defined in a script rather than a package.
 
@@ -96,13 +100,33 @@ program = dspy.load("haiku_ensemble/", allow_pickle=True)
 You rarely call these directly — `Module.save` / `Module.load` are the user-facing pair — but knowing what they round-trip helps when debugging a state file.
 
 **`Module.dump_state(json_mode=True)` → `dict`**  
-Returns `{name: parameter.dump_state(...)}` for every named parameter in the tree. `json_mode=True` (the default) forces JSON-serializable shapes; `False` allows pickle-only objects through (used internally by the `.pkl` save path).
+Returns `{name: parameter.dump_state(...)}` for every named parameter in the tree, plus a reserved metadata envelope containing `artifact_metadata` when it is non-empty. `json_mode=True` (the default) forces JSON-serializable shapes; `False` allows pickle-only parameter objects through (used internally by the `.pkl` save path). Artifact metadata is always JSON-compatible and is omitted from the dumped state when empty.
 
 **`Module.load_state(state, *, allow_unsafe_lm_state=False)`**  
-Applies a state dict. Runs the load on a deep copy first to validate, then commits to the live module. Failure on the trial leaves the live module unchanged.
+Applies a state dict. Runs the load on a deep copy first to validate, then commits to the live module. Failure on the trial leaves the live module unchanged. Loading replaces the module’s complete `artifact_metadata` mapping with the saved mapping; loading state without artifact metadata clears any existing values.
+
+**`Module.artifact_metadata`**
+
+A mapping for integration-owned artifact data. Use a stable string namespace and store a JSON object under it:
+
+```python
+program.artifact_metadata["com.example.optimizer"] = {
+    "optimization_run_id": "run-123",
+    "compiled_from_run_id": "run-122",
+}
+program.save("program.json")
+
+loaded_program = MyProgram()
+loaded_program.load("program.json")
+assert loaded_program.artifact_metadata["com.example.optimizer"]["optimization_run_id"] == "run-123"
+```
+
+The mapping round-trips through direct `dump_state` / `load_state` calls and state-only JSON or PKL `save` / `load` calls. Whole-program saves preserve it inside `program.pkl`; the inspectable `metadata.json` sidecar continues to contain dependency versions only. DSPy does not merge, inspect, or act on namespace payloads.
+
+Programs that override `dump_state` or `load_state` must delegate to the base implementation to participate in artifact metadata persistence.
 
 **`Predict.dump_state(json_mode=True)`**  
-A single predictor’s state: `{"traces": [...], "train": [...], "demos": [...], "signature": {...}, "lm": {...}}`. Demos are serialized via a `serialize_object` helper that recursively converts Pydantic objects to plain dicts.
+A single predictor’s state: `{"traces": [...], "train": [...], "demos": [...], "signature": {...}, "lm": {...}}`, plus the same metadata envelope when artifact metadata is set. Demos are serialized via a `serialize_object` helper that recursively converts Pydantic objects to plain dicts.
 
 **`Signature.dump_state()`**  
 `{"instructions": str, "fields": [{"prefix": str, "description": str}, ...]}`. The instructions are the docstring — what optimizers like GEPA rewrite. Field metadata (prefix, description) round-trips too; field names and types are reconstructed from the live Signature class on load.

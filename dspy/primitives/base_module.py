@@ -1,8 +1,10 @@
 import copy
 import logging
+import math
 from collections import deque
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import cloudpickle
 import orjson
@@ -16,9 +18,126 @@ from dspy.utils.saving import get_dependency_versions
 logger = logging.getLogger(__name__)
 
 
+_METADATA_KEY = "metadata"
+_ARTIFACT_METADATA_KEY = "artifact_metadata"
+_MISSING = object()
+
+
+def _copy_json_value(value: Any, *, path: str, active_containers: set[int]) -> Any:
+    """Validate and copy a value composed only of JSON data types."""
+    if value is None or type(value) in (bool, int, str):
+        return value
+
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"`{path}` must not contain non-finite numbers.")
+        return value
+
+    if type(value) is list:
+        container_id = id(value)
+        if container_id in active_containers:
+            raise ValueError(f"`{path}` must not contain cyclic data.")
+        active_containers.add(container_id)
+        try:
+            return [
+                _copy_json_value(item, path=f"{path}[{index}]", active_containers=active_containers)
+                for index, item in enumerate(value)
+            ]
+        finally:
+            active_containers.remove(container_id)
+
+    if type(value) is dict:
+        container_id = id(value)
+        if container_id in active_containers:
+            raise ValueError(f"`{path}` must not contain cyclic data.")
+        active_containers.add(container_id)
+        try:
+            copied = {}
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise TypeError(f"`{path}` must contain only string keys, but received {type(key).__name__}.")
+                copied[key] = _copy_json_value(
+                    item,
+                    path=f"{path}.{key}",
+                    active_containers=active_containers,
+                )
+            return copied
+        finally:
+            active_containers.remove(container_id)
+
+    raise TypeError(f"`{path}` must contain only JSON-compatible values, but received {type(value).__name__}.")
+
+
+def _validate_and_copy_artifact_metadata(metadata: Any) -> dict[str, dict[str, Any]]:
+    if type(metadata) is not dict:
+        raise TypeError(f"`artifact_metadata` must be a dict, but received {type(metadata).__name__}.")
+
+    copied = {}
+    for namespace, payload in metadata.items():
+        if type(namespace) is not str:
+            raise TypeError(
+                f"`artifact_metadata` namespace keys must be strings, but received {type(namespace).__name__}."
+            )
+        if not namespace:
+            raise ValueError("`artifact_metadata` namespace keys must not be empty.")
+        if type(payload) is not dict:
+            raise TypeError(
+                f"`artifact_metadata.{namespace}` must be a JSON object, but received {type(payload).__name__}."
+            )
+        copied[namespace] = _copy_json_value(
+            payload,
+            path=f"artifact_metadata.{namespace}",
+            active_containers=set(),
+        )
+
+    # Validate constraints imposed by the JSON serializer as well, such as its integer range.
+    try:
+        orjson.dumps(copied)
+    except TypeError as error:
+        raise TypeError(f"`artifact_metadata` must be JSON serializable: {error}") from error
+
+    return copied
+
+
+def _artifact_metadata_from_state(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    if type(state) is not dict:
+        raise TypeError(f"`state` must be a dict, but received {type(state).__name__}.")
+
+    metadata = state.get(_METADATA_KEY, _MISSING)
+    if metadata is _MISSING:
+        return {}
+    if type(metadata) is not dict:
+        raise TypeError(f"`{_METADATA_KEY}` must be a dict, but received {type(metadata).__name__}.")
+
+    artifact_metadata = metadata.get(_ARTIFACT_METADATA_KEY, _MISSING)
+    if artifact_metadata is _MISSING:
+        return {}
+    return _validate_and_copy_artifact_metadata(artifact_metadata)
+
+
 class BaseModule:
     def __init__(self):
         pass
+
+    @property
+    def artifact_metadata(self) -> dict[str, dict[str, Any]]:
+        """Namespaced JSON metadata persisted when this module is the serialization root."""
+        if not hasattr(self, "_dspy_artifact_metadata"):
+            self._dspy_artifact_metadata = {}
+        return self._dspy_artifact_metadata
+
+    @artifact_metadata.setter
+    def artifact_metadata(self, value: dict[str, dict[str, Any]]) -> None:
+        self._dspy_artifact_metadata = _validate_and_copy_artifact_metadata(value)
+
+    def _state_with_artifact_metadata(self, state: dict[str, Any]) -> dict[str, Any]:
+        if _METADATA_KEY in state:
+            raise ValueError(f"`{_METADATA_KEY}` is reserved for DSPy serialization metadata.")
+
+        artifact_metadata = _validate_and_copy_artifact_metadata(self.artifact_metadata)
+        if artifact_metadata:
+            state[_METADATA_KEY] = {_ARTIFACT_METADATA_KEY: artifact_metadata}
+        return state
 
     def named_parameters(self):
         """
@@ -154,10 +273,13 @@ class BaseModule:
         return new_instance
 
     def dump_state(self, json_mode=True):
-        return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
+        state = {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
+        return self._state_with_artifact_metadata(state)
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         from dspy.predict.predict import Predict
+
+        artifact_metadata = _artifact_metadata_from_state(state)
 
         def _apply(module):
             for name, param in module.named_parameters():
@@ -168,6 +290,9 @@ class BaseModule:
 
         _apply(self.deepcopy())  # trial run raises before self is touched
         _apply(self)
+
+        self._dspy_artifact_metadata = artifact_metadata
+
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
@@ -207,6 +332,9 @@ class BaseModule:
             if path.exists() and not path.is_dir():
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
 
+            for _, module in self.named_sub_modules():
+                _validate_and_copy_artifact_metadata(getattr(module, "_dspy_artifact_metadata", {}))
+
             if not path.exists():
                 # Create the directory (and any parent directories)
                 path.mkdir(parents=True)
@@ -231,7 +359,7 @@ class BaseModule:
 
         if path.suffix == ".json":
             state = self.dump_state()
-            state["metadata"] = metadata
+            state.setdefault(_METADATA_KEY, {}).update(metadata)
             try:
                 with open(path, "wb") as f:
                     f.write(orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
@@ -245,7 +373,7 @@ class BaseModule:
             logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
                           'this, prefer saving using json format using module.save("module.json").')
             state = self.dump_state(json_mode=False)
-            state["metadata"] = metadata
+            state.setdefault(_METADATA_KEY, {}).update(metadata)
             with open(path, "wb") as f:
                 cloudpickle.dump(state, f)
         else:
