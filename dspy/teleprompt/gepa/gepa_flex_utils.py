@@ -218,14 +218,7 @@ def code_reflective_records(eval_batch) -> list[dict[str, Any]]:
 
 
 def _metric_scoring_kwargs(metric_fn, program_trace) -> dict[str, Any]:
-    """Keyword args for the optional GEPA-contract params ``metric_fn`` declares.
-
-    ``gold`` and ``pred`` are passed positionally; here we add only the trailing params the metric
-    actually declares, so one written to the full ``GEPAFeedbackMetric`` signature (where they have
-    no defaults) still binds. ``trace``/``pred_name``/``pred_trace`` stay ``None`` — a non-None
-    ``trace`` would flip a DSPy metric into strict-bool bootstrap mode — while ``program_trace``
-    receives the execution trace so a metric can score against how the answer was produced.
-    """
+    """Keyword args for the optional GEPA-contract params ``metric_fn`` declares."""
     try:
         declared = inspect.signature(metric_fn).parameters.keys()
     except (TypeError, ValueError):
