@@ -121,3 +121,77 @@ class CompleteAndGrounded(Module):
         score = f1_score(groundedness.groundedness, completeness.completeness)
 
         return Prediction(score=score if trace is None else score >= self.threshold)
+
+
+###########
+
+
+class RAGGroundedRefusal(Module):
+    """Scores a RAG response for correctness, groundedness, and refusal behavior, with textual feedback.
+
+    Returns ``Prediction(score, feedback)``, where ``feedback`` names the failure mode so that
+    feedback-driven optimizers (e.g. ``dspy.GEPA``) can reflect on it. Whether an example is
+    answerable from its context is read from the structured ``example.answerable`` field; whether
+    the prediction refused is read from ``pred.refused`` if present, otherwise via ``is_refusal``.
+
+    Args:
+        threshold: Minimum score to accept during optimization. Defaults to 0.66.
+        is_refusal: Optional callable applied to ``pred.response`` to detect refusal when
+            ``pred.refused`` is absent or ``None`` (an explicit ``pred.refused=False`` is
+            trusted and bypasses it).
+    """
+
+    def __init__(self, threshold=0.66, is_refusal=None):
+        self.threshold = threshold
+        self.is_refusal = is_refusal
+        self.correctness_module = ChainOfThought(SemanticRecallPrecision)
+        self.groundedness_module = ChainOfThought(AnswerGroundedness)
+
+    def forward(self, example, pred, trace=None, pred_name=None, pred_trace=None):
+        if not hasattr(example, "answerable"):
+            raise ValueError(
+                "RAGGroundedRefusal requires `example.answerable` (bool): whether the example's "
+                "context supports an answer."
+            )
+
+        refused = getattr(pred, "refused", None)
+        if refused is None:
+            if self.is_refusal is None:
+                raise ValueError(
+                    "RAGGroundedRefusal needs a refusal signal: set `pred.refused` (bool) or "
+                    "pass `is_refusal=` to detect it from `pred.response`."
+                )
+            refused = bool(self.is_refusal(pred.response))
+
+        if not example.answerable:
+            if refused:
+                score, feedback = 1.0, "The response correctly refused: the context does not support an answer."
+            else:
+                score, feedback = (
+                    0.0,
+                    "The response answered although the context does not support an answer; it should refuse.",
+                )
+        elif refused:
+            score, feedback = 0.0, "The response refused although the context supports an answer."
+        else:
+            correctness = self.correctness_module(
+                question=example.question, ground_truth=example.response, system_response=pred.response
+            )
+            groundedness = self.groundedness_module(
+                question=example.question, retrieved_context=pred.context, system_response=pred.response
+            )
+            correctness_score = f1_score(correctness.precision, correctness.recall)
+            groundedness_score = max(0.0, min(1.0, groundedness.groundedness))
+            score = f1_score(correctness_score, groundedness_score)
+
+            issues = []
+            if correctness_score < self.threshold:
+                issues.append(f"misses or contradicts the ground truth (expected: {example.response})")
+            if groundedness_score < self.threshold:
+                issues.append("makes claims not supported by the retrieved context")
+            if issues:
+                feedback = f"The response {' and '.join(issues)}."
+            else:
+                feedback = "The response is correct and grounded in the retrieved context."
+
+        return Prediction(score=score if trace is None else score >= self.threshold, feedback=feedback)
