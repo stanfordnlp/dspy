@@ -51,6 +51,9 @@ class REPLVariable(pydantic.BaseModel):
             field_info: Optional pydantic FieldInfo with desc/constraints metadata
             preview_chars: Max characters for preview
         """
+        if preview_chars <= 0:
+            raise ValueError("preview_chars must be greater than 0")
+
         jsonable = serialize_for_json(value)
         if isinstance(jsonable, (dict, list)):
             value_str = json.dumps(jsonable, indent=2)
@@ -58,8 +61,9 @@ class REPLVariable(pydantic.BaseModel):
             value_str = str(jsonable)
         is_truncated = len(value_str) > preview_chars
         if is_truncated:
-            half = preview_chars // 2
-            preview = value_str[:half] + "..." + value_str[-half:]
+            head_chars = preview_chars // 2
+            tail_chars = preview_chars - head_chars
+            preview = value_str[:head_chars] + "..." + value_str[-tail_chars:]
         else:
             preview = value_str
 
@@ -111,11 +115,15 @@ class REPLEntry(pydantic.BaseModel):
     @staticmethod
     def format_output(output: str, max_output_chars: int = 10_000) -> str:
         """Format output with head+tail truncation, preserving true length in header."""
+        if max_output_chars <= 0:
+            raise ValueError("max_output_chars must be greater than 0")
+
         raw_len = len(output)
         if raw_len > max_output_chars:
-            half = max_output_chars // 2
+            head_chars = max_output_chars // 2
+            tail_chars = max_output_chars - head_chars
             omitted = raw_len - max_output_chars
-            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
+            output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
         return f"Output ({raw_len:,} chars):\n{output}"
 
     def format(self, index: int, max_output_chars: int = 10_000) -> str:
