@@ -177,6 +177,32 @@ def test_selection_eval_keeps_vanilla_semantics_for_legacy_metric() -> None:
     assert batch.scores == [0.75]
 
 
+def test_selection_eval_binds_metric_with_required_contract_params() -> None:
+    """A metric written to the full GEPAFeedbackMetric signature with `trace`/`pred_name`/
+    `pred_trace` REQUIRED (no defaults) must still bind at flex scoring time: flex passes those
+    declared parameters as None rather than dropping them, so the metric doesn't raise TypeError."""
+    seen: dict[str, object] = {}
+
+    def strict_metric(gold, pred, trace, pred_name, pred_trace, program_trace=None):
+        seen["trace"] = trace
+        seen["pred_name"] = pred_name
+        seen["pred_trace"] = pred_trace
+        seen["n_calls"] = len(program_trace) if program_trace is not None else None
+        return 1.0
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=strict_metric, feedback_map={})
+    candidate = {make_code_key("self"): SIMPLE_MODULE}
+    ex = dspy.Example(q="hi", a="hi").with_inputs("q")
+
+    dspy.configure(lm=DummyLM([{"a": "hi"}]))
+    batch = adapter.evaluate([ex], candidate, capture_traces=False)
+
+    assert batch.scores == [1.0]  # bound and scored instead of raising TypeError
+    assert seen.get("trace") is None and seen.get("pred_name") is None and seen.get("pred_trace") is None
+    assert seen.get("n_calls") == 1  # program_trace still delivered to a metric that declares it
+
+
 # --- adapter: scores stay aligned to the batch when examples crash ------------
 
 CRASHY_MODULE = textwrap.dedent(

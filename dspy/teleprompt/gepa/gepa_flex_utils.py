@@ -217,19 +217,21 @@ def code_reflective_records(eval_batch) -> list[dict[str, Any]]:
     return records
 
 
-def _metric_wants_program_trace(metric_fn) -> bool:
-    """True if ``metric_fn`` declares a ``program_trace`` parameter.
+def _metric_scoring_kwargs(metric_fn, program_trace) -> dict[str, Any]:
+    """Keyword args for the optional GEPA-contract params ``metric_fn`` declares.
 
-    DSPy metrics conventionally treat a non-None third argument (``trace``) as bootstrapping
-    mode and return a strict bool, so the execution trace cannot be passed there at scoring
-    time without silently coarsening scores. Instead, a metric opts in to receiving the trace
-    during flex scoring by declaring ``program_trace=None``.
+    ``gold`` and ``pred`` are passed positionally; here we add only the trailing params the metric
+    actually declares, so one written to the full ``GEPAFeedbackMetric`` signature (where they have
+    no defaults) still binds. ``trace``/``pred_name``/``pred_trace`` stay ``None`` — a non-None
+    ``trace`` would flip a DSPy metric into strict-bool bootstrap mode — while ``program_trace``
+    receives the execution trace so a metric can score against how the answer was produced.
     """
     try:
-        param = inspect.signature(metric_fn).parameters.get("program_trace")
+        declared = inspect.signature(metric_fn).parameters.keys()
     except (TypeError, ValueError):
-        return False
-    return param is not None and param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
+        return {}
+    values = {"trace": None, "pred_name": None, "pred_trace": None, "program_trace": program_trace}
+    return {name: value for name, value in values.items() if name in declared}
 
 
 def evaluate_with_trace(
@@ -261,7 +263,6 @@ def evaluate_with_trace(
         format_failure_score=failure_score,
         callback_metadata=callback_metadata,
     )
-    wants_trace = _metric_wants_program_trace(metric_fn)
     outputs: list[Any] = [None] * len(batch)
     scores: list[float] = [failure_score] * len(batch)
     for t in trajs:
@@ -269,10 +270,8 @@ def evaluate_with_trace(
         outputs[t["example_ind"]] = pred
         if isinstance(pred, FailedPrediction):
             result = failure_score
-        elif wants_trace:
-            result = metric_fn(t["example"], pred, program_trace=t["trace"])
         else:
-            result = metric_fn(t["example"], pred)
+            result = metric_fn(t["example"], pred, **_metric_scoring_kwargs(metric_fn, t["trace"]))
         t["score"] = result  # make_reflective_dataset reads this for the (trace-aware) feedback
         score = result["score"] if hasattr(result, "score") else result
         scores[t["example_ind"]] = failure_score if score is None else score
