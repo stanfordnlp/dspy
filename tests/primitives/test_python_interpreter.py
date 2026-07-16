@@ -1,8 +1,10 @@
 import asyncio
+import dataclasses
 import json
 import os
 import random
 from datetime import datetime
+from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -742,6 +744,113 @@ def test_tool_returning_unserializable_pydantic_model_raises_execution_error():
             match="CodeInterpreterError.*Unable to serialize _UnserializableModel as JSON",
         ):
             sandbox.execute("get_value()")
+
+
+# -- dataclass tool returns --------------------------------------------------
+
+
+@dataclasses.dataclass
+class _BBox:
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+
+
+@dataclasses.dataclass
+class _PageTable:
+    index: int
+    bbox: _BBox
+    strategy: str
+
+
+def test_tool_returns_dataclass():
+    """Dataclass instances returned from a tool should arrive as dicts."""
+
+    def get_bbox() -> _BBox:
+        return _BBox(x0=18.2, top=108.0, x1=554.4, bottom=748.8)
+
+    with PythonInterpreter(tools={"get_bbox": get_bbox}) as sandbox:
+        result = sandbox.execute("b = get_bbox()\n(b['x0'], b['bottom'])")
+        assert result == [18.2, 748.8]
+
+
+def test_tool_returns_nested_dataclass():
+    """Nested dataclass instances should be recursively converted to dicts."""
+
+    def get_table() -> _PageTable:
+        return _PageTable(index=0, bbox=_BBox(x0=1.0, top=2.0, x1=3.0, bottom=4.0), strategy="lines")
+
+    with PythonInterpreter(tools={"get_table": get_table}) as sandbox:
+        result = sandbox.execute("t = get_table()\n(t['bbox']['x0'], t['strategy'])")
+        assert result == [1.0, "lines"]
+
+
+def test_tool_returns_list_of_dataclasses():
+    """Lists of dataclass instances should round-trip as lists of dicts."""
+
+    def get_tables() -> list[_PageTable]:
+        return [
+            _PageTable(index=0, bbox=_BBox(x0=1.0, top=2.0, x1=3.0, bottom=4.0), strategy="lines"),
+            _PageTable(index=1, bbox=_BBox(x0=5.0, top=6.0, x1=7.0, bottom=8.0), strategy="text"),
+        ]
+
+    with PythonInterpreter(tools={"get_tables": get_tables}) as sandbox:
+        result = sandbox.execute("ts = get_tables()\n[t['index'] for t in ts]")
+        assert result == [0, 1]
+
+
+# -- namedtuple tool returns -------------------------------------------------
+
+
+class _TypedPoint(NamedTuple):
+    x: float
+    y: float
+    label: str
+
+
+from collections import namedtuple
+
+_Point = namedtuple("_Point", ["x", "y"])
+
+
+def test_tool_returns_typing_namedtuple():
+    """typing.NamedTuple instances should arrive as dicts."""
+
+    def get_point() -> _TypedPoint:
+        return _TypedPoint(x=10.5, y=20.3, label="origin")
+
+    with PythonInterpreter(tools={"get_point": get_point}) as sandbox:
+        result = sandbox.execute("p = get_point()\n(p['x'], p['label'])")
+        assert result == [10.5, "origin"]
+
+
+def test_tool_returns_collections_namedtuple():
+    """collections.namedtuple instances should arrive as dicts."""
+
+    def get_point() -> _Point:
+        return _Point(x=3.0, y=4.0)
+
+    with PythonInterpreter(tools={"get_point": get_point}) as sandbox:
+        result = sandbox.execute("p = get_point()\np['x'] + p['y']")
+        assert result == 7.0
+
+
+def test_tool_returns_dataclass_with_unserializable_field_falls_back():
+    """Dataclass with non-serializable fields should fall back to str() gracefully."""
+    import threading
+
+    @dataclasses.dataclass
+    class _Holder:
+        name: str
+        lock: threading.Lock
+
+    def get_holder() -> _Holder:
+        return _Holder(name="test", lock=threading.Lock())
+
+    with PythonInterpreter(tools={"get_holder": get_holder}) as sandbox:
+        result = sandbox.execute("h = get_holder()\ntype(h).__name__")
+        assert result == "str"
 
 
 # =============================================================================
