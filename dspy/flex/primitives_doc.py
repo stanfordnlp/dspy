@@ -56,12 +56,16 @@ Available DSPy primitives:
    `max_iterations` (REPL steps), `max_llm_calls` (sub-LLM calls), `sub_lm`
    (cheaper LM for sub-queries), `tools` (extra callables for the REPL).
 
-- Tools for `dspy.ReAct` / `dspy.RLM` come from two places, and you should use both:
+- Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
   (1) any tools listed in the available context, in scope by name; and (2) tools you
   AUTHOR yourself — define a plain function (with a docstring and type hints so the model
-  knows how to call it) inside `__init__`, then pass it via `tools=[...]`. Create your own
-  tools whenever a sub-step needs a capability the provided tools don't cover: deterministic
-  lookups, parsing/formatting, calculators, validators, retrieval helpers, etc.
+  knows how to call it) inside `__init__`. Create your own tools whenever a sub-step needs a
+  capability the provided tools don't cover: deterministic lookups, parsing/formatting,
+  calculators, validators, retrieval helpers, etc.
+  An authored function can ALWAYS be called directly from `forward`. You may ALSO pass it to 
+  `dspy.ReAct`/`dspy.RLM` via `tools=[...]` UNLESS the available context says this module runs 
+  in a sandbox — in a sandbox, only the provided (in-scope-by-name) tools can be handed to 
+  those sub-predictors, so call your authored helpers directly in `forward` instead.
 
 - `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
    bare function and it is wrapped for you.

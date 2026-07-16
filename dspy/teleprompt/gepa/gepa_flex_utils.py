@@ -117,8 +117,12 @@ class CodeProposalSignature(dspy.Signature):
     (reference them by the exact names; do not import or redefine them). If ``available_context``
     is '(no extra context)', no tools were provided — don't reference any.
     (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define
-    a documented function inside ``__init__`` and pass it via ``tools=[...]``. Tools you author
-    live in this source, so they are optimized and persisted exactly like the rest of the code.
+    a documented function inside ``__init__``. Tools you author live in this source, so they are
+    optimized and persisted exactly like the rest of the code. You can ALWAYS call an authored
+    function directly from ``forward``. You may also pass it to ``dspy.RLM``/``dspy.ReAct`` via
+    ``tools=[...]`` UNLESS ``available_context`` says the module is sandboxed — in a sandbox, only
+    the provided tools may be handed to those sub-predictors, so call authored helpers directly in
+    ``forward`` instead.
     """
 
     task_description: str = dspy.InputField(
