@@ -7,6 +7,7 @@ protocol defined in interpreter.py.
 """
 
 import asyncio
+import dataclasses
 import functools
 import inspect
 import json
@@ -106,16 +107,28 @@ def _dump_pydantic(value: BaseModel) -> Any:
         raise CodeInterpreterError(f"Unable to serialize {type(value).__name__} as JSON: {e}") from e
 
 
-def _coerce_pydantic(value: Any) -> Any:
-    """Recursively convert Pydantic ``BaseModel`` instances to JSON-compatible values."""
+def _make_jsonable(value: Any) -> Any:
+    """Recursively convert structured types to JSON-serializable values.
+
+    Handles Pydantic BaseModel, dataclasses, and namedtuples so that
+    ``json.dumps()`` can serialize tool results without falling back to
+    ``str()``.
+    """
     if isinstance(value, BaseModel):
-        return _coerce_pydantic(_dump_pydantic(value))
+        return _make_jsonable(_dump_pydantic(value))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        try:
+            return _make_jsonable(dataclasses.asdict(value))
+        except Exception:
+            return value  # fall through to json.dumps/str fallback
+    if isinstance(value, tuple) and hasattr(value, "_fields") and hasattr(value, "_asdict"):
+        return _make_jsonable(value._asdict())
     if isinstance(value, dict):
-        return {k: _coerce_pydantic(v) for k, v in value.items()}
+        return {k: _make_jsonable(v) for k, v in value.items()}
     if isinstance(value, list):
-        return [_coerce_pydantic(v) for v in value]
+        return [_make_jsonable(v) for v in value]
     if isinstance(value, tuple):
-        return tuple(_coerce_pydantic(v) for v in value)
+        return tuple(_make_jsonable(v) for v in value)
     return value
 
 
@@ -383,7 +396,7 @@ class PythonInterpreter:
             result = self.tools[tool_name](**kwargs)
             if asyncio.iscoroutine(result):
                 result = _await_in_sync(result)
-            result = _coerce_pydantic(result)
+            result = _make_jsonable(result)
             if result is None or isinstance(result, str):
                 response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
             else:

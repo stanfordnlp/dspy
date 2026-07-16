@@ -2,12 +2,10 @@ import functools
 import inspect
 import logging
 import uuid
-from contextvars import ContextVar
 from typing import Any, Callable
 
 import dspy
-
-ACTIVE_CALL_ID = ContextVar("active_call_id", default=None)
+from dspy.utils.callback_context import ACTIVE_CALL_ID
 
 logger = logging.getLogger(__name__)
 
