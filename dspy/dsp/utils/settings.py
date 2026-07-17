@@ -280,9 +280,14 @@ class Settings:
             "execution of arbitrary code during deserialization, you should only load files from "
             "verified sources within a trusted environment."
         )
+        modules_to_serialize = modules_to_serialize or []
+        # Only unregister the modules we register here, so we restore
+        # cloudpickle's global registry to its prior state without clobbering
+        # any modules the caller had already registered by value themselves.
+        already_registered = cloudpickle.list_registry_pickle_by_value()
+        registered_by_us = [module for module in modules_to_serialize if module.__name__ not in already_registered]
         try:
-            modules_to_serialize = modules_to_serialize or []
-            for module in modules_to_serialize:
+            for module in registered_by_us:
                 cloudpickle.register_pickle_by_value(module)
 
             exclude_keys = exclude_keys or []
@@ -294,6 +299,9 @@ class Settings:
                 f"Saving failed with error: {e}. Please remove the non-picklable attributes from the values "
                 "in the `dspy.settings`."
             )
+        finally:
+            for module in registered_by_us:
+                cloudpickle.unregister_pickle_by_value(module)
 
     @classmethod
     def load(cls, path: str, allow_pickle: bool = False) -> dict[str, Any]:

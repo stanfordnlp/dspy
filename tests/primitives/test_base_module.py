@@ -188,6 +188,37 @@ class MyModule(dspy.Module):
             sys.path.remove(str(tmp_path))
 
 
+def test_save_with_extra_modules_does_not_leak_pickle_by_value_registry(tmp_path):
+    """`save(modules_to_serialize=...)` must not permanently register modules for
+    pickling by value in cloudpickle's process-global registry.
+
+    Regression test: previously `save()` called ``cloudpickle.register_pickle_by_value``
+    but never unregistered, so the module stayed registered by value for the rest of
+    the process. That leaked global state across unrelated ``save``/``load`` calls
+    (and across tests), e.g. making a later ``load`` of a genuinely-missing module
+    succeed instead of raising ``ModuleNotFoundError``.
+    """
+    # Reuse an always-available module as the stand-in for the caller's module.
+    import json as some_module
+
+    import cloudpickle
+
+    program = dspy.Predict(dspy.Signature("q -> a"))
+
+    # 1. A module we register here must be gone from the registry afterwards.
+    assert some_module.__name__ not in cloudpickle.list_registry_pickle_by_value()
+    program.save(tmp_path / "prog", save_program=True, modules_to_serialize=[some_module])
+    assert some_module.__name__ not in cloudpickle.list_registry_pickle_by_value()
+
+    # 2. A module the caller registered themselves must be preserved (not clobbered).
+    cloudpickle.register_pickle_by_value(some_module)
+    try:
+        program.save(tmp_path / "prog2", save_program=True, modules_to_serialize=[some_module])
+        assert some_module.__name__ in cloudpickle.list_registry_pickle_by_value()
+    finally:
+        cloudpickle.unregister_pickle_by_value(some_module)
+
+
 def test_load_with_version_mismatch(tmp_path):
     from dspy.primitives.base_module import logger
 
