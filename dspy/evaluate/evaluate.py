@@ -78,6 +78,7 @@ class Evaluate:
         display_table: bool | int = False,
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
+        timeout: float | None = None,
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
@@ -106,6 +107,7 @@ class Evaluate:
         self.display_table = display_table
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
+        self.timeout = timeout
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
@@ -125,6 +127,7 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: float | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -153,19 +156,24 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
 
         tqdm.tqdm._instances.clear()
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            disable_progress_bar=not display_progress,
-            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
-            provide_traceback=self.provide_traceback,
-            compare_results=True,
-        )
+        executor_kwargs = {
+            "num_threads": num_threads,
+            "disable_progress_bar": not display_progress,
+            "max_errors": (self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
+            "provide_traceback": self.provide_traceback,
+            "compare_results": True,
+        }
+        if timeout is not None:
+            executor_kwargs["timeout"] = timeout
+
+        executor = ParallelExecutor(**executor_kwargs)
 
         def process_item(example):
             prediction = program(**example.inputs())
