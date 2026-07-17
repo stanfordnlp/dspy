@@ -753,3 +753,58 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+@pytest.mark.parametrize(
+    "tool_call_dict",
+    [
+        {"name": "get_time", "arguments": ""},
+        {"name": "get_time", "args": ""},
+        {"type": "function", "function": {"name": "get_time", "arguments": ""}},
+        {"name": "get_time", "arguments": "   "},
+        {"name": "get_time", "arguments": "not json"},
+        {"name": "get_time", "arguments": "[1, 2]"},
+        {"name": "get_time", "arguments": "42"},
+    ],
+)
+def test_tool_calls_normalize_non_dict_arguments_to_empty_dict(tool_call_dict):
+    """A tool call whose ``arguments`` is not a JSON object (e.g. the empty string an
+    OpenAI-compatible provider emits for a no-argument call) must normalize to an empty
+    dict instead of crashing ToolCall validation."""
+    tool_calls = ToolCalls.from_dict_list([tool_call_dict])
+    assert tool_calls.tool_calls[0].name == "get_time"
+    assert tool_calls.tool_calls[0].args == {}
+
+    validated = ToolCalls.model_validate(tool_call_dict)
+    assert validated.tool_calls[0].args == {}
+
+
+def test_tool_calls_still_parse_valid_json_string_arguments():
+    """Well-formed JSON-string arguments continue to parse into a dict."""
+    tool_calls = ToolCalls.from_dict_list([{"name": "search", "arguments": '{"query": "hello"}'}])
+    assert tool_calls.tool_calls[0].args == {"query": "hello"}
+
+
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        ("", {}),
+        ("   ", {}),
+        ("not json", {}),
+        ("[1, 2]", {}),
+        (None, {}),
+        ('{"query": "hello"}', {"query": "hello"}),
+        ({"query": "hello"}, {"query": "hello"}),
+    ],
+)
+def test_provider_tool_call_to_tool_call_dict_normalizes_arguments(arguments, expected):
+    """The provider-response path (hit when an LM returns native tool calls) must also
+    coerce non-dict ``arguments`` to a dict so downstream ToolCall construction succeeds."""
+    from dspy.adapters.base import _provider_tool_call_to_tool_call_dict
+
+    normalized = _provider_tool_call_to_tool_call_dict(
+        {"id": "call_1", "function": {"name": "get_time", "arguments": arguments}}
+    )
+    assert normalized["name"] == "get_time"
+    assert normalized["args"] == expected
+    assert ToolCalls.ToolCall(**normalized).args == expected

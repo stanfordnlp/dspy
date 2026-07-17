@@ -736,6 +736,10 @@ def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
     arguments = _provider_value(function, "arguments", {})
     if isinstance(arguments, str):
         parsed_arguments = json_repair.loads(arguments)
+        # json_repair.loads returns "" for empty or invalid input; a no-argument
+        # tool call (arguments="") must still normalize to an empty dict.
+        if not isinstance(parsed_arguments, dict):
+            parsed_arguments = {}
     elif isinstance(arguments, dict):
         parsed_arguments = arguments
     else:
