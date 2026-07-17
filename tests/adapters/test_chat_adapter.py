@@ -2399,6 +2399,81 @@ def test_chat_adapter_respects_use_json_adapter_fallback_flag():
         mock_json_adapter_call.assert_not_called()
 
 
+def test_chat_adapter_does_not_fallback_on_field_constraint_violation():
+    """Regression for #7843.
+
+    When the LM produces a response that ChatAdapter can parse but whose value
+    violates an output-field constraint (e.g. a Literal/Enum), the failure is
+    semantic (the LM disobeyed the signature). Falling back to JSONAdapter
+    burns another LM call and masks the real error with a generic
+    AdapterParseError. The original constraint violation should propagate.
+    """
+
+    class SentimentSignature(dspy.Signature):
+        text: str = dspy.InputField()
+        sentiment: Literal["positive", "negative"] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    # Well-formed ChatAdapter output, but the value is not in the Literal.
+    content = "[[ ## sentiment ## ]]\nDEFINITELY_NEUTRAL\n[[ ## completed ## ]]\n"
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content=content))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__"
+        ) as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+                adapter(lm, {}, SentimentSignature, [], {"text": "I love it"})
+
+        # The fallback must not run: the LM call already produced parseable text,
+        # so a second JSONAdapter attempt cannot recover from a value constraint
+        # violation. It only wastes a call and masks the underlying error.
+        mock_json_adapter_call.assert_not_called()
+
+        # The propagated error must describe the original constraint violation,
+        # not a generic JSONAdapter parse failure.
+        assert "DEFINITELY_NEUTRAL" in str(exc_info.value)
+        assert exc_info.value.adapter_name == "ChatAdapter"
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_does_not_fallback_on_field_constraint_violation_async():
+    """Async counterpart of test_chat_adapter_does_not_fallback_on_field_constraint_violation."""
+
+    class SentimentSignature(dspy.Signature):
+        text: str = dspy.InputField()
+        sentiment: Literal["positive", "negative"] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    content = "[[ ## sentiment ## ]]\nDEFINITELY_NEUTRAL\n[[ ## completed ## ]]\n"
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content=content))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.acall"
+        ) as mock_json_adapter_acall:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+                await adapter.acall(lm, {}, SentimentSignature, [], {"text": "I love it"})
+
+        mock_json_adapter_acall.assert_not_called()
+        assert "DEFINITELY_NEUTRAL" in str(exc_info.value)
+        assert exc_info.value.adapter_name == "ChatAdapter"
+
+
 @pytest.mark.asyncio
 async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
     signature = dspy.make_signature("question->answer")
