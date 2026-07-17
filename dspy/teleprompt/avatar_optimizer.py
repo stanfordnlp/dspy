@@ -1,14 +1,13 @@
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
 from typing import Callable
 
 from pydantic import BaseModel
-from tqdm import tqdm
 
 import dspy
 from dspy.predict.avatar import ActionOutput
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.parallelizer import ParallelExecutor
 
 DEFAULT_MAX_EXAMPLES = 10
 
@@ -117,17 +116,31 @@ class AvatarOptimizer(Teleprompter):
         results = []
         num_threads = num_threads or dspy.settings.num_threads
 
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]
+        executor = ParallelExecutor(
+            num_threads=num_threads,
+            # process_example swallows per-example exceptions itself, so the executor's error
+            # path is effectively unreachable. Keep the cap out of reach anyway (e.g. a failing
+            # deepcopy) to preserve the previous behaviour: a failing example scores 0 and the
+            # run continues rather than aborting.
+            max_errors=len(devset) + 1,
+            compare_results=True,
+            # Disable straggler resubmission to preserve Avatar's at-most-once contract:
+            # each actor/metric runs exactly once per example, with no duplicate LM calls.
+            straggler_limit=0,
+        )
 
-            for future in tqdm(futures, total=total_examples, desc="Processing examples"):
-                result = future.result()
-                if return_outputs:
-                    example, prediction, score = result
-                    total_score += score
-                    results.append((example, prediction, score))
-                else:
-                    total_score += result
+        # Always request outputs so every worker returns a uniform (example, prediction, score);
+        # thread_safe_evaluator's own return_outputs only controls what it hands back to callers.
+        outcomes = executor.execute(lambda example: self.process_example(actor, example, True), devset)
+
+        for example, outcome in zip(devset, outcomes, strict=True):
+            if outcome is None:
+                # The example failed or was cancelled; count it as a zero score.
+                results.append((example, None, 0))
+            else:
+                _, prediction, score = outcome
+                total_score += score
+                results.append((example, prediction, score))
 
         avg_metric = total_score / total_examples
 
