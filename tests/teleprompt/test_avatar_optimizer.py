@@ -143,7 +143,11 @@ def test_process_example_is_the_per_example_override_point():
     """A subclass overriding process_example must still drive every example.
 
     process_example is public API, so the parallel-evaluation path has to route through it
-    rather than inlining the work; otherwise an override is silently ignored.
+    rather than inlining the work; otherwise an override is silently ignored. This pins the
+    existing signature -- ``process_example(self, actor, example, return_outputs)`` -- so a
+    subclass written against the pre-change API keeps working. That matters because an arity
+    mismatch would raise inside a worker, where the error is swallowed and surfaces only as a
+    silently zeroed score.
     """
 
     class CountingOptimizer(AvatarOptimizer):
@@ -152,12 +156,15 @@ def test_process_example_is_the_per_example_override_point():
             self.calls = []
             self.lock = threading.Lock()
 
-        def process_example(self, actor, example):
+        def process_example(self, actor, example, return_outputs):
             with self.lock:
                 self.calls.append(example.question)
-            example, prediction, score = super().process_example(actor, example)
+            result = super().process_example(actor, example, return_outputs)
             # Override the score to prove the subclass's return value is what gets used.
-            return example, prediction, score * 2
+            if return_outputs:
+                example, prediction, score = result
+                return example, prediction, score * 2
+            return result * 2
 
     optimizer = CountingOptimizer(_match_metric)
     devset = _devset(4)

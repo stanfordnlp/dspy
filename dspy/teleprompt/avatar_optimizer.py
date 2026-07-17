@@ -89,18 +89,26 @@ class AvatarOptimizer(Teleprompter):
         self.comparator = dspy.TypedPredictor(Comparator)
         self.feedback_instruction = dspy.Predict(FeedbackBasedInstruction)
 
-    def process_example(self, actor, example):
-        """Run a single example through a copy of ``actor`` and score it.
+    def process_example(self, actor, example, return_outputs):
+        actor = deepcopy(actor)
 
-        This is the per-example extension point: ``thread_safe_evaluator`` calls it once per
-        example from inside a worker, so overriding it here changes how every example is
-        handled. Exceptions are intentionally left uncaught -- the caller's ParallelExecutor
-        records the failure and scores the example 0.
-        """
-        actor_clone = deepcopy(actor)
-        prediction = actor_clone(**example.inputs().toDict())
-        score = self.metric(example, prediction)
-        return example, prediction, score
+        try:
+            prediction = actor(**example.inputs().toDict())
+            score = self.metric(example, prediction)
+
+            if return_outputs:
+                return example, prediction, score
+            else:
+                return score
+
+        except Exception as e:
+            print(e)
+
+            if return_outputs:
+                return example, None, 0
+            else:
+                return 0
+
 
     def thread_safe_evaluator(self, devset, actor, return_outputs=False, num_threads=None):
         total_score = 0
@@ -110,7 +118,10 @@ class AvatarOptimizer(Teleprompter):
 
         executor = ParallelExecutor(
             num_threads=num_threads,
-            # Never abort on per-example failures; failing examples are scored 0 (issue #10053).
+            # process_example swallows per-example exceptions itself, so the executor's error
+            # path is effectively unreachable. Keep the cap out of reach anyway (e.g. a failing
+            # deepcopy) to preserve the previous behaviour: a failing example scores 0 and the
+            # run continues rather than aborting.
             max_errors=len(devset) + 1,
             compare_results=True,
             # Disable straggler resubmission to preserve Avatar's at-most-once contract:
@@ -118,7 +129,9 @@ class AvatarOptimizer(Teleprompter):
             straggler_limit=0,
         )
 
-        outcomes = executor.execute(lambda example: self.process_example(actor, example), devset)
+        # Always request outputs so every worker returns a uniform (example, prediction, score);
+        # thread_safe_evaluator's own return_outputs only controls what it hands back to callers.
+        outcomes = executor.execute(lambda example: self.process_example(actor, example, True), devset)
 
         for example, outcome in zip(devset, outcomes, strict=True):
             if outcome is None:
