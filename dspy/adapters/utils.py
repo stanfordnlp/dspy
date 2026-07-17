@@ -143,6 +143,12 @@ def find_enum_member(enum, identifier):
     if identifier in enum.__members__:
         return enum[identifier]
 
+    # Adapters surface field values as text, so a non-string member value (e.g. an int-valued
+    # enum) arrives as its string form. Match against the stringified member value as a fallback.
+    for member in enum:
+        if str(member.value) == str(identifier):
+            return member
+
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
@@ -174,6 +180,18 @@ def parse_value(value, annotation):
 
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
+
+    # Optional/Union-wrapped enums (e.g. `Grade | None`) should resolve enum names and values the
+    # same way a bare enum does, instead of only matching the raw value through pydantic. Restrict
+    # to unions whose non-None members are all enums, to avoid altering mixed unions like `str | Grade`.
+    if origin in (Union, types.UnionType):
+        non_none_args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if non_none_args and all(isinstance(arg, enum.EnumMeta) for arg in non_none_args):
+            for enum_arg in non_none_args:
+                try:
+                    return find_enum_member(enum_arg, value)
+                except ValueError:
+                    pass
 
     if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
