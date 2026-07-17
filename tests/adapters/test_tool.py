@@ -1,4 +1,5 @@
 import asyncio
+import pickle
 from typing import Any
 
 import pytest
@@ -8,6 +9,8 @@ import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
 from dspy.clients.openai_format import to_openai_chat_request
 from dspy.core.types import LMMessage, LMRequest, LMToolResultPart
+from dspy.utils.dummies import DummyLM
+from dspy.utils.hasher import Hasher
 
 
 # Test fixtures
@@ -753,3 +756,97 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+# ---------------------------------------------------------------------------
+# Pickling a Tool whose func is a local closure (regression for #9998)
+# ---------------------------------------------------------------------------
+
+def _make_closure_tool():
+    """A Tool wrapping a local closure that captures state — the pattern that
+    is not picklable by default (``AttributeError: Can't get local object``)."""
+    class Client:
+        def lookup(self, city):
+            return {"paris": "France"}[city.lower()]
+
+    def make_tool(client):
+        def country_of(city: str) -> str:
+            """Return the country a city is in."""
+            return client.lookup(city)
+
+        return country_of
+
+    return dspy.Tool(make_tool(Client()))
+
+
+def module_level_double(x: int) -> int:
+    """Double a number."""
+    return x * 2
+
+
+def test_tool_with_closure_is_picklable():
+    tool = _make_closure_tool()
+    assert tool(city="Paris") == "France"  # live tool works
+
+    restored = pickle.loads(pickle.dumps(tool))
+    # Metadata survives the round-trip.
+    assert restored.name == "country_of"
+    assert restored.desc == "Return the country a city is in."
+    assert list((restored.args or {}).keys()) == ["city"]
+
+
+def test_restored_closure_tool_raises_when_called():
+    restored = pickle.loads(pickle.dumps(_make_closure_tool()))
+    with pytest.raises(RuntimeError, match="no longer callable"):
+        restored(city="Paris")
+
+
+def test_tool_hash_is_stable_across_closure_instances():
+    # Two tools built from distinct closure instances with identical metadata
+    # must hash identically, so hashing is deterministic across processes.
+    h1 = Hasher.hash((_make_closure_tool(),))
+    h2 = Hasher.hash((_make_closure_tool(),))
+    assert h1 == h2
+
+
+def test_module_level_tool_is_unaffected():
+    # A tool backed by a module-level function keeps its real func and stays
+    # fully callable after a pickle round-trip.
+    restored = pickle.loads(pickle.dumps(dspy.Tool(module_level_double)))
+    assert restored(x=21) == 42
+
+
+class _RepeatedCallModule(dspy.Module):
+    def __init__(self, signature):
+        super().__init__()
+        self.predictor = dspy.Predict(signature)
+
+    def forward(self, **kwargs):
+        self.predictor(**kwargs)
+        return self.predictor(**kwargs)
+
+
+def test_bootstrap_with_unpicklable_tool_demo():
+    # End-to-end: BootstrapFewShot seeds its demo shuffle by hashing the trace.
+    # With >1 trace carrying a closure-backed tool, the hash previously crashed
+    # (#9998). The Tool-level fix makes the whole compile succeed.
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    tool = _make_closure_tool()
+    example = dspy.Example(
+        question="Where is Paris?", tools=[tool], answer="France"
+    ).with_inputs("question", "tools")
+    dspy.configure(lm=DummyLM([{"answer": "France"}, {"answer": "France"}]))
+
+    compiled = dspy.BootstrapFewShot(
+        metric=lambda ex, pred, trace=None: pred.answer == ex.answer,
+        max_bootstrapped_demos=1,
+        max_labeled_demos=0,
+    ).compile(_RepeatedCallModule(ToolSignature), trainset=[example])
+
+    assert len(compiled.predictor.demos) == 1
+    # The live demo's tool is untouched and still callable.
+    assert compiled.predictor.demos[0].tools[0](city="Paris") == "France"
