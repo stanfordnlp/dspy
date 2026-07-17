@@ -1,14 +1,13 @@
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
 from typing import Callable
 
 from pydantic import BaseModel
-from tqdm import tqdm
 
 import dspy
 from dspy.predict.avatar import ActionOutput
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.parallelizer import ParallelExecutor
 
 DEFAULT_MAX_EXAMPLES = 10
 
@@ -90,26 +89,18 @@ class AvatarOptimizer(Teleprompter):
         self.comparator = dspy.TypedPredictor(Comparator)
         self.feedback_instruction = dspy.Predict(FeedbackBasedInstruction)
 
-    def process_example(self, actor, example, return_outputs):
-        actor = deepcopy(actor)
+    def process_example(self, actor, example):
+        """Run a single example through a copy of ``actor`` and score it.
 
-        try:
-            prediction = actor(**example.inputs().toDict())
-            score = self.metric(example, prediction)
-
-            if return_outputs:
-                return example, prediction, score
-            else:
-                return score
-
-        except Exception as e:
-            print(e)
-
-            if return_outputs:
-                return example, None, 0
-            else:
-                return 0
-
+        This is the per-example extension point: ``thread_safe_evaluator`` calls it once per
+        example from inside a worker, so overriding it here changes how every example is
+        handled. Exceptions are intentionally left uncaught -- the caller's ParallelExecutor
+        records the failure and scores the example 0.
+        """
+        actor_clone = deepcopy(actor)
+        prediction = actor_clone(**example.inputs().toDict())
+        score = self.metric(example, prediction)
+        return example, prediction, score
 
     def thread_safe_evaluator(self, devset, actor, return_outputs=False, num_threads=None):
         total_score = 0
@@ -117,17 +108,26 @@ class AvatarOptimizer(Teleprompter):
         results = []
         num_threads = num_threads or dspy.settings.num_threads
 
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]
+        executor = ParallelExecutor(
+            num_threads=num_threads,
+            # Never abort on per-example failures; failing examples are scored 0 (issue #10053).
+            max_errors=len(devset) + 1,
+            compare_results=True,
+            # Disable straggler resubmission to preserve Avatar's at-most-once contract:
+            # each actor/metric runs exactly once per example, with no duplicate LM calls.
+            straggler_limit=0,
+        )
 
-            for future in tqdm(futures, total=total_examples, desc="Processing examples"):
-                result = future.result()
-                if return_outputs:
-                    example, prediction, score = result
-                    total_score += score
-                    results.append((example, prediction, score))
-                else:
-                    total_score += result
+        outcomes = executor.execute(lambda example: self.process_example(actor, example), devset)
+
+        for example, outcome in zip(devset, outcomes, strict=True):
+            if outcome is None:
+                # The example failed or was cancelled; count it as a zero score.
+                results.append((example, None, 0))
+            else:
+                _, prediction, score = outcome
+                total_score += score
+                results.append((example, prediction, score))
 
         avg_metric = total_score / total_examples
 
