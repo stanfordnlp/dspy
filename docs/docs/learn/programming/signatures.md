@@ -235,6 +235,26 @@ predictor = dspy.Predict("number: int -> result: str")
 predictor(number="42")  # No warning
 ```
 
+## Reserved names
+
+A few names are reserved by DSPy and cannot be used as field names.
+
+**Reserved on every signature: `instructions`, `fields`, `input_fields`, `output_fields`, `signature`.** DSPy exposes
+these as properties on the signature class itself (that is how `MySignature.instructions` works), so a field of the
+same name would be hidden by the property and could never be read back. Creating such a signature raises a
+`TypeError`, whether you use the class-based or the inline form:
+
+```python
+dspy.Signature("question -> instructions")  # TypeError: ... collide with reserved DSPy signature attribute(s) ...
+```
+
+**Additionally reserved for `dspy.Predict` *input* fields: `lm`, `demos`, `config`, `signature`, `new_signature`.**
+`dspy.Predict` consumes these as keyword arguments (e.g. `predict(question=..., lm=my_lm)`), so an input field with
+one of these names would have its value swallowed and never reach the LM. Constructing the predictor raises a
+`ValueError`. Output fields are unaffected.
+
+In both cases the fix is to rename the field, for example `instructions` -> `instructions_text`.
+
 ## Using signatures to build modules & compiling them
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the only reason to use them!

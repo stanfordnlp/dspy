@@ -60,6 +60,8 @@ Our model doesn’t know we want a haiku, so it just makes a guess.
 
 Naming is the cheapest optimization in DSPy. A field called `research_request` will produce better completions than one called `request`, with no other changes. Signatures are easy to edit; take advantage.
 
+One constraint on naming: a handful of names are reserved by DSPy itself — `instructions`, `fields`, `input_fields`, `output_fields`, `signature`, and (for input fields) `lm`, `demos`, `config`, `new_signature`. DSPy raises an error naming the offending field if you use one, so you'll know right away; rename it (`instructions` → `instructions_text`) and carry on. See [Reserved names](../learn/programming/signatures.md#reserved-names).
+
 ## Typing your fields yields more reliable programs
 
 We can add more specificity to our task by *typing* our fields using the format `name: type`. For example, the signature `"location, mood, contains_pun: bool -> haiku"` accepts a boolean to indicate whether we want our poem to include a pun:
