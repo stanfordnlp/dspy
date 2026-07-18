@@ -60,20 +60,15 @@ def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
     return task_descriptions, context_blurbs
 
 
-def _short_repr(value: Any, max_len: int = 800) -> str:
-    s = str(value)
-    return s if len(s) <= max_len else s[: max_len - 3] + "..."
-
-
 def _render_prediction(prediction: Any) -> Any:
     if isinstance(prediction, FailedPrediction):
-        return f"FailedPrediction: {prediction.completion_text[:1000]}"
+        return f"FailedPrediction: {prediction.completion_text}"
     if isinstance(prediction, Prediction):
         try:
-            return {k: _short_repr(v) for k, v in prediction.items()}
+            return {k: str(v) for k, v in prediction.items()}
         except Exception:
             pass
-    return _short_repr(prediction)
+    return str(prediction)
 
 
 def _format_failures(records: list[dict[str, Any]]) -> str:
@@ -209,7 +204,7 @@ def code_reflective_records(eval_batch) -> list[dict[str, Any]]:
             score_val = raw_score
         records.append(
             {
-                "Inputs": {k: _short_repr(v) for k, v in example.inputs().items()},
+                "Inputs": {k: str(v) for k, v in example.inputs().items()},
                 "Generated Outputs": _render_prediction(prediction),
                 "Feedback": feedback or f"This trajectory got a score of {score_val}.",
             }
