@@ -77,6 +77,25 @@ def test_parse_value_literal():
         parse_value("invalid", Literal["option1", "option2"])
 
 
+def test_parse_value_literal_numeric():
+    # ChatAdapter/XMLAdapter always hand raw strings to parse_value, so numeric literal
+    # members (e.g. from `Literal[1, 2, 3]`) must be coercible from their plain-text form.
+    assert parse_value("1", Literal[1, 2, 3]) == 1
+    assert parse_value("3", Literal[1, 2, 3]) == 3
+    assert parse_value(2, Literal[1, 2, 3]) == 2
+
+    # Float literals
+    assert parse_value("1.5", Literal[1.5, 2.5]) == 1.5
+
+    # Mixed-type literals: string members should still be matched as strings
+    assert parse_value("yes", Literal["yes", "no", 1]) == "yes"
+    assert parse_value("1", Literal["yes", "no", 1]) == 1
+
+    # Out-of-range values must still raise
+    with pytest.raises(ValueError):
+        parse_value("4", Literal[1, 2, 3])
+
+
 def test_parse_value_union():
     # Test Union with None (Optional)
     assert parse_value("test", Optional[str]) == "test"

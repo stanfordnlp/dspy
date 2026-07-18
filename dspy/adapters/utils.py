@@ -170,6 +170,19 @@ def parse_value(value, annotation):
             if v in allowed:
                 return v
 
+            # The value may be a non-string literal member (e.g. an int or float) that the LM
+            # rendered as plain text, e.g. "3" for `Literal[1, 2, 3]`. ChatAdapter/XMLAdapter always
+            # hand raw strings to this function, so without this coercion such literals could never
+            # match `allowed` even when the LM's response is otherwise correct.
+            for allowed_value in allowed:
+                if isinstance(allowed_value, bool) or not isinstance(allowed_value, (int, float)):
+                    continue
+                try:
+                    if type(allowed_value)(v) == allowed_value:
+                        return allowed_value
+                except (ValueError, TypeError):
+                    continue
+
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
     if not isinstance(value, str):
