@@ -392,3 +392,37 @@ def test_parallel_executor_with_usage_tracker():
 
     # Parent tracker should remain unchanged (workers have independent copies)
     assert len(parent_tracker.usage_data) == 0
+
+
+def test_nested_usage_tracker():
+    """Test that nested usage trackers still reflect usage on the parent."""
+
+    def pretend_lm_call(prompt_tokens, completion_tokens):
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+        )
+
+    def subagent(prompt_tokens, completion_tokens):
+        with track_usage():  # subagent reports its own cost
+            pretend_lm_call(prompt_tokens, completion_tokens)
+        return prompt_tokens + completion_tokens
+
+    with track_usage() as orchestrator_cost:
+        pretend_lm_call(100, 10)
+        subagent(1000, 100)
+        subagent(500, 50)
+        pretend_lm_call(5, 1)
+
+    total_prompt_tokens = 100 + 1000 + 500 + 5
+    total_completion_tokens = 10 + 100 + 50 + 1
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }

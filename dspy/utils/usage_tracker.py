@@ -70,5 +70,11 @@ def track_usage() -> Generator[UsageTracker, None, None]:
     """Context manager for tracking LM usage."""
     tracker = UsageTracker()
 
+    parent = settings.usage_tracker
     with settings.context(usage_tracker=tracker):
-        yield tracker
+        try:
+            yield tracker
+        finally:
+            if parent is not None:
+                for lm, entries in tracker.usage_data.items():
+                    parent.usage_data[lm].extend(entries)
