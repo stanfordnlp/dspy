@@ -471,3 +471,235 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_recovers_from_adapter_parse_error():
+    # Regression test for https://github.com/stanfordnlp/dspy/issues/8377:
+    # the LM aperiodically emits a wrong section header (e.g. `tool_args`
+    # instead of `next_tool_args`); ReAct should feed the parse failure back
+    # into the trajectory and let the model self-correct, mirroring how tool
+    # execution errors are handled, instead of crashing the whole call.
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            # Wrong field name, exactly as reported in #8377 -> AdapterParseError.
+            {
+                "next_thought": "I need to add two numbers.",
+                "next_tool_name": "add",
+                "tool_args": {"a": 1, "b": 2},
+            },
+            # The model self-corrects on the next iteration.
+            {
+                "next_thought": "Retrying with the correct fields.",
+                "next_tool_name": "add",
+                "next_tool_args": {"a": 1, "b": 2},
+            },
+            {
+                "next_thought": "I have the sum, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "Added the numbers.", "c": "3"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    outputs = react(a=1, b=2)
+    traj = outputs.trajectory
+
+    assert outputs.c == 3
+    # The parse failure was recorded as a full 4-key step (preserving the
+    # trajectory shape truncate_trajectory relies on), reusing the fields that
+    # did parse and pointing out what was missing.
+    assert "could not be parsed" in traj["observation_0"]
+    assert "next_tool_args" in traj["observation_0"]
+    assert traj["thought_0"] == "I need to add two numbers."
+    assert traj["tool_name_0"] == "add"
+    assert traj["tool_args_0"] == {}
+    # ...and the loop continued: the next iteration executed the tool normally.
+    assert traj["tool_name_1"] == "add"
+    assert traj["observation_1"] == 3
+    assert traj["tool_name_2"] == "finish"
+
+
+def test_react_parse_error_every_iteration_falls_back_to_extract():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    max_iters = 3
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            # Every iteration produces an unparseable step.
+            {
+                "next_thought": "I need to add two numbers.",
+                "next_tool_name": "add",
+                "tool_args": {"a": 1, "b": 2},
+            },
+        ]
+        * max_iters
+        + [{"reasoning": "Could not run any tool.", "c": "3"}]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    outputs = react(a=1, b=2, max_iters=max_iters)
+    traj = outputs.trajectory
+
+    # No crash: the parse failure of every iteration is in the trajectory and
+    # the extract fallback still produced the outputs.
+    assert outputs.c == 3
+    for idx in range(max_iters):
+        assert "could not be parsed" in traj[f"observation_{idx}"]
+
+
+@pytest.mark.asyncio
+async def test_async_react_recovers_from_adapter_parse_error():
+    async def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to add two numbers.",
+                "next_tool_name": "add",
+                "tool_args": {"a": 1, "b": 2},
+            },
+            {
+                "next_thought": "Retrying with the correct fields.",
+                "next_tool_name": "add",
+                "next_tool_args": {"a": 1, "b": 2},
+            },
+            {
+                "next_thought": "I have the sum, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "Added the numbers.", "c": "3"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    outputs = await react.acall(a=1, b=2)
+    traj = outputs.trajectory
+
+    assert outputs.c == 3
+    assert "could not be parsed" in traj["observation_0"]
+    assert traj["tool_name_1"] == "add"
+    assert traj["observation_1"] == 3
+
+
+def test_react_parse_failure_preserves_trajectory_truncation_alignment():
+    # A parse-failure step must contribute the same four keys as a normal step,
+    # so truncate_trajectory (which pops keys in groups of four) stays aligned.
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to add two numbers.",
+                "next_tool_name": "add",
+                "tool_args": {"a": 1, "b": 2},
+            },
+            {
+                "next_thought": "Retrying with the correct fields.",
+                "next_tool_name": "add",
+                "next_tool_args": {"a": 1, "b": 2},
+            },
+            {
+                "next_thought": "I have the sum, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "Added the numbers.", "c": "3"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    traj = react(a=1, b=2).trajectory
+    assert len(traj) % 4 == 0
+
+    # Truncating drops the oldest step (the parse failure) as one whole unit,
+    # leaving the first real tool call intact and aligned.
+    truncated = react.truncate_trajectory(dict(traj))
+    assert truncated["thought_1"] == "Retrying with the correct fields."
+    assert truncated["tool_name_1"] == "add"
+    assert truncated["observation_1"] == 3
+
+
+def test_react_extract_parse_error_is_retried_with_feedback():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I have the answer, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            # The extraction step emits a wrong field name -> AdapterParseError.
+            {"reasoning": "Adding the numbers.", "d": "3"},
+            # The retry (with parse feedback in the prompt) self-corrects.
+            {"reasoning": "Adding the numbers.", "c": "3"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    outputs = react(a=1, b=2)
+    assert outputs.c == 3
+    # The prompt-only feedback is not stored in the returned trajectory.
+    assert "parse_feedback" not in outputs.trajectory
+
+
+def test_react_extract_parse_error_propagates_after_retry():
+    from dspy.utils.exceptions import AdapterParseError
+
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I have the answer, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            # The extraction step fails to parse twice: the error is real, surface it.
+            {"reasoning": "Adding the numbers.", "d": "3"},
+            {"reasoning": "Adding the numbers.", "d": "3"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    with pytest.raises(AdapterParseError):
+        react(a=1, b=2)
+
+
+def test_codeact_recovers_from_adapter_parse_error():
+    from dspy.predict import CodeAct
+
+    # No tools: keeps the test free of the Deno interpreter (tool registration
+    # is the only pre-loop interpreter use), while still exercising the loop.
+    program = CodeAct("question -> answer", tools=[], max_iters=2)
+    lm = DummyLM(
+        [
+            # Both iterations emit an unparseable step (wrong field name).
+            {"reasoning": "Thinking.", "code": "print(42)"},
+            {"reasoning": "Thinking.", "code": "print(42)"},
+            {"reasoning": "Done.", "answer": "42"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False))
+
+    outputs = program(question="What is 6*7?")
+    assert outputs.answer == "42"
+    assert "could not be parsed" in outputs.trajectory["observation_0"]
+    assert "could not be parsed" in outputs.trajectory["observation_1"]

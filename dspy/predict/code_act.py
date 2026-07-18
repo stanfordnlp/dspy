@@ -9,6 +9,7 @@ from dspy.predict.react import ReAct
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,15 @@ class CodeAct(ReAct, ProgramOfThought):
             trajectory = {}
             max_iters = kwargs.pop("max_iters", self.max_iters)
             for idx in range(max_iters):
-                code_data = self.codeact(trajectory=trajectory, **kwargs)
+                try:
+                    code_data = self.codeact(trajectory=trajectory, **kwargs)
+                except AdapterParseError as err:
+                    # Same failure class as dspy.ReAct (#8377): record the parse
+                    # failure as an observation and let the model self-correct.
+                    logger.warning(f"Failed to parse the LM response for the next step: {err}")
+                    trajectory[f"observation_{idx}"] = self._format_parse_failure_observation(err)
+                    continue
+
                 output = None
                 code, error = self._parse_code(code_data)
 
@@ -136,5 +145,45 @@ class CodeAct(ReAct, ProgramOfThought):
                 if code_data.finished:
                     break
 
-            extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
+            extract = self._call_extract_with_parse_retry(self.extractor, trajectory, **kwargs)
             return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def truncate_trajectory(self, trajectory):
+        """Truncate the oldest CodeAct iteration so the trajectory fits the context window.
+
+        CodeAct steps have a variable number of keys (1 on a parse/execution failure:
+        ``observation_i``; 2 on success: ``generated_code_i`` + ``code_output_i``), unlike
+        ReAct's fixed 4 keys per step. Popping a fixed ``keys[:4]`` slice (ReAct's behavior)
+        would cut across iteration boundaries and desynchronize the trajectory, so instead we
+        drop every key belonging to the earliest iteration index.
+
+        Users can override this method to implement their own truncation logic.
+        """
+        keys = list(trajectory.keys())
+        if not keys:
+            raise ValueError(
+                "The trajectory is empty, so it cannot be truncated to fit the context window."
+            )
+
+        # Non-indexed entries (e.g. the prompt-only "parse_feedback" key added by the extractor
+        # parse retry) are not iteration steps: skip them when computing indices and never pop them.
+        iteration_indices = {
+            int(key.rsplit("_", 1)[-1])
+            for key in keys
+            if key.rsplit("_", 1)[-1].isdigit()
+        }
+        if len(iteration_indices) < 2:
+            # Only one iteration is present; dropping it would leave no context (same spirit as
+            # ReAct's single-tool-call guard).
+            raise ValueError(
+                "The trajectory is too long so your prompt exceeded the context window, but it "
+                "cannot be truncated because it only contains a single iteration."
+            )
+
+        oldest = min(iteration_indices)
+        for key in keys:
+            suffix = key.rsplit("_", 1)[-1]
+            if suffix.isdigit() and int(suffix) == oldest:
+                trajectory.pop(key)
+
+        return trajectory

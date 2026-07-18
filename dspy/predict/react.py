@@ -5,7 +5,7 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.exceptions import ContextWindowExceededError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +92,44 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
+    def _format_parse_failure_observation(self, err: AdapterParseError) -> str:
+        """Build the trajectory observation fed back to the model after a parse failure.
+
+        Mirrors how tool execution errors are surfaced: the model sees what went
+        wrong and can self-correct on the next iteration (see issue #8377, where
+        models aperiodically emit e.g. `tool_args` instead of `next_tool_args`).
+        """
+        expected = ", ".join(err.signature.output_fields.keys())
+        message = f"Your previous response could not be parsed. Expected fields: [{expected}]"
+        if err.parsed_result is not None:
+            # Only the missing-fields parse failure reports what was found; a
+            # value-parse failure (e.g. invalid JSON in one field) does not.
+            message += f"; fields found: [{', '.join(err.parsed_result.keys()) or 'none'}]"
+        return f"{message}. Redo this step, producing every expected field exactly once with its exact field header."
+
+    def _record_parse_failure(self, trajectory: dict[str, Any], idx: int, err: AdapterParseError) -> None:
+        """Record an unparseable reasoning step as a full trajectory entry.
+
+        Writes all four keys of a normal step (preserving the four-keys-per-step
+        trajectory shape that `truncate_trajectory` relies on), reusing whatever
+        fields were successfully parsed and marking the rest.
+        """
+        parsed = err.parsed_result or {}
+        trajectory[f"thought_{idx}"] = parsed.get("next_thought", "[response could not be parsed]")
+        trajectory[f"tool_name_{idx}"] = parsed.get("next_tool_name", "[response could not be parsed]")
+        trajectory[f"tool_args_{idx}"] = parsed.get("next_tool_args", {})
+        trajectory[f"observation_{idx}"] = self._format_parse_failure_observation(err)
+
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            except AdapterParseError as err:
+                logger.warning(f"Failed to parse the LM response for the next step: {_fmt_exc(err)}")
+                self._record_parse_failure(trajectory, idx, err)
+                continue
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
@@ -114,7 +146,7 @@ class ReAct(Module):
             if pred.next_tool_name == "finish":
                 break
 
-        extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
+        extract = self._call_extract_with_parse_retry(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
@@ -123,6 +155,10 @@ class ReAct(Module):
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            except AdapterParseError as err:
+                logger.warning(f"Failed to parse the LM response for the next step: {_fmt_exc(err)}")
+                self._record_parse_failure(trajectory, idx, err)
+                continue
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
@@ -139,8 +175,34 @@ class ReAct(Module):
             if pred.next_tool_name == "finish":
                 break
 
-        extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
+        extract = await self._async_call_extract_with_parse_retry(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def _extract_retry_trajectory(self, trajectory, err: AdapterParseError):
+        """Return a prompt-only copy of the trajectory with parse-failure feedback appended.
+
+        The copy is used for a single retry of the extraction step; the stored
+        trajectory is left untouched so its shape stays consistent.
+        """
+        return {**trajectory, "parse_feedback": self._format_parse_failure_observation(err)}
+
+    def _call_extract_with_parse_retry(self, module, trajectory, **input_args):
+        try:
+            return self._call_with_potential_trajectory_truncation(module, trajectory, **input_args)
+        except AdapterParseError as err:
+            logger.warning(f"Failed to parse the LM response for the extraction step, retrying once: {_fmt_exc(err)}")
+            return self._call_with_potential_trajectory_truncation(
+                module, self._extract_retry_trajectory(trajectory, err), **input_args
+            )
+
+    async def _async_call_extract_with_parse_retry(self, module, trajectory, **input_args):
+        try:
+            return await self._async_call_with_potential_trajectory_truncation(module, trajectory, **input_args)
+        except AdapterParseError as err:
+            logger.warning(f"Failed to parse the LM response for the extraction step, retrying once: {_fmt_exc(err)}")
+            return await self._async_call_with_potential_trajectory_truncation(
+                module, self._extract_retry_trajectory(trajectory, err), **input_args
+            )
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
