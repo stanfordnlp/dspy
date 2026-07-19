@@ -21,10 +21,29 @@ if TYPE_CHECKING:
 
 @experimental
 class ReActV2(Module):
+    RESERVED_OUTPUT_FIELDS = {"history", "termination_reason"}
+    RESERVED_INPUT_FIELDS = {"history", "tools"}
+
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        # Validate that user signature does not use reserved output field names.
+        reserved_output_conflicts = self.RESERVED_OUTPUT_FIELDS & set(self.signature.output_fields)
+        if reserved_output_conflicts:
+            raise ValueError(
+                f"Output field(s) {sorted(reserved_output_conflicts)} are reserved by ReActV2 and cannot be used "
+                f"in the signature. Please rename them. Reserved names: {sorted(self.RESERVED_OUTPUT_FIELDS)}"
+            )
+
+        # Validate that user signature does not use reserved input field names.
+        reserved_input_conflicts = self.RESERVED_INPUT_FIELDS & set(self.signature.input_fields)
+        if reserved_input_conflicts:
+            raise ValueError(
+                f"Input field(s) {sorted(reserved_input_conflicts)} are reserved by ReActV2 and cannot be used "
+                f"in the signature. Please rename them. Reserved names: {sorted(self.RESERVED_INPUT_FIELDS)}"
+            )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}
