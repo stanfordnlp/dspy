@@ -41,3 +41,17 @@ def test_majority_with_no_majority():
     completions = [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}]
     result = majority(completions)
     assert result.completions[0]["answer"] == "2"  # The first completion is returned in case of a tie
+
+
+def test_majority_does_not_drop_article_answers():
+    # "A" normalizes to "" under SQuAD-style normalization (articles stripped);
+    # it must still count as a vote (common in multiple-choice A/B/C/D).
+    completions = [{"answer": "A"}, {"answer": "A"}, {"answer": "A"}, {"answer": "B"}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == "A"
+
+
+def test_majority_the_answer():
+    completions = [{"answer": "The"}, {"answer": "The"}, {"answer": "Paris"}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == "The"
