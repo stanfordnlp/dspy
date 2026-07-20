@@ -48,13 +48,14 @@ Available DSPy primitives:
 - `dspy.ReAct(signature_str, tools=[tool1, tool2])`, multi-step reasoning + tool
    use. `tools` is a list of plain Python callables or `dspy.Tool` instances.
 
-- `dspy.RLM("context, query -> output", max_iterations=10)`, Recursive Language
-   Model: the LLM writes Python code in a sandboxed REPL to programmatically
-   explore very large or structured inputs (long documents, big JSON blobs,
-   tables) and build up an answer iteratively. Use when one of the input fields
-   is too large or too structured for a single direct prompt. Optional kwargs:
-   `max_iterations` (REPL steps), `max_llm_calls` (sub-LLM calls), `sub_lm`
-   (cheaper LM for sub-queries), `tools` (extra callables for the REPL).
+- `dspy.RLM("context, query -> output")`, Recursive Language Model: the LLM writes
+   Python code in a sandboxed REPL to programmatically explore very large or
+   structured inputs (long documents, big JSON blobs, tables) and build up an answer
+   iteratively. Use when one of the input fields is too large or too structured for a
+   single direct prompt. The defaults are sensible; only pass a kwarg to override one.
+   Optional kwargs: `max_iters` (REPL steps, default 20), `max_llm_calls` (sub-LLM
+   calls, default 50), `sub_lm` (cheaper LM for sub-queries), `tools` (extra callables
+   for the REPL).
 
 - Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
   (1) any tools listed in the available context, in scope by name; and (2) tools you
