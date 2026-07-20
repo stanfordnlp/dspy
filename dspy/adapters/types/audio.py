@@ -8,6 +8,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.image import _allow_local_file_access
 
 try:
     import soundfile as sf
@@ -144,6 +145,12 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
         except Exception as e:
             raise ValueError(f"Malformed audio data URI: {e}")
     elif isinstance(audio, str) and os.path.isfile(audio):
+        # Block local file reads during LM output parsing (GHSA-frf5-486g-243f)
+        if not _allow_local_file_access.get():
+            raise ValueError(
+                f"Local file reads are disabled during LM output parsing (security, GHSA-frf5-486g-243f). "
+                f"Received path-like string: {audio!r}"
+            )
         a = Audio.from_file(audio)
         return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, str) and audio.startswith("http"):
