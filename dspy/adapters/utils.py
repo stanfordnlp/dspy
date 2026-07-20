@@ -9,6 +9,8 @@ from typing import Any, Literal, Union, get_args, get_origin
 import json_repair
 import pydantic
 from pydantic import TypeAdapter
+
+from dspy.adapters.types.image import disable_local_file_access
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import Type as DspyType
@@ -172,30 +174,34 @@ def parse_value(value, annotation):
 
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
-    if not isinstance(value, str):
-        return TypeAdapter(annotation).validate_python(value)
+    # Disable local file reads when constructing types from LM output.
+    # This prevents file exfiltration via untrusted model completions that
+    # contain filesystem paths (GHSA-frf5-486g-243f / #10067).
+    with disable_local_file_access():
+        if not isinstance(value, str):
+            return TypeAdapter(annotation).validate_python(value)
 
-    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-        # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
-        return TypeAdapter(annotation).validate_python(value)
+        if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
+            # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
+            return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
-    if candidate == "" and value != "":
-        try:
-            candidate = ast.literal_eval(value)
-        except (ValueError, SyntaxError):
-            candidate = value
-
-    try:
-        return TypeAdapter(annotation).validate_python(candidate)
-    except pydantic.ValidationError as e:
-        if _annotation_is_subclass(annotation, DspyType):
+        candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+        if candidate == "" and value != "":
             try:
-                # For dspy.Type, try parsing from the original value in case it has a custom parser
-                return TypeAdapter(annotation).validate_python(value)
-            except Exception:
-                raise e
-        raise
+                candidate = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                candidate = value
+
+        try:
+            return TypeAdapter(annotation).validate_python(candidate)
+        except pydantic.ValidationError as e:
+            if _annotation_is_subclass(annotation, DspyType):
+                try:
+                    # For dspy.Type, try parsing from the original value in case it has a custom parser
+                    return TypeAdapter(annotation).validate_python(value)
+                except Exception:
+                    raise e
+            raise
 
 
 def get_annotation_name(annotation):
