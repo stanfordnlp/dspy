@@ -30,12 +30,12 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, url: Any = None, **data):
+    def __init__(self, source: Any = None, **data):
         """Create an Image.
 
         Parameters
         ----------
-        url:
+        source:
             The image source. Supported values include
 
             - ``str``: HTTP(S)/GS URL or an encoded data URI
@@ -50,14 +50,16 @@ class Image(Type):
         :meth:`from_file` and :meth:`from_url`, respectively.
         """
 
-        if url is not None and "url" not in data:
-            # Support a positional argument while allowing ``url=`` in **data.
-            if isinstance(url, dict) and set(url.keys()) == {"url"}:
+        if source is not None and "url" in data:
+            raise TypeError("Image received both `source` and `url`; provide only one image source")
+
+        if source is not None:
+            # Support a positional source while retaining the Pydantic ``url`` field.
+            if isinstance(source, dict) and set(source.keys()) == {"url"}:
                 # Legacy dict form from previous model validator.
-                data["url"] = url["url"]
+                data["url"] = source["url"]
             else:
-                # ``url`` may be a string, bytes, or a PIL image.
-                data["url"] = url
+                data["url"] = source
 
         if "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.

@@ -123,7 +123,7 @@ Types adapters know how to render and parse beyond Python’s standard ones. Eac
 **`dspy.adapters.types.Type`**  
 The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type. Adapters wrap the output of `format()` with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` so multi-modal content can be inserted into a single message stream and later split out.
 
-**`dspy.Image(url)`**
+**`dspy.Image(source)`**
 
 URL reference, data URI, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Constructors and adapter parsing never access the filesystem or network. Use `Image.from_file(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource.
 

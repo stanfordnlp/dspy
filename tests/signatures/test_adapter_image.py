@@ -464,6 +464,16 @@ def test_image_repr():
     assert "base64" in str(pil_image)
 
 
+def test_image_constructor_supports_source_and_url_keywords():
+    source = "https://example.com/dog.jpg"
+
+    assert dspy.Image(source=source).url == source
+    assert dspy.Image(url=source).url == source
+
+    with pytest.raises(TypeError, match="both `source` and `url`"):
+        dspy.Image(source, url=source)
+
+
 def test_resource_factories_do_not_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")
