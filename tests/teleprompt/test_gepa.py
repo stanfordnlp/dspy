@@ -188,7 +188,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg/500px-Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg",
-                download=False,
             ),
             hour=8,
             minute=18,
@@ -196,7 +195,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Telechron_clock_2H07-Br_Administrator.JPG/960px-Telechron_clock_2H07-Br_Administrator.JPG",
-                download=False,
             ),
             hour=4,
             minute=16,
