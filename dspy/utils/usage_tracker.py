@@ -67,8 +67,20 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
+    """Context manager for tracking LM usage.
+
+    When nested, the inner tracker rolls its recorded usage up into the
+    enclosing tracker on exit so that outer scopes observe the full cost
+    of the workflow (fixes #10064).
+    """
     tracker = UsageTracker()
+    parent_tracker = settings.usage_tracker  # may be None if not nested
 
     with settings.context(usage_tracker=tracker):
         yield tracker
+
+    # Roll up into the enclosing tracker so outer scopes see nested usage.
+    if parent_tracker is not None:
+        for lm, entries in tracker.usage_data.items():
+            for entry in entries:
+                parent_tracker.add_usage(lm, entry)
