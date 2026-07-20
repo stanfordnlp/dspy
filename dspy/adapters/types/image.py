@@ -30,7 +30,7 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, url: Any = None, *, download: bool = False, verify: bool = True, **data):
+    def __init__(self, url: Any = None, **data):
         """Create an Image.
 
         Parameters
@@ -38,20 +38,16 @@ class Image(Type):
         url:
             The image source. Supported values include
 
-            - ``str``: HTTP(S)/GS URL or local file path
+            - ``str``: HTTP(S)/GS URL or an encoded data URI
             - ``bytes``: raw image bytes
             - ``PIL.Image.Image``: a PIL image instance
             - ``dict`` with a single ``{"url": value}`` entry (legacy form)
             - already encoded data URI
 
-        download:
-            Whether remote URLs should be downloaded to infer their MIME type.
-
-        verify:
-            Whether to verify SSL certificates when downloading images from URLs.
-            Set to False for self-signed certificates. Default is True.
-
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
+
+        Local files and remote resources must be loaded explicitly with
+        :meth:`from_file` and :meth:`from_url`, respectively.
         """
 
         if url is not None and "url" not in data:
@@ -65,7 +61,7 @@ class Image(Type):
 
         if "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.
-            data["url"] = encode_image(data["url"], download_images=download, verify=verify)
+            data["url"] = encode_image(data["url"])
 
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
@@ -79,22 +75,16 @@ class Image(Type):
         return [{"type": "image_url", "image_url": {"url": image_url}}]
 
     @classmethod
-    def from_url(cls, url: str, download: bool = False):
-        warnings.warn(
-            "Image.from_url is deprecated; use Image(url) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls(url, download=download)
+    def from_url(cls, url: str, verify: bool = True) -> "Image":
+        """Download an HTTP(S) resource and encode it as a data URI."""
+        if not _is_http_url(url):
+            raise ValueError(f"Image.from_url requires an HTTP(S) URL, received: {url}")
+        return cls(_encode_image_from_url(url, verify=verify))
 
     @classmethod
-    def from_file(cls, file_path: str):
-        warnings.warn(
-            "Image.from_file is deprecated; use Image(file_path) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls(file_path)
+    def from_file(cls, file_path: str) -> "Image":
+        """Read a local file and encode it as a data URI."""
+        return cls(_encode_image_from_file(file_path))
 
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
@@ -125,41 +115,38 @@ def is_url(string: str) -> bool:
         return False
 
 
-def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_images: bool = False, verify: bool = True) -> str:
+def _is_http_url(string: str) -> bool:
+    """Check if a string is an HTTP(S) URL."""
+    try:
+        result = urlparse(string)
+        return result.scheme in ("http", "https") and bool(result.netloc)
+    except ValueError:
+        return False
+
+
+def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
     """
-    Encode an image or file to a base64 data URI.
+    Normalize an in-memory image or preserve a remote image reference.
 
     Args:
-        image: The image or file to encode. Can be a PIL Image, file path, URL, or data URI.
-        download_images: Whether to download images from URLs.
-        verify: Whether to verify SSL certificates when downloading images.
+        image: A PIL Image, bytes, URL reference, data URI, or Image.
 
     Returns:
-        str: The data URI of the file or the URL if download_images is False.
+        str: A data URI or remote URL reference.
 
     Raises:
         ValueError: If the file type is not supported.
     """
     if isinstance(image, dict) and "url" in image:
-        # NOTE: Not doing other validation for now
-        return image["url"]
+        return encode_image(image["url"])
     elif isinstance(image, str):
         if image.startswith("data:"):
             # Already a data URI
             return image
-        elif os.path.isfile(image):
-            # File path
-            return _encode_image_from_file(image)
         elif is_url(image):
-            # URL
-            if download_images:
-                return _encode_image_from_url(image, verify=verify)
-            else:
-                # Return the URL as is
-                return image
+            return image
         else:
-            # Unsupported string format
-            raise ValueError(f"Unrecognized file string: {image}; If this file type should be supported, please open an issue.")
+            raise ValueError(f"Unrecognized image string: {image}. Local files must be loaded with Image.from_file().")
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
@@ -172,7 +159,6 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
     elif isinstance(image, Image):
         return image.url
     else:
-        print(f"Unsupported image type: {type(image)}")
         raise ValueError(f"Unsupported image type: {type(image)}")
 
 
@@ -192,7 +178,7 @@ def _encode_image_from_file(file_path: str) -> str:
 
 def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
     """Encode a file from a URL to a base64 data URI.
-    
+
     Args:
         image_url: The URL of the image to download.
         verify: Whether to verify SSL certificates. Set to False for self-signed certs.
@@ -242,8 +228,6 @@ def is_image(obj) -> bool:
         return True
     if isinstance(obj, str):
         if obj.startswith("data:"):
-            return True
-        elif os.path.isfile(obj):
             return True
         elif is_url(obj):
             return True
