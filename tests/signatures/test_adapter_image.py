@@ -507,3 +507,13 @@ def test_pil_image_rejects_download_parameter():
 
     with pytest.raises(pydantic.ValidationError, match="download"):
         dspy.Image(sample_pil, download=True)
+
+
+def test_from_file_missing_file():
+    with pytest.raises(ValueError, match="File not found"):
+        dspy.Image.from_file("/nonexistent/image.png")
+
+
+def test_unidentifiable_bytes_raise_value_error():
+    with pytest.raises(ValueError, match="could not be identified as an image"):
+        dspy.Image(b"not an image")

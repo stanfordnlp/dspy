@@ -44,6 +44,11 @@ class File(Type):
             raise TypeError(f"File expected at most 1 positional argument, received {len(args)}")
         if args:
             normalized = encode_file_to_dict(args[0])
+            overlap = sorted(set(normalized) & set(data))
+            if overlap:
+                raise TypeError(
+                    f"File received {', '.join(overlap)} from both the positional source and keyword arguments"
+                )
             normalized.update(data)
             data = normalized
         super().__init__(**data)
@@ -155,7 +160,7 @@ def encode_file_to_dict(file_input: Any) -> dict:
     Encode various file inputs to a dict with file_data, file_id, and/or filename.
 
     Args:
-        file_input: Can be bytes, a structured dictionary, or a File instance.
+        file_input: Can be bytes, a data URI string, a structured dictionary, or a File instance.
 
     Returns:
         dict: A dictionary with file_data, file_id, and/or filename keys.
@@ -176,7 +181,12 @@ def encode_file_to_dict(file_input: Any) -> dict:
         raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
 
     elif isinstance(file_input, str):
-        raise ValueError(f"String file inputs are not supported: {file_input}. Load local files with File.from_path().")
+        if file_input.startswith("data:"):
+            return {"file_data": file_input}
+        raise ValueError(
+            f"String file inputs must be data URIs, received: {file_input}. "
+            "Load local files with File.from_path()."
+        )
 
     elif isinstance(file_input, bytes):
         file_obj = File.from_bytes(file_input)

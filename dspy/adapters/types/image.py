@@ -14,6 +14,7 @@ from dspy.adapters.types.base_type import Type
 
 try:
     from PIL import Image as PILImage
+    from PIL import UnidentifiedImageError
 
     PIL_AVAILABLE = True
 except ImportError:
@@ -86,6 +87,8 @@ class Image(Type):
     @classmethod
     def from_file(cls, file_path: str) -> "Image":
         """Read a local file and encode it as a data URI."""
+        if not os.path.isfile(file_path):
+            raise ValueError(f"File not found: {file_path}")
         return cls(_encode_image_from_file(file_path))
 
     @classmethod
@@ -156,7 +159,10 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
         # Raw bytes
         if not PIL_AVAILABLE:
             raise ImportError("Pillow is required to process image bytes.")
-        img = PILImage.open(io.BytesIO(image))
+        try:
+            img = PILImage.open(io.BytesIO(image))
+        except UnidentifiedImageError as e:
+            raise ValueError(f"Bytes could not be identified as an image: {e}") from e
         return _encode_pil_image(img)
     elif isinstance(image, Image):
         return image.url

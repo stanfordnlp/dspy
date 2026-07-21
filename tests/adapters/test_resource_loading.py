@@ -99,3 +99,53 @@ def test_in_memory_resource_construction():
     assert image.url.startswith("data:image/")
     assert base64.b64decode(audio.data) == b"audio bytes"
     assert file.file_data.startswith("data:application/octet-stream;base64,")
+
+
+@pytest.mark.parametrize(
+    ("source", "match"),
+    [("clip.wav", r"Audio\.from_file"), ("https://example.com/a.wav", r"Audio\.from_url")],
+)
+def test_audio_positional_string_must_be_data_uri_even_with_format(source, match):
+    with pytest.raises(ValueError, match=match):
+        dspy.Audio(source, audio_format="wav")
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "data:audio/wav;base64,AA==",
+        {"data": "AA==", "audio_format": "wav"},
+        dspy.Audio(data="AA==", audio_format="wav"),
+    ],
+)
+def test_audio_rejects_audio_format_for_inputs_that_carry_one(source):
+    with pytest.raises(TypeError, match="already carries its format"):
+        dspy.Audio(source, audio_format="mp3")
+
+
+@pytest.mark.parametrize("source", [b"audio bytes", "data:audio/wav;base64,AA=="])
+def test_audio_rejects_sampling_rate_for_non_array_inputs(source):
+    with pytest.raises(TypeError, match="sampling_rate"):
+        dspy.Audio(source, sampling_rate=44100)
+
+
+def test_audio_from_url_passes_verify(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __init__(self):
+            self.content = b"remote bytes"
+            self.headers = {"Content-Type": "audio/wav"}
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr("dspy.adapters.types.audio.requests.get", fake_get)
+
+    dspy.Audio.from_url("https://example.com/a.wav", verify=False)
+
+    assert captured["verify"] is False

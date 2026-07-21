@@ -39,16 +39,15 @@ class Audio(Type):
             if "data" in data:
                 raise TypeError("Audio received data as both a positional and keyword argument")
             value = args[0]
-            sampling_rate = data.pop("sampling_rate", 16000)
+            sampling_rate = data.pop("sampling_rate", None)
             audio_format = data.pop("audio_format", None)
-            if audio_format is not None and isinstance(value, str) and not value.startswith("data:audio/"):
-                normalized = {"data": value, "audio_format": audio_format}
-            else:
-                normalized = encode_audio(
-                    value,
-                    sampling_rate=sampling_rate,
-                    format=audio_format or data.pop("format", "wav"),
+            if audio_format is not None and _carries_own_format(value):
+                raise TypeError(
+                    "Audio received audio_format alongside an input that already carries its format; provide only one"
                 )
+            if sampling_rate is not None and not hasattr(value, "shape"):
+                raise TypeError("Audio received sampling_rate for a non-array input; it only applies to array data")
+            normalized = encode_audio(value, sampling_rate=sampling_rate or 16000, format=audio_format or "wav")
             normalized.update(data)
             data = normalized
         super().__init__(**data)
@@ -71,14 +70,18 @@ class Audio(Type):
         return encode_audio(values)
 
     @classmethod
-    def from_url(cls, url: str) -> "Audio":
+    def from_url(cls, url: str, verify: bool = True) -> "Audio":
         """
         Download an audio file from URL and encode it as base64.
+
+        Args:
+            url: The URL of the audio to download.
+            verify: Whether to verify SSL certificates. Set to False for self-signed certs.
         """
         parsed_url = urlparse(url)
         if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
             raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
-        response = requests.get(url)
+        response = requests.get(url, verify=verify)
         response.raise_for_status()
         mime_type = response.headers.get("Content-Type", "audio/wav")
         if not mime_type.startswith("audio/"):
@@ -137,6 +140,15 @@ class Audio(Type):
     def __repr__(self) -> str:
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
+
+
+def _carries_own_format(value: Any) -> bool:
+    """Whether an audio input already carries its own format (making audio_format redundant)."""
+    if isinstance(value, Audio):
+        return True
+    if isinstance(value, dict) and "audio_format" in value:
+        return True
+    return isinstance(value, str) and value.startswith("data:audio/")
 
 
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:

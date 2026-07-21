@@ -169,6 +169,17 @@ def test_file_constructor_from_bytes():
     assert file_obj.filename == "test.txt"
 
 
+def test_file_constructor_from_data_uri():
+    data_uri = "data:text/plain;base64,aGVsbG8="
+    file_obj = dspy.File(data_uri)
+    assert file_obj.file_data == data_uri
+
+
+def test_file_constructor_rejects_conflicting_keyword():
+    with pytest.raises(TypeError, match="file_data"):
+        dspy.File(b"test content", file_data="data:text/plain;base64,aGVsbG8=")
+
+
 def test_invalid_file_string():
     with pytest.raises(ValueError, match=r"File\.from_path"):
         encode_file_to_dict("https://this_is_not_a_file_path")
