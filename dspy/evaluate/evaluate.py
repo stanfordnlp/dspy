@@ -81,6 +81,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
         **kwargs,
     ):
         """
@@ -97,6 +99,15 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (Optional[int]): Per-item timeout in seconds for the parallel executor's
+                straggler resubmission. ``None`` defers to ``ParallelExecutor``'s own default
+                (currently 120 seconds). Raise this when individual examples legitimately take
+                longer than the default, e.g. long reasoning chains or slow tool calls, so the
+                straggler logic does not resubmit work that has not actually hung. Pass ``0`` to
+                disable straggler resubmission entirely.
+            straggler_limit (Optional[int]): How many remaining stragglers trigger the
+                resubmission check. ``None`` defers to ``ParallelExecutor``'s default
+                (currently 3).
 
         """
         self.devset = devset
@@ -109,6 +120,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +138,8 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -153,19 +168,28 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
 
         tqdm.tqdm._instances.clear()
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            disable_progress_bar=not display_progress,
-            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
-            provide_traceback=self.provide_traceback,
-            compare_results=True,
-        )
+        executor_kwargs: dict[str, Any] = {
+            "num_threads": num_threads,
+            "disable_progress_bar": not display_progress,
+            "max_errors": self.max_errors if self.max_errors is not None else dspy.settings.max_errors,
+            "provide_traceback": self.provide_traceback,
+            "compare_results": True,
+        }
+        # Only forward the straggler knobs when the caller actually picked a value, so
+        # `ParallelExecutor`'s own defaults stay authoritative if they ever change.
+        if timeout is not None:
+            executor_kwargs["timeout"] = timeout
+        if straggler_limit is not None:
+            executor_kwargs["straggler_limit"] = straggler_limit
+        executor = ParallelExecutor(**executor_kwargs)
 
         def process_item(example):
             prediction = program(**example.inputs())
