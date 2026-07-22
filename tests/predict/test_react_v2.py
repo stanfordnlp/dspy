@@ -123,6 +123,36 @@ def test_react_v2_text_mode_accepts_wrapped_submit_arguments():
     assert pred.termination_reason == "submit"
 
 
+def test_react_v2_allows_outputs_named_like_runtime_metadata():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {
+                            "name": "submit",
+                            "args": {
+                                "answer": "done",
+                                "history": "user-visible history",
+                                "termination_reason": "user-visible reason",
+                            },
+                        }
+                    ]
+                ),
+            },
+        ]
+    )
+
+    react = dspy.ReActV2("question -> answer, history: str, termination_reason: str", tools=[])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = react(question="cats")
+
+    assert pred.answer == "done"
+    assert pred.history == "user-visible history"
+    assert pred.termination_reason == "user-visible reason"
+
+
 def test_react_v2_unknown_tool_observation_can_continue():
     lm = dspy.utils.DummyLM(
         [
