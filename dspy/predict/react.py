@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
 
 class ReAct(Module):
-    def __init__(self, signature: type["Signature"], tools: list[Callable], max_iters: int = 20):
+    def __init__(
+        self,
+        signature: type["Signature"],
+        tools: list[Callable],
+        max_iters: int = 20,
+        cache_tool_calls: bool = False,
+    ):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
         In this approach, the language model is iteratively provided with a list of tools and has
@@ -26,6 +32,8 @@ class ReAct(Module):
             signature: The signature of the module, which defines the input and output of the react module.
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
             max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
+            cache_tool_calls (bool): If True, cache tool call results via ``dspy.cache`` so identical
+                invocations return cached results. Useful during development iterations. Defaults to False.
 
         Examples:
 
@@ -40,6 +48,7 @@ class ReAct(Module):
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.cache_tool_calls = cache_tool_calls
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         tools = {tool.name: tool for tool in tools}
@@ -92,6 +101,40 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
+    def _call_tool(self, tool_name: str, tool_args: dict[str, Any]) -> Any:
+        """Call a tool, optionally caching the result.
+
+        The ``finish`` tool is never cached.  Exceptions are not cached.
+        """
+        if not self.cache_tool_calls or tool_name == "finish":
+            return self.tools[tool_name](**tool_args)
+
+        cache = dspy.cache
+        request = {"_fn_identifier": f"dspy.tool_call.{tool_name}", **tool_args}
+        cached = cache.get(request)
+        if cached is not None:
+            return cached
+        result = self.tools[tool_name](**tool_args)
+        cache.put(request, result)
+        return result
+
+    async def _acall_tool(self, tool_name: str, tool_args: dict[str, Any]) -> Any:
+        """Async call a tool, optionally caching the result.
+
+        The ``finish`` tool is never cached.  Exceptions are not cached.
+        """
+        if not self.cache_tool_calls or tool_name == "finish":
+            return await self.tools[tool_name].acall(**tool_args)
+
+        cache = dspy.cache
+        request = {"_fn_identifier": f"dspy.tool_call.{tool_name}", **tool_args}
+        cached = cache.get(request)
+        if cached is not None:
+            return cached
+        result = await self.tools[tool_name].acall(**tool_args)
+        cache.put(request, result)
+        return result
+
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
@@ -107,7 +150,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                trajectory[f"observation_{idx}"] = self._call_tool(pred.next_tool_name, pred.next_tool_args)
             except Exception as err:
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
@@ -132,7 +175,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
+                trajectory[f"observation_{idx}"] = await self._acall_tool(pred.next_tool_name, pred.next_tool_args)
             except Exception as err:
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 

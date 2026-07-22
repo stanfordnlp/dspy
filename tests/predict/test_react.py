@@ -471,3 +471,127 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+# =========================================================================
+# Tool call caching tests (cache_tool_calls parameter)
+# =========================================================================
+
+
+class TestCacheToolCalls:
+    """Tests for cache_tool_calls parameter."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_tool_cache(self):
+        """Reset dspy cache (memory + disk) before each caching test to ensure isolation."""
+        dspy.cache.reset_memory_cache()
+        if hasattr(dspy.cache.disk_cache, "clear"):
+            dspy.cache.disk_cache.clear()
+        yield
+        dspy.cache.reset_memory_cache()
+        if hasattr(dspy.cache.disk_cache, "clear"):
+            dspy.cache.disk_cache.clear()
+
+    def test_returns_cached_result(self):
+        """When cache_tool_calls=True, identical tool invocations should only execute once."""
+        call_count = 0
+
+        def counting_tool(city: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"Sunny in {city}"
+
+        react = dspy.ReAct("question -> answer", tools=[counting_tool], cache_tool_calls=True)
+        lm = DummyLM([
+            {"next_thought": "Check weather.", "next_tool_name": "counting_tool", "next_tool_args": {"city": "Tokyo"}},
+            {"next_thought": "Check again.", "next_tool_name": "counting_tool", "next_tool_args": {"city": "Tokyo"}},
+            {"next_thought": "Done.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Sunny.", "answer": "Sunny in Tokyo"},
+        ])
+        dspy.configure(lm=lm)
+        outputs = react(question="What is the weather in Tokyo?")
+
+        assert call_count == 1
+        assert outputs.trajectory["observation_0"] == "Sunny in Tokyo"
+        assert outputs.trajectory["observation_1"] == "Sunny in Tokyo"
+
+    def test_false_does_not_cache(self):
+        """Default cache_tool_calls=False should execute the tool every time."""
+        call_count = 0
+
+        def counting_tool(city: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"Sunny in {city}"
+
+        react = dspy.ReAct("question -> answer", tools=[counting_tool], cache_tool_calls=False)
+        lm = DummyLM([
+            {"next_thought": "Check.", "next_tool_name": "counting_tool", "next_tool_args": {"city": "Tokyo"}},
+            {"next_thought": "Again.", "next_tool_name": "counting_tool", "next_tool_args": {"city": "Tokyo"}},
+            {"next_thought": "Done.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Done.", "answer": "Sunny"},
+        ])
+        dspy.configure(lm=lm)
+        react(question="Weather?")
+
+        assert call_count == 2
+
+    def test_different_args_miss(self):
+        """Different arguments should produce cache misses even with caching enabled."""
+        call_count = 0
+
+        def weather_tool(city: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"Weather in {city}"
+
+        react = dspy.ReAct("question -> answer", tools=[weather_tool], cache_tool_calls=True)
+        lm = DummyLM([
+            {"next_thought": "Check Tokyo.", "next_tool_name": "weather_tool", "next_tool_args": {"city": "Tokyo"}},
+            {"next_thought": "Check Paris.", "next_tool_name": "weather_tool", "next_tool_args": {"city": "Paris"}},
+            {"next_thought": "Done.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Done.", "answer": "Weather varies"},
+        ])
+        dspy.configure(lm=lm)
+        outputs = react(question="Weather?")
+
+        assert call_count == 2
+        assert outputs.trajectory["observation_0"] == "Weather in Tokyo"
+        assert outputs.trajectory["observation_1"] == "Weather in Paris"
+
+    def test_finish_not_cached(self):
+        """The finish tool should never be cached."""
+        react = dspy.ReAct("question -> answer", tools=[lambda: None], cache_tool_calls=True)
+        lm = DummyLM([
+            {"next_thought": "Done.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Done.", "answer": "Done"},
+        ])
+        dspy.configure(lm=lm)
+        outputs = react(question="Hi")
+
+        assert outputs.trajectory["observation_0"] == "Completed."
+
+    def test_exception_not_cached(self):
+        """Failed tool calls should not be cached — the next identical call should retry."""
+        call_count = 0
+
+        def flaky_tool(x: int) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("Temporary failure")
+            return f"Result: {x}"
+
+        react = dspy.ReAct("question -> answer", tools=[flaky_tool], cache_tool_calls=True)
+        lm = DummyLM([
+            {"next_thought": "Try.", "next_tool_name": "flaky_tool", "next_tool_args": {"x": 42}},
+            {"next_thought": "Retry.", "next_tool_name": "flaky_tool", "next_tool_args": {"x": 42}},
+            {"next_thought": "Done.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Got it.", "answer": "Result: 42"},
+        ])
+        dspy.configure(lm=lm)
+        outputs = react(question="Test?")
+
+        assert call_count == 2
+        assert re.search(r"Temporary failure", outputs.trajectory["observation_0"])
+        assert outputs.trajectory["observation_1"] == "Result: 42"
