@@ -158,7 +158,7 @@ class Tool(Type):
                 "parameters": {
                     "type": "object",
                     "properties": self.args,
-                    "required": list(self.args.keys()),
+                    "required": [k for k, v in self.args.items() if "default" not in v],
                 },
             },
         }

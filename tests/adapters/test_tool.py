@@ -146,6 +146,19 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_tool_required_excludes_defaults():
+    def look_up(query: str, state_optional: str = "fresh") -> str:
+        """Look something up."""
+        return f"{query}:{state_optional}"
+
+    tool = Tool(look_up)
+    schema = tool.format_as_litellm_function_call()
+    required = schema["function"]["parameters"]["required"]
+
+    assert "query" in required
+    assert "state_optional" not in required  # has default, must not be required
+
+
 def test_tool_from_class():
     class Foo:
         def __init__(self, user_id: str):
