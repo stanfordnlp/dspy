@@ -111,13 +111,20 @@ class CodeProposalSignature(dspy.Signature):
     ``dspy.RLM(..., tools=[...])`` / ``dspy.ReAct(..., tools=[...])`` or call them directly
     (reference them by the exact names; do not import or redefine them). If ``available_context``
     is '(no extra context)', no tools were provided — don't reference any.
-    (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define
-    a documented function inside ``__init__``. Tools you author live in this source, so they are
-    optimized and persisted exactly like the rest of the code. You can ALWAYS call an authored
-    function directly from ``forward``. You may also pass it to ``dspy.RLM``/``dspy.ReAct`` via
-    ``tools=[...]`` UNLESS ``available_context`` says the module is sandboxed — in a sandbox, only
-    the provided tools may be handed to those sub-predictors, so call authored helpers directly in
-    ``forward`` instead.
+    (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define a
+    documented helper nested inside ``forward`` and call it directly. Authored helpers live in this
+    source, so they are optimized and persisted exactly like the rest of the code. They run in the
+    sandbox and cannot be handed to a bridged sub-predictor, so only the provided tools may be wired
+    into ``dspy.RLM``/``dspy.ReAct`` via ``tools=[...]``.
+
+    Optimize the predictors' INSTRUCTIONS, not just the code structure. Each predictor's
+    natural-language instructions live in this source — construct a predictor over
+    ``dspy.Signature("inputs -> outputs", "instructions")`` and refine those instructions from the
+    failing examples and feedback (add a clear task definition, domain knowledge the model lacked,
+    the required output format, and rules that prevent the observed errors). These predictors are
+    inside a dspy.Flex module, so this source is the ONLY place their prompts get optimized. See the primitives
+    catalog's "Writing and refining instructions" section for how. Fix instructions when a failure is about
+    WHAT the model should do or know; change the structure when it is about HOW steps are wired.
     """
 
     task_description: str = dspy.InputField(
@@ -137,7 +144,8 @@ class CodeProposalSignature(dspy.Signature):
         desc="A batch of failing examples and feedback. Diagnose them and revise the module to fix them."
     )
     revised_source: str = dspy.OutputField(
-        desc="The full revised module source: one `dspy.Module` subclass with `__init__` (predictors) and `forward`."
+        desc="The full revised module source: one `dspy.Module` subclass with `__init__` (predictors, "
+        'including any refined `dspy.Signature(..., "instructions")`) and `forward`.'
     )
 
 

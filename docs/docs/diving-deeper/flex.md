@@ -34,13 +34,13 @@ The reflection model authors code, and code can be wrong — a syntax error, a m
 
 A code candidate can bind cleanly and still raise mid-`forward` on some inputs — the model wrote code that works for most examples and throws on an edge case. Those examples drop out of trace capture, so `Flex` rebuilds the score list to full length by example index, scoring each dropped example at the failure score in its own slot. Without this, a gap would shift every later score onto the wrong example and corrupt GEPA's per-instance bookkeeping. Runtime-fragile candidates are penalized honestly, not silently misattributed.
 
-### 8. Generated code can run in-process or in a sandbox
+### 8. Generated code always runs in an interpreter, never in-process
 
-By default `Flex` binds `module_src` with a plain `exec` in the host process — fast, and fine when you trust the source. Pass an `interpreter` and the binding and `forward` run inside a sandbox instead: the optimizer-authored glue executes isolated, and only predictor construction and predictor calls bridge back to the host to make real LM calls. Because sandbox sessions are stateful and not thread-safe, supply a *zero-argument factory* so each parallel evaluation gets its own; a shared instance is unsafe under optimization and `Flex` warns about it. `max_predictor_calls` caps bridged LM calls per sandboxed `forward` as a runaway guard.
+`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only predictor construction and predictor calls bridge back to the host to make real LM calls. Sandbox sessions are stateful and not thread-safe, so the factory is called per rollout and each parallel evaluation gets its own; pass your own factory to customize the sandbox (grant filesystem/network access, or use another backend). `max_predictor_calls` caps bridged LM calls per `forward` as a runaway guard.
 
 ### 9. The code is state; the interpreter is a runtime dependency
 
-`module_src` is part of the module's serialized state, so saving an optimized program and loading it elsewhere restores the discovered code and its predictors. The interpreter is treated like the LM: a live runtime resource that isn't serialized. If you optimized with a sandbox, you re-supply the `interpreter` when you reconstruct the module before `load`. This mirrors how DSPy handles LMs — configuration travels with the program, live resources are wired up at load time.
+`module_src` is part of the module's serialized state, so saving an optimized program and loading it elsewhere restores the discovered code and its predictors. The interpreter is treated like the LM: a live runtime resource that isn't serialized. Reconstructing with `dspy.Flex(signature)` restores the default sandbox, so you only re-supply the `interpreter_factory` before `load` if you optimized with a customized one. This mirrors how DSPy handles LMs — configuration travels with the program, live resources are wired up at load time.
 
 ### 10. Flex is experimental and the interface is in flux
 
@@ -50,17 +50,17 @@ The class carries the `@experimental` decorator. The moving parts — the code p
 
 ### Defining and running a Flex
 
-**`dspy.Flex(signature, *, tools=None, interpreter=None, max_predictor_calls=100)`**
-Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Marks the instance `_code_optimizable`. With an `interpreter`, sets up a sandbox bridge instead of in-process binding. One instance carries one configuration.
+**`dspy.Flex(signature, *, tools=None, interpreter_factory=PythonInterpreter, max_predictor_calls=100)`**
+Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Marks the instance `_code_optimizable`, validates `interpreter_factory` (a zero-arg factory, defaulting to `dspy.PythonInterpreter`, exactly as `dspy.RLM`), and sets up the sandbox bridge. One instance carries one configuration.
 
 **`__call__(**inputs)` / `forward(**inputs)`**
-Runs the currently bound source. In-process, this is the exec'd class's `forward`; sandboxed, it runs inside the interpreter and bridges predictor calls back to the host. Returns a `dspy.Prediction` over the signature's output fields. Sandboxed execution accepts keyword inputs only.
+Runs the currently bound source inside the interpreter, bridging predictor calls back to the host. Returns a `dspy.Prediction` over the signature's output fields, and accepts keyword inputs only.
 
 **`module_src`**
 A read-only property holding the current implementation as source — one `dspy.Module` subclass. This is the value GEPA reads as the seed and overwrites with each accepted candidate. Print it to see what the optimizer discovered.
 
 **`close()` / context-manager use**
-Shuts down any sandbox sessions the `Flex` created. Safe to call repeatedly. Use `with dspy.Flex(...) as f:` or call `close()` explicitly when you pass an `interpreter`; the in-process default needs no cleanup.
+Shuts down any interpreter sessions the `Flex` created. Safe to call repeatedly. Since `Flex` always runs sandboxed, use `with dspy.Flex(...) as f:` or call `close()` explicitly to release the Deno subprocess.
 
 ### Optimizing with GEPA
 
@@ -78,16 +78,16 @@ Add `program_trace=None` as a sixth parameter to your metric and GEPA passes the
 **`tools=[...]`**
 Plain functions or `dspy.Tool` instances, referenced by name in the generated code, so each name must be a valid Python identifier. Providing tools makes the baseline a `dspy.RLM` and tells the code proposer the tools are in scope — to wire into `dspy.RLM`/`dspy.ReAct`, call directly, or supplement with its own inline helpers.
 
-**`interpreter=...`**
-A `CodeInterpreter` instance or, preferably, a zero-argument factory returning one. When set, generated code runs sandboxed. A factory gives each parallel evaluation its own session; a bare instance is shared and unsafe under optimization, which `Flex` warns about.
+**`interpreter_factory=...`**
+Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno), like `dspy.RLM`. Must be a zero-argument callable returning a fresh `CodeInterpreter`; each parallel evaluation gets its own session. As in `dspy.RLM`, a bare interpreter instance is not accepted — pass a factory.
 
 **`max_predictor_calls`**
-Caps bridged LM calls per sandboxed `forward` as a runaway guard. `None` disables it. Ignored without an `interpreter`.
+Caps bridged LM calls per `forward` as a runaway guard. `None` disables it.
 
 ### Saving and loading
 
 **`save(path)` / `load(path)` / `dump_state()` / `load_state(state)`**
-`module_src` travels in the serialized state, so loading restores the optimized code and rebuilds its predictors. The interpreter is not serialized; re-supply it in the constructor before `load` if you ran sandboxed.
+`module_src` travels in the serialized state, so loading restores the optimized code and rebuilds its predictors. The interpreter is not serialized; reconstructing with `dspy.Flex(signature)` restores the default sandbox, so re-supply it in the constructor before `load` only if you customized the `interpreter_factory`.
 
 ## Cross-links
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import dspy
-from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +134,7 @@ class BridgeRuntime:
     resolved by name when passed to a bridged sub-predictor; tools authored inside the generated module
     live in the sandbox. A code-executing sub-predictor (RLM/CodeAct/ProgramOfThought)
     gets a fresh interpreter from the same factory, so its inner code runs in the backend chosen for
-    Flex — except a shared bare instance, which it can't reuse (that would shut the session down after
-    ``forward``), so there it falls back to its own default sandbox. See ``_sub_interpreter_factory``.
+    Flex. See ``_sub_interpreter_factory``.
     """
 
     def __init__(self, flex: Any, factory: Callable[[], Any], max_predictor_calls: int | None = 100) -> None:
@@ -171,7 +170,7 @@ class BridgeRuntime:
             raise CodeInterpreterError("dspy.Flex interpreter has been closed")
         sess: _Session | None = getattr(self._local, "sess", None)
         if sess is None:
-            interp = self._factory()
+            interp = _create_interpreter(self._factory)
             interp.tools.update(self.bridge_tools())
             interp.tools.update(self._tool_callables())  # user tools callable by name in the sandbox
             with self._lock:
@@ -251,11 +250,6 @@ class BridgeRuntime:
         return value
 
     def _sub_interpreter_factory(self) -> Any:
-        """The Flex interpreter factory, handed to a bridged code-executing sub-predictor so its inner
-        code runs in the same backend chosen for Flex. The sub-predictor creates and tears down a fresh
-        interpreter per ``forward`` from this factory, isolating each rollout."""
-        if getattr(self._flex, "_interpreter_shared", False):
-            return None
         return self._factory
 
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:

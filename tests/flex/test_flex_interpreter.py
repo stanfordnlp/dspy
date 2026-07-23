@@ -1,8 +1,8 @@
-"""dspy.Flex(interpreter=...) runs generated code inside a sandbox via the run-in-interpreter bridge.
+"""dspy.Flex(interpreter_factory=...) runs generated code inside a sandbox via the run-in-interpreter bridge.
 
 Two layers of coverage:
 
-* Unit (no Deno): the interpreter is normalized to a factory; the host-side bridge callbacks
+* Unit (no Deno): the interpreter_factory is validated; the host-side bridge callbacks
   (``_construct``/``_call``) build real predictors on the host, attach them under their canonical
   names, are idempotent, and run via the configured LM. These exercise everything the sandbox would
   drive, without needing Deno.
@@ -13,10 +13,10 @@ Two layers of coverage:
 
 from __future__ import annotations
 
+import inspect
 import json
 import shutil
 import textwrap
-from unittest.mock import patch as mock_patch
 
 import pytest
 
@@ -53,40 +53,51 @@ class ShoutSig(dspy.Signature):
 # =============================================================================
 
 
-def test_no_interpreter_keeps_in_process_path() -> None:
+def test_default_interpreter_factory_is_python_interpreter() -> None:
+    # Like dspy.RLM, interpreter_factory defaults to dspy.PythonInterpreter (a class used as a
+    # zero-arg factory). Inspect the constructor default so this needs no Deno.
+    default = inspect.signature(Flex.__init__).parameters["interpreter_factory"].default
+    assert default is dspy.PythonInterpreter
+
+
+@deno_required
+def test_default_is_sandbox() -> None:
+    # With no interpreter_factory argument, Flex builds a PythonInterpreter sandbox (needs Deno).
     flex = Flex(Doubler)
-    assert flex._bridge is None
-    assert flex._interpreter_factory is None
-    # In-process baseline: with no tools, a single dspy.Predict.
-    assert flex.module_src and "dspy.Predict(" in flex.module_src
+    try:
+        assert flex._bridge is not None
+        assert flex._interpreter_factory is dspy.PythonInterpreter
+        assert isinstance(flex._interpreter_factory(), dspy.PythonInterpreter)
+    finally:
+        flex.close()
 
 
-def test_instance_is_wrapped_as_factory_with_warning() -> None:
-    mock = MockInterpreter()
-    with mock_patch("dspy.flex.flex.logger") as log:
-        flex = Flex(Doubler, interpreter=mock)
+def test_bare_instance_is_rejected() -> None:
+    # There is no in-process mode and no shared-instance mode: like dspy.RLM, the constructor takes a
+    # factory, not a live interpreter. Passing an instance is a TypeError.
+    with pytest.raises(TypeError):
+        Flex(Doubler, interpreter_factory=MockInterpreter())  # type: ignore[arg-type]
+
+
+def test_none_interpreter_factory_is_rejected() -> None:
+    # None used to mean "run in-process"; that path is gone, so None is now invalid.
+    with pytest.raises(TypeError):
+        Flex(Doubler, interpreter_factory=None)  # type: ignore[arg-type]
+
+
+def test_factory_is_used_as_is() -> None:
+    flex = Flex(Doubler, interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge is not None
-    assert flex._interpreter_factory is not None
-    # The factory yields the very same shared instance, and the user was warned about sharing.
-    assert flex._interpreter_factory() is mock
-    assert log.warning.called
-    assert "shared across all forward" in log.warning.call_args[0][0]
-
-
-def test_factory_is_used_as_is_without_warning() -> None:
-    with mock_patch("dspy.flex.flex.logger") as log:
-        flex = Flex(Doubler, interpreter=lambda: MockInterpreter())
-    assert flex._bridge is not None
-    assert not log.warning.called
+    assert callable(flex._interpreter_factory)
 
 
 def test_bad_interpreter_type_raises() -> None:
     with pytest.raises(TypeError):
-        Flex(Doubler, interpreter=123)  # type: ignore[arg-type]
+        Flex(Doubler, interpreter_factory=123)  # type: ignore[arg-type]
 
 
 def test_tools_plus_interpreter_is_supported() -> None:
-    flex = Flex(Doubler, tools=[shout], interpreter=lambda: MockInterpreter())
+    flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge is not None
     # the user tool is registered (name -> callable) so sandbox glue can call it by name
     assert flex._bridge._tool_callables()["shout"] is shout
@@ -100,11 +111,11 @@ def test_tools_plus_interpreter_is_supported() -> None:
 def _bridged_flex():
     # MockInterpreter doesn't execute Python, so eager init attaches nothing; we drive the host
     # bridge callbacks directly, exactly as the sandbox shim would.
-    return Flex(Doubler, interpreter=lambda: MockInterpreter())
+    return Flex(Doubler, interpreter_factory=lambda: MockInterpreter())
 
 
 def _bridged_flex_with(**kwargs):
-    return Flex(Doubler, interpreter=lambda: MockInterpreter(), **kwargs)
+    return Flex(Doubler, interpreter_factory=lambda: MockInterpreter(), **kwargs)
 
 
 def test_construct_attaches_real_predictor_under_canonical_name() -> None:
@@ -140,7 +151,7 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     # ReAct/ReActV2 are tool-calling agents: they run NO inner code (so take no interpreter) and call
     # named tools on the host. They just need whitelisting; the tools must be Flex-level to resolve.
     assert "ReAct" in bridge.BRIDGEABLE_KINDS and "ReActV2" in bridge.BRIDGEABLE_KINDS
-    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: MockInterpreter())
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     tools_payload = [{bridge.TOOL_MARKER: "shout"}]
     flex._bridge._construct("ReAct", "text: str -> out: str", "agent", {"tools": tools_payload})
     assert isinstance(flex.agent, dspy.ReAct)
@@ -165,7 +176,7 @@ def test_call_unknown_handle_raises() -> None:
 
 def test_tool_name_markers_resolve_to_real_tools() -> None:
     # The shim passes tools to a bridged sub-predictor by name; the host resolves them back.
-    flex = Flex(Doubler, tools=[shout], interpreter=lambda: MockInterpreter())
+    flex = Flex(Doubler, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     assert flex._bridge._decode_tools([{"__dspy_tool__": "shout"}]) == [shout]
     with pytest.raises(CodeInterpreterError):
         flex._bridge._decode_tools({"__dspy_tool__": "not_a_tool"})  # module-authored / unknown tool
@@ -282,7 +293,7 @@ def test_accepts_interpreter_factory_only_for_code_executing_kinds() -> None:
 
 def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
     # CodeAct requires function tools; `shout` is a Flex-level tool, resolvable on the host.
-    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: MockInterpreter())
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
     tools_payload = [{bridge.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
     flex._bridge._construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
     # The sub-predictor makes its per-forward interpreter from the Flex factory (the configured
@@ -299,16 +310,6 @@ def test_sub_interpreter_factory_makes_a_fresh_interpreter_per_call() -> None:
     a, b = factory(), factory()
     assert isinstance(a, MockInterpreter) and isinstance(b, MockInterpreter)
     assert a is not b  # so each forward is isolated in its own interpreter
-
-
-def test_shared_instance_is_not_handed_to_sub_predictors() -> None:
-    # A shared bare instance must NOT be inherited: a sub-predictor shuts its interpreter down after
-    # forward, which would tear down the shared Flex session. It falls back to its own default sandbox.
-    shared = MockInterpreter()
-    with mock_patch("dspy.flex.flex.logger"):  # silence the "shared instance" warning
-        flex = Flex(Doubler, interpreter=shared)
-    assert flex._interpreter_shared is True
-    assert flex._bridge._sub_interpreter_factory() is None
 
 
 # =============================================================================
@@ -340,7 +341,7 @@ COT_GLUE_MODULE = textwrap.dedent(
 @deno_required
 def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
-    flex = Flex(Doubler, interpreter=lambda: dspy.PythonInterpreter())
+    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     try:
         flex._bind_code(COT_GLUE_MODULE)
         # forward() runs entirely in the sandbox; self.solve(...) bridges to the host DummyLM, and the
@@ -348,9 +349,7 @@ def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
         out = flex(value=21)
         assert isinstance(out, dspy.Prediction)
         assert out.result == 42
-        # It really took the bridge path (no in-process forward bound), and the predictor is a real
-        # host object discoverable for optimization/serialization.
-        assert flex._forward_impl is None
+        # The predictor is a real host object discoverable for optimization/serialization.
         assert isinstance(flex.solve, dspy.ChainOfThought)
     finally:
         flex.close()
@@ -379,7 +378,7 @@ def _evil_read_module(host_path: str) -> str:
 @deno_required
 def test_bridged_program_survives_save_load(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
-    program = Flex(Doubler, interpreter=lambda: dspy.PythonInterpreter())
+    program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     path = tmp_path / "prog.json"
     try:
         program._bind_code(COT_GLUE_MODULE)
@@ -391,7 +390,7 @@ def test_bridged_program_survives_save_load(tmp_path) -> None:
     assert "interpreter" not in path.read_text()
 
     # Reconstruct with a fresh interpreter factory and load the saved code.
-    reloaded = Flex(Doubler, interpreter=lambda: dspy.PythonInterpreter())
+    reloaded = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     try:
         reloaded.load(path)
         assert reloaded.module_src and "self.solve" in reloaded.module_src
@@ -418,7 +417,7 @@ TOOL_GLUE_MODULE = textwrap.dedent(
 
 @deno_required
 def test_user_tool_is_callable_from_sandbox_glue() -> None:
-    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: dspy.PythonInterpreter())
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
     try:
         flex._bind_code(TOOL_GLUE_MODULE)
         # shout() runs on the host (bridged from the sandbox); no LM involved.
@@ -447,7 +446,7 @@ RUNAWAY_MODULE = textwrap.dedent(
 @deno_required
 def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "r", "result": "1"} for _ in range(50)]))
-    flex = Flex(Doubler, interpreter=lambda: dspy.PythonInterpreter(), max_predictor_calls=3)
+    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter(), max_predictor_calls=3)
     try:
         flex._bind_code(RUNAWAY_MODULE)
         with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
@@ -489,7 +488,7 @@ def test_bridged_codeact_runs_in_flex_sandbox() -> None:
     def backend_factory():
         return dspy.PythonInterpreter()
 
-    flex = Flex(ShoutSig, tools=[shout], interpreter=backend_factory)
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=backend_factory)
     try:
         flex._bind_code(CODEACT_MODULE)
         out = flex(text="hello")
@@ -530,7 +529,7 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
             ]
         )
     )
-    flex = Flex(ShoutSig, tools=[shout], interpreter=lambda: dspy.PythonInterpreter())
+    flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
     try:
         flex._bind_code(REACT_MODULE)
         out = flex(text="hello")
@@ -551,7 +550,7 @@ def test_adversarial_host_file_access_is_contained(tmp_path) -> None:
         value: int = dspy.InputField()
         result: str = dspy.OutputField()
 
-    flex = Flex(Leak, interpreter=lambda: dspy.PythonInterpreter())
+    flex = Flex(Leak, interpreter_factory=lambda: dspy.PythonInterpreter())
     try:
         flex._bind_code(_evil_read_module(str(secret)))
         out = flex(value=1)
@@ -560,3 +559,100 @@ def test_adversarial_host_file_access_is_contained(tmp_path) -> None:
         assert str(out.result).startswith("BLOCKED")
     finally:
         flex.close()
+
+
+@deno_required
+def test_nested_rlm_tool_provenance() -> None:
+    """A GEPA-authored RLM spawns a second RLM through a host tool, and a host-provided tool is
+    threaded down to both. Assert the trust boundary AND that each layer is a distinct interpreter:
+
+      - each layer runs in a Pyodide sandbox (its ``sys.platform`` is 'emscripten', not the host's);
+      - each layer is its OWN interpreter, not one shared sandbox. A global counter persists WITHIN
+        an interpreter but resets in a fresh one, so the Flex glue counts 1 then 2 in interp A, while
+        each nested agent sees 1 (a fresh namespace) — if they shared the glue's interpreter it would
+        read 3, then 4;
+      - the host-provided ``probe`` tool, wherever it is called from, executes in the HOST process.
+
+    A code-executing agent's REPL has no ``dspy`` shim, so the second RLM is spawned via a host tool
+    (``spawn_inner``) that constructs and runs it on the host, passing ``probe`` further down; only
+    that sub-agent's ``out`` string crosses back, so its trajectory never touches the Flex bridge.
+    """
+    import sys as _sys
+
+    host_platform = _sys.platform
+    assert host_platform != "emscripten"  # sanity: the test itself is the real host, not the sandbox
+    record: dict[str, dict[str, str]] = {}
+    host_seen: dict[str, str] = {}
+
+    def probe(layer: str, platform: str, count: str) -> str:
+        # Host-provided tool: runs in the host process. Records, per layer, the platform and the
+        # per-interpreter counter value that layer reported, plus the platform `probe` itself runs in.
+        record[layer] = {"platform": platform, "count": count}
+        host_seen["platform"] = __import__("sys").platform
+        return "ok"
+
+    def spawn_inner(task: str) -> str:
+        # Host tool that spawns a SECOND code-executing agent (a nested interpreter), passing the
+        # host `probe` tool down to it. Runs on the host; only the inner RLM's `out` string is
+        # returned, so nothing but a string crosses back.
+        inner = dspy.RLM("task: str -> out: str", tools=[probe])
+        return inner(task=task).out
+
+    class ProbeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        out: str = dspy.OutputField()
+
+    # Each agent bumps a global counter and reports it; a fresh interpreter starts the count at 1.
+    outer_code = (
+        "```python\nimport sys\ng = globals()\ng['_n'] = g.get('_n', 0) + 1\n"
+        "probe(layer='outer_rlm', platform=sys.platform, count=str(g['_n']))\n"
+        "spawn_inner(task='go')\nSUBMIT(out='outer')\n```"
+    )
+    inner_code = (
+        "```python\nimport sys\ng = globals()\ng['_n'] = g.get('_n', 0) + 1\n"
+        "probe(layer='inner_rlm', platform=sys.platform, count=str(g['_n']))\nSUBMIT(out='inner')\n```"
+    )
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {"reasoning": "probe here, then spawn the sub-agent", "code": outer_code},
+                {"reasoning": "probe from the sub-agent", "code": inner_code},
+            ]
+        )
+    )
+
+    MODULE = textwrap.dedent(
+        """
+        class ProbeModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.rlm = dspy.RLM("task: str -> out: str", tools=[probe, spawn_inner])
+
+            def forward(self, **inputs):
+                import sys
+                g = globals()
+                g["_n"] = g.get("_n", 0) + 1                                        # interp A -> 1
+                probe(layer="glue_1", platform=sys.platform, count=str(g["_n"]))
+                g["_n"] = g.get("_n", 0) + 1                                        # same interp -> 2
+                probe(layer="glue_2", platform=sys.platform, count=str(g["_n"]))
+                self.rlm(task=inputs["task"])
+                return dspy.Prediction(out="done")
+        """
+    ).strip()
+
+    with Flex(ProbeSig, tools=[probe, spawn_inner], interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
+        flex._bind_code(MODULE)
+        flex(task="go")
+
+    # Every layer ran inside a Pyodide sandbox, not the host process:
+    for layer in ("glue_1", "glue_2", "outer_rlm", "inner_rlm"):
+        assert record[layer]["platform"] == "emscripten", f"Failed at {layer}."
+    # The counter persists WITHIN the Flex glue's interpreter (1 then 2)...
+    assert record["glue_1"]["count"] == "1"
+    assert record["glue_2"]["count"] == "2"
+    # ...but each nested agent starts fresh at 1 — proving it is its OWN interpreter, not the glue's
+    # (which would read 3, then 4) and not each other's:
+    assert record["outer_rlm"]["count"] == "1"
+    assert record["inner_rlm"]["count"] == "1"
+    # The host-provided tool itself executed in the host process, wherever it was called from:
+    assert host_seen["platform"] == host_platform

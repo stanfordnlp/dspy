@@ -41,6 +41,11 @@ Available DSPy primitives:
 - `dspy.Predict("a, b -> c, d")`, one LM call. `result = self.p(a=x, b=y)` returns a
   `dspy.Prediction` object; the declared outputs are attributes on it:
   `result.c`, `result.d`. Signature strings use snake_case names.
+  Give any predictor task-specific INSTRUCTIONS by constructing it over a
+  `dspy.Signature("a, b -> c, d", "natural-language instructions ...")` instead of a bare
+  string.
+  You may optimize optimize these string instructions. See "Writing and refining instructions" 
+  below.
 
 - `dspy.ChainOfThought("a -> b")`, like Predict but adds an implicit `reasoning`
    output field; useful when the answer benefits from explicit step-by-step thought.
@@ -58,15 +63,13 @@ Available DSPy primitives:
    for the REPL).
 
 - Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
-  (1) any tools listed in the available context, in scope by name; and (2) tools you
-  AUTHOR yourself — define a plain function (with a docstring and type hints so the model
-  knows how to call it) inside `__init__`. Create your own tools whenever a sub-step needs a
-  capability the provided tools don't cover: deterministic lookups, parsing/formatting,
-  calculators, validators, retrieval helpers, etc.
-  An authored function can ALWAYS be called directly from `forward`. You may ALSO pass it to 
-  `dspy.ReAct`/`dspy.RLM` via `tools=[...]` UNLESS the available context says this module runs 
-  in a sandbox — in a sandbox, only the provided (in-scope-by-name) tools can be handed to 
-  those sub-predictors, so call your authored helpers directly in `forward` instead.
+  (1) any tools listed in the available context, in scope by name — ONLY these provided tools may
+  be handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` / `dspy.RLM(..., tools=[...])`;
+  and (2) helpers you AUTHOR yourself — when a sub-step needs a capability the provided tools don't
+  cover (deterministic lookups, parsing/formatting, calculators, validators, retrieval helpers,
+  etc.), define a plain function (with a docstring and type hints) nested inside `forward` and CALL
+  IT DIRECTLY. This code runs in a sandbox, so an authored helper cannot be handed to a bridged
+  sub-predictor — keep authored helpers to direct calls in `forward`.
 
 - `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
    bare function and it is wrapped for you.
@@ -80,6 +83,12 @@ Rules you MUST follow:
 
 - Define every predictor in `__init__` as `self.<name> = dspy.Predict(...)` and call
   it in `forward` as `self.<name>(...)`.
+
+- Give predictors INSTRUCTIONS, don't just rely on field names. When the feedback shows
+  the model needs guidance, construct the predictor over
+  `dspy.Signature("inputs -> outputs", "instructions")` and refine those instructions from the
+  failing examples (see "Writing and refining instructions"). These instructions are optimized
+  ONLY through this source, so improving them is as important as changing the code.
 
 - Do NOT access dunder attributes (anything matching `__*__`). Use the public API.
 
@@ -111,6 +120,34 @@ Rules you MUST follow:
     * `dspy.RLM` when an input field is a large blob (long document, big JSON,
       multi-table data) that doesn't fit naturally in a single prompt — RLM
       lets the LLM explore it iteratively via a sandboxed REPL.
+
+Writing and refining instructions:
+
+The predictors you define are prompts, and a predictor's natural-language instructions — the
+second argument to `dspy.Signature("inputs -> outputs", "instructions")` — are a PRIMARY thing
+you optimize here, exactly like the code structure. Because these predictors live inside this
+dspy.Flex module, this source is the ONLY place their instructions get optimized, so rewriting
+them well matters as much as picking the right primitive. Don't leave a predictor on a bare
+signature string once the feedback shows the model needs guidance.
+
+When you revise, mine the failing examples and feedback the way a dedicated instruction
+optimizer would:
+
+- Read every failing input, output, and its feedback, and diagnose WHY each one failed.
+- Categorize what the feedback is telling you:
+    * Error patterns — recurring mistakes to explicitly prevent.
+    * Success patterns — what worked and should be preserved/reinforced.
+    * Domain-knowledge gaps — task-specific facts, definitions, or conventions the model
+      lacked; state them IN the instruction, since the model won't otherwise have them.
+    * Task-specific guidance — required output format, edge cases, and constraints.
+- Fold those findings into each affected predictor's instructions: a clear task definition,
+  the domain knowledge it needs, explicit rules that prevent the observed errors, the exact
+  output format required, and precise, actionable language. Keep instructions specific to the
+  task but NEVER paste in example answers or magic constants from the data.
+
+Rule of thumb: fix a predictor's INSTRUCTIONS when a failure is about WHAT the model should do
+or know; change the CODE structure (which predictors, how they're wired, what runs in plain
+Python) when the failure is about HOW the steps fit together. The best revision often does both.
 
 Common patterns (study these before writing `forward`):
 
@@ -165,5 +202,25 @@ Common patterns (study these before writing `forward`):
                return "-".join(part for part in cleaned.split("-") if part)
 
            return dspy.Prediction(slug=slugify(inputs["title"]))
+   ```
+
+6) Put task guidance in a predictor's INSTRUCTIONS, not only in the field names, and refine
+   them from feedback. Give the signature a second argument spelling out the rules the failures
+   revealed (definitions, output format, error-prevention), without pasting in example answers.
+
+   ```
+   class ClassifyModule(dspy.Module):
+       def __init__(self):
+           super().__init__()
+           self.classify = dspy.Predict(dspy.Signature(
+               "ticket: str -> category: str",
+               "Classify the support ticket into exactly one of: billing, bug, feature, other. "
+               "Choose 'bug' only for a defect in existing behavior; a request for new behavior "
+               "is 'feature'. Reply with the lowercase category word and nothing else."
+           ))
+
+       def forward(self, **inputs):
+           out = self.classify(ticket=inputs["ticket"])
+           return dspy.Prediction(category=out.category.strip().lower())
    ```
 """

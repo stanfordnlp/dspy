@@ -1,24 +1,13 @@
 from __future__ import annotations
 
 import copy
-import logging
-import types
 from typing import Any, Callable
 
-import dspy
 from dspy.flex.ctx import FlexContext
-from dspy.primitives.code_interpreter import CodeInterpreter
+from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.module import Module
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.utils.annotation import experimental
-
-logger = logging.getLogger(__name__)
-
-
-def _exec_source(source: str, context_names: dict[str, Any] | None = None) -> dict[str, Any]:
-    code = compile(source, filename="<flex>", mode="exec")
-    globals_ns: dict[str, Any] = dict(context_names or {})
-    exec(code, globals_ns)
-    return globals_ns
 
 
 @experimental(version="3.3.0b2")
@@ -31,21 +20,18 @@ class Flex(Module):
     source — a single ``dspy.Module`` subclass, exposed as ``module_src`` — into decomposed predictors
     plus plain Python instead of only tuning instructions.
 
-    Pass ``interpreter`` to run the generated code inside a sandbox rather than with in-process
-    ``exec``. The optimizer-authored glue (control flow, string work, imports) runs isolated; only
-    predictor construction and predictor calls bridge back to the host, which makes the real LM
-    calls. Give a zero-arg factory (``interpreter=lambda: dspy.PythonInterpreter()``) so parallel
-    evaluations each get their own session; a bare instance is shared, and Flex warns about it. The
-    interpreter is a runtime dependency like the LM: it is not serialized, so re-supply it before
-    ``load``. Any ``CodeInterpreter`` backend works — see ``dspy/flex/bridge.py``.
+    The optimizer-authored code runs inside an interpreter. ``Flex`` never
+    runs it in the host Python process. ``interpreter_factory`` defaults to ``dspy.PythonInterpreter``
+    (Deno/Pyodide) and must be a zero-argument callable returning a new ``CodeInterpreter``.
+    The optimizer-authored glue runs isolated; only provided-tool calls, predictor construction,
+    and predictor calls bridge back to the host, which makes the real LM calls.
 
     Args:
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
-        interpreter: A ``CodeInterpreter`` instance or zero-arg factory. When set, generated code
-            runs in the sandbox.
-        max_predictor_calls: Cap on bridged LM calls per sandboxed ``forward`` (a runaway guard);
-            ``None`` disables it. Ignored without an ``interpreter``.
+        interpreter_factory: Zero-argument callable returning a ``CodeInterpreter`` for each forward
+            pass. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
+        max_predictor_calls: Cap on bridged LM calls per ``forward``; ``None`` disables it.
     """
 
     # dspy.GEPA reads this marker (duck-typed) to know it may rewrite the module's code.
@@ -56,7 +42,7 @@ class Flex(Module):
         signature: Any,
         *,
         tools: list[Any] | None = None,
-        interpreter: CodeInterpreter | Callable[[], CodeInterpreter] | None = None,
+        interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
         max_predictor_calls: int | None = 100,
     ):
         super().__init__()
@@ -69,44 +55,16 @@ class Flex(Module):
 
         self._module_src: str | None = None
         self._attached_names: list[str] = []
-        self._forward_impl: Any = None
 
-        self._interpreter_factory = self._normalize_interpreter(interpreter)
-        # A bare instance is shared across forward() calls, so it can't be handed to a sub-predictor
-        # that shuts its interpreter down after forward (see BridgeRuntime._sub_interpreter_factory).
-        self._interpreter_shared = isinstance(interpreter, CodeInterpreter)
-        self._max_predictor_calls = max_predictor_calls
         self._bridge: Any = None
-        if self._interpreter_factory is not None:
-            from dspy.flex.bridge import BridgeRuntime
+        _validate_interpreter_factory(interpreter_factory)
+        self._interpreter_factory = interpreter_factory
+        self._max_predictor_calls = max_predictor_calls
 
-            self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
+        from dspy.flex.bridge import BridgeRuntime
 
+        self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
         self._bind_code(self._baseline_src())
-
-    @staticmethod
-    def _normalize_interpreter(
-        interpreter: CodeInterpreter | Callable[[], CodeInterpreter] | None,
-    ) -> Callable[[], CodeInterpreter] | None:
-        """Normalize an interpreter instance-or-factory to a zero-arg factory (or ``None``)."""
-        if interpreter is None:
-            return None
-        # Check for an instance before a callable: an interpreter may itself be callable, but it's
-        # an instance to wrap, not a factory to use directly.
-        if isinstance(interpreter, CodeInterpreter):
-            logger.warning(
-                "dspy.Flex received a CodeInterpreter instance; it will be shared across all forward() "
-                "calls. PythonInterpreter is not thread-safe and is stateful, so this is unsafe under "
-                "parallel evaluation/optimization. Pass a zero-arg factory "
-                "(interpreter=lambda: dspy.PythonInterpreter(...)) for isolation."
-            )
-            return lambda: interpreter
-        if callable(interpreter):
-            return interpreter
-        raise TypeError(
-            "interpreter must be a CodeInterpreter instance or a zero-arg callable returning one, "
-            f"got {type(interpreter).__name__}"
-        )
 
     @property
     def signature(self) -> Any:
@@ -132,8 +90,7 @@ class Flex(Module):
     def _baseline_src(self) -> str:
         """Starting source: one predictor over the whole signature, wrapped in a ``dspy.Module``.
 
-        Uses ``dspy.RLM`` when tools are provided, so the baseline can call them through its REPL;
-        otherwise a single ``dspy.Predict``, which runs with just an LM and no code interpreter.
+        Uses ``dspy.RLM`` when tools are provided; otherwise a single ``dspy.Predict``.
         """
         cls: Any = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
@@ -161,61 +118,28 @@ class Flex(Module):
         return f"{base}Module"
 
     def _bind_code(self, module_src: str) -> None:
-        """Bind ``module_src``: in-process ``exec`` by default, or via the sandbox bridge when an
-        ``interpreter`` was provided. Either way the resulting predictors are attached onto ``self``."""
+        """Bind ``module_src``: The sandbox constructs the predictors and bridges them back to attach onto ``self``.
+        ``forward`` runs in the sandbox."""
         for old_name in self._attached_names:
             if hasattr(self, old_name):
                 delattr(self, old_name)
         self._attached_names = []
 
-        if self._bridge is not None:
-            self._bind_code_bridged(module_src)
-            return
-
-        ctx_names = self._flex_ctx.context_names()
-        ctx_names["dspy"] = dspy
-
-        ns = _exec_source(module_src, context_names=ctx_names)
-        impl_cls = _find_module_class(ns)
-        forward_fn = impl_cls.__dict__.get("forward")
-        if not callable(forward_fn):
-            raise RuntimeError("module_src's dspy.Module subclass must define a `forward` method")
-
-        impl = impl_cls()  # runs __init__, constructing predictors only
-        baseline_keys = _bare_module_keys()
-        for key, value in list(impl.__dict__.items()):
-            if key in baseline_keys:
-                continue  # internal dspy.Module bookkeeping, not user-defined state
-            setattr(self, key, value)
-            self._attached_names.append(key)
-
-        self._forward_impl = types.MethodType(forward_fn, self)
-        self._module_src = module_src
-
-    def _bind_code_bridged(self, module_src: str) -> None:
-        """Bind ``module_src`` for sandboxed execution: the host never ``exec``s the source. The
-        sandbox constructs predictors and bridges them back to attach onto ``self``, and ``forward``
-        runs in the sandbox. We build eagerly so ``named_predictors()``/``load_state`` see them.
-        """
-        self._forward_impl = None  # the bridge runs forward, not an in-process method
         self._bridge.bind(module_src)
         self._module_src = module_src
         self._bridge.ensure_initialized()
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
-        """Run the bound ``forward`` (in-process, or inside the sandbox when an interpreter is set)."""
-        if self._bridge is not None:
-            if args:
-                raise TypeError("dspy.Flex with an interpreter accepts keyword inputs only")
-            return self._bridge.forward(kwargs)
-        if self._forward_impl is None:
-            raise RuntimeError(f"dspy.Flex {self._name!r}: no implementation bound.")
-        return self._forward_impl(*args, **kwargs)
+        """Run the bound ``forward`` inside the interpreter."""
+        if args:
+            raise TypeError("dspy.Flex accepts keyword inputs only")
+        return self._bridge.forward(kwargs)
 
     def close(self) -> None:
-        """Shut down any sandbox interpreter sessions this Flex created. Safe to call repeatedly."""
-        if self._bridge is not None:
-            self._bridge.shutdown()
+        """Shut down any interpreter sessions this Flex created."""
+        bridge = getattr(self, "_bridge", None)
+        if bridge is not None:
+            bridge.shutdown()
 
     def __enter__(self):
         return self
@@ -230,7 +154,7 @@ class Flex(Module):
             pass
 
     def __deepcopy__(self, memo):
-        # Each copy needs its own sandbox sessions. Sharing `_bridge` by reference would let a
+        # Each copy needs its own interpreter sessions. Sharing `_bridge` by reference would let a
         # throwaway copy's __del__ tear down the original's live session, so copy everything else and
         # give the copy a fresh session-less bridge that reuses the already-copied predictors.
         new = self.__class__.__new__(self.__class__)
@@ -243,7 +167,7 @@ class Flex(Module):
             except Exception:
                 setattr(new, key, value)
         new._bridge = None
-        if new._interpreter_factory is not None and new._module_src is not None:
+        if new._module_src is not None:
             from dspy.flex.bridge import BridgeRuntime
 
             bridge = BridgeRuntime(new, new._interpreter_factory, new._max_predictor_calls)
@@ -252,24 +176,3 @@ class Flex(Module):
                 bridge._registry = dict(self._bridge._registry)
             new._bridge = bridge
         return new
-
-
-def _find_module_class(ns: dict[str, Any]) -> type:
-    """Find the generated ``dspy.Module`` subclass in an exec'd namespace."""
-    candidates = [v for v in ns.values() if isinstance(v, type) and issubclass(v, Module) and v is not Module]
-    defined = [c for c in candidates if "forward" in c.__dict__]
-    chosen = defined or candidates
-    if not chosen:
-        raise RuntimeError("module_src must define a dspy.Module subclass with a `forward` method")
-    return chosen[0]
-
-
-_BARE_MODULE_KEYS: set[str] | None = None
-
-
-def _bare_module_keys() -> set[str]:
-    """Instance ``__dict__`` keys a bare ``dspy.Module`` carries; ``_bind_code`` copies only the extra ones."""
-    global _BARE_MODULE_KEYS
-    if _BARE_MODULE_KEYS is None:
-        _BARE_MODULE_KEYS = set(Module().__dict__.keys())
-    return _BARE_MODULE_KEYS
