@@ -48,6 +48,12 @@ class TogetherProvider(Provider):
         return model.startswith("together_ai/")
 
     @staticmethod
+    def _remove_provider_prefix(model: str) -> str:
+        # Together's API wants the bare model name, so strip DSPy's "together_ai/" routing prefix.
+        provider_prefix = "together_ai/"
+        return model.replace(provider_prefix, "")
+
+    @staticmethod
     def finetune(
         job: "TrainingJobTogether",
         model: str,
@@ -55,6 +61,7 @@ class TogetherProvider(Provider):
         train_data_format: TrainDataFormat | str | None = "chat",
         train_kwargs: dict[str, Any] | None = None,
     ) -> str:
+        model = TogetherProvider._remove_provider_prefix(model)
         train_kwargs = train_kwargs or {}
 
         # --- Step 1: normalize the format label, then validate the data matches it ---

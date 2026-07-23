@@ -42,3 +42,6 @@ def test_finetune_returns_prefixed_model_name(monkeypatch):
 
     # 4. It should return the fine-tuned model's name, DSPy-prefixed.
     assert result == "together_ai/my-model"
+
+    # 5. What went OUT: create() should get the BARE model name, "together_ai/" prefix stripped.
+    assert fake_client.fine_tuning.create.call_args.kwargs["model"] == "meta-llama/Llama-3-8b"
