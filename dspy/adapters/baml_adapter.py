@@ -61,9 +61,9 @@ def _render_type_str(
 
     # Literal[T1, T2, ...]
     if origin is Literal:
-        # Only string members are quoted; ints, bools, and None render bare
-        # so the schema shown to the LLM matches how the value is emitted.
-        return " or ".join(f'"{arg}"' if isinstance(arg, str) else str(arg) for arg in args)
+        return " or ".join(
+            f'"{arg}"' if isinstance(arg, str) else "null" if arg is None else str(arg) for arg in args
+        )
 
     # list[T]
     if origin is list:

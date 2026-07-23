@@ -193,6 +193,7 @@ def test_baml_adapter_handles_non_string_literals():
         status: Literal["active", "inactive"]
         priority: Literal[1, 2, 3]
         enabled: Literal[True, False]
+        mode: Literal["auto", None]
 
     class TestSignature(dspy.Signature):
         input: str = dspy.InputField()
@@ -206,6 +207,8 @@ def test_baml_adapter_handles_non_string_literals():
     # ...but int and bool literals must NOT be quoted (previously rendered as "1" or "2" or "3").
     assert "priority: 1 or 2 or 3," in schema
     assert "enabled: True or False," in schema
+    # None renders as JSON null (not Python None), matching Optional's "or null".
+    assert 'mode: "auto" or null,' in schema
 
 
 def test_baml_adapter_handles_lists_with_bracket_notation():
