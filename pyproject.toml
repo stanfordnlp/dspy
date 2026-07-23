@@ -40,6 +40,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
+chromadb = ["chromadb>=0.4.0"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]

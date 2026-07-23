@@ -6,7 +6,7 @@ try:
     import chromadb
 except ImportError as err:
     raise ImportError(
-        "The 'chromadb' extra is required to use ChromadbRM. Install it with `pip install dspy-ai[chromadb]`",
+        "The 'chromadb' extra is required to use ChromadbRM. Install it with `pip install dspy[chromadb]`",
     ) from err
 
 
