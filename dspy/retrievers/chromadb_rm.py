@@ -1,6 +1,5 @@
 import dspy
 from dspy.dsp.utils import dotdict
-from dspy.primitives.prediction import Prediction
 
 try:
     import chromadb
@@ -51,7 +50,7 @@ class ChromadbRM(dspy.Retrieve):
         self._chromadb_collection = self._chromadb_client.get_collection(name=collection_name)
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: str | list[str], k: int | None = None, **kwargs) -> Prediction:
+    def forward(self, query_or_queries: str | list[str], k: int | None = None, **kwargs) -> list[dotdict]:
         """Search with ChromaDB for the top k passages for the given query or queries.
 
         Args:
@@ -59,7 +58,7 @@ class ChromadbRM(dspy.Retrieve):
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
 
         Returns:
-            dspy.Prediction: An object containing the retrieved passages.
+            list[dotdict]: One dotdict per retrieved passage, each with a `long_text` field.
         """
         k = k if k is not None else self.k
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
