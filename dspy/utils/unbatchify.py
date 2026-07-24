@@ -57,8 +57,9 @@ class Unbatchify:
             futures = []
             start_time = time.time()
             while len(batch) < self.max_batch_size and (time.time() - start_time) < self.max_wait_time:
+                remaining_time = self.max_wait_time - (time.time() - start_time)
                 try:
-                    input_item, future = self.input_queue.get(timeout=self.max_wait_time)
+                    input_item, future = self.input_queue.get(timeout=max(remaining_time, 0))
                     batch.append(input_item)
                     futures.append(future)
                 except queue.Empty:
