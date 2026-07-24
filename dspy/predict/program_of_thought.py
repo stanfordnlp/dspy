@@ -162,7 +162,7 @@ class ProgramOfThought(Module):
             return code, "Error: Code format is not correct."
         lines = code_block.split("\n")
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
-        if last_line_match and len(lines) > 1:
+        if last_line_match:
             code_block += "\n" + last_line_match.group(1)
         return code_block, None
 
