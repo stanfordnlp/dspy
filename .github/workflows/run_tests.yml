@@ -150,6 +150,12 @@ jobs:
             -p 11434:11434 \
             -v "$GITHUB_WORKSPACE/ollama-data:/root/.ollama" \
             ollama/ollama:0.31.2
+          # Some GitHub runners are Sapphire-Rapids-class machines with AMX. llama.cpp's
+          # AMX-repacked weight path segfaults there during model load (llama-server dies
+          # with SIGSEGV in warm-up), while all non-AMX runners pass. Removing the AMX
+          # backend variant makes ggml's autodetection fall back to the icelake kernels
+          # that every other runner already uses.
+          docker exec ollama rm /usr/lib/ollama/libggml-cpu-sapphirerapids.so
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
       - name: Pull LLM
         if: steps.cache-ollama.outputs.cache-hit != 'true'
