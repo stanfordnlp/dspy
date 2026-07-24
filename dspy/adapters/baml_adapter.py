@@ -18,6 +18,17 @@ COMMENT_SYMBOL = "#"
 INDENTATION = "  "
 
 
+def _render_literal_member(member: Any) -> str:
+    """Render a Literal member as the JSON value the model is expected to emit."""
+    if isinstance(member, str):
+        return f'"{member}"'
+    if isinstance(member, bool):
+        return "true" if member else "false"
+    if member is None:
+        return "null"
+    return str(member)
+
+
 def _render_type_str(
     annotation: Any,
     depth: int = 0,
@@ -61,9 +72,7 @@ def _render_type_str(
 
     # Literal[T1, T2, ...]
     if origin is Literal:
-        return " or ".join(
-            f'"{arg}"' if isinstance(arg, str) else "null" if arg is None else str(arg) for arg in args
-        )
+        return " or ".join(_render_literal_member(arg) for arg in args)
 
     # list[T]
     if origin is list:

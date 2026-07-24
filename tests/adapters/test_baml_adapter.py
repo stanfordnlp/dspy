@@ -206,7 +206,7 @@ def test_baml_adapter_handles_non_string_literals():
     assert 'status: "active" or "inactive",' in schema
     # ...but int and bool literals must NOT be quoted (previously rendered as "1" or "2" or "3").
     assert "priority: 1 or 2 or 3," in schema
-    assert "enabled: True or False," in schema
+    assert "enabled: true or false," in schema
     # None renders as JSON null (not Python None), matching Optional's "or null".
     assert 'mode: "auto" or null,' in schema
 
