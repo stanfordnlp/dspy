@@ -51,7 +51,7 @@ class TogetherProvider(Provider):
     def _remove_provider_prefix(model: str) -> str:
         # Together's API wants the bare model name, so strip DSPy's "together_ai/" routing prefix.
         provider_prefix = "together_ai/"
-        return model.replace(provider_prefix, "")
+        return model.removeprefix(provider_prefix)
 
     @staticmethod
     def finetune(

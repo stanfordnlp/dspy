@@ -14,6 +14,13 @@ def test_is_provider_model():
     assert TogetherProvider.is_provider_model("openai/my-together_ai-clone") is False
 
 
+def test_remove_provider_prefix_strips_only_leading_prefix():
+    # Normal case: the "together_ai/" routing prefix is stripped off the front.
+    assert TogetherProvider._remove_provider_prefix("together_ai/meta-llama/Llama-3-8b") == "meta-llama/Llama-3-8b"
+    # Edge case: a "together_ai/" appearing mid-string is left alone (only the leading prefix is removed).
+    assert TogetherProvider._remove_provider_prefix("org/together_ai/model") == "org/together_ai/model"
+
+
 def test_status_returns_none_before_job_starts():
     # No job started yet (job_id is None) → status() returns None instead of hitting the API.
     assert TrainingJobTogether().status() is None
