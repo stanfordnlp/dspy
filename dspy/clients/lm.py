@@ -654,7 +654,47 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         text = request.pop("text", {})
         request["text"] = {**text, "format": response_format}
 
+    # Convert `tools` from Chat Completions format to Responses API flattened shape.
+    if "tools" in request:
+        request["tools"] = [
+            _chat_tool_to_responses_tool(t) for t in request["tools"]
+        ]
+
+    # Convert `tool_choice` object form from Chat to Responses shape.
+    # String values ("auto", "required", "none") pass through unchanged.
+    if isinstance(request.get("tool_choice"), dict):
+        request["tool_choice"] = _chat_tool_choice_to_responses(request["tool_choice"])
+
     return request
+
+
+def _chat_tool_to_responses_tool(t: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Chat Completions tool definition to Responses API format.
+
+    Chat format (produced by the native-FC adapter):
+        {"type": "function", "function": {name, description, parameters, strict}}
+
+    Responses format:
+        {"type": "function", name, description, parameters, strict}
+
+    Passes already-flat / hosted tools through unchanged.
+    """
+    if t.get("type") == "function" and "function" in t:
+        t = dict(t)  # copy to avoid mutating the caller's tool dict
+        fn = t.pop("function")
+        t.update(fn)  # hoist name/description/parameters/strict to top level
+    return t
+
+
+def _chat_tool_choice_to_responses(tc: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Chat Completions tool_choice object to Responses API format.
+
+    Chat object form:    {"type": "function", "function": {"name": "X"}}
+    Responses form:      {"type": "function", "name": "X"}
+    """
+    if tc.get("type") == "function" and "function" in tc:
+        tc = {"type": "function", "name": tc["function"]["name"]}
+    return tc
 
 
 def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
