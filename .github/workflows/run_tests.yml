@@ -9,6 +9,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   workflow-lint:
     name: Lint GitHub Actions Workflows
@@ -99,16 +103,12 @@ jobs:
         run: |
           uv sync --dev -p .venv --extra dev
           uv pip list
-      - name: Run lint with tests
-        uses: chartboost/ruff-action@e18ae971ccee1b2d7bbef113930f00c670b78da4 # v1
-        with:
-          args: check --fix-only
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/
+        run: uv run -p .venv pytest -vv -n auto --dist worksteal tests/
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra and deno tests
-        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno
+        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
   
   llm_call_test:
     name: Run Tests with Real LM
@@ -201,15 +201,11 @@ jobs:
           cache-dependency-glob: |
             **/pyproject.toml
             **/uv.lock
-      - name: Create and activate virtual environment
+      - name: Build
+        run: uv build
+      - name: Install built package
         run: |
           uv venv .venv
-          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
-      - name: Install dependencies
-        run: uv sync --dev -p .venv --extra dev
-      - name: Build
-        run: uv run -p .venv python -m build
-      - name: Install built package
-        run: uv pip install dist/*.whl -p .venv
+          uv pip install dist/*.whl -p .venv
       - name: Test import dspy
-        run: uv run -p .venv python -c "import dspy"
+        run: .venv/bin/python -c "import dspy"
