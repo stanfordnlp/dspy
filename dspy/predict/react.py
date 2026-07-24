@@ -172,7 +172,7 @@ class ReAct(Module):
         Users can override this method to implement their own truncation logic.
         """
         keys = list(trajectory.keys())
-        if len(keys) < 4:
+        if len(keys) <= 4:
             # Every tool call has 4 keys: thought, tool_name, tool_args, and observation.
             raise ValueError(
                 "The trajectory is too long so your prompt exceeded the context window, but the trajectory cannot be "
