@@ -123,14 +123,17 @@ Types adapters know how to render and parse beyond Python’s standard ones. Eac
 **`dspy.adapters.types.Type`**  
 The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type. Adapters wrap the output of `format()` with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` so multi-modal content can be inserted into a single message stream and later split out.
 
-**`dspy.Image(url, download=False, verify=True)`**  
-URL, local path, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). `download=True` fetches the image and base64-encodes it, useful when the LM provider can’t reach the URL.
+**`dspy.Image(source)`**
 
-**`dspy.Audio(data, audio_format)`**  
-Base64 audio data plus format string (`"wav"`, `"mp3"`). Renders as the provider’s audio content block.
+URL reference, data URI, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Constructors and adapter parsing never access the filesystem or network. Use `Image.from_file(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource.
 
-**`dspy.File(file_data=None, file_id=None, filename=None)`**  
-Either a data URI or a file ID (some providers preupload files and reference them by ID).
+**`dspy.Audio(source)`**
+
+A data URI, in-memory bytes, or array data; raw base64 must be passed as `Audio(data=..., audio_format=...)`. Renders as the provider’s audio content block. Use `Audio.from_file(path)` or `Audio.from_url(url)` for resource loading.
+
+**`dspy.File(file_data=None, file_id=None, filename=None)`**
+
+Either in-memory bytes, a data URI, or a file ID (some providers preupload files and reference them by ID). Use `File.from_path(path)` to read a local file.
 
 **`dspy.Code(code, language="python")`**  
 Code with a class-level `language` parameter. `dspy.Code["java"]` produces a Code subclass typed for Java. `format()` returns the raw string — no wrapper, no fencing.

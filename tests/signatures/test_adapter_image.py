@@ -1,5 +1,6 @@
 import os
 import tempfile
+import warnings
 from io import BytesIO
 
 import pydantic
@@ -24,7 +25,7 @@ def sample_pil_image():
 @pytest.fixture
 def sample_dspy_image_download():
     url = "https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg"
-    return dspy.Image(url, download=True)
+    return dspy.Image.from_url(url)
 
 
 @pytest.fixture
@@ -343,8 +344,8 @@ def test_pdf_url_support():
     """Test support for PDF files from URLs"""
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
 
-    # Create a dspy.Image object from the PDF URL with download=True
-    pdf_image = dspy.Image(pdf_url, download=True)
+    # Download the PDF into a dspy.Image data URI.
+    pdf_image = dspy.Image.from_url(pdf_url)
 
     # The data URI should contain application/pdf in the MIME type
     assert "data:application/pdf" in pdf_image.url
@@ -381,7 +382,7 @@ def test_different_mime_types():
 
     for file_type, url in file_urls.items():
         # Download and encode
-        encoded = encode_image(url, download_images=True)
+        encoded = dspy.Image.from_url(url).url
 
         # Check for correct MIME type in the encoded data - using 'in' instead of startswith
         # to account for possible parameters in the MIME type
@@ -402,7 +403,7 @@ def test_mime_type_from_response_headers():
     assert "pdf" in expected_mime_type.lower()
 
     # Encode with download to test MIME type from headers
-    encoded = encode_image(pdf_url, download_images=True)
+    encoded = dspy.Image.from_url(pdf_url).url
 
     # The encoded data should contain the correct MIME type
     assert "application/pdf" in encoded
@@ -422,7 +423,7 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image(tmp_file_path)
+        pdf_image = dspy.Image.from_file(tmp_file_path)
 
         # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url
@@ -463,15 +464,30 @@ def test_image_repr():
     assert "base64" in str(pil_image)
 
 
-def test_from_methods_warn(tmp_path):
-    """Deprecated from_* methods emit warnings"""
+def test_image_constructor_supports_source_and_url_keywords():
+    source = "https://example.com/dog.jpg"
+
+    assert dspy.Image(source=source).url == source
+    assert dspy.Image(url=source).url == source
+
+    with pytest.raises(TypeError, match="both `source` and `url`"):
+        dspy.Image(source, url=source)
+
+
+def test_resource_factories_do_not_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")
 
-    with pytest.warns(DeprecationWarning):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
+        response.raise_for_status = lambda: None
+        monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
         dspy.Image.from_url("https://example.com/dog.jpg")
-    with pytest.warns(DeprecationWarning):
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
         dspy.Image.from_file(str(tmp_file))
+
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
     with pytest.warns(DeprecationWarning):
         dspy.Image.from_PIL(sample_pil)
@@ -482,22 +498,22 @@ def test_invalid_string_format():
     invalid_string = "this_is_not_a_url_or_file"
 
     # Should raise a ValueError and not pass the string through
-    with pytest.raises(ValueError, match="Unrecognized") as warning_info:
-        image = dspy.Image(invalid_string)
+    with pytest.raises(ValueError, match="Unrecognized"):
+        dspy.Image(invalid_string)
 
-def test_pil_image_with_download_parameter():
-    """Test behavior when PIL image is passed with download=True"""
+
+def test_pil_image_rejects_download_parameter():
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
 
-    # PIL image should be encoded regardless of download parameter
-    image_no_download = dspy.Image(sample_pil)
-    image_with_download = dspy.Image(sample_pil, download=True)
+    with pytest.raises(pydantic.ValidationError, match="download"):
+        dspy.Image(sample_pil, download=True)
 
-    # Both should result in base64 encoded data URIs
-    assert image_no_download.url.startswith("data:")
-    assert image_with_download.url.startswith("data:")
-    assert "base64," in image_no_download.url
-    assert "base64," in image_with_download.url
 
-    # They should be identical since PIL images are always encoded
-    assert image_no_download.url == image_with_download.url
+def test_from_file_missing_file():
+    with pytest.raises(ValueError, match="File not found"):
+        dspy.Image.from_file("/nonexistent/image.png")
+
+
+def test_unidentifiable_bytes_raise_value_error():
+    with pytest.raises(ValueError, match="could not be identified as an image"):
+        dspy.Image(b"not an image")
