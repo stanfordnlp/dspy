@@ -33,6 +33,7 @@ class GEPAFeedbackMetric(Protocol):
         trace: Optional["DSPyTrace"],
         pred_name: str | None,
         pred_trace: Optional["DSPyTrace"],
+        program_trace: Optional["DSPyTrace"] = None,
     ) -> Union[float, "ScoreWithFeedback"]:
         """
         This function is called with the following arguments:
@@ -42,6 +43,10 @@ class GEPAFeedbackMetric(Protocol):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The full execution trace of the program, supplied at scoring time when a
+            `dspy.Flex` submodule is being optimized. Declare this parameter to score against how an answer was
+            produced (e.g. `len(program_trace)` as an LM-call count), rather than only whether it was correct.
+            Unlike `trace`, it is populated during candidate *scoring*.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -174,6 +179,7 @@ class GEPA(Teleprompter):
         trace: Optional[DSPyTrace] = None,
         pred_name: Optional[str] = None,
         pred_trace: Optional[DSPyTrace] = None,
+        program_trace: Optional[DSPyTrace] = None,
     ) -> float | ScoreWithFeedback:
         \"""
         This function is called with the following arguments:
@@ -183,6 +189,9 @@ class GEPA(Teleprompter):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The program's execution trace, supplied at scoring time when a `dspy.Flex`
+            submodule is being optimized. Declare it to score against how the answer was produced (e.g. an
+            LM-call penalty). Defaults to None.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -492,14 +501,27 @@ class GEPA(Teleprompter):
         """
         from gepa import GEPAResult, optimize
 
+        from dspy.teleprompt.gepa.gepa_flex_utils import (
+            enumerate_flex_submodules,
+            flex_internal_predictor_ids,
+            make_code_key,
+        )
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
+        # dspy.Flex submodules get their code optimized, not just their instructions.
+        flex_submodules = enumerate_flex_submodules(student)
+        flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
+        instruction_predictors = [
+            (name, pred) for name, pred in student.named_predictors() if id(pred) not in flex_internal_ids
+        ]
+
+        num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
-                num_preds=len(student.predictors()),
+                num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
             )
@@ -554,7 +576,7 @@ class GEPA(Teleprompter):
 
             return feedback_fn
 
-        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
+        feedback_map = {k: feedback_fn_creator(k, v) for k, v in instruction_predictors}
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
@@ -571,8 +593,11 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: map each predictor name to its current instruction
-        seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
+        # each dspy.Flex submodule as its code component.
+        seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
+        for path, flex in flex_submodules.items():
+            seed_candidate[make_code_key(path)] = flex.module_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
