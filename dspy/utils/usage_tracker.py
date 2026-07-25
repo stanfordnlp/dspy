@@ -54,6 +54,15 @@ class UsageTracker:
         if len(usage_entry) > 0:
             self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
 
+    def merge(self, other: "UsageTracker") -> None:
+        """Absorb every usage entry recorded by `other` into this tracker.
+
+        Entries stored on a tracker are already flattened, so they can be carried over
+        as-is. Used to roll a nested `track_usage()` scope up into its parent.
+        """
+        for lm, usage_entries in other.usage_data.items():
+            self.usage_data[lm].extend(usage_entries)
+
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
         total_usage_by_lm = {}
@@ -67,8 +76,19 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
-    tracker = UsageTracker()
+    """Context manager for tracking LM usage.
 
-    with settings.context(usage_tracker=tracker):
-        yield tracker
+    Each LM call is recorded by the innermost active tracker. On exit, a nested tracker
+    rolls its usage up into the enclosing one, so an outer block always reflects
+    everything that happened inside it (including work done by nested scopes).
+    """
+    tracker = UsageTracker()
+    parent_tracker = settings.usage_tracker
+
+    try:
+        with settings.context(usage_tracker=tracker):
+            yield tracker
+    finally:
+        # Roll up even when the block raises: those tokens were still spent.
+        if parent_tracker is not None:
+            parent_tracker.merge(tracker)
