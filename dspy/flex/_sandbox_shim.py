@@ -89,10 +89,15 @@ def _dspy_signature(signature, instructions=None, **_kw):
     return {"__dspy_sig__": True, "signature": signature, "instructions": instructions}
 
 
+def _dspy_tool(func, **_kw):
+    return func
+
+
 _dspy = _dspy_types.ModuleType("dspy")
 _dspy.Module = _DspyModule
 _dspy.Prediction = _DspyPrediction
 _dspy.Signature = _dspy_signature
+_dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy

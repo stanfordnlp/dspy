@@ -630,7 +630,7 @@ def make_signature(
 
     # Default prompt when no instructions are provided
     if instructions is None:
-        sig = Signature(signature, "")  # Simple way to parse input/output fields
+        sig = Signature(signature, "", custom_types=custom_types)  # Simple way to parse input/output fields
         instructions = _default_instructions(sig)
 
     return create_model(

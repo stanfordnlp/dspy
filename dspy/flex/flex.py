@@ -16,7 +16,7 @@ class Flex(Module):
 
     Construct it like any module (``dspy.Flex(MySignature)``). It starts as a baseline that delegates
     to a single ``dspy.Predict`` over the signature — or ``dspy.RLM`` when ``tools`` are given, so the
-    baseline can call them — and is marked ``_code_optimizable``, so ``dspy.GEPA`` can rewrite its
+    baseline can call them. ``dspy.GEPA`` recognizes ``Flex`` instances by type and rewrites their
     source — a single ``dspy.Module`` subclass, exposed as ``module_src`` — into decomposed predictors
     plus plain Python instead of only tuning instructions.
 

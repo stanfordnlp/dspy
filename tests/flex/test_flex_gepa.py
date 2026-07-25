@@ -3,7 +3,7 @@
 Covers the behavior:
 - a freshly constructed dspy.Flex binds a deterministic, LM-free baseline (a dspy.Module subclass;
   a single dspy.Predict when no tools are given),
-- the module is marked `_code_optimizable` and discoverable as a code-optimizable submodule,
+- code-optimizable submodules are discovered by type (dspy.Flex), not by a duck-typed marker,
 - GEPA's seed candidate mixes per-submodule *code* components (each a full `module_src`) with
   *instruction* components for non-flex predictors, excluding predictors that live inside a Flex,
 - the adapter rebinds Flex code from a candidate and routes code components through the
@@ -52,7 +52,7 @@ def _metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
     return 1.0 if getattr(pred, "a", None) == gold.a else 0.0
 
 
-# --- baseline + marker -------------------------------------------------------
+# --- baseline + discovery ----------------------------------------------------
 
 
 def test_flex_baseline_is_predict_and_lm_free() -> None:
@@ -65,9 +65,29 @@ def test_flex_baseline_is_predict_and_lm_free() -> None:
     assert "class EchoModule(dspy.Module)" in program.module_src
 
 
-def test_flex_is_marked_code_optimizable() -> None:
-    program = dspy.Flex(Echo)
-    assert getattr(program, "_code_optimizable", False) is True
+def test_only_flex_instances_are_code_optimizable() -> None:
+    """Discovery is by type. A module that merely looks flex-shaped is not rewritten: GEPA would
+    hand it optimizer-authored source with nowhere safe to run it."""
+
+    class LookAlike(dspy.Module):
+        _code_optimizable = True  # the marker the old duck-typed check keyed on
+
+        def _bind_code(self, src):
+            raise AssertionError("must never be treated as a code component")
+
+        def forward(self, **kwargs):
+            return dspy.Prediction(a="x")
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.real = dspy.Flex(Echo)
+            self.fake = LookAlike()
+
+        def forward(self, **kwargs):
+            return self.real(**kwargs)
+
+    assert set(enumerate_flex_submodules(Prog())) == {"self.real"}
 
 
 def test_enumerate_finds_top_level_and_nested_flex() -> None:
@@ -242,6 +262,59 @@ def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
     assert result.scores == [1.0, 0.0, 1.0]  # crashed example scores as a failure, in place
     assert result.outputs[1] is None  # no prediction for the crashed example
     assert getattr(result.outputs[2], "a", None) == "yo"  # later examples keep their own results
+
+
+# --- adapter: which build failures are absorbed ------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [
+        ("syntax error", "class Broken(dspy.Module)\n    def forward(self): pass"),
+        ("no module class", "x = 1"),
+        (
+            "raises while constructing predictors",
+            "class Broken(dspy.Module):\n"
+            "    def __init__(self):\n"
+            "        super().__init__()\n"
+            "        self.p = dspy.Nope('q -> a')\n"
+            "    def forward(self, **inputs):\n"
+            "        return dspy.Prediction(a='x')",
+        ),
+    ],
+)
+def test_a_candidate_that_cannot_bind_scores_as_a_failure(label, source) -> None:
+    # Every way a candidate's own source can break binding — parsing it, running it, or the host
+    # rejecting what it asks for — is the search's problem to score, not to crash on.
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, failure_score=-1.0)
+    ex = dspy.Example(q="hi", a="hi").with_inputs("q")
+
+    result = adapter.evaluate([ex, ex], {make_code_key("self"): source}, capture_traces=False)
+
+    assert result.scores == [-1.0, -1.0], label
+    assert result.outputs == [None, None]
+
+
+def test_an_infrastructure_error_during_build_is_not_scored_as_a_failure(monkeypatch) -> None:
+    """Only source-level failures are absorbed. An LM provider or rate-limit error is not the
+    candidate's fault — swallowing it would silently score a whole run at the failure score and
+    hand back an 'optimized' program chosen from garbage."""
+
+    class RateLimitError(Exception):
+        pass
+
+    def boom(program, candidate):
+        raise RateLimitError("429 from the provider")
+
+    monkeypatch.setattr("dspy.teleprompt.gepa.gepa_utils.rebind_flex_code", boom)
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
+    ex = dspy.Example(q="hi", a="hi").with_inputs("q")
+
+    with pytest.raises(RateLimitError):
+        adapter.evaluate([ex], {make_code_key("self"): SIMPLE_MODULE}, capture_traces=False)
 
 
 # --- adapter: propose routes code keys to the code proposer ------------------

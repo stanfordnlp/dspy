@@ -58,13 +58,15 @@ def _accepts_interpreter_factory(cls: type) -> bool:
         return False
 
 
-def _resolve_signature(signature: Any) -> Any:
+def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = None) -> Any:
     """Turn a shim signature payload back into something a host predictor accepts."""
-    if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
-        from dspy.signatures.signature import ensure_signature
+    from dspy.signatures.signature import make_signature
 
-        # marker always carries a string signature; ensure_signature applies instructions if given
-        return ensure_signature(signature["signature"], signature.get("instructions"))
+    if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
+        # marker always carries a string signature; make_signature applies instructions if given
+        return make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
+    if isinstance(signature, str):
+        return make_signature(signature, custom_types=custom_types)
     return signature
 
 
@@ -211,7 +213,28 @@ class BridgeRuntime:
                 "Sandboxed forward returned no serializable result; the generated forward must return "
                 f"a dspy.Prediction (got {result!r})"
             )
-        return dspy.Prediction(**json.loads(result))
+        return self._to_prediction(json.loads(result))
+
+    def _to_prediction(self, fields: dict[str, Any]) -> Any:
+        from dspy.adapters.utils import parse_value
+
+        signature = self._flex.signature
+        missing = [name for name in signature.output_fields if name not in fields]
+        if missing:
+            raise CodeInterpreterError(
+                f"Sandboxed forward returned a dspy.Prediction missing declared output field(s) "
+                f"{missing}; the signature declares {list(signature.output_fields)}."
+            )
+        out = dict(fields)
+        for name, field in signature.output_fields.items():
+            try:
+                out[name] = parse_value(out[name], field.annotation)
+            except Exception as e:
+                raise CodeInterpreterError(
+                    f"Sandboxed forward returned {out[name]!r} for output field {name!r}, which is "
+                    f"not a valid {field.annotation}: {e}"
+                ) from e
+        return dspy.Prediction(**out)
 
     def shutdown(self) -> None:
         self._closed = True
@@ -262,7 +285,7 @@ class BridgeRuntime:
             factory = self._sub_interpreter_factory()
             if factory is not None:
                 extra["interpreter_factory"] = factory
-        return cls(_resolve_signature(signature), **extra)
+        return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)
 
     def _construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
         if kind not in BRIDGEABLE_KINDS:

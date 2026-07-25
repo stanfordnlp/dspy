@@ -79,6 +79,17 @@ Available DSPy primitives:
    exactly, and each `value_*` must be a plain value of the declared output
    type — never a `dspy.Prediction` you got back from a predictor call.
 
+The list above is the WHOLE of `dspy` available here. These do NOT exist in this
+module, and referencing one makes the code fail to bind: adapters
+(`dspy.ChatAdapter`, `dspy.JSONAdapter`), `dspy.settings`, `dspy.context`,
+`dspy.configure`, `dspy.LM`, `dspy.Example`, `dspy.Evaluate`, the optimizers,
+retrievers, `dspy.Flex` itself, and class-based signatures with
+`dspy.InputField` / `dspy.OutputField` (use the string form,
+`dspy.Signature("a -> b", "instructions")`). The host owns prompting, parsing,
+and the LM; this source only declares predictors and the Python wiring them
+together. The code also runs sandboxed, with no host filesystem or network, unless otherwise 
+provided via a host tool.
+
 Rules you MUST follow:
 
 - Define every predictor in `__init__` as `self.<name> = dspy.Predict(...)` and call

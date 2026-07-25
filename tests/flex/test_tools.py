@@ -103,6 +103,55 @@ def test_load_without_tools_cannot_resolve_them(tmp_path) -> None:
             reloaded.load(path)
 
 
+# The primitives catalog offers the proposer `dspy.Tool(func)`, so the sandbox shim has to define
+# it — a name the catalog advertises but the shim lacks turns into an AttributeError at bind time,
+# scoring an otherwise-fine candidate as a failure.
+WRAPPED_TOOL_MODULE = textwrap.dedent("""
+    class EchoModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.react = dspy.ReAct("q -> a", tools=[dspy.Tool(shout)])
+
+        def forward(self, **inputs):
+            return dspy.Prediction(a=shout(inputs["q"]))
+""").strip()
+
+
+@deno_required
+def test_dspy_tool_wrapper_is_available_in_the_sandbox() -> None:
+    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
+        program._bind_code(WRAPPED_TOOL_MODULE)
+        # The wrapper resolves to the same host tool a bare reference would, so the predictor binds.
+        assert [t.name for t in program.react.tools.values()] == ["shout", "finish"]
+        assert program(q="hi").a == "HI"
+
+
+def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
+    """Every `dspy.X(...)` the proposer is told to write must exist in the shim.
+
+    The prompts and the shim are the two halves of one contract, edited in different files: a name
+    advertised but not defined becomes an AttributeError at bind time, and GEPA scores the
+    candidate as a failure with nothing pointing at the real cause.
+    """
+    import re
+
+    from dspy.flex.bridge import SHIM_SETUP
+    from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
+    from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
+
+    # The shim only registers itself as the importable `dspy` inside the sandbox (where the host
+    # bridge tools are in globals), so running it here just builds the module object to inspect.
+    namespace: dict = {}
+    exec(SHIM_SETUP, namespace)
+    shim = namespace["dspy"]
+
+    prompts = PRIMITIVES_CATALOG + (CodeProposalSignature.__doc__ or "")
+    advertised = set(re.findall(r"dspy\.([A-Z]\w+)\(", prompts))
+    assert advertised, "expected the prompts to name some primitives"
+    missing = sorted(name for name in advertised if not hasattr(shim, name))
+    assert not missing, f"advertised to the proposer but missing from the sandbox shim: {missing}"
+
+
 def test_gepa_proposer_is_told_about_tools() -> None:
     """GEPA can optimize tool usage because the proposer is shown the available tools."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter

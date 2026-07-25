@@ -12,6 +12,7 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
+from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 from dspy.teleprompt.gepa.gepa_flex_utils import (
     code_reflective_records,
@@ -108,6 +109,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        self._warned_custom_proposer_skips_code = False
 
         # Task description + available context shown to the dspy.Flex code proposer, per submodule.
         self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
@@ -135,8 +137,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         if not components_to_update:
             return results
 
-        # If custom proposer provided, override everything with custom proposer
+        # A custom proposer overrides the default *instruction* proposer only.
         if self.custom_instruction_proposer:
+            if code_keys and not self._warned_custom_proposer_skips_code:
+                logger.warning(
+                    "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
+                    "being optimized. The custom proposer handles instruction components only; the "
+                    "built-in code proposer rewrites the flex source.",
+                    len(code_keys),
+                )
+                self._warned_custom_proposer_skips_code = True
             with dspy.context(lm=reflection_lm):
                 results.update(
                     self.custom_instruction_proposer(
@@ -179,9 +189,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def evaluate(self, batch, candidate, capture_traces=False):
         try:
             program = self.build_program(candidate)
-        except Exception as e:
-            # A code candidate that fails to bind (broken source) scores as a failure rather than
-            # crashing the run. Instruction candidates always build, so this only guards flex code.
+        except (SyntaxError, CodeInterpreterError) as e:
+            # A code candidate that fails to bind scores as a failure rather than
+            # crashing the run. Only source-level failures are caught. Anything else
+            # (e.g., an LM provider or rate-limit error) is not the candidate's fault and must
+            # propagate.
             logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
             return EvaluationBatch(
                 outputs=[None] * len(batch),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, get_origin
+from typing import Any, get_args, get_origin
 
 
 @dataclass
@@ -56,15 +56,23 @@ class FlexContext:
         are emitted untyped so baseline construction never fails on them.
         """
         cls = self.signature_cls
+        custom = self.custom_types()
 
         def _render(fields_dict: dict[str, Any]) -> str:
             parts: list[str] = []
             for fname, finfo in fields_dict.items():
-                type_str = _parseable_type_str(finfo.annotation)
+                type_str = _parseable_type_str(finfo.annotation, custom)
                 parts.append(f"{fname}: {type_str}" if type_str else fname)
             return ", ".join(parts)
 
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
+
+    def custom_types(self) -> dict[str, type]:
+        cls = self.signature_cls
+        out: dict[str, type] = {}
+        for finfo in {**cls.input_fields, **cls.output_fields}.values():
+            _collect_custom_types(finfo.annotation, out)
+        return out
 
     def render_context_blurb(self, sandboxed: bool = False) -> str:
         parts: list[str] = []
@@ -97,12 +105,42 @@ def _type_name(t: Any) -> str:
 _SIMPLE_TYPES = (str, int, float, bool, list, dict, tuple, set)
 
 
-def _parseable_type_str(annotation: Any) -> str | None:
-    """A signature-string type token DSPy's parser can resolve (builtin or typing generic), else None."""
+def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:
+    """Add every non-builtin type named anywhere in ``annotation`` to ``out``, keyed by name."""
+    for arg in get_args(annotation):
+        _collect_custom_types(arg, out)
+    if get_origin(annotation) is not None or annotation is type(None):
+        return
+    name = getattr(annotation, "__name__", None)
+    if isinstance(annotation, type) and name and name.isidentifier() and annotation.__module__ != "builtins":
+        out[name] = annotation
+
+
+def _parseable_type_str(annotation: Any, custom_types: dict[str, type] | None = None) -> str | None:
+    """A signature-string type token DSPy's parser can read back, else None."""
     if annotation in _SIMPLE_TYPES:
         return annotation.__name__
-    if get_origin(annotation) is not None:
-        return str(annotation).replace("typing.", "")
+
+    from dspy.adapters.utils import get_annotation_name
+    from dspy.signatures.signature import make_signature
+
+    name = getattr(annotation, "__name__", None)
+    candidates = [
+        name if name and name.isidentifier() else None,
+        get_annotation_name(annotation),
+        str(annotation).replace("typing.", ""),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            # Instructions are irrelevant here; passing one skips generating a default for a
+            # signature that is thrown away. Only the parsed annotation is read back.
+            probe = make_signature(f"x: {candidate} -> y", "probe", custom_types=custom_types)
+        except Exception:
+            continue
+        if probe.input_fields["x"].annotation == annotation:
+            return candidate
     return None
 
 
