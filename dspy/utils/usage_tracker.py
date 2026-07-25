@@ -70,5 +70,19 @@ def track_usage() -> Generator[UsageTracker, None, None]:
     """Context manager for tracking LM usage."""
     tracker = UsageTracker()
 
-    with settings.context(usage_tracker=tracker):
-        yield tracker
+    # Capture any tracker already active in an enclosing `track_usage()` block.
+    # While this block is open it shadows the enclosing one in settings, so each
+    # LM call is recorded only by the innermost active tracker. Rolling this
+    # tracker's usage up into the parent on exit keeps an outer block reflecting
+    # everything that happened inside it, including work done in nested blocks
+    # (e.g. sub-agents or per-epoch tracking under a top-level cost tracker).
+    parent_tracker = settings.usage_tracker
+
+    try:
+        with settings.context(usage_tracker=tracker):
+            yield tracker
+    finally:
+        if parent_tracker is not None:
+            for lm, usage_entries in tracker.usage_data.items():
+                for usage_entry in usage_entries:
+                    parent_tracker.add_usage(lm, usage_entry)

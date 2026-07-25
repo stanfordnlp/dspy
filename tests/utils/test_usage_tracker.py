@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 import dspy
 from dspy.utils.usage_tracker import UsageTracker, track_usage
+from dspy.dsp.utils.settings import settings
 
 
 def test_add_usage_entry():
@@ -392,3 +393,66 @@ def test_parallel_executor_with_usage_tracker():
 
     # Parent tracker should remain unchanged (workers have independent copies)
     assert len(parent_tracker.usage_data) == 0
+
+
+def _record_lm_usage(model, prompt_tokens, completion_tokens):
+    """Mirror what dspy/clients/lm.py does on each LM call: record against the
+    innermost active usage tracker, if any."""
+    if settings.usage_tracker:
+        settings.usage_tracker.add_usage(
+            model, {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens}
+        )
+
+
+def test_nested_track_usage_rolls_up_into_outer_tracker():
+    """A nested `track_usage()` block must not hide its usage from the enclosing
+    block. Each LM call is recorded only by the innermost active tracker, so
+    without roll-up an outer block silently under-counts everything that happened
+    inside a nested block (e.g. sub-agents, or per-epoch tracking under a
+    top-level cost tracker). Regression test for #10064."""
+    model = "gpt"
+
+    def subagent(prompt_tokens, completion_tokens):
+        with track_usage() as inner:
+            _record_lm_usage(model, prompt_tokens, completion_tokens)
+        # The inner block still reports exactly its own usage, nothing more.
+        return inner.get_total_tokens()[model]["prompt_tokens"]
+
+    with track_usage() as outer:
+        _record_lm_usage(model, 100, 10)
+        a = subagent(1000, 100)
+        b = subagent(500, 50)
+        _record_lm_usage(model, 5, 1)
+
+    assert a == 1000
+    assert b == 500
+
+    outer_total = outer.get_total_tokens()[model]
+    assert outer_total["prompt_tokens"] == 100 + 1000 + 500 + 5
+    assert outer_total["completion_tokens"] == 10 + 100 + 50 + 1
+
+
+def test_nested_track_usage_rolls_up_on_exception():
+    """Usage incurred before an exception inside a nested block still rolls up,
+    since the tokens were spent regardless of how the block exited."""
+    model = "gpt"
+
+    with track_usage() as outer:
+        _record_lm_usage(model, 3, 1)
+        try:
+            with track_usage():
+                _record_lm_usage(model, 50, 5)
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+
+    assert outer.get_total_tokens()[model]["prompt_tokens"] == 3 + 50
+
+
+def test_top_level_track_usage_has_no_parent_to_roll_up_into():
+    """A single (non-nested) block has no enclosing tracker, so it must record
+    its own usage once and not error on exit."""
+    model = "gpt"
+    with track_usage() as tracker:
+        _record_lm_usage(model, 9, 1)
+    assert tracker.get_total_tokens()[model]["prompt_tokens"] == 9
