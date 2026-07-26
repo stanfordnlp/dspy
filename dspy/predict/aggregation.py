@@ -5,9 +5,9 @@ from dspy.primitives.prediction import Completions, Prediction
 def default_normalize(s):
     # `normalize_text` strips English articles ("a", "an", "the"), so answers that consist
     # solely of an article (e.g. the multiple-choice option "A", or "The") would normalize to
-    # an empty string and be discarded from the vote. Fall back to the lowercased, stripped
-    # answer so such answers still count, while genuinely empty answers still map to None.
-    return normalize_text(s) or (s.strip().lower() or None)
+    # an empty string and be discarded from the vote. Retain the same normalization pipeline
+    # without article removal so punctuation-only answers remain ignored.
+    return normalize_text(s) or normalize_text(s, remove_articles=False) or None
 
 
 def majority(prediction_or_completions, normalize=default_normalize, field=None):

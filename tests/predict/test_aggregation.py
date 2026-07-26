@@ -55,3 +55,21 @@ def test_majority_the_answer():
     completions = [{"answer": "The"}, {"answer": "The"}, {"answer": "Paris"}]
     result = majority(completions)
     assert result.completions[0]["answer"] == "The"
+
+
+def test_majority_normalizes_multiple_choice_punctuation():
+    completions = [
+        {"answer": "A"},
+        {"answer": "A."},
+        {"answer": "(A)"},
+        {"answer": "B"},
+        {"answer": "B"},
+    ]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == "A"
+
+
+def test_majority_ignores_punctuation_only_answers():
+    completions = [{"answer": "..."}, {"answer": "..."}, {"answer": "Paris"}]
+    result = majority(completions)
+    assert result.completions[0]["answer"] == "Paris"
