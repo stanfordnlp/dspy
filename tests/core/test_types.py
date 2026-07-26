@@ -3,6 +3,7 @@ import pytest
 
 from dspy.core.types import (
     LMAudioPart,
+    LMBinaryPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -140,6 +141,42 @@ def test_video_data_round_trips_through_history_messages():
     assert isinstance(round_tripped, LMVideoPart)
     assert round_tripped.data == "YWJj"
     assert round_tripped.media_type == "video/mp4"
+
+
+def test_file_content_block_preserves_format_detail_and_video_metadata():
+    message = LMMessage(
+        role="user",
+        content=[
+            {
+                "type": "file",
+                "file": {
+                    "file_id": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                    "format": "video/webm",
+                    "detail": "high",
+                    "video_metadata": {"fps": 1.0},
+                },
+            }
+        ],
+    )
+
+    part = message.parts[0]
+    assert isinstance(part, LMBinaryPart)
+    assert part.file_id == "https://generativelanguage.googleapis.com/v1beta/files/abc123"
+    assert part.media_type == "video/webm"
+    assert part.detail == "high"
+    assert part.video_metadata == {"fps": 1.0}
+
+
+def test_file_content_block_format_overrides_data_uri_media_type():
+    message = LMMessage(
+        role="user",
+        content=[{"type": "file", "file": {"file_data": "data:application/octet-stream;base64,YWJj", "format": "video/webm"}}],
+    )
+
+    part = message.parts[0]
+    assert isinstance(part, LMBinaryPart)
+    assert part.data == "YWJj"
+    assert part.media_type == "video/webm"
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():

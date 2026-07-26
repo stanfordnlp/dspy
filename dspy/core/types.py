@@ -137,6 +137,8 @@ class LMBinaryPart(LMSourcePart):
     type: Literal["binary"] = "binary"
     media_type: str = "application/octet-stream"
     filename: str | None = None
+    detail: Literal["low", "high", "auto"] | None = None
+    video_metadata: dict[str, Any] | None = None
 
 
 class LMToolCallPart(LMBasePart):
@@ -1691,6 +1693,8 @@ def _history_part_as_openai_content(part: LMPart) -> dict[str, Any]:
                     "file_id": part.file_id,
                     "filename": part.filename,
                     "media_type": part.media_type,
+                    "detail": part.detail,
+                    "video_metadata": part.video_metadata,
                 }.items()
                 if value is not None
             },
@@ -1888,14 +1892,22 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
+    common = {
+        "filename": file.get("filename"),
+        "detail": file.get("detail"),
+        "video_metadata": file.get("video_metadata"),
+    }
+    media_format = file.get("format")
     if file.get("file_data") is not None:
         media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_format or media_type, **common)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+        return LMBinaryPart(data=data, media_type=media_format or media_type, **common)
     if file.get("file_id") is not None:
-        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"))
+        if media_format is not None:
+            common["media_type"] = media_format
+        return LMBinaryPart(file_id=file["file_id"], **common)
     raise ValueError("Binary content block requires data, file_data, or file_id.")
 
 

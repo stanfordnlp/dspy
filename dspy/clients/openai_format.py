@@ -340,6 +340,14 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
         file_data["file_id"] = binary.file_id
     if binary.filename is not None:
         file_data["filename"] = binary.filename
+    if binary.data is None and binary.path is None and binary.media_type != "application/octet-stream":
+        # file_id and url sources carry no MIME information of their own; data
+        # and path sources already embed it in the emitted data URI.
+        file_data["format"] = binary.media_type
+    if binary.detail is not None:
+        file_data["detail"] = binary.detail
+    if binary.video_metadata is not None:
+        file_data["video_metadata"] = binary.video_metadata
     return {"type": "file", "file": file_data}
 
 
