@@ -624,6 +624,11 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
     """
     request = dict(request)
+
+    model = request.get("model", "")
+    # LiteLLM treats unprefixed models as OpenAI models by default.
+    provider = model.split("/", 1)[0] if "/" in model else "openai"
+    _openai_compatible_providers = {"openai", "azure"}
     if "messages" in request:
         input_items = []
         for msg in request.pop("messages"):
@@ -645,14 +650,18 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:
         response_format = request.pop("response_format")
-        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
-            response_format = {
-                "name": response_format.__name__,
-                "type": "json_schema",
-                "schema": response_format.model_json_schema(),
-            }
-        text = request.pop("text", {})
-        request["text"] = {**text, "format": response_format}
+        if provider in _openai_compatible_providers:
+            if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
+                response_format = {
+                    "name": response_format.__name__,
+                    "type": "json_schema",
+                    "schema": response_format.model_json_schema(),
+                }
+
+            text = request.pop("text", {})
+            request["text"] = {**text, "format": response_format}
+        else:
+            request["response_format"] = response_format
 
     return request
 
