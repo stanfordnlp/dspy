@@ -51,10 +51,10 @@ def bootstrap_trace_data(
     )
 
     def wrapped_metric(example, prediction, trace=None):
-        prediction, _ = prediction
+        prediction, captured_trace = prediction
         if isinstance(prediction, FailedPrediction):
             return prediction.format_reward or format_failure_score
-        return metric(example, prediction, trace) if metric else True
+        return metric(example, prediction, captured_trace) if metric else True
 
     # Use `object.__getattribute__` to bypass the custom hook `Module.__getattribute__` so that we avoid
     # the warning that `forward` is not accessed through `__call__`.
@@ -87,7 +87,7 @@ def bootstrap_trace_data(
                     failed_pred = FailedPrediction(
                         completion_text=completion_str,
                         format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
+                        + (failure_score - format_failure_score) * (len(present) / len(expected)),
                     )
                 else:
                     failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
@@ -135,6 +135,17 @@ def bootstrap_trace_data(
             if raise_on_error:
                 raise ve
             else:
+                # Add placeholder to maintain 1:1 correspondence between inputs and outputs.
+                # This is required by GEPA which zips outputs with input IDs.
+                data_dict = {
+                    "example": example,
+                    "prediction": prediction,  # The raw prediction that couldn't be unpacked
+                    "trace": [],
+                    "example_ind": example_ind,
+                }
+                if metric:
+                    data_dict["score"] = score
+                data.append(data_dict)
                 continue
         data_dict = {"example": example, "prediction": prediction, "trace": trace, "example_ind": example_ind}
         if metric:
