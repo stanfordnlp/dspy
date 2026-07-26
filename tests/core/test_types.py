@@ -142,6 +142,31 @@ def test_video_data_round_trips_through_history_messages():
     assert round_tripped.media_type == "video/mp4"
 
 
+def test_video_round_trips_through_openai_chat_messages():
+    """Regression test for #9899.
+
+    A video part must emit a `video` content block that keeps `media_type`, rather
+    than collapsing into a bare `file` block that drops it (which forces providers
+    such as Gemini/Vertex to HTTP-fetch the source to infer the MIME type).
+    """
+    from dspy.clients.openai_format import message_to_openai_chat
+
+    message = User(LMVideoPart(file_id="https://example.com/files/abc", media_type="video/webm"))
+    content = message_to_openai_chat(message)["content"]
+
+    assert content == [
+        {
+            "type": "video",
+            "video": {"media_type": "video/webm", "file_id": "https://example.com/files/abc"},
+        }
+    ]
+
+    round_tripped = LMMessage(role="user", content=content).parts[0]
+    assert isinstance(round_tripped, LMVideoPart)
+    assert round_tripped.media_type == "video/webm"
+    assert round_tripped.file_id == "https://example.com/files/abc"
+
+
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():
     message = LMMessage(
         role="user",
