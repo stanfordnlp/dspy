@@ -373,6 +373,45 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     assert not any(k.startswith("flex.") for k in seed)
 
 
+# --- DspyGEPAResult.to_dict: candidates keep their code components -----------
+
+
+def test_result_to_dict_keeps_flex_code_components() -> None:
+    """to_dict() must serialize the same components GEPA optimized: a `<path>::code` entry holding
+    the full module_src per Flex, and no entries for the Flex's internal predictors (whose
+    instructions are written by that code, not optimized on their own)."""
+    from dspy.teleprompt.gepa.gepa import DspyGEPAResult
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.flex = dspy.Flex(Echo)
+            self.sibling = dspy.Predict("x -> y")
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    prog = Prog()
+    prog.flex._bind_code(SIMPLE_MODULE)
+
+    result = DspyGEPAResult(
+        candidates=[prog],
+        parents=[[None]],
+        val_aggregate_scores=[1.0],
+        val_subscores=[{0: 1.0}],
+        per_val_instance_best_candidates={0: {0}},
+        discovery_eval_counts=[0],
+    )
+    (candidate,) = result.to_dict()["candidates"]
+
+    code_key = make_code_key("self.flex")
+    assert candidate[code_key] == SIMPLE_MODULE  # the optimized code survives serialization
+    assert candidate["sibling"] == prog.sibling.signature.instructions
+    # The Flex's internal predictors are not components; reporting them would misstate what was
+    # optimized and silently stand in for the dropped code.
+    assert not any(k.startswith("flex.") for k in candidate)
+
+
 # --- GEPA.compile: a non-empty trainset is required ------------------------------------
 
 

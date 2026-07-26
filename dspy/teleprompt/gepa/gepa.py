@@ -117,11 +117,29 @@ class DspyGEPAResult:
             for val_id in self.per_val_instance_best_candidates
         }
 
+    @staticmethod
+    def _candidate_components(cand: Module) -> dict[str, str]:
+        """The candidate's optimized components. It can be either instruction text per predictor, or
+        the full `module_src` of each `dspy.Flex` submodule under its `<path>::code` key."""
+        from dspy.teleprompt.gepa.gepa_flex_utils import (
+            enumerate_flex_submodules,
+            flex_internal_predictor_ids,
+            make_code_key,
+        )
+
+        flex_submodules = enumerate_flex_submodules(cand)
+        flex_internal_ids = flex_internal_predictor_ids(flex_submodules)
+        components = {
+            name: pred.signature.instructions
+            for name, pred in cand.named_predictors()
+            if id(pred) not in flex_internal_ids
+        }
+        for path, flex in flex_submodules.items():
+            components[make_code_key(path)] = flex.module_src
+        return components
+
     def to_dict(self) -> dict[str, Any]:
-        cands = [
-            {name: pred.signature.instructions for name, pred in cand.named_predictors()}
-            for cand in self.candidates
-        ]
+        cands = [self._candidate_components(cand) for cand in self.candidates]
 
         return dict(
             candidates=cands,
