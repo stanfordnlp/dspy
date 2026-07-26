@@ -70,11 +70,10 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
     return signature
 
 
-def _signature_key(signature: Any) -> str:
-    """A hashable, stable key for a signature payload (for construction idempotency)."""
-    if isinstance(signature, str):
-        return signature
-    return json.dumps(signature, sort_keys=True, default=str)
+def _construction_key(kind: str, signature: Any, kwargs: dict[str, Any] | None) -> str:
+    """A stable key for a construction request, used for idempotency across repeated ``__init__``
+    runs (see ``_construct``)."""
+    return json.dumps([kind, signature, kwargs or {}], sort_keys=True, default=str)
 
 
 def _jsonable(value: Any) -> Any:
@@ -146,7 +145,7 @@ class BridgeRuntime:
         self._local = threading.local()
         self._all_interps: list[Any] = []
         self._lock = threading.Lock()
-        self._registry: dict[str, str] = {}  # attr_name -> signature key (host predictors built once)
+        self._registry: dict[str, str] = {}  # attr_name -> construction key
         self._generation = 0
         self._module_src: str | None = None
         self._class_name: str | None = None
@@ -293,17 +292,17 @@ class BridgeRuntime:
                 f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
-        sig_key = _signature_key(signature)
+        key = _construction_key(kind, signature, kwargs)
         with self._lock:
-            if self._registry.get(attr_name) == sig_key and getattr(self._flex, attr_name, None) is not None:
-                return attr_name  # already built with the same signature; reuse (preserves demos)
+            if self._registry.get(attr_name) == key and getattr(self._flex, attr_name, None) is not None:
+                return attr_name  # identical request already built
             predictor = self._build_predictor(kind, signature, kwargs)
             # Attach under attr_name so it keeps a canonical name in named_parameters()/state; the
             # handle IS that name, so _call resolves it with getattr.
             setattr(self._flex, attr_name, predictor)
             if attr_name not in self._flex._attached_names:
                 self._flex._attached_names.append(attr_name)
-            self._registry[attr_name] = sig_key
+            self._registry[attr_name] = key
         return attr_name
 
     def _call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -84,6 +84,67 @@ def test_save_load_roundtrips_generated_code(tmp_path) -> None:
 
 
 @deno_required
+def test_nested_flex_state_roundtrips_inside_a_program(tmp_path) -> None:
+    """A Flex nested in a larger program persists like a top-level one.
+
+    The parent's state must carry the sub-module's `module_src`, not just its predictors' state:
+    those predictors are *created by* that source, so without it a reload has nothing to attach
+    them to and the optimized code is lost.
+    """
+    path = tmp_path / "program.json"
+
+    class Program(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sibling = dspy.Predict("x -> y")
+            self.flex = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    program = Program()
+    try:
+        program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
+        program.sibling.signature = program.sibling.signature.with_instructions("tuned sibling")
+
+        state = program.dump_state()
+        assert state["flex"]["module_src"] == ECHO_MODULE  # the code, not just its predictors
+        assert "sibling" in state  # a plain predictor stays a flat top-level entry
+        # The Flex's internals belong to its own state; the parent must not dump them separately.
+        assert not any(key.startswith("flex.") for key in state)
+
+        program.save(path)
+    finally:
+        program.flex.close()
+
+    reloaded = Program()
+    try:
+        assert "self.echo" not in reloaded.flex.module_src  # a fresh program is on the baseline
+        reloaded.load(path)
+
+        assert reloaded.flex.module_src == ECHO_MODULE
+        assert hasattr(reloaded.flex, "echo")  # the reloaded code attached its predictor
+        assert reloaded.sibling.signature.instructions == "tuned sibling"
+    finally:
+        reloaded.flex.close()
+
+
+def test_state_layout_unchanged_without_a_flex() -> None:
+    # Programs with no Flex keep the flat `{param_path: state}` layout, so existing saved state
+    # still loads.
+    class Plain(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.first = dspy.Predict("x -> y")
+            self.second = dspy.Predict("y -> z")
+
+        def forward(self, **kwargs):
+            return self.second(**self.first(**kwargs))
+
+    assert sorted(Plain().dump_state()) == ["first", "second"]
+
+
+@deno_required
 def test_end_to_end_forward_after_save_load(tmp_path) -> None:
     """End-to-end: bind a plain dspy.Predict class, save it, reload into a fresh Flex, run it."""
     path = tmp_path / "program.json"

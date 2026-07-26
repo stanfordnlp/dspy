@@ -153,21 +153,37 @@ class BaseModule:
 
         return new_instance
 
+    def _state_units(self):
+        """The module's state as `(name, unit)` pairs. `dspy.Flex` sub-modules are yielded as
+        whole sub-modules, everything else as parameters `named_parameters()`."""
+        from dspy.flex import Flex
+
+        subs = [
+            (path.removeprefix("self."), sub)
+            for path, sub in self.named_sub_modules(type_=Flex)
+            if sub is not self
+        ]
+        yield from subs
+        owned = {id(p) for _, sub in subs for _, p in sub.named_parameters()}
+        yield from ((name, p) for name, p in self.named_parameters() if id(p) not in owned)
+
     def dump_state(self, json_mode=True):
-        return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
+        return {name: param.dump_state(json_mode=json_mode) for name, param in self._state_units()}
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
+        from dspy.flex import Flex
         from dspy.predict.predict import Predict
 
         def _apply(module):
-            for name, param in module.named_parameters():
-                if isinstance(param, Predict):
+            for name, param in module._state_units():
+                if isinstance(param, (Predict, Flex)):
                     param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
                 else:
                     param.load_state(state[name])
 
         _apply(self.deepcopy())  # trial run raises before self is touched
         _apply(self)
+
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
