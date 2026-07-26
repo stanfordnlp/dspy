@@ -2,8 +2,6 @@ import json
 import logging
 from typing import Any, get_origin
 
-import json_repair
-
 from dspy.adapters._legacy_type_markers import (
     _expand_legacy_custom_type_markers_in_chat_message,
     _expand_legacy_custom_type_markers_in_lm_message,
@@ -181,8 +179,7 @@ class Adapter:
                 value.setdefault(field_name, None)
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [_provider_tool_call_to_tool_call_dict(tool_call) for tool_call in tool_calls]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+                value[tool_call_output_field_name] = ToolCalls.from_openai_tool_calls(tool_calls)
 
             # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
             # the real normalized hook, this should not call the legacy
@@ -723,29 +720,6 @@ class Adapter:
             A dictionary of the output fields.
         """
         raise NotImplementedError
-
-
-def _provider_value(value: Any, key: str, default: Any = None) -> Any:
-    if isinstance(value, dict):
-        return value.get(key, default)
-    return getattr(value, key, default)
-
-
-def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
-    function = _provider_value(tool_call, "function", {}) or {}
-    arguments = _provider_value(function, "arguments", {})
-    if isinstance(arguments, str):
-        parsed_arguments = json_repair.loads(arguments)
-    elif isinstance(arguments, dict):
-        parsed_arguments = arguments
-    else:
-        parsed_arguments = {}
-
-    return {
-        "id": _provider_value(tool_call, "id") or _provider_value(tool_call, "call_id"),
-        "name": _provider_value(function, "name") or _provider_value(tool_call, "name"),
-        "args": parsed_arguments,
-    }
 
 
 def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:

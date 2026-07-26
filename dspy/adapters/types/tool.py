@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
@@ -318,7 +319,9 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method."
+                )
 
             try:
                 args = self.args or {}
@@ -363,6 +366,11 @@ class ToolCalls(Type):
         """
         tool_calls = [cls.ToolCall(**_normalize_tool_call_dict(item)) for item in tool_calls_dicts]
         return cls(tool_calls=tool_calls)
+
+    @classmethod
+    def from_openai_tool_calls(cls, tool_calls: list[Any]) -> "ToolCalls":
+        tool_call_dicts = [_normalize_openai_tool_call(item) for item in tool_calls]
+        return cls.from_dict_list(tool_call_dicts)
 
     @classmethod
     def description(cls) -> str:
@@ -496,6 +504,43 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "id": data.get("id") or data.get("call_id"),
+        "name": name,
+        "args": arguments,
+    }
+
+
+def _get_tool_call_field(item: Any, field: str) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(field)
+    return getattr(item, field, None)
+
+
+def _normalize_openai_tool_call(tool_call: Any) -> dict[str, Any]:
+    if isinstance(tool_call, Mapping) and "name" in tool_call and "args" in tool_call:
+        return {
+            "id": tool_call.get("id") or tool_call.get("call_id"),
+            "name": tool_call["name"],
+            "args": tool_call["args"],
+        }
+
+    function = _get_tool_call_field(tool_call, "function")
+    if function is None:
+        raise ValueError(f"Received invalid tool call value: {tool_call}")
+
+    name = _get_tool_call_field(function, "name")
+    arguments = _get_tool_call_field(function, "arguments")
+    if name is None:
+        raise ValueError(f"Received tool call without a function name: {tool_call}")
+
+    if isinstance(arguments, str):
+        arguments = json_repair.loads(arguments)
+    elif arguments is None:
+        arguments = {}
+    elif not isinstance(arguments, dict):
+        arguments = {}
+
+    return {
+        "id": _get_tool_call_field(tool_call, "id") or _get_tool_call_field(tool_call, "call_id"),
         "name": name,
         "args": arguments,
     }
