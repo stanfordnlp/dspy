@@ -340,6 +340,10 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
         file_data["file_id"] = binary.file_id
     if binary.filename is not None:
         file_data["filename"] = binary.filename
+    # Re-emit provider-specific fields (e.g. format, detail, video_metadata) that were preserved
+    # on the way in, without letting them overwrite the canonical keys computed above.
+    for key, value in binary.extra_file_fields.items():
+        file_data.setdefault(key, value)
     return {"type": "file", "file": file_data}
 
 
