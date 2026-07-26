@@ -13,6 +13,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   dependency-range:
     name: Dependencies (${{ matrix.profile }})
@@ -84,7 +88,7 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           set +e
-          uv run --frozen --no-sync pytest -q tests/ --extra --deno 2>&1 \
+          uv run --frozen --no-sync pytest -q -n auto --dist worksteal tests/ --extra --deno 2>&1 \
             | tee "$RUNNER_TEMP/pytest-$PROFILE.log"
           TEST_STATUS=${PIPESTATUS[0]}
           set -e

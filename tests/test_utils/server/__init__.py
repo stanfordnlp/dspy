@@ -76,7 +76,7 @@ def _get_random_port():
         return s.getsockname()[1]
 
 
-def _wait_for_port(host, port, timeout=10):
+def _wait_for_port(host, port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

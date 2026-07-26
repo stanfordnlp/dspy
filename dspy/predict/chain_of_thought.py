@@ -10,6 +10,29 @@ from dspy.signatures.signature import Signature, ensure_signature
 
 
 class ChainOfThought(Module):
+    """A module that reasons step by step before producing the output.
+
+    Extends a given signature with an additional ``reasoning`` output field that
+    the language model fills in before answering. This chain-of-thought process
+    improves accuracy on tasks that require multi-step logic or explanation.
+
+    Args:
+        signature: The DSPy signature defining the module's inputs and outputs.
+        rationale_field: An optional custom ``FieldInfo`` for the reasoning field.
+            If not provided, a default field with description ``${reasoning}`` is used.
+        rationale_field_type: The type annotation for the reasoning field. Defaults
+            to ``str``. Ignored if ``rationale_field`` is provided.
+        **config: Additional keyword arguments forwarded to the underlying
+            ``dspy.Predict`` module.
+
+    Example:
+        >>> import dspy
+        >>> cot = dspy.ChainOfThought("question -> answer")
+        >>> result = cot(question="What is the capital of France?")
+        >>> print(result.reasoning)
+        >>> print(result.answer)
+    """
+
     def __init__(
         self,
         signature: str | type[Signature],
@@ -17,15 +40,6 @@ class ChainOfThought(Module):
         rationale_field_type: type = str,
         **config: dict[str, Any],
     ):
-        """
-        A module that reasons step by step in order to predict the output of a task.
-
-        Args:
-            signature (Type[dspy.Signature]): The signature of the module.
-            rationale_field (Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]]): The field that will contain the reasoning.
-            rationale_field_type (Type): The type of the rationale field.
-            **config: The configuration for the module.
-        """
         super().__init__()
         signature = ensure_signature(signature)
         desc = "${reasoning}"
