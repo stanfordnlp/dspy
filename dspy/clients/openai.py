@@ -2,10 +2,11 @@ import time
 from datetime import datetime
 from typing import Any
 
-import openai
-
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
+from dspy.utils.lazy_import import require
+
+openai = require("openai")
 
 
 class TrainingJobOpenAI(TrainingJob):

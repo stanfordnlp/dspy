@@ -6,9 +6,7 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
-import anyio.from_thread
 import pydantic
-from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
 from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
@@ -457,7 +455,8 @@ def _get_stream_completion_fn(
         return None
 
     # The stream is already opened, and will be closed by the caller.
-    stream = cast(MemoryObjectSendStream, stream)
+    # String form so the annotation does not require anyio at import time.
+    stream = cast("MemoryObjectSendStream", stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
 
     if dspy.settings.track_usage:
@@ -480,6 +479,8 @@ def _get_stream_completion_fn(
         return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
+        import anyio.from_thread
+
         return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
 
     async def async_stream_completion():

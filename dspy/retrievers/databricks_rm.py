@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import Any
 
-import requests
-
 import dspy
 from dspy.primitives.prediction import Prediction
+from dspy.utils.lazy_import import require
+
+requests = require("requests")
 
 _databricks_sdk_installed = find_spec("databricks.sdk") is not None
 

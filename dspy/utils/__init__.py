@@ -1,7 +1,5 @@
 import os
 
-import requests
-
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider
 from dspy.utils import exceptions
 from dspy.utils.annotation import experimental
@@ -12,6 +10,8 @@ from dspy.utils.syncify import syncify
 
 
 def download(url):
+    import requests
+
     filename = os.path.basename(url)
     remote_size = int(requests.head(url, allow_redirects=True).headers.get("Content-Length", 0))
     local_size = os.path.getsize(filename) if os.path.exists(filename) else 0

@@ -3,8 +3,6 @@ import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
-import anyio.from_thread
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -46,6 +44,10 @@ def sync_send_to_stream(stream, message):
             future = executor.submit(run_in_new_loop)
             return future.result()
     except RuntimeError:
+        # Imported here, not at module scope: this is anyio's only use site, and
+        # from_thread is a submodule a lazy top-level proxy would not expose.
+        import anyio.from_thread
+
         # Not in an event loop, safe to use a new event loop in this thread
         return anyio.from_thread.run(_send)
 

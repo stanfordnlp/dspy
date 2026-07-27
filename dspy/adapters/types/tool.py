@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
 import pydantic
-from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
@@ -118,6 +117,10 @@ class Tool(Type):
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
     def _validate_and_parse_args(self, **kwargs):
+        # Imported here rather than at module scope: jsonschema pulls in
+        # referencing/rpds, and this is its only use site.
+        from jsonschema import ValidationError, validate
+
         # Validate the args value comply to the json schema.
         for k, v in kwargs.items():
             if k not in self.args:
