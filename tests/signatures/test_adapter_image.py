@@ -424,7 +424,7 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image.from_file(tmp_file_path)
+        pdf_image = dspy.Image.from_path(tmp_file_path)
 
         # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url
@@ -475,7 +475,7 @@ def test_image_constructor_supports_source_and_url_keywords():
         dspy.Image(source, url=source)
 
 
-def test_resource_factories_do_not_warn(tmp_path):
+def test_canonical_factories_do_not_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")
 
@@ -487,6 +487,14 @@ def test_resource_factories_do_not_warn(tmp_path):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
+        dspy.Image.from_path(str(tmp_file))
+
+
+def test_deprecated_factory_aliases_warn(tmp_path):
+    tmp_file = tmp_path / "test.png"
+    tmp_file.write_bytes(b"pngdata")
+
+    with pytest.warns(DeprecationWarning, match="Image.from_file is deprecated"):
         dspy.Image.from_file(str(tmp_file))
 
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
@@ -532,7 +540,7 @@ def test_deprecated_verify_warns_without_download():
 def test_deprecated_download_does_not_rescue_local_path():
     # The Image(path) hard break holds even with the deprecated download flag.
     with pytest.warns(DeprecationWarning):
-        with pytest.raises(ValueError, match=r"Image\.from_file"):
+        with pytest.raises(ValueError, match=r"Image\.from_path"):
             dspy.Image("/etc/passwd", download=True)
 
 
@@ -543,9 +551,9 @@ def test_pil_image_with_deprecated_download_still_encodes():
     assert image.url.startswith("data:image/")
 
 
-def test_from_file_missing_file():
+def test_from_path_missing_file():
     with pytest.raises(ValueError, match="File not found"):
-        dspy.Image.from_file("/nonexistent/image.png")
+        dspy.Image.from_path("/nonexistent/image.png")
 
 
 def test_unidentifiable_bytes_raise_value_error():

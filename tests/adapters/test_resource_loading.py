@@ -64,9 +64,19 @@ def test_explicit_local_resource_factories(tmp_path):
     file_path = tmp_path / "document.txt"
     file_path.write_bytes(b"file bytes")
 
-    assert base64.b64decode(dspy.Image.from_file(str(image_path)).url.split(",", 1)[1]) == b"image bytes"
-    assert base64.b64decode(dspy.Audio.from_file(str(audio_path)).data) == b"audio bytes"
+    assert base64.b64decode(dspy.Image.from_path(str(image_path)).url.split(",", 1)[1]) == b"image bytes"
+    assert base64.b64decode(dspy.Audio.from_path(str(audio_path)).data) == b"audio bytes"
     assert base64.b64decode(dspy.File.from_path(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
+
+
+def test_audio_from_file_is_deprecated_alias(tmp_path):
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"audio bytes")
+
+    with pytest.warns(DeprecationWarning, match="Audio.from_file is deprecated"):
+        aliased = dspy.Audio.from_file(str(audio_path))
+
+    assert base64.b64decode(aliased.data) == b"audio bytes"
 
 
 @pytest.mark.parametrize(
@@ -103,7 +113,7 @@ def test_in_memory_resource_construction():
 
 @pytest.mark.parametrize(
     ("source", "match"),
-    [("clip.wav", r"Audio\.from_file"), ("https://example.com/a.wav", r"Audio\.from_url")],
+    [("clip.wav", r"Audio\.from_path"), ("https://example.com/a.wav", r"Audio\.from_url")],
 )
 def test_audio_positional_string_must_be_data_uri_even_with_format(source, match):
     with pytest.raises(ValueError, match=match):
