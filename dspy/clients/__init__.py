@@ -12,7 +12,25 @@ from dspy.clients.provider import Provider, TrainingJob
 
 logger = logging.getLogger(__name__)
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+def _default_disk_cache_dir() -> str:
+    """Where the on-disk cache lives, resolved without touching the filesystem.
+
+    Evaluated at import time, so it must not raise. `Path.home()` raises
+    RuntimeError where no home can be determined (WebAssembly guests, some
+    containers), and `tempfile.gettempdir()` is no safer — it probes for a writable
+    directory and raises FileNotFoundError when none exists. So the last resort is a
+    plain relative path, resolved only if something actually opens the cache.
+    """
+    explicit = os.environ.get("DSPY_CACHEDIR")
+    if explicit:
+        return explicit
+    try:
+        return os.path.join(Path.home(), ".dspy_cache")
+    except RuntimeError:
+        return ".dspy_cache"
+
+
+DISK_CACHE_DIR = _default_disk_cache_dir()
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
 
@@ -57,7 +75,7 @@ def configure_cache(
 
 
 def _get_dspy_cache():
-    disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+    disk_cache_dir = _default_disk_cache_dir()
     disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
 
     try:
