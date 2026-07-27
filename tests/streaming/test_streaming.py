@@ -2145,3 +2145,36 @@ async def test_stream_listener_raises_clear_error_for_unknown_field():
 
     with pytest.raises(ValueError, match="is not a field of any predictor in the program"):
         await _collect_answer_chunks(dspy.ChainOfThought("question->answer"), [listener])
+
+
+@pytest.mark.anyio
+async def test_stream_listener_ambiguous_field_error_mentions_predict_name():
+    """A listener that did pass a predictor must get advice it can act on, not 'specify the predictor'."""
+
+    class TwoAnswers(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.first = dspy.Predict("question->answer")
+            self.second = dspy.Predict("context->answer")
+
+    program = TwoAnswers()
+    listener = dspy.streaming.StreamListener(signature_field_name="answer", predict=program.first)
+
+    with pytest.raises(ValueError, match="Pass `predict_name` to identify the predictor"):
+        await _collect_answer_chunks(program.deepcopy(), [listener])
+
+
+@pytest.mark.anyio
+async def test_stream_listener_ambiguous_field_keeps_original_error_without_predict():
+    """The pre-existing message is unchanged for listeners that never passed a predictor."""
+
+    class TwoAnswers(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.first = dspy.Predict("question->answer")
+            self.second = dspy.Predict("context->answer")
+
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+
+    with pytest.raises(ValueError, match="is not unique in the program"):
+        await _collect_answer_chunks(TwoAnswers(), [listener])

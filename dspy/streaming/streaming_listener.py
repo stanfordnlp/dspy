@@ -397,16 +397,17 @@ def find_predictor_for_stream_listeners(
             continue
         field_name_to_named_predictor[listener.signature_field_name] = None
 
+    ambiguous_field_names = set()
     for name, predictor in predictors:
         for field_name in predictor.signature.output_fields:
             if field_name not in field_name_to_named_predictor:
                 continue
 
             if field_name_to_named_predictor[field_name] is not None:
-                raise ValueError(
-                    f"Signature field {field_name} is not unique in the program, cannot automatically determine which "
-                    "predictor to use for streaming. Please specify the predictor to listen to."
-                )
+                # Raised per listener below, so that a listener which did pass a predictor gets advice it can act
+                # on rather than being told to do what it already did.
+                ambiguous_field_names.add(field_name)
+                continue
             field_name_to_named_predictor[field_name] = (name, predictor)
 
     predict_id_to_listener = defaultdict(list)
@@ -424,6 +425,19 @@ def find_predictor_for_stream_listeners(
             listener.predict = name_to_predictor[listener.predict_name]
             predict_id_to_listener[id(listener.predict)].append(listener)
             continue
+
+        if listener.signature_field_name in ambiguous_field_names:
+            if stale_predict:
+                raise ValueError(
+                    f"The predictor passed to the stream listener for signature field "
+                    f"{listener.signature_field_name} is not part of the program being streamed, and that field is "
+                    "produced by more than one predictor, so the listener cannot be re-bound automatically. Pass "
+                    "`predict_name` to identify the predictor, or pass a predictor that belongs to the program."
+                )
+            raise ValueError(
+                f"Signature field {listener.signature_field_name} is not unique in the program, cannot automatically "
+                "determine which predictor to use for streaming. Please specify the predictor to listen to."
+            )
 
         # Check the resolved value rather than key membership: the key is inserted for every listener that needs
         # resolution, so a missing-field lookup lands here with a `None` value, not a missing key.
