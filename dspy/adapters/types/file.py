@@ -15,6 +15,11 @@ class File(Type):
     The file_data field should be a data URI with the format:
         data:<mime_type>;base64,<base64_encoded_data>
 
+    Construct from in-memory values only: raw ``bytes``, a data URI string, a
+    ``{"file_data"|"file_id"|"filename"}`` dict, or another ``File``. Construction and adapter
+    parsing never access the filesystem; use :meth:`from_path` to read a local file,
+    :meth:`from_bytes` for raw bytes, or :meth:`from_file_id` to reference a preuploaded file.
+
     Examples:
         ```python
         import dspy

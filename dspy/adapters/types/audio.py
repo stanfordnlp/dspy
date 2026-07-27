@@ -25,6 +25,15 @@ def _normalize_audio_format(audio_format: str) -> str:
 
 
 class Audio(Type):
+    """An audio input type for DSPy.
+
+    Construct from in-memory values only: a data URI string, raw ``bytes`` (with
+    ``audio_format=``), a numpy-like array, a ``{"data", "audio_format"}`` dict, or another
+    ``Audio``. Raw base64 is passed as ``Audio(data=..., audio_format=...)``. Construction and
+    adapter parsing never access the filesystem or network; use :meth:`from_path` to read a local
+    file, :meth:`from_url` to download a remote resource, or :meth:`from_array` for array data.
+    """
+
     data: str
     audio_format: str
 
@@ -126,7 +135,7 @@ class Audio(Type):
     def from_file(cls, file_path: str) -> "Audio":
         """Deprecated alias for :meth:`from_path`."""
         warnings.warn(
-            "Audio.from_file is deprecated; use Audio.from_path instead.",
+            "Audio.from_file is deprecated and will be removed in 3.5; use Audio.from_path instead.",
             DeprecationWarning,
             stacklevel=2,
         )

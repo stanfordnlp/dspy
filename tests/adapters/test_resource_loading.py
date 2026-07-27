@@ -1,48 +1,58 @@
 import base64
-import json
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 import dspy
-from dspy.adapters.json_adapter import JSONAdapter
 
 
-@pytest.mark.parametrize(
-    ("annotation", "payload"),
-    [
-        (dspy.Image, lambda path: {"url": path}),
-        (dspy.Audio, lambda path: path),
-        (dspy.File, lambda path: path),
-    ],
-)
-def test_lm_output_cannot_read_local_resources(tmp_path, monkeypatch, annotation, payload):
-    secret = tmp_path / "secret.wav"
-    secret.write_bytes(b"TOP-SECRET")
-
-    class OutputSignature(dspy.Signature):
-        resource: annotation = dspy.OutputField()
+def _forbid_host_io(monkeypatch):
+    """Make any filesystem read or outbound request fail the test."""
 
     def fail_open(*args, **kwargs):
-        pytest.fail("LM output parsing attempted to open a local resource")
-
-    monkeypatch.setattr("builtins.open", fail_open)
-    completion = '{"resource": ' + json.dumps(payload(str(secret))) + "}"
-
-    with pytest.raises((ValueError, TypeError)):
-        JSONAdapter().parse(OutputSignature, completion)
-
-
-def test_audio_lm_output_cannot_download_url(monkeypatch):
-    class OutputSignature(dspy.Signature):
-        audio: dspy.Audio = dspy.OutputField()
+        pytest.fail("resource handling attempted a filesystem read")
 
     def fail_request(*args, **kwargs):
-        pytest.fail("LM output parsing attempted to download a remote resource")
+        pytest.fail("resource handling attempted a network request")
 
+    monkeypatch.setattr("builtins.open", fail_open)
+    monkeypatch.setattr("dspy.adapters.types.image.requests.get", fail_request)
     monkeypatch.setattr("dspy.adapters.types.audio.requests.get", fail_request)
 
-    with pytest.raises(ValueError, match=r"Audio\.from_url"):
-        JSONAdapter().parse(OutputSignature, '{"audio": "https://example.com/secret.wav"}')
+
+# Locator-shaped inputs an attacker could supply. None may trigger host I/O, whether the call
+# raises (paths, non-data-URI strings) or is retained as a reference (Image URLs).
+_LOCATOR_INPUTS = [
+    (dspy.Image, {"url": "/etc/passwd"}),
+    (dspy.Image, "/etc/passwd"),
+    (dspy.Image, {"url": "https://evil.example/secret.png"}),
+    (dspy.Audio, "/etc/passwd"),
+    (dspy.Audio, "https://evil.example/secret.wav"),
+    (dspy.File, "/etc/passwd"),
+    (dspy.File, "https://evil.example/secret.bin"),
+]
+
+
+@pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
+def test_construction_performs_no_host_io(monkeypatch, annotation, value):
+    # The constructor is reachable from untrusted application input (e.g. dspy.Image(user_string));
+    # it must never dereference a locator.
+    _forbid_host_io(monkeypatch)
+    try:
+        annotation(value)
+    except (ValueError, TypeError):
+        pass
+
+
+@pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
+def test_validation_performs_no_host_io(monkeypatch, annotation, value):
+    # validate_python is the path adapters use to coerce untrusted LM output (and pydantic uses for
+    # nested models / deserialization); it must never dereference a locator either.
+    _forbid_host_io(monkeypatch)
+    try:
+        TypeAdapter(annotation).validate_python(value)
+    except (ValueError, TypeError, ValidationError):
+        pass
 
 
 def test_image_url_constructor_does_not_download(monkeypatch):
