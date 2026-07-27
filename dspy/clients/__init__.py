@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from dspy.clients._litellm import get_litellm
@@ -9,10 +8,11 @@ from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
+from dspy.utils.caching import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_DIR = default_cache_dir()
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
 
@@ -57,7 +57,7 @@ def configure_cache(
 
 
 def _get_dspy_cache():
-    disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+    disk_cache_dir = default_cache_dir()
     disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
 
     try:
