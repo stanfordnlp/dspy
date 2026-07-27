@@ -53,14 +53,13 @@ class Flex(Module):
         self._module_src: str | None = None
         self._attached_names: list[str] = []
 
-        self._bridge: Any = None
         _validate_interpreter_factory(interpreter_factory)
         self._interpreter_factory = interpreter_factory
         self._max_predictor_calls = max_predictor_calls
 
         from dspy.flex.bridge import BridgeRuntime
 
-        self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
+        self._bridge: BridgeRuntime = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
         self._bind_code(self._baseline_src())
 
     @property
@@ -77,8 +76,8 @@ class Flex(Module):
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
-        state = dict(state) if isinstance(state, dict) else state
-        module_src = state.pop("module_src", None) if isinstance(state, dict) else None
+        state = dict(state)
+        module_src = state.pop("module_src", None)
         if module_src:
             self._bind_code(module_src)
         if state:
@@ -163,13 +162,10 @@ class Flex(Module):
                 setattr(new, key, copy.deepcopy(value, memo))
             except Exception:
                 setattr(new, key, value)
-        new._bridge = None
-        if new._module_src is not None:
-            from dspy.flex.bridge import BridgeRuntime
+        from dspy.flex.bridge import BridgeRuntime
 
-            bridge = BridgeRuntime(new, new._interpreter_factory, new._max_predictor_calls)
-            bridge.bind(new._module_src)
-            if self._bridge is not None:
-                bridge._registry = dict(self._bridge._registry)
-            new._bridge = bridge
+        new._bridge = BridgeRuntime(new, new._interpreter_factory, new._max_predictor_calls)
+        if new._module_src is not None:
+            new._bridge.bind(new._module_src)
+            new._bridge._registry = dict(self._bridge._registry)
         return new
