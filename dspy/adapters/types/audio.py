@@ -135,7 +135,7 @@ class Audio(Type):
     def from_file(cls, file_path: str) -> "Audio":
         """Deprecated alias for :meth:`from_path`."""
         warnings.warn(
-            "Audio.from_file is deprecated and will be removed in 3.5; use Audio.from_path instead.",
+            "Audio.from_file is deprecated and will be removed in 3.4; use Audio.from_path instead.",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -64,7 +64,7 @@ class Image(Type):
         if download_requested or verify_requested:
             warnings.warn(
                 "The `download` and `verify` arguments to Image() are deprecated and will be removed in "
-                "3.5. Use Image.from_url(url, verify=...) to download a remote image, or "
+                "3.4. Use Image.from_url(url, verify=...) to download a remote image, or "
                 "Image.from_path(path) for a local file.",
                 DeprecationWarning,
                 stacklevel=2,
@@ -125,7 +125,7 @@ class Image(Type):
     def from_file(cls, file_path: str) -> "Image":
         """Deprecated alias for :meth:`from_path`."""
         warnings.warn(
-            "Image.from_file is deprecated and will be removed in 3.5; use Image.from_path instead.",
+            "Image.from_file is deprecated and will be removed in 3.4; use Image.from_path instead.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -134,7 +134,7 @@ class Image(Type):
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
         warnings.warn(
-            "Image.from_PIL is deprecated and will be removed in 3.5; use Image(pil_image) instead.",
+            "Image.from_PIL is deprecated and will be removed in 3.4; use Image(pil_image) instead.",
             DeprecationWarning,
             stacklevel=2,
         )
