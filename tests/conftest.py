@@ -76,3 +76,78 @@ def lm_for_test():
     if model is None:
         pytest.skip("LM_FOR_TEST is not set in the environment variables")
     return model
+
+
+# Booting a Deno/Pyodide interpreter costs ~2.5s, which dominates the deno-marked
+# test suite. Tests that only exercise execute() semantics share one interpreter
+# per pytest process and restore its global namespace between tests. Tests that
+# configure Deno *process-level* permissions (enable_env_vars/enable_read_paths/
+# enable_write_paths/enable_network_access/deno_command/sync_files) or exercise
+# session lifecycle (shutdown, process death, protocol failure) must keep
+# creating their own instances.
+_POOL_SETUP_CODE = """
+def _pool_reset():
+    g = globals()
+    for name in [n for n in g if n not in _POOL_SAVED]:
+        del g[name]
+    g.update(_POOL_SAVED)
+
+_POOL_SAVED = dict(globals())
+_POOL_SAVED["_POOL_SAVED"] = _POOL_SAVED
+"""
+
+
+@pytest.fixture(scope="session")
+def _interpreter_pool() -> Iterator[dict[str, Any]]:
+    holder: dict[str, Any] = {"interpreter": None}
+    yield holder
+    if holder["interpreter"] is not None:
+        holder["interpreter"].shutdown()
+
+
+@pytest.fixture
+def pooled_interpreter(_interpreter_pool: dict[str, Any]):
+    """A shared PythonInterpreter with per-test namespace restoration.
+
+    Per-test tools and output_fields may be set by mutating ``.tools`` /
+    ``.output_fields`` and clearing ``_tools_registered`` (the same protocol
+    RLM uses for caller-owned interpreters); teardown restores both along
+    with the sandbox's global namespace.
+    """
+    from dspy.primitives.code_interpreter import CodeInterpreterError
+    from dspy.primitives.python_interpreter import PythonInterpreter
+
+    interpreter = _interpreter_pool["interpreter"]
+    if interpreter is None:
+        interpreter = PythonInterpreter()
+        interpreter.execute(_POOL_SETUP_CODE)
+        _interpreter_pool["interpreter"] = interpreter
+
+    yield interpreter
+
+    try:
+        interpreter.tools.clear()
+        interpreter.output_fields = None
+        interpreter._tools_registered = False
+        interpreter.execute("_pool_reset()")
+    except CodeInterpreterError:
+        # The test that just ran killed the session. Surface that loudly on
+        # this test and boot a fresh interpreter for the next consumer.
+        _interpreter_pool["interpreter"] = None
+        interpreter.shutdown()
+        raise
+
+
+@pytest.fixture
+def configure_pooled_interpreter(pooled_interpreter):
+    """Configure the pooled interpreter with per-test tools/output_fields."""
+
+    def configure(tools: dict[str, Any] | None = None, output_fields: list[dict[str, Any]] | None = None):
+        if tools:
+            pooled_interpreter.tools.update(tools)
+        if output_fields is not None:
+            pooled_interpreter.output_fields = output_fields
+        pooled_interpreter._tools_registered = False
+        return pooled_interpreter
+
+    return configure

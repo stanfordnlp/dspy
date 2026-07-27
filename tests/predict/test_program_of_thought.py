@@ -40,7 +40,7 @@ class RecordingPythonInterpreterFactory:
 
 
 @pytest.mark.deno
-def test_pot_code_generation():
+def test_pot_code_generation(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -52,13 +52,13 @@ def test_pot_code_generation():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
 
 
 # This test ensures the old finetuned saved models still work
 @pytest.mark.deno
-def test_old_style_pot():
+def test_old_style_pot(pooled_interpreter):
     lm = DummyLM(
         [
             {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
@@ -67,7 +67,7 @@ def test_old_style_pot():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
 
 
@@ -78,7 +78,7 @@ class ExtremumFinder(Signature):
 
 
 @pytest.mark.deno
-def test_pot_support_multiple_fields():
+def test_pot_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -90,13 +90,13 @@ def test_pot_support_multiple_fields():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(ExtremumFinder)
-    res = pot(input_list="2, 3, 5, 6")
+    res = pot(pooled_interpreter, input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
 
 
 @pytest.mark.deno
-def test_pot_code_generation_with_one_error():
+def test_pot_code_generation_with_one_error(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -112,7 +112,7 @@ def test_pot_code_generation_with_one_error():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
 
 
