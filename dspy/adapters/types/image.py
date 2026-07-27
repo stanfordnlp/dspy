@@ -79,7 +79,14 @@ class Image(Type):
 
     @classmethod
     def from_url(cls, url: str, verify: bool = True) -> "Image":
-        """Download an HTTP(S) resource and encode it as a data URI."""
+        """Download an HTTP(S) resource and encode it as a data URI.
+
+        Security: this performs an explicit, caller-initiated fetch and applies no
+        SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
+        will reach private, loopback, or cloud-metadata hosts and follow redirects to
+        them. When ``url`` is derived from untrusted input, the caller is responsible
+        for validating the host against an allowlist before calling this method.
+        """
         if not _is_http_url(url):
             raise ValueError(f"Image.from_url requires an HTTP(S) URL, received: {url}")
         return cls(_encode_image_from_url(url, verify=verify))

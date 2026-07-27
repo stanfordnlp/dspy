@@ -74,6 +74,12 @@ class Audio(Type):
         """
         Download an audio file from URL and encode it as base64.
 
+        Security: this performs an explicit, caller-initiated fetch and applies no
+        SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
+        will reach private, loopback, or cloud-metadata hosts and follow redirects to
+        them. When ``url`` is derived from untrusted input, the caller is responsible
+        for validating the host against an allowlist before calling this method.
+
         Args:
             url: The URL of the audio to download.
             verify: Whether to verify SSL certificates. Set to False for self-signed certs.
