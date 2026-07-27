@@ -422,7 +422,18 @@ def find_predictor_for_stream_listeners(
             # The listener holds a predictor that is not the one the program will execute, which happens whenever
             # the program was copied (every optimizer's `compile()` returns a copy) or the inner predictor of a
             # module like `dspy.ChainOfThought` was replaced after the listener was built. Re-bind by name.
-            listener.predict = name_to_predictor[listener.predict_name]
+            candidate = name_to_predictor[listener.predict_name]
+            if listener.signature_field_name not in candidate.signature.output_fields:
+                # Binding anyway would reproduce the bug this function fixes: the predictor streams, the listener
+                # never sees its field marker, and nothing is emitted.
+                raise ValueError(
+                    f"The predictor passed to the stream listener for signature field "
+                    f"{listener.signature_field_name} is not part of the program being streamed, and the predictor "
+                    f"named {listener.predict_name} in the program does not produce that field, so the listener "
+                    "cannot be re-bound by name. Pass a `predict_name` whose predictor produces the field, or pass "
+                    "a predictor that belongs to the program."
+                )
+            listener.predict = candidate
             predict_id_to_listener[id(listener.predict)].append(listener)
             continue
 

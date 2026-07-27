@@ -2178,3 +2178,19 @@ async def test_stream_listener_ambiguous_field_keeps_original_error_without_pred
 
     with pytest.raises(ValueError, match="is not unique in the program"):
         await _collect_answer_chunks(TwoAnswers(), [listener])
+
+
+@pytest.mark.anyio
+async def test_stream_listener_raises_when_named_predictor_lacks_the_field():
+    """Re-binding by name must not accept a predictor that does not produce the listened-to field.
+
+    Binding anyway would leave the listener attached to a predictor whose stream never carries its field
+    marker, which is the silent no-op this function exists to prevent.
+    """
+    other_program = dspy.Predict("question->judgement")
+    listener = dspy.streaming.StreamListener(
+        signature_field_name="judgement", predict=other_program, predict_name="predict"
+    )
+
+    with pytest.raises(ValueError, match="does not produce that field"):
+        await _collect_answer_chunks(dspy.ChainOfThought("question->answer"), [listener])
