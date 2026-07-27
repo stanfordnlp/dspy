@@ -1,9 +1,6 @@
 import functools
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-import anyio
-from anyio import CapacityLimiter
-
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
@@ -18,6 +15,8 @@ def get_async_max_workers():
 
 def get_limiter():
     async_max_workers = get_async_max_workers()
+
+    from anyio import CapacityLimiter
 
     global _limiter
     if _limiter is None:
@@ -58,6 +57,8 @@ def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
                 return program(*a, **kw)
             finally:
                 thread_local_overrides.reset(token)
+
+        import anyio.to_thread
 
         partial_f = functools.partial(wrapped_program, *args, **kwargs)
         return await anyio.to_thread.run_sync(partial_f, abandon_on_cancel=True, limiter=get_limiter())

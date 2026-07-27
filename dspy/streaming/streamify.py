@@ -7,8 +7,6 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
 import orjson
-from anyio import create_memory_object_stream, create_task_group
-from anyio.streams.memory import MemoryObjectSendStream
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
@@ -25,6 +23,8 @@ def _is_litellm_model_response_stream(value: Any) -> bool:
 
 
 if TYPE_CHECKING:
+    from anyio.streams.memory import MemoryObjectSendStream
+
     from dspy.primitives.module import Module
 
 
@@ -170,13 +170,17 @@ def streamify(
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
 
-    async def generator(args, kwargs, stream: MemoryObjectSendStream):
+    async def generator(args, kwargs, stream: "MemoryObjectSendStream"):
         with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
+        # Imported here, not at module scope: anyio pulls ssl, which CPython builds
+        # with a reduced stdlib omit, and streaming is optional.
+        from anyio import create_memory_object_stream, create_task_group
+
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)

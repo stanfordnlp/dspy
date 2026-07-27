@@ -10,13 +10,6 @@ from typing import Any
 import cloudpickle
 import orjson
 import pydantic
-from cachetools import LRUCache
-from diskcache import FanoutCache
-
-from dspy.clients.disk_serialization import (
-    DeserializationError,
-    restricted_disk,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +64,8 @@ class Cache:
         self.enable_memory_cache = enable_memory_cache
         self.disk_cache_dir = os.fspath(disk_cache_dir) if disk_cache_dir is not None else None
         if self.enable_memory_cache:
+            from cachetools import LRUCache
+
             if memory_max_entries is None:
                 raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
             elif memory_max_entries <= 0:
@@ -79,6 +74,13 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
+            # Scoped per branch so a cache with both tiers disabled imports neither
+            # cachetools nor diskcache — diskcache pulls sqlite3, which CPython
+            # builds with a reduced stdlib omit (verified on a WebAssembly build).
+            from diskcache import FanoutCache
+
+            from dspy.clients.disk_serialization import restricted_disk
+
             fanout_kwargs = dict(
                 directory=self.disk_cache_dir,
                 shards=16,
@@ -129,6 +131,8 @@ class Cache:
                 return self._prepare_cached_response(response)
 
         if self.enable_disk_cache:
+            from dspy.clients.disk_serialization import DeserializationError
+
             try:
                 response = self.disk_cache.get(key)
             except DeserializationError:

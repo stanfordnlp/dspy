@@ -8,10 +8,11 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-import requests
-
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, save_data
+from dspy.utils.lazy_import import require
+
+requests = require("requests")
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM

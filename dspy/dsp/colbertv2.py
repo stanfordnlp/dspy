@@ -1,9 +1,10 @@
 from typing import Any
 
-import requests
-
 from dspy.clients.cache import request_cache
 from dspy.dsp.utils import dotdict
+from dspy.utils.lazy_import import require
+
+requests = require("requests")
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
 

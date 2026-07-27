@@ -5,10 +5,12 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import orjson
-import requests
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
+from dspy.utils.lazy_import import require
+
+requests = require("requests")
 
 if TYPE_CHECKING:
     from databricks.sdk import WorkspaceClient
