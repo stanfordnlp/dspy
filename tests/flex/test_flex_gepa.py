@@ -70,8 +70,6 @@ def test_only_flex_instances_are_code_optimizable() -> None:
     hand it optimizer-authored source with nowhere safe to run it."""
 
     class LookAlike(dspy.Module):
-        _code_optimizable = True  # the marker the old duck-typed check keyed on
-
         def _bind_code(self, src):
             raise AssertionError("must never be treated as a code component")
 

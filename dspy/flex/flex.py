@@ -34,9 +34,6 @@ class Flex(Module):
         max_predictor_calls: Cap on bridged LM calls per ``forward``; ``None`` disables it.
     """
 
-    # dspy.GEPA reads this marker (duck-typed) to know it may rewrite the module's code.
-    _code_optimizable: bool = True
-
     def __init__(
         self,
         signature: Any,

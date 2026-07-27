@@ -34,7 +34,7 @@ The generated code always runs in a sandbox (`interpreter_factory` defaults to `
 
 ## How Optimization Works
 
-`Flex` modules are marked `_code_optimizable`, a flag `dspy.GEPA` looks for. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your evals. GEPA binds the candidate source, evaluates it, and keeps it if it scores better — the same Pareto-based search GEPA runs for prompts, applied to code.
+`dspy.GEPA` discovers `Flex` submodules by type. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your evals. GEPA binds the candidate source, evaluates it, and keeps it if it scores better — the same Pareto-based search GEPA runs for prompts, applied to code.
 
 One thing to note is that a broken GEPA candidate can't crash the run. If the reflection model emits source that fails to import or bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
 

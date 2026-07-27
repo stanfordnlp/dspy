@@ -55,7 +55,7 @@ The class carries the `@experimental` decorator. The moving parts — the code p
 ### Defining and running a Flex
 
 **`dspy.Flex(signature, *, tools=None, interpreter_factory=PythonInterpreter, max_predictor_calls=100)`**
-Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Marks the instance `_code_optimizable`, validates `interpreter_factory` (a zero-arg factory, defaulting to `dspy.PythonInterpreter`, exactly as `dspy.RLM`), and sets up the sandbox bridge. One instance carries one configuration.
+Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Validates `interpreter_factory` (a zero-arg factory, defaulting to `dspy.PythonInterpreter`, exactly as `dspy.RLM`), and sets up the sandbox bridge. One instance carries one configuration.
 
 **`__call__(**inputs)` / `forward(**inputs)`**
 Runs the currently bound source inside the interpreter, bridging predictor calls back to the host. Returns a `dspy.Prediction` over the signature's output fields, and accepts keyword inputs only.
