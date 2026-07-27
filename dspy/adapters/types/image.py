@@ -21,6 +21,9 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
+_UNSET = object()
+
+
 class Image(Type):
     url: str
 
@@ -31,7 +34,7 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, source: Any = None, **data):
+    def __init__(self, source: Any = None, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
         """Create an Image.
 
         Parameters
@@ -45,11 +48,27 @@ class Image(Type):
             - ``dict`` with a single ``{"url": value}`` entry (legacy form)
             - already encoded data URI
 
+        download, verify:
+            Deprecated. Use :meth:`from_url` (which accepts ``verify``) to download a
+            remote image, or :meth:`from_file` for a local file. Accepted for one release
+            with a warning: ``download=True`` eagerly fetches an HTTP(S) ``source``.
+
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
 
         Local files and remote resources must be loaded explicitly with
         :meth:`from_file` and :meth:`from_url`, respectively.
         """
+
+        download_requested = download is not _UNSET
+        verify_requested = verify is not _UNSET
+        if download_requested or verify_requested:
+            warnings.warn(
+                "The `download` and `verify` arguments to Image() are deprecated and will be removed in a "
+                "future release. Use Image.from_url(url, verify=...) to download a remote image, or "
+                "Image.from_file(path) for a local file.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if source is not None and "url" in data:
             raise TypeError("Image received both `source` and `url`; provide only one image source")
@@ -62,7 +81,11 @@ class Image(Type):
             else:
                 data["url"] = source
 
-        if "url" in data:
+        url = data.get("url")
+        if download_requested and download and isinstance(url, str) and _is_http_url(url):
+            # Legacy download=True path: eagerly fetch the remote URL.
+            data["url"] = _encode_image_from_url(url, verify=verify if verify_requested else True)
+        elif "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.
             data["url"] = encode_image(data["url"])
 

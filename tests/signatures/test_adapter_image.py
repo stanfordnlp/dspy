@@ -1,3 +1,4 @@
+import base64
 import os
 import tempfile
 import warnings
@@ -502,11 +503,44 @@ def test_invalid_string_format():
         dspy.Image(invalid_string)
 
 
-def test_pil_image_rejects_download_parameter():
-    sample_pil = PILImage.new("RGB", (60, 30), color="red")
+def test_deprecated_download_true_downloads(monkeypatch):
+    response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
+    response.raise_for_status = lambda: None
+    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
 
-    with pytest.raises(pydantic.ValidationError, match="download"):
-        dspy.Image(sample_pil, download=True)
+    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
+        image = dspy.Image("https://example.com/dog.jpg", download=True)
+
+    assert image.url.startswith("data:image/png;base64,")
+    assert base64.b64decode(image.url.split(",", 1)[1]) == b"pngdata"
+
+
+def test_deprecated_download_false_keeps_reference():
+    source = "https://example.com/dog.jpg"
+    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
+        image = dspy.Image(source, download=False)
+    assert image.url == source
+
+
+def test_deprecated_verify_warns_without_download():
+    source = "https://example.com/dog.jpg"
+    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
+        image = dspy.Image(source, verify=False)
+    assert image.url == source
+
+
+def test_deprecated_download_does_not_rescue_local_path():
+    # The Image(path) hard break holds even with the deprecated download flag.
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError, match=r"Image\.from_file"):
+            dspy.Image("/etc/passwd", download=True)
+
+
+def test_pil_image_with_deprecated_download_still_encodes():
+    sample_pil = PILImage.new("RGB", (60, 30), color="red")
+    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
+        image = dspy.Image(sample_pil, download=True)
+    assert image.url.startswith("data:image/")
 
 
 def test_from_file_missing_file():
