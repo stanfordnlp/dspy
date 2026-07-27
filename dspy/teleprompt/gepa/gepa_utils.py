@@ -163,7 +163,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 capture_failed_parses=True,
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
-                callback_metadata=callback_metadata,
             )
             scores = []
             outputs = []

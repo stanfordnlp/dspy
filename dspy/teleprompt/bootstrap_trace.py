@@ -1,14 +1,13 @@
 import logging
 from dataclasses import dataclass
-from types import MethodType
 from typing import Any, Callable, TypedDict
 
-import dspy
-from dspy.evaluate.evaluate import Evaluate
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.parallelizer import ParallelExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -37,108 +36,84 @@ def bootstrap_trace_data(
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
-    callback_metadata: dict[str, Any] | None = None,
 ) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
-    evaluator = Evaluate(
-        devset=dataset,
-        num_threads=num_threads,
-        display_progress=True,
-        provide_traceback=False,  # TODO(check with team)
-        max_errors=len(dataset) * 10,  # TODO(check with team)
-        failure_score=failure_score,
-    )
 
-    def wrapped_metric(example, prediction, trace=None):
-        prediction, _ = prediction
-        if isinstance(prediction, FailedPrediction):
-            return prediction.format_reward or format_failure_score
-        return metric(example, prediction, trace) if metric else True
+    def process_example(example):
+        inputs = {**example.inputs()}
+        trace = []
+        try:
+            with settings.context(trace=trace):
+                prediction = program(**inputs)
+        except AdapterParseError as e:
+            present = list(e.parsed_result.keys()) if e.parsed_result else None
+            expected = list(e.signature.output_fields.keys())
 
-    # Use `object.__getattribute__` to bypass the custom hook `Module.__getattribute__` so that we avoid
-    # the warning that `forward` is not accessed through `__call__`.
-    original_forward = object.__getattribute__(program, "forward")
+            found_pred = None
+            for pred in program.predictors():
+                if pred.signature == e.signature:
+                    found_pred = pred
+                    break
+            if found_pred is None:
+                raise ValueError(f"Failed to find the predictor for the failed signature: {e.signature}")
 
-    def patched_forward(program_to_use: Module, **kwargs):
-        with dspy.context(trace=[]):
-            try:
-                return original_forward(**kwargs), dspy.settings.trace.copy()
-            except AdapterParseError as e:
-                completion_str = e.lm_response
-                parsed_result = e.parsed_result
-                failed_signature = e.signature
-                failed_inputs = kwargs
+            if present:
+                prediction = FailedPrediction(
+                    completion_text=e.lm_response,
+                    format_reward=format_failure_score + (failure_score - format_failure_score) * (present / expected),
+                )
+            else:
+                prediction = FailedPrediction(completion_text=e.lm_response, format_reward=format_failure_score)
 
-                present = list(parsed_result.keys()) if parsed_result else None
-                expected = list(failed_signature.output_fields.keys())
+            trace.append((found_pred, inputs, prediction))
 
-                found_pred = None
-                for pred in program_to_use.predictors():
-                    if pred.signature == failed_signature:
-                        found_pred = pred
-                        break
-                if found_pred is None:
-                    raise ValueError(f"Failed to find the predictor for the failed signature: {failed_signature}")
-
-                trace = dspy.settings.trace.copy()
-                # Trace is Tuple[signature, inputs, prediction outputs]
-                if present:
-                    failed_pred = FailedPrediction(
-                        completion_text=completion_str,
-                        format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
-                    )
-                else:
-                    failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
-
-                trace.append(
-                    (
-                        found_pred,
-                        failed_inputs,
-                        failed_pred,
-                    )
+            if log_format_failures:
+                logging.warning(
+                    "Failed to parse output for example. This is likely due to the LLM response not following "
+                    "the adapter's formatting."
                 )
 
-                if log_format_failures:
-                    logging.warning(
-                        "Failed to parse output for example. This is likely due to the LLM response not following "
-                        "the adapter's formatting."
-                    )
+        if isinstance(prediction, FailedPrediction):
+            score = prediction.format_reward or format_failure_score
+        else:
+            score = metric(example, prediction, None) if metric else True
 
-                return failed_pred, trace
+        return {"prediction": prediction, "trace": trace, "score": score}
 
-    program.forward = MethodType(patched_forward, program)
-
-    try:
-        results = evaluator(
-            program,
-            metric=wrapped_metric,
-            callback_metadata=callback_metadata,
-        ).results
-    finally:
-        program.forward = original_forward
+    executor = ParallelExecutor(
+        num_threads=num_threads,
+        disable_progress_bar=False,
+        provide_traceback=False,  # TODO(check with team)
+        max_errors=len(dataset) * 10,  # TODO(check with team)
+    )
+    results = executor.execute(process_example, dataset)
 
     data = []
-    for example_ind, (example, prediction, score) in enumerate(results):
-        try:
-            prediction, trace = prediction
-        except ValueError as ve:
-            # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This
-            # leads to a value error. To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset.
+    for example_ind, (example, result) in enumerate(zip(dataset, results, strict=True)):
+        if result is None:
+            # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting.
+            # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset.
             # Proposal(Lakshya): We should capture the incorrectly-formatted LLM response, and store it in the trace,
             # and pass it to in the GRPO group with a high-negative user-configurable score.
-            logger.warning(
-                "Failed to unpack prediction and trace. This is likely due to the LLM response not following "
-                "dspy formatting."
-            )
+            exception = executor.exceptions_map.get(example_ind)
+            logger.warning("Failed to run the program on an example during bootstrapping: %r", exception)
             if raise_on_error:
-                raise ve
+                if exception is None:
+                    raise RuntimeError(
+                        f"Example {example_ind} failed during bootstrapping without a recorded exception."
+                    )
+                raise exception
             else:
                 continue
-        data_dict = {"example": example, "prediction": prediction, "trace": trace, "example_ind": example_ind}
+        data_dict = {
+            "example": example,
+            "prediction": result["prediction"],
+            "trace": result["trace"],
+            "example_ind": example_ind,
+        }
         if metric:
-            data_dict["score"] = score
+            data_dict["score"] = result["score"]
         data.append(data_dict)
 
     return data

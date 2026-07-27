@@ -53,7 +53,6 @@ def bad_metric(example, prediction):
     ], {"metric_key": "eval_full"}),
 ])
 def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection_minibatch_size, batch, expected_callback_metadata):
-    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
     from dspy.teleprompt.gepa import gepa_utils
 
     class DummyModule(dspy.Module):
@@ -71,18 +70,25 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection
 
     captured_kwargs: dict[str, Any] = {}
 
-    def dummy_bootstrap_trace_data(*args, **kwargs):
-        captured_kwargs.update(kwargs)
-        return []
+    class DummyEvaluate:
+        def __init__(self, *args, **kwargs):
+            captured_kwargs.update(kwargs)
 
-    monkeypatch.setattr(bootstrap_trace_module, "bootstrap_trace_data", dummy_bootstrap_trace_data)
+        def __call__(self, *args, **kwargs):
+            class _Result:
+                def __init__(self):
+                    self.results = []
+
+            return _Result()
+
+    monkeypatch.setattr(gepa_utils, "Evaluate", DummyEvaluate)
     monkeypatch.setattr(
         gepa_utils.DspyAdapter,
         "build_program",
         lambda self, candidate: DummyModule(),
     )
 
-    adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
+    adapter.evaluate(batch=batch, candidate={}, capture_traces=False)
 
     assert captured_kwargs["callback_metadata"] == expected_callback_metadata
 

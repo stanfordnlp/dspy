@@ -317,17 +317,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return results
 
     def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
-        # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
-        # module.forward to return a tuple: (prediction, trace).
-        # When usage tracking is enabled, ensure we attach usage to the
-        # prediction object if present.
-        prediction_in_output = None
         if isinstance(output, Prediction):
-            prediction_in_output = output
-        elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
-            prediction_in_output = output[0]
-        if prediction_in_output:
-            prediction_in_output.set_lm_usage(tokens)
+            output.set_lm_usage(tokens)
         else:
             logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
 

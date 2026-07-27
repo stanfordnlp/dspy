@@ -1,6 +1,6 @@
-from typing import Any, ClassVar
 from unittest import mock
 
+import pytest
 from litellm import Choices, Message, ModelResponse
 
 import dspy
@@ -121,33 +121,18 @@ def test_bootstrap_trace_data():
             assert len(trace_entry) == 3, "Trace entry should have 3 elements"
 
 
-def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
-    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+def test_bootstrap_trace_data_raise_on_error():
+    """A program failure re-raises the original exception, or skips the example when tolerated."""
 
-    class DummyProgram(dspy.Module):
-        def forward(self, **kwargs):  # pragma: no cover - stub forward
-            return dspy.Prediction()
+    class ExplodingModule(dspy.Module):
+        def forward(self, **kwargs):
+            raise RuntimeError("program blew up")
 
-    captured_metadata: dict[str, Any] = {}
+    program = ExplodingModule()
+    dataset = [Example(text="one").with_inputs("text")]
 
-    class DummyEvaluate:
-        def __init__(self, *args, **kwargs):
-            pass
+    with pytest.raises(RuntimeError, match="program blew up"):
+        bootstrap_trace_data(program=program, dataset=dataset, num_threads=1, raise_on_error=True)
 
-        def __call__(self, *args, callback_metadata=None, **kwargs):
-            captured_metadata["value"] = callback_metadata
-
-            class _Result:
-                results: ClassVar[list[Any]] = []
-
-            return _Result()
-
-    monkeypatch.setattr(bootstrap_trace_module, "Evaluate", DummyEvaluate)
-
-    bootstrap_trace_module.bootstrap_trace_data(
-        program=DummyProgram(),
-        dataset=[],
-        callback_metadata={"disable_logging": True},
-    )
-
-    assert captured_metadata["value"] == {"disable_logging": True}
+    results = bootstrap_trace_data(program=program, dataset=dataset, num_threads=1, raise_on_error=False)
+    assert results == []
