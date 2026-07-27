@@ -74,9 +74,35 @@ def configure_cache(
 
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _get_dspy_cache():
     disk_cache_dir = _default_disk_cache_dir()
     disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
+
+    # Both tiers off imports neither cachetools nor diskcache. That matters beyond
+    # saving a little startup: diskcache pulls sqlite3, which CPython builds with a
+    # reduced stdlib omit, so without a way to switch the cache off `import dspy`
+    # cannot succeed there at all.
+    if _env_flag("DSPY_DISABLE_CACHE"):
+        return Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=False,
+            disk_cache_dir=None,
+            disk_size_limit_bytes=disk_cache_limit,
+            memory_max_entries=1,
+        )
+
+    if _env_flag("DSPY_DISABLE_DISK_CACHE"):
+        return Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir=None,
+            disk_size_limit_bytes=disk_cache_limit,
+            memory_max_entries=1000000,
+        )
 
     try:
         _dspy_cache = Cache(
