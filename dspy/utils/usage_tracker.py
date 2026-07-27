@@ -54,6 +54,15 @@ class UsageTracker:
         if len(usage_entry) > 0:
             self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
 
+    def merge(self, other: "UsageTracker") -> None:
+        """Absorb every usage entry recorded by another tracker.
+
+        Used to roll a nested `track_usage()` block's usage up into the enclosing
+        tracker, so that an outer block reflects everything that happened inside it.
+        """
+        for lm, usage_entries in other.usage_data.items():
+            self.usage_data[lm].extend(usage_entries)
+
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
         total_usage_by_lm = {}
@@ -67,8 +76,19 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
-    tracker = UsageTracker()
+    """Context manager for tracking LM usage.
 
-    with settings.context(usage_tracker=tracker):
-        yield tracker
+    Nested blocks roll up: on exit, the usage recorded by an inner `track_usage()` is also
+    added to the enclosing tracker, so an outer block accounts for everything that happened
+    inside it. The roll-up happens even when the block exits with an exception, because the
+    tokens were spent either way.
+    """
+    tracker = UsageTracker()
+    parent_tracker = settings.usage_tracker
+
+    try:
+        with settings.context(usage_tracker=tracker):
+            yield tracker
+    finally:
+        if parent_tracker is not None:
+            parent_tracker.merge(tracker)

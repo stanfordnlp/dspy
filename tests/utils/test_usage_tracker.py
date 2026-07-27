@@ -1,5 +1,6 @@
 from unittest import mock
 
+import pytest
 from pydantic import BaseModel
 
 import dspy
@@ -153,6 +154,74 @@ def test_track_usage_context_manager(lm_for_test):
     assert lm_for_test in total_usage
     assert len(total_usage.keys()) == 1
     assert isinstance(total_usage[lm_for_test], dict)
+
+
+def _record_lm_call(model, prompt_tokens, completion_tokens):
+    """Record usage the same way `BaseLM` does on each call."""
+    dspy.settings.usage_tracker.add_usage(
+        model,
+        {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+    )
+
+
+def test_nested_track_usage_rolls_up_to_outer_tracker():
+    """An outer tracker must account for usage recorded inside a nested block."""
+    with track_usage() as outer_tracker:
+        _record_lm_call("gpt-4o-mini", 100, 10)
+
+        with track_usage() as inner_tracker:
+            _record_lm_call("gpt-4o-mini", 1000, 100)
+
+        _record_lm_call("gpt-4o-mini", 5, 1)
+
+    # The inner block only sees its own usage.
+    assert inner_tracker.get_total_tokens()["gpt-4o-mini"]["prompt_tokens"] == 1000
+
+    # The outer block sees everything, including the nested block's usage.
+    outer_total = outer_tracker.get_total_tokens()["gpt-4o-mini"]
+    assert outer_total["prompt_tokens"] == 1105
+    assert outer_total["completion_tokens"] == 111
+    assert len(outer_tracker.usage_data["gpt-4o-mini"]) == 3
+
+
+def test_nested_track_usage_rolls_up_multiple_models_and_levels():
+    """Roll-up is per-model and survives more than one level of nesting."""
+    with track_usage() as outer_tracker:
+        _record_lm_call("gpt-4o-mini", 100, 10)
+
+        with track_usage():
+            _record_lm_call("gpt-3.5-turbo", 200, 20)
+
+            with track_usage():
+                _record_lm_call("gpt-4o-mini", 300, 30)
+
+    total = outer_tracker.get_total_tokens()
+    assert total["gpt-4o-mini"]["prompt_tokens"] == 400
+    assert total["gpt-3.5-turbo"]["prompt_tokens"] == 200
+
+
+def test_nested_track_usage_rolls_up_on_exception():
+    """Tokens spent before an exception still count against the outer tracker."""
+    with track_usage() as outer_tracker:
+        with pytest.raises(ValueError):
+            with track_usage():
+                _record_lm_call("gpt-4o-mini", 1000, 100)
+                raise ValueError("boom")
+
+    assert outer_tracker.get_total_tokens()["gpt-4o-mini"]["prompt_tokens"] == 1000
+
+
+def test_track_usage_restores_outer_tracker_as_active():
+    """Leaving a nested block puts the enclosing tracker back in `settings`."""
+    with track_usage() as outer_tracker:
+        with track_usage() as inner_tracker:
+            assert dspy.settings.usage_tracker is inner_tracker
+        assert dspy.settings.usage_tracker is outer_tracker
+    assert dspy.settings.usage_tracker is None
 
 
 def test_merge_usage_entries_with_new_keys():
