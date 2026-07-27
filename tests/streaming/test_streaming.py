@@ -2061,3 +2061,87 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+def _chain_of_thought_stream_chunks():
+    for content in [
+        "[[", " ##", " reasoning", " ##", " ]]\n\n",
+        "Step", " by", " step", ".",
+        "\n\n[[ ##", " answer", " ##", " ]]\n\n",
+        "Because", " of", " gravity", ".",
+        "\n\n[[ ##", " completed", " ##", " ]]",
+    ]:
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+
+async def _collect_answer_chunks(program, listeners):
+    async def chain_of_thought_stream(*args, **kwargs):
+        for chunk in _chain_of_thought_stream_chunks():
+            yield chunk
+
+    async def completion_side_effect(*args, **kwargs):
+        return chain_of_thought_stream()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        streamed_program = dspy.streamify(program, stream_listeners=listeners)
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            all_chunks = []
+            async for value in streamed_program(question="why do things fall?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+    return all_chunks
+
+
+@pytest.mark.anyio
+async def test_stream_listener_rebinds_to_predictor_of_copied_program():
+    """Regression test for https://github.com/stanfordnlp/dspy/issues/8736.
+
+    Every optimizer's `compile()` returns a copy of the program, so a listener built from the original
+    holds a predictor that the copy never executes. `Predict.forward` compares by identity, so streaming
+    was silently disabled and the listener emitted nothing.
+    """
+    program = dspy.ChainOfThought("question->answer")
+    listener = dspy.streaming.StreamListener(
+        signature_field_name="answer", predict=program.predict, predict_name="predict"
+    )
+
+    compiled_program = program.deepcopy()
+    all_chunks = await _collect_answer_chunks(compiled_program, [listener])
+
+    assert listener.predict is compiled_program.predict
+    assert "".join(chunk.chunk for chunk in all_chunks) == "Because of gravity."
+    assert all_chunks[-1].is_last_chunk is True
+
+
+@pytest.mark.anyio
+async def test_stream_listener_rebinds_when_inner_predictor_is_replaced():
+    """A listener built before `ChainOfThought.predict` is replaced must still stream."""
+    program = dspy.ChainOfThought("question->answer")
+    listener = dspy.streaming.StreamListener(signature_field_name="answer", predict=program.predict)
+
+    program.predict = dspy.Predict(program.predict.signature)
+    all_chunks = await _collect_answer_chunks(program, [listener])
+
+    assert listener.predict is program.predict
+    assert "".join(chunk.chunk for chunk in all_chunks) == "Because of gravity."
+
+
+@pytest.mark.anyio
+async def test_stream_listener_raises_when_predictor_is_not_in_program():
+    """An unresolvable predictor must fail loudly instead of silently disabling streaming."""
+    other_program = dspy.Predict("question->judgement")
+    listener = dspy.streaming.StreamListener(
+        signature_field_name="judgement", predict=other_program, predict_name="not_in_program"
+    )
+
+    with pytest.raises(ValueError, match="is not part of the program being streamed"):
+        await _collect_answer_chunks(dspy.ChainOfThought("question->answer"), [listener])
+
+
+@pytest.mark.anyio
+async def test_stream_listener_raises_clear_error_for_unknown_field():
+    """An unknown signature field must raise the documented ValueError, not a TypeError."""
+    listener = dspy.streaming.StreamListener(signature_field_name="nonexistent_field")
+
+    with pytest.raises(ValueError, match="is not a field of any predictor in the program"):
+        await _collect_answer_chunks(dspy.ChainOfThought("question->answer"), [listener])
