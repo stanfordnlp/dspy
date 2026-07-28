@@ -2111,3 +2111,21 @@ async def test_streaming_rejects_adapter_without_a_supported_ancestor():
     with dspy.context(adapter=CustomAdapter()):
         with pytest.raises(ValueError, match="Unsupported adapter for streaming: CustomAdapter"):
             listener.receive(chunk)
+
+
+@pytest.mark.anyio
+async def test_streaming_rejects_unrelated_adapter_with_a_colliding_class_name():
+    """Ancestors are matched by class identity, not by name.
+
+    An adapter that merely shares a name with a supported one has no reason to share its wire format, and
+    accepting it here would defer the failure to `flush()`, where the same decision is made with
+    `isinstance`.
+    """
+    JSONAdapter = type("JSONAdapter", (dspy.Adapter,), {})  # noqa: N806 - deliberate name collision
+
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    chunk = ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"answer": "'))])
+
+    with dspy.context(adapter=JSONAdapter()):
+        with pytest.raises(ValueError, match="Unsupported adapter for streaming: JSONAdapter"):
+            listener.receive(chunk)

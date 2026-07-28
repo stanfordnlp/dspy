@@ -118,16 +118,21 @@ class StreamListener:
     def _resolve_adapter_name(self) -> str | None:
         """Find the `adapter_identifiers` entry that applies to the adapter in the current settings.
 
-        The lookup walks the adapter's MRO instead of matching its exact class name, so a subclass of a
-        supported adapter inherits that adapter's field markers. `BAMLAdapter` for instance only changes how
-        the schema is rendered in the prompt, so its wire format is `JSONAdapter`'s and the JSON markers
-        apply verbatim. Returns `None` when no ancestor is a supported adapter.
+        The lookup walks the adapter's MRO, so a subclass of a supported adapter inherits that adapter's
+        field markers. `BAMLAdapter` for instance only changes how the schema is rendered in the prompt, so
+        its wire format is `JSONAdapter`'s and the JSON markers apply verbatim. MRO order resolves the
+        nearest ancestor first, which matches the precedence of the `isinstance` checks in `flush()` and in
+        the end-of-field detection: `JSONAdapter` and `XMLAdapter` both subclass `ChatAdapter`.
+
+        Ancestors are matched by class identity rather than by name, so an unrelated adapter that happens to
+        be called `JSONAdapter` is rejected here instead of being accepted and then failing downstream where
+        the same decision is made with `isinstance`. Returns `None` when no ancestor is a supported adapter.
         """
         if settings.adapter is None:
             return "ChatAdapter"
 
         for adapter_class in type(settings.adapter).__mro__:
-            if adapter_class.__name__ in self.adapter_identifiers:
+            if adapter_class in ADAPTER_SUPPORT_STREAMING:
                 return adapter_class.__name__
         return None
 
