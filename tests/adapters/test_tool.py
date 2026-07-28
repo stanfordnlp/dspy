@@ -146,6 +146,21 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
+    """Regression test for #9882: args with a default value should not be
+    listed as "required" in the native function-calling schema, even though
+    they're still advertised (with their default) in "properties".
+    """
+    tool = Tool(dummy_function)
+
+    function_call = tool.format_as_litellm_function_call()
+
+    parameters = function_call["function"]["parameters"]
+    assert set(parameters["properties"].keys()) == {"x", "y"}
+    assert parameters["required"] == ["x"]
+    assert "y" not in parameters["required"]
+
+
 def test_tool_from_class():
     class Foo:
         def __init__(self, user_id: str):

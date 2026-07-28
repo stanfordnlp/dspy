@@ -604,7 +604,7 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                              "parameters": {"type": "object",
                                             "properties": {"query": {"type": "string"},
                                                            "k": {"type": "integer", "default": 3}},
-                                            "required": ["query", "k"]}}}]}
+                                            "required": ["query"]}}}]}
     assert lm_kwargs == expected_lm_kwargs
 
 def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():

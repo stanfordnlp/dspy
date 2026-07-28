@@ -150,6 +150,9 @@ class Tool(Type):
         return str(self)
 
     def format_as_litellm_function_call(self):
+        # Args with a default value are optional: they shouldn't be listed as "required",
+        # even though they're still advertised (with their default) in "properties".
+        required = [name for name, schema in self.args.items() if "default" not in schema]
         return {
             "type": "function",
             "function": {
@@ -158,7 +161,7 @@ class Tool(Type):
                 "parameters": {
                     "type": "object",
                     "properties": self.args,
-                    "required": list(self.args.keys()),
+                    "required": required,
                 },
             },
         }
