@@ -155,6 +155,45 @@ def test_track_usage_context_manager(lm_for_test):
     assert isinstance(total_usage[lm_for_test], dict)
 
 
+def test_nested_track_usage_rolls_up_into_outer_tracker():
+    """Regression test for #10064: usage recorded inside a nested
+    track_usage() block must also be reflected in the enclosing tracker,
+    not just the innermost one.
+    """
+    model = "openai/gpt-4o-mini"
+
+    def record(prompt_tokens, completion_tokens):
+        dspy.settings.usage_tracker.add_usage(
+            model, {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens}
+        )
+
+    def subagent(prompt_tokens, completion_tokens):
+        with track_usage() as usage:
+            record(prompt_tokens, completion_tokens)
+        return usage.get_total_tokens()[model]["prompt_tokens"]
+
+    with track_usage() as orchestrator_cost:
+        record(100, 10)
+        a = subagent(1000, 100)
+        b = subagent(500, 50)
+        record(5, 1)
+
+    billed = orchestrator_cost.get_total_tokens()[model]["prompt_tokens"]
+    assert billed == 100 + a + b + 5  # 1605, not 105
+
+
+def test_top_level_track_usage_unaffected_by_rollup():
+    """A track_usage() block with no enclosing tracker should behave exactly
+    as before: nothing to roll up into, so its own totals are unaffected.
+    """
+    model = "openai/gpt-4o-mini"
+
+    with track_usage() as tracker:
+        dspy.settings.usage_tracker.add_usage(model, {"prompt_tokens": 42, "completion_tokens": 7})
+
+    assert tracker.get_total_tokens()[model]["prompt_tokens"] == 42
+
+
 def test_merge_usage_entries_with_new_keys():
     """Ensure merging usage entries preserves unseen keys."""
     tracker = UsageTracker()

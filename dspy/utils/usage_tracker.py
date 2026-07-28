@@ -67,8 +67,20 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
+    """Context manager for tracking LM usage.
+
+    If this is used inside another `track_usage()` block, the usage recorded here is
+    also rolled up into the enclosing tracker on exit, so the outer block's totals
+    reflect everything that happened within it, not just what happened outside the
+    nested block.
+    """
+    parent_tracker = settings.usage_tracker
     tracker = UsageTracker()
 
     with settings.context(usage_tracker=tracker):
         yield tracker
+
+    if parent_tracker is not None:
+        for lm, usage_entries in tracker.usage_data.items():
+            for usage_entry in usage_entries:
+                parent_tracker.add_usage(lm, usage_entry)
