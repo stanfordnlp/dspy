@@ -193,7 +193,7 @@ class BridgeRuntime:
             sess.constructed = True
 
     def ensure_initialized(self) -> None:
-        """Build the host predictors now (used at bind time so load_state/named_predictors see them)."""
+        """Build the host predictors now (used at bind time so load_state sees them)."""
         self._ensure_constructed(self._get_session())
 
     def forward(self, inputs: dict[str, Any]) -> Any:

@@ -123,9 +123,11 @@ def test_construct_attaches_real_predictor_under_canonical_name() -> None:
     handle = flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     assert handle == "solve"
     assert isinstance(flex.solve, dspy.ChainOfThought)
-    # Keeps its canonical predictor name (not "_bridge_predictors[...]") so state round-trips.
-    names = [n for n, _ in flex.named_predictors()]
+    # Keeps its canonical name in named_parameters() (not "_bridge_predictors[...]") so state
+    # round-trips; named_predictors() stays empty — internals are not tunable units.
+    names = [n for n, _ in flex.named_parameters()]
     assert "solve.predict" in names
+    assert flex.named_predictors() == []
     assert "solve" in flex._attached_names
 
 

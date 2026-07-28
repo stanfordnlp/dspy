@@ -45,12 +45,15 @@ class Echo(dspy.Signature):
 
 
 @deno_required
-def test_predictors_are_attached_and_discoverable() -> None:
+def test_predictors_are_attached_but_not_reported_as_tunable() -> None:
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        # The baseline attaches a predictor named `predict` directly onto the module.
+        # The baseline attaches a predictor named `predict` directly onto the module (its state is
+        # named and serialized via named_parameters)...
         assert hasattr(program, "predict")
-        names = [n for n, _ in program.named_predictors()]
-        assert "predict" in names
+        assert "predict" in [n for n, _ in program.named_parameters()]
+        # ...but named_predictors() reports no tunable units: the Flex's update unit is its
+        # module_src, and the attached predictors are rebuilt on every rebind.
+        assert program.named_predictors() == []
 
 
 def test_construction_writes_nothing_to_disk(tmp_path, monkeypatch) -> None:
@@ -150,9 +153,42 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     params = dict(program.named_parameters())
     assert isinstance(params["flex"], Flex)
     assert not any(name.startswith("flex.") for name in params)
-    # The internals stay discoverable on the Flex itself, invisible to the parent.
-    assert [n for n, _ in program.flex.named_predictors()] == ["echo"]
+    # The internals are not tunable units from any vantage point; the parent sees one leaf.
+    assert program.flex.named_predictors() == []
     assert [n for n, _ in program.named_predictors()] == ["sibling"]
+
+
+def test_set_lm_is_stored_and_survives_rebind_and_save(tmp_path) -> None:
+    # set_lm stores one module-level LM (one home), applied via context at forward time — so it
+    # survives rebinds (which delete and rebuild the attached predictors) and save/load, unlike
+    # writing .lm onto internals that the next candidate wipes.
+    flex = Flex(Echo, interpreter_factory=MockInterpreter)
+    lm = dspy.LM("openai/gpt-4o-mini")
+    flex.set_lm(lm)
+    assert flex.get_lm() is lm
+
+    flex._bind_code(ECHO_MODULE)  # a rebind must not lose the module-level LM
+    assert flex.get_lm() is lm
+
+    path = tmp_path / "flex.json"
+    flex.save(path)
+    reloaded = Flex(Echo, interpreter_factory=MockInterpreter)
+    reloaded.load(path)
+    assert reloaded.get_lm() is not None
+    assert reloaded.get_lm().model == lm.model
+
+    assert reloaded.reset_copy().get_lm() is None  # reset clears the LM, like Predict.reset
+
+
+@deno_required
+def test_set_lm_is_the_default_for_bridged_calls() -> None:
+    # No global LM configured: the flex-level LM is the ambient default the internal predictor
+    # resolves at call time.
+    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
+        program._bind_code(ECHO_MODULE)
+        program.set_lm(DummyLM([{"a": "from-flex-lm"}]))
+        result = program(q="hello")
+        assert result.a == "from-flex-lm"
 
 
 def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:

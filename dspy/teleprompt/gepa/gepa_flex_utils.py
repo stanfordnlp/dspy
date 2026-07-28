@@ -19,15 +19,6 @@ def enumerate_flex_submodules(root) -> dict[str, Any]:
     return {name: sub for name, sub in root.named_parameters() if isinstance(sub, Flex)}
 
 
-def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
-    """Object ids of predictors owned by ``dspy.Flex`` submodules."""
-    ids: set[int] = set()
-    for flex in flex_submodules.values():
-        for _, pred in flex.named_predictors():
-            ids.add(id(pred))
-    return ids
-
-
 def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
     """Per flex submodule path, the ``(task_description, available_context)`` shown to the code
     proposer, keyed by the submodule's parameter path (its candidate key).

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable
 
+from dspy.dsp.utils.settings import settings
 from dspy.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
@@ -53,6 +54,7 @@ class Flex(Module, Parameter):
 
         self._module_src: str | None = None
         self._attached_names: list[str] = []
+        self._lm = None
 
         _validate_interpreter_factory(interpreter_factory)
         self._interpreter_factory = interpreter_factory
@@ -74,21 +76,45 @@ class Flex(Module, Parameter):
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
         state = super().dump_state(json_mode=json_mode)
         state["module_src"] = self._module_src
+        state["lm"] = self._lm.dump_state() if self._lm else None
         return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
         state = dict(state)
         module_src = state.pop("module_src", None)
+        lm_state = state.pop("lm", None)
         if module_src:
             self._bind_code(module_src)
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+        if lm_state:
+            from dspy.clients.base_lm import BaseLM
+            from dspy.predict.predict import _sanitize_lm_state
+
+            sanitized = _sanitize_lm_state(lm_state, allow_unsafe_lm_state)
+            self._lm = (
+                BaseLM.load_state(sanitized, allow_custom_lm_class=allow_unsafe_lm_state) if sanitized else None
+            )
 
     def reset(self) -> None:
-        """Reset the internal predictors' state while keeping ``module_src``."""
+        """Reset the LM and the internal predictors' state while keeping ``module_src``."""
+        self._lm = None
         for _, param in self.named_parameters():
             if param is not self:
                 param.reset()
+
+    def named_predictors(self):
+        """A Flex's update unit is only its ``module_src``."""
+        return []
+
+    def set_lm(self, lm) -> None:
+        self._lm = lm
+
+    def get_lm(self):
+        return self._lm
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self._name})"
 
     def _baseline_src(self) -> str:
         """Starting source: one predictor over the whole signature, wrapped in a ``dspy.Module``.
@@ -136,6 +162,10 @@ class Flex(Module, Parameter):
         """Run the bound ``forward`` inside the interpreter."""
         if args:
             raise TypeError("dspy.Flex accepts keyword inputs only")
+        if self._lm is not None:
+            # Bridged predictor calls run host-side in this thread, so the context reaches them.
+            with settings.context(lm=self._lm):
+                return self._bridge.forward(kwargs)
         return self._bridge.forward(kwargs)
 
     def close(self) -> None:

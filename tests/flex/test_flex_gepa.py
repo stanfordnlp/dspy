@@ -18,10 +18,7 @@ import textwrap
 import pytest
 
 import dspy
-from dspy.teleprompt.gepa.gepa_flex_utils import (
-    enumerate_flex_submodules,
-    flex_internal_predictor_ids,
-)
+from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 
@@ -119,17 +116,12 @@ def test_flex_internal_predictors_excluded_from_instruction_components() -> None
             return self.flex(**kwargs)
 
     prog = Prog()
-    flex_subs = enumerate_flex_submodules(prog)
-    internal_ids = flex_internal_predictor_ids(flex_subs)
-
-    instruction_names = [n for n, p in prog.named_predictors() if id(p) not in internal_ids]
-    # Only the sibling Predict gets instruction optimization; the Flex's internal
-    # predictors are owned by its code and excluded.
-    assert instruction_names == ["sibling"]
-    # A Flex is a Parameter leaf: its internals exist on the Flex itself but the parent's
-    # predictor list never sees them, so nothing else can optimize them behind the code's back.
-    assert [n for n, _ in prog.flex.named_predictors()] == ["predict"]
+    # Only the sibling Predict gets instruction optimization; the Flex's internal predictors are
+    # owned by its code and never reported as tunable units — from the parent (Parameter leaf) or
+    # from the Flex itself (named_predictors() is empty) — so no exclusion logic is needed.
     assert [n for n, _ in prog.named_predictors()] == ["sibling"]
+    assert prog.flex.named_predictors() == []
+    assert set(enumerate_flex_submodules(prog)) == {"flex"}
 
 
 # --- adapter: build_program rebinds code, applies instructions ---------------
