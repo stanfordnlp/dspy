@@ -28,10 +28,10 @@ def code_key_path(key: str) -> str:
 
 
 def enumerate_flex_submodules(root) -> dict[str, Any]:
-    """Map submodule path -> module for every code-optimizable (``dspy.Flex``) submodule."""
+    """Map parameter path -> module for every code-optimizable (``dspy.Flex``) submodule."""
     from dspy.flex import Flex
 
-    return {name: sub for name, sub in root.named_sub_modules() if isinstance(sub, Flex)}
+    return {name: sub for name, sub in root.named_parameters() if isinstance(sub, Flex)}
 
 
 def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:

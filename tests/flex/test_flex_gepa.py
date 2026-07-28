@@ -85,7 +85,7 @@ def test_only_flex_instances_are_code_optimizable() -> None:
         def forward(self, **kwargs):
             return self.real(**kwargs)
 
-    assert set(enumerate_flex_submodules(Prog())) == {"self.real"}
+    assert set(enumerate_flex_submodules(Prog())) == {"real"}
 
 
 def test_enumerate_finds_top_level_and_nested_flex() -> None:
@@ -103,7 +103,7 @@ def test_enumerate_finds_top_level_and_nested_flex() -> None:
 
     prog = Prog()
     flex_paths = enumerate_flex_submodules(prog)
-    assert set(flex_paths) == {"self.flex"}  # the regular Predict is not code-optimizable
+    assert set(flex_paths) == {"flex"}  # the regular Predict is not code-optimizable
 
 
 # --- exclusion of Flex-internal predictors -----------------------------------
@@ -127,9 +127,10 @@ def test_flex_internal_predictors_excluded_from_instruction_components() -> None
     # Only the sibling Predict gets instruction optimization; the Flex's internal
     # predictors are owned by its code and excluded.
     assert instruction_names == ["sibling"]
-    all_names = [n for n, _ in prog.named_predictors()]
-    assert any(n.startswith("flex.") for n in all_names)  # internals exist...
-    assert not any(n.startswith("flex.") for n in instruction_names)  # ...but are excluded
+    # A Flex is a Parameter leaf: its internals exist on the Flex itself but the parent's
+    # predictor list never sees them, so nothing else can optimize them behind the code's back.
+    assert [n for n, _ in prog.flex.named_predictors()] == ["predict"]
+    assert [n for n, _ in prog.named_predictors()] == ["sibling"]
 
 
 # --- adapter: build_program rebinds code, applies instructions ---------------
@@ -363,7 +364,7 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     optimizer.compile(prog, trainset=[ex], valset=[ex])
 
     seed = captured["seed"]
-    code_key = make_code_key("self.flex")
+    code_key = make_code_key("flex")
     assert code_key in seed  # one code component for the whole Flex
     assert "class " in seed[code_key]  # the value is the full module class source
     assert "sibling" in seed  # the non-flex predictor's instruction
@@ -402,7 +403,7 @@ def test_result_to_dict_keeps_flex_code_components() -> None:
     )
     (candidate,) = result.to_dict()["candidates"]
 
-    code_key = make_code_key("self.flex")
+    code_key = make_code_key("flex")
     assert candidate[code_key] == SIMPLE_MODULE  # the optimized code survives serialization
     assert candidate["sibling"] == prog.sibling.signature.instructions
     # The Flex's internal predictors are not components; reporting them would misstate what was

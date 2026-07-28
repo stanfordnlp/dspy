@@ -4,6 +4,7 @@ import copy
 from typing import Any, Callable
 
 from dspy.flex.ctx import FlexContext
+from dspy.predict.parameter import Parameter
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -11,7 +12,7 @@ from dspy.utils.annotation import experimental
 
 
 @experimental(version="3.3.0b2")
-class Flex(Module):
+class Flex(Module, Parameter):
     """A module whose implementation is optimizable code, not just a prompt.
 
     Construct it like any module (``dspy.Flex(MySignature)``). It starts as a baseline that delegates
@@ -82,6 +83,10 @@ class Flex(Module):
             self._bind_code(module_src)
         if state:
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+
+    def reset(self) -> None:
+        """Rebind the baseline source, discarding any optimized code."""
+        self._bind_code(self._baseline_src())
 
     def _baseline_src(self) -> str:
         """Starting source: one predictor over the whole signature, wrapped in a ``dspy.Module``.

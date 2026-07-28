@@ -129,6 +129,53 @@ def test_nested_flex_state_roundtrips_inside_a_program(tmp_path) -> None:
         reloaded.flex.close()
 
 
+def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
+    # Saving, GEPA discovery, and reset_copy all walk named_parameters(); a Flex appears there
+    # as one state-bearing leaf (like dspy.Predict), so its sandbox-attached predictors are
+    # never enumerated — or optimized — behind the code's back.
+    class Program(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sibling = dspy.Predict("x -> y")
+            self.flex = Flex(Echo, interpreter_factory=lambda: MockInterpreter())
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    program = Program()
+    # Attach a predictor the way the bridge does when the sandbox constructs one.
+    program.flex.echo = dspy.Predict("q -> a")
+    program.flex._attached_names.append("echo")
+
+    params = dict(program.named_parameters())
+    assert isinstance(params["flex"], Flex)
+    assert not any(name.startswith("flex.") for name in params)
+    # The internals stay discoverable on the Flex itself, invisible to the parent.
+    assert [n for n, _ in program.flex.named_predictors()] == ["echo"]
+    assert [n for n, _ in program.named_predictors()] == ["sibling"]
+
+
+def test_reset_copy_rebinds_the_baseline_source() -> None:
+    # reset_copy() calls .reset() on every parameter leaf; for a Flex that means discarding
+    # the optimized code and rebinding the construction baseline, like a fresh Flex.
+    class Program(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.flex = Flex(Echo, interpreter_factory=lambda: MockInterpreter())
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    program = Program()
+    program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
+    assert "self.echo" in program.flex.module_src
+
+    fresh = program.reset_copy()
+    assert "self.echo" not in fresh.flex.module_src  # back to the baseline...
+    assert "dspy.Predict(" in fresh.flex.module_src
+    assert "self.echo" in program.flex.module_src  # ...without touching the original
+
+
 def test_state_layout_unchanged_without_a_flex() -> None:
     # Programs with no Flex keep the flat `{param_path: state}` layout, so existing saved state
     # still loads.

@@ -24,7 +24,9 @@ Instruction optimization in GEPA is per-predictor: it looks at one predictor's i
 
 ### 5. Predictors inside a Flex are owned by its code, not tuned in parallel
 
-When you mix a `Flex` with ordinary modules in one program, GEPA optimizes the `Flex`'s code and the other predictors' instructions — but never the instructions of predictors that live *inside* the `Flex`. Those predictors are constructed by the current `module_src` and will be replaced wholesale by the next code candidate, so tuning their instructions would be optimizing something about to be overwritten. `Flex` excludes them from the instruction-component set by object identity, keeping the two optimization surfaces from fighting each other.
+When you mix a `Flex` with ordinary modules in one program, GEPA optimizes the `Flex`'s code and the other predictors' instructions — but never the instructions of predictors that live *inside* the `Flex`. Those predictors are constructed by the current `module_src` and will be replaced wholesale by the next code candidate, so tuning their instructions would be optimizing something about to be overwritten.
+
+The mechanism is structural: `Flex` is a `Parameter` (like `dspy.Predict`), so a parent program's `named_parameters()` yields it as one state-bearing leaf and never recurses into it. That single fact drives saving (the parent's state nests the `Flex`'s state, `module_src` included), GEPA discovery (each `Flex` is one code component), and opacity — a parent's `named_predictors()`, `predictors()`, `set_lm()`, and demo/instruction optimizers like `BootstrapFewShot` don't see the `Flex`'s internals, so nothing tunes them behind the code's back. Calling `flex.set_lm(...)` or `flex.named_predictors()` on the `Flex` itself still reaches them, and `reset_copy()` resets a `Flex` the way it resets any parameter: back to its construction baseline, discarding optimized code.
 
 ### 6. A broken candidate scores as a failure, not a crash
 
