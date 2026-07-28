@@ -28,7 +28,6 @@ import pytest
 import dspy
 from dspy.flex import Flex
 from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.teleprompt.gepa.gepa_flex_utils import make_code_key
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 from tests.flex import _offstack_types  # imported as a module: `Contact` is never a name here
@@ -266,7 +265,7 @@ def test_gepa_scores_a_type_mismatch_as_a_failure_in_place() -> None:
         dspy.Example(text="Bob", person=Person(name="Bob", age=1)).with_inputs("text"),
     ]
 
-    result = adapter.evaluate(batch, {make_code_key("self"): source}, capture_traces=False)
+    result = adapter.evaluate(batch, {"self": source}, capture_traces=False)
     student.close()
 
     assert result.scores == [1.0, 0.0, 1.0]  # the type error is scored, not raised

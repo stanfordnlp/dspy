@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import dspy
 from dspy.flex import Flex
-from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules, make_code_key
+from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from tests.mock_interpreter import MockInterpreter
 
 EDITED_MODULE = (
@@ -54,7 +54,7 @@ def test_gepa_discovers_edited_submodule_in_a_program() -> None:
 
     seed_candidate: dict[str, str] = {}
     for sub_path, sub in submodules.items():
-        seed_candidate[make_code_key(sub_path)] = sub.module_src  # the exact GEPA seed expression
+        seed_candidate[sub_path] = sub.module_src  # the exact GEPA seed expression
 
     # Every seeded candidate carries the edit forward into the next GEPA run.
     assert seed_candidate

@@ -21,7 +21,6 @@ import dspy
 from dspy.teleprompt.gepa.gepa_flex_utils import (
     enumerate_flex_submodules,
     flex_internal_predictor_ids,
-    make_code_key,
 )
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
@@ -140,7 +139,7 @@ def test_build_program_rebinds_flex_code() -> None:
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={})
 
-    candidate = {make_code_key("self"): SIMPLE_MODULE}
+    candidate = {"self": SIMPLE_MODULE}
     rebuilt = adapter.build_program(candidate)
 
     assert 'dspy.Predict("q -> a")' in rebuilt.module_src
@@ -165,7 +164,7 @@ def test_selection_eval_passes_program_trace_to_declaring_metric() -> None:
 
     student = dspy.Flex(Echo)  # a flex submodule is present
     adapter = DspyAdapter(student_module=student, metric_fn=trace_aware_metric, feedback_map={})
-    candidate = {make_code_key("self"): SIMPLE_MODULE}  # one dspy.Predict -> one traced call
+    candidate = {"self": SIMPLE_MODULE}  # one dspy.Predict -> one traced call
     ex = dspy.Example(q="hi", a="hi").with_inputs("q")
 
     dspy.configure(lm=DummyLM([{"a": "hi"}]))
@@ -186,7 +185,7 @@ def test_selection_eval_keeps_vanilla_semantics_for_legacy_metric() -> None:
 
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=legacy_metric, feedback_map={})
-    candidate = {make_code_key("self"): SIMPLE_MODULE}
+    candidate = {"self": SIMPLE_MODULE}
     ex = dspy.Example(q="hi", a="hi").with_inputs("q")
 
     dspy.configure(lm=DummyLM([{"a": "hi"}]))
@@ -211,7 +210,7 @@ def test_selection_eval_binds_metric_with_required_contract_params() -> None:
 
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=strict_metric, feedback_map={})
-    candidate = {make_code_key("self"): SIMPLE_MODULE}
+    candidate = {"self": SIMPLE_MODULE}
     ex = dspy.Example(q="hi", a="hi").with_inputs("q")
 
     dspy.configure(lm=DummyLM([{"a": "hi"}]))
@@ -249,7 +248,7 @@ def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
 
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=exact_match, feedback_map={})
-    candidate = {make_code_key("self"): CRASHY_MODULE}
+    candidate = {"self": CRASHY_MODULE}
     batch = [
         dspy.Example(q="hi", a="hi").with_inputs("q"),
         dspy.Example(q="boom", a="boom").with_inputs("q"),  # raises inside forward
@@ -289,7 +288,7 @@ def test_a_candidate_that_cannot_bind_scores_as_a_failure(label, source) -> None
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, failure_score=-1.0)
     ex = dspy.Example(q="hi", a="hi").with_inputs("q")
 
-    result = adapter.evaluate([ex, ex], {make_code_key("self"): source}, capture_traces=False)
+    result = adapter.evaluate([ex, ex], {"self": source}, capture_traces=False)
 
     assert result.scores == [-1.0, -1.0], label
     assert result.outputs == [None, None]
@@ -313,7 +312,7 @@ def test_an_infrastructure_error_during_build_is_not_scored_as_a_failure(monkeyp
     ex = dspy.Example(q="hi", a="hi").with_inputs("q")
 
     with pytest.raises(RateLimitError):
-        adapter.evaluate([ex], {make_code_key("self"): SIMPLE_MODULE}, capture_traces=False)
+        adapter.evaluate([ex], {"self": SIMPLE_MODULE}, capture_traces=False)
 
 
 # --- adapter: propose routes code keys to the code proposer ------------------
@@ -323,7 +322,7 @@ def test_propose_new_texts_uses_code_proposer_for_code_keys() -> None:
     reflection = DummyLM([{"revised_source": SIMPLE_MODULE}])
     student = dspy.Flex(Echo)
     adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=reflection)
-    ckey = make_code_key("self")
+    ckey = "self"
     candidate = {ckey: student.module_src}
     reflective = {ckey: [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
 
@@ -364,7 +363,7 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     optimizer.compile(prog, trainset=[ex], valset=[ex])
 
     seed = captured["seed"]
-    code_key = make_code_key("flex")
+    code_key = "flex"
     assert code_key in seed  # one code component for the whole Flex
     assert "class " in seed[code_key]  # the value is the full module class source
     assert "sibling" in seed  # the non-flex predictor's instruction
@@ -376,8 +375,8 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
 
 
 def test_result_to_dict_keeps_flex_code_components() -> None:
-    """to_dict() must serialize the same components GEPA optimized: a `<path>::code` entry holding
-    the full module_src per Flex, and no entries for the Flex's internal predictors (whose
+    """to_dict() must serialize the same components GEPA optimized: the full module_src per Flex
+    under its parameter path, and no entries for the Flex's internal predictors (whose
     instructions are written by that code, not optimized on their own)."""
     from dspy.teleprompt.gepa.gepa import DspyGEPAResult
 
@@ -403,7 +402,7 @@ def test_result_to_dict_keeps_flex_code_components() -> None:
     )
     (candidate,) = result.to_dict()["candidates"]
 
-    code_key = make_code_key("flex")
+    code_key = "flex"
     assert candidate[code_key] == SIMPLE_MODULE  # the optimized code survives serialization
     assert candidate["sibling"] == prog.sibling.signature.instructions
     # The Flex's internal predictors are not components; reporting them would misstate what was
