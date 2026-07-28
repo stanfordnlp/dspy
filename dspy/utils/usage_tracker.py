@@ -32,6 +32,14 @@ class UsageTracker:
                 result[key] = value
         return result
 
+    def _is_summable(self, value: Any) -> bool:
+        """Return True for values that should be numerically summed when merging entries.
+
+        bool is excluded despite being an int subclass: tallying `is_byok=True` twice
+        would yield 2 instead of True, which is wrong.
+        """
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
     def _merge_usage_entries(
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
@@ -45,8 +53,9 @@ class UsageTracker:
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
-            elif current_v is not None or v is not None:
+            elif self._is_summable(v) or self._is_summable(current_v):
                 result[k] = (current_v or 0) + (v or 0)
+            # else: non-summable (str, bool, …) — usage_entry2's value already in result; leave it.
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
@@ -57,8 +66,10 @@ class UsageTracker:
     def merge(self, other: "UsageTracker") -> None:
         """Absorb every usage entry recorded by `other` into this tracker.
 
-        Entries stored on a tracker are already flattened, so they can be carried over
-        as-is. Used to roll a nested `track_usage()` scope up into its parent.
+        Entries stored on a tracker are already flattened by `_flatten_usage_entry`,
+        so they can be appended directly without going through `add_usage` (which would
+        re-flatten them and re-apply the `len > 0` guard unnecessarily).
+        Used to roll a nested `track_usage()` scope up into its parent.
         """
         for lm, usage_entries in other.usage_data.items():
             self.usage_data[lm].extend(usage_entries)

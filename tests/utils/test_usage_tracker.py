@@ -468,3 +468,31 @@ def test_usage_tracker_merge():
 
     # `b` is untouched by the merge.
     assert b.get_total_tokens()["openai/gpt-4o-mini"]["prompt_tokens"] == 20
+
+
+def test_non_numeric_usage_values_are_not_accumulated():
+    """Non-numeric metadata fields must not be concatenated when entries are merged.
+
+    `get_total_tokens()` runs `_merge_usage_entries` across all entries for a given
+    LM.  Rolling a nested scope up into the outer one means the outer tracker ends up
+    with *more* entries per LM to fold together, so this interaction is exercised here
+    specifically with a nested `track_usage()` call.
+    """
+    with track_usage() as outer:
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {"prompt_tokens": 100, "service_tier": "standard", "is_byok": False},
+        )
+        with track_usage():
+            dspy.settings.usage_tracker.add_usage(
+                "openai/gpt-4o-mini",
+                {"prompt_tokens": 50, "service_tier": "standard", "is_byok": False},
+            )
+
+    outer_total = outer.get_total_tokens()["openai/gpt-4o-mini"]
+    # Numeric fields should be summed.
+    assert outer_total["prompt_tokens"] == 150
+    # String metadata must not be concatenated ("standardstandard").
+    assert outer_total["service_tier"] == "standard"
+    # Boolean flags must not be tallied (False + False → 0).
+    assert outer_total["is_byok"] is False
