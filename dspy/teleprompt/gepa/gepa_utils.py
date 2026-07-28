@@ -211,7 +211,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # When a dspy.Flex submodule is present, capture the execution trace at scoring time so a
         # metric that declares a `program_trace` parameter can score against it (e.g. an LM-call
         # penalty).
-        if self._flex_task_descriptions:
+        if self._flex_paths:
             return evaluate_with_trace(
                 program,
                 batch,

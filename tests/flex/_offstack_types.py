@@ -3,7 +3,7 @@
 dspy resolves a type named in a signature string by walking caller frames for the bare name. Test
 modules normally define their types at module scope, which puts them on the stack and hides that
 lookup's limits. Importing *this* module as a module object — `from tests.flex import
-_offstack_types` — keeps `Contact` off every frame, which is the condition `bridge._make_signature`
+_offstack_types` — keeps `Contact` off every frame, which is the condition `bridge._resolve_signature`
 exists for, and the condition any program written as `import myapp.models as models` is in.
 """
 

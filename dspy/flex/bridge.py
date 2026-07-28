@@ -126,8 +126,8 @@ class _Session:
 class BridgeRuntime:
     """Owns the sandbox session(s) and host-side bridge callbacks for one ``Flex``.
 
-    Predictors are constructed on the host and attached to the ``Flex`` (so they stay optimizable and
-    serializable). Sessions are thread-local, so parallel rollouts each get their own interpreter;
+    Predictors are constructed on the host and attached to the ``Flex`` (so they carry canonical
+    names in its state and serialize with it). Sessions are thread-local, so parallel rollouts each get their own interpreter;
     construction is idempotent across sessions, so the host predictors are built once and shared.
     ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
 

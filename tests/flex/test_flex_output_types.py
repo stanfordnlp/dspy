@@ -97,7 +97,7 @@ def test_baseline_omits_a_type_the_signature_parser_cannot_read_back() -> None:
 
 @deno_required
 def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
-    """The regression `bridge._make_signature` exists for.
+    """The regression `bridge._resolve_signature` exists for.
 
     dspy resolves a type named in a signature string by walking caller frames for the bare name,
     so `from myapp.models import Contact` accidentally works while `import myapp.models as models`

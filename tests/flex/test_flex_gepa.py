@@ -1,4 +1,4 @@
-"""Tests for flex-marked (dspy.Flex) code optimization inside dspy.GEPA.
+"""Tests for dspy.Flex code optimization inside dspy.GEPA.
 
 Covers the behavior:
 - a freshly constructed dspy.Flex binds a deterministic, LM-free baseline (a dspy.Module subclass;

@@ -14,7 +14,7 @@ An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s
 
 You construct `Flex` from the same signature you'd give `Predict`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is deliberately the simplest thing that works — one call, no decomposition — because it's meant to be the starting point of a search, not the answer. This is what lets you adopt `Flex` by changing one line and revert just as cheaply.
 
-### 3. GEPA discovers the marker and optimizes code instead of text
+### 3. GEPA discovers `Flex` by type and optimizes code instead of text
 
 When GEPA compiles a program, it enumerates the `Flex` submodules — by type, so only genuine `Flex` instances qualify — and splits its work: each `Flex` becomes a **code component**, every other predictor stays an **instruction component**. Code components are seeded with their current `module_src` and evolved by a dedicated code proposer; instruction components are seeded with their current instructions and optimized using GEPA. A custom `instruction_proposer` replaces the instruction proposer only; code components stay on the code proposer, since a proposer written to rewrite prompts would return prose where a `dspy.Module` subclass is required.
 
@@ -38,7 +38,7 @@ A code candidate can bind cleanly and still raise mid-`forward` on some inputs �
 
 ### 8. Generated code always runs in an interpreter, never in-process
 
-`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only predictor construction and predictor calls bridge back to the host to make real LM calls. Sandbox sessions are stateful and not thread-safe, so the factory is called per rollout and each parallel evaluation gets its own; pass your own factory to customize the sandbox (grant filesystem/network access, or use another backend). `max_predictor_calls` caps bridged LM calls per `forward` as a runaway guard.
+`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host to make real LM calls. Sandbox sessions are stateful and not thread-safe, so the factory is called per rollout and each parallel evaluation gets its own; pass your own factory to customize the sandbox (grant filesystem/network access, or use another backend). `max_predictor_calls` caps bridged LM calls per `forward` as a runaway guard.
 
 ### 9. The declared output types are enforced at the sandbox boundary
 

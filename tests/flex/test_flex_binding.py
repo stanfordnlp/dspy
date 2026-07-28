@@ -1,7 +1,7 @@
 """dspy.Flex binds a module's source (``module_src``) and makes it usable like any dspy.Module.
 
 Binding a source — the deterministic baseline at construction, or a GEPA-optimized decomposition —
-attaches its predictors flat on the module (so they are discoverable and optimizable), writes nothing
+attaches its predictors flat on the module (so their state is named and serialized), writes nothing
 to disk, and round-trips through Module.save / load so the generated code can be persisted and rerun.
 Binding runs the source through the interpreter (Flex has no in-process mode), so the tests that
 attach or run predictors need Deno; the pure ``module_src`` check uses a MockInterpreter instead.

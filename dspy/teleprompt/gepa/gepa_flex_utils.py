@@ -30,7 +30,7 @@ def flex_internal_predictor_ids(flex_submodules: dict[str, Any]) -> set[int]:
 
 def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
     """Per flex submodule path, the ``(task_description, available_context)`` shown to the code
-    proposer, keyed by the path used in the submodule's code candidate key.
+    proposer, keyed by the submodule's parameter path (its candidate key).
     """
     task_descriptions: dict[str, str] = {}
     context_blurbs: dict[str, str] = {}
@@ -38,8 +38,7 @@ def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
         ctx = getattr(sub, "_flex_ctx", None)
         if ctx is not None and hasattr(ctx, "render_signature_spec"):
             task_descriptions[path] = ctx.render_signature_spec()
-            sandboxed = getattr(sub, "_bridge", None) is not None
-            context_blurbs[path] = ctx.render_context_blurb(sandboxed=sandboxed)
+            context_blurbs[path] = ctx.render_context_blurb(sandboxed=True)
     return task_descriptions, context_blurbs
 
 
@@ -69,7 +68,7 @@ def _format_failures(records: list[dict[str, Any]]) -> str:
 
 
 class CodeProposalSignature(dspy.Signature):
-    """Revise the full source code of a flex-marked dspy.Flex submodule.
+    """Revise the full source code of a dspy.Flex submodule.
 
     You receive the submodule's task description (its Signature), the available context (any tools
     and style notes), the catalog of allowed primitives, the module's current source, and a batch
