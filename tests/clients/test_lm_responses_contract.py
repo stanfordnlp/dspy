@@ -92,10 +92,12 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
     assert data["parallel_tool_calls"] is False
     assert data["reasoning"] == {"effort": "low", "summary": "auto"}
     assert data["max_output_tokens"] == 123
+    # Closed schema, not a raw model_json_schema(): the Responses API rejects
+    # schemas without explicit additionalProperties: false.
     assert data["text"]["format"] == {
         "type": "json_schema",
         "name": "ContractSchema",
-        "schema": ContractSchema.model_json_schema(),
+        "schema": {**ContractSchema.model_json_schema(), "additionalProperties": False},
     }
 
 

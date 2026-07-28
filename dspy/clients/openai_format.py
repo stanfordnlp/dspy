@@ -147,7 +147,7 @@ def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]
 
     tool_calls = [part for part in message.parts if isinstance(part, LMToolCallPart)]
     content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
-    content = parts_to_responses_content(content_parts)
+    content = parts_to_responses_content(content_parts, role=message.role)
     items: list[dict[str, Any]] = []
 
     if content or message.role != "assistant" or not tool_calls:
@@ -161,11 +161,18 @@ def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]
     return items
 
 
-def parts_to_responses_content(parts: list[Any]) -> list[dict[str, Any]]:
+def parts_to_responses_content(parts: list[Any], role: str = "user") -> list[dict[str, Any]]:
     blocks = parts_to_openai_content(parts)
     if isinstance(blocks, str):
-        return [{"type": "input_text", "text": blocks}]
-    return [content_block_to_responses(block) for block in blocks]
+        return [{"type": _responses_text_type(role), "text": blocks}]
+    return [content_block_to_responses(block, role) for block in blocks]
+
+
+def _responses_text_type(role: str) -> str:
+    # The Responses API types text by direction, not just by role slot: assistant
+    # input items replay *model output*, so their text must be "output_text";
+    # "input_text" on an assistant item is rejected with a 400.
+    return "output_text" if role == "assistant" else "input_text"
 
 
 def tool_call_to_responses_input(tool_call_part: LMToolCallPart) -> dict[str, Any]:
@@ -178,10 +185,10 @@ def tool_call_to_responses_input(tool_call_part: LMToolCallPart) -> dict[str, An
     return item
 
 
-def content_block_to_responses(block: dict[str, Any]) -> dict[str, Any]:
+def content_block_to_responses(block: dict[str, Any], role: str = "user") -> dict[str, Any]:
     block_type = block.get("type")
     if block_type == "text":
-        return {"type": "input_text", "text": block.get("text", "")}
+        return {"type": _responses_text_type(role), "text": block.get("text", "")}
     if block_type == "image_url":
         image_url = block.get("image_url", {})
         out = {"type": "input_image", "image_url": image_url.get("url", "")}
@@ -538,8 +545,30 @@ def prompt_cache_to_kwargs(cache: Any) -> dict[str, Any]:
 
 def response_format_to_responses(value: Any) -> Any:
     if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-        return {"name": value.__name__, "type": "json_schema", "schema": value.model_json_schema()}
+        return {
+            "name": value.__name__,
+            "type": "json_schema",
+            "schema": _close_object_schemas(value.model_json_schema()),
+        }
     return value
+
+
+def _close_object_schemas(schema: Any) -> Any:
+    """Recursively supply ``additionalProperties: false`` on object schemas.
+
+    The Responses API rejects ``json_schema`` formats whose object schemas leave
+    ``additionalProperties`` unspecified; pydantic's ``model_json_schema()``
+    omits it. Schemas that already set it (e.g. ``dict[str, T]`` fields) are
+    left untouched.
+    """
+    if isinstance(schema, dict):
+        closed = {key: _close_object_schemas(item) for key, item in schema.items()}
+        if closed.get("type") == "object" and "additionalProperties" not in closed:
+            closed["additionalProperties"] = False
+        return closed
+    if isinstance(schema, list):
+        return [_close_object_schemas(item) for item in schema]
+    return schema
 
 
 def responses_tool_output_text(content: Any) -> str:
