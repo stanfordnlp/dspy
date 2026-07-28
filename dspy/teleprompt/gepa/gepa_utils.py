@@ -122,8 +122,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
 
-        # dspy.Flex code components are rewritten by the code proposer (see gepa_flex_utils); the rest
-        # are ordinary instruction components.
+        # dspy.Flex code components are rewritten by the code proposer.
         results: dict[str, str] = {}
         code_keys = [c for c in components_to_update if is_code_key(c)]
         if code_keys:
