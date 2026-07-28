@@ -195,6 +195,47 @@ def test_state_layout_unchanged_without_a_flex() -> None:
     assert sorted(Plain().dump_state()) == ["first", "second"]
 
 
+def test_save_program_roundtrips_via_cloudpickle(tmp_path) -> None:
+    # save_program=True cloudpickles the live program object. The bridge (sessions, locks,
+    # thread-locals) is excluded from the pickle and rebuilt session-less on load.
+    class Program(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sibling = dspy.Predict("x -> y")
+            self.flex = Flex(Echo, interpreter_factory=MockInterpreter)
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    program = Program()
+    program.flex._bind_code(ECHO_MODULE)
+    program.flex.echo = dspy.Predict("q -> a")  # attach an internal predictor like the bridge does
+    program.flex._attached_names.append("echo")
+    program.flex.echo.demos = [dspy.Example(q="1", a="1")]
+    program.save(tmp_path, save_program=True)
+
+    loaded = dspy.load(str(tmp_path), allow_pickle=True)
+    assert loaded.flex.module_src == ECHO_MODULE
+    assert loaded.flex.echo.demos[0].q == "1"  # attached predictor state travels in the pickle
+
+
+@deno_required
+def test_save_program_end_to_end_forward(tmp_path) -> None:
+    """save_program=True with a live Deno session: reload elsewhere and run it."""
+    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
+        program._bind_code(ECHO_MODULE)
+        program.save(tmp_path, save_program=True)
+
+    dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
+    loaded = dspy.load(str(tmp_path), allow_pickle=True)
+    try:
+        assert loaded.module_src == ECHO_MODULE
+        result = loaded(q="hello")
+        assert result.a == "echoed-back"
+    finally:
+        loaded.close()
+
+
 @deno_required
 def test_end_to_end_forward_after_save_load(tmp_path) -> None:
     """End-to-end: bind a plain dspy.Predict class, save it, reload into a fresh Flex, run it."""

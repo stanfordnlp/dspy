@@ -156,6 +156,23 @@ class Flex(Module, Parameter):
         except Exception:
             pass
 
+    def __getstate__(self):
+        state = super().__getstate__()
+        bridge = state.pop("_bridge", None)
+        state["_bridge_registry"] = dict(bridge._registry) if bridge is not None else {}
+        return state
+
+    def __setstate__(self, state):
+        state = dict(state)
+        registry = state.pop("_bridge_registry", {})
+        super().__setstate__(state)
+        from dspy.flex.bridge import BridgeRuntime
+
+        self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
+        if self._module_src is not None:
+            self._bridge.bind(self._module_src)
+            self._bridge._registry = registry
+
     def __deepcopy__(self, memo):
         # Each copy needs its own interpreter sessions. Sharing `_bridge` by reference would let a
         # throwaway copy's __del__ tear down the original's live session, so copy everything else and
