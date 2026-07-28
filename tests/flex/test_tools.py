@@ -58,6 +58,13 @@ def test_baseline_is_rlm_with_tools() -> None:
     assert "dspy.Predict(" not in src
 
 
+def test_reserved_bridge_tool_names_are_rejected() -> None:
+    # The sandbox bridge registers its own callbacks (__dspy_construct__, __dspy_call__) alongside
+    # user tools; a user tool with a reserved name would silently replace them.
+    with pytest.raises(ValueError, match="reserved"):
+        Flex(Echo, tools=[dspy.Tool(shout, name="__dspy_call__")], interpreter_factory=lambda: MockInterpreter())
+
+
 def test_baseline_is_predict_without_tools() -> None:
     # Without tools, the baseline is a single dspy.Predict (no RLM, no tools arg).
     src = Flex(Echo, interpreter_factory=lambda: MockInterpreter()).module_src
