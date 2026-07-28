@@ -155,9 +155,11 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     assert [n for n, _ in program.named_predictors()] == ["sibling"]
 
 
-def test_reset_copy_rebinds_the_baseline_source() -> None:
-    # reset_copy() calls .reset() on every parameter leaf; for a Flex that means discarding
-    # the optimized code and rebinding the construction baseline, like a fresh Flex.
+def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:
+    # reset_copy() calls .reset() on every parameter leaf. Predict.reset() clears demos/lm but
+    # keeps tuned instructions; a Flex resets the same way — internal predictor state is cleared,
+    # the optimized module_src is kept — so optimizer chains (e.g. GEPA then BootstrapFewShot,
+    # which compiles a reset copy) don't silently discard the discovered code.
     class Program(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
@@ -168,12 +170,14 @@ def test_reset_copy_rebinds_the_baseline_source() -> None:
 
     program = Program()
     program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
-    assert "self.echo" in program.flex.module_src
+    program.flex.echo = dspy.Predict("q -> a")  # attach an internal predictor like the bridge does
+    program.flex._attached_names.append("echo")
+    program.flex.echo.demos = [dspy.Example(q="1", a="1")]
 
     fresh = program.reset_copy()
-    assert "self.echo" not in fresh.flex.module_src  # back to the baseline...
-    assert "dspy.Predict(" in fresh.flex.module_src
-    assert "self.echo" in program.flex.module_src  # ...without touching the original
+    assert fresh.flex.module_src == ECHO_MODULE  # the optimized code survives, like instructions
+    assert fresh.flex.echo.demos == []  # the internal predictor's state is cleared
+    assert program.flex.echo.demos  # the original is untouched
 
 
 def test_state_layout_unchanged_without_a_flex() -> None:

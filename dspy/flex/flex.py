@@ -85,8 +85,10 @@ class Flex(Module, Parameter):
             super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     def reset(self) -> None:
-        """Rebind the baseline source, discarding any optimized code."""
-        self._bind_code(self._baseline_src())
+        """Reset the internal predictors' state while keeping ``module_src``."""
+        for _, param in self.named_parameters():
+            if param is not self:
+                param.reset()
 
     def _baseline_src(self) -> str:
         """Starting source: one predictor over the whole signature, wrapped in a ``dspy.Module``.
