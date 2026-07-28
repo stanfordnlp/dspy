@@ -10,6 +10,7 @@ import pytest
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
+from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
@@ -2061,3 +2062,52 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+async def _stream_answer_json_chunks(*args, **kwargs):
+    for content in ['{"', 'answer": "', "Because", " of", " gravity", '."}']:
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+
+async def _collect_chunks_with_adapter(adapter):
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+    with mock.patch("litellm.acompletion", side_effect=_stream_answer_json_chunks):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=adapter):
+            chunks = []
+            async for value in program(question="why do things fall?"):
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+    return chunks
+
+
+@pytest.mark.anyio
+async def test_streaming_supports_subclass_of_supported_adapter():
+    """Regression test for https://github.com/stanfordnlp/dspy/issues/8629.
+
+    `BAMLAdapter` subclasses `JSONAdapter` and only changes how the schema is rendered in the prompt, so
+    its wire format is JSON. Resolving the field markers by exact class name rejected it outright with
+    `ValueError: Unsupported adapter for streaming: BAMLAdapter`.
+    """
+    baml_chunks = await _collect_chunks_with_adapter(BAMLAdapter())
+    json_chunks = await _collect_chunks_with_adapter(dspy.JSONAdapter())
+
+    assert "".join(chunk.chunk for chunk in baml_chunks) == "".join(chunk.chunk for chunk in json_chunks)
+    assert baml_chunks[-1].is_last_chunk is True
+
+
+@pytest.mark.anyio
+async def test_streaming_rejects_adapter_without_a_supported_ancestor():
+    """An adapter that shares no ancestor with a supported one must still be rejected, with a clear error."""
+
+    class CustomAdapter(dspy.Adapter):
+        pass
+
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    chunk = ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="hello"))])
+
+    with dspy.context(adapter=CustomAdapter()):
+        with pytest.raises(ValueError, match="Unsupported adapter for streaming: CustomAdapter"):
+            listener.receive(chunk)

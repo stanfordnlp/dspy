@@ -115,11 +115,28 @@ class StreamListener:
 
         return False
 
+    def _resolve_adapter_name(self) -> str | None:
+        """Find the `adapter_identifiers` entry that applies to the adapter in the current settings.
+
+        The lookup walks the adapter's MRO instead of matching its exact class name, so a subclass of a
+        supported adapter inherits that adapter's field markers. `BAMLAdapter` for instance only changes how
+        the schema is rendered in the prompt, so its wire format is `JSONAdapter`'s and the JSON markers
+        apply verbatim. Returns `None` when no ancestor is a supported adapter.
+        """
+        if settings.adapter is None:
+            return "ChatAdapter"
+
+        for adapter_class in type(settings.adapter).__mro__:
+            if adapter_class.__name__ in self.adapter_identifiers:
+                return adapter_class.__name__
+        return None
+
     def receive(self, chunk: ModelResponseStream):
-        adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
-        if adapter_name not in self.adapter_identifiers:
+        adapter_name = self._resolve_adapter_name()
+        if adapter_name is None:
             raise ValueError(
-                f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
+                f"Unsupported adapter for streaming: {settings.adapter.__class__.__name__}, please use one of the "
+                f"following adapters or a subclass of them: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
         start_identifier = self.adapter_identifiers[adapter_name]["start_identifier"]
