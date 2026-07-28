@@ -111,8 +111,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_minibatch_size = reflection_minibatch_size
         self._warned_custom_proposer_skips_code = False
 
-        # dspy.Flex code components are keyed by the submodule's parameter path; instruction
-        # components by predictor path. The two never collide (a path names one object).
+        # dspy.Flex code components are keyed by the submodule's parameter path.
         self._flex_paths = set(enumerate_flex_submodules(student_module))
         # Task description + available context shown to the dspy.Flex code proposer, per submodule.
         self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
