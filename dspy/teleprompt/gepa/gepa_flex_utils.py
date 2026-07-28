@@ -12,21 +12,6 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction
 
 logger = logging.getLogger(__name__)
 
-_CODE_KEY_SUFFIX = "::code"
-
-
-def is_code_key(key: str) -> bool:
-    return key.endswith(_CODE_KEY_SUFFIX)
-
-
-def make_code_key(path: str) -> str:
-    return f"{path}{_CODE_KEY_SUFFIX}"
-
-
-def code_key_path(key: str) -> str:
-    return key[: -len(_CODE_KEY_SUFFIX)]
-
-
 def enumerate_flex_submodules(root) -> dict[str, Any]:
     """Map parameter path -> module for every code-optimizable (``dspy.Flex``) submodule."""
     from dspy.flex import Flex
@@ -163,11 +148,10 @@ def propose_code(
     proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
         for ckey in code_keys:
-            path = code_key_path(ckey)
             try:
                 out = proposer(
-                    task_description=task_descriptions.get(path, path),
-                    available_context=context_blurbs.get(path, "(no extra context)"),
+                    task_description=task_descriptions.get(ckey, ckey),
+                    available_context=context_blurbs.get(ckey, "(no extra context)"),
                     primitives_catalog=PRIMITIVES_CATALOG,
                     current_source=candidate[ckey],
                     failures=_format_failures(reflective_dataset.get(ckey, [])),
@@ -180,15 +164,14 @@ def propose_code(
 
 
 def rebind_flex_code(program, candidate: dict[str, str]) -> None:
-    """Rebind ``module_src`` on each ``dspy.Flex`` submodule whose code key is in the candidate.
+    """Rebind ``module_src`` on each ``dspy.Flex`` submodule whose path is in the candidate.
 
     Raises if a candidate's source is broken; ``DspyAdapter.evaluate`` catches that and scores the
     batch as a failure.
     """
     for path, flex in enumerate_flex_submodules(program).items():
-        key = make_code_key(path)
-        if key in candidate:
-            flex._bind_code(candidate[key])
+        if path in candidate:
+            flex._bind_code(candidate[path])
 
 
 def code_reflective_records(eval_batch) -> list[dict[str, Any]]:

@@ -120,11 +120,10 @@ class DspyGEPAResult:
     @staticmethod
     def _candidate_components(cand: Module) -> dict[str, str]:
         """The candidate's optimized components. It can be either instruction text per predictor, or
-        the full `module_src` of each `dspy.Flex` submodule under its `<path>::code` key."""
+        the full `module_src` of each `dspy.Flex` submodule under its parameter path."""
         from dspy.teleprompt.gepa.gepa_flex_utils import (
             enumerate_flex_submodules,
             flex_internal_predictor_ids,
-            make_code_key,
         )
 
         flex_submodules = enumerate_flex_submodules(cand)
@@ -135,7 +134,7 @@ class DspyGEPAResult:
             if id(pred) not in flex_internal_ids
         }
         for path, flex in flex_submodules.items():
-            components[make_code_key(path)] = flex.module_src
+            components[path] = flex.module_src
         return components
 
     def to_dict(self) -> dict[str, Any]:
@@ -522,7 +521,6 @@ class GEPA(Teleprompter):
         from dspy.teleprompt.gepa.gepa_flex_utils import (
             enumerate_flex_submodules,
             flex_internal_predictor_ids,
-            make_code_key,
         )
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
@@ -615,7 +613,7 @@ class GEPA(Teleprompter):
         # each dspy.Flex submodule as its code component.
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, flex in flex_submodules.items():
-            seed_candidate[make_code_key(path)] = flex.module_src
+            seed_candidate[path] = flex.module_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,

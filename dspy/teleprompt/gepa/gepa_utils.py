@@ -16,9 +16,9 @@ from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 from dspy.teleprompt.gepa.gepa_flex_utils import (
     code_reflective_records,
+    enumerate_flex_submodules,
     evaluate_with_trace,
     flex_task_context,
-    is_code_key,
     propose_code,
     rebind_flex_code,
 )
@@ -111,6 +111,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_minibatch_size = reflection_minibatch_size
         self._warned_custom_proposer_skips_code = False
 
+        # dspy.Flex code components are keyed by the submodule's parameter path; instruction
+        # components by predictor path. The two never collide (a path names one object).
+        self._flex_paths = set(enumerate_flex_submodules(student_module))
         # Task description + available context shown to the dspy.Flex code proposer, per submodule.
         self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
 
@@ -124,7 +127,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # dspy.Flex code components are rewritten by the code proposer.
         results: dict[str, str] = {}
-        code_keys = [c for c in components_to_update if is_code_key(c)]
+        code_keys = [c for c in components_to_update if c in self._flex_paths]
         if code_keys:
             results.update(
                 propose_code(
@@ -132,7 +135,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
                 )
             )
-        components_to_update = [c for c in components_to_update if not is_code_key(c)]
+        components_to_update = [c for c in components_to_update if c not in self._flex_paths]
         if not components_to_update:
             return results
 
@@ -177,8 +180,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # candidate raises here; evaluate() catches it and scores the batch as a failure.
         rebind_flex_code(new_prog, candidate)
 
-        # Apply instruction updates. Code keys contain "::" so never match here, and predictors
-        # inside a Flex were excluded from the candidate, so both are left untouched.
+        # Apply instruction updates. Code components are keyed by a Flex's parameter path, which
+        # never names a predictor, and predictors inside a Flex were excluded from the candidate,
+        # so both are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
@@ -274,7 +278,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for pred_name in components_to_update:
             # Code components (dspy.Flex submodules) reflect on whole-program I/O, not per-predictor
             # traces.
-            if is_code_key(pred_name):
+            if pred_name in self._flex_paths:
                 recs = code_reflective_records(eval_batch)
                 if recs:
                     ret_d[pred_name] = recs
