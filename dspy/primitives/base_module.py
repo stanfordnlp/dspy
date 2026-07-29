@@ -157,11 +157,11 @@ class BaseModule:
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
-        import dspy
+        from dspy.predict.predict import Predict
 
         def _apply(module):
             for name, param in module.named_parameters():
-                if isinstance(param, dspy.Module):
+                if isinstance(param, Predict):
                     param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
                 else:
                     param.load_state(state[name])

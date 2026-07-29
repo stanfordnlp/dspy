@@ -158,37 +158,15 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     assert [n for n, _ in program.named_predictors()] == ["sibling"]
 
 
-def test_set_lm_is_stored_and_survives_rebind_and_save(tmp_path) -> None:
-    # set_lm stores one module-level LM (one home), applied via context at forward time — so it
-    # survives rebinds (which delete and rebuild the attached predictors) and save/load, unlike
-    # writing .lm onto internals that the next candidate wipes.
-    flex = Flex(Echo, interpreter_factory=MockInterpreter)
-    lm = dspy.LM("openai/gpt-4o-mini")
-    flex.set_lm(lm)
-    assert flex.get_lm() is lm
-
-    flex._bind_code(ECHO_MODULE)  # a rebind must not lose the module-level LM
-    assert flex.get_lm() is lm
-
-    path = tmp_path / "flex.json"
-    flex.save(path)
-    reloaded = Flex(Echo, interpreter_factory=MockInterpreter)
-    reloaded.load(path)
-    assert reloaded.get_lm() is not None
-    assert reloaded.get_lm().model == lm.model
-
-    assert reloaded.reset_copy().get_lm() is None  # reset clears the LM, like Predict.reset
-
-
 @deno_required
-def test_set_lm_is_the_default_for_bridged_calls() -> None:
-    # No global LM configured: the flex-level LM is the ambient default the internal predictor
-    # resolves at call time.
+def test_context_lm_reaches_bridged_calls() -> None:
+    # A Flex holds no LM of its own (its state is only module_src); like any module, its
+    # predictor calls resolve the ambient LM — including a caller's dspy.context, since the
+    # bridged calls run host-side in the calling thread.
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
         program._bind_code(ECHO_MODULE)
-        program.set_lm(DummyLM([{"a": "from-flex-lm"}]))
-        result = program(q="hello")
-        assert result.a == "from-flex-lm"
+        with dspy.context(lm=DummyLM([{"a": "from-context-lm"}])):
+            assert program(q="hello").a == "from-context-lm"
 
 
 def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:
