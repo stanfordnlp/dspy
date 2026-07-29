@@ -12,6 +12,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
 from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
+from dspy.clients.openai_format import responses_tool_output_text
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -110,6 +111,13 @@ class LM(BaseLM):
             callbacks=callbacks,
             **kwargs,
         )
+
+        # Validate model_type early to avoid an unbound `completion` later in `forward()`.
+        if self.model_type not in {"chat", "text", "responses"}:
+            raise LMConfigurationError(
+                f"Unsupported model_type {self.model_type!r}; expected 'chat', 'text', or 'responses'.",
+                model=self.model,
+            )
 
         self.provider = provider or self.infer_provider()
         self.finetuning_model = finetuning_model
@@ -627,15 +635,51 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     if "messages" in request:
         input_items = []
         for msg in request.pop("messages"):
+            role = msg.get("role", "user")
             content_blocks = []
             c = msg.get("content")
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                # Convert each content item from Chat API format to Responses API format
                 for item in c:
                     content_blocks.append(_convert_content_item_to_responses_format(item))
-            input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
+
+            # Handle tool-result messages from tools (tool -> function_call_output)
+            if role == "tool":
+                # For tool outputs, emit a function_call_output item with optional call_id/name
+                output_text = responses_tool_output_text(c)
+                item: dict[str, Any] = {"type": "function_call_output", "output": output_text}
+                if msg.get("tool_call_id") is not None:
+                    item["call_id"] = msg.get("tool_call_id")
+                if msg.get("name") is not None:
+                    item["name"] = msg.get("name")
+                input_items.append(item)
+                continue
+
+            # For assistant messages that include tool_calls, we may omit the assistant content
+            # item if content is None and tool_calls are present (Responses API expects separate
+            # function_call items for each tool call).
+            has_tool_calls = bool(msg.get("tool_calls"))
+            if content_blocks or role != "assistant" or not has_tool_calls:
+                item = {"role": role, "content": content_blocks}
+                if msg.get("name") is not None:
+                    item["name"] = msg.get("name")
+                input_items.append(item)
+
+            # Emit function_call items for assistant tool calls
+            if role == "assistant" and has_tool_calls:
+                for tool_call in msg.get("tool_calls"):
+                    function = tool_call.get("function", {})
+                    func_item: dict[str, Any] = {
+                        "type": "function_call",
+                        "name": function.get("name", ""),
+                        "arguments": function.get("arguments", "{}"),
+                    }
+                    call_id = tool_call.get("id") or tool_call.get("call_id")
+                    if call_id is not None:
+                        func_item["call_id"] = call_id
+                    input_items.append(func_item)
+
         request["input"] = input_items
     # Convert `reasoning_effort` to reasoning format supported by the Responses API
     if "reasoning_effort" in request:
