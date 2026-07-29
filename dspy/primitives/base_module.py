@@ -213,11 +213,13 @@ class BaseModule:
             logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
                           'this, prefer saving using json format using module.save("module.json").')
             try:
+                from dspy.clients.base_lm import scrub_lm_state_on_pickle
+
                 modules_to_serialize = modules_to_serialize or []
                 for module in modules_to_serialize:
                     cloudpickle.register_pickle_by_value(module)
 
-                with open(path / "program.pkl", "wb") as f:
+                with open(path / "program.pkl", "wb") as f, scrub_lm_state_on_pickle():
                     cloudpickle.dump(self, f)
             except Exception as e:
                 raise RuntimeError(
