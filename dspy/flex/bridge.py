@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import dspy
+from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,29 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
     return fields
 
 
+def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
+    """Record custom-type instances by their serialized string, recursing into containers."""
+    if isinstance(value, _CustomType):
+        out[value.serialize_model()] = value
+    elif isinstance(value, dict):
+        for v in value.values():
+            _collect_custom_type_originals(v, out)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _collect_custom_type_originals(v, out)
+
+
+def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
+    """Substitute serialized custom-type strings back with the original host objects."""
+    if isinstance(value, str) and value in originals:
+        return originals[value]
+    if isinstance(value, dict):
+        return {k: _restore_custom_types(v, originals) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_restore_custom_types(v, originals) for v in value]
+    return value
+
+
 class _Session:
     """One sandbox interpreter pinned to one thread, plus its initialization bookkeeping."""
 
@@ -200,6 +224,11 @@ class BridgeRuntime:
         sess = self._get_session()
         self._ensure_constructed(sess)
         sess.calls = 0  # reset the per-forward predictor-call budget
+        # Keep the originals of custom types so bridged predictor calls receive the real objects back.
+        originals: dict[str, Any] = {}
+        for v in inputs.values():
+            _collect_custom_type_originals(v, originals)
+        self._local.custom_type_originals = originals
         code = (
             f"{_INSTANCE_VAR} = {self._class_name}()\n"
             f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**{_INPUTS_VAR})\n"
@@ -318,5 +347,8 @@ class BridgeRuntime:
         predictor = getattr(self._flex, handle, None)
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
+        originals = getattr(self._local, "custom_type_originals", None)
+        if originals:
+            inputs = {k: _restore_custom_types(v, originals) for k, v in (inputs or {}).items()}
         out = predictor(**(inputs or {}))
         return prediction_to_fields(out)

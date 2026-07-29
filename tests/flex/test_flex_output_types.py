@@ -271,3 +271,25 @@ def test_gepa_scores_a_type_mismatch_as_a_failure_in_place() -> None:
     assert result.scores == [1.0, 0.0, 1.0]  # the type error is scored, not raised
     assert result.outputs[1] is None
     assert result.outputs[0].person == Person(name="Ada", age=1)  # and it is a real model, parsed
+
+
+@deno_required
+def test_custom_type_inputs_are_restored_across_the_bridge(caplog) -> None:
+    """A custom-type input (dspy.Image) crosses into the sandbox as its serialized string; the
+    bridge hands the original object back to the host predictor, so Predict sees a real Image —
+    no spurious "Type mismatch" warning, and adapters get the object rather than a tagged string.
+    """
+    import logging
+
+    class Caption(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    dspy.configure(lm=DummyLM([{"a": "a cat"}]))
+    with Flex(Caption, interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
+        with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+            out = flex(image=dspy.Image(url="https://example.com/x.png"))
+
+    assert out.a == "a cat"
+    mismatch_warnings = [r.getMessage() for r in caplog.records if "Type mismatch" in r.getMessage()]
+    assert mismatch_warnings == []
