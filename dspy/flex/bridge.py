@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import inspect
 import json
 import logging
@@ -110,6 +111,19 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
             f"(must be JSON-serializable): {e}"
         ) from e
     return fields
+
+
+def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
+    """A callable for the interpreter's tool registry."""
+    func = getattr(tool, "func", None)
+    if func is None:
+        return tool
+
+    @functools.wraps(func)
+    def entrypoint(**kwargs: Any) -> Any:
+        return tool(**kwargs)
+
+    return entrypoint
 
 
 def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
@@ -273,9 +287,8 @@ class BridgeRuntime:
     # -- host-side bridge callbacks --------------
 
     def _tool_callables(self) -> dict[str, Callable[..., Any]]:
-        """User tools as ``name -> underlying callable`` to register so sandbox code can call them."""
-        ctx = self._flex._flex_ctx.context_names()
-        return {name: getattr(tool, "func", tool) for name, tool in ctx.items()}
+        """User tools as ``name -> callable`` to register so sandbox code can call them."""
+        return {name: _tool_entrypoint(tool) for name, tool in self._flex._flex_ctx.context_names().items()}
 
     def _resolve_tool(self, name: str) -> Any:
         ctx = self._flex._flex_ctx.context_names()

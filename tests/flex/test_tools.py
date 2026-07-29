@@ -236,3 +236,33 @@ def test_inner_predictor_instructions_persist(tmp_path) -> None:
         reloaded.load(path)
         reloaded(q="hi")
         assert reloaded.p.signature.instructions == "Always answer in uppercase."
+
+
+def double(n: int) -> str:
+    """Double the number."""
+    return str(n * 2)
+
+
+@deno_required
+def test_direct_tool_calls_go_through_the_tool_wrapper() -> None:
+    # Tools keep their dspy.Tool wrapper when the sandbox calls them directly, so DSPy's argument
+    # validation applies: n=3 works, n="3" is rejected loudly — the raw underlying function would
+    # have silently returned "33".
+    def src(arg: str) -> str:
+        return textwrap.dedent(
+            f"""
+            class EchoModule(dspy.Module):
+                def __init__(self):
+                    super().__init__()
+
+                def forward(self, q):
+                    return dspy.Prediction(a=double(n={arg}))
+            """
+        ).strip()
+
+    with Flex(Echo, tools=[dspy.Tool(double)], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
+        program._bind_code(src("3"))
+        assert program(q="x").a == "6"
+        program._bind_code(src('"3"'))
+        with pytest.raises(CodeInterpreterError, match="not of type 'integer'"):
+            program(q="x")
