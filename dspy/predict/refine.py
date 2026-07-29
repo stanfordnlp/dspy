@@ -1,3 +1,4 @@
+import copy
 import inspect
 import textwrap
 from typing import Callable
@@ -126,7 +127,13 @@ class Refine(Module):
                                     )
                                     return base_adapter(lm, lm_kwargs, signature, demos, inputs)
 
-                            return WrapperAdapter()
+                            # Build the wrapper from a shallow copy of the configured adapter instead of
+                            # calling the constructor, which may require arguments (e.g. TwoStepAdapter).
+                            # This preserves the adapter's state and keeps `isinstance` checks intact
+                            # without mutating the original instance.
+                            wrapper = copy.copy(base_adapter)
+                            wrapper.__class__ = WrapperAdapter
+                            return wrapper
 
                         # Install the hint-injecting wrapper as an instance adapter on each predictor of the
                         # deep copy, so it takes effect regardless of whether the module was configured via
