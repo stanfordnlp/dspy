@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from pydantic_core import PydanticSerializationError, to_jsonable_python
+
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
@@ -72,17 +74,11 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
 
 
 def _jsonable(value: Any) -> Any:
-    """Best-effort coercion of a predictor output field to a JSON-serializable value."""
-    if value is None or isinstance(value, (str, int, float, bool)):
+    """Coerce a predictor output field to a JSON-serializable value."""
+    try:
+        return to_jsonable_python(value)
+    except PydanticSerializationError:
         return value
-    if isinstance(value, dict):
-        return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
-    model_dump = getattr(value, "model_dump", None)
-    if callable(model_dump):
-        return model_dump()
-    return value
 
 
 def prediction_to_fields(pred: Any) -> dict[str, Any]:

@@ -13,11 +13,14 @@ Two layers of coverage:
 
 from __future__ import annotations
 
+import datetime
+import enum
 import inspect
 import json
 import shutil
 import textwrap
 
+import pydantic
 import pytest
 
 import dspy
@@ -225,6 +228,29 @@ def test_prediction_to_fields_rejects_non_jsonable() -> None:
     assert bridge.prediction_to_fields(dspy.Prediction(a=1, b="x")) == {"a": 1, "b": "x"}
     with pytest.raises(CodeInterpreterError):
         bridge.prediction_to_fields(dspy.Prediction(a=object()))
+
+
+def test_prediction_to_fields_serializes_json_mode_values() -> None:
+    # Everything dspy.Predict can output must cross the boundary: datetimes, enums, and pydantic
+    # models holding them serialize in JSON mode (python-mode model_dump used to leave them as
+    # live objects, and Flex rejected outputs a plain Predict returns and parses just fine).
+    class Color(enum.Enum):
+        RED = "red"
+
+    class Event(pydantic.BaseModel):
+        when: datetime.datetime
+        color: Color
+
+    fields = bridge.prediction_to_fields(
+        dspy.Prediction(
+            event=Event(when=datetime.datetime(2026, 1, 1), color=Color.RED),
+            when=datetime.datetime(2026, 1, 2),
+            color=Color.RED,
+        )
+    )
+    assert fields["event"] == {"when": "2026-01-01T00:00:00", "color": "red"}
+    assert fields["when"] == "2026-01-02T00:00:00"
+    assert fields["color"] == "red"
 
 
 # =============================================================================
