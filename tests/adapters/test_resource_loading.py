@@ -20,9 +20,9 @@ def _forbid_host_io(monkeypatch):
     monkeypatch.setattr("dspy.adapters.types.audio.requests.get", fail_request)
 
 
-# Locator-shaped inputs an attacker could supply. Through the validation/parse path none may
-# trigger host I/O, whether the call raises (paths, non-data-URI strings) or is retained as a
-# reference (Image URLs).
+# Locator-shaped inputs an attacker could supply. Neither construction nor the validation/parse
+# path may trigger host I/O, whether the call raises (paths, non-data-URI strings) or is retained
+# as a reference (Image URLs).
 _LOCATOR_INPUTS = [
     (dspy.Image, {"url": "/etc/passwd"}),
     (dspy.Image, "/etc/passwd"),
@@ -33,15 +33,11 @@ _LOCATOR_INPUTS = [
     (dspy.File, "https://evil.example/secret.bin"),
 ]
 
-# Direct construction is I/O-free for the same inputs, except the deprecated Image(positional path)
-# convenience (covered by test_image_positional_path_is_deprecated), which is excluded here.
-_CONSTRUCTION_INPUTS = [case for case in _LOCATOR_INPUTS if case != (dspy.Image, "/etc/passwd")]
 
-
-@pytest.mark.parametrize(("annotation", "value"), _CONSTRUCTION_INPUTS)
+@pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
 def test_construction_performs_no_host_io(monkeypatch, annotation, value):
-    # Aside from the deprecated Image(path) convenience, constructing from a locator-shaped value
-    # must never dereference it.
+    # The constructor is reachable from untrusted application input (e.g. dspy.Image(user_string));
+    # it must never dereference a locator.
     _forbid_host_io(monkeypatch)
     try:
         annotation(value)
@@ -52,23 +48,12 @@ def test_construction_performs_no_host_io(monkeypatch, annotation, value):
 @pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
 def test_validation_performs_no_host_io(monkeypatch, annotation, value):
     # validate_python is the path adapters use to coerce untrusted LM output (and pydantic uses for
-    # nested models / deserialization); it must never dereference a locator. This is the security
-    # boundary: the deprecated Image(path) convenience is unreachable here.
+    # nested models / deserialization); it must never dereference a locator either.
     _forbid_host_io(monkeypatch)
     try:
         TypeAdapter(annotation).validate_python(value)
     except (ValueError, TypeError, ValidationError):
         pass
-
-
-def test_image_positional_path_is_deprecated(tmp_path):
-    image_path = tmp_path / "image.png"
-    image_path.write_bytes(b"image bytes")
-
-    with pytest.warns(DeprecationWarning, match="Constructing Image from a local file path is deprecated"):
-        image = dspy.Image(str(image_path))
-
-    assert base64.b64decode(image.url.split(",", 1)[1]) == b"image bytes"
 
 
 def test_image_url_constructor_does_not_download(monkeypatch):

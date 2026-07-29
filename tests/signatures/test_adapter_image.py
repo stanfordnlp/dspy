@@ -503,7 +503,7 @@ def test_deprecated_factory_aliases_warn(tmp_path):
 
 
 def test_invalid_string_format():
-    """A string that is neither a data URI, a URL, nor an existing local path raises."""
+    """A string that is neither a data URI nor a URL raises."""
     invalid_string = "this_is_not_a_url_or_file"
 
     # Should raise a ValueError and not pass the string through
@@ -511,14 +511,15 @@ def test_invalid_string_format():
         dspy.Image(invalid_string)
 
 
-def test_positional_local_path_is_deprecated(tmp_path):
+def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
+    """Image(path) raises pointing at from_path, and never touches the filesystem to decide."""
     tmp_file = tmp_path / "photo.png"
     tmp_file.write_bytes(b"pngdata")
 
-    with pytest.warns(DeprecationWarning, match="Constructing Image from a local file path is deprecated"):
-        image = dspy.Image(str(tmp_file))
+    monkeypatch.setattr("builtins.open", lambda *a, **k: pytest.fail("Image(path) read the filesystem"))
 
-    assert image.url.startswith("data:image/png;base64,")
+    with pytest.raises(ValueError, match=r"Image\.from_path"):
+        dspy.Image(str(tmp_file))
 
 
 def test_deprecated_download_true_downloads(monkeypatch):
