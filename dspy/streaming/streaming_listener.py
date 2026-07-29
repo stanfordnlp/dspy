@@ -36,6 +36,27 @@ def resolve_adapter_name(adapter: Any) -> str:
     return adapter.__class__.__name__
 
 
+def stamp_chunk_adapter_name(chunk: Any) -> None:
+    """Stamp the sender-resolved adapter identity on an LM stream chunk.
+
+    Stream chunks are consumed by `StreamListener` in a sibling task that only sees the
+    global adapter, so the scoped (per-call or per-Predict) adapter identity must travel
+    with the chunk. This is a no-op when the chunk is not a litellm `ModelResponseStream`,
+    is already stamped, or no adapter is configured in the sender's context.
+
+    Args:
+        chunk: The value being sent through the streaming channel.
+    """
+    cls = type(chunk)
+    if not (cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")):
+        return
+    if getattr(chunk, "adapter_name", None) is not None:
+        return
+    adapter = settings.adapter
+    if adapter is not None:
+        chunk.adapter_name = resolve_adapter_name(adapter)
+
+
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 

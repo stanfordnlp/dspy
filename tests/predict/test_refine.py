@@ -59,6 +59,50 @@ def test_refine_module_default_fail_count():
         refine(question="What is the capital of Belgium?")
 
 
+def test_refine_feedback_reaches_retry_with_instance_adapter():
+    """Refine's hint wrapper must run even when the module has an instance adapter via `set_adapter()`."""
+    adapter_calls = []
+
+    class TrackingChatAdapter(dspy.ChatAdapter):
+        def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+            adapter_calls.append(dict(inputs))
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+
+    lm = DummyLM(
+        [
+            {"answer": "wrong"},
+            {"discussion": "The answer was wrong.", "advice": {"predictor": "Answer with 'right'."}},
+            {"answer": "right"},
+        ]
+    )
+    dspy.configure(lm=lm, adapter=None)
+
+    def forward_fn(self, **kwargs):
+        return self.predictor(**kwargs)
+
+    module = DummyModule("question -> answer", forward_fn)
+    tracking_adapter = TrackingChatAdapter()
+    module.set_adapter(tracking_adapter)
+
+    refine = Refine(
+        module=module,
+        N=2,
+        reward_fn=lambda _, pred: 1.0 if pred.answer == "right" else 0.0,
+        threshold=1.0,
+    )
+    result = refine(question="What is the right answer?")
+
+    assert result.answer == "right"
+    # The first attempt goes through the configured adapter without a hint.
+    assert any("hint_" not in inputs for inputs in adapter_calls)
+    # The retry must go through the configured adapter *and* carry the feedback hint.
+    hinted = [inputs for inputs in adapter_calls if "hint_" in inputs]
+    assert hinted, "Feedback hint never reached the retry through the configured adapter"
+    assert hinted[0]["hint_"] == "Answer with 'right'."
+    # The original module must not be mutated.
+    assert module.predictor.adapter is tracking_adapter
+
+
 def test_refine_module_custom_fail_count():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
     dspy.configure(lm=lm)

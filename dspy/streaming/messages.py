@@ -26,6 +26,11 @@ class StatusMessage:
 
 def sync_send_to_stream(stream, message):
     """Send message to stream in a sync context, regardless of event loop state."""
+    # Stamp LM stream chunks here, while still in the sender's context: the send itself may be
+    # offloaded to a thread that does not carry the sender's scoped-adapter overrides.
+    from dspy.streaming.streaming_listener import stamp_chunk_adapter_name
+
+    stamp_chunk_adapter_name(message)
 
     async def _send():
         await stream.send(message)

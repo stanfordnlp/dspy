@@ -13,6 +13,8 @@ import dspy
 from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+from dspy.streaming.messages import sync_send_to_stream
+from dspy.utils.dummies import DummyLM
 
 
 @pytest.mark.anyio
@@ -2147,3 +2149,88 @@ def test_stream_listener_falls_back_to_settings_adapter_for_chunks_without_metad
 
     assert "".join(response.chunk for response in responses) == "To get to the other side!"
     assert responses[-1].is_last_chunk is True
+
+
+class _UnstampedStreamingDummyLM(DummyLM):
+    """Custom/legacy LM that sends raw `ModelResponseStream` chunks without adapter metadata."""
+
+    def __init__(self, answers, stream_chunks, adapter=None):
+        super().__init__(answers, adapter=adapter)
+        self.stream_chunks = stream_chunks
+
+    def _make_chunk(self, content):
+        chunk = ModelResponseStream(model="dummy", choices=[StreamingChoices(delta=Delta(content=content))])
+        caller_predict = dspy.settings.caller_predict
+        if caller_predict is not None:
+            chunk.predict_id = id(caller_predict)
+        return chunk
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        stream = dspy.settings.send_stream
+        if stream is not None:
+            for content in self.stream_chunks:
+                sync_send_to_stream(stream, self._make_chunk(content))
+        return super().forward(prompt=prompt, messages=messages, **kwargs)
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        stream = dspy.settings.send_stream
+        if stream is not None:
+            for content in self.stream_chunks:
+                await stream.send(self._make_chunk(content))
+        return DummyLM.forward(self, prompt=prompt, messages=messages, **kwargs)
+
+
+@pytest.mark.anyio
+async def test_unstamped_custom_chunks_use_scoped_adapter_sync_producer():
+    """Unstamped custom/legacy chunks must be parsed with the scoped adapter, not the global one."""
+    predict = dspy.Predict("question->answer")
+    predict.set_adapter(dspy.XMLAdapter())
+
+    xml_chunks = ["<answer>", "To", " get", " to", " the", " other", " side", "!", "</answer>"]
+    lm = _UnstampedStreamingDummyLM(
+        [{"answer": "To get to the other side!"}], xml_chunks, adapter=dspy.XMLAdapter()
+    )
+
+    program = dspy.streamify(
+        predict,
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+    # The conflicting global adapter must not drive parsing of the scoped Predict's chunks.
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        output = program(question="why did a chicken cross the kitchen?")
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
+
+    assert len(all_chunks) > 0
+    assert "".join(chunk.chunk for chunk in all_chunks) == "To get to the other side!"
+    assert all_chunks[-1].is_last_chunk is True
+
+
+@pytest.mark.anyio
+async def test_unstamped_custom_chunks_use_scoped_adapter_async_producer():
+    """Async custom producers that await `send_stream.send` directly also keep the scoped adapter."""
+    predict = dspy.Predict("question->answer")
+    predict.set_adapter(dspy.XMLAdapter())
+
+    xml_chunks = ["<answer>", "To", " get", " to", " the", " other", " side", "!", "</answer>"]
+    lm = _UnstampedStreamingDummyLM(
+        [{"answer": "To get to the other side!"}], xml_chunks, adapter=dspy.XMLAdapter()
+    )
+
+    program = dspy.streamify(
+        predict,
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        is_async_program=True,
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        output = program(question="why did a chicken cross the kitchen?")
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
+
+    assert len(all_chunks) > 0
+    assert "".join(chunk.chunk for chunk in all_chunks) == "To get to the other side!"
+    assert all_chunks[-1].is_last_chunk is True

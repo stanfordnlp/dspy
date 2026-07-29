@@ -101,7 +101,6 @@ class Refine(Module):
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -118,16 +117,26 @@ class Refine(Module):
                         outputs = mod(**kwargs)
                     else:
 
-                        class WrapperAdapter(adapter.__class__):
-                            def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
-                                signature = signature.append(
-                                    "hint_", InputField(desc="A hint to the module from an earlier run")
-                                )
-                                return adapter(lm, lm_kwargs, signature, demos, inputs)
+                        def wrap_with_hint(base_adapter):
+                            class WrapperAdapter(base_adapter.__class__):
+                                def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+                                    inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
+                                    signature = signature.append(
+                                        "hint_", InputField(desc="A hint to the module from an earlier run")
+                                    )
+                                    return base_adapter(lm, lm_kwargs, signature, demos, inputs)
 
-                        with dspy.context(adapter=WrapperAdapter()):
-                            outputs = mod(**kwargs)
+                            return WrapperAdapter()
+
+                        # Install the hint-injecting wrapper as an instance adapter on each predictor of the
+                        # deep copy, so it takes effect regardless of whether the module was configured via
+                        # `set_adapter()` (instance adapters outrank context overrides). The wrapped adapter
+                        # preserves each predictor's own resolution: instance > settings > ChatAdapter.
+                        default_adapter = dspy.settings.adapter or dspy.ChatAdapter()
+                        for _, predictor in mod.named_predictors():
+                            predictor.adapter = wrap_with_hint(predictor.adapter or default_adapter)
+
+                        outputs = mod(**kwargs)
 
                     trace = dspy.settings.trace.copy()
 
