@@ -470,7 +470,7 @@ def test_chat_adapter_format_exact_messages_with_multimodal_custom_type_inputs()
         CustomTypeSignature,
         [],
         {
-            "image": dspy.Image("https://example.com/cat.png"),
+            "image": dspy.Image(url="https://example.com/cat.png"),
             "audio": dspy.Audio(data="QUJD", audio_format="wav"),
             "file": dspy.File.from_file_id("file-123", filename="notes.txt"),
             "document": Document(data="Alpha beta", title="Doc"),
@@ -585,7 +585,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
         RichRenderingSignature,
         demos=[
             {
-                "image": dspy.Image("https://example.com/demo.png"),
+                "image": dspy.Image(url="https://example.com/demo.png"),
                 "tools": [tool],
                 "profile": demo_profile,
                 "question": "What should we mention?",
@@ -594,7 +594,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
         ],
         inputs={
             "history": history,
-            "image": dspy.Image("https://example.com/current.png"),
+            "image": dspy.Image(url="https://example.com/current.png"),
             "tools": [tool],
             "profile": current_profile,
             "question": "What should the answer include?",
@@ -1752,7 +1752,7 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
         KitchenSinkSignature,
         demos=[
             {
-                "image": dspy.Image("https://example.com/demo.png"),
+                "image": dspy.Image(url="https://example.com/demo.png"),
                 "audio": dspy.Audio(data="REVNTw==", audio_format="wav"),
                 "file": dspy.File.from_file_id("file-demo", filename="demo.txt"),
                 "document": Document(data="Demo document", title="Demo Doc"),
@@ -1772,7 +1772,7 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
         ],
         inputs={
             "history": history,
-            "image": dspy.Image("https://example.com/current.png"),
+            "image": dspy.Image(url="https://example.com/current.png"),
             "audio": dspy.Audio(data="Q1VSUkVOVA==", audio_format="wav"),
             "file": dspy.File.from_file_id("file-current", filename="current.txt"),
             "document": Document(data="Current document", title="Current Doc"),

@@ -567,7 +567,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
         RichRenderingSignature,
         demos=[
             {
-                "image": dspy.Image("https://example.com/demo.png"),
+                "image": dspy.Image(url="https://example.com/demo.png"),
                 "tools": [tool],
                 "profile": demo_profile,
                 "question": "What should we mention?",
@@ -576,7 +576,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
         ],
         inputs={
             "history": history,
-            "image": dspy.Image("https://example.com/current.png"),
+            "image": dspy.Image(url="https://example.com/current.png"),
             "tools": [tool],
             "profile": current_profile,
             "question": "What should the answer include?",

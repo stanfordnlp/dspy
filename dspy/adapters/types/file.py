@@ -15,10 +15,9 @@ class File(Type):
     The file_data field should be a data URI with the format:
         data:<mime_type>;base64,<base64_encoded_data>
 
-    Construct from in-memory values only: raw ``bytes``, a data URI string, a
-    ``{"file_data"|"file_id"|"filename"}`` dict, or another ``File``. Construction and adapter
-    parsing never access the filesystem; use :meth:`from_path` to read a local file,
-    :meth:`from_bytes` for raw bytes, or :meth:`from_file_id` to reference a preuploaded file.
+    Construction and adapter parsing never access the filesystem; use :meth:`from_path` to read a
+    local file, :meth:`from_bytes` for raw bytes, or :meth:`from_file_id` to reference a preuploaded
+    file.
 
     Examples:
         ```python
@@ -44,20 +43,6 @@ class File(Type):
         extra="forbid",
     )
 
-    def __init__(self, *args, **data):
-        if len(args) > 1:
-            raise TypeError(f"File expected at most 1 positional argument, received {len(args)}")
-        if args:
-            normalized = encode_file_to_dict(args[0])
-            overlap = sorted(set(normalized) & set(data))
-            if overlap:
-                raise TypeError(
-                    f"File received {', '.join(overlap)} from both the positional source and keyword arguments"
-                )
-            normalized.update(data)
-            data = normalized
-        super().__init__(**data)
-
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values: Any) -> Any:
@@ -70,10 +55,10 @@ class File(Type):
 
         if isinstance(values, dict):
             if "file_data" in values or "file_id" in values or "filename" in values:
-                return values
+                return dict(values)
             raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
 
-        return encode_file_to_dict(values)
+        raise ValueError("File must be constructed from named fields or an explicit from_* factory")
 
     def format(self) -> list[dict[str, Any]]:
         try:
@@ -112,25 +97,29 @@ class File(Type):
         return f"File({', '.join(parts)})"
 
     @classmethod
-    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+    def from_path(
+        cls,
+        path: str | os.PathLike[str],
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+    ) -> "File":
         """Create a File from a local file path.
 
         Args:
-            file_path: Path to the file to read
+            path: Path to the file to read
             filename: Optional filename to use (defaults to basename of path)
             mime_type: Optional MIME type (defaults to auto-detection from file extension)
         """
-        if not os.path.isfile(file_path):
-            raise ValueError(f"File not found: {file_path}")
-
-        with open(file_path, "rb") as f:
+        with open(path, "rb") as f:
             file_bytes = f.read()
 
+        path_string = os.fspath(path)
         if filename is None:
-            filename = os.path.basename(file_path)
+            filename = os.path.basename(path_string)
 
         if mime_type is None:
-            mime_type, _ = mimetypes.guess_type(file_path)
+            mime_type, _ = mimetypes.guess_type(path_string)
             if mime_type is None:
                 mime_type = "application/octet-stream"
 
@@ -141,7 +130,11 @@ class File(Type):
 
     @classmethod
     def from_bytes(
-        cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream"
+        cls,
+        file_bytes: bytes,
+        *,
+        filename: str | None = None,
+        mime_type: str = "application/octet-stream",
     ) -> "File":
         """Create a File from raw bytes.
 
@@ -155,7 +148,7 @@ class File(Type):
         return cls(file_data=file_data, filename=filename)
 
     @classmethod
-    def from_file_id(cls, file_id: str, filename: str | None = None) -> "File":
+    def from_file_id(cls, file_id: str, *, filename: str | None = None) -> "File":
         """Create a File from an uploaded file ID."""
         return cls(file_id=file_id, filename=filename)
 
@@ -182,15 +175,14 @@ def encode_file_to_dict(file_input: Any) -> dict:
 
     elif isinstance(file_input, dict):
         if "file_data" in file_input or "file_id" in file_input or "filename" in file_input:
-            return file_input
+            return dict(file_input)
         raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
 
     elif isinstance(file_input, str):
         if file_input.startswith("data:"):
             return {"file_data": file_input}
         raise ValueError(
-            f"String file inputs must be data URIs, received: {file_input}. "
-            "Load local files with File.from_path()."
+            f"String file inputs must be data URIs, received: {file_input}. Load local files with File.from_path()."
         )
 
     elif isinstance(file_input, bytes):

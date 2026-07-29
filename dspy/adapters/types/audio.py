@@ -27,11 +27,10 @@ def _normalize_audio_format(audio_format: str) -> str:
 class Audio(Type):
     """An audio input type for DSPy.
 
-    Construct from in-memory values only: a data URI string, raw ``bytes`` (with
-    ``audio_format=``), a numpy-like array, a ``{"data", "audio_format"}`` dict, or another
-    ``Audio``. Raw base64 is passed as ``Audio(data=..., audio_format=...)``. Construction and
-    adapter parsing never access the filesystem or network; use :meth:`from_path` to read a local
-    file, :meth:`from_url` to download a remote resource, or :meth:`from_array` for array data.
+    Raw base64 is passed as ``Audio(data=..., audio_format=...)``. Construction and adapter
+    parsing never access the filesystem or network; use :meth:`from_path` to read a local file,
+    :meth:`from_url` to download a remote resource, :meth:`from_bytes` for audio bytes, or
+    :meth:`from_array` for array data.
     """
 
     data: str
@@ -42,25 +41,12 @@ class Audio(Type):
         extra="forbid",
     )
 
-    def __init__(self, *args, **data):
-        if len(args) > 1:
-            raise TypeError(f"Audio expected at most 1 positional argument, received {len(args)}")
-        if args:
-            if "data" in data:
-                raise TypeError("Audio received data as both a positional and keyword argument")
-            value = args[0]
-            sampling_rate = data.pop("sampling_rate", None)
-            audio_format = data.pop("audio_format", None)
-            if audio_format is not None and _carries_own_format(value):
-                raise TypeError(
-                    "Audio received audio_format alongside an input that already carries its format; provide only one"
-                )
-            if sampling_rate is not None and not hasattr(value, "shape"):
-                raise TypeError("Audio received sampling_rate for a non-array input; it only applies to array data")
-            normalized = encode_audio(value, sampling_rate=sampling_rate or 16000, format=audio_format or "wav")
-            normalized.update(data)
-            data = normalized
-        super().__init__(**data)
+    @pydantic.field_validator("audio_format")
+    @classmethod
+    def validate_audio_format(cls, value: str) -> str:
+        if not value:
+            raise ValueError("audio_format must be a non-empty string")
+        return _normalize_audio_format(value)
 
     def format(self) -> list[dict[str, Any]]:
         try:
@@ -77,12 +63,22 @@ class Audio(Type):
         """
         if isinstance(values, cls):
             return {"data": values.data, "audio_format": values.audio_format}
-        return encode_audio(values)
+        if isinstance(values, dict):
+            return dict(values)
+        raise ValueError("Audio must be constructed from data and audio_format fields or an explicit from_* factory")
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Audio":
+    def from_url(
+        cls,
+        url: str,
+        *,
+        timeout: float | tuple[float, float] = 30.0,
+        verify: bool | str = True,
+    ) -> "Audio":
         """
         Download an audio file from URL and encode it as base64.
+
+        This is a synchronous, blocking network operation.
 
         Security: this performs an explicit, caller-initiated fetch and applies no
         SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
@@ -92,57 +88,56 @@ class Audio(Type):
 
         Args:
             url: The URL of the audio to download.
+            timeout: Connection and read timeout in seconds, either as one value or a tuple.
             verify: Whether to verify SSL certificates. Set to False for self-signed certs.
         """
         parsed_url = urlparse(url)
         if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
             raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
-        response = requests.get(url, verify=verify)
+        response = requests.get(url, timeout=timeout, verify=verify)
         response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "audio/wav")
+        mime_type = response.headers.get("Content-Type", "audio/wav").split(";", 1)[0].strip().lower()
         if not mime_type.startswith("audio/"):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
-        audio_format = mime_type.split("/")[1]
-
-        audio_format = _normalize_audio_format(audio_format)
-
-        encoded_data = base64.b64encode(response.content).decode("utf-8")
-        return cls(data=encoded_data, audio_format=audio_format)
+        audio_format = _normalize_audio_format(mime_type.split("/", 1)[1])
+        return cls.from_bytes(response.content, audio_format=audio_format)
 
     @classmethod
-    def from_path(cls, file_path: str) -> "Audio":
+    def from_path(cls, path: str | os.PathLike[str]) -> "Audio":
         """
         Read local audio file and encode it as base64.
         """
-        if not os.path.isfile(file_path):
-            raise ValueError(f"File not found: {file_path}")
+        with open(path, "rb") as file:
+            file_data = file.read()
 
-        mime_type, _ = mimetypes.guess_type(file_path)
+        path_string = os.fspath(path)
+        mime_type, _ = mimetypes.guess_type(path_string)
         if not mime_type or not mime_type.startswith("audio/"):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
 
-        with open(file_path, "rb") as file:
-            file_data = file.read()
-
-        audio_format = mime_type.split("/")[1]
-
-        audio_format = _normalize_audio_format(audio_format)
-
-        encoded_data = base64.b64encode(file_data).decode("utf-8")
-        return cls(data=encoded_data, audio_format=audio_format)
+        audio_format = _normalize_audio_format(mime_type.split("/", 1)[1])
+        return cls.from_bytes(file_data, audio_format=audio_format)
 
     @classmethod
-    def from_file(cls, file_path: str) -> "Audio":
+    def from_bytes(cls, audio_bytes: bytes, *, audio_format: str) -> "Audio":
+        """Create Audio from raw bytes with an explicit format."""
+        if not audio_format:
+            raise ValueError("audio_format must be a non-empty string")
+        encoded_data = base64.b64encode(audio_bytes).decode("utf-8")
+        return cls(data=encoded_data, audio_format=_normalize_audio_format(audio_format))
+
+    @classmethod
+    def from_file(cls, path: str | os.PathLike[str]) -> "Audio":
         """Deprecated alias for :meth:`from_path`."""
         warnings.warn(
             "Audio.from_file is deprecated and will be removed in 3.4; use Audio.from_path instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls.from_path(file_path)
+        return cls.from_path(path)
 
     @classmethod
-    def from_array(cls, array: Any, sampling_rate: int, format: str = "wav") -> "Audio":
+    def from_array(cls, array: Any, sampling_rate: int, *, audio_format: str = "wav") -> "Audio":
         """
         Process numpy-like array and encode it as base64. Uses sampling rate and audio format for encoding.
         """
@@ -154,11 +149,10 @@ class Audio(Type):
             byte_buffer,
             array,
             sampling_rate,
-            format=format.upper(),
+            format=audio_format.upper(),
             subtype="PCM_16",
         )
-        encoded_data = base64.b64encode(byte_buffer.getvalue()).decode("utf-8")
-        return cls(data=encoded_data, audio_format=format)
+        return cls.from_bytes(byte_buffer.getvalue(), audio_format=audio_format)
 
     def __str__(self) -> str:
         return self.serialize_model()
@@ -168,23 +162,19 @@ class Audio(Type):
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
 
-def _carries_own_format(value: Any) -> bool:
-    """Whether an audio input already carries its own format (making audio_format redundant)."""
-    if isinstance(value, Audio):
-        return True
-    if isinstance(value, dict) and "audio_format" in value:
-        return True
-    return isinstance(value, str) and value.startswith("data:audio/")
-
-
-def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
+def encode_audio(
+    audio: Union[str, bytes, dict, "Audio", Any],
+    *,
+    sampling_rate: int | None = None,
+    audio_format: str | None = None,
+) -> dict:
     """
     Encode audio to a dict with 'data' and 'audio_format'.
 
     Accepts in-memory data: data URI, dict, Audio instance, numpy array, or bytes.
     """
     if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
-        return audio
+        return dict(audio)
     elif isinstance(audio, Audio):
         return {"data": audio.data, "audio_format": audio.audio_format}
     elif isinstance(audio, str) and audio.startswith("data:audio/"):
@@ -200,10 +190,15 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
             "Load local files with Audio.from_path() and remote resources with Audio.from_url()."
         )
     elif SF_AVAILABLE and hasattr(audio, "shape"):
-        a = Audio.from_array(audio, sampling_rate=sampling_rate, format=format)
+        if sampling_rate is None:
+            raise ValueError("sampling_rate is required for array audio inputs")
+        array_format = "wav" if audio_format is None else audio_format
+        a = Audio.from_array(audio, sampling_rate=sampling_rate, audio_format=array_format)
         return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, bytes):
-        encoded = base64.b64encode(audio).decode("utf-8")
-        return {"data": encoded, "audio_format": format}
+        if audio_format is None:
+            raise ValueError("audio_format is required for byte audio inputs")
+        a = Audio.from_bytes(audio, audio_format=audio_format)
+        return {"data": a.data, "audio_format": a.audio_format}
     else:
         raise ValueError(f"Unsupported type for encode_audio: {type(audio)}")

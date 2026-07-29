@@ -23,8 +23,7 @@ def test_tool_observation_preserves_custom_type():
             return super().format_user_message_content(signature, inputs, *args, **kwargs)
 
     def make_images():
-        return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
-
+        return dspy.Image(url="https://example.com/test.png"), dspy.Image.from_pil(Image.new("RGB", (100, 100), "red"))
 
     adapter = SpyChatAdapter()
     lm = DummyLM(

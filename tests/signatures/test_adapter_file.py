@@ -163,21 +163,21 @@ def test_encode_file_to_dict_from_bytes():
     assert result["file_data"].startswith("data:application/octet-stream;base64,")
 
 
-def test_file_constructor_from_bytes():
-    file_obj = dspy.File(b"test content", filename="test.txt")
+def test_file_from_bytes_factory_with_filename():
+    file_obj = dspy.File.from_bytes(b"test content", filename="test.txt")
     assert file_obj.file_data.startswith("data:application/octet-stream;base64,")
     assert file_obj.filename == "test.txt"
 
 
-def test_file_constructor_from_data_uri():
+def test_file_constructor_with_data_uri():
     data_uri = "data:text/plain;base64,aGVsbG8="
-    file_obj = dspy.File(data_uri)
+    file_obj = dspy.File(file_data=data_uri)
     assert file_obj.file_data == data_uri
 
 
-def test_file_constructor_rejects_conflicting_keyword():
-    with pytest.raises(TypeError, match="file_data"):
-        dspy.File(b"test content", file_data="data:text/plain;base64,aGVsbG8=")
+def test_file_constructor_rejects_positional_source():
+    with pytest.raises(TypeError):
+        dspy.File(b"test content")
 
 
 def test_invalid_file_string():
@@ -269,7 +269,7 @@ def test_file_with_all_fields():
 
 
 def test_file_path_not_found():
-    with pytest.raises(ValueError, match="File not found"):
+    with pytest.raises(FileNotFoundError):
         dspy.File.from_path("/nonexistent/path/file.txt")
 
 

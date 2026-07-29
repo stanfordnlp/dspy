@@ -159,6 +159,7 @@ nav:
             - Audio: api/primitives/Audio.md
             - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
+            - File: api/primitives/File.md
             - History: api/primitives/History.md
             - Image: api/primitives/Image.md
             - Prediction: api/primitives/Prediction.md

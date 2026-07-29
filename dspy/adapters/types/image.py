@@ -4,7 +4,7 @@ import mimetypes
 import os
 import warnings
 from functools import lru_cache
-from typing import Any, Union
+from typing import Any
 from urllib.parse import urlparse
 
 import pydantic
@@ -21,10 +21,15 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
-_UNSET = object()
-
-
 class Image(Type):
+    """An image input represented by a remote URL or data URI.
+
+    Construction and adapter parsing never access the filesystem or network. Use
+    :meth:`from_path` to read a local file, :meth:`from_url` to download a remote
+    resource, :meth:`from_bytes` for encoded image bytes, or :meth:`from_pil` for a
+    PIL image.
+    """
+
     url: str
 
     model_config = pydantic.ConfigDict(
@@ -34,65 +39,14 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, source: Any = None, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
-        """Create an Image.
+    @pydantic.field_validator("url", mode="before")
+    @classmethod
+    def validate_url(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Image.url must be an HTTP(S)/GS URL or data URI string")
+        return encode_image(value)
 
-        Parameters
-        ----------
-        source:
-            The image source. Supported values include
-
-            - ``str``: HTTP(S)/GS URL or an encoded data URI
-            - ``bytes``: raw image bytes
-            - ``PIL.Image.Image``: a PIL image instance
-            - ``dict`` with a single ``{"url": value}`` entry (legacy form)
-            - already encoded data URI
-
-        download, verify:
-            Deprecated. Use :meth:`from_url` (which accepts ``verify``) to download a
-            remote image, or :meth:`from_path` for a local file. Accepted for one release
-            with a warning: ``download=True`` eagerly fetches an HTTP(S) ``source``.
-
-        Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
-
-        The constructor never touches the filesystem or network. Local files and remote
-        resources must be loaded explicitly with :meth:`from_path` and :meth:`from_url`.
-        """
-
-        download_requested = download is not _UNSET
-        verify_requested = verify is not _UNSET
-        if download_requested or verify_requested:
-            warnings.warn(
-                "The `download` and `verify` arguments to Image() are deprecated and will be removed in "
-                "3.4. Use Image.from_url(url, verify=...) to download a remote image, or "
-                "Image.from_path(path) for a local file.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        if source is not None and "url" in data:
-            raise TypeError("Image received both `source` and `url`; provide only one image source")
-
-        if source is not None:
-            # Support a positional source while retaining the Pydantic ``url`` field.
-            if isinstance(source, dict) and set(source.keys()) == {"url"}:
-                # Legacy dict form from previous model validator.
-                data["url"] = source["url"]
-            else:
-                data["url"] = source
-
-        url = data.get("url")
-        if download_requested and download and isinstance(url, str) and _is_http_url(url):
-            # Legacy download=True path: eagerly fetch the remote URL.
-            data["url"] = _encode_image_from_url(url, verify=verify if verify_requested else True)
-        elif "url" in data:
-            # Normalize any accepted input into a base64 data URI or plain URL.
-            data["url"] = encode_image(data["url"])
-
-        # Delegate the rest of initialization to pydantic's BaseModel.
-        super().__init__(**data)
-
-    @lru_cache(maxsize=32)
+    @lru_cache(maxsize=32)  # noqa: B019
     def format(self) -> list[dict[str, Any]] | str:
         try:
             image_url = encode_image(self.url)
@@ -101,44 +55,69 @@ class Image(Type):
         return [{"type": "image_url", "image_url": {"url": image_url}}]
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Image":
+    def from_url(
+        cls,
+        url: str,
+        *,
+        timeout: float | tuple[float, float] = 30.0,
+        verify: bool | str = True,
+    ) -> "Image":
         """Download an HTTP(S) resource and encode it as a data URI.
+
+        This is a synchronous, blocking network operation.
 
         Security: this performs an explicit, caller-initiated fetch and applies no
         SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
         will reach private, loopback, or cloud-metadata hosts and follow redirects to
         them. When ``url`` is derived from untrusted input, the caller is responsible
         for validating the host against an allowlist before calling this method.
+
+        Args:
+            url: The HTTP(S) URL to download.
+            timeout: Connection and read timeout in seconds, either as one value or a tuple.
+            verify: Whether to verify TLS certificates, or a path to a CA bundle.
         """
         if not _is_http_url(url):
             raise ValueError(f"Image.from_url requires an HTTP(S) URL, received: {url}")
-        return cls(_encode_image_from_url(url, verify=verify))
+        return cls(url=_encode_image_from_url(url, timeout=timeout, verify=verify))
 
     @classmethod
-    def from_path(cls, file_path: str) -> "Image":
+    def from_path(cls, path: str | os.PathLike[str]) -> "Image":
         """Read a local file and encode it as a data URI."""
-        if not os.path.isfile(file_path):
-            raise ValueError(f"File not found: {file_path}")
-        return cls(_encode_image_from_file(file_path))
+        return cls(url=_encode_image_from_file(path))
 
     @classmethod
-    def from_file(cls, file_path: str) -> "Image":
+    def from_bytes(cls, image_bytes: bytes) -> "Image":
+        """Create an Image from encoded image bytes."""
+        return cls(url=_encode_image_from_bytes(image_bytes))
+
+    @classmethod
+    def from_pil(cls, pil_image: Any) -> "Image":
+        """Create an Image from a PIL image."""
+        if not PIL_AVAILABLE:
+            raise ImportError("Pillow is required to process PIL images.")
+        if not isinstance(pil_image, PILImage.Image):
+            raise TypeError(f"pil_image must be a PIL image, received: {type(pil_image)}")
+        return cls(url=_encode_pil_image(pil_image))
+
+    @classmethod
+    def from_file(cls, path: str | os.PathLike[str]) -> "Image":
         """Deprecated alias for :meth:`from_path`."""
         warnings.warn(
             "Image.from_file is deprecated and will be removed in 3.4; use Image.from_path instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls.from_path(file_path)
+        return cls.from_path(path)
 
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
         warnings.warn(
-            "Image.from_PIL is deprecated and will be removed in 3.4; use Image(pil_image) instead.",
+            "Image.from_PIL is deprecated and will be removed in 3.4; use Image.from_pil(pil_image) instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls(pil_image)
+        return cls.from_pil(pil_image)
 
     def __str__(self):
         return self.serialize_model()
@@ -169,12 +148,12 @@ def _is_http_url(string: str) -> bool:
         return False
 
 
-def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
+def encode_image(image: str | Image) -> str:
     """
     Normalize an in-memory image or preserve a remote image reference.
 
     Args:
-        image: A PIL Image, bytes, URL reference, data URI, or Image.
+        image: A URL reference, data URI, or Image.
 
     Returns:
         str: A data URI or remote URL reference.
@@ -182,9 +161,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
     Raises:
         ValueError: If the file type is not supported.
     """
-    if isinstance(image, dict) and "url" in image:
-        return encode_image(image["url"])
-    elif isinstance(image, str):
+    if isinstance(image, str):
         if image.startswith("data:"):
             # Already a data URI
             return image
@@ -192,52 +169,46 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
             return image
         else:
             raise ValueError(f"Unrecognized image string: {image}. Local files must be loaded with Image.from_path().")
-    elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
-        # PIL Image
-        return _encode_pil_image(image)
-    elif isinstance(image, bytes):
-        # Raw bytes
-        if not PIL_AVAILABLE:
-            raise ImportError("Pillow is required to process image bytes.")
-        try:
-            img = PILImage.open(io.BytesIO(image))
-        except UnidentifiedImageError as e:
-            raise ValueError(f"Bytes could not be identified as an image: {e}") from e
-        return _encode_pil_image(img)
     elif isinstance(image, Image):
         return image.url
     else:
         raise ValueError(f"Unsupported image type: {type(image)}")
 
 
-def _encode_image_from_file(file_path: str) -> str:
+def _encode_image_from_file(path: str | os.PathLike[str]) -> str:
     """Encode a file from a file path to a base64 data URI."""
-    with open(file_path, "rb") as file:
+    with open(path, "rb") as file:
         file_data = file.read()
 
-    # Use mimetypes to guess directly from the file path
-    mime_type, _ = mimetypes.guess_type(file_path)
+    path_string = os.fspath(path)
+    mime_type, _ = mimetypes.guess_type(path_string)
     if mime_type is None:
-        raise ValueError(f"Could not determine MIME type for file: {file_path}")
+        raise ValueError(f"Could not determine MIME type for file: {path_string}")
 
     encoded_data = base64.b64encode(file_data).decode("utf-8")
     return f"data:{mime_type};base64,{encoded_data}"
 
 
-def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
+def _encode_image_from_url(
+    image_url: str,
+    *,
+    timeout: float | tuple[float, float],
+    verify: bool | str,
+) -> str:
     """Encode a file from a URL to a base64 data URI.
 
     Args:
         image_url: The URL of the image to download.
+        timeout: Connection and read timeout in seconds, either as one value or a tuple.
         verify: Whether to verify SSL certificates. Set to False for self-signed certs.
     """
-    response = requests.get(image_url, verify=verify)
+    response = requests.get(image_url, timeout=timeout, verify=verify)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "")
 
     # Use the content type from the response headers if available
     if content_type:
-        mime_type = content_type
+        mime_type = content_type.split(";", 1)[0].strip()
     else:
         # Try to guess MIME type from URL
         mime_type, _ = mimetypes.guess_type(image_url)
@@ -246,6 +217,17 @@ def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
 
     encoded_data = base64.b64encode(response.content).decode("utf-8")
     return f"data:{mime_type};base64,{encoded_data}"
+
+
+def _encode_image_from_bytes(image_bytes: bytes) -> str:
+    """Encode image bytes to a base64 data URI."""
+    if not PIL_AVAILABLE:
+        raise ImportError("Pillow is required to process image bytes.")
+    try:
+        image = PILImage.open(io.BytesIO(image_bytes))
+    except UnidentifiedImageError as e:
+        raise ValueError(f"Bytes could not be identified as an image: {e}") from e
+    return _encode_pil_image(image)
 
 
 def _encode_pil_image(image: "PILImage") -> str:

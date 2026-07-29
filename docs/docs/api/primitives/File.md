@@ -1,7 +1,7 @@
-# dspy.Audio
+# dspy.File
 
 <!-- START_API_REF -->
-::: dspy.Audio
+::: dspy.File
     handler: python
     options:
         members:
@@ -9,15 +9,13 @@
             - description
             - extract_custom_type_from_annotation
             - format
-            - from_array
             - from_bytes
+            - from_file_id
             - from_path
-            - from_url
             - is_streamable
             - parse_lm_response
             - parse_stream_chunk
             - serialize_model
-            - validate_input
         show_source: true
         show_root_heading: true
         heading_level: 2

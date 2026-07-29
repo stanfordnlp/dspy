@@ -123,17 +123,17 @@ Types adapters know how to render and parse beyond Python’s standard ones. Eac
 **`dspy.adapters.types.Type`**  
 The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type. Adapters wrap the output of `format()` with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` so multi-modal content can be inserted into a single message stream and later split out.
 
-**`dspy.Image(source)`**
+**`dspy.Image(url=...)`**
 
-URL reference, data URI, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Constructors and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource.
+URL reference or data URI. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Constructors and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file, `Image.from_url(url)` to synchronously download a remote resource, `Image.from_bytes(data)` for encoded image bytes, or `Image.from_pil(image)` for a PIL image.
 
-**`dspy.Audio(source)`**
+**`dspy.Audio(data=..., audio_format=...)`**
 
-A data URI, in-memory bytes, or array data; raw base64 must be passed as `Audio(data=..., audio_format=...)`. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or `Audio.from_url(url)` for resource loading.
+Raw base64 audio data and its format. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or the synchronous `Audio.from_url(url)` for resource loading, `Audio.from_bytes(data, audio_format=...)` for raw bytes, or `Audio.from_array(array, sampling_rate, audio_format=...)` for array data.
 
 **`dspy.File(file_data=None, file_id=None, filename=None)`**
 
-Either in-memory bytes, a data URI, or a file ID (some providers preupload files and reference them by ID). Use `File.from_path(path)` to read a local file.
+Either a data URI or a file ID (some providers preupload files and reference them by ID). Use `File.from_path(path)` to read a local file, `File.from_bytes(data)` for raw bytes, or `File.from_file_id(id)` for a preuploaded file.
 
 **`dspy.Code(code, language="python")`**  
 Code with a class-level `language` parameter. `dspy.Code["java"]` produces a Code subclass typed for Java. `format()` returns the raw string — no wrapper, no fencing.

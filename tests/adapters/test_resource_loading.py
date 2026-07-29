@@ -1,9 +1,25 @@
 import base64
+import inspect
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
 import dspy
+
+
+@pytest.mark.parametrize(
+    ("resource_type", "field_names"),
+    [
+        (dspy.Image, {"url"}),
+        (dspy.Audio, {"data", "audio_format"}),
+        (dspy.File, {"file_data", "file_id", "filename"}),
+    ],
+)
+def test_resource_constructor_signatures_are_keyword_only(resource_type, field_names):
+    parameters = inspect.signature(resource_type).parameters
+
+    assert set(parameters) == field_names
+    assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in parameters.values())
 
 
 def _forbid_host_io(monkeypatch):
@@ -25,23 +41,20 @@ def _forbid_host_io(monkeypatch):
 # as a reference (Image URLs).
 _LOCATOR_INPUTS = [
     (dspy.Image, {"url": "/etc/passwd"}),
-    (dspy.Image, "/etc/passwd"),
     (dspy.Image, {"url": "https://evil.example/secret.png"}),
-    (dspy.Audio, "/etc/passwd"),
-    (dspy.Audio, "https://evil.example/secret.wav"),
-    (dspy.File, "/etc/passwd"),
-    (dspy.File, "https://evil.example/secret.bin"),
+    (dspy.Audio, {"data": "/etc/passwd", "audio_format": "wav"}),
+    (dspy.Audio, {"data": "https://evil.example/secret.wav", "audio_format": "wav"}),
+    (dspy.File, {"file_data": "/etc/passwd"}),
+    (dspy.File, {"file_data": "https://evil.example/secret.bin"}),
 ]
 
 
 @pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
 def test_construction_performs_no_host_io(monkeypatch, annotation, value):
-    # The constructor is reachable from untrusted application input (e.g. dspy.Image(user_string));
-    # it must never dereference a locator.
     _forbid_host_io(monkeypatch)
     try:
-        annotation(value)
-    except (ValueError, TypeError):
+        annotation(**value)
+    except (ValueError, TypeError, ValidationError):
         pass
 
 
@@ -56,13 +69,20 @@ def test_validation_performs_no_host_io(monkeypatch, annotation, value):
         pass
 
 
+def test_image_validation_rejects_download_without_host_io(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    with pytest.raises(ValidationError, match="download"):
+        TypeAdapter(dspy.Image).validate_python({"url": "https://evil.example/secret.png", "download": True})
+
+
 def test_image_url_constructor_does_not_download(monkeypatch):
     def fail_request(*args, **kwargs):
         pytest.fail("Image construction attempted to download a remote resource")
 
     monkeypatch.setattr("dspy.adapters.types.image.requests.get", fail_request)
 
-    image = dspy.Image("https://example.com/image.png")
+    image = dspy.Image(url="https://example.com/image.png")
 
     assert image.url == "https://example.com/image.png"
 
@@ -75,9 +95,9 @@ def test_explicit_local_resource_factories(tmp_path):
     file_path = tmp_path / "document.txt"
     file_path.write_bytes(b"file bytes")
 
-    assert base64.b64decode(dspy.Image.from_path(str(image_path)).url.split(",", 1)[1]) == b"image bytes"
-    assert base64.b64decode(dspy.Audio.from_path(str(audio_path)).data) == b"audio bytes"
-    assert base64.b64decode(dspy.File.from_path(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
+    assert base64.b64decode(dspy.Image.from_path(image_path).url.split(",", 1)[1]) == b"image bytes"
+    assert base64.b64decode(dspy.Audio.from_path(audio_path).data) == b"audio bytes"
+    assert base64.b64decode(dspy.File.from_path(file_path).file_data.split(",", 1)[1]) == b"file bytes"
 
 
 def test_audio_from_file_is_deprecated_alias(tmp_path):
@@ -110,12 +130,12 @@ def test_explicit_remote_resource_factories(monkeypatch, factory, mime_type):
     assert base64.b64decode(encoded) == b"remote bytes"
 
 
-def test_in_memory_resource_construction():
-    image = dspy.Image(
+def test_in_memory_resource_factories():
+    image = dspy.Image.from_bytes(
         base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
     )
-    audio = dspy.Audio(b"audio bytes", audio_format="wav")
-    file = dspy.File(b"file bytes")
+    audio = dspy.Audio.from_bytes(b"audio bytes", audio_format="wav")
+    file = dspy.File.from_bytes(b"file bytes")
 
     assert image.url.startswith("data:image/")
     assert base64.b64decode(audio.data) == b"audio bytes"
@@ -123,31 +143,21 @@ def test_in_memory_resource_construction():
 
 
 @pytest.mark.parametrize(
-    ("source", "match"),
-    [("clip.wav", r"Audio\.from_path"), ("https://example.com/a.wav", r"Audio\.from_url")],
-)
-def test_audio_positional_string_must_be_data_uri_even_with_format(source, match):
-    with pytest.raises(ValueError, match=match):
-        dspy.Audio(source, audio_format="wav")
-
-
-@pytest.mark.parametrize(
-    "source",
+    "constructor",
     [
-        "data:audio/wav;base64,AA==",
-        {"data": "AA==", "audio_format": "wav"},
-        dspy.Audio(data="AA==", audio_format="wav"),
+        lambda: dspy.Image("https://example.com/image.png"),
+        lambda: dspy.Audio(b"audio bytes", audio_format="wav"),
+        lambda: dspy.File(b"file bytes"),
     ],
 )
-def test_audio_rejects_audio_format_for_inputs_that_carry_one(source):
-    with pytest.raises(TypeError, match="already carries its format"):
-        dspy.Audio(source, audio_format="mp3")
+def test_resource_constructors_reject_positional_sources(constructor):
+    with pytest.raises(TypeError):
+        constructor()
 
 
-@pytest.mark.parametrize("source", [b"audio bytes", "data:audio/wav;base64,AA=="])
-def test_audio_rejects_sampling_rate_for_non_array_inputs(source):
-    with pytest.raises(TypeError, match="sampling_rate"):
-        dspy.Audio(source, sampling_rate=44100)
+def test_audio_from_bytes_requires_nonempty_format():
+    with pytest.raises(ValueError, match="non-empty"):
+        dspy.Audio.from_bytes(b"audio bytes", audio_format="")
 
 
 def test_audio_from_url_passes_verify(monkeypatch):
@@ -170,3 +180,24 @@ def test_audio_from_url_passes_verify(monkeypatch):
     dspy.Audio.from_url("https://example.com/a.wav", verify=False)
 
     assert captured["verify"] is False
+    assert captured["timeout"] == 30.0
+
+
+def test_audio_from_url_strips_content_type_parameters(monkeypatch):
+    class Response:
+        def __init__(self):
+            self.content = b"remote bytes"
+            self.headers = {"Content-Type": "audio/x-wav; charset=binary"}
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("dspy.adapters.types.audio.requests.get", lambda *args, **kwargs: Response())
+
+    assert dspy.Audio.from_url("https://example.com/a.wav").audio_format == "wav"
+
+
+@pytest.mark.parametrize("factory", [dspy.Image.from_path, dspy.Audio.from_path, dspy.File.from_path])
+def test_from_path_preserves_file_not_found_error(factory, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        factory(tmp_path / "missing.resource")

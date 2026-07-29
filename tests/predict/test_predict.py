@@ -1144,7 +1144,7 @@ def test_warning_images(caplog):
     predict_instance = Predict("question:dspy.Image -> answer")
 
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
-        predict_instance(question=dspy.Image("https://example.com/image1.jpg"))
+        predict_instance(question=dspy.Image(url="https://example.com/image1.jpg"))
 
     assert "Type mismatch" not in caplog.text
 

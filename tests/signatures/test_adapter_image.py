@@ -1,4 +1,3 @@
-import base64
 import os
 import tempfile
 import warnings
@@ -10,7 +9,6 @@ import requests
 from PIL import Image as PILImage
 
 import dspy
-from dspy.adapters.types.image import encode_image
 from dspy.utils.dummies import DummyLM
 
 
@@ -36,7 +34,7 @@ def sample_url():
 
 @pytest.fixture
 def sample_dspy_image_no_download():
-    return dspy.Image("https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg")
+    return dspy.Image(url="https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg")
 
 
 def count_messages_with_image_url_pattern(messages):
@@ -116,7 +114,7 @@ def test_basic_image_operations(test_case):
 
     # Convert string URLs to dspy.Image objects
     inputs = {
-        k: dspy.Image(v) if isinstance(v, str) and k in ["image", "ui_image"] else v
+        k: dspy.Image(url=v) if isinstance(v, str) and k in ["image", "ui_image"] else v
         for k, v in test_case["inputs"].items()
     }
 
@@ -147,7 +145,7 @@ def test_image_input_formats(
 
     input_map = {
         "pil_image": sample_pil_image,
-        "encoded_pil_image": encode_image(sample_pil_image),
+        "encoded_pil_image": dspy.Image.from_pil(sample_pil_image).url,
         "dspy_image_download": sample_dspy_image_download,
         "dspy_image_no_download": sample_dspy_image_no_download,
     }
@@ -166,7 +164,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     """Test saving and loading predictors with image fields"""
     signature = "image: dspy.Image -> caption: str"
     examples = [
-        dspy.Example(image=dspy.Image(sample_url), caption="Example 1"),
+        dspy.Example(image=dspy.Image(url=sample_url), caption="Example 1"),
         dspy.Example(image=sample_pil_image, caption="Example 2"),
     ]
 
@@ -179,7 +177,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
         loaded_predictor = dspy.Predict(signature)
         loaded_predictor.load(temp_file.name)
 
-    loaded_predictor(image=dspy.Image("https://example.com/dog.jpg"))
+    loaded_predictor(image=dspy.Image(url="https://example.com/dog.jpg"))
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 2
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
@@ -189,8 +187,8 @@ def test_save_load_complex_default_types():
     examples = [
         dspy.Example(
             image_list=[
-                dspy.Image("https://example.com/dog.jpg"),
-                dspy.Image("https://example.com/cat.jpg"),
+                dspy.Image(url="https://example.com/dog.jpg"),
+                dspy.Image(url="https://example.com/cat.jpg"),
             ],
             caption="Example 1",
         ).with_inputs("image_list"),
@@ -256,9 +254,9 @@ def test_save_load_complex_types(test_case):
     processed_input = {}
     for key, value in test_case["inputs"].items():
         if isinstance(value, str) and "http" in value:
-            processed_input[key] = dspy.Image(value)
+            processed_input[key] = dspy.Image(url=value)
         elif isinstance(value, list) and value and isinstance(value[0], str):
-            processed_input[key] = [dspy.Image(url) for url in value]
+            processed_input[key] = [dspy.Image(url=url) for url in value]
         else:
             processed_input[key] = value
 
@@ -301,8 +299,8 @@ def test_save_load_pydantic_model():
 
     # Create model instance
     model_input = ImageModel(
-        image=dspy.Image("https://example.com/dog.jpg"),
-        image_list=[dspy.Image("https://example.com/cat.jpg")],
+        image=dspy.Image(url="https://example.com/dog.jpg"),
+        image_list=[dspy.Image(url="https://example.com/cat.jpg")],
         output="Multiple photos",
     )
 
@@ -450,7 +448,7 @@ def test_pdf_from_file():
 
 def test_image_repr():
     """Test string representation of Image objects"""
-    url_image = dspy.Image("https://example.com/dog.jpg")
+    url_image = dspy.Image(url="https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
         '[{"type": "image_url", "image_url": {"url": "https://example.com/dog.jpg"}}]'
@@ -459,20 +457,19 @@ def test_image_repr():
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    pil_image = dspy.Image(sample_pil)
+    pil_image = dspy.Image.from_pil(sample_pil)
     assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
 
 
-def test_image_constructor_supports_source_and_url_keywords():
+def test_image_constructor_uses_url_field():
     source = "https://example.com/dog.jpg"
 
-    assert dspy.Image(source=source).url == source
     assert dspy.Image(url=source).url == source
 
-    with pytest.raises(TypeError, match="both `source` and `url`"):
-        dspy.Image(source, url=source)
+    with pytest.raises(TypeError):
+        dspy.Image(source)
 
 
 def test_canonical_factories_do_not_warn(tmp_path):
@@ -488,6 +485,7 @@ def test_canonical_factories_do_not_warn(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         dspy.Image.from_path(str(tmp_file))
+        dspy.Image.from_pil(PILImage.new("RGB", (10, 10), color="blue"))
 
 
 def test_deprecated_factory_aliases_warn(tmp_path):
@@ -507,8 +505,8 @@ def test_invalid_string_format():
     invalid_string = "this_is_not_a_url_or_file"
 
     # Should raise a ValueError and not pass the string through
-    with pytest.raises(ValueError, match="Unrecognized"):
-        dspy.Image(invalid_string)
+    with pytest.raises(pydantic.ValidationError, match="Unrecognized"):
+        dspy.Image(url=invalid_string)
 
 
 def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
@@ -518,48 +516,21 @@ def test_positional_local_path_hard_breaks(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.open", lambda *a, **k: pytest.fail("Image(path) read the filesystem"))
 
-    with pytest.raises(ValueError, match=r"Image\.from_path"):
+    with pytest.raises(TypeError):
         dspy.Image(str(tmp_file))
 
 
-def test_deprecated_download_true_downloads(monkeypatch):
-    response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
-    response.raise_for_status = lambda: None
-    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
-
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image("https://example.com/dog.jpg", download=True)
-
-    assert image.url.startswith("data:image/png;base64,")
-    assert base64.b64decode(image.url.split(",", 1)[1]) == b"pngdata"
-
-
-def test_deprecated_download_false_keeps_reference():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, download=False)
-    assert image.url == source
-
-
-def test_deprecated_verify_warns_without_download():
-    source = "https://example.com/dog.jpg"
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(source, verify=False)
-    assert image.url == source
-
-
-def test_pil_image_with_deprecated_download_still_encodes():
-    sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
-        image = dspy.Image(sample_pil, download=True)
-    assert image.url.startswith("data:image/")
+@pytest.mark.parametrize("option", [{"download": True}, {"download": False}, {"verify": False}])
+def test_constructor_rejects_removed_network_options(option):
+    with pytest.raises(pydantic.ValidationError):
+        dspy.Image(url="https://example.com/dog.jpg", **option)
 
 
 def test_from_path_missing_file():
-    with pytest.raises(ValueError, match="File not found"):
+    with pytest.raises(FileNotFoundError):
         dspy.Image.from_path("/nonexistent/image.png")
 
 
 def test_unidentifiable_bytes_raise_value_error():
     with pytest.raises(ValueError, match="could not be identified as an image"):
-        dspy.Image(b"not an image")
+        dspy.Image.from_bytes(b"not an image")

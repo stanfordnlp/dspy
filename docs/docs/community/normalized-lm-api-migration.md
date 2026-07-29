@@ -114,7 +114,7 @@ from dspy.core.types import LMImagePart
 with dspy.context(experimental=True):
     response = lm(
         dspy.System("Be concise."),
-        dspy.User("Describe this image.", dspy.Image("https://example.com/dog.png")), #Coming soon!
+        dspy.User("Describe this image.", dspy.Image(url="https://example.com/dog.png")), #Coming soon!
         temperature=0.2,
     )
 ```

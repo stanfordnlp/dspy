@@ -6,6 +6,7 @@ API reference for DSPy primitives. Select a page below.
 - [Audio](Audio.md)
 - [Code](Code.md)
 - [Example](Example.md)
+- [File](File.md)
 - [History](History.md)
 - [Image](Image.md)
 - [Prediction](Prediction.md)
