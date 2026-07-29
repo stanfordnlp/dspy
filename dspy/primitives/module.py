@@ -198,8 +198,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def get_lm(self):
         """Get the language model used by this module's predictors.
 
-        Returns the language model if all predictors use the same LM.
-        Raises an error if multiple different LMs are in use.
+        Returns the language model if every module leaf uses the same LM. Raises an error if multiple
+        different LMs are in use.
 
         Returns:
             The language model instance used by this module's predictors.
@@ -208,7 +208,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             ValueError: If multiple different language models are being
                 used by the predictors in this module.
         """
-        all_used_lms = [param.lm for _, param in self.named_predictors()]
+        all_used_lms = [param.lm for _, param in self.named_parameters() if isinstance(param, Module)]
 
         if len(set(all_used_lms)) == 1:
             return all_used_lms[0]

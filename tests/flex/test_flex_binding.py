@@ -155,6 +155,43 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     assert [n for n, _ in program.named_predictors()] == ["sibling"]
 
 
+def test_parent_set_lm_and_get_lm_are_symmetric() -> None:
+    # set_lm writes to every LM-bearing leaf (Predicts and Flexes); get_lm reads the same set —
+    # so set-then-get is an identity, a flex-only program has a unique LM rather than an error,
+    # and a divergent flex LM is reported instead of silently ignored.
+    class Program(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sibling = dspy.Predict("x -> y")
+            self.flex = Flex(Echo, interpreter_factory=MockInterpreter)
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    program = Program()
+    lm = dspy.LM("openai/gpt-4o-mini")
+    program.set_lm(lm)
+    assert program.sibling.lm is lm
+    assert program.flex.get_lm() is lm
+    assert program.get_lm() is lm  # read-your-writes
+
+    program.flex.lm = dspy.LM("openai/gpt-4.1")
+    with pytest.raises(ValueError, match="Multiple LMs"):
+        program.get_lm()
+
+    class OnlyFlex(dspy.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.flex = Flex(Echo, interpreter_factory=MockInterpreter)
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    only = OnlyFlex()
+    only.set_lm(lm)
+    assert only.get_lm() is lm  # previously raised "Multiple LMs" on the empty predictor list
+
+
 def test_set_lm_is_stored_and_survives_rebind_and_save(tmp_path) -> None:
     # set_lm stores one module-level LM (one home), applied via context at forward time — so it
     # survives rebinds (which delete and rebuild the attached predictors) and save/load, unlike
