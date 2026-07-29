@@ -156,13 +156,33 @@ class BaseModule:
     def dump_state(self, json_mode=True):
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
-    def load_state(self, state, *, allow_unsafe_lm_state=False):
+    def load_state(self, state, *, allow_unsafe_lm_state=False, lm=None):
+        from dspy.clients.base_lm import BaseLM
         from dspy.predict.predict import Predict
+
+        if lm is None or isinstance(lm, BaseLM):
+            def resolve_lm(name):
+                return lm
+        elif isinstance(lm, dict):
+            predictor_names = [name for name, param in self.named_parameters() if isinstance(param, Predict)]
+            unknown = sorted(set(lm) - set(predictor_names))
+            if unknown:
+                raise ValueError(
+                    f"lm mapping contains unknown predictor name(s): {unknown}. "
+                    f"This module's predictors are: {sorted(predictor_names)}."
+                )
+
+            def resolve_lm(name):
+                return lm.get(name)
+        else:
+            raise ValueError(
+                f"lm must be a `dspy.BaseLM` or a dict mapping predictor names to LMs, not {type(lm)}."
+            )
 
         def _apply(module):
             for name, param in module.named_parameters():
                 if isinstance(param, Predict):
-                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state, lm=resolve_lm(name))
                 else:
                     param.load_state(state[name])
 
@@ -253,7 +273,7 @@ class BaseModule:
         else:
             raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
-    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False):
+    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False, lm=None):
         """Load the saved module. You may also want to check out dspy.load, if you want to
         load an entire program, not just the state for an existing program.
 
@@ -262,8 +282,15 @@ class BaseModule:
             allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
                 This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
             allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
-                `api_base`, `base_url`, and `model_list`) from loaded state and allows importing custom LM classes.
-                Enable only for trusted files.
+                `api_base`, `base_url`, and `model_list`) from loaded state and
+                allows importing custom LM classes. Enable only for trusted files. Without it, saved
+                LM state carrying endpoint configuration fails with a typed `dspy.LMStateError`.
+            lm (BaseLM | dict): If provided, use this instead of reconstructing LMs from the saved
+                state. A single `dspy.BaseLM` applies to every predictor; a dict maps predictor
+                names (as returned by `named_predictors()`) to LMs for multi-LM programs, and
+                predictors absent from the dict load their saved LM state normally. This is the
+                safe way to load a program whose saved LMs pointed at custom endpoints: the routes
+                come from your code, not from the file.
         """
         path = Path(path)
 
@@ -291,4 +318,4 @@ class BaseModule:
                     "on the loaded model, please consider loading the model in the same environment as the "
                     "saving environment."
                 )
-        self.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+        self.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state, lm=lm)

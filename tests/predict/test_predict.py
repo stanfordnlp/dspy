@@ -329,7 +329,7 @@ def test_lm_field_after_dump_and_load_state(tmp_path, filename):
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
-def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint_override_key):
+def test_load_refuses_serialized_endpoint_override_by_default(tmp_path, endpoint_override_key):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
@@ -342,14 +342,77 @@ def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint
     with open(file_path, "wb") as f:
         f.write(orjson.dumps(saved_state))
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
-        loaded_predict = dspy.Predict("q->a")
+    loaded_predict = dspy.Predict("q->a")
+    with pytest.raises(dspy.LMStateError, match=endpoint_override_key):
         loaded_predict.load(file_path)
 
-    assert loaded_predict.lm is not None
-    assert endpoint_override_key not in loaded_predict.lm.kwargs
-    warning_mock.assert_called_once()
-    assert warning_mock.call_args.args[1] == [endpoint_override_key]
+
+def test_load_with_explicit_lm_bypasses_saved_lm_state(tmp_path):
+    file_path = tmp_path / "model.json"
+    original_predict = dspy.Predict("q->a")
+    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.save(file_path)
+
+    with open(file_path, "rb") as f:
+        saved_state = orjson.loads(f.read())
+    saved_state["lm"]["api_base"] = "http://override.local/v1"
+    with open(file_path, "wb") as f:
+        f.write(orjson.dumps(saved_state))
+
+    trusted_lm = dspy.LM(model="openai/gpt-4o")
+    loaded_predict = dspy.Predict("q->a")
+    loaded_predict.load(file_path, lm=trusted_lm)
+
+    assert loaded_predict.lm is trusted_lm
+
+
+def test_load_with_lm_mapping_assigns_per_predictor(tmp_path):
+    class TwoStage(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.draft = dspy.Predict("q->a")
+            self.critique = dspy.Predict("a->b")
+
+    file_path = tmp_path / "model.json"
+    original = TwoStage()
+    original.draft.lm = dspy.LM(model="openai/local-model", api_base="http://internal.local/v1")
+    original.critique.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original.save(file_path)
+
+    # Default load refuses: one predictor's LM carries endpoint configuration.
+    with pytest.raises(dspy.LMStateError, match="api_base"):
+        TwoStage().load(file_path)
+
+    # A partial mapping supplies the endpoint-carrying LM from code; the other
+    # predictor loads its saved (safe) LM state normally.
+    draft_lm = dspy.LM(model="openai/local-model", api_base="http://localhost:8000/v1")
+    loaded = TwoStage()
+    loaded.load(file_path, lm={"draft": draft_lm})
+
+    assert loaded.draft.lm is draft_lm
+    assert isinstance(loaded.critique.lm, dspy.LM)
+    assert loaded.critique.lm.model == "openai/gpt-4o-mini"
+
+    # The trusted path still "just works" for any number of LMs.
+    trusted = TwoStage()
+    trusted.load(file_path, allow_unsafe_lm_state=True)
+    assert trusted.draft.lm.kwargs["api_base"] == "http://internal.local/v1"
+    assert trusted.critique.lm.model == "openai/gpt-4o-mini"
+
+
+def test_load_with_lm_mapping_rejects_unknown_predictor_names(tmp_path):
+    class TwoStage(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.draft = dspy.Predict("q->a")
+            self.critique = dspy.Predict("a->b")
+
+    file_path = tmp_path / "model.json"
+    original = TwoStage()
+    original.save(file_path)
+
+    with pytest.raises(ValueError, match="unknown predictor name"):
+        TwoStage().load(file_path, lm={"typo_name": dspy.LM(model="openai/gpt-4o-mini")})
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
@@ -376,21 +439,16 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
-def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_override_key):
+def test_load_state_refuses_serialized_endpoint_override_by_default(endpoint_override_key):
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
     original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
-        loaded_predict = dspy.Predict("q->a")
+    loaded_predict = dspy.Predict("q->a")
+    with pytest.raises(dspy.LMStateError, match=endpoint_override_key):
         loaded_predict.load_state(saved_state)
-
-    assert loaded_predict.lm is not None
-    assert endpoint_override_key not in loaded_predict.lm.kwargs
-    warning_mock.assert_called_once()
-    assert warning_mock.call_args.args[1] == [endpoint_override_key]
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
@@ -410,7 +468,7 @@ def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_ove
     warning_mock.assert_not_called()
 
 
-def test_load_state_ignores_serialized_model_list_endpoint_override_by_default():
+def test_load_state_refuses_serialized_model_list_endpoint_override_by_default():
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
     original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
@@ -425,18 +483,13 @@ def test_load_state_ignores_serialized_model_list_endpoint_override_by_default()
         }
     ]
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
-        loaded_predict = dspy.Predict("q->a")
+    loaded_predict = dspy.Predict("q->a")
+    with pytest.raises(dspy.LMStateError, match="model_list"):
         loaded_predict.load_state(saved_state)
-
-    assert loaded_predict.lm is not None
-    assert "model_list" not in loaded_predict.lm.kwargs
-    warning_mock.assert_called_once()
-    assert "model_list" in warning_mock.call_args.args[1]
 
 
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
-def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, endpoint_override_key):
+def test_explicit_lm_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, endpoint_override_key):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
@@ -450,7 +503,7 @@ def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, e
         f.write(orjson.dumps(saved_state))
 
     loaded_predict = dspy.Predict("q->a")
-    loaded_predict.load(file_path)
+    loaded_predict.load(file_path, lm=dspy.LM(model="openai/gpt-4o-mini"))
 
     class FakeResp(dict):
         cache_hit = False
@@ -466,7 +519,7 @@ def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, e
     assert completion_mock.call_args.kwargs.get(endpoint_override_key) != override_url
 
 
-def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
+def test_load_honors_serialized_model_list_only_when_opted_in(tmp_path):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
@@ -495,13 +548,8 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
             super().__init__({"choices": []})
 
     safe_loaded_predict = dspy.Predict("q->a")
-    safe_loaded_predict.load(file_path)
-    with patch("litellm.batch_completion_models", return_value=FakeResp()) as batch_completion_mock:
-        with patch("litellm.completion", return_value=FakeResp()) as completion_mock:
-            safe_loaded_predict.lm.forward(prompt="hello", cache=False)
-
-    assert completion_mock.called
-    assert not batch_completion_mock.called
+    with pytest.raises(dspy.LMStateError, match="model_list"):
+        safe_loaded_predict.load(file_path)
 
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
@@ -512,7 +560,7 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
     assert opt_in_deployments[0]["api_base"] == override_url
 
 
-def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp_path, monkeypatch):
+def test_serialized_endpoint_override_cannot_capture_env_api_key_by_default(tmp_path, monkeypatch):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     env_api_key = "sk-live-test-secret"
@@ -537,7 +585,7 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
         def __init__(self):
             super().__init__({"choices": []})
 
-    # Simulates legacy behavior by allowing serialized endpoint overrides.
+    # Trusted opt-in honors the serialized endpoint, and the ambient key goes with it.
     opt_in_loaded_predict = dspy.Predict("q->a")
     opt_in_loaded_predict.load(file_path, allow_unsafe_lm_state=True)
     with patch("litellm.text_completion", return_value=FakeResp()) as text_completion_mock:
@@ -546,14 +594,11 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
     assert text_completion_mock.call_args.kwargs["api_base"] == override_url
     assert text_completion_mock.call_args.kwargs["api_key"] == env_api_key
 
+    # The default path refuses the file outright, so the ambient key can never
+    # be sent to the overriding endpoint.
     safe_loaded_predict = dspy.Predict("q->a")
-    safe_loaded_predict.load(file_path)
-    with patch("litellm.text_completion", return_value=FakeResp()) as text_completion_mock:
-        safe_loaded_predict.lm.forward(prompt="hello", cache=False)
-
-    # In the safe path, the key still comes from the environment, but the serialized endpoint override does not.
-    assert text_completion_mock.call_args.kwargs["api_key"] == env_api_key
-    assert text_completion_mock.call_args.kwargs["api_base"] != override_url
+    with pytest.raises(dspy.LMStateError, match="api_base"):
+        safe_loaded_predict.load(file_path)
 
 
 def test_forward_method():
