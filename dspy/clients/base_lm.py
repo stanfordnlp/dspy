@@ -1,3 +1,5 @@
+import contextlib
+import contextvars
 import copy as copy_module
 import datetime
 import importlib
@@ -24,6 +26,41 @@ GLOBAL_HISTORY = []
 LM_CLASS_STATE_KEY = "_dspy_lm_class"
 _BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
 ForwardContract = Literal["legacy", "typed_lm"]
+
+# Kwarg names that hold credentials and must never reach a saved artifact.
+SENSITIVE_LM_KWARG_NAMES = frozenset(
+    {"api_key", "azure_ad_token", "aws_access_key_id", "aws_secret_access_key", "aws_session_token"}
+)
+# Header names (lowercase) that hold credentials and must never reach a saved artifact.
+SENSITIVE_HEADER_NAMES = frozenset(
+    {"authorization", "proxy-authorization", "api-key", "x-api-key", "cookie", "set-cookie"}
+)
+
+# Scrubbing is scoped to program-artifact pickling only: `copy.copy`,
+# `copy.deepcopy`, and in-process pickling (optimizer copies, the
+# transactional-load trial run) must keep working credentials and history.
+_scrub_lm_state_on_pickle = contextvars.ContextVar("_scrub_lm_state_on_pickle", default=False)
+
+
+@contextlib.contextmanager
+def scrub_lm_state_on_pickle():
+    """Scrub credentials and history from LMs pickled inside this context.
+
+    `BaseModule.save(save_program=True)` wraps its cloudpickle dump in this
+    context so program artifacts never embed API keys, credential callables,
+    sensitive headers, or call history.
+    """
+    token = _scrub_lm_state_on_pickle.set(True)
+    try:
+        yield
+    finally:
+        _scrub_lm_state_on_pickle.reset(token)
+
+
+def _scrub_sensitive_headers(headers):
+    if not isinstance(headers, dict):
+        return headers
+    return {key: value for key, value in headers.items() if str(key).lower() not in SENSITIVE_HEADER_NAMES}
 
 
 def _import_lm_class(class_path: str) -> type:
@@ -204,6 +241,32 @@ class BaseLM:
 
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
         return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if not _scrub_lm_state_on_pickle.get():
+            return state
+
+        # Program-artifact hygiene: the pickle travels, so credentials and the
+        # call log must not. The loading side configures credentials fresh,
+        # exactly as on the JSON state path.
+        state["history"] = []
+        state["callbacks"] = []
+        kwargs = {
+            key: value
+            for key, value in (state.get("kwargs") or {}).items()
+            if key not in SENSITIVE_LM_KWARG_NAMES
+        }
+        for header_field in ("extra_headers", "headers"):
+            if header_field in kwargs:
+                kwargs[header_field] = _scrub_sensitive_headers(kwargs[header_field])
+        state["kwargs"] = kwargs
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__dict__.setdefault("history", [])
+        self.__dict__.setdefault("callbacks", [])
 
     def _declares_forward_contract(self) -> bool:
         """Return whether this concrete LM class declares `forward_contract`."""
