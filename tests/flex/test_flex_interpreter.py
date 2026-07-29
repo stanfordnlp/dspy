@@ -138,46 +138,17 @@ def test_construct_rejects_reserved_attribute_names() -> None:
             flex._bridge._construct("Predict", "value: int -> result: int", reserved, {})
 
 
-def test_construct_is_idempotent_but_rebuilds_on_signature_change() -> None:
+def test_construct_rebuilds_from_the_source_each_time() -> None:
+    # Predictors are derived artifacts: every forward re-runs the source's __init__ in a fresh
+    # sandbox, and each construction request rebuilds the host predictor. There is no cross-call
+    # cache to go stale, and nothing set on a previous forward's objects can leak into the next.
     flex = _bridged_flex()
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     first = flex.solve
-    # Same (kind, signature) -> reuse the same object (preserves any optimized demos/instructions).
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    assert flex.solve is first
-    # Changed signature -> rebuild.
-    flex._bridge._construct("ChainOfThought", "value: int -> result: str", "solve", {})
-    assert flex.solve is not first
-
-
-def test_construct_rebuilds_when_kind_or_kwargs_change() -> None:
-    """The reuse check keys on the whole construction request, not just (attr_name, signature).
-
-    Optimizer-authored source can reuse an attribute name and signature while asking for a
-    different primitive or config, so matching on the signature alone would hand back a predictor
-    the source never asked for and silently run the wrong configuration.
-    """
-    flex = _bridged_flex()
-    flex._bridge._construct("Predict", "value: int -> result: int", "solve", {})
-    first = flex.solve
-
-    # Same attr_name and signature, different primitive -> rebuild.
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     assert flex.solve is not first
     assert isinstance(flex.solve, dspy.ChainOfThought)
-
-    # Same attr_name, signature and primitive, different kwargs -> rebuild.
-    flex._bridge._construct("Predict", "value: int -> result: int", "solve", {})
-    plain = flex.solve
-    flex._bridge._construct("Predict", "value: int -> result: int", "solve", {"temperature": 0.7})
-    assert flex.solve is not plain
-    assert flex.solve.config["temperature"] == 0.7
-
-
-def test_construct_rejects_non_bridgeable_kind() -> None:
-    flex = _bridged_flex()
-    with pytest.raises(CodeInterpreterError):
-        flex._bridge._construct("Retrieve", "value -> result", "r", {})
+    assert flex._attached_names == ["solve"]  # bookkeeping stays deduplicated
 
 
 def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from typing import Any, Callable
 
 from dspy.dsp.utils.settings import settings
@@ -162,40 +161,3 @@ class Flex(Module, Parameter):
             with settings.context(lm=self.lm):
                 return self._bridge.forward(kwargs)
         return self._bridge.forward(kwargs)
-
-    def __getstate__(self):
-        state = super().__getstate__()
-        bridge = state.pop("_bridge", None)
-        state["_bridge_registry"] = dict(bridge._registry) if bridge is not None else {}
-        return state
-
-    def __setstate__(self, state):
-        state = dict(state)
-        registry = state.pop("_bridge_registry", {})
-        super().__setstate__(state)
-        from dspy.flex.bridge import BridgeRuntime
-
-        self._bridge = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
-        if self._module_src is not None:
-            self._bridge.bind(self._module_src)
-            self._bridge._registry = registry
-
-    def __deepcopy__(self, memo):
-        # The bridge holds a threading.Lock and a back-reference to its Flex,
-        # so copy everything else and give the copy a fresh bridge that reuses the copied predictors.
-        new = self.__class__.__new__(self.__class__)
-        memo[id(self)] = new
-        for key, value in self.__dict__.items():
-            if key == "_bridge":
-                continue
-            try:
-                setattr(new, key, copy.deepcopy(value, memo))
-            except Exception:
-                setattr(new, key, value)
-        from dspy.flex.bridge import BridgeRuntime
-
-        new._bridge = BridgeRuntime(new, new._interpreter_factory, new._max_predictor_calls)
-        if new._module_src is not None:
-            new._bridge.bind(new._module_src)
-            new._bridge._registry = dict(self._bridge._registry)
-        return new

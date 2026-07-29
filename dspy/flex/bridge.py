@@ -5,7 +5,6 @@ import functools
 import inspect
 import json
 import logging
-import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,7 +34,7 @@ _OUT_VAR = "__dspy_flex_out"
 _JSON_VAR = "__dspy_flex_json"
 
 
-# The sandbox-side dspy shim, injected as text once per session.
+# The sandbox-side dspy shim, injected as text into each per-forward interpreter.
 SHIM_SETUP = (Path(__file__).parent / "_sandbox_shim.py").read_text(encoding="utf-8")
 
 
@@ -70,12 +69,6 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
     if isinstance(signature, str):
         return make_signature(signature, custom_types=custom_types)
     return signature
-
-
-def _construction_key(kind: str, signature: Any, kwargs: dict[str, Any] | None) -> str:
-    """A stable key for a construction request, used for idempotency across repeated ``__init__``
-    runs (see ``_construct``)."""
-    return json.dumps([kind, signature, kwargs or {}], sort_keys=True, default=str)
 
 
 def _jsonable(value: Any) -> Any:
@@ -155,8 +148,7 @@ class BridgeRuntime:
     Every ``forward`` creates a fresh interpreter from the factory, executes the shim and the
     bound source, runs the instance, and shuts the interpreter down — nothing outlives the call,
     so parallel forwards are trivially isolated. Predictors are constructed on the host and
-    attached to the ``Flex`` (so they carry canonical names and stable identity); the registry
-    keeps construction idempotent across forwards, so repeated ``__init__`` runs reuse them.
+    attached to the ``Flex`` under canonical names, rebuilt from the source on each forward.
     ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
 
     User ``tools`` are registered with the interpreter (callable by name from sandbox) and
@@ -170,8 +162,6 @@ class BridgeRuntime:
         self._flex = flex
         self._factory = factory
         self._max_predictor_calls = max_predictor_calls
-        self._lock = threading.Lock()
-        self._registry: dict[str, str] = {}  # attr_name -> construction key
         self._module_src: str | None = None
         self._class_name: str | None = None
 
@@ -179,8 +169,6 @@ class BridgeRuntime:
         """Record new source; it runs at the next ``forward``."""
         self._module_src = module_src
         self._class_name = parse_module_class_name(module_src)
-        with self._lock:
-            self._registry.clear()
 
     def _invocation_call(self, originals: dict[str, Any]) -> Callable[..., Any]:
         """Enforces the per-forward predictor-call budget and hands bridged calls the original custom-type
@@ -301,17 +289,10 @@ class BridgeRuntime:
             raise CodeInterpreterError(
                 f"Predictor name {attr_name!r} is reserved on dspy.Flex; rename the attribute in the module source."
             )
-        key = _construction_key(kind, signature, kwargs)
-        with self._lock:
-            if self._registry.get(attr_name) == key and getattr(self._flex, attr_name, None) is not None:
-                return attr_name  # identical request already built
-            predictor = self._build_predictor(kind, signature, kwargs)
-            # Attach under attr_name so it keeps a canonical name in named_parameters()/state; the
-            # handle IS that name, so _call resolves it with getattr.
-            setattr(self._flex, attr_name, predictor)
-            if attr_name not in self._flex._attached_names:
-                self._flex._attached_names.append(attr_name)
-            self._registry[attr_name] = key
+        predictor = self._build_predictor(kind, signature, kwargs)
+        setattr(self._flex, attr_name, predictor)
+        if attr_name not in self._flex._attached_names:
+            self._flex._attached_names.append(attr_name)
         return attr_name
 
     def _call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
