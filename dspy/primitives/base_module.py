@@ -154,19 +154,13 @@ class BaseModule:
         return new_instance
 
     def dump_state(self, json_mode=True):
-        return {
-            name: param.dump_state(json_mode=json_mode)
-            for name, param in self.named_parameters()
-            if param is not self
-        }
+        return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         import dspy
 
         def _apply(module):
             for name, param in module.named_parameters():
-                if param is module:
-                    continue
                 if isinstance(param, dspy.Module):
                     param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
                 else:

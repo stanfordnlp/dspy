@@ -74,19 +74,16 @@ class Flex(Module, Parameter):
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
-        state = super().dump_state(json_mode=json_mode)
-        state["module_src"] = self._module_src
-        state["lm"] = self._lm.dump_state() if self._lm else None
-        return state
+        return {
+            "module_src": self._module_src,
+            "lm": self._lm.dump_state() if self._lm else None,
+        }
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
-        state = dict(state)
-        module_src = state.pop("module_src", None)
-        lm_state = state.pop("lm", None)
+        module_src = state.get("module_src")
         if module_src:
             self._bind_code(module_src)
-        if state:
-            super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+        lm_state = state.get("lm")
         if lm_state:
             from dspy.clients.base_lm import BaseLM
             from dspy.predict.predict import _sanitize_lm_state
