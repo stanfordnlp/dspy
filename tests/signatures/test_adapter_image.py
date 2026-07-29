@@ -503,12 +503,22 @@ def test_deprecated_factory_aliases_warn(tmp_path):
 
 
 def test_invalid_string_format():
-    """Test that invalid string formats raise a ValueError"""
+    """A string that is neither a data URI, a URL, nor an existing local path raises."""
     invalid_string = "this_is_not_a_url_or_file"
 
     # Should raise a ValueError and not pass the string through
     with pytest.raises(ValueError, match="Unrecognized"):
         dspy.Image(invalid_string)
+
+
+def test_positional_local_path_is_deprecated(tmp_path):
+    tmp_file = tmp_path / "photo.png"
+    tmp_file.write_bytes(b"pngdata")
+
+    with pytest.warns(DeprecationWarning, match="Constructing Image from a local file path is deprecated"):
+        image = dspy.Image(str(tmp_file))
+
+    assert image.url.startswith("data:image/png;base64,")
 
 
 def test_deprecated_download_true_downloads(monkeypatch):
@@ -535,13 +545,6 @@ def test_deprecated_verify_warns_without_download():
     with pytest.warns(DeprecationWarning, match="`download` and `verify`"):
         image = dspy.Image(source, verify=False)
     assert image.url == source
-
-
-def test_deprecated_download_does_not_rescue_local_path():
-    # The Image(path) hard break holds even with the deprecated download flag.
-    with pytest.warns(DeprecationWarning):
-        with pytest.raises(ValueError, match=r"Image\.from_path"):
-            dspy.Image("/etc/passwd", download=True)
 
 
 def test_pil_image_with_deprecated_download_still_encodes():

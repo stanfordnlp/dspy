@@ -47,6 +47,7 @@ class Image(Type):
             - ``PIL.Image.Image``: a PIL image instance
             - ``dict`` with a single ``{"url": value}`` entry (legacy form)
             - already encoded data URI
+            - a local file path (deprecated; use :meth:`from_path`)
 
         download, verify:
             Deprecated. Use :meth:`from_url` (which accepts ``verify``) to download a
@@ -55,8 +56,9 @@ class Image(Type):
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
 
-        Local files and remote resources must be loaded explicitly with
-        :meth:`from_path` and :meth:`from_url`, respectively.
+        Passing a local file path is deprecated; prefer :meth:`from_path`. Remote
+        resources must be loaded explicitly with :meth:`from_url`. Only this positional
+        convenience touches the filesystem — adapter parsing of untrusted values never does.
         """
 
         download_requested = download is not _UNSET
@@ -78,6 +80,23 @@ class Image(Type):
             if isinstance(source, dict) and set(source.keys()) == {"url"}:
                 # Legacy dict form from previous model validator.
                 data["url"] = source["url"]
+            elif (
+                isinstance(source, str)
+                and not source.startswith("data:")
+                and not is_url(source)
+                and os.path.isfile(source)
+            ):
+                # Deprecated positional-path convenience. This is the ONLY constructor path
+                # that reads the filesystem; it is reachable only from direct developer
+                # construction, never from adapter parsing of untrusted values (which passes
+                # `url=` and is rejected below).
+                warnings.warn(
+                    "Constructing Image from a local file path is deprecated and will be removed in 3.4; "
+                    "use Image.from_path(path) instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                data["url"] = _encode_image_from_file(source)
             else:
                 data["url"] = source
 
