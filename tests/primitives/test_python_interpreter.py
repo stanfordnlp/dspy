@@ -4,13 +4,14 @@ import json
 import os
 import random
 from datetime import datetime
+from enum import Enum
 from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter, _make_jsonable
 
 
 class _Hit(BaseModel):
@@ -338,6 +339,35 @@ def test_pydantic_json_values_are_compatible_with_large_variable_injection(monke
     code = interpreter._inject_variables("hit", {"hit": value})
     assert "hit = json.loads" in code
     assert json.loads(interpreter._pending_large_vars["hit"]) == expected
+
+
+def test_json_mode_values_cross_every_host_to_sandbox_path():
+    """Bare datetimes/enums/sets (not wrapped in a model) serialize the way they would into a
+    JSON body on all three host->sandbox paths: variable injection, large-var injection, and
+    tool results — instead of raising "Unsupported value type" or str()-flattening the result."""
+
+    class Color(Enum):
+        RED = "red"
+
+    value = {"t": datetime(2026, 1, 1), "c": Color.RED}
+    interpreter = PythonInterpreter()
+    assert interpreter._serialize_value(value) == "{'t': '2026-01-01T00:00:00', 'c': 'red'}"
+    assert interpreter._to_json_compatible(value) == {"t": "2026-01-01T00:00:00", "c": "red"}
+    jsonable = _make_jsonable({**value, "s": {3, 1}})
+    assert jsonable["t"] == "2026-01-01T00:00:00" and jsonable["c"] == "red"
+    assert sorted(jsonable["s"]) == [1, 3]
+
+
+def test_json_mode_coercion_preserves_existing_fallbacks():
+    class P(NamedTuple):
+        x: int
+        y: int
+
+    assert _make_jsonable(P(1, 2)) == {"x": 1, "y": 2}  # namedtuples keep field names, not [1, 2]
+    obj = object()
+    assert _make_jsonable(obj) is obj  # unknown values still take the json.dumps/str fallback
+    with pytest.raises(CodeInterpreterError, match="Unsupported value type"):
+        PythonInterpreter()._serialize_value(object())  # injection still rejects them loudly
 
 
 def test_unserializable_pydantic_variable_raises_code_interpreter_error():
