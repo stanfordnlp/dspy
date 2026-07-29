@@ -233,17 +233,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
             param.adapter = adapter
 
     def get_adapter(self):
-        """Get the adapter used by this module's predictors.
-
-        Returns the adapter if all predictors use the same adapter.
-        Raises an error if multiple different adapters are in use.
+        """Get the adapter configured on this module's predictors.
 
         Returns:
-            The adapter instance used by this module's predictors.
+            The shared adapter, or `None` when every predictor inherits the
+            adapter from DSPy settings.
 
         Raises:
-            ValueError: If multiple different adapters are being used by the
-                predictors in this module.
+            ValueError: If the predictors use different adapters.
         """
         all_used_adapters = [param.adapter for _, param in self.named_predictors()]
 

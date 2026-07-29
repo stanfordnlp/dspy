@@ -7,9 +7,9 @@ dspy.configure(**kwargs)
 ```
 
 Call `dspy.configure(...)` once near the top of your script or notebook.
-Every DSPy module will use these defaults unless you override them with
-[`dspy.context`](context.md). The values persist until you call
-`dspy.configure(...)` again.
+DSPy modules use these defaults unless a call, predictor, or
+[`dspy.context`](context.md) supplies a more specific value. The defaults
+persist until you call `dspy.configure(...)` again.
 
 !!! note
     Pass a [`dspy.LM`](../models/LM.md) object as `lm`, not a bare model
@@ -20,7 +20,7 @@ Every DSPy module will use these defaults unless you override them with
 | Setting | Default | Description |
 | --- | --- | --- |
 | `lm` | `None` | Default language model. Pass a [`dspy.LM`](../models/LM.md) instance. |
-| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.ChatAdapter`](../adapters/ChatAdapter.md). |
+| `adapter` | `None` | Formats prompts and parses LM responses. When `None`, modules use [`dspy.ChatAdapter`](../adapters/ChatAdapter.md). A `Predict` with its own adapter (e.g. via `set_adapter`) ignores this default. |
 | `callbacks` | `[]` | Observability and logging hooks. See [Observability](../../tutorials/observability/index.md). |
 | `track_usage` | `False` | Record token counts for every LM call. |
 | `async_max_workers` | `8` | Maximum concurrent workers for async operations. |
@@ -75,7 +75,10 @@ Use `dspy.configure(...)` when one set of defaults should apply to most of
 your program—scripts, notebooks, test setup, or application startup.
 
 If you need different settings for one call or one block, use
-[`dspy.context`](context.md) instead.
+[`dspy.context`](context.md) instead. To pin an LM or adapter to one program
+or predictor, use `program.set_lm(...)` / `program.set_adapter(...)`, or pass
+`lm=` / `adapter=` on a single call — see
+[Adapters](../../learn/programming/adapters.md#adapter-precedence).
 
 ## Thread safety
 

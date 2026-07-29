@@ -12,6 +12,7 @@
             - deepcopy
             - dump_state
             - forward
+            - get_adapter
             - get_lm
             - inspect_history
             - load
@@ -24,6 +25,7 @@
             - predictors
             - reset_copy
             - save
+            - set_adapter
             - set_lm
             - truncate_trajectory
         show_source: true

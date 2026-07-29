@@ -49,6 +49,11 @@ with dspy.context(adapter=dspy.JSONAdapter()):
     print(result.answer)
 ```
 
+A `Predict` that carries its own adapter (set via `qa.adapter = ...` or
+`program.set_adapter(...)`) keeps it inside the block: instance-level values
+outrank `dspy.context`. See
+[Adapter precedence](../../learn/programming/adapters.md#adapter-precedence).
+
 ### Enable async tool conversion temporarily
 
 ```python

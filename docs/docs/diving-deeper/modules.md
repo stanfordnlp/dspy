@@ -28,9 +28,11 @@ Going through `__call__` is what pushes `self` onto `settings.caller_modules`, o
 
 `acall` mirrors `__call__`‘s infrastructure for async; `aforward` is the async counterpart to `forward`. A module that doesn’t define `aforward` falls back to running the sync `forward` in a worker thread via `asyncify`. That gives you a path from “sync only” to “fully async” without rewriting the world — async one sub-module at a time, leave the rest as-is.
 
-### 6. Settings propagate via context, not constructor args
+### 6. Predictors resolve runtime configuration at call time
 
-Sub-modules read `dspy.settings.lm` (and `.adapter`, `.callbacks`) at call time. The consequence: `with dspy.context(lm=other_lm): result = my_module(...)` swaps the LM for every sub-module inside, no rewiring needed. The price is implicit state — a sub-module’s behavior depends on whoever calls it, not only on what was assigned in `__init__`. The composition story is worth the tradeoff.
+A predictor first checks values passed for one call, then values set directly on that predictor, then `dspy.settings`. This lets `with dspy.context(lm=other_lm): result = my_module(...)` swap the LM for every sub-module that has not pinned its own LM. Adapters follow the same rule: a call-time `adapter=` wins, followed by `predict.adapter`, `dspy.settings.adapter`, and finally `ChatAdapter()`.
+
+Use `set_lm` or `set_adapter` when the program should own a choice. Use `dspy.context(...)` when unconfigured predictors should temporarily share a setting. The explicit predictor value wins over the context value; see [Adapters](adapters.md#configuring-which-adapter-to-use) for the complete order.
 
 ### 7. `_compiled=True` freezes a sub-module’s parameters from optimizers
 
@@ -81,7 +83,7 @@ The generator the others build on. Use it directly when you want a custom walk �
 **`Module.map_named_predictors(func)`**  
 Applies `func` to each predictor and replaces it in place. The hook teleprompts use when swapping in optimized predictors. You’ll rarely need it directly.
 
-### Setting and getting the LM
+### Setting LMs and adapters
 
 **`Module.set_lm(lm)`**  
 Walks every predictor in the tree and assigns `lm`. Useful when you’ve built a program with one LM and want to re-evaluate it on another without changing settings globally.
@@ -89,12 +91,18 @@ Walks every predictor in the tree and assigns `lm`. Useful when you’ve built a
 **`Module.get_lm()` → `LM`**  
 Returns the LM if every predictor agrees on one. Raises `ValueError` on a mix. A sanity check before fine-tuning or saving, when you want to confirm the whole program is on one model.
 
+**`Module.set_adapter(adapter)`**
+Walks every predictor in the tree and assigns `adapter`. Use it when one program should consistently use JSON, XML, or another Adapter without changing the process default. Pass `None` to make those predictors inherit from settings again.
+
+**`Module.get_adapter()` → `Adapter | None`**
+Returns the configured Adapter when every predictor agrees. Returns `None` when they all inherit from settings, and raises `ValueError` when predictors use different Adapters. A mixed program is supported; it simply has no single Adapter to return.
+
 ### State and copies
 
 The save/load surface. The full lifecycle — JSON vs PKL, full-program vs state-only, `save_program=True` — lives in [Saving and loading](saving-and-loading.md); the methods here are what that page is about.
 
 **`Module.dump_state(json_mode=True)` / `Module.load_state(state, allow_unsafe_lm_state=False)`**  
-Round-trips the optimizer-visible state: per-predictor demos, traces, signature instructions, LM config. Not the Python class itself.
+Round-trips the optimizer-visible state: per-predictor demos, traces, signature instructions, LM config. Not the Python class itself. Adapters are runtime configuration and are not included; call `set_adapter` again after loading when the program needs a non-default Adapter.
 
 **`Module.save(path, save_program=False, modules_to_serialize=None)` / `Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False)`**  
 The user-facing pair. `save_program=True` cloudpickles the whole module to a directory; the default writes state-only JSON or PKL.

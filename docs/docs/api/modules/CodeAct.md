@@ -9,6 +9,7 @@
             - batch
             - deepcopy
             - dump_state
+            - get_adapter
             - get_lm
             - inspect_history
             - load
@@ -21,6 +22,7 @@
             - predictors
             - reset_copy
             - save
+            - set_adapter
             - set_lm
         show_source: true
         show_root_heading: true

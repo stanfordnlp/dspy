@@ -152,12 +152,36 @@ Declared as a default native response type. When the provider returns citations 
 
 ### Configuring which adapter to use
 
+Each `Predict` resolves its adapter per call, mirroring LM resolution: the call-time `adapter=`
+keyword, then the predictor's own `predict.adapter`, then `settings.adapter`, then `ChatAdapter()`.
+
+- **`predict(..., adapter=dspy.XMLAdapter())`** — one invocation. `adapter` is a reserved call
+  keyword like `lm`, never a Signature input. Passing `adapter=None` bypasses the predictor's own
+  adapter and falls through to settings/default, matching `lm=None`.
+- **`program.set_adapter(dspy.JSONAdapter())`** — recursively sets the adapter on every `Predict`
+  in the module. `program.get_adapter()` returns the unique configured adapter, and raises
+  `ValueError` when predictors hold different adapters. Individual predictors may hold different
+  adapters (`predict.adapter = ...`) when one step targets a model with different formatting needs.
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
-- **`with dspy.context(adapter=dspy.XMLAdapter()): ...`** — scoped override.
+- **`with dspy.context(adapter=dspy.XMLAdapter()): ...`** — scoped settings override. Note that an
+  explicitly configured `predict.adapter` outranks both `configure` and `context`.
+- **Not serialized.** Adapters are runtime configuration; `program.save` does not store them, so
+  reconfigure after loading.
+- **Sticky across execution modes.** The resolved adapter is preserved through sync and async
+  calls, streaming (chunks are parsed with the caller's adapter format), and `Refine`'s feedback
+  retries.
 - **No automatic LM-based selection.** ChatAdapter is the default and stays the default until you set otherwise. Some teleprompts (e.g., `BootstrapFinetune`) accept an `adapter` dict keyed by LM, so different LMs in a finetuning loop can use different adapters.
+
+A note on optimization: built-in adapters are usually enough. Reach for a custom `Adapter`
+subclass when a provider or model needs a genuinely different message/response protocol, or when
+an experiment requires precise control over rendering and parsing. Adapter token/format effects
+are easiest to observe in small programs with few LM calls and short outputs; in a large call
+graph, model behavior, reasoning, tool use, and the graph itself often dominate cost and latency.
+Measure the real program before optimizing its adapter.
 
 ## Cross-links
 
+- [Adapters learn guide](../learn/programming/adapters.md) — the beginner-facing scope and precedence story.
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
 - Tools, ReAct, and MCP DD page — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
