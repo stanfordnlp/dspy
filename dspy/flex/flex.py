@@ -52,7 +52,6 @@ class Flex(Module, Parameter):
         self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=list(tools or []))
 
         self._module_src: str | None = None
-        self._attached_names: list[str] = []
         self.lm = None
 
         _validate_interpreter_factory(interpreter_factory)
@@ -95,11 +94,8 @@ class Flex(Module, Parameter):
             self.lm = None
 
     def reset(self) -> None:
-        """Reset the LM and the internal predictors' state while keeping ``module_src``."""
+        """Clear the LM; ``module_src`` is kept, and predictors are rebuilt from it each forward."""
         self.lm = None
-        for _, param in self.named_parameters():
-            if param is not self:
-                param.reset()
 
     def named_predictors(self):
         """A Flex's update unit is only its ``module_src``."""
@@ -145,11 +141,6 @@ class Flex(Module, Parameter):
         return f"{base}Module"
 
     def _bind_code(self, module_src: str) -> None:
-        for old_name in self._attached_names:
-            if hasattr(self, old_name):
-                delattr(self, old_name)
-        self._attached_names = []
-
         self._bridge.bind(module_src)
         self._module_src = module_src
 

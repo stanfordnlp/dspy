@@ -142,13 +142,48 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
+class _Invocation:
+    """Per-forward bridge state: the predictors this forward constructed (keyed by the sandbox
+    attribute name), its predictor-call budget, and the original custom-type objects to restore
+    on bridged calls. Each forward gets its own ``_Invocation``."""
+
+    def __init__(self, runtime: BridgeRuntime, originals: dict[str, Any]) -> None:
+        self._runtime = runtime
+        self._originals = originals
+        self._predictors: dict[str, Any] = {}
+        self._calls = 0
+
+    def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
+        if kind not in BRIDGEABLE_KINDS:
+            raise CodeInterpreterError(
+                f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
+                f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
+            )
+        self._predictors[attr_name] = self._runtime._build_predictor(kind, signature, kwargs)
+        return attr_name
+
+    def call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._calls += 1
+        budget = self._runtime._max_predictor_calls
+        if budget is not None and self._calls > budget:
+            raise CodeInterpreterError(
+                f"Sandboxed dspy.Flex forward exceeded its predictor-call budget "
+                f"({budget}). Raise max_predictor_calls if this is expected."
+            )
+        predictor = self._predictors.get(handle)
+        if predictor is None:
+            raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
+        restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        return prediction_to_fields(predictor(**restored))
+
+
 class BridgeRuntime:
     """Owns the host-side bridge callbacks and per-forward interpreter runs for one ``Flex``.
 
     Every ``forward`` creates a fresh interpreter from the factory, executes the shim and the
-    bound source, runs the instance, and shuts the interpreter down — nothing outlives the call,
-    so parallel forwards are trivially isolated. Predictors are constructed on the host and
-    attached to the ``Flex`` under canonical names, rebuilt from the source on each forward.
+    bound source, runs the instance, and shuts the interpreter down. Predictors are built on the
+    host but live in that forward's ``_Invocation`` — nothing is set on the ``Flex`` itself — so
+    nothing outlives the call and parallel forwards are isolated.
     ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
 
     User ``tools`` are registered with the interpreter (callable by name from sandbox) and
@@ -170,32 +205,15 @@ class BridgeRuntime:
         self._module_src = module_src
         self._class_name = parse_module_class_name(module_src)
 
-    def _invocation_call(self, originals: dict[str, Any]) -> Callable[..., Any]:
-        """Enforces the per-forward predictor-call budget and hands bridged calls the original custom-type
-        objects back."""
-        calls = 0
-
-        def call_predictor(handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-            nonlocal calls
-            calls += 1
-            if self._max_predictor_calls is not None and calls > self._max_predictor_calls:
-                raise CodeInterpreterError(
-                    f"Sandboxed dspy.Flex forward exceeded its predictor-call budget "
-                    f"({self._max_predictor_calls}). Raise max_predictor_calls if this is expected."
-                )
-            restored = {k: _restore_custom_types(v, originals) for k, v in (inputs or {}).items()}
-            return self._call(handle, restored)
-
-        return call_predictor
-
     def forward(self, inputs: dict[str, Any]) -> Any:
         originals: dict[str, Any] = {}
         for v in inputs.values():
             _collect_custom_type_originals(v, originals)
 
+        invocation = _Invocation(self, originals)
         interp = _create_interpreter(self._factory)
         try:
-            interp.tools.update({CONSTRUCT_TOOL: self._construct, CALL_TOOL: self._invocation_call(originals)})
+            interp.tools.update({CONSTRUCT_TOOL: invocation.construct, CALL_TOOL: invocation.call})
             interp.tools.update(self._tool_callables())  # user tools callable by name in the sandbox
             interp.execute(SHIM_SETUP)
             interp.execute(self._module_src)  # defines the class in the sandbox
@@ -278,26 +296,3 @@ class BridgeRuntime:
             if factory is not None:
                 extra["interpreter_factory"] = factory
         return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)
-
-    def _construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
-        if kind not in BRIDGEABLE_KINDS:
-            raise CodeInterpreterError(
-                f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
-                f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
-            )
-        if attr_name.startswith("_") or attr_name in ("lm",) or hasattr(type(self._flex), attr_name):
-            raise CodeInterpreterError(
-                f"Predictor name {attr_name!r} is reserved on dspy.Flex; rename the attribute in the module source."
-            )
-        predictor = self._build_predictor(kind, signature, kwargs)
-        setattr(self._flex, attr_name, predictor)
-        if attr_name not in self._flex._attached_names:
-            self._flex._attached_names.append(attr_name)
-        return attr_name
-
-    def _call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        predictor = getattr(self._flex, handle, None)
-        if predictor is None:
-            raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
-        out = predictor(**(inputs or {}))
-        return prediction_to_fields(out)

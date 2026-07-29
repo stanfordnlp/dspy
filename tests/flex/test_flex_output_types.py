@@ -26,7 +26,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.flex import Flex
+from dspy.flex import Flex, bridge
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
@@ -121,9 +121,12 @@ def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
     program._bind_code(source)
     dspy.configure(lm=DummyLM([{"contact": json.dumps({"name": "Ada", "age": 36})}] * 2))
     out = program(text="Ada is 36")  # raised `Unknown name: Contact` before the handoff
-    assert program.p.signature.output_fields["contact"].annotation is _offstack_types.Contact
-
     assert out.contact == _offstack_types.Contact(name="Ada", age=36)
+
+    # And the host-built sub-predictor resolved `Contact` to the module's class, not a lookalike:
+    inv = bridge._Invocation(program._bridge, {})
+    inv.construct("Predict", "text: str -> contact: Contact", "p", {})
+    assert inv._predictors["p"].signature.output_fields["contact"].annotation is _offstack_types.Contact
 
 
 @deno_required
@@ -144,8 +147,10 @@ def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
     program = Flex(Extract, interpreter_factory=_sandbox)
     program._bind_code(source)
     dspy.configure(lm=DummyLM([{"person": json.dumps({"name": "Ada", "age": 36})}] * 2))
-    program(text="Ada is 36")  # predictors attach when the code first runs
-    assert program.p.signature.output_fields["person"].annotation is Person
+    program(text="Ada is 36")  # would raise `Unknown name: Person` if resolution failed
+    inv = bridge._Invocation(program._bridge, {})
+    inv.construct("Predict", "text: str -> person: Person", "p", {})
+    assert inv._predictors["p"].signature.output_fields["person"].annotation is Person
 
 
 # =============================================================================

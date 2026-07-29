@@ -2,7 +2,8 @@
 
 Binding a source — the deterministic baseline at construction, or a GEPA-optimized decomposition —
 records it host-side (a syntax check, no interpreter); each forward runs it in a fresh sandbox,
-the first of which constructs the predictors and attaches them flat on the module. Everything
+constructing its predictors into that forward's own bridge invocation (nothing is attached to the
+module, so parallel forwards can't overwrite each other's predictors). Everything
 round-trips through Module.save / load so the generated code can be persisted and rerun. Tests
 that run predictors need Deno; pure ``module_src`` checks use a MockInterpreter instead.
 (The baseline's RLM-vs-Predict shape is covered in test_tools.py; GEPA's code rewriting in
@@ -45,17 +46,16 @@ class Echo(dspy.Signature):
 
 
 @deno_required
-def test_predictors_are_attached_but_not_reported_as_tunable() -> None:
+def test_forward_attaches_nothing_to_the_module() -> None:
+    # A forward's predictors live in that forward's bridge invocation, never on the shared Flex:
+    # parallel forwards (e.g. Evaluate(num_threads>1)) run on one module object, and attached
+    # predictors would let one forward overwrite another's. The module's surface stays clean,
+    # and named_predictors() reports no tunable units — the Flex's update unit is its module_src.
     dspy.configure(lm=DummyLM([{"a": "hi"}]))
     program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
-    assert not hasattr(program, "predict")  # nothing attaches until the code first runs
     program(q="hello")
-    # The first forward attaches the baseline's predictor directly onto the module (its state
-    # is named via named_parameters)...
-    assert hasattr(program, "predict")
-    assert "predict" in [n for n, _ in program.named_parameters()]
-    # ...but named_predictors() reports no tunable units: the Flex's update unit is its
-    # module_src, and the attached predictors are rebuilt on every rebind.
+    assert not hasattr(program, "predict")
+    assert "predict" not in [n for n, _ in program.named_parameters()]
     assert program.named_predictors() == []
 
 
@@ -84,7 +84,7 @@ def test_save_load_roundtrips_generated_code(tmp_path) -> None:
     reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
     assert "self.echo" not in reloaded.module_src
     # ...and load() rebinds the saved code (no interpreter or LM needed: the code runs, and
-    # attaches its predictors, at the first forward).
+    # constructs its predictors, at each forward).
     reloaded.load(path)
     assert "self.echo" in reloaded.module_src
     assert not hasattr(reloaded, "echo")
@@ -131,8 +131,8 @@ def test_nested_flex_state_roundtrips_inside_a_program(tmp_path) -> None:
 
 def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     # Saving, GEPA discovery, and reset_copy all walk named_parameters(); a Flex appears there
-    # as one state-bearing leaf (like dspy.Predict), so its sandbox-attached predictors are
-    # never enumerated — or optimized — behind the code's back.
+    # as one state-bearing leaf (like dspy.Predict), so nothing inside it is enumerated — or
+    # optimized — behind the code's back.
     class Program(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
@@ -143,9 +143,9 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
             return self.flex(**kwargs)
 
     program = Program()
-    # Attach a predictor the way the bridge does when the sandbox constructs one.
+    # Even a predictor set directly on the Flex (the bridge itself never attaches any) stays
+    # behind the leaf.
     program.flex.echo = dspy.Predict("q -> a")
-    program.flex._attached_names.append("echo")
 
     params = dict(program.named_parameters())
     assert isinstance(params["flex"], Flex)
@@ -194,8 +194,8 @@ def test_parent_set_lm_and_get_lm_are_symmetric() -> None:
 
 def test_set_lm_is_stored_and_survives_rebind_and_save(tmp_path) -> None:
     # set_lm stores one module-level LM (one home), applied via context at forward time — so it
-    # survives rebinds (which delete and rebuild the attached predictors) and save/load, unlike
-    # writing .lm onto internals that the next candidate wipes.
+    # survives rebinds and save/load, unlike writing .lm onto per-forward internals that the
+    # next forward rebuilds from scratch.
     flex = Flex(Echo, interpreter_factory=MockInterpreter)
     lm = dspy.LM("openai/gpt-4o-mini")
     flex.set_lm(lm)
@@ -230,11 +230,12 @@ def test_context_lm_reaches_bridged_calls() -> None:
         assert program(q="hello").a == "from-context-lm"
 
 
-def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:
+def test_reset_copy_keeps_optimized_code_and_clears_the_lm() -> None:
     # reset_copy() calls .reset() on every parameter leaf. Predict.reset() clears demos/lm but
-    # keeps tuned instructions; a Flex resets the same way — internal predictor state is cleared,
-    # the optimized module_src is kept — so optimizer chains (e.g. GEPA then BootstrapFewShot,
-    # which compiles a reset copy) don't silently discard the discovered code.
+    # keeps tuned instructions; a Flex resets the same way — the LM is cleared, the optimized
+    # module_src is kept — so optimizer chains (e.g. GEPA then BootstrapFewShot, which compiles
+    # a reset copy) don't silently discard the discovered code. There is no other internal state:
+    # predictors are rebuilt from the source inside each forward's bridge invocation.
     class Program(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
@@ -245,14 +246,12 @@ def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:
 
     program = Program()
     program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
-    program.flex.echo = dspy.Predict("q -> a")  # attach an internal predictor like the bridge does
-    program.flex._attached_names.append("echo")
-    program.flex.echo.demos = [dspy.Example(q="1", a="1")]
+    program.flex.set_lm(dspy.LM("openai/gpt-4o-mini"))
 
     fresh = program.reset_copy()
     assert fresh.flex.module_src == ECHO_MODULE  # the optimized code survives, like instructions
-    assert fresh.flex.echo.demos == []  # the internal predictor's state is cleared
-    assert program.flex.echo.demos  # the original is untouched
+    assert fresh.flex.get_lm() is None  # the LM is cleared, like Predict.reset
+    assert program.flex.get_lm() is not None  # the original is untouched
 
 
 def test_state_layout_unchanged_without_a_flex() -> None:
@@ -284,14 +283,10 @@ def test_save_program_roundtrips_via_cloudpickle(tmp_path) -> None:
 
     program = Program()
     program.flex._bind_code(ECHO_MODULE)
-    program.flex.echo = dspy.Predict("q -> a")  # attach an internal predictor like the bridge does
-    program.flex._attached_names.append("echo")
-    program.flex.echo.demos = [dspy.Example(q="1", a="1")]
     program.save(tmp_path, save_program=True)
 
     loaded = dspy.load(str(tmp_path), allow_pickle=True)
     assert loaded.flex.module_src == ECHO_MODULE
-    assert loaded.flex.echo.demos[0].q == "1"  # attached predictor state travels in the pickle
 
 
 @deno_required

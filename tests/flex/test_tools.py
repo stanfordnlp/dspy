@@ -132,9 +132,10 @@ WRAPPED_TOOL_MODULE = textwrap.dedent("""
 def test_dspy_tool_wrapper_is_available_in_the_sandbox() -> None:
     program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
     program._bind_code(WRAPPED_TOOL_MODULE)
+    # forward re-runs __init__ in the sandbox, so it only succeeds if the shim defines dspy.Tool
+    # and the wrapper resolves to the same host tool a bare reference would (a failed resolution
+    # raises out of the ReAct's construction).
     assert program(q="hi").a == "HI"
-    # The wrapper resolves to the same host tool a bare reference would, so the predictor binds.
-    assert [t.name for t in program.react.tools.values()] == ["shout", "finish"]
 
 
 def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
@@ -222,20 +223,22 @@ INSTR_MODULE = textwrap.dedent("""
 
 @deno_required
 def test_inner_predictor_instructions_persist(tmp_path) -> None:
-    # The instructions GEPA writes into the code persist through save/load (via module_src and
-    # the predictor's own serialized state), just like a plain optimized Predict.
+    # The instructions GEPA writes into the code persist through save/load via module_src alone:
+    # each forward rebuilds the predictor from the source, instructions included — observable in
+    # the prompt the LM actually receives.
     path = tmp_path / "program.json"
-    dspy.configure(lm=DummyLM([{"a": "HI"}] * 4))
+    lm = DummyLM([{"a": "HI"}] * 4)
+    dspy.configure(lm=lm)
     flex = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
     flex._bind_code(INSTR_MODULE)
-    flex(q="hi")  # predictors attach when the code first runs
-    assert flex.p.signature.instructions == "Always answer in uppercase."
+    flex(q="hi")
+    assert "Always answer in uppercase." in str(lm.history[-1]["messages"])
     flex.save(path)
 
     reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
     reloaded.load(path)
     reloaded(q="hi")
-    assert reloaded.p.signature.instructions == "Always answer in uppercase."
+    assert "Always answer in uppercase." in str(lm.history[-1]["messages"])
 
 
 def double(n: int) -> str:

@@ -3,9 +3,9 @@
 Two layers of coverage:
 
 * Unit (no Deno): the interpreter_factory is validated; the host-side bridge callbacks
-  (``_construct``/``_call``) build real predictors on the host, attach them under their canonical
-  names, are idempotent, and run via the configured LM. These exercise everything the sandbox would
-  drive, without needing Deno.
+  (``_Invocation.construct``/``.call``) build real predictors on the host, keep them in a
+  per-forward registry (never on the Flex, so parallel forwards can't clobber each other), and
+  run via the configured LM. These exercise everything the sandbox would drive, without Deno.
 * Integration (Deno required, skipped otherwise): an optimized CoT-style module — with optimizer
   authored glue like ``import re`` — actually runs inside a ``dspy.PythonInterpreter`` with the LM call
   bridged back to the host, and adversarial file access is contained to the sandbox.
@@ -115,40 +115,44 @@ def _bridged_flex_with(**kwargs):
     return Flex(Doubler, interpreter_factory=lambda: MockInterpreter(), **kwargs)
 
 
-def test_construct_attaches_real_predictor_under_canonical_name() -> None:
+def test_construct_builds_real_predictor_in_per_forward_registry() -> None:
     flex = _bridged_flex()
-    handle = flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    inv = bridge._Invocation(flex._bridge, {})
+    handle = inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     assert handle == "solve"
-    assert isinstance(flex.solve, dspy.ChainOfThought)
-    # Keeps its canonical name in named_parameters() (not "_bridge_predictors[...]") so state
-    # round-trips; named_predictors() stays empty — internals are not tunable units.
-    names = [n for n, _ in flex.named_parameters()]
-    assert "solve.predict" in names
+    assert isinstance(inv._predictors["solve"], dspy.ChainOfThought)
+    # Nothing is set on the Flex itself: the module's surface stays clean, and
+    # named_predictors() reports no tunable units — internals belong to the code.
+    assert not hasattr(flex, "solve")
     assert flex.named_predictors() == []
-    assert "solve" in flex._attached_names
 
 
-def test_construct_rejects_reserved_attribute_names() -> None:
-    # Attaching is a setattr on the host Flex: a generated predictor named like one of its own
-    # attributes would clobber the LM, the bridge, or a method. Rejected → GEPA scores the
-    # candidate as a failure instead of corrupting the module.
+def test_construct_names_cannot_clobber_the_flex() -> None:
+    # Construction writes to the per-forward registry, never setattr on the host Flex, so a
+    # generated predictor named like a Flex attribute is just a handle — nothing to corrupt.
     flex = _bridged_flex()
-    for reserved in ("lm", "_bridge", "forward", "module_src"):
-        with pytest.raises(CodeInterpreterError, match="reserved"):
-            flex._bridge._construct("Predict", "value: int -> result: int", reserved, {})
+    inv = bridge._Invocation(flex._bridge, {})
+    for name in ("lm", "forward", "module_src", "_bridge"):
+        assert inv.construct("Predict", "value: int -> result: int", name, {}) == name
+    assert flex.lm is None  # host attributes untouched
+    assert callable(flex.forward)
+    assert isinstance(flex._bridge, bridge.BridgeRuntime)
 
 
-def test_construct_rebuilds_from_the_source_each_time() -> None:
-    # Predictors are derived artifacts: every forward re-runs the source's __init__ in a fresh
-    # sandbox, and each construction request rebuilds the host predictor. There is no cross-call
-    # cache to go stale, and nothing set on a previous forward's objects can leak into the next.
+def test_parallel_forwards_cannot_overwrite_each_others_predictors() -> None:
+    # The regression the per-forward registry prevents: two forwards on one Flex (e.g. under
+    # Evaluate(num_threads>1)) interleave as construct(A), construct(B), call(A). With predictors
+    # attached to the shared Flex, A would run B's predictor; each invocation owning its own
+    # registry keeps them isolated.
     flex = _bridged_flex()
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    first = flex.solve
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    assert flex.solve is not first
-    assert isinstance(flex.solve, dspy.ChainOfThought)
-    assert flex._attached_names == ["solve"]  # bookkeeping stays deduplicated
+    a = bridge._Invocation(flex._bridge, {})
+    b = bridge._Invocation(flex._bridge, {})
+    a.construct("Predict", "value: int -> result: int", "solve", {})
+    b.construct("ChainOfThought", "question: str -> answer: str", "solve", {})  # same handle
+    assert a._predictors["solve"] is not b._predictors["solve"]
+    dspy.configure(lm=DummyLM([{"result": "4"}]))
+    fields = a.call("solve", {"value": 2})
+    assert fields == {"result": 4}  # A's own predictor and signature, not B's
 
 
 def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
@@ -156,18 +160,21 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     # named tools on the host. They just need whitelisting; the tools must be Flex-level to resolve.
     assert "ReAct" in bridge.BRIDGEABLE_KINDS and "ReActV2" in bridge.BRIDGEABLE_KINDS
     flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
+    inv = bridge._Invocation(flex._bridge, {})
     tools_payload = [{bridge.TOOL_MARKER: "shout"}]
-    flex._bridge._construct("ReAct", "text: str -> out: str", "agent", {"tools": tools_payload})
-    assert isinstance(flex.agent, dspy.ReAct)
+    inv.construct("ReAct", "text: str -> out: str", "agent", {"tools": tools_payload})
+    agent = inv._predictors["agent"]
+    assert isinstance(agent, dspy.ReAct)
     # No interpreter is injected into a non-code-executing predictor.
-    assert not hasattr(flex.agent, "interpreter")
+    assert not hasattr(agent, "interpreter")
 
 
 def test_call_runs_predictor_via_host_lm() -> None:
     flex = _bridged_flex()
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     dspy.configure(lm=DummyLM([{"reasoning": "two doubled is four", "result": "4"}]))
-    fields = flex._bridge._call("solve", {"value": 2})
+    fields = inv.call("solve", {"value": 2})
     assert fields["result"] == 4
     assert "reasoning" in fields
 
@@ -175,7 +182,7 @@ def test_call_runs_predictor_via_host_lm() -> None:
 def test_call_unknown_handle_raises() -> None:
     flex = _bridged_flex()
     with pytest.raises(CodeInterpreterError):
-        flex._bridge._call("nope", {"value": 1})
+        bridge._Invocation(flex._bridge, {}).call("nope", {"value": 1})
 
 
 def test_tool_name_markers_resolve_to_real_tools() -> None:
@@ -188,7 +195,8 @@ def test_tool_name_markers_resolve_to_real_tools() -> None:
 
 def test_interpreter_is_not_serialized() -> None:
     flex = _bridged_flex()
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     state = flex.dump_state()
     assert state.get("module_src")  # the code persists
     assert "interpreter" not in json.dumps(state)  # the runtime sandbox does not
@@ -252,26 +260,29 @@ def test_max_predictor_calls_is_plumbed_to_bridge() -> None:
 
 
 def test_predictor_call_budget_is_enforced() -> None:
-    # The budget lives in the per-forward CALL_TOOL closure, so every forward starts fresh.
+    # The budget lives in the per-forward _Invocation, so every forward starts fresh.
     flex = _bridged_flex_with(max_predictor_calls=2)
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(3)]))
-    call = flex._bridge._invocation_call({})
-    call("solve", {"value": 1})  # 1st
-    call("solve", {"value": 1})  # 2nd
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    inv.call("solve", {"value": 1})  # 1st
+    inv.call("solve", {"value": 1})  # 2nd
     with pytest.raises(CodeInterpreterError, match="budget"):
-        call("solve", {"value": 1})  # 3rd exceeds the cap
-    flex._bridge._invocation_call({})("solve", {"value": 1})  # a new forward gets a new budget
+        inv.call("solve", {"value": 1})  # 3rd exceeds the cap
+    # A new forward gets a new budget — and its own registry, so it constructs anew.
+    fresh = bridge._Invocation(flex._bridge, {})
+    fresh.construct("ChainOfThought", "value: int -> result: int", "solve", {})
+    fresh.call("solve", {"value": 1})
 
 
 def test_predictor_call_budget_can_be_disabled() -> None:
     flex = _bridged_flex_with(max_predictor_calls=None)
     assert flex._bridge._max_predictor_calls is None
-    flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(5)]))
-    call = flex._bridge._invocation_call({})
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     for _ in range(5):  # no cap -> all calls go through
-        call("solve", {"value": 1})
+        inv.call("solve", {"value": 1})
 
 
 # =============================================================================
@@ -298,13 +309,15 @@ def test_accepts_interpreter_factory_only_for_code_executing_kinds() -> None:
 def test_bridged_codeact_inherits_flex_interpreter_backend() -> None:
     # CodeAct requires function tools; `shout` is a Flex-level tool, resolvable on the host.
     flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: MockInterpreter())
+    inv = bridge._Invocation(flex._bridge, {})
     tools_payload = [{bridge.TOOL_MARKER: "shout"}]  # how the shim passes a tool by name
-    flex._bridge._construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
+    inv.construct("CodeAct", "text: str -> out: str", "act", {"tools": tools_payload})
     # The sub-predictor makes its per-forward interpreter from the Flex factory (the configured
     # backend), not a default PythonInterpreter.
-    assert isinstance(flex.act, dspy.CodeAct)
-    assert flex.act._interpreter_factory is flex._bridge._factory
-    assert isinstance(flex.act._interpreter_factory(), MockInterpreter)
+    act = inv._predictors["act"]
+    assert isinstance(act, dspy.CodeAct)
+    assert act._interpreter_factory is flex._bridge._factory
+    assert isinstance(act._interpreter_factory(), MockInterpreter)
 
 
 def test_sub_interpreter_factory_makes_a_fresh_interpreter_per_call() -> None:
@@ -352,8 +365,9 @@ def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
     out = flex(value=21)
     assert isinstance(out, dspy.Prediction)
     assert out.result == 42
-    # The predictor is a real host object discoverable for optimization/serialization.
-    assert isinstance(flex.solve, dspy.ChainOfThought)
+    # The predictor lived in the forward's invocation, not on the module: nothing is attached,
+    # so parallel forwards on one Flex cannot overwrite each other's predictors.
+    assert not hasattr(flex, "solve")
 
 
 # Adversarial module: tries to read a host file. In the sandbox this hits Pyodide's virtual FS, which
@@ -419,7 +433,6 @@ def test_bridged_program_survives_save_load(tmp_path) -> None:
     assert reloaded.module_src and "self.solve" in reloaded.module_src
     out = reloaded(value=21)  # still runs in the sandbox, LM bridged to the host
     assert out.result == 42
-    assert isinstance(reloaded.solve, dspy.ChainOfThought)  # attached at first run
 
 
 # A module whose glue calls a user-provided tool directly (no LM): proves Flex tools are callable
@@ -507,10 +520,8 @@ def test_bridged_codeact_runs_in_flex_sandbox() -> None:
     flex._bind_code(CODEACT_MODULE)
     out = flex(text="hello")
     assert out.out == "HELLO"
-    # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter:
-    # it builds its per-forward interpreter from the very factory Flex was given.
-    act = flex.act  # bridged predictor, attached dynamically
-    assert act._interpreter_factory is backend_factory
+    # (That the sub-CodeAct builds its interpreter from the very factory Flex was given is
+    # asserted in test_bridged_codeact_inherits_flex_interpreter_backend.)
 
 
 # A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
@@ -546,7 +557,6 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
     out = flex(text="hello")
     # The agent's glue ran in the sandbox; the `shout` tool call and every LM call bridged to the host.
     assert out.out == "HELLO"
-    assert isinstance(flex.agent, dspy.ReAct)
 
 
 @deno_required

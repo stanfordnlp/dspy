@@ -137,7 +137,7 @@ def test_build_program_rebinds_flex_code() -> None:
     assert 'dspy.Predict("q -> a")' in rebuilt.module_src
     assert "self.p" in rebuilt.module_src
     assert "dspy.RLM(" not in rebuilt.module_src  # baseline replaced
-    assert not hasattr(rebuilt, "p")  # predictors attach when the code first runs, not at rebind
+    assert not hasattr(rebuilt, "p")  # predictors are per-forward artifacts, never set on the Flex
 
 
 # --- adapter: selection eval passes the trace to a flex metric ---------------
