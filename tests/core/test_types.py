@@ -9,6 +9,7 @@ from dspy.core.types import (
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
+    LMImagePart,
     LMMessage,
     LMOutput,
     LMOutputBuilder,
@@ -19,6 +20,7 @@ from dspy.core.types import (
     LMResponse,
     LMStreamDeltaEvent,
     LMTextDelta,
+    LMTextPart,
     LMThinkingDelta,
     LMThinkingPart,
     LMToolCallDelta,
@@ -427,6 +429,18 @@ def test_history_entry_exposes_existing_dict_style_properties():
 def test_response_rejects_empty_outputs():
     with pytest.raises(pydantic.ValidationError):
         LMResponse(model="model", outputs=[])
+
+
+def test_response_to_outputs_preserves_multipart_values():
+    image = LMImagePart(url="https://example.com/image.png")
+    response = LMResponse(
+        outputs=[
+            LMOutput(parts=[LMTextPart(text="part one"), LMTextPart(text="part two")]),
+            LMOutput(parts=[LMTextPart(text="caption"), image]),
+        ]
+    )
+
+    assert response.to_outputs() == [["part one", "part two"], ["caption", image]]
 
 
 def test_output_to_value_preserves_redacted_thinking_part():
