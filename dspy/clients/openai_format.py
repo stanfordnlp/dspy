@@ -353,6 +353,13 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
     return {"type": "file", "file": file_data}
 
 
+_TOOL_SPEC_WIRE_KEYS = {"type", "name", "description", "parameters", "strict"}
+
+
+def _tool_provider_extras(tool: LMToolSpec) -> dict[str, Any]:
+    return {key: value for key, value in tool.provider_data.items() if key not in _TOOL_SPEC_WIRE_KEYS}
+
+
 def tool_to_openai(tool: LMToolSpec) -> dict[str, Any]:
     # provider_data holds function-scoped extras; each dialect emits them where
     # it puts function fields — nested under "function" here, flattened to the
@@ -362,7 +369,7 @@ def tool_to_openai(tool: LMToolSpec) -> dict[str, Any]:
         data["function"]["description"] = tool.description
     if tool.strict is not None:
         data["function"]["strict"] = tool.strict
-    data["function"].update(tool.provider_data)
+    data["function"].update(_tool_provider_extras(tool))
     return data
 
 
@@ -373,7 +380,7 @@ def tool_to_openai_responses(tool: LMToolSpec) -> dict[str, Any]:
         data["description"] = tool.description
     if tool.strict is not None:
         data["strict"] = tool.strict
-    data.update(tool.provider_data)
+    data.update(_tool_provider_extras(tool))
     return data
 
 

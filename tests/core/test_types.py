@@ -213,6 +213,47 @@ def test_tool_extras_emit_at_function_field_location_per_dialect():
     assert responses_tool["vendor_key"] == 1
 
 
+def test_tool_provider_extras_cannot_override_canonical_fields():
+    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
+
+    tool = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[
+            {
+                "type": "function",
+                "name": "safe_name",
+                "parameters": {"type": "object"},
+                "strict": True,
+                "provider_data": {
+                    "type": "web_search",
+                    "name": "overridden_name",
+                    "parameters": {"type": "string"},
+                    "strict": False,
+                    "vendor_key": 1,
+                },
+            }
+        ],
+    ).tools[0]
+
+    assert tool_to_openai(tool) == {
+        "type": "function",
+        "function": {
+            "name": "safe_name",
+            "parameters": {"type": "object"},
+            "strict": True,
+            "vendor_key": 1,
+        },
+    }
+    assert tool_to_openai_responses(tool) == {
+        "type": "function",
+        "name": "safe_name",
+        "parameters": {"type": "object"},
+        "strict": True,
+        "vendor_key": 1,
+    }
+
+
 def test_close_object_schemas_ignores_schema_shaped_defaults():
     from dspy.clients.openai_format import response_format_to_responses
 

@@ -629,7 +629,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     request = dict(request)
     model = request.pop("model")
     messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
-    tools = request.pop("tools", None)
+    tools = list(request.pop("tools", None) or [])
 
     # Reasoning models use `max_completion_tokens` in the chat path. The
     # normalized Responses mapper expects the shared `max_tokens` name and emits
@@ -649,13 +649,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
 
     # Hosted Responses tools (web_search, file_search, code_interpreter, mcp, ...)
     # have no normalized LMToolSpec representation; send them through unchanged.
-    function_tools = []
-    hosted_tools = []
-    for tool in tools or []:
-        if isinstance(tool, dict) and "function" not in tool and tool.get("type") not in (None, "function"):
-            hosted_tools.append(tool)
-        else:
-            function_tools.append(tool)
+    function_tools = [tool for tool in tools if not _is_hosted_responses_tool(tool)]
 
     # tool_choice dicts that aren't the chat-nested function form are already
     # Responses-native (flat function, hosted, allowed_tools, ...); send them
@@ -668,25 +662,31 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     # The old converter never validated reasoning/temperature combinations
     # client-side; keep the provider as the authority on this door.
     data = to_openai_responses_request(lm_request, enforce_reasoning_temperature=False)
-    if hosted_tools:
-        data["tools"] = [*data.get("tools", []), *hosted_tools]
+    if tools:
+        normalized_function_tools = iter(data.pop("tools", []))
+        data["tools"] = [
+            tool if _is_hosted_responses_tool(tool) else next(normalized_function_tools) for tool in tools
+        ]
     if responses_native_tool_choice is not None:
         data["tool_choice"] = responses_native_tool_choice
     return data
 
 
+def _is_hosted_responses_tool(tool: Any) -> bool:
+    return isinstance(tool, dict) and "function" not in tool and tool.get("type") not in (None, "function")
+
+
 def _sanitize_legacy_message(message: dict[str, Any]) -> dict[str, Any]:
     """Normalize one legacy message the old converter would have passed through.
 
-    Drops empty provider-SDK dump artifacts (``refusal: None``,
-    ``annotations: []``) — ``content`` stays even when ``None`` because that is
-    how assistant tool-call turns are written — and rewrites Responses-native
-    content blocks into their chat forms so the mapper can re-emit them with
-    role-correct direction.
+    Strips provider-SDK output fields that are not message inputs and rewrites
+    Responses-native content blocks into their chat forms so the mapper can
+    re-emit them with role-correct direction.
     """
     if not isinstance(message, dict):
         return message
-    cleaned = {key: value for key, value in message.items() if key == "content" or value not in (None, [], {})}
+    message_keys = {"role", "content", "name", "metadata", "tool_calls", "tool_call_id"}
+    cleaned = {key: value for key, value in message.items() if key in message_keys}
     content = cleaned.get("content")
     if isinstance(content, list):
         cleaned["content"] = [_normalize_legacy_content_block(block) for block in content]

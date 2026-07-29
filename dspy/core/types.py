@@ -1840,7 +1840,9 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
     if not isinstance(function, Mapping):
         function = {}
 
-    args = function.get("arguments", {})
+    args = function.get("arguments")
+    if args is None:
+        args = tool_call.get("arguments", {})
     if isinstance(args, str):
         args = _parse_json_object(args)
     elif isinstance(args, Mapping):
@@ -1849,7 +1851,7 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
         args = {}
 
     return LMToolCallPart(
-        id=tool_call.get("id"),
+        id=tool_call.get("call_id") or tool_call.get("id"),
         name=function.get("name") or tool_call.get("name") or "",
         args=args,
     )

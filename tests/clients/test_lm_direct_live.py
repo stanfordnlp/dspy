@@ -513,7 +513,8 @@ def test_probe_tool_round_trip_ids_are_referenceable(responses_lm):
     wrong id (the fc_* item id instead of call_id) fails only on this second
     turn."""
     outputs = responses_lm("What is the weather in Berlin? Use the tool.", tools=[WEATHER_TOOL_CHAT])
-    name, args, call_id = _first_tool_call(outputs)
+    name, _, call_id = _first_tool_call(outputs)
+    tool_calls = outputs[0]["tool_calls"]
 
     followup = responses_lm(
         messages=[
@@ -521,13 +522,8 @@ def test_probe_tool_round_trip_ids_are_referenceable(responses_lm):
             {
                 "role": "assistant",
                 "content": None,
-                "tool_calls": [
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {"name": name, "arguments": json.dumps(args)},
-                    }
-                ],
+                # Replay the Responses-shaped output exactly as DSPy returned it.
+                "tool_calls": tool_calls,
             },
             {"role": "tool", "tool_call_id": call_id, "name": name, "content": "It is 22C and sunny."},
         ],

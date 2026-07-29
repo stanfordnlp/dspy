@@ -2021,6 +2021,42 @@ def test_responses_request_converts_assistant_tool_calls_and_tool_results():
     ]
 
 
+def test_responses_request_replays_responses_shaped_tool_calls():
+    from dspy.clients.openai_format import to_openai_responses_request
+    from dspy.core.types import LMRequest
+
+    request = LMRequest.from_call(
+        model="openai/gpt-5-mini",
+        messages=[
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "fc_1",
+                        "type": "function_call",
+                        "name": "get_weather",
+                        "arguments": json.dumps({"city": "Paris"}),
+                        "call_id": "call_1",
+                        "status": "completed",
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "name": "get_weather", "content": "sunny"},
+        ],
+    )
+
+    assert to_openai_responses_request(request)["input"] == [
+        {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": json.dumps({"city": "Paris"}),
+            "call_id": "call_1",
+        },
+        {"type": "function_call_output", "output": "sunny", "call_id": "call_1"},
+    ]
+
+
 def test_lm_responses_direct_native_tool_calling_uses_responses_tool_shape():
     response = make_response(
         [
@@ -2070,6 +2106,14 @@ def test_lm_responses_passes_hosted_tools_through_unchanged():
     sent_tools = responses.call_args.kwargs["tools"]
     assert sent_tools[0]["name"] == "get_weather"
     assert sent_tools[1] == hosted_tool
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm("What is in the news?", tools=[hosted_tool, _chat_shaped_weather_tool()])
+
+    sent_tools = responses.call_args.kwargs["tools"]
+    assert sent_tools[0] == hosted_tool
+    assert sent_tools[1]["name"] == "get_weather"
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
         lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
@@ -2133,6 +2177,36 @@ def test_lm_responses_tolerates_responses_native_and_sdk_dumped_messages():
     assert sent[0]["content"] == [{"type": "input_text", "text": "Say hi."}]
     assert sent[1] == {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}
     assert sent[2]["content"] == [{"type": "input_text", "text": "Again."}]
+
+
+def test_lm_responses_tolerates_responses_output_message_dump():
+    response = make_response(
+        [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "OK", "annotations": []}],
+                "id": "msg_2",
+                "status": "completed",
+            }
+        ]
+    )
+    sdk_dump = {
+        "id": "msg_1",
+        "type": "message",
+        "status": "completed",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "hi", "annotations": []}],
+    }
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm(messages=[sdk_dump, {"role": "user", "content": "Again."}])
+
+    assert responses.call_args.kwargs["input"] == [
+        {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]},
+        {"role": "user", "content": [{"type": "input_text", "text": "Again."}]},
+    ]
 
 
 def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
