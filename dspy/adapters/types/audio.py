@@ -1,4 +1,5 @@
 import base64
+import binascii
 import io
 import mimetypes
 import os
@@ -24,13 +25,39 @@ def _normalize_audio_format(audio_format: str) -> str:
     return audio_format.removeprefix("x-")
 
 
+def _validate_base64_audio_data(data: str) -> str:
+    if not data:
+        raise ValueError("Audio data must be non-empty base64 or an audio data URI")
+    try:
+        base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("Audio data must be valid base64 or an audio data URI") from error
+    return data
+
+
+def _parse_audio_data_uri(data_uri: str) -> tuple[str, str]:
+    header, separator, data = data_uri.partition(",")
+    media_type, *parameters = header.removeprefix("data:").split(";")
+    media_category, format_separator, audio_format = media_type.partition("/")
+    if (
+        not separator
+        or media_category.lower() != "audio"
+        or not format_separator
+        or not audio_format
+        or "base64" not in {parameter.lower() for parameter in parameters}
+    ):
+        raise ValueError("Audio data URI must have the form data:audio/<format>;base64,<base64_data>")
+    return _validate_base64_audio_data(data), _normalize_audio_format(audio_format.lower())
+
+
 class Audio(Type):
     """An audio input type for DSPy.
 
-    Raw base64 is passed as ``Audio(data=..., audio_format=...)``. Construction and adapter
-    parsing never access the filesystem or network; use :meth:`from_path` to read a local file,
-    :meth:`from_url` to download a remote resource, :meth:`from_bytes` for audio bytes, or
-    :meth:`from_array` for array data.
+    Raw base64 is passed as ``Audio(data=..., audio_format=...)``. An audio data URI may instead be
+    passed as ``Audio(data=...)``; its format is inferred and its payload is normalized to raw
+    base64. Construction and adapter parsing never access the filesystem or network; use
+    :meth:`from_path` to read a local file, :meth:`from_url` to download a remote resource,
+    :meth:`from_bytes` for audio bytes, or :meth:`from_array` for array data.
     """
 
     data: str
@@ -48,6 +75,11 @@ class Audio(Type):
             raise ValueError("audio_format must be a non-empty string")
         return _normalize_audio_format(value)
 
+    @pydantic.field_validator("data")
+    @classmethod
+    def validate_data(cls, value: str) -> str:
+        return _validate_base64_audio_data(value)
+
     def format(self) -> list[dict[str, Any]]:
         try:
             data = self.data
@@ -64,7 +96,22 @@ class Audio(Type):
         if isinstance(values, cls):
             return {"data": values.data, "audio_format": values.audio_format}
         if isinstance(values, dict):
-            return dict(values)
+            normalized_values = dict(values)
+            data = normalized_values.get("data")
+            if isinstance(data, str) and data.startswith("data:"):
+                normalized_data, uri_format = _parse_audio_data_uri(data)
+                declared_format = normalized_values.get("audio_format")
+                if isinstance(declared_format, str):
+                    if _normalize_audio_format(declared_format).lower() != uri_format:
+                        raise ValueError(
+                            f"audio_format {declared_format!r} does not match data URI format {uri_format!r}"
+                        )
+                elif declared_format is not None:
+                    normalized_values["data"] = normalized_data
+                    return normalized_values
+                normalized_values["data"] = normalized_data
+                normalized_values["audio_format"] = uri_format
+            return normalized_values
         raise ValueError("Audio must be constructed from data and audio_format fields or an explicit from_* factory")
 
     @classmethod
@@ -173,17 +220,14 @@ def encode_audio(
 
     Accepts in-memory data: data URI, dict, Audio instance, numpy array, or bytes.
     """
-    if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
-        return dict(audio)
+    if isinstance(audio, dict):
+        encoded_audio = Audio(**audio)
+        return {"data": encoded_audio.data, "audio_format": encoded_audio.audio_format}
     elif isinstance(audio, Audio):
         return {"data": audio.data, "audio_format": audio.audio_format}
-    elif isinstance(audio, str) and audio.startswith("data:audio/"):
-        header, separator, b64data = audio.partition(",")
-        mime = header.removeprefix("data:").split(";", 1)[0]
-        _, format_separator, audio_format = mime.partition("/")
-        if not separator or not format_separator or not audio_format:
-            raise ValueError("Malformed audio data URI")
-        return {"data": b64data, "audio_format": _normalize_audio_format(audio_format)}
+    elif isinstance(audio, str) and audio.startswith("data:"):
+        encoded_audio = Audio(data=audio)
+        return {"data": encoded_audio.data, "audio_format": encoded_audio.audio_format}
     elif isinstance(audio, str):
         raise ValueError(
             "String audio inputs must be data URIs. "

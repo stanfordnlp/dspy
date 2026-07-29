@@ -48,6 +48,8 @@ _LOCATOR_INPUTS = [
     (dspy.File, {"file_data": "https://evil.example/secret.bin"}),
 ]
 
+_REJECTED_LOCATOR_INPUTS = _LOCATOR_INPUTS[2:]
+
 
 @pytest.mark.parametrize(("annotation", "value"), _LOCATOR_INPUTS)
 def test_construction_performs_no_host_io(monkeypatch, annotation, value):
@@ -67,6 +69,56 @@ def test_validation_performs_no_host_io(monkeypatch, annotation, value):
         TypeAdapter(annotation).validate_python(value)
     except (ValueError, TypeError, ValidationError):
         pass
+
+
+@pytest.mark.parametrize(("annotation", "value"), _REJECTED_LOCATOR_INPUTS)
+def test_resource_construction_rejects_locator_payloads(annotation, value):
+    with pytest.raises(ValidationError):
+        annotation(**value)
+
+
+@pytest.mark.parametrize(("annotation", "value"), _REJECTED_LOCATOR_INPUTS)
+def test_resource_validation_rejects_locator_payloads(annotation, value):
+    with pytest.raises(ValidationError):
+        TypeAdapter(annotation).validate_python(value)
+
+
+def test_audio_data_uri_is_normalized_and_format_is_inferred():
+    audio = dspy.Audio(data="data:audio/x-wav;base64,YXVkaW8=")
+
+    assert audio.data == "YXVkaW8="
+    assert audio.audio_format == "wav"
+
+
+def test_audio_data_uri_rejects_mismatched_format():
+    with pytest.raises(ValidationError, match="does not match"):
+        dspy.Audio(data="data:audio/wav;base64,YXVkaW8=", audio_format="mp3")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"data": "not base64!", "audio_format": "wav"},
+        {"data": "data:audio/wav;base64,not base64!"},
+        {"data": "data:text/plain;base64,YXVkaW8="},
+    ],
+)
+def test_audio_rejects_malformed_payloads(value):
+    with pytest.raises(ValidationError):
+        TypeAdapter(dspy.Audio).validate_python(value)
+
+
+@pytest.mark.parametrize(
+    "file_data",
+    [
+        "data:text/plain,plain text",
+        "data:text/plain;base64,not base64!",
+        "data:;base64,",
+    ],
+)
+def test_file_rejects_malformed_data_uris(file_data):
+    with pytest.raises(ValidationError):
+        TypeAdapter(dspy.File).validate_python({"file_data": file_data})
 
 
 def test_image_validation_rejects_download_without_host_io(monkeypatch):

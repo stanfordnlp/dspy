@@ -129,7 +129,7 @@ URL reference or data URI. `format()` returns the provider’s image content blo
 
 **`dspy.Audio(data=..., audio_format=...)`**
 
-Raw base64 audio data and its format. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or the synchronous `Audio.from_url(url)` for resource loading, `Audio.from_bytes(data, audio_format=...)` for raw bytes, or `Audio.from_array(array, sampling_rate, audio_format=...)` for array data.
+Raw base64 audio data and its format. Audio data URIs are also accepted; their format is inferred and their payload is normalized to raw base64. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or the synchronous `Audio.from_url(url)` for resource loading, `Audio.from_bytes(data, audio_format=...)` for raw bytes, or `Audio.from_array(array, sampling_rate, audio_format=...)` for array data.
 
 **`dspy.File(file_data=None, file_id=None, filename=None)`**
 

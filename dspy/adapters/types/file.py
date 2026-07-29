@@ -1,4 +1,5 @@
 import base64
+import binascii
 import mimetypes
 import os
 from typing import Any
@@ -42,6 +43,27 @@ class File(Type):
         validate_assignment=True,
         extra="forbid",
     )
+
+    @pydantic.field_validator("file_data")
+    @classmethod
+    def validate_file_data(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        header, separator, data = value.partition(",")
+        media_type, *parameters = header.removeprefix("data:").split(";")
+        if (
+            not value.startswith("data:")
+            or not separator
+            or not media_type
+            or "base64" not in {parameter.lower() for parameter in parameters}
+        ):
+            raise ValueError("file_data must have the form data:<mime_type>;base64,<base64_data>")
+        try:
+            base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("file_data must contain valid base64 data") from error
+        return value
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -174,13 +196,12 @@ def encode_file_to_dict(file_input: Any) -> dict:
         return result
 
     elif isinstance(file_input, dict):
-        if "file_data" in file_input or "file_id" in file_input or "filename" in file_input:
-            return dict(file_input)
-        raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
+        file_obj = File(**file_input)
+        return encode_file_to_dict(file_obj)
 
     elif isinstance(file_input, str):
         if file_input.startswith("data:"):
-            return {"file_data": file_input}
+            return {"file_data": File(file_data=file_input).file_data}
         raise ValueError(
             f"String file inputs must be data URIs, received: {file_input}. Load local files with File.from_path()."
         )
