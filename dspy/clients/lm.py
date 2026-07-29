@@ -619,10 +619,16 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """Convert legacy chat-shaped LM kwargs into Responses API kwargs."""
+    """Convert legacy chat-shaped LM kwargs into Responses API kwargs.
+
+    This is the legacy door into the normalized Responses mapper. Inputs the
+    old pass-through converter forwarded verbatim — Responses-native shapes and
+    provider-SDK dumps — are tolerated here and only here; the typed path stays
+    strict.
+    """
     request = dict(request)
     model = request.pop("model")
-    messages = request.pop("messages", [])
+    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
     tools = request.pop("tools", None)
 
     # Reasoning models use `max_completion_tokens` in the chat path. The
@@ -634,8 +640,12 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
     # compatibility shim: requesting reasoning effort also asks OpenAI for an
     # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
-    if "reasoning_effort" in request and request.get("reasoning") is None:
-        request["reasoning"] = {"effort": request.pop("reasoning_effort"), "summary": "auto"}
+    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
+    # is discarded rather than merged.
+    if "reasoning_effort" in request:
+        effort = request.pop("reasoning_effort")
+        if request.get("reasoning") is None:
+            request["reasoning"] = {"effort": effort, "summary": "auto"}
 
     # Hosted Responses tools (web_search, file_search, code_interpreter, mcp, ...)
     # have no normalized LMToolSpec representation; send them through unchanged.
@@ -647,11 +657,54 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         else:
             function_tools.append(tool)
 
+    # tool_choice dicts that aren't the chat-nested function form are already
+    # Responses-native (flat function, hosted, allowed_tools, ...); send them
+    # through unchanged.
+    responses_native_tool_choice = None
+    if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
+        responses_native_tool_choice = request.pop("tool_choice")
+
     lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
-    data = to_openai_responses_request(lm_request)
+    # The old converter never validated reasoning/temperature combinations
+    # client-side; keep the provider as the authority on this door.
+    data = to_openai_responses_request(lm_request, enforce_reasoning_temperature=False)
     if hosted_tools:
         data["tools"] = [*data.get("tools", []), *hosted_tools]
+    if responses_native_tool_choice is not None:
+        data["tool_choice"] = responses_native_tool_choice
     return data
+
+
+def _sanitize_legacy_message(message: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one legacy message the old converter would have passed through.
+
+    Drops empty provider-SDK dump artifacts (``refusal: None``,
+    ``annotations: []``) — ``content`` stays even when ``None`` because that is
+    how assistant tool-call turns are written — and rewrites Responses-native
+    content blocks into their chat forms so the mapper can re-emit them with
+    role-correct direction.
+    """
+    if not isinstance(message, dict):
+        return message
+    cleaned = {key: value for key, value in message.items() if key == "content" or value not in (None, [], {})}
+    content = cleaned.get("content")
+    if isinstance(content, list):
+        cleaned["content"] = [_normalize_legacy_content_block(block) for block in content]
+    return cleaned
+
+
+def _normalize_legacy_content_block(block: Any) -> Any:
+    if not isinstance(block, dict):
+        return block
+    block_type = block.get("type")
+    if block_type in ("input_text", "output_text"):
+        return {"type": "text", "text": block.get("text", "")}
+    if block_type == "input_image" and isinstance(block.get("image_url"), str):
+        return {"type": "image_url", "image_url": {"url": block["image_url"]}}
+    if block_type == "input_file":
+        file = {key: block[key] for key in ("file_data", "file_id", "filename") if block.get(key) is not None}
+        return {"type": "file", "file": file}
+    return block
 
 
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):

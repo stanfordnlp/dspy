@@ -121,14 +121,16 @@ def message_to_openai_chat(message: LMMessage) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def to_openai_responses_request(request: LMRequest) -> dict[str, Any]:
+def to_openai_responses_request(request: LMRequest, *, enforce_reasoning_temperature: bool = True) -> dict[str, Any]:
     """Convert a normalized DSPy request into Responses API kwargs."""
     config = request.config
     data: dict[str, Any] = {
         "model": request.model,
         "input": [item for message in request.messages for item in message_to_responses_input_items(message)],
     }
-    data.update(responses_config_kwargs(config, model=request.model))
+    data.update(
+        responses_config_kwargs(config, model=request.model, enforce_reasoning_temperature=enforce_reasoning_temperature)
+    )
     if config.tool_choice is not None:
         data.update(tool_choice_to_openai_responses(config.tool_choice))
     if request.tools:
@@ -352,12 +354,15 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
 
 
 def tool_to_openai(tool: LMToolSpec) -> dict[str, Any]:
+    # provider_data holds function-scoped extras; each dialect emits them where
+    # it puts function fields — nested under "function" here, flattened to the
+    # top level in the Responses shape.
     data = {"type": "function", "function": {"name": tool.name, "parameters": tool.parameters}}
     if tool.description is not None:
         data["function"]["description"] = tool.description
     if tool.strict is not None:
         data["function"]["strict"] = tool.strict
-    data.update(tool.provider_data)
+    data["function"].update(tool.provider_data)
     return data
 
 
@@ -402,11 +407,18 @@ def tool_choice_to_openai_responses(choice: LMToolChoice) -> dict[str, Any]:
     return data
 
 
+# provider_data on parsed tool calls echoes raw provider fields (the fc_* item
+# id, status) and parser diagnostics; none of these may override the canonical
+# wire fields or leak into requests.
+_TOOL_CALL_INTERNAL_KEYS = {"id", "call_id", "status", "raw_arguments", "arguments_parse_error"}
+
+
 def assistant_tool_call_to_openai(call: LMToolCallPart) -> dict[str, Any]:
-    data = {"type": "function", "function": {"name": call.name, "arguments": json.dumps(call.args)}}
+    data = {key: value for key, value in call.provider_data.items() if key not in _TOOL_CALL_INTERNAL_KEYS}
+    data["type"] = "function"
+    data["function"] = {"name": call.name, "arguments": json.dumps(call.args)}
     if call.id is not None:
         data["id"] = call.id
-    data.update(call.provider_data)
     return data
 
 
@@ -440,10 +452,13 @@ def common_config_kwargs(config: LMConfig, *, model: str | None = None, endpoint
     return data
 
 
-def responses_config_kwargs(config: LMConfig, *, model: str | None = None) -> dict[str, Any]:
+def responses_config_kwargs(
+    config: LMConfig, *, model: str | None = None, enforce_reasoning_temperature: bool = True
+) -> dict[str, Any]:
     """Convert shared DSPy config fields into Responses API kwargs."""
     data = dict(config.extensions) if config.extensions else {}
-    _validate_openai_reasoning_temperature(config, model=model, endpoint="responses")
+    if enforce_reasoning_temperature:
+        _validate_openai_reasoning_temperature(config, model=model, endpoint="responses")
     for key in ("temperature", "top_p"):
         value = getattr(config, key)
         if value is not None:
@@ -559,16 +574,25 @@ def _close_object_schemas(schema: Any) -> Any:
     The Responses API rejects ``json_schema`` formats whose object schemas leave
     ``additionalProperties`` unspecified; pydantic's ``model_json_schema()``
     omits it. Schemas that already set it (e.g. ``dict[str, T]`` fields) are
-    left untouched.
+    left untouched. Recursion follows JSON Schema keyword positions only, so
+    schema-shaped values inside ``default``/``examples``/``const`` are never
+    rewritten.
     """
-    if isinstance(schema, dict):
-        closed = {key: _close_object_schemas(item) for key, item in schema.items()}
-        if closed.get("type") == "object" and "additionalProperties" not in closed:
-            closed["additionalProperties"] = False
-        return closed
-    if isinstance(schema, list):
-        return [_close_object_schemas(item) for item in schema]
-    return schema
+    if not isinstance(schema, dict):
+        return schema
+    closed = dict(schema)
+    for key in ("items", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames"):
+        if isinstance(closed.get(key), dict):
+            closed[key] = _close_object_schemas(closed[key])
+    for key in ("items", "prefixItems", "anyOf", "oneOf", "allOf"):
+        if isinstance(closed.get(key), list):
+            closed[key] = [_close_object_schemas(item) for item in closed[key]]
+    for key in ("properties", "patternProperties", "$defs", "definitions"):
+        if isinstance(closed.get(key), dict):
+            closed[key] = {name: _close_object_schemas(sub) for name, sub in closed[key].items()}
+    if closed.get("type") == "object" and "additionalProperties" not in closed:
+        closed["additionalProperties"] = False
+    return closed
 
 
 def responses_tool_output_text(content: Any) -> str:

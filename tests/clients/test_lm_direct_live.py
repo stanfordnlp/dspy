@@ -470,6 +470,17 @@ def test_probe_forced_tool_choice_chat_shape(responses_lm):
 
 
 @pytest.mark.llm_call
+def test_probe_forced_tool_choice_flat_responses_shape(responses_lm):
+    outputs = responses_lm(
+        "Talk about the weather in Lima.",
+        tools=[WEATHER_TOOL_CHAT],
+        tool_choice={"type": "function", "name": "get_weather"},
+    )
+    name, _, _ = _first_tool_call(outputs)
+    assert name == "get_weather"
+
+
+@pytest.mark.llm_call
 def test_probe_tool_choice_none_suppresses_calls(responses_lm):
     outputs = responses_lm(
         "What is the weather in Lima? Use the tool.",

@@ -178,6 +178,52 @@ def test_tool_spec_strict_emits_in_provider_shapes():
     assert "function" not in responses_tool
 
 
+def test_parsed_tool_call_replays_with_call_id_not_item_id():
+    from dspy.clients.openai_format import assistant_tool_call_to_openai, tool_call_to_responses_input
+
+    part = LMToolCallPart(
+        name="get_weather",
+        args={"city": "Paris"},
+        id="call_1",
+        provider_data={"id": "fc_1", "call_id": "call_1", "status": "completed", "raw_arguments": "{}"},
+    )
+
+    chat_call = assistant_tool_call_to_openai(part)
+    assert chat_call["id"] == "call_1"
+    assert "status" not in chat_call and "raw_arguments" not in chat_call
+
+    responses_item = tool_call_to_responses_input(part)
+    assert responses_item["call_id"] == "call_1"
+
+
+def test_tool_extras_emit_at_function_field_location_per_dialect():
+    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
+
+    nested = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "vendor_key": 1}}],
+    ).tools[0]
+    assert nested.provider_data == {"vendor_key": 1}
+
+    assert tool_to_openai(nested)["function"]["vendor_key"] == 1
+    assert "vendor_key" not in tool_to_openai(nested)
+
+    responses_tool = tool_to_openai_responses(nested)
+    assert responses_tool["vendor_key"] == 1
+
+
+def test_close_object_schemas_ignores_schema_shaped_defaults():
+    from dspy.clients.openai_format import response_format_to_responses
+
+    class WithDictDefault(pydantic.BaseModel):
+        payload: dict = {"type": "object"}
+
+    schema = response_format_to_responses(WithDictDefault)["schema"]
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["payload"]["default"] == {"type": "object"}
+
+
 def test_file_content_blocks_normalize_to_binary_parts():
     data_message = LMMessage(
         role="user",

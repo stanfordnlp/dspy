@@ -2097,6 +2097,99 @@ def test_lm_responses_preserves_flat_function_tool_with_strict():
     assert responses.call_args.kwargs["tools"] == [flat_tool]
 
 
+def test_lm_responses_passes_native_tool_choice_shapes_through():
+    response = make_response(
+        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
+    )
+    for native_choice in (
+        {"type": "function", "name": "get_weather"},
+        {"type": "web_search_preview"},
+        {"type": "allowed_tools", "mode": "auto", "tools": [{"type": "function", "name": "get_weather"}]},
+    ):
+        with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+            lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+            lm("What is the weather?", tools=[_chat_shaped_weather_tool()], tool_choice=native_choice)
+
+        assert responses.call_args.kwargs["tool_choice"] == native_choice
+
+
+def test_lm_responses_tolerates_responses_native_and_sdk_dumped_messages():
+    response = make_response(
+        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm(
+            messages=[
+                {"role": "user", "content": [{"type": "input_text", "text": "Say hi."}]},
+                # An assistant message dict dumped from an OpenAI SDK response.
+                {"role": "assistant", "content": "hi", "refusal": None, "annotations": [], "function_call": None},
+                {"role": "user", "content": [{"type": "output_text", "text": "Again."}]},
+            ]
+        )
+
+    sent = responses.call_args.kwargs["input"]
+    assert sent[0]["content"] == [{"type": "input_text", "text": "Say hi."}]
+    assert sent[1] == {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}
+    assert sent[2]["content"] == [{"type": "input_text", "text": "Again."}]
+
+
+def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
+    response = make_response(
+        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM(
+            "openai/dspy-test-model", model_type="responses", cache=False, reasoning_effort="low"
+        )
+        lm("Say hi.", reasoning={"effort": "high"})
+
+    sent = responses.call_args.kwargs
+    assert sent["reasoning"] == {"effort": "high"}
+    assert "reasoning_effort" not in sent
+
+
+def test_lm_responses_forwards_raw_base64_file_data_verbatim():
+    response = make_response(
+        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
+    )
+    raw_base64 = "JVBERi0xLjQK"
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Read this."},
+                        {"type": "file", "file": {"file_data": raw_base64, "filename": "doc.pdf"}},
+                    ],
+                }
+            ]
+        )
+
+    file_item = responses.call_args.kwargs["input"][0]["content"][1]
+    assert file_item["type"] == "input_file"
+    assert file_item["file_data"] == raw_base64
+
+
+def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
+    response = make_response(
+        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm = dspy.LM("openai/gpt-5-nano", model_type="responses", cache=False, max_tokens=16000)
+        lm("Say hi.", temperature=0.7, reasoning_effort="low")
+
+    sent = responses.call_args.kwargs
+    assert sent["temperature"] == 0.7
+    assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
+
+
 def test_lm_responses_hoists_nested_strict_to_flat_shape():
     from dspy.clients.openai_format import to_openai_responses_request
     from dspy.core.types import LMRequest
