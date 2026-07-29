@@ -94,6 +94,9 @@ Rules you MUST follow:
 
 - Define every predictor in `__init__` as `self.<name> = dspy.Predict(...)` and call
   it in `forward` as `self.<name>(...)`.
+- `forward` runs on a fresh instance every call: do not rely on `self` attributes
+  carrying state across calls (caches, counters). Cross-call state, if truly needed,
+  belongs in a provided host tool.
 
 - Give predictors INSTRUCTIONS, don't just rely on field names. When the feedback shows
   the model needs guidance, construct the predictor over

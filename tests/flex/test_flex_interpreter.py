@@ -402,6 +402,32 @@ def _evil_read_module(host_path: str) -> str:
 
 
 @deno_required
+def test_forward_runs_on_a_fresh_instance_each_call() -> None:
+    """Each forward instantiates the module anew in the sandbox — instance state does not carry
+    across calls. This is deliberate: GEPA scores every rollout under these semantics, so
+    deployment must match; it also keeps scores independent of evaluation order and of which
+    thread-local session serves the call. The primitives catalog tells the proposer as much.
+    """
+    counter_src = textwrap.dedent(
+        """
+        class DoublerModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def forward(self, value):
+                self.calls += 1
+                return dspy.Prediction(result=self.calls)
+        """
+    ).strip()
+
+    with Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
+        program._bind_code(counter_src)
+        assert program(value=1).result == 1
+        assert program(value=1).result == 1  # not 2: a persistent instance would diverge from scoring
+
+
+@deno_required
 def test_bridged_program_survives_save_load(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
     program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
