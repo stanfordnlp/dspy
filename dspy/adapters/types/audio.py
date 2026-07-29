@@ -30,8 +30,8 @@ class Audio(Type):
     Construct from in-memory values only: a data URI string, raw ``bytes`` (with
     ``audio_format=``), a numpy-like array, a ``{"data", "audio_format"}`` dict, or another
     ``Audio``. Raw base64 is passed as ``Audio(data=..., audio_format=...)``. Construction and
-    adapter parsing never access the filesystem or network; use :meth:`from_path` to read a local
-    file, :meth:`from_url` to download a remote resource, or :meth:`from_array` for array data.
+    adapter parsing never access the filesystem or network; use :meth:`open` to read a local
+    file, :meth:`download` to fetch a remote resource, or :meth:`from_array` for array data.
     """
 
     data: str
@@ -80,37 +80,7 @@ class Audio(Type):
         return encode_audio(values)
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Audio":
-        """
-        Download an audio file from URL and encode it as base64.
-
-        Security: this performs an explicit, caller-initiated fetch and applies no
-        SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
-        will reach private, loopback, or cloud-metadata hosts and follow redirects to
-        them. When ``url`` is derived from untrusted input, the caller is responsible
-        for validating the host against an allowlist before calling this method.
-
-        Args:
-            url: The URL of the audio to download.
-            verify: Whether to verify SSL certificates. Set to False for self-signed certs.
-        """
-        parsed_url = urlparse(url)
-        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
-            raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
-        response = requests.get(url, verify=verify)
-        response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "audio/wav")
-        if not mime_type.startswith("audio/"):
-            raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
-        audio_format = mime_type.split("/")[1]
-
-        audio_format = _normalize_audio_format(audio_format)
-
-        encoded_data = base64.b64encode(response.content).decode("utf-8")
-        return cls(data=encoded_data, audio_format=audio_format)
-
-    @classmethod
-    def from_path(cls, file_path: str) -> "Audio":
+    def open(cls, file_path: str) -> "Audio":
         """
         Read local audio file and encode it as base64.
         """
@@ -132,14 +102,64 @@ class Audio(Type):
         return cls(data=encoded_data, audio_format=audio_format)
 
     @classmethod
-    def from_file(cls, file_path: str) -> "Audio":
-        """Deprecated alias for :meth:`from_path`."""
+    def download(cls, url: str, verify: bool = True) -> "Audio":
+        """
+        Download an audio file from URL and encode it as base64.
+
+        Security: this performs an explicit, caller-initiated fetch and applies no
+        SSRF protection beyond requiring an HTTP(S) scheme. Like ``requests.get``, it
+        will reach private, loopback, or cloud-metadata hosts and follow redirects to
+        them. When ``url`` is derived from untrusted input, the caller is responsible
+        for validating the host against an allowlist before calling this method.
+
+        Args:
+            url: The URL of the audio to download.
+            verify: Whether to verify SSL certificates. Set to False for self-signed certs.
+        """
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            raise ValueError(f"Audio.download requires an HTTP(S) URL, received: {url}")
+        response = requests.get(url, verify=verify)
+        response.raise_for_status()
+        mime_type = response.headers.get("Content-Type", "audio/wav")
+        if not mime_type.startswith("audio/"):
+            raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
+        audio_format = mime_type.split("/")[1]
+
+        audio_format = _normalize_audio_format(audio_format)
+
+        encoded_data = base64.b64encode(response.content).decode("utf-8")
+        return cls(data=encoded_data, audio_format=audio_format)
+
+    @classmethod
+    def from_path(cls, file_path: str) -> "Audio":
+        """Deprecated alias for :meth:`open`."""
         warnings.warn(
-            "Audio.from_file is deprecated and will be removed in 3.4; use Audio.from_path instead.",
+            "Audio.from_path is deprecated and will be removed in 3.4; use Audio.open instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls.from_path(file_path)
+        return cls.open(file_path)
+
+    @classmethod
+    def from_url(cls, url: str, verify: bool = True) -> "Audio":
+        """Deprecated alias for :meth:`download`."""
+        warnings.warn(
+            "Audio.from_url is deprecated and will be removed in 3.4; use Audio.download instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.download(url, verify=verify)
+
+    @classmethod
+    def from_file(cls, file_path: str) -> "Audio":
+        """Deprecated alias for :meth:`open`."""
+        warnings.warn(
+            "Audio.from_file is deprecated and will be removed in 3.4; use Audio.open instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.open(file_path)
 
     @classmethod
     def from_array(cls, array: Any, sampling_rate: int, format: str = "wav") -> "Audio":
@@ -197,7 +217,7 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
     elif isinstance(audio, str):
         raise ValueError(
             "String audio inputs must be data URIs. "
-            "Load local files with Audio.from_path() and remote resources with Audio.from_url()."
+            "Load local files with Audio.open() and remote resources with Audio.download()."
         )
     elif SF_AVAILABLE and hasattr(audio, "shape"):
         a = Audio.from_array(audio, sampling_rate=sampling_rate, format=format)

@@ -74,23 +74,31 @@ def test_explicit_local_resource_factories(tmp_path):
     file_path = tmp_path / "document.txt"
     file_path.write_bytes(b"file bytes")
 
-    assert base64.b64decode(dspy.Image.from_path(str(image_path)).url.split(",", 1)[1]) == b"image bytes"
-    assert base64.b64decode(dspy.Audio.from_path(str(audio_path)).data) == b"audio bytes"
-    assert base64.b64decode(dspy.File.from_path(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
-
-
-def test_audio_from_file_is_deprecated_alias(tmp_path):
-    audio_path = tmp_path / "audio.wav"
-    audio_path.write_bytes(b"audio bytes")
-
-    with pytest.warns(DeprecationWarning, match="Audio.from_file is deprecated"):
-        aliased = dspy.Audio.from_file(str(audio_path))
-
-    assert base64.b64decode(aliased.data) == b"audio bytes"
+    assert base64.b64decode(dspy.Image.open(str(image_path)).url.split(",", 1)[1]) == b"image bytes"
+    assert base64.b64decode(dspy.Audio.open(str(audio_path)).data) == b"audio bytes"
+    assert base64.b64decode(dspy.File.open(str(file_path)).file_data.split(",", 1)[1]) == b"file bytes"
 
 
 @pytest.mark.parametrize(
-    ("factory", "mime_type"), [(dspy.Image.from_url, "image/png"), (dspy.Audio.from_url, "audio/wav")]
+    ("annotation", "alias", "canonical"),
+    [
+        (dspy.Image, "from_path", "open"),
+        (dspy.Image, "from_file", "open"),
+        (dspy.Audio, "from_path", "open"),
+        (dspy.Audio, "from_file", "open"),
+        (dspy.File, "from_path", "open"),
+    ],
+)
+def test_local_read_aliases_are_deprecated(tmp_path, annotation, alias, canonical):
+    path = tmp_path / "resource.wav"
+    path.write_bytes(b"audio bytes")
+
+    with pytest.warns(DeprecationWarning, match=rf"{annotation.__name__}\.{alias} is deprecated"):
+        getattr(annotation, alias)(str(path))
+
+
+@pytest.mark.parametrize(
+    ("factory", "mime_type"), [(dspy.Image.download, "image/png"), (dspy.Audio.download, "audio/wav")]
 )
 def test_explicit_remote_resource_factories(monkeypatch, factory, mime_type):
     class Response:
@@ -101,7 +109,7 @@ def test_explicit_remote_resource_factories(monkeypatch, factory, mime_type):
         def raise_for_status(self):
             return None
 
-    module = "image" if factory == dspy.Image.from_url else "audio"
+    module = "image" if factory == dspy.Image.download else "audio"
     monkeypatch.setattr(f"dspy.adapters.types.{module}.requests.get", lambda *args, **kwargs: Response())
 
     resource = factory(f"https://example.com/resource.{mime_type.split('/', 1)[1]}")
@@ -123,7 +131,7 @@ def test_in_memory_resource_construction():
 
 @pytest.mark.parametrize(
     ("source", "match"),
-    [("clip.wav", r"Audio\.from_path"), ("https://example.com/a.wav", r"Audio\.from_url")],
+    [("clip.wav", r"Audio\.open"), ("https://example.com/a.wav", r"Audio\.download")],
 )
 def test_audio_positional_string_must_be_data_uri_even_with_format(source, match):
     with pytest.raises(ValueError, match=match):
@@ -149,7 +157,7 @@ def test_audio_rejects_sampling_rate_for_non_array_inputs(source):
         dspy.Audio(source, sampling_rate=44100)
 
 
-def test_audio_from_url_passes_verify(monkeypatch):
+def test_audio_download_passes_verify(monkeypatch):
     captured = {}
 
     class Response:
@@ -166,6 +174,6 @@ def test_audio_from_url_passes_verify(monkeypatch):
 
     monkeypatch.setattr("dspy.adapters.types.audio.requests.get", fake_get)
 
-    dspy.Audio.from_url("https://example.com/a.wav", verify=False)
+    dspy.Audio.download("https://example.com/a.wav", verify=False)
 
     assert captured["verify"] is False

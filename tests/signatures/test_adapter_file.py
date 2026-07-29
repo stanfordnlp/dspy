@@ -53,21 +53,21 @@ def setup_predictor(signature, expected_output):
 
 
 def test_file_from_local_path(sample_text_file):
-    file_obj = dspy.File.from_path(sample_text_file)
+    file_obj = dspy.File.open(sample_text_file)
     assert file_obj.file_data is not None
     assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == os.path.basename(sample_text_file)
 
 
-def test_file_from_path_method(sample_text_file):
-    file_obj = dspy.File.from_path(sample_text_file)
+def test_file_open_method(sample_text_file):
+    file_obj = dspy.File.open(sample_text_file)
     assert file_obj.file_data is not None
     assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == os.path.basename(sample_text_file)
 
 
-def test_file_from_path_with_custom_filename(sample_text_file):
-    file_obj = dspy.File.from_path(sample_text_file, filename="custom.txt")
+def test_file_open_with_custom_filename(sample_text_file):
+    file_obj = dspy.File.open(sample_text_file, filename="custom.txt")
     assert file_obj.file_data is not None
     assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == "custom.txt"
@@ -153,7 +153,7 @@ def test_file_str():
 
 
 def test_encode_file_to_dict_rejects_path(sample_text_file):
-    with pytest.raises(ValueError, match=r"File\.from_path"):
+    with pytest.raises(ValueError, match=r"File\.open"):
         encode_file_to_dict(sample_text_file)
 
 
@@ -181,7 +181,7 @@ def test_file_constructor_rejects_conflicting_keyword():
 
 
 def test_invalid_file_string():
-    with pytest.raises(ValueError, match=r"File\.from_path"):
+    with pytest.raises(ValueError, match=r"File\.open"):
         encode_file_to_dict("https://this_is_not_a_file_path")
 
 
@@ -195,7 +195,7 @@ def test_file_in_signature(sample_text_file):
     expected = {"summary": "This is a summary"}
     predictor, lm = setup_predictor(signature, expected)
 
-    file_obj = dspy.File.from_path(sample_text_file)
+    file_obj = dspy.File.open(sample_text_file)
     result = predictor(document=file_obj)
 
     assert result.summary == "This is a summary"
@@ -211,7 +211,7 @@ def test_file_list_in_signature(sample_text_file):
     predictor, lm = setup_predictor(FileListSignature, expected)
 
     files = [
-        dspy.File.from_path(sample_text_file),
+        dspy.File.open(sample_text_file),
         dspy.File.from_file_id("file-123"),
     ]
     result = predictor(documents=files)
@@ -233,7 +233,7 @@ def test_optional_file_field():
 
 def test_save_load_file_signature(sample_text_file):
     signature = "document: dspy.File -> summary: str"
-    file_obj = dspy.File.from_path(sample_text_file)
+    file_obj = dspy.File.open(sample_text_file)
     examples = [dspy.Example(document=file_obj, summary="Test summary")]
 
     predictor, lm = setup_predictor(signature, {"summary": "A summary"})
@@ -270,11 +270,11 @@ def test_file_with_all_fields():
 
 def test_file_path_not_found():
     with pytest.raises(ValueError, match="File not found"):
-        dspy.File.from_path("/nonexistent/path/file.txt")
+        dspy.File.open("/nonexistent/path/file.txt")
 
 
 def test_file_custom_mime_type(sample_text_file):
-    file_obj = dspy.File.from_path(sample_text_file, mime_type="text/custom")
+    file_obj = dspy.File.open(sample_text_file, mime_type="text/custom")
     assert file_obj.file_data.startswith("data:text/custom;base64,")
 
 

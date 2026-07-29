@@ -10,8 +10,8 @@
             - extract_custom_type_from_annotation
             - format
             - from_PIL
-            - from_path
-            - from_url
+            - open
+            - download
             - is_streamable
             - parse_lm_response
             - parse_stream_chunk

@@ -1,6 +1,7 @@
 import base64
 import mimetypes
 import os
+import warnings
 from typing import Any
 
 import pydantic
@@ -17,7 +18,7 @@ class File(Type):
 
     Construct from in-memory values only: raw ``bytes``, a data URI string, a
     ``{"file_data"|"file_id"|"filename"}`` dict, or another ``File``. Construction and adapter
-    parsing never access the filesystem; use :meth:`from_path` to read a local file,
+    parsing never access the filesystem; use :meth:`open` to read a local file,
     :meth:`from_bytes` for raw bytes, or :meth:`from_file_id` to reference a preuploaded file.
 
     Examples:
@@ -28,7 +29,7 @@ class File(Type):
             file: dspy.File = dspy.InputField()
             summary = dspy.OutputField()
         program = dspy.Predict(QA)
-        result = program(file=dspy.File.from_path("./research.pdf"))
+        result = program(file=dspy.File.open("./research.pdf"))
         print(result.summary)
         ```
     """
@@ -112,7 +113,7 @@ class File(Type):
         return f"File({', '.join(parts)})"
 
     @classmethod
-    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+    def open(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
         """Create a File from a local file path.
 
         Args:
@@ -138,6 +139,16 @@ class File(Type):
         file_data = f"data:{mime_type};base64,{encoded_data}"
 
         return cls(file_data=file_data, filename=filename)
+
+    @classmethod
+    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+        """Deprecated alias for :meth:`open`."""
+        warnings.warn(
+            "File.from_path is deprecated and will be removed in 3.4; use File.open instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.open(file_path, filename=filename, mime_type=mime_type)
 
     @classmethod
     def from_bytes(
@@ -190,7 +201,7 @@ def encode_file_to_dict(file_input: Any) -> dict:
             return {"file_data": file_input}
         raise ValueError(
             f"String file inputs must be data URIs, received: {file_input}. "
-            "Load local files with File.from_path()."
+            "Load local files with File.open()."
         )
 
     elif isinstance(file_input, bytes):

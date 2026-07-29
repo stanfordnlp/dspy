@@ -26,7 +26,7 @@ def sample_pil_image():
 @pytest.fixture
 def sample_dspy_image_download():
     url = "https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg"
-    return dspy.Image.from_url(url)
+    return dspy.Image.download(url)
 
 
 @pytest.fixture
@@ -346,7 +346,7 @@ def test_pdf_url_support():
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
 
     # Download the PDF into a dspy.Image data URI.
-    pdf_image = dspy.Image.from_url(pdf_url)
+    pdf_image = dspy.Image.download(pdf_url)
 
     # The data URI should contain application/pdf in the MIME type
     assert "data:application/pdf" in pdf_image.url
@@ -383,7 +383,7 @@ def test_different_mime_types():
 
     for file_type, url in file_urls.items():
         # Download and encode
-        encoded = dspy.Image.from_url(url).url
+        encoded = dspy.Image.download(url).url
 
         # Check for correct MIME type in the encoded data - using 'in' instead of startswith
         # to account for possible parameters in the MIME type
@@ -404,7 +404,7 @@ def test_mime_type_from_response_headers():
     assert "pdf" in expected_mime_type.lower()
 
     # Encode with download to test MIME type from headers
-    encoded = dspy.Image.from_url(pdf_url).url
+    encoded = dspy.Image.download(pdf_url).url
 
     # The encoded data should contain the correct MIME type
     assert "application/pdf" in encoded
@@ -424,7 +424,7 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image.from_path(tmp_file_path)
+        pdf_image = dspy.Image.open(tmp_file_path)
 
         # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url
@@ -483,19 +483,20 @@ def test_canonical_factories_do_not_warn(tmp_path):
         response = type("Response", (), {"content": b"pngdata", "headers": {"Content-Type": "image/png"}})()
         response.raise_for_status = lambda: None
         monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: response)
-        dspy.Image.from_url("https://example.com/dog.jpg")
+        dspy.Image.download("https://example.com/dog.jpg")
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
-        dspy.Image.from_path(str(tmp_file))
+        dspy.Image.open(str(tmp_file))
 
 
 def test_deprecated_factory_aliases_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")
 
-    with pytest.warns(DeprecationWarning, match="Image.from_file is deprecated"):
-        dspy.Image.from_file(str(tmp_file))
+    for alias in ("from_path", "from_file"):
+        with pytest.warns(DeprecationWarning, match=rf"Image.{alias} is deprecated"):
+            getattr(dspy.Image, alias)(str(tmp_file))
 
     sample_pil = PILImage.new("RGB", (10, 10), color="blue")
     with pytest.warns(DeprecationWarning):
@@ -540,7 +541,7 @@ def test_deprecated_verify_warns_without_download():
 def test_deprecated_download_does_not_rescue_local_path():
     # The Image(path) hard break holds even with the deprecated download flag.
     with pytest.warns(DeprecationWarning):
-        with pytest.raises(ValueError, match=r"Image\.from_path"):
+        with pytest.raises(ValueError, match=r"Image\.open"):
             dspy.Image("/etc/passwd", download=True)
 
 
@@ -551,9 +552,9 @@ def test_pil_image_with_deprecated_download_still_encodes():
     assert image.url.startswith("data:image/")
 
 
-def test_from_path_missing_file():
+def test_open_missing_file():
     with pytest.raises(ValueError, match="File not found"):
-        dspy.Image.from_path("/nonexistent/image.png")
+        dspy.Image.open("/nonexistent/image.png")
 
 
 def test_unidentifiable_bytes_raise_value_error():

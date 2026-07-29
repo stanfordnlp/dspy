@@ -49,14 +49,14 @@ class Image(Type):
             - already encoded data URI
 
         download, verify:
-            Deprecated. Use :meth:`from_url` (which accepts ``verify``) to download a
-            remote image, or :meth:`from_path` for a local file. Accepted for one release
+            Deprecated. Use :meth:`download` (which accepts ``verify``) to fetch a
+            remote image, or :meth:`open` for a local file. Accepted for one release
             with a warning: ``download=True`` eagerly fetches an HTTP(S) ``source``.
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
 
         Local files and remote resources must be loaded explicitly with
-        :meth:`from_path` and :meth:`from_url`, respectively.
+        :meth:`open` and :meth:`download`, respectively.
         """
 
         download_requested = download is not _UNSET
@@ -64,8 +64,8 @@ class Image(Type):
         if download_requested or verify_requested:
             warnings.warn(
                 "The `download` and `verify` arguments to Image() are deprecated and will be removed in "
-                "3.4. Use Image.from_url(url, verify=...) to download a remote image, or "
-                "Image.from_path(path) for a local file.",
+                "3.4. Use Image.download(url, verify=...) to fetch a remote image, or "
+                "Image.open(path) for a local file.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -101,7 +101,14 @@ class Image(Type):
         return [{"type": "image_url", "image_url": {"url": image_url}}]
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Image":
+    def open(cls, file_path: str) -> "Image":
+        """Read a local file and encode it as a data URI."""
+        if not os.path.isfile(file_path):
+            raise ValueError(f"File not found: {file_path}")
+        return cls(_encode_image_from_file(file_path))
+
+    @classmethod
+    def download(cls, url: str, verify: bool = True) -> "Image":
         """Download an HTTP(S) resource and encode it as a data URI.
 
         Security: this performs an explicit, caller-initiated fetch and applies no
@@ -111,25 +118,38 @@ class Image(Type):
         for validating the host against an allowlist before calling this method.
         """
         if not _is_http_url(url):
-            raise ValueError(f"Image.from_url requires an HTTP(S) URL, received: {url}")
+            raise ValueError(f"Image.download requires an HTTP(S) URL, received: {url}")
         return cls(_encode_image_from_url(url, verify=verify))
 
     @classmethod
     def from_path(cls, file_path: str) -> "Image":
-        """Read a local file and encode it as a data URI."""
-        if not os.path.isfile(file_path):
-            raise ValueError(f"File not found: {file_path}")
-        return cls(_encode_image_from_file(file_path))
-
-    @classmethod
-    def from_file(cls, file_path: str) -> "Image":
-        """Deprecated alias for :meth:`from_path`."""
+        """Deprecated alias for :meth:`open`."""
         warnings.warn(
-            "Image.from_file is deprecated and will be removed in 3.4; use Image.from_path instead.",
+            "Image.from_path is deprecated and will be removed in 3.4; use Image.open instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls.from_path(file_path)
+        return cls.open(file_path)
+
+    @classmethod
+    def from_url(cls, url: str, verify: bool = True) -> "Image":
+        """Deprecated alias for :meth:`download`."""
+        warnings.warn(
+            "Image.from_url is deprecated and will be removed in 3.4; use Image.download instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.download(url, verify=verify)
+
+    @classmethod
+    def from_file(cls, file_path: str) -> "Image":
+        """Deprecated alias for :meth:`open`."""
+        warnings.warn(
+            "Image.from_file is deprecated and will be removed in 3.4; use Image.open instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.open(file_path)
 
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
@@ -191,7 +211,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
         elif is_url(image):
             return image
         else:
-            raise ValueError(f"Unrecognized image string: {image}. Local files must be loaded with Image.from_path().")
+            raise ValueError(f"Unrecognized image string: {image}. Local files must be loaded with Image.open().")
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
