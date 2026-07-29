@@ -64,12 +64,9 @@ def test_default_interpreter_factory_is_python_interpreter() -> None:
 def test_default_is_sandbox() -> None:
     # With no interpreter_factory argument, Flex builds a PythonInterpreter sandbox (needs Deno).
     flex = Flex(Doubler)
-    try:
-        assert flex._bridge is not None
-        assert flex._interpreter_factory is dspy.PythonInterpreter
-        assert isinstance(flex._interpreter_factory(), dspy.PythonInterpreter)
-    finally:
-        flex.close()
+    assert flex._bridge is not None
+    assert flex._interpreter_factory is dspy.PythonInterpreter
+    assert isinstance(flex._interpreter_factory(), dspy.PythonInterpreter)
 
 
 def test_bare_instance_is_rejected() -> None:
@@ -284,15 +281,16 @@ def test_max_predictor_calls_is_plumbed_to_bridge() -> None:
 
 
 def test_predictor_call_budget_is_enforced() -> None:
+    # The budget lives in the per-forward CALL_TOOL closure, so every forward starts fresh.
     flex = _bridged_flex_with(max_predictor_calls=2)
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
-    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": "1"}, {"reasoning": "r", "result": "2"}]))
-    flex._bridge._get_session()  # a session must exist for per-forward budget tracking
-    flex._bridge._local.sess.calls = 0
-    flex._bridge._call("solve", {"value": 1})  # 1st
-    flex._bridge._call("solve", {"value": 1})  # 2nd
+    dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(3)]))
+    call = flex._bridge._invocation_call({})
+    call("solve", {"value": 1})  # 1st
+    call("solve", {"value": 1})  # 2nd
     with pytest.raises(CodeInterpreterError, match="budget"):
-        flex._bridge._call("solve", {"value": 1})  # 3rd exceeds the cap
+        call("solve", {"value": 1})  # 3rd exceeds the cap
+    flex._bridge._invocation_call({})("solve", {"value": 1})  # a new forward gets a new budget
 
 
 def test_predictor_call_budget_can_be_disabled() -> None:
@@ -300,10 +298,9 @@ def test_predictor_call_budget_can_be_disabled() -> None:
     assert flex._bridge._max_predictor_calls is None
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})
     dspy.configure(lm=DummyLM([{"reasoning": "r", "result": str(i)} for i in range(5)]))
-    flex._bridge._get_session()
-    flex._bridge._local.sess.calls = 0
+    call = flex._bridge._invocation_call({})
     for _ in range(5):  # no cap -> all calls go through
-        flex._bridge._call("solve", {"value": 1})
+        call("solve", {"value": 1})
 
 
 # =============================================================================
@@ -378,17 +375,14 @@ COT_GLUE_MODULE = textwrap.dedent(
 def test_optimized_cot_runs_in_sandbox_with_lm_bridged() -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
-    try:
-        flex._bind_code(COT_GLUE_MODULE)
-        # forward() runs entirely in the sandbox; self.solve(...) bridges to the host DummyLM, and the
-        # `import re` / int-parsing glue executes inside Pyodide.
-        out = flex(value=21)
-        assert isinstance(out, dspy.Prediction)
-        assert out.result == 42
-        # The predictor is a real host object discoverable for optimization/serialization.
-        assert isinstance(flex.solve, dspy.ChainOfThought)
-    finally:
-        flex.close()
+    flex._bind_code(COT_GLUE_MODULE)
+    # forward() runs entirely in the sandbox; self.solve(...) bridges to the host DummyLM, and the
+    # `import re` / int-parsing glue executes inside Pyodide.
+    out = flex(value=21)
+    assert isinstance(out, dspy.Prediction)
+    assert out.result == 42
+    # The predictor is a real host object discoverable for optimization/serialization.
+    assert isinstance(flex.solve, dspy.ChainOfThought)
 
 
 # Adversarial module: tries to read a host file. In the sandbox this hits Pyodide's virtual FS, which
@@ -416,7 +410,7 @@ def test_forward_runs_on_a_fresh_instance_each_call() -> None:
     """Each forward instantiates the module anew in the sandbox — instance state does not carry
     across calls. This is deliberate: GEPA scores every rollout under these semantics, so
     deployment must match; it also keeps scores independent of evaluation order and of which
-    thread-local session serves the call. The primitives catalog tells the proposer as much.
+    interpreter serves the call. The primitives catalog tells the proposer as much.
     """
     counter_src = textwrap.dedent(
         """
@@ -431,10 +425,10 @@ def test_forward_runs_on_a_fresh_instance_each_call() -> None:
         """
     ).strip()
 
-    with Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(counter_src)
-        assert program(value=1).result == 1
-        assert program(value=1).result == 1  # not 2: a persistent instance would diverge from scoring
+    program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(counter_src)
+    assert program(value=1).result == 1
+    assert program(value=1).result == 1  # not 2: a persistent instance would diverge from scoring
 
 
 @deno_required
@@ -442,25 +436,19 @@ def test_bridged_program_survives_save_load(tmp_path) -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "double of 21 is 42", "result": "the result is 42"}]))
     program = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     path = tmp_path / "prog.json"
-    try:
-        program._bind_code(COT_GLUE_MODULE)
-        program.save(path)
-    finally:
-        program.close()
+    program._bind_code(COT_GLUE_MODULE)
+    program.save(path)
 
     # The interpreter is a runtime dependency (like the LM): the saved code persists, the sandbox does not.
     assert "interpreter" not in path.read_text()
 
     # Reconstruct with a fresh interpreter factory and load the saved code.
     reloaded = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
-    try:
-        reloaded.load(path)
-        assert reloaded.module_src and "self.solve" in reloaded.module_src
-        out = reloaded(value=21)  # still runs in the sandbox, LM bridged to the host
-        assert out.result == 42
-        assert isinstance(reloaded.solve, dspy.ChainOfThought)  # attached at first run
-    finally:
-        reloaded.close()
+    reloaded.load(path)
+    assert reloaded.module_src and "self.solve" in reloaded.module_src
+    out = reloaded(value=21)  # still runs in the sandbox, LM bridged to the host
+    assert out.result == 42
+    assert isinstance(reloaded.solve, dspy.ChainOfThought)  # attached at first run
 
 
 # A module whose glue calls a user-provided tool directly (no LM): proves Flex tools are callable
@@ -480,12 +468,9 @@ TOOL_GLUE_MODULE = textwrap.dedent(
 @deno_required
 def test_user_tool_is_callable_from_sandbox_glue() -> None:
     flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
-    try:
-        flex._bind_code(TOOL_GLUE_MODULE)
-        # shout() runs on the host (bridged from the sandbox); no LM involved.
-        assert flex(text="hello").out == "HELLO"
-    finally:
-        flex.close()
+    flex._bind_code(TOOL_GLUE_MODULE)
+    # shout() runs on the host (bridged from the sandbox); no LM involved.
+    assert flex(text="hello").out == "HELLO"
 
 
 RUNAWAY_MODULE = textwrap.dedent(
@@ -509,13 +494,10 @@ RUNAWAY_MODULE = textwrap.dedent(
 def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
     dspy.configure(lm=DummyLM([{"reasoning": "r", "result": "1"} for _ in range(50)]))
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter(), max_predictor_calls=3)
-    try:
-        flex._bind_code(RUNAWAY_MODULE)
-        with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
-            flex(value=1)
-        assert "budget" in str(excinfo.value).lower()
-    finally:
-        flex.close()
+    flex._bind_code(RUNAWAY_MODULE)
+    with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
+        flex(value=1)
+    assert "budget" in str(excinfo.value).lower()
 
 
 # A module that constructs and calls a dspy.CodeAct with a Flex-level tool. CodeAct runs its own
@@ -551,16 +533,13 @@ def test_bridged_codeact_runs_in_flex_sandbox() -> None:
         return dspy.PythonInterpreter()
 
     flex = Flex(ShoutSig, tools=[shout], interpreter_factory=backend_factory)
-    try:
-        flex._bind_code(CODEACT_MODULE)
-        out = flex(text="hello")
-        assert out.out == "HELLO"
-        # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter:
-        # it builds its per-forward interpreter from the very factory Flex was given.
-        act = flex.act  # bridged predictor, attached dynamically
-        assert act._interpreter_factory is backend_factory
-    finally:
-        flex.close()
+    flex._bind_code(CODEACT_MODULE)
+    out = flex(text="hello")
+    assert out.out == "HELLO"
+    # The sub-CodeAct inherited the Flex-configured backend rather than a default PythonInterpreter:
+    # it builds its per-forward interpreter from the very factory Flex was given.
+    act = flex.act  # bridged predictor, attached dynamically
+    assert act._interpreter_factory is backend_factory
 
 
 # A module that constructs and calls a dspy.ReAct with a Flex-level tool. ReAct runs no code of its
@@ -592,14 +571,11 @@ def test_bridged_react_runs_in_flex_sandbox() -> None:
         )
     )
     flex = Flex(ShoutSig, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
-    try:
-        flex._bind_code(REACT_MODULE)
-        out = flex(text="hello")
-        # The agent's glue ran in the sandbox; the `shout` tool call and every LM call bridged to the host.
-        assert out.out == "HELLO"
-        assert isinstance(flex.agent, dspy.ReAct)
-    finally:
-        flex.close()
+    flex._bind_code(REACT_MODULE)
+    out = flex(text="hello")
+    # The agent's glue ran in the sandbox; the `shout` tool call and every LM call bridged to the host.
+    assert out.out == "HELLO"
+    assert isinstance(flex.agent, dspy.ReAct)
 
 
 @deno_required
@@ -613,14 +589,11 @@ def test_adversarial_host_file_access_is_contained(tmp_path) -> None:
         result: str = dspy.OutputField()
 
     flex = Flex(Leak, interpreter_factory=lambda: dspy.PythonInterpreter())
-    try:
-        flex._bind_code(_evil_read_module(str(secret)))
-        out = flex(value=1)
-        # The sandbox could not reach the host file; the secret never crossed the boundary.
-        assert "TOP-SECRET" not in str(out.result)
-        assert str(out.result).startswith("BLOCKED")
-    finally:
-        flex.close()
+    flex._bind_code(_evil_read_module(str(secret)))
+    out = flex(value=1)
+    # The sandbox could not reach the host file; the secret never crossed the boundary.
+    assert "TOP-SECRET" not in str(out.result)
+    assert str(out.result).startswith("BLOCKED")
 
 
 @deno_required
@@ -702,9 +675,9 @@ def test_nested_rlm_tool_provenance() -> None:
         """
     ).strip()
 
-    with Flex(ProbeSig, tools=[probe, spawn_inner], interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
-        flex._bind_code(MODULE)
-        flex(task="go")
+    flex = Flex(ProbeSig, tools=[probe, spawn_inner], interpreter_factory=lambda: dspy.PythonInterpreter())
+    flex._bind_code(MODULE)
+    flex(task="go")
 
     # Every layer ran inside a Pyodide sandbox, not the host process:
     for layer in ("glue_1", "glue_2", "outer_rlm", "inner_rlm"):

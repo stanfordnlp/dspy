@@ -78,25 +78,25 @@ def test_baseline_is_predict_without_tools() -> None:
 
 @deno_required
 def test_tool_is_in_scope_for_bound_code() -> None:
-    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(TOOL_MODULE)
-        # LM-free: forward only calls the tool (bridged from the sandbox to the host).
-        assert program(q="hello").a == "HELLO"
+    program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(TOOL_MODULE)
+    # LM-free: forward only calls the tool (bridged from the sandbox to the host).
+    assert program(q="hello").a == "HELLO"
 
 
 @deno_required
 def test_save_load_roundtrips_tool_using_code(tmp_path) -> None:
     path = tmp_path / "program.json"
-    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(TOOL_MODULE)
-        program.save(path)
+    program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(TOOL_MODULE)
+    program.save(path)
 
     # Reconstruct with the SAME tools (the architecture is re-provided in code, like the
     # signature), then load the saved code — the tool reference resolves and runs.
-    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
-        reloaded.load(path)
-        assert "shout(q)" in reloaded.module_src
-        assert reloaded(q="hi").a == "HI"
+    reloaded = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
+    reloaded.load(path)
+    assert "shout(q)" in reloaded.module_src
+    assert reloaded(q="hi").a == "HI"
 
 
 @deno_required
@@ -105,13 +105,13 @@ def test_load_without_tools_cannot_resolve_them(tmp_path) -> None:
     # tool can't resolve the name in the sandbox. Loading succeeds (binding is a host-side
     # syntax check) — the failure surfaces when the code first runs (tools must be re-provided).
     path = tmp_path / "program.json"
-    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program.save(path)
+    program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program.save(path)
 
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:  # tools NOT re-provided
-        reloaded.load(path)
-        with pytest.raises(CodeInterpreterError):
-            reloaded(q="hi")
+    reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())  # tools NOT re-provided
+    reloaded.load(path)
+    with pytest.raises(CodeInterpreterError):
+        reloaded(q="hi")
 
 
 # The primitives catalog offers the proposer `dspy.Tool(func)`, so the sandbox shim has to define
@@ -130,11 +130,11 @@ WRAPPED_TOOL_MODULE = textwrap.dedent("""
 
 @deno_required
 def test_dspy_tool_wrapper_is_available_in_the_sandbox() -> None:
-    with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(WRAPPED_TOOL_MODULE)
-        assert program(q="hi").a == "HI"
-        # The wrapper resolves to the same host tool a bare reference would, so the predictor binds.
-        assert [t.name for t in program.react.tools.values()] == ["shout", "finish"]
+    program = Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(WRAPPED_TOOL_MODULE)
+    assert program(q="hi").a == "HI"
+    # The wrapper resolves to the same host tool a bare reference would, so the predictor binds.
+    assert [t.name for t in program.react.tools.values()] == ["shout", "finish"]
 
 
 def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
@@ -197,15 +197,15 @@ def test_self_authored_tool_persists_with_the_code(tmp_path) -> None:
     # instructions): reconstructing with ONLY the signature — no tools re-provided — rebuilds the
     # helper from the saved source and runs it.
     path = tmp_path / "program.json"
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:  # no user-provided tools
-        flex._bind_code(SELF_AUTHORED_TOOL_MODULE)
-        assert "def upcase" in flex.module_src
-        flex.save(path)
+    flex = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())  # no user-provided tools
+    flex._bind_code(SELF_AUTHORED_TOOL_MODULE)
+    assert "def upcase" in flex.module_src
+    flex.save(path)
 
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:  # still no tools
-        reloaded.load(path)
-        assert reloaded.module_src == SELF_AUTHORED_TOOL_MODULE
-        assert reloaded(q="hi").a == "HI"
+    reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())  # still no tools
+    reloaded.load(path)
+    assert reloaded.module_src == SELF_AUTHORED_TOOL_MODULE
+    assert reloaded(q="hi").a == "HI"
 
 
 # Instructions baked into the generated code, on an inner predictor.
@@ -226,16 +226,16 @@ def test_inner_predictor_instructions_persist(tmp_path) -> None:
     # the predictor's own serialized state), just like a plain optimized Predict.
     path = tmp_path / "program.json"
     dspy.configure(lm=DummyLM([{"a": "HI"}] * 4))
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
-        flex._bind_code(INSTR_MODULE)
-        flex(q="hi")  # predictors attach when the code first runs
-        assert flex.p.signature.instructions == "Always answer in uppercase."
-        flex.save(path)
+    flex = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    flex._bind_code(INSTR_MODULE)
+    flex(q="hi")  # predictors attach when the code first runs
+    assert flex.p.signature.instructions == "Always answer in uppercase."
+    flex.save(path)
 
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
-        reloaded.load(path)
-        reloaded(q="hi")
-        assert reloaded.p.signature.instructions == "Always answer in uppercase."
+    reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    reloaded.load(path)
+    reloaded(q="hi")
+    assert reloaded.p.signature.instructions == "Always answer in uppercase."
 
 
 def double(n: int) -> str:
@@ -260,9 +260,9 @@ def test_direct_tool_calls_go_through_the_tool_wrapper() -> None:
             """
         ).strip()
 
-    with Flex(Echo, tools=[dspy.Tool(double)], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(src("3"))
-        assert program(q="x").a == "6"
-        program._bind_code(src('"3"'))
-        with pytest.raises(CodeInterpreterError, match="not of type 'integer'"):
-            program(q="x")
+    program = Flex(Echo, tools=[dspy.Tool(double)], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(src("3"))
+    assert program(q="x").a == "6"
+    program._bind_code(src('"3"'))
+    with pytest.raises(CodeInterpreterError, match="not of type 'integer'"):
+        program(q="x")

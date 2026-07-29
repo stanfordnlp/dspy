@@ -149,24 +149,14 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
-class _Session:
-    """One sandbox interpreter pinned to one thread, plus its initialization bookkeeping."""
-
-    __slots__ = ("calls", "constructed", "generation", "interp")
-
-    def __init__(self, interp: Any) -> None:
-        self.interp = interp
-        self.generation = -1
-        self.constructed = False
-        self.calls = 0  # bridged predictor calls in the current forward (budget enforcement)
-
-
 class BridgeRuntime:
-    """Owns the sandbox session(s) and host-side bridge callbacks for one ``Flex``.
+    """Owns the host-side bridge callbacks and per-forward interpreter runs for one ``Flex``.
 
-    Predictors are constructed on the host and attached to the ``Flex`` (so they carry canonical
-    names in its state and serialize with it). Sessions are thread-local, so parallel rollouts each get their own interpreter;
-    construction is idempotent across sessions, so the host predictors are built once and shared.
+    Every ``forward`` creates a fresh interpreter from the factory, executes the shim and the
+    bound source, runs the instance, and shuts the interpreter down — nothing outlives the call,
+    so parallel forwards are trivially isolated. Predictors are constructed on the host and
+    attached to the ``Flex`` (so they carry canonical names and stable identity); the registry
+    keeps construction idempotent across forwards, so repeated ``__init__`` runs reuse them.
     ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
 
     User ``tools`` are registered with the interpreter (callable by name from sandbox) and
@@ -180,72 +170,59 @@ class BridgeRuntime:
         self._flex = flex
         self._factory = factory
         self._max_predictor_calls = max_predictor_calls
-        self._local = threading.local()
-        self._all_interps: list[Any] = []
         self._lock = threading.Lock()
         self._registry: dict[str, str] = {}  # attr_name -> construction key
-        self._generation = 0
         self._module_src: str | None = None
         self._class_name: str | None = None
-        self._closed = False
-
-    # -- registration -------------------------------------------------------
-
-    def bridge_tools(self) -> dict[str, Callable[..., Any]]:
-        return {CONSTRUCT_TOOL: self._construct, CALL_TOOL: self._call}
 
     def bind(self, module_src: str) -> None:
-        """Record new source and invalidate existing sessions (they re-init lazily)."""
+        """Record new source; it runs at the next ``forward``."""
         self._module_src = module_src
         self._class_name = parse_module_class_name(module_src)
-        self._generation += 1
         with self._lock:
             self._registry.clear()
 
-    # -- sessions -----------------------------------------------------------
+    def _invocation_call(self, originals: dict[str, Any]) -> Callable[..., Any]:
+        """Enforces the per-forward predictor-call budget and hands bridged calls the original custom-type
+        objects back."""
+        calls = 0
 
-    def _get_session(self) -> _Session:
-        if self._closed:
-            raise CodeInterpreterError("dspy.Flex interpreter has been closed")
-        sess: _Session | None = getattr(self._local, "sess", None)
-        if sess is None:
-            interp = _create_interpreter(self._factory)
-            interp.tools.update(self.bridge_tools())
-            interp.tools.update(self._tool_callables())  # user tools callable by name in the sandbox
-            with self._lock:
-                self._all_interps.append(interp)
-            sess = _Session(interp)
-            self._local.sess = sess
-        if sess.generation != self._generation:
-            sess.interp.execute(SHIM_SETUP)
-            sess.interp.execute(self._module_src)  # defines the class in the sandbox
-            sess.generation = self._generation
-            sess.constructed = False
-        return sess
+        def call_predictor(handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+            nonlocal calls
+            calls += 1
+            if self._max_predictor_calls is not None and calls > self._max_predictor_calls:
+                raise CodeInterpreterError(
+                    f"Sandboxed dspy.Flex forward exceeded its predictor-call budget "
+                    f"({self._max_predictor_calls}). Raise max_predictor_calls if this is expected."
+                )
+            restored = {k: _restore_custom_types(v, originals) for k, v in (inputs or {}).items()}
+            return self._call(handle, restored)
 
-    def _ensure_constructed(self, sess: _Session) -> None:
-        if not sess.constructed:
-            # Instantiating runs __init__ in the sandbox, which bridges predictor construction back to
-            # the host (attaching them to the Flex instance). Idempotent on the host side.
-            sess.interp.execute(f"{_INSTANCE_VAR}_probe = {self._class_name}()")
-            sess.constructed = True
+        return call_predictor
 
     def forward(self, inputs: dict[str, Any]) -> Any:
-        sess = self._get_session()
-        self._ensure_constructed(sess)
-        sess.calls = 0  # reset the per-forward predictor-call budget
-        # Keep the originals of custom types so bridged predictor calls receive the real objects back.
         originals: dict[str, Any] = {}
         for v in inputs.values():
             _collect_custom_type_originals(v, originals)
-        self._local.custom_type_originals = originals
-        code = (
-            f"{_INSTANCE_VAR} = {self._class_name}()\n"
-            f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**{_INPUTS_VAR})\n"
-            f"import json as {_JSON_VAR}\n"
-            f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
-        )
-        result = sess.interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+
+        interp = _create_interpreter(self._factory)
+        try:
+            interp.tools.update({CONSTRUCT_TOOL: self._construct, CALL_TOOL: self._invocation_call(originals)})
+            interp.tools.update(self._tool_callables())  # user tools callable by name in the sandbox
+            interp.execute(SHIM_SETUP)
+            interp.execute(self._module_src)  # defines the class in the sandbox
+            code = (
+                f"{_INSTANCE_VAR} = {self._class_name}()\n"
+                f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**{_INPUTS_VAR})\n"
+                f"import json as {_JSON_VAR}\n"
+                f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
+            )
+            result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+        finally:
+            try:
+                interp.shutdown()
+            except Exception:
+                logger.warning("dspy.Flex: interpreter.shutdown() raised after forward", exc_info=True)
         if not isinstance(result, str) or not result:
             raise CodeInterpreterError(
                 "Sandboxed forward returned no serializable result; the generated forward must return "
@@ -273,16 +250,6 @@ class BridgeRuntime:
                     f"not a valid {field.annotation}: {e}"
                 ) from e
         return dspy.Prediction(**out)
-
-    def shutdown(self) -> None:
-        self._closed = True
-        with self._lock:
-            interps, self._all_interps = self._all_interps, []
-        for interp in interps:
-            try:
-                interp.shutdown()
-            except Exception:
-                logger.warning("dspy.Flex: interpreter.shutdown() raised during close", exc_info=True)
 
     # -- host-side bridge callbacks --------------
 
@@ -348,20 +315,8 @@ class BridgeRuntime:
         return attr_name
 
     def _call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        # Cap calls: generated glue could loop over a predictor and run up the host LM bill.
-        sess: _Session | None = getattr(self._local, "sess", None)
-        if sess is not None and self._max_predictor_calls is not None:
-            sess.calls += 1
-            if sess.calls > self._max_predictor_calls:
-                raise CodeInterpreterError(
-                    f"Sandboxed dspy.Flex forward exceeded its predictor-call budget "
-                    f"({self._max_predictor_calls}). Raise max_predictor_calls if this is expected."
-                )
         predictor = getattr(self._flex, handle, None)
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
-        originals = getattr(self._local, "custom_type_originals", None)
-        if originals:
-            inputs = {k: _restore_custom_types(v, originals) for k, v in (inputs or {}).items()}
         out = predictor(**(inputs or {}))
         return prediction_to_fields(out)

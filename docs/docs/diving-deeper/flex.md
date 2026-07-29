@@ -38,7 +38,7 @@ A code candidate can bind cleanly and still raise mid-`forward` on some inputs �
 
 ### 8. Generated code always runs in an interpreter, never in-process
 
-`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host to make real LM calls. Sandbox sessions are stateful and not thread-safe, so the factory is called per rollout and each parallel evaluation gets its own; pass your own factory to customize the sandbox (grant filesystem/network access, or use another backend). `max_predictor_calls` caps bridged LM calls per `forward` as a runaway guard.
+`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host to make real LM calls. The factory is called per `forward` — each call gets a fresh interpreter, shut down on return — so parallel evaluations are isolated by construction; pass your own factory to customize the sandbox (grant filesystem/network access, or use another backend). `max_predictor_calls` caps bridged LM calls per `forward` as a runaway guard.
 
 ### 9. The declared output types are enforced at the sandbox boundary
 
@@ -64,9 +64,6 @@ Runs the currently bound source inside the interpreter, bridging predictor calls
 
 **`module_src`**
 A read-only property holding the current implementation as source — one `dspy.Module` subclass. This is the value GEPA reads as the seed and overwrites with each accepted candidate. Print it to see what the optimizer discovered.
-
-**`close()` / context-manager use**
-Shuts down any interpreter sessions the `Flex` created. Safe to call repeatedly. Since `Flex` always runs sandboxed, use `with dspy.Flex(...) as f:` or call `close()` explicitly to release the Deno subprocess.
 
 ### Optimizing with GEPA
 

@@ -1,10 +1,10 @@
 """dspy.Flex binds a module's source (``module_src``) and makes it usable like any dspy.Module.
 
 Binding a source — the deterministic baseline at construction, or a GEPA-optimized decomposition —
-records it host-side (a syntax check, no interpreter); the first forward runs it in the sandbox,
-which constructs the predictors and attaches them flat on the module. Everything round-trips
-through Module.save / load so the generated code can be persisted and rerun. Tests that run
-predictors need Deno; pure ``module_src`` checks use a MockInterpreter instead.
+records it host-side (a syntax check, no interpreter); each forward runs it in a fresh sandbox,
+the first of which constructs the predictors and attaches them flat on the module. Everything
+round-trips through Module.save / load so the generated code can be persisted and rerun. Tests
+that run predictors need Deno; pure ``module_src`` checks use a MockInterpreter instead.
 (The baseline's RLM-vs-Predict shape is covered in test_tools.py; GEPA's code rewriting in
 test_flex_gepa.py.)
 """
@@ -47,16 +47,16 @@ class Echo(dspy.Signature):
 @deno_required
 def test_predictors_are_attached_but_not_reported_as_tunable() -> None:
     dspy.configure(lm=DummyLM([{"a": "hi"}]))
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        assert not hasattr(program, "predict")  # nothing attaches until the code first runs
-        program(q="hello")
-        # The first forward attaches the baseline's predictor directly onto the module (its state
-        # is named via named_parameters)...
-        assert hasattr(program, "predict")
-        assert "predict" in [n for n, _ in program.named_parameters()]
-        # ...but named_predictors() reports no tunable units: the Flex's update unit is its
-        # module_src, and the attached predictors are rebuilt on every rebind.
-        assert program.named_predictors() == []
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    assert not hasattr(program, "predict")  # nothing attaches until the code first runs
+    program(q="hello")
+    # The first forward attaches the baseline's predictor directly onto the module (its state
+    # is named via named_parameters)...
+    assert hasattr(program, "predict")
+    assert "predict" in [n for n, _ in program.named_parameters()]
+    # ...but named_predictors() reports no tunable units: the Flex's update unit is its
+    # module_src, and the attached predictors are rebuilt on every rebind.
+    assert program.named_predictors() == []
 
 
 def test_construction_writes_nothing_to_disk(tmp_path, monkeypatch) -> None:
@@ -76,18 +76,18 @@ def test_construction_writes_nothing_to_disk(tmp_path, monkeypatch) -> None:
 def test_save_load_roundtrips_generated_code(tmp_path) -> None:
     """Module.save/load carries the generated code (module_src), like instruction state."""
     path = tmp_path / "program.json"
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
-        program.save(path)
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
+    program.save(path)
 
     # A fresh Flex starts on the Predict baseline...
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
-        assert "self.echo" not in reloaded.module_src
-        # ...and load() rebinds the saved code (no interpreter or LM needed: the code runs, and
-        # attaches its predictors, at the first forward).
-        reloaded.load(path)
-        assert "self.echo" in reloaded.module_src
-        assert not hasattr(reloaded, "echo")
+    reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    assert "self.echo" not in reloaded.module_src
+    # ...and load() rebinds the saved code (no interpreter or LM needed: the code runs, and
+    # attaches its predictors, at the first forward).
+    reloaded.load(path)
+    assert "self.echo" in reloaded.module_src
+    assert not hasattr(reloaded, "echo")
 
 
 @deno_required
@@ -110,29 +110,23 @@ def test_nested_flex_state_roundtrips_inside_a_program(tmp_path) -> None:
             return self.flex(**kwargs)
 
     program = Program()
-    try:
-        program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
-        program.sibling.signature = program.sibling.signature.with_instructions("tuned sibling")
+    program.flex._bind_code(ECHO_MODULE)  # stand in for a GEPA-optimized decomposition
+    program.sibling.signature = program.sibling.signature.with_instructions("tuned sibling")
 
-        state = program.dump_state()
-        assert state["flex"]["module_src"] == ECHO_MODULE  # the code, not just its predictors
-        assert "sibling" in state  # a plain predictor stays a flat top-level entry
-        # The Flex's internals belong to its own state; the parent must not dump them separately.
-        assert not any(key.startswith("flex.") for key in state)
+    state = program.dump_state()
+    assert state["flex"]["module_src"] == ECHO_MODULE  # the code, not just its predictors
+    assert "sibling" in state  # a plain predictor stays a flat top-level entry
+    # The Flex's internals belong to its own state; the parent must not dump them separately.
+    assert not any(key.startswith("flex.") for key in state)
 
-        program.save(path)
-    finally:
-        program.flex.close()
+    program.save(path)
 
     reloaded = Program()
-    try:
-        assert "self.echo" not in reloaded.flex.module_src  # a fresh program is on the baseline
-        reloaded.load(path)
+    assert "self.echo" not in reloaded.flex.module_src  # a fresh program is on the baseline
+    reloaded.load(path)
 
-        assert reloaded.flex.module_src == ECHO_MODULE
-        assert reloaded.sibling.signature.instructions == "tuned sibling"
-    finally:
-        reloaded.flex.close()
+    assert reloaded.flex.module_src == ECHO_MODULE
+    assert reloaded.sibling.signature.instructions == "tuned sibling"
 
 
 def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
@@ -193,10 +187,10 @@ def test_context_lm_reaches_bridged_calls() -> None:
     # A Flex holds no LM of its own (its state is only module_src); like any module, its
     # predictor calls resolve the ambient LM — including a caller's dspy.context, since the
     # bridged calls run host-side in the calling thread.
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(ECHO_MODULE)
-        with dspy.context(lm=DummyLM([{"a": "from-context-lm"}])):
-            assert program(q="hello").a == "from-context-lm"
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(ECHO_MODULE)
+    with dspy.context(lm=DummyLM([{"a": "from-context-lm"}])):
+        assert program(q="hello").a == "from-context-lm"
 
 
 def test_reset_copy_keeps_optimized_code_and_clears_internal_state() -> None:
@@ -266,32 +260,29 @@ def test_save_program_roundtrips_via_cloudpickle(tmp_path) -> None:
 @deno_required
 def test_save_program_end_to_end_forward(tmp_path) -> None:
     """save_program=True with a live Deno session: reload elsewhere and run it."""
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(ECHO_MODULE)
-        program.save(tmp_path, save_program=True)
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(ECHO_MODULE)
+    program.save(tmp_path, save_program=True)
 
     dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
     loaded = dspy.load(str(tmp_path), allow_pickle=True)
-    try:
-        assert loaded.module_src == ECHO_MODULE
-        result = loaded(q="hello")
-        assert result.a == "echoed-back"
-    finally:
-        loaded.close()
+    assert loaded.module_src == ECHO_MODULE
+    result = loaded(q="hello")
+    assert result.a == "echoed-back"
 
 
 @deno_required
 def test_end_to_end_forward_after_save_load(tmp_path) -> None:
     """End-to-end: bind a plain dspy.Predict class, save it, reload into a fresh Flex, run it."""
     path = tmp_path / "program.json"
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        program._bind_code(ECHO_MODULE)
-        program.save(path)
+    program = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(ECHO_MODULE)
+    program.save(path)
 
     dspy.configure(lm=DummyLM([{"a": "echoed-back"}]))
-    with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
-        reloaded.load(path)
-        assert "self.echo" in reloaded.module_src
-        result = reloaded(q="hello")
-        assert isinstance(result, dspy.Prediction)
-        assert result.a == "echoed-back"
+    reloaded = Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter())
+    reloaded.load(path)
+    assert "self.echo" in reloaded.module_src
+    result = reloaded(q="hello")
+    assert isinstance(result, dspy.Prediction)
+    assert result.a == "echoed-back"

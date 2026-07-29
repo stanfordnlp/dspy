@@ -117,11 +117,11 @@ def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
         """
     ).strip()
 
-    with Flex(_offstack_types.ExtractContact, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)
-        dspy.configure(lm=DummyLM([{"contact": json.dumps({"name": "Ada", "age": 36})}] * 2))
-        out = program(text="Ada is 36")  # raised `Unknown name: Contact` before the handoff
-        assert program.p.signature.output_fields["contact"].annotation is _offstack_types.Contact
+    program = Flex(_offstack_types.ExtractContact, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    dspy.configure(lm=DummyLM([{"contact": json.dumps({"name": "Ada", "age": 36})}] * 2))
+    out = program(text="Ada is 36")  # raised `Unknown name: Contact` before the handoff
+    assert program.p.signature.output_fields["contact"].annotation is _offstack_types.Contact
 
     assert out.contact == _offstack_types.Contact(name="Ada", age=36)
 
@@ -141,11 +141,11 @@ def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
                 return dspy.Prediction(person=self.p(text=inputs["text"]).person)
         """
     ).strip()
-    with Flex(Extract, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)
-        dspy.configure(lm=DummyLM([{"person": json.dumps({"name": "Ada", "age": 36})}] * 2))
-        program(text="Ada is 36")  # predictors attach when the code first runs
-        assert program.p.signature.output_fields["person"].annotation is Person
+    program = Flex(Extract, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    dspy.configure(lm=DummyLM([{"person": json.dumps({"name": "Ada", "age": 36})}] * 2))
+    program(text="Ada is 36")  # predictors attach when the code first runs
+    assert program.p.signature.output_fields["person"].annotation is Person
 
 
 # =============================================================================
@@ -159,8 +159,8 @@ def test_pydantic_output_comes_back_as_the_model_like_predict_does() -> None:
     dspy.configure(lm=DummyLM([{"person": payload}] * 2))
 
     baseline = dspy.Predict(Extract)(text="Ada is 36")
-    with Flex(Extract, interpreter_factory=_sandbox) as program:
-        flexed = program(text="Ada is 36")
+    program = Flex(Extract, interpreter_factory=_sandbox)
+    flexed = program(text="Ada is 36")
 
     # The point of the parse: a Flex is substitutable for a Predict over the same signature.
     assert isinstance(baseline.person, Person)
@@ -186,9 +186,9 @@ def test_generic_enum_and_scalar_outputs_are_all_parsed() -> None:
                 )
         """
     ).strip()
-    with Flex(Roster, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)
-        out = program(text="two people")
+    program = Flex(Roster, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    out = program(text="two people")
 
     assert out.people == [Person(name="Ada", age=36), Person(name="Bob", age=40)]
     assert out.color is Color.BLUE
@@ -207,10 +207,10 @@ def test_payload_that_does_not_match_the_declared_type_raises() -> None:
                 return dspy.Prediction(person="Ada, aged thirty-six")
         """
     ).strip()
-    with Flex(Extract, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)
-        with pytest.raises(CodeInterpreterError, match="person"):
-            program(text="Ada is 36")
+    program = Flex(Extract, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    with pytest.raises(CodeInterpreterError, match="person"):
+        program(text="Ada is 36")
 
 
 @deno_required
@@ -225,10 +225,10 @@ def test_missing_declared_output_field_raises() -> None:
                 return dspy.Prediction(summary="Ada, 36")  # not the declared output field
         """
     ).strip()
-    with Flex(Extract, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)
-        with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['person'\]"):
-            program(text="Ada is 36")
+    program = Flex(Extract, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['person'\]"):
+        program(text="Ada is 36")
 
 
 # =============================================================================
@@ -267,7 +267,6 @@ def test_gepa_scores_a_type_mismatch_as_a_failure_in_place() -> None:
     ]
 
     result = adapter.evaluate(batch, {"self": source}, capture_traces=False)
-    student.close()
 
     assert result.scores == [1.0, 0.0, 1.0]  # the type error is scored, not raised
     assert result.outputs[1] is None
@@ -287,9 +286,9 @@ def test_custom_type_inputs_are_restored_across_the_bridge(caplog) -> None:
         a: str = dspy.OutputField()
 
     dspy.configure(lm=DummyLM([{"a": "a cat"}]))
-    with Flex(Caption, interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
-        with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
-            out = flex(image=dspy.Image(url="https://example.com/x.png"))
+    flex = Flex(Caption, interpreter_factory=lambda: dspy.PythonInterpreter())
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        out = flex(image=dspy.Image(url="https://example.com/x.png"))
 
     assert out.a == "a cat"
     mismatch_warnings = [r.getMessage() for r in caplog.records if "Type mismatch" in r.getMessage()]

@@ -163,24 +163,6 @@ class Flex(Module, Parameter):
                 return self._bridge.forward(kwargs)
         return self._bridge.forward(kwargs)
 
-    def close(self) -> None:
-        """Shut down any interpreter sessions this Flex created."""
-        bridge = getattr(self, "_bridge", None)
-        if bridge is not None:
-            bridge.shutdown()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.close()
-
-    def __del__(self) -> None:
-        try:
-            self.close()
-        except Exception:
-            pass
-
     def __getstate__(self):
         state = super().__getstate__()
         bridge = state.pop("_bridge", None)
@@ -199,9 +181,8 @@ class Flex(Module, Parameter):
             self._bridge._registry = registry
 
     def __deepcopy__(self, memo):
-        # Each copy needs its own interpreter sessions. Sharing `_bridge` by reference would let a
-        # throwaway copy's __del__ tear down the original's live session, so copy everything else and
-        # give the copy a fresh session-less bridge that reuses the already-copied predictors.
+        # The bridge holds a threading.Lock and a back-reference to its Flex,
+        # so copy everything else and give the copy a fresh bridge that reuses the copied predictors.
         new = self.__class__.__new__(self.__class__)
         memo[id(self)] = new
         for key, value in self.__dict__.items():
