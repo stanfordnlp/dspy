@@ -368,36 +368,15 @@ def _first_tool_call(outputs):
 
 
 @pytest.mark.llm_call
-def test_probe_history_all_roles_string_content(responses_lm):
-    outputs = responses_lm(
-        messages=[
-            {"role": "system", "content": "Answer with one word."},
-            {"role": "user", "content": "Say apple."},
-            {"role": "assistant", "content": "apple"},
-            {"role": "user", "content": "Now say banana."},
-        ]
-    )
-    assert outputs
-
-
-@pytest.mark.llm_call
-def test_probe_history_list_form_text_content(responses_lm):
-    outputs = responses_lm(
-        messages=[
-            {"role": "user", "content": [{"type": "text", "text": "Say apple."}]},
-            {"role": "assistant", "content": [{"type": "text", "text": "apple"}]},
-            {"role": "user", "content": [{"type": "text", "text": "Now say banana."}]},
-        ]
-    )
-    assert outputs
-
-
-@pytest.mark.llm_call
-def test_probe_developer_role(responses_lm):
+def test_probe_history_roles_and_text_content_forms(responses_lm):
     outputs = responses_lm(
         messages=[
             {"role": "developer", "content": "Answer with one word."},
-            {"role": "user", "content": "Say apple."},
+            {"role": "user", "content": [{"type": "text", "text": "Say apple."}]},
+            {"role": "assistant", "content": "apple"},
+            {"role": "user", "content": "Now say banana."},
+            {"role": "assistant", "content": [{"type": "text", "text": "banana"}]},
+            {"role": "user", "content": [{"type": "text", "text": "Now say cherry."}]},
         ]
     )
     assert outputs
@@ -420,15 +399,6 @@ def test_probe_image_content(responses_lm):
 
 
 @pytest.mark.llm_call
-def test_probe_nested_chat_tools_return_a_call(responses_lm):
-    outputs = responses_lm("What is the weather in Paris? Use the tool.", tools=[WEATHER_TOOL_CHAT])
-    name, args, call_id = _first_tool_call(outputs)
-    assert name == "get_weather"
-    assert args.get("city") == "Paris"
-    assert call_id
-
-
-@pytest.mark.llm_call
 def test_probe_flat_tool_with_strict(responses_lm):
     flat_strict = {
         "type": "function",
@@ -442,7 +412,11 @@ def test_probe_flat_tool_with_strict(responses_lm):
         },
         "strict": True,
     }
-    outputs = responses_lm("What is the weather in Oslo? Use the tool.", tools=[flat_strict])
+    outputs = responses_lm(
+        "Talk about the weather in Oslo.",
+        tools=[flat_strict],
+        tool_choice={"type": "function", "name": "get_weather"},
+    )
     name, args, _ = _first_tool_call(outputs)
     assert name == "get_weather"
     assert args == {"city": "Oslo"}
@@ -452,32 +426,8 @@ def test_probe_flat_tool_with_strict(responses_lm):
 def test_probe_hosted_web_search_tool(responses_lm):
     # The pinned openai SDK models only the "web_search_preview" hosted-tool
     # shape; the newer "web_search" shape fails in litellm's response parsing.
-    outputs = responses_lm(
-        "Search the web: what year is it? Answer briefly.", tools=[{"type": "web_search_preview"}]
-    )
+    outputs = responses_lm("Search the web: what year is it? Answer briefly.", tools=[{"type": "web_search_preview"}])
     assert outputs
-
-
-@pytest.mark.llm_call
-def test_probe_forced_tool_choice_chat_shape(responses_lm):
-    outputs = responses_lm(
-        "Talk about the weather in Lima.",
-        tools=[WEATHER_TOOL_CHAT],
-        tool_choice={"type": "function", "function": {"name": "get_weather"}},
-    )
-    name, _, _ = _first_tool_call(outputs)
-    assert name == "get_weather"
-
-
-@pytest.mark.llm_call
-def test_probe_forced_tool_choice_flat_responses_shape(responses_lm):
-    outputs = responses_lm(
-        "Talk about the weather in Lima.",
-        tools=[WEATHER_TOOL_CHAT],
-        tool_choice={"type": "function", "name": "get_weather"},
-    )
-    name, _, _ = _first_tool_call(outputs)
-    assert name == "get_weather"
 
 
 @pytest.mark.llm_call
@@ -492,19 +442,13 @@ def test_probe_tool_choice_none_suppresses_calls(responses_lm):
 
 
 @pytest.mark.llm_call
-def test_probe_response_format_pydantic(responses_lm):
+def test_probe_response_format_with_reasoning(responses_lm):
     class Answer(pydantic.BaseModel):
         word: str
 
-    outputs = responses_lm("Reply with the word apple.", response_format=Answer)
+    outputs = responses_lm("Reply with the word apple.", response_format=Answer, reasoning_effort="low")
     text = outputs[0]["text"] if isinstance(outputs[0], dict) else outputs[0]
     assert Answer.model_validate_json(text).word
-
-
-@pytest.mark.llm_call
-def test_probe_reasoning_effort(responses_lm):
-    outputs = responses_lm("Say apple.", reasoning_effort="low")
-    assert outputs
 
 
 @pytest.mark.llm_call
@@ -512,7 +456,11 @@ def test_probe_tool_round_trip_ids_are_referenceable(responses_lm):
     """Acceptance alone can't catch id bugs: a request that sends back the
     wrong id (the fc_* item id instead of call_id) fails only on this second
     turn."""
-    outputs = responses_lm("What is the weather in Berlin? Use the tool.", tools=[WEATHER_TOOL_CHAT])
+    outputs = responses_lm(
+        "Talk about the weather in Berlin.",
+        tools=[WEATHER_TOOL_CHAT],
+        tool_choice={"type": "function", "function": {"name": "get_weather"}},
+    )
     name, _, call_id = _first_tool_call(outputs)
     tool_calls = outputs[0]["tool_calls"]
 

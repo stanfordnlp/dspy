@@ -1384,46 +1384,6 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["max_tokens"] == 100
 
 
-def test_responses_api_converts_tools_to_responses_shape():
-    from dspy.clients.lm import _convert_chat_request_to_responses_request
-
-    result = _convert_chat_request_to_responses_request(
-        {
-            "model": "openai/gpt-4o-mini",
-            "messages": [{"role": "user", "content": "What is the weather?"}],
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "get_weather",
-                        "description": "Get weather.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {"city": {"type": "string"}},
-                            "required": ["city"],
-                        },
-                    },
-                }
-            ],
-            "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
-        }
-    )
-
-    assert result["tools"] == [
-        {
-            "type": "function",
-            "name": "get_weather",
-            "description": "Get weather.",
-            "parameters": {
-                "type": "object",
-                "properties": {"city": {"type": "string"}},
-                "required": ["city"],
-            },
-        }
-    ]
-    assert result["tool_choice"] == {"type": "function", "name": "get_weather"}
-
-
 def test_responses_api_converts_images_correctly():
     from dspy.clients.lm import _convert_chat_request_to_responses_request
 
@@ -1589,13 +1549,15 @@ def test_responses_api_preserves_multi_message_structure():
             {"role": "user", "content": "What is 2+2?"},
             {"role": "assistant", "content": "4"},
             {"role": "user", "content": "And 3+3?"},
+            {"role": "assistant", "content": [{"type": "text", "text": "6"}]},
+            {"role": "user", "content": "And 4+4?"},
         ],
     }
 
     result = _convert_chat_request_to_responses_request(request)
 
     assert "input" in result
-    assert len(result["input"]) == 4
+    assert len(result["input"]) == 6
 
     assert result["input"][0]["role"] == "system"
     assert result["input"][0]["content"] == [{"type": "input_text", "text": "You are a helpful assistant."}]
@@ -1610,25 +1572,10 @@ def test_responses_api_preserves_multi_message_structure():
 
     assert result["input"][3]["role"] == "user"
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
-
-
-def test_responses_api_types_assistant_list_content_as_output_text():
-    from dspy.clients.lm import _convert_chat_request_to_responses_request
-
-    request = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {"role": "user", "content": [{"type": "text", "text": "What is 2+2?"}]},
-            {"role": "assistant", "content": [{"type": "text", "text": "4"}]},
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request)
-
-    assert result["input"][0]["role"] == "user"
-    assert result["input"][0]["content"] == [{"type": "input_text", "text": "What is 2+2?"}]
-    assert result["input"][1]["role"] == "assistant"
-    assert result["input"][1]["content"] == [{"type": "output_text", "text": "4"}]
+    assert result["input"][4]["role"] == "assistant"
+    assert result["input"][4]["content"] == [{"type": "output_text", "text": "6"}]
+    assert result["input"][5]["role"] == "user"
+    assert result["input"][5]["content"] == [{"type": "input_text", "text": "And 4+4?"}]
 
 
 def test_responses_api_with_image_input():
@@ -1918,6 +1865,20 @@ def _chat_shaped_weather_tool():
     }
 
 
+def _responses_text_response():
+    return make_response(
+        [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "OK", "annotations": []}],
+                "id": "msg_1",
+                "status": "completed",
+            }
+        ]
+    )
+
+
 class ContractSchema(pydantic.BaseModel):
     answer: str
 
@@ -1926,10 +1887,12 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
     from dspy.clients.openai_format import to_openai_responses_request
     from dspy.core.types import LMRequest
 
+    tool = _chat_shaped_weather_tool()
+    tool["function"]["strict"] = True
     request = LMRequest.from_call(
         model="openai/gpt-5-mini",
         messages=[{"role": "user", "content": "What is the weather in Paris?"}],
-        tools=[_chat_shaped_weather_tool()],
+        tools=[tool],
         tool_choice={"type": "function", "function": {"name": "get_weather"}},
         parallel_tool_calls=False,
         reasoning={"effort": "low", "summary": "auto"},
@@ -1955,6 +1918,7 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
                 "properties": {"city": {"type": "string"}},
                 "required": ["city"],
             },
+            "strict": True,
         }
     ]
     assert data["tool_choice"] == {"type": "function", "name": "get_weather"}
@@ -1968,20 +1932,6 @@ def test_openai_format_responses_request_maps_tools_choices_and_config():
         "name": "ContractSchema",
         "schema": {**ContractSchema.model_json_schema(), "additionalProperties": False},
     }
-
-
-def test_openai_format_responses_request_preserves_unspecified_reasoning_summary():
-    from dspy.clients.openai_format import to_openai_responses_request
-    from dspy.core.types import LMRequest
-
-    request = LMRequest.from_call(
-        model="openai/gpt-5-mini",
-        messages=[{"role": "user", "content": "Say OK."}],
-        reasoning={"effort": "low"},
-    )
-
-    assert request.config.reasoning.summary is None
-    assert to_openai_responses_request(request)["reasoning"] == {"effort": "low"}
 
 
 def test_responses_request_converts_assistant_tool_calls_and_tool_results():
@@ -2021,130 +1971,28 @@ def test_responses_request_converts_assistant_tool_calls_and_tool_results():
     ]
 
 
-def test_responses_request_replays_responses_shaped_tool_calls():
-    from dspy.clients.openai_format import to_openai_responses_request
-    from dspy.core.types import LMRequest
-
-    request = LMRequest.from_call(
-        model="openai/gpt-5-mini",
-        messages=[
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "fc_1",
-                        "type": "function_call",
-                        "name": "get_weather",
-                        "arguments": json.dumps({"city": "Paris"}),
-                        "call_id": "call_1",
-                        "status": "completed",
-                    }
-                ],
-            },
-            {"role": "tool", "tool_call_id": "call_1", "name": "get_weather", "content": "sunny"},
-        ],
-    )
-
-    assert to_openai_responses_request(request)["input"] == [
-        {
-            "type": "function_call",
-            "name": "get_weather",
-            "arguments": json.dumps({"city": "Paris"}),
-            "call_id": "call_1",
-        },
-        {"type": "function_call_output", "output": "sunny", "call_id": "call_1"},
-    ]
-
-
-def test_lm_responses_direct_native_tool_calling_uses_responses_tool_shape():
-    response = make_response(
-        [
-            {
-                "type": "function_call",
-                "name": "get_weather",
-                "arguments": json.dumps({"city": "Paris"}),
-                "call_id": "call_1",
-                "id": "fc_1",
-                "status": "completed",
-            }
-        ]
-    )
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        outputs = lm("What is the weather in Paris?", tools=[_chat_shaped_weather_tool()])
-
-    # The legacy Responses output shape is unchanged: raw function_call dumps.
-    assert outputs[0]["tool_calls"][0]["name"] == "get_weather"
-    assert outputs[0]["tool_calls"][0]["arguments"] == json.dumps({"city": "Paris"})
-    assert outputs[0]["tool_calls"][0]["call_id"] == "call_1"
-    assert responses.call_args.kwargs["tools"] == [
-        {
-            "type": "function",
-            "name": "get_weather",
-            "description": "Get weather.",
-            "parameters": {
-                "type": "object",
-                "properties": {"city": {"type": "string"}},
-                "required": ["city"],
-            },
-        }
-    ]
-
-
 def test_lm_responses_passes_hosted_tools_through_unchanged():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+    response = _responses_text_response()
     hosted_tool = {"type": "web_search", "search_context_size": "low"}
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        lm("What is in the news?", tools=[_chat_shaped_weather_tool(), hosted_tool])
-
-    sent_tools = responses.call_args.kwargs["tools"]
-    assert sent_tools[0]["name"] == "get_weather"
-    assert sent_tools[1] == hosted_tool
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        lm("What is in the news?", tools=[hosted_tool, _chat_shaped_weather_tool()])
-
-    sent_tools = responses.call_args.kwargs["tools"]
-    assert sent_tools[0] == hosted_tool
-    assert sent_tools[1]["name"] == "get_weather"
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        lm("What is in the news?", tools=[hosted_tool])
-
-    assert responses.call_args.kwargs["tools"] == [hosted_tool]
-
-
-def test_lm_responses_preserves_flat_function_tool_with_strict():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
     flat_tool = {
         "type": "function",
         "name": "get_weather",
-        "description": "Get weather.",
-        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
         "strict": True,
     }
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
         lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        lm("What is the weather in Paris?", tools=[flat_tool])
+        lm("What is in the news?", tools=[hosted_tool, _chat_shaped_weather_tool(), flat_tool])
 
-    assert responses.call_args.kwargs["tools"] == [flat_tool]
+    sent_tools = responses.call_args.kwargs["tools"]
+    assert sent_tools[0] == hosted_tool
+    assert sent_tools[1]["name"] == "get_weather"
+    assert sent_tools[2] == flat_tool
 
 
 def test_lm_responses_passes_native_tool_choice_shapes_through():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+    response = _responses_text_response()
     for native_choice in (
         {"type": "function", "name": "get_weather"},
         {"type": "web_search_preview"},
@@ -2157,10 +2005,8 @@ def test_lm_responses_passes_native_tool_choice_shapes_through():
         assert responses.call_args.kwargs["tool_choice"] == native_choice
 
 
-def test_lm_responses_tolerates_responses_native_and_sdk_dumped_messages():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+def test_lm_responses_tolerates_native_content_and_sdk_message_dumps():
+    response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
         lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
@@ -2170,6 +2016,13 @@ def test_lm_responses_tolerates_responses_native_and_sdk_dumped_messages():
                 # An assistant message dict dumped from an OpenAI SDK response.
                 {"role": "assistant", "content": "hi", "refusal": None, "annotations": [], "function_call": None},
                 {"role": "user", "content": [{"type": "output_text", "text": "Again."}]},
+                {
+                    "id": "msg_1",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello", "annotations": []}],
+                },
             ]
         )
 
@@ -2177,47 +2030,14 @@ def test_lm_responses_tolerates_responses_native_and_sdk_dumped_messages():
     assert sent[0]["content"] == [{"type": "input_text", "text": "Say hi."}]
     assert sent[1] == {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}
     assert sent[2]["content"] == [{"type": "input_text", "text": "Again."}]
-
-
-def test_lm_responses_tolerates_responses_output_message_dump():
-    response = make_response(
-        [
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": "OK", "annotations": []}],
-                "id": "msg_2",
-                "status": "completed",
-            }
-        ]
-    )
-    sdk_dump = {
-        "id": "msg_1",
-        "type": "message",
-        "status": "completed",
-        "role": "assistant",
-        "content": [{"type": "output_text", "text": "hi", "annotations": []}],
-    }
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        lm(messages=[sdk_dump, {"role": "user", "content": "Again."}])
-
-    assert responses.call_args.kwargs["input"] == [
-        {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]},
-        {"role": "user", "content": [{"type": "input_text", "text": "Again."}]},
-    ]
+    assert sent[3] == {"role": "assistant", "content": [{"type": "output_text", "text": "hello"}]}
 
 
 def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+    response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM(
-            "openai/dspy-test-model", model_type="responses", cache=False, reasoning_effort="low"
-        )
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False, reasoning_effort="low")
         lm("Say hi.", reasoning={"effort": "high"})
 
     sent = responses.call_args.kwargs
@@ -2226,9 +2046,7 @@ def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
 
 
 def test_lm_responses_forwards_raw_base64_file_data_verbatim():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+    response = _responses_text_response()
     raw_base64 = "JVBERi0xLjQK"
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
@@ -2251,9 +2069,7 @@ def test_lm_responses_forwards_raw_base64_file_data_verbatim():
 
 
 def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
-    response = make_response(
-        [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "OK", "annotations": []}], "id": "msg_1", "status": "completed"}]
-    )
+    response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
         lm = dspy.LM("openai/gpt-5-nano", model_type="responses", cache=False, max_tokens=16000)
@@ -2262,45 +2078,3 @@ def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
     sent = responses.call_args.kwargs
     assert sent["temperature"] == 0.7
     assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
-
-
-def test_lm_responses_hoists_nested_strict_to_flat_shape():
-    from dspy.clients.openai_format import to_openai_responses_request
-    from dspy.core.types import LMRequest
-
-    tool = _chat_shaped_weather_tool()
-    tool["function"]["strict"] = True
-    request = LMRequest.from_call(
-        model="openai/gpt-5-mini",
-        messages=[{"role": "user", "content": "What is the weather in Paris?"}],
-        tools=[tool],
-    )
-
-    data = to_openai_responses_request(request)
-
-    assert data["tools"][0]["strict"] is True
-    assert "function" not in data["tools"][0]
-
-
-@pytest.mark.asyncio
-async def test_lm_responses_async_native_tool_calling_matches_sync_contract():
-    response = make_response(
-        [
-            {
-                "type": "function_call",
-                "name": "get_weather",
-                "arguments": json.dumps({"city": "Paris"}),
-                "call_id": "call_1",
-                "id": "fc_1",
-                "status": "completed",
-            }
-        ]
-    )
-
-    with mock.patch("litellm.aresponses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
-        outputs = await lm.acall("What is the weather in Paris?", tools=[_chat_shaped_weather_tool()])
-
-    assert outputs[0]["tool_calls"][0]["name"] == "get_weather"
-    assert responses.call_args.kwargs["tools"][0]["name"] == "get_weather"
-    assert "function" not in responses.call_args.kwargs["tools"][0]

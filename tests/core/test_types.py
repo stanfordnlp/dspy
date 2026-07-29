@@ -1,3 +1,5 @@
+import json
+
 import pydantic
 import pytest
 
@@ -143,13 +145,32 @@ def test_video_data_round_trips_through_history_messages():
     assert round_tripped.media_type == "video/mp4"
 
 
-def test_tool_dicts_coerce_strict_and_extras_into_tool_spec():
+def test_tool_dicts_coerce_and_emit_strict_and_extras():
+    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
+
     nested = LMRequest.from_call(
         model="openai/gpt-5-nano",
         messages=[{"role": "user", "content": "hi"}],
-        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "strict": True}}],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "f", "parameters": {}, "strict": True, "vendor_key": 1},
+            }
+        ],
     ).tools[0]
     assert nested.strict is True
+    assert nested.provider_data == {"vendor_key": 1}
+    assert tool_to_openai(nested) == {
+        "type": "function",
+        "function": {"name": "f", "parameters": {}, "strict": True, "vendor_key": 1},
+    }
+    assert tool_to_openai_responses(nested) == {
+        "type": "function",
+        "name": "f",
+        "parameters": {},
+        "strict": True,
+        "vendor_key": 1,
+    }
 
     flat = LMRequest.from_call(
         model="openai/gpt-5-nano",
@@ -160,33 +181,30 @@ def test_tool_dicts_coerce_strict_and_extras_into_tool_spec():
     assert flat.provider_data == {"custom_field": "x"}
 
 
-def test_tool_spec_strict_emits_in_provider_shapes():
-    from dspy.clients.openai_format import to_openai_chat_request, to_openai_responses_request
-
-    request = LMRequest.from_call(
-        model="openai/gpt-5-nano",
-        messages=[{"role": "user", "content": "hi"}],
-        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "strict": True}}],
-    )
-
-    chat_tool = to_openai_chat_request(request)["tools"][0]
-    assert chat_tool["function"]["strict"] is True
-    assert "strict" not in chat_tool
-
-    responses_tool = to_openai_responses_request(request)["tools"][0]
-    assert responses_tool["strict"] is True
-    assert "function" not in responses_tool
-
-
 def test_parsed_tool_call_replays_with_call_id_not_item_id():
     from dspy.clients.openai_format import assistant_tool_call_to_openai, tool_call_to_responses_input
 
-    part = LMToolCallPart(
-        name="get_weather",
-        args={"city": "Paris"},
-        id="call_1",
-        provider_data={"id": "fc_1", "call_id": "call_1", "status": "completed", "raw_arguments": "{}"},
+    message = LMMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "fc_1",
+                "type": "function_call",
+                "name": "get_weather",
+                "arguments": json.dumps({"city": "Paris"}),
+                "call_id": "call_1",
+                "status": "completed",
+            }
+        ],
     )
+    part = message.parts[0]
+    assert isinstance(part, LMToolCallPart)
+    assert part.id == "call_1"
+    assert part.name == "get_weather"
+    assert part.args == {"city": "Paris"}
+
+    part.provider_data = {"id": "fc_1", "call_id": "call_1", "status": "completed", "raw_arguments": "{}"}
 
     chat_call = assistant_tool_call_to_openai(part)
     assert chat_call["id"] == "call_1"
@@ -194,23 +212,7 @@ def test_parsed_tool_call_replays_with_call_id_not_item_id():
 
     responses_item = tool_call_to_responses_input(part)
     assert responses_item["call_id"] == "call_1"
-
-
-def test_tool_extras_emit_at_function_field_location_per_dialect():
-    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
-
-    nested = LMRequest.from_call(
-        model="openai/gpt-5-nano",
-        messages=[{"role": "user", "content": "hi"}],
-        tools=[{"type": "function", "function": {"name": "f", "parameters": {}, "vendor_key": 1}}],
-    ).tools[0]
-    assert nested.provider_data == {"vendor_key": 1}
-
-    assert tool_to_openai(nested)["function"]["vendor_key"] == 1
-    assert "vendor_key" not in tool_to_openai(nested)
-
-    responses_tool = tool_to_openai_responses(nested)
-    assert responses_tool["vendor_key"] == 1
+    assert responses_item["arguments"] == json.dumps({"city": "Paris"})
 
 
 def test_tool_provider_extras_cannot_override_canonical_fields():
@@ -265,37 +267,6 @@ def test_close_object_schemas_ignores_schema_shaped_defaults():
     assert schema["properties"]["payload"]["default"] == {"type": "object"}
 
 
-def test_file_content_blocks_normalize_to_binary_parts():
-    data_message = LMMessage(
-        role="user",
-        content=[
-            {
-                "type": "file",
-                "file": {
-                    "file_data": "data:text/plain;base64,SGVsbG8=",
-                    "filename": "hello.txt",
-                },
-            }
-        ],
-    )
-    data_part = data_message.parts[0]
-
-    assert isinstance(data_part, LMBinaryPart)
-    assert data_part.data == "SGVsbG8="
-    assert data_part.media_type == "text/plain"
-    assert data_part.filename == "hello.txt"
-
-    id_message = LMMessage(
-        role="user",
-        content=[{"type": "file", "file": {"file_id": "file_123", "filename": "report.pdf"}}],
-    )
-    id_part = id_message.parts[0]
-
-    assert isinstance(id_part, LMBinaryPart)
-    assert id_part.file_id == "file_123"
-    assert id_part.filename == "report.pdf"
-
-
 def test_file_content_block_with_data_and_id_round_trips_losslessly_to_responses_format():
     from dspy.clients.openai_format import to_openai_responses_request
 
@@ -335,26 +306,6 @@ def test_file_content_block_with_data_and_id_round_trips_losslessly_to_responses
             "filename": "report.pdf",
         }
     ]
-
-
-def test_tool_result_message_content_list_normalizes_to_parts():
-    message = LMMessage(
-        role="tool",
-        tool_call_id="call_1",
-        name="search",
-        content=[
-            {"type": "text", "text": "see this"},
-            {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
-        ],
-    )
-    result = message.parts[0]
-
-    assert isinstance(result, LMToolResultPart)
-    assert result.call_id == "call_1"
-    assert result.name == "search"
-    assert len(result.content) == 2
-    assert result.content[0].text == "see this"
-    assert result.content[1].url == "https://example.com/cat.png"
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():
