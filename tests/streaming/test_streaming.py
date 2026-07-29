@@ -2061,3 +2061,89 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+@pytest.mark.anyio
+async def test_stream_listener_uses_scoped_json_adapter_with_global_chat_adapter():
+    """A per-call JSONAdapter must drive stream parsing even when the global adapter is ChatAdapter."""
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, adapter=dspy.JSONAdapter(), **kwargs)
+
+    async def json_stream(*args, **kwargs):
+        for content in ['{"', "answer", '":', '"To', " get", " to", " the", " other", " side", '!"', "}"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[json_stream()]):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+    assert len(all_chunks) > 0
+    assert "".join(chunk.chunk for chunk in all_chunks) == '"To get to the other side!"'
+    assert all_chunks[-1].is_last_chunk is True
+
+
+@pytest.mark.anyio
+async def test_stream_listener_uses_instance_xml_adapter_with_global_chat_adapter():
+    """A per-instance XMLAdapter must drive stream parsing even when the global adapter is ChatAdapter."""
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+            self.predict.adapter = dspy.XMLAdapter()
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def xml_stream(*args, **kwargs):
+        for content in ["<answer>", "To", " get", " to", " the", " other", " side", "!", "</answer>"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[xml_stream()]):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+    assert len(all_chunks) > 0
+    assert "".join(chunk.chunk for chunk in all_chunks) == "To get to the other side!"
+    assert all_chunks[-1].is_last_chunk is True
+
+
+def test_stream_listener_falls_back_to_settings_adapter_for_chunks_without_metadata():
+    """Chunks without adapter metadata (e.g. custom producers) fall back to `settings.adapter`."""
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    listener.predict = dspy.Predict("question->answer")
+    listener.predict_name = "predict"
+
+    with dspy.context(adapter=dspy.XMLAdapter()):
+        responses = []
+        for content in ["<answer>", "To get to", " the other side!", "</answer>"]:
+            chunk = ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+            assert not hasattr(chunk, "adapter_name")
+            response = listener.receive(chunk)
+            if response is not None:
+                responses.append(response)
+
+    assert "".join(response.chunk for response in responses) == "To get to the other side!"
+    assert responses[-1].is_last_chunk is True

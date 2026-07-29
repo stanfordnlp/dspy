@@ -459,6 +459,11 @@ def _get_stream_completion_fn(
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
+    caller_adapter_name = None
+    if caller_predict_id:
+        from dspy.streaming.streaming_listener import resolve_adapter_name
+
+        caller_adapter_name = resolve_adapter_name(dspy.settings.adapter)
 
     if dspy.settings.track_usage:
         request["stream_options"] = {"include_usage": True}
@@ -475,6 +480,9 @@ def _get_stream_completion_fn(
             if caller_predict_id:
                 # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
                 chunk.predict_id = caller_predict_id
+                # Also stamp the resolved adapter identity so the stream listener, which runs in a different task
+                # from the one carrying the caller's context, can parse the chunk with the correct adapter format.
+                chunk.adapter_name = caller_adapter_name
             chunks.append(chunk)
             await stream.send(chunk)
         return _get_litellm().stream_chunk_builder(chunks)
