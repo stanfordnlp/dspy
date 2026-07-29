@@ -156,8 +156,9 @@ def propose_code(
 def rebind_flex_code(program, candidate: dict[str, str]) -> None:
     """Rebind ``module_src`` on each ``dspy.Flex`` submodule whose path is in the candidate.
 
-    Raises if a candidate's source is broken; ``DspyAdapter.evaluate`` catches that and scores the
-    batch as a failure.
+    A candidate that does not parse raises here (``DspyAdapter.evaluate`` catches that and scores
+    the batch as a failure); one that parses but breaks at runtime fails per example during
+    evaluation, since the code first runs at ``forward``.
     """
     for path, flex in enumerate_flex_submodules(program).items():
         if path in candidate:

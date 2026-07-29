@@ -20,6 +20,7 @@ import pytest
 import dspy
 from dspy.flex import Flex
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
@@ -101,15 +102,16 @@ def test_save_load_roundtrips_tool_using_code(tmp_path) -> None:
 @deno_required
 def test_load_without_tools_cannot_resolve_them(tmp_path) -> None:
     # The baseline RLM is built with tools=[shout] in __init__; reconstructing without the
-    # tool can't resolve the name in the sandbox, so binding the saved code raises (tools must be
-    # re-provided).
+    # tool can't resolve the name in the sandbox. Loading succeeds (binding is a host-side
+    # syntax check) — the failure surfaces when the code first runs (tools must be re-provided).
     path = tmp_path / "program.json"
     with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
         program.save(path)
 
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:  # tools NOT re-provided
+        reloaded.load(path)
         with pytest.raises(CodeInterpreterError):
-            reloaded.load(path)
+            reloaded(q="hi")
 
 
 # The primitives catalog offers the proposer `dspy.Tool(func)`, so the sandbox shim has to define
@@ -130,9 +132,9 @@ WRAPPED_TOOL_MODULE = textwrap.dedent("""
 def test_dspy_tool_wrapper_is_available_in_the_sandbox() -> None:
     with Flex(Echo, tools=[shout], interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
         program._bind_code(WRAPPED_TOOL_MODULE)
+        assert program(q="hi").a == "HI"
         # The wrapper resolves to the same host tool a bare reference would, so the predictor binds.
         assert [t.name for t in program.react.tools.values()] == ["shout", "finish"]
-        assert program(q="hi").a == "HI"
 
 
 def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
@@ -223,11 +225,14 @@ def test_inner_predictor_instructions_persist(tmp_path) -> None:
     # The instructions GEPA writes into the code persist through save/load (via module_src and
     # the predictor's own serialized state), just like a plain optimized Predict.
     path = tmp_path / "program.json"
+    dspy.configure(lm=DummyLM([{"a": "HI"}] * 4))
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as flex:
         flex._bind_code(INSTR_MODULE)
+        flex(q="hi")  # predictors attach when the code first runs
         assert flex.p.signature.instructions == "Always answer in uppercase."
         flex.save(path)
 
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
         reloaded.load(path)
+        reloaded(q="hi")
         assert reloaded.p.signature.instructions == "Always answer in uppercase."

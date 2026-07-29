@@ -123,8 +123,6 @@ class Flex(Module, Parameter):
         return f"{base}Module"
 
     def _bind_code(self, module_src: str) -> None:
-        """Bind ``module_src``: The sandbox constructs the predictors and bridges them back to attach onto ``self``.
-        ``forward`` runs in the sandbox."""
         for old_name in self._attached_names:
             if hasattr(self, old_name):
                 delattr(self, old_name)
@@ -132,7 +130,6 @@ class Flex(Module, Parameter):
 
         self._bridge.bind(module_src)
         self._module_src = module_src
-        self._bridge.ensure_initialized()
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the bound ``forward`` inside the interpreter."""

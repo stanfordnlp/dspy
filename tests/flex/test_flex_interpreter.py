@@ -446,9 +446,9 @@ def test_bridged_program_survives_save_load(tmp_path) -> None:
     try:
         reloaded.load(path)
         assert reloaded.module_src and "self.solve" in reloaded.module_src
-        assert isinstance(reloaded.solve, dspy.ChainOfThought)
         out = reloaded(value=21)  # still runs in the sandbox, LM bridged to the host
         assert out.result == 42
+        assert isinstance(reloaded.solve, dspy.ChainOfThought)  # attached at first run
     finally:
         reloaded.close()
 

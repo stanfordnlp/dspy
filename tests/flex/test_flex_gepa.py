@@ -137,7 +137,7 @@ def test_build_program_rebinds_flex_code() -> None:
     assert 'dspy.Predict("q -> a")' in rebuilt.module_src
     assert "self.p" in rebuilt.module_src
     assert "dspy.RLM(" not in rebuilt.module_src  # baseline replaced
-    assert hasattr(rebuilt, "p")  # the new predictor is attached flat on the module
+    assert not hasattr(rebuilt, "p")  # predictors attach when the code first runs, not at rebind
 
 
 # --- adapter: selection eval passes the trace to a flex metric ---------------

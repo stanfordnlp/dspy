@@ -175,8 +175,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Rebind code for any dspy.Flex submodules in the candidate (see gepa_flex_utils). A broken
-        # candidate raises here; evaluate() catches it and scores the batch as a failure.
+        # Rebind code for any dspy.Flex submodules in the candidate (see gepa_flex_utils). A
+        # candidate that doesn't parse raises here (evaluate() catches it and scores the batch as
+        # a failure); runtime breakage surfaces per example when the code first runs at forward.
         rebind_flex_code(new_prog, candidate)
 
         # Apply instruction updates. Code components are keyed by a Flex's parameter path, which

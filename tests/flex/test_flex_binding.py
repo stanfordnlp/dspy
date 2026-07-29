@@ -1,10 +1,10 @@
 """dspy.Flex binds a module's source (``module_src``) and makes it usable like any dspy.Module.
 
 Binding a source — the deterministic baseline at construction, or a GEPA-optimized decomposition —
-attaches its predictors flat on the module (so their state is named and serialized), writes nothing
-to disk, and round-trips through Module.save / load so the generated code can be persisted and rerun.
-Binding runs the source through the interpreter (Flex has no in-process mode), so the tests that
-attach or run predictors need Deno; the pure ``module_src`` check uses a MockInterpreter instead.
+records it host-side (a syntax check, no interpreter); the first forward runs it in the sandbox,
+which constructs the predictors and attaches them flat on the module. Everything round-trips
+through Module.save / load so the generated code can be persisted and rerun. Tests that run
+predictors need Deno; pure ``module_src`` checks use a MockInterpreter instead.
 (The baseline's RLM-vs-Predict shape is covered in test_tools.py; GEPA's code rewriting in
 test_flex_gepa.py.)
 """
@@ -46,9 +46,12 @@ class Echo(dspy.Signature):
 
 @deno_required
 def test_predictors_are_attached_but_not_reported_as_tunable() -> None:
+    dspy.configure(lm=DummyLM([{"a": "hi"}]))
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as program:
-        # The baseline attaches a predictor named `predict` directly onto the module (its state is
-        # named and serialized via named_parameters)...
+        assert not hasattr(program, "predict")  # nothing attaches until the code first runs
+        program(q="hello")
+        # The first forward attaches the baseline's predictor directly onto the module (its state
+        # is named via named_parameters)...
         assert hasattr(program, "predict")
         assert "predict" in [n for n, _ in program.named_parameters()]
         # ...but named_predictors() reports no tunable units: the Flex's update unit is its
@@ -80,10 +83,11 @@ def test_save_load_roundtrips_generated_code(tmp_path) -> None:
     # A fresh Flex starts on the Predict baseline...
     with Flex(Echo, interpreter_factory=lambda: dspy.PythonInterpreter()) as reloaded:
         assert "self.echo" not in reloaded.module_src
-        # ...and load() rebinds the saved code (no LM needed for binding).
+        # ...and load() rebinds the saved code (no interpreter or LM needed: the code runs, and
+        # attaches its predictors, at the first forward).
         reloaded.load(path)
         assert "self.echo" in reloaded.module_src
-        assert hasattr(reloaded, "echo")
+        assert not hasattr(reloaded, "echo")
 
 
 @deno_required
@@ -126,7 +130,6 @@ def test_nested_flex_state_roundtrips_inside_a_program(tmp_path) -> None:
         reloaded.load(path)
 
         assert reloaded.flex.module_src == ECHO_MODULE
-        assert hasattr(reloaded.flex, "echo")  # the reloaded code attached its predictor
         assert reloaded.sibling.signature.instructions == "tuned sibling"
     finally:
         reloaded.flex.close()

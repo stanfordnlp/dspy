@@ -118,11 +118,10 @@ def test_custom_type_resolves_when_it_is_not_on_the_calling_stack() -> None:
     ).strip()
 
     with Flex(_offstack_types.ExtractContact, interpreter_factory=_sandbox) as program:
-        program._bind_code(source)  # raised `Unknown name: Contact` before the handoff
-        assert program.p.signature.output_fields["contact"].annotation is _offstack_types.Contact
-
+        program._bind_code(source)
         dspy.configure(lm=DummyLM([{"contact": json.dumps({"name": "Ada", "age": 36})}] * 2))
-        out = program(text="Ada is 36")
+        out = program(text="Ada is 36")  # raised `Unknown name: Contact` before the handoff
+        assert program.p.signature.output_fields["contact"].annotation is _offstack_types.Contact
 
     assert out.contact == _offstack_types.Contact(name="Ada", age=36)
 
@@ -144,6 +143,8 @@ def test_sub_signature_naming_a_custom_type_resolves_on_the_host() -> None:
     ).strip()
     with Flex(Extract, interpreter_factory=_sandbox) as program:
         program._bind_code(source)
+        dspy.configure(lm=DummyLM([{"person": json.dumps({"name": "Ada", "age": 36})}] * 2))
+        program(text="Ada is 36")  # predictors attach when the code first runs
         assert program.p.signature.output_fields["person"].annotation is Person
 
 
