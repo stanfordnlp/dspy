@@ -179,8 +179,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def set_lm(self, lm):
         """Set the language model for all predictors in this module.
 
-        This method recursively sets the language model for all Predict
-        instances contained within this module.
+        This method recursively sets the language model on every leaf module
+        in this module.
 
         Args:
             lm: The language model instance to use for all predictors.
@@ -191,8 +191,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
             >>> program = dspy.Predict("question -> answer")
             >>> program.set_lm(lm)
         """
-        for _, param in self.named_predictors():
-            param.lm = lm
+        for _, param in self.named_parameters():
+            if isinstance(param, Module):
+                param.lm = lm
 
     def get_lm(self):
         """Get the language model used by this module's predictors.

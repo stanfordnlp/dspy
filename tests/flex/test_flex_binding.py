@@ -161,6 +161,33 @@ def test_flex_is_a_parameter_leaf_in_parent_programs() -> None:
     assert [n for n, _ in program.named_predictors()] == ["sibling"]
 
 
+def test_set_lm_is_stored_and_survives_rebind_and_save(tmp_path) -> None:
+    # set_lm stores one module-level LM (one home), applied via context at forward time — so it
+    # survives rebinds (which delete and rebuild the attached predictors) and save/load, unlike
+    # writing .lm onto internals that the next candidate wipes.
+    flex = Flex(Echo, interpreter_factory=MockInterpreter)
+    lm = dspy.LM("openai/gpt-4o-mini")
+    flex.set_lm(lm)
+    assert flex.get_lm() is lm
+
+    flex._bind_code(ECHO_MODULE)  # a rebind must not lose the module-level LM
+    assert flex.get_lm() is lm
+
+    path = tmp_path / "flex.json"
+    flex.save(path)
+    reloaded = Flex(Echo, interpreter_factory=MockInterpreter)
+    reloaded.load(path)
+    assert reloaded.get_lm() is not None
+    assert reloaded.get_lm().model == lm.model
+
+    # Like Predict: loading a state without an LM clears any previously set one.
+    reloaded.load_state({"module_src": ECHO_MODULE, "lm": None})
+    assert reloaded.get_lm() is None
+
+    flex.set_lm(lm)
+    assert flex.reset_copy().get_lm() is None  # reset clears the LM, like Predict.reset
+
+
 @deno_required
 def test_context_lm_reaches_bridged_calls() -> None:
     # A Flex holds no LM of its own (its state is only module_src); like any module, its

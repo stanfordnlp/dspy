@@ -131,6 +131,16 @@ def test_construct_attaches_real_predictor_under_canonical_name() -> None:
     assert "solve" in flex._attached_names
 
 
+def test_construct_rejects_reserved_attribute_names() -> None:
+    # Attaching is a setattr on the host Flex: a generated predictor named like one of its own
+    # attributes would clobber the LM, the bridge, or a method. Rejected → GEPA scores the
+    # candidate as a failure instead of corrupting the module.
+    flex = _bridged_flex()
+    for reserved in ("lm", "_bridge", "forward", "module_src"):
+        with pytest.raises(CodeInterpreterError, match="reserved"):
+            flex._bridge._construct("Predict", "value: int -> result: int", reserved, {})
+
+
 def test_construct_is_idempotent_but_rebuilds_on_signature_change() -> None:
     flex = _bridged_flex()
     flex._bridge._construct("ChainOfThought", "value: int -> result: int", "solve", {})

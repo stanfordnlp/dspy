@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable
 
+from dspy.dsp.utils.settings import settings
 from dspy.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
@@ -53,6 +54,7 @@ class Flex(Module, Parameter):
 
         self._module_src: str | None = None
         self._attached_names: list[str] = []
+        self.lm = None
 
         _validate_interpreter_factory(interpreter_factory)
         self._interpreter_factory = interpreter_factory
@@ -72,15 +74,30 @@ class Flex(Module, Parameter):
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
-        return {"module_src": self._module_src}
+        return {
+            "module_src": self._module_src,
+            "lm": self.lm.dump_state() if self.lm else None,
+        }
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
         module_src = state.get("module_src")
         if module_src:
             self._bind_code(module_src)
+        lm_state = state.get("lm")
+        if lm_state:
+            from dspy.clients.base_lm import BaseLM
+            from dspy.predict.predict import _sanitize_lm_state
+
+            sanitized = _sanitize_lm_state(lm_state, allow_unsafe_lm_state)
+            self.lm = (
+                BaseLM.load_state(sanitized, allow_custom_lm_class=allow_unsafe_lm_state) if sanitized else None
+            )
+        else:
+            self.lm = None
 
     def reset(self) -> None:
-        """Reset the internal predictors' state while keeping ``module_src``."""
+        """Reset the LM and the internal predictors' state while keeping ``module_src``."""
+        self.lm = None
         for _, param in self.named_parameters():
             if param is not self:
                 param.reset()
@@ -88,6 +105,12 @@ class Flex(Module, Parameter):
     def named_predictors(self):
         """A Flex's update unit is only its ``module_src``."""
         return []
+
+    def set_lm(self, lm) -> None:
+        self.lm = lm
+
+    def get_lm(self):
+        return self.lm
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._name})"
@@ -135,6 +158,9 @@ class Flex(Module, Parameter):
         """Run the bound ``forward`` inside the interpreter."""
         if args:
             raise TypeError("dspy.Flex accepts keyword inputs only")
+        if self.lm is not None:
+            with settings.context(lm=self.lm):
+                return self._bridge.forward(kwargs)
         return self._bridge.forward(kwargs)
 
     def close(self) -> None:

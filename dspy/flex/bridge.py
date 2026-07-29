@@ -330,6 +330,10 @@ class BridgeRuntime:
                 f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
+        if attr_name.startswith("_") or attr_name in ("lm",) or hasattr(type(self._flex), attr_name):
+            raise CodeInterpreterError(
+                f"Predictor name {attr_name!r} is reserved on dspy.Flex; rename the attribute in the module source."
+            )
         key = _construction_key(kind, signature, kwargs)
         with self._lock:
             if self._registry.get(attr_name) == key and getattr(self._flex, attr_name, None) is not None:
