@@ -245,6 +245,29 @@ def test_load_state_is_transactional():
         )
 
 
+def test_load_state_adapter_failure_is_atomic():
+    """A refused adapter class in one predictor must leave the whole program untouched."""
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.a = dspy.Predict("question -> answer")
+            self.b = dspy.Predict("question -> answer")
+
+    source = Prog()
+    source.a.adapter = dspy.JSONAdapter()
+    source.b.adapter = dspy.XMLAdapter()
+    state = source.dump_state()
+    state["b"]["adapter"]["_dspy_adapter_class"] = "evil.package.Adapter"
+
+    template = Prog()
+    with pytest.raises(ValueError, match="custom serialized adapter class"):
+        template.load_state(state)
+
+    assert template.a.adapter is None, "load_state partially mutated module before failing"
+    assert template.b.adapter is None
+
+
 def test_set_adapter_reaches_nested_predictors():
     class OuterModule(dspy.Module):
         def __init__(self):

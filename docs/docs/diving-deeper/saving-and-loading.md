@@ -2,7 +2,7 @@
 
 ## Intent
 
-Saving a DSPy program preserves what an optimizer produced: the rewritten signature instructions, the few-shot demos, the LM config, and whatever state each predictor needs to recreate its behavior. There are two paths — save the state alone and re-load it into a freshly-instantiated program, or pickle the whole program so the loading side doesn’t need your class definitions at all.
+Saving a DSPy program preserves what an optimizer produced: the rewritten signature instructions, the few-shot demos, the LM and adapter config, and whatever state each predictor needs to recreate its behavior. There are two paths — save the state alone and re-load it into a freshly-instantiated program, or pickle the whole program so the loading side doesn’t need your class definitions at all.
 
 Read this when you’re shipping an optimized program to another team, version-controlling optimizer output, or trying to figure out why a `.json` save round-trips but a `.pkl` save needs an extra flag to load.
 
@@ -10,7 +10,7 @@ Read this when you’re shipping an optimized program to another team, version-c
 
 ### 1. Two paths: state-only and full-program
 
-State-only saves the optimizer’s work — demos, signature instructions, LM config — and assumes the loading side has your class definitions. Full-program saves the whole module via cloudpickle, so the loader doesn’t need to import your code. Use state-only by default; reach for full-program when shipping to a process that doesn’t have your source.
+State-only saves the optimizer’s work — demos, signature instructions, LM config, adapter config — and assumes the loading side has your class definitions. Full-program saves the whole module via cloudpickle, so the loader doesn’t need to import your code. Use state-only by default; reach for full-program when shipping to a process that doesn’t have your source.
 
 ### 2. JSON by default
 
@@ -76,8 +76,8 @@ Registers each entry with `cloudpickle.register_pickle_by_value` before pickling
 
 Two entry points, matching the two save modes.
 
-**`Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False)`**  
-Loads state into an existing module instance. You instantiate the program the same way you built it, then call `.load()` on it. JSON paths load freely; `.pkl` paths require `allow_pickle=True`. `allow_unsafe_lm_state=True` keeps `api_base`, `base_url`, and `model_list` instead of stripping them.
+**`Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False, allow_custom_adapter_class=False)`**  
+Loads state into an existing module instance. You instantiate the program the same way you built it, then call `.load()` on it. JSON paths load freely; `.pkl` paths require `allow_pickle=True`. `allow_unsafe_lm_state=True` keeps `api_base`, `base_url`, and `model_list` instead of stripping them. `allow_custom_adapter_class=True` permits importing custom `Adapter` subclasses recorded in the saved state.
 
 ```python
 program = HaikuEnsemble(n=5)        # same construction as when saved
@@ -98,11 +98,14 @@ You rarely call these directly — `Module.save` / `Module.load` are the user-fa
 **`Module.dump_state(json_mode=True)` → `dict`**  
 Returns `{name: parameter.dump_state(...)}` for every named parameter in the tree. `json_mode=True` (the default) forces JSON-serializable shapes; `False` allows pickle-only objects through (used internally by the `.pkl` save path).
 
-**`Module.load_state(state, *, allow_unsafe_lm_state=False)`**  
+**`Module.load_state(state, *, allow_unsafe_lm_state=False, allow_custom_adapter_class=False)`**  
 Applies a state dict. Runs the load on a deep copy first to validate, then commits to the live module. Failure on the trial leaves the live module unchanged.
 
 **`Predict.dump_state(json_mode=True)`**  
-A single predictor’s state: `{"traces": [...], "train": [...], "demos": [...], "signature": {...}, "lm": {...}}`. Demos are serialized via a `serialize_object` helper that recursively converts Pydantic objects to plain dicts.
+A single predictor’s state: `{"traces": [...], "train": [...], "demos": [...], "signature": {...}, "lm": {...}, "adapter": {...}}`. Demos are serialized via a `serialize_object` helper that recursively converts Pydantic objects to plain dicts.
+
+**`Adapter.dump_state()`**  
+The adapter’s concrete class path plus its constructor configuration (native function calling, native response types, fallback behavior, and so on). Adapters are inference strategies: they decide how a predictor’s prompt is rendered and its response parsed, they can materially change program behavior, and future optimizers may customize them automatically — so a configured adapter is integral program state, not runtime configuration. Predictors with no adapter of their own save `adapter: null` and keep inheriting from `dspy.settings` after loading; legacy state files with no adapter field load the same way. `TwoStepAdapter` also saves its extraction LM’s state, with the same sanitization as any LM state (no API keys; endpoint keys dropped unless `allow_unsafe_lm_state=True`). The contract is honest but bounded: constructor configuration round-trips through JSON and PKL state; runtime hooks like `callbacks` and ad-hoc instance attributes do not. Custom subclasses that carry extra constructor configuration extend the contract by overriding `dump_state` (and `load_state` when reconstruction needs special handling, as `TwoStepAdapter` does for its extraction LM). Full-program saves (`save_program=True`) cloudpickle the adapter object itself, so arbitrary attributes survive there.
 
 **`Signature.dump_state()`**  
 `{"instructions": str, "fields": [{"prefix": str, "description": str}, ...]}`. The instructions are the docstring — what optimizers like GEPA rewrite. Field metadata (prefix, description) round-trips too; field names and types are reconstructed from the live Signature class on load.
@@ -112,13 +115,16 @@ Model name, `model_type`, cache flag, retry count, kwargs (minus `api_key`), and
 
 ### Security flags
 
-Two flags, two different concerns.
+Three flags, three different concerns.
 
 **`allow_pickle=False` (default)**  
 Refuses to load any `.pkl` or full-program directory. Loading a pickle can execute arbitrary code; the flag forces the caller to acknowledge that the file is trusted. Applies to both `Module.load` and `dspy.load`.
 
 **`allow_unsafe_lm_state=False` (default)**  
-On state load, drops `api_base`, `base_url`, and `model_list` from the LM config. Pass `True` to restore the original endpoint configuration. The split exists because a saved program’s endpoint may not match where the loader wants to run — an internal-only URL, a deprecated host, a model list that’s no longer available.
+On state load, drops `api_base`, `base_url`, and `model_list` from the LM config. Pass `True` to restore the original endpoint configuration. The split exists because a saved program’s endpoint may not match where the loader wants to run — an internal-only URL, a deprecated host, a model list that’s no longer available. The same rules apply to LMs nested inside adapter state, such as `TwoStepAdapter`’s extraction model.
+
+**`allow_custom_adapter_class=False` (default)**  
+Built-in adapters (`ChatAdapter`, `JSONAdapter`, `XMLAdapter`, `BAMLAdapter`, `TwoStepAdapter`) load without opt-in. A saved custom `Adapter` subclass is recorded by module-qualified class path, and importing an arbitrary recorded module can execute code — so loading it (or a custom native response type) requires `allow_custom_adapter_class=True`. Loading is transactional either way: a refused adapter in any predictor leaves the live program unchanged.
 
 API keys are never re-enabled by either flag. The loading side configures credentials fresh.
 

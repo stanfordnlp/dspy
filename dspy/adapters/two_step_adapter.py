@@ -6,7 +6,7 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.base_lm import BaseLM, sanitize_lm_state
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 from dspy.utils.exceptions import AdapterParseError, LMError
@@ -45,6 +45,28 @@ class TwoStepAdapter(Adapter):
         if not isinstance(extraction_model, BaseLM):
             raise ValueError("extraction_model must be an instance of dspy.BaseLM")
         self.extraction_model = extraction_model
+
+    def dump_state(self) -> dict[str, Any]:
+        state = super().dump_state()
+        # The extraction model is part of the adapter's inference strategy. Its state is
+        # sanitized by `BaseLM.dump_state` (no API keys).
+        state["extraction_model"] = self.extraction_model.dump_state()
+        return state
+
+    @classmethod
+    def load_state(
+        cls, state: dict[str, Any], *, allow_custom_adapter_class: bool = False, allow_unsafe_lm_state: bool = False
+    ) -> "TwoStepAdapter":
+        """Reconstruct a `TwoStepAdapter`, including its nested extraction LM.
+
+        The extraction LM state follows the same safety rules as top-level LM
+        state: unsafe endpoint keys are dropped and custom LM classes are
+        refused unless `allow_unsafe_lm_state=True`.
+        """
+        state = dict(state)
+        extraction_model_state = sanitize_lm_state(state.pop("extraction_model"), allow_unsafe_lm_state)
+        extraction_model = BaseLM.load_state(extraction_model_state, allow_custom_lm_class=allow_unsafe_lm_state)
+        return cls(extraction_model=extraction_model, **cls._load_init_kwargs(state, allow_custom_adapter_class))
 
     def format(
         self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]

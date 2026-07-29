@@ -8,6 +8,7 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.types import Type
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     format_field_value,
@@ -42,14 +43,23 @@ class JSONAdapter(ChatAdapter):
         self,
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = True,
+        native_response_types: list[type[Type]] | None = None,
         parallel_tool_calls: bool | None = None,
     ):
         # JSONAdapter uses native function calling by default.
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
+            native_response_types=native_response_types,
             parallel_tool_calls=parallel_tool_calls,
         )
+
+    def dump_state(self):
+        state = super().dump_state()
+        # `use_json_adapter_fallback` is a ChatAdapter constructor option; JSONAdapter is itself
+        # the fallback target and does not expose it.
+        state.pop("use_json_adapter_fallback", None)
+        return state
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""

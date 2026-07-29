@@ -101,10 +101,10 @@ Returns the configured Adapter when every predictor agrees. Returns `None` when 
 
 The save/load surface. The full lifecycle — JSON vs PKL, full-program vs state-only, `save_program=True` — lives in [Saving and loading](saving-and-loading.md); the methods here are what that page is about.
 
-**`Module.dump_state(json_mode=True)` / `Module.load_state(state, allow_unsafe_lm_state=False)`**  
-Round-trips the optimizer-visible state: per-predictor demos, traces, signature instructions, LM config. Not the Python class itself. Adapters are runtime configuration and are not included; call `set_adapter` again after loading when the program needs a non-default Adapter.
+**`Module.dump_state(json_mode=True)` / `Module.load_state(state, allow_unsafe_lm_state=False, allow_custom_adapter_class=False)`**  
+Round-trips the optimizer-visible state: per-predictor demos, traces, signature instructions, LM config, and adapter config. Not the Python class itself. An adapter configured on a predictor is inference strategy state — it changes how prompts are rendered and parsed — so it is saved (class plus constructor configuration) and restored on load. Custom `Adapter` subclasses are only imported when `allow_custom_adapter_class=True`.
 
-**`Module.save(path, save_program=False, modules_to_serialize=None)` / `Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False)`**  
+**`Module.save(path, save_program=False, modules_to_serialize=None)` / `Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False, allow_custom_adapter_class=False)`**  
 The user-facing pair. `save_program=True` cloudpickles the whole module to a directory; the default writes state-only JSON or PKL.
 
 **`Module.deepcopy()`**  

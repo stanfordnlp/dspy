@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 from typing import Any, get_origin
@@ -24,10 +25,34 @@ from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.import_utils import import_class_from_path
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+
+ADAPTER_CLASS_STATE_KEY = "_dspy_adapter_class"
+_BUILTIN_ADAPTER_CLASS_PATHS = {
+    "dspy.adapters.chat_adapter.ChatAdapter",
+    "dspy.adapters.json_adapter.JSONAdapter",
+    "dspy.adapters.xml_adapter.XMLAdapter",
+    "dspy.adapters.baml_adapter.BAMLAdapter",
+    "dspy.adapters.two_step_adapter.TwoStepAdapter",
+}
+
+
+def _load_native_response_type(class_path: str, allow_custom_adapter_class: bool) -> type[Type]:
+    if not class_path.startswith("dspy.") and not allow_custom_adapter_class:
+        raise ValueError(
+            f"Refusing to import custom native response type `{class_path}` from serialized adapter state. "
+            "Pass allow_custom_adapter_class=True when loading trusted files to enable custom types."
+        )
+    native_type = import_class_from_path(class_path, description="native response type")
+    if not (isinstance(native_type, type) and issubclass(native_type, Type)):
+        raise TypeError(f"Serialized native response type `{class_path}` must be a subclass of dspy.Type.")
+    return native_type
+
+
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
 
 
@@ -79,6 +104,96 @@ class Adapter:
         # Decorate format() and parse() method with with_callbacks
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
+
+    def dump_state(self) -> dict[str, Any]:
+        """Return a JSON-serializable reconstruction state for this adapter.
+
+        An adapter attached to a `Predict` is integral program state: it decides
+        how prompts are rendered and responses are parsed, so saving a program
+        must preserve it. The state records the concrete adapter class and its
+        constructor configuration. Runtime-only hooks (`callbacks`) are not
+        saved, matching LM state behavior. Subclasses with extra constructor
+        configuration should override both `dump_state` and, when the extra
+        state needs special reconstruction, `load_state`.
+
+        Returns:
+            A dictionary that can be passed to `Adapter.load_state`.
+        """
+        return {
+            ADAPTER_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
+            "use_native_function_calling": self.use_native_function_calling,
+            "parallel_tool_calls": self.parallel_tool_calls,
+            "native_response_types": [
+                f"{native_type.__module__}.{native_type.__qualname__}" for native_type in self.native_response_types
+            ],
+        }
+
+    @classmethod
+    def load_state(
+        cls, state: dict[str, Any], *, allow_custom_adapter_class: bool = False, allow_unsafe_lm_state: bool = False
+    ) -> "Adapter":
+        """Reconstruct an adapter from `dump_state` output.
+
+        Built-in adapter classes load without opt-in. Custom `Adapter`
+        subclasses must be importable by their module-qualified class path and
+        are only loaded when `allow_custom_adapter_class=True`, because
+        importing an arbitrary recorded class can execute untrusted code.
+
+        Args:
+            state: Serialized adapter state produced by `dump_state`.
+            allow_custom_adapter_class: If True, allow importing and loading
+                custom `Adapter` subclasses (and custom native response types)
+                recorded in `state`. Enable only for trusted state.
+            allow_unsafe_lm_state: If True, preserve unsafe endpoint keys and
+                allow custom LM classes for nested LM state, such as
+                `TwoStepAdapter`'s extraction model. Enable only for trusted state.
+
+        Returns:
+            The reconstructed adapter instance.
+
+        Raises:
+            ValueError: If `state` references a custom adapter class and
+                `allow_custom_adapter_class` is False.
+            ImportError: If the serialized adapter class cannot be imported.
+            TypeError: If the serialized class is not an `Adapter` subclass.
+        """
+        state = dict(state)
+        class_path = state.pop(ADAPTER_CLASS_STATE_KEY, None)
+
+        if cls is Adapter:
+            if class_path is None:
+                raise ValueError("Serialized adapter state is missing the adapter class marker.")
+
+            if class_path not in _BUILTIN_ADAPTER_CLASS_PATHS and not allow_custom_adapter_class:
+                raise ValueError(
+                    f"Refusing to import custom serialized adapter class `{class_path}`. "
+                    "Pass allow_custom_adapter_class=True when loading trusted files to enable custom adapters."
+                )
+
+            adapter_cls = import_class_from_path(class_path, description="adapter class")
+            if not (isinstance(adapter_cls, type) and issubclass(adapter_cls, Adapter)):
+                raise TypeError(f"Serialized adapter class `{class_path}` must be a subclass of dspy.Adapter.")
+
+            load_params = inspect.signature(adapter_cls.load_state).parameters
+            load_kwargs = {}
+            if "allow_custom_adapter_class" in load_params:
+                load_kwargs["allow_custom_adapter_class"] = allow_custom_adapter_class
+            if "allow_unsafe_lm_state" in load_params:
+                load_kwargs["allow_unsafe_lm_state"] = allow_unsafe_lm_state
+            return adapter_cls.load_state(state, **load_kwargs)
+
+        return cls(**cls._load_init_kwargs(state, allow_custom_adapter_class))
+
+    @classmethod
+    def _load_init_kwargs(cls, state: dict[str, Any], allow_custom_adapter_class: bool) -> dict[str, Any]:
+        """Convert serialized adapter state into constructor keyword arguments."""
+        init_kwargs = dict(state)
+        if init_kwargs.get("native_response_types") is not None:
+            init_kwargs["native_response_types"] = [
+                _load_native_response_type(class_path, allow_custom_adapter_class)
+                for class_path in init_kwargs["native_response_types"]
+            ]
+        return init_kwargs
 
     def _call_preprocess(
         self,

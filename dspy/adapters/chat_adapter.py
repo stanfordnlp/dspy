@@ -5,6 +5,7 @@ from typing import Any, NamedTuple
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
+from dspy.adapters.types import Type
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     format_field_value,
@@ -42,7 +43,7 @@ class ChatAdapter(Adapter):
         self,
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
-        native_response_types: list[type[type]] | None = None,
+        native_response_types: list[type[Type]] | None = None,
         use_json_adapter_fallback: bool = True,
         parallel_tool_calls: bool | None = None,
     ):
@@ -64,6 +65,11 @@ class ChatAdapter(Adapter):
             native_response_types=native_response_types,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
+
+    def dump_state(self):
+        state = super().dump_state()
+        state["use_json_adapter_fallback"] = self.use_json_adapter_fallback
+        return state
 
     def _make_json_adapter_fallback(self):
         from dspy.adapters.json_adapter import JSONAdapter

@@ -165,8 +165,11 @@ keyword, then the predictor's own `predict.adapter`, then `settings.adapter`, th
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
 - **`with dspy.context(adapter=dspy.XMLAdapter()): ...`** — scoped settings override. Note that an
   explicitly configured `predict.adapter` outranks both `configure` and `context`.
-- **Not serialized.** Adapters are runtime configuration; `program.save` does not store them, so
-  reconfigure after loading.
+- **Serialized with the program.** An adapter configured on a predictor is inference strategy
+  state, not runtime configuration: `program.save` stores each predictor's adapter class and
+  constructor configuration, and loading restores it (including `TwoStepAdapter`'s extraction LM,
+  minus credentials). Custom `Adapter` subclasses require `allow_custom_adapter_class=True` at
+  load time; see [Saving and loading](saving-and-loading.md).
 - **Sticky across execution modes.** The resolved adapter is preserved through sync and async
   calls, streaming (chunks are parsed with the caller's adapter format), and `Refine`'s feedback
   retries.

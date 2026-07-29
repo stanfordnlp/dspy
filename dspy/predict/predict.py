@@ -6,8 +6,9 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.base_lm import BaseLM, sanitize_lm_state
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.module import Module
@@ -17,26 +18,6 @@ from dspy.utils.callback import BaseCallback
 from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 logger = logging.getLogger(__name__)
-
-UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
-
-
-def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
-    if allow_unsafe_lm_state:
-        return lm_state
-
-    unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
-
-    if not unsafe_keys:
-        return lm_state
-
-    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
-    logger.warning(
-        "Ignoring unsafe LM config key(s) during state load: %s. "
-        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
-        unsafe_keys,
-    )
-    return sanitized_lm_state
 
 
 class Predict(Module, Parameter):
@@ -91,30 +72,47 @@ class Predict(Module, Parameter):
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None
+        state["adapter"] = self.adapter.dump_state() if self.adapter else None
         return state
 
-    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
+    def load_state(
+        self, state: dict, *, allow_unsafe_lm_state: bool = False, allow_custom_adapter_class: bool = False
+    ) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
                 serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
+            allow_custom_adapter_class: If True, allows importing custom `Adapter` subclasses recorded
+                in the saved adapter state. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
         """
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        excluded_keys = ["signature", "extended_signature", "lm", "adapter"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
 
         self.signature = self.signature.load_state(state["signature"])
-        sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
+        sanitized_lm_state = sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
         self.lm = (
             BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
             if sanitized_lm_state
+            else None
+        )
+        # Legacy states predate adapter persistence and carry no "adapter" key; treat that
+        # the same as an explicit None (inherit the adapter from DSPy settings).
+        adapter_state = state.get("adapter")
+        self.adapter = (
+            Adapter.load_state(
+                adapter_state,
+                allow_custom_adapter_class=allow_custom_adapter_class,
+                allow_unsafe_lm_state=allow_unsafe_lm_state,
+            )
+            if adapter_state
             else None
         )
 

@@ -15,6 +15,7 @@ from pydantic import BaseModel, HttpUrl
 
 import dspy
 from dspy import Predict, Signature
+from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.clients.base_lm import LM_CLASS_STATE_KEY
 from dspy.predict.predict import serialize_object
 from dspy.utils.dummies import DummyLM
@@ -344,7 +345,7 @@ def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint
     with open(file_path, "wb") as f:
         f.write(orjson.dumps(saved_state))
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+    with patch("dspy.clients.base_lm.logger.warning") as warning_mock:
         loaded_predict = dspy.Predict("q->a")
         loaded_predict.load(file_path)
 
@@ -368,7 +369,7 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
     with open(file_path, "wb") as f:
         f.write(orjson.dumps(saved_state))
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+    with patch("dspy.clients.base_lm.logger.warning") as warning_mock:
         loaded_predict = dspy.Predict("q->a")
         loaded_predict.load(file_path, allow_unsafe_lm_state=True)
 
@@ -385,7 +386,7 @@ def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_ove
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+    with patch("dspy.clients.base_lm.logger.warning") as warning_mock:
         loaded_predict = dspy.Predict("q->a")
         loaded_predict.load_state(saved_state)
 
@@ -403,7 +404,7 @@ def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_ove
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+    with patch("dspy.clients.base_lm.logger.warning") as warning_mock:
         loaded_predict = dspy.Predict("q->a")
         loaded_predict.load_state(saved_state, allow_unsafe_lm_state=True)
 
@@ -427,7 +428,7 @@ def test_load_state_ignores_serialized_model_list_endpoint_override_by_default()
         }
     ]
 
-    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+    with patch("dspy.clients.base_lm.logger.warning") as warning_mock:
         loaded_predict = dspy.Predict("q->a")
         loaded_predict.load_state(saved_state)
 
@@ -1784,11 +1785,24 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch" not in caplog.text
 
 
+class _TunableAdapter(dspy.ChatAdapter):
+    """ChatAdapter subclass exercising the documented extension contract for extra constructor state."""
+
+    def __init__(self, style: str = "terse", **kwargs):
+        super().__init__(**kwargs)
+        self.style = style
+
+    def dump_state(self):
+        state = super().dump_state()
+        state["style"] = self.style
+        return state
+
+
 class _SpyAdapter(dspy.ChatAdapter):
     """ChatAdapter subclass that records when it handles a call and the inputs it formats."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.sync_calls = 0
         self.async_calls = 0
         self.seen_inputs = []
@@ -1903,11 +1917,108 @@ async def test_resolved_adapter_visible_in_settings_during_acall():
         assert dspy.settings.adapter is outer_adapter
 
 
-def test_adapter_not_serialized():
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        dspy.ChatAdapter(use_json_adapter_fallback=False, use_native_function_calling=True),
+        dspy.JSONAdapter(use_native_function_calling=False),
+        dspy.XMLAdapter(),
+        BAMLAdapter(parallel_tool_calls=True),
+    ],
+)
+def test_adapter_state_round_trip_preserves_type_and_config(adapter):
+    program = Predict("input -> output")
+    program.adapter = adapter
+    state = orjson.loads(orjson.dumps(program.dump_state()))  # must survive JSON
+
+    loaded = Predict("input -> output").load_state(state)
+    assert type(loaded.adapter) is type(adapter)
+    assert loaded.adapter.use_native_function_calling == adapter.use_native_function_calling
+    assert loaded.adapter.parallel_tool_calls == adapter.parallel_tool_calls
+    assert loaded.adapter.native_response_types == adapter.native_response_types
+    if isinstance(adapter, dspy.ChatAdapter):
+        assert loaded.adapter.use_json_adapter_fallback == adapter.use_json_adapter_fallback
+
+
+def test_loaded_adapter_drives_inference():
+    program = Predict("input -> output")
+    program.adapter = _SpyAdapter()
+    loaded = Predict("input -> output").load_state(
+        program.dump_state(), allow_custom_adapter_class=True
+    )
+
+    settings_adapter = _SpyAdapter()
+    with dspy.context(lm=DummyLM([{"output": "test output"}]), adapter=settings_adapter):
+        loaded(input="q")
+
+    assert loaded.adapter.sync_calls == 1
+    assert settings_adapter.sync_calls == 0
+
+
+def test_two_step_adapter_round_trip_sanitizes_nested_lm():
+    adapter = dspy.TwoStepAdapter(dspy.LM("openai/gpt-4o-mini", api_base="http://internal:8080"))
+    program = Predict("input -> output")
+    program.adapter = adapter
+    state = orjson.loads(orjson.dumps(program.dump_state()))
+
+    assert "api_key" not in state["adapter"]["extraction_model"]
+
+    loaded = Predict("input -> output").load_state(state)
+    assert type(loaded.adapter) is dspy.TwoStepAdapter
+    assert loaded.adapter.extraction_model.model == "openai/gpt-4o-mini"
+    # Unsafe endpoint keys are dropped from the nested extraction LM by default...
+    assert "api_base" not in loaded.adapter.extraction_model.kwargs
+
+    # ...and preserved only for trusted files.
+    trusted = Predict("input -> output").load_state(state, allow_unsafe_lm_state=True)
+    assert trusted.adapter.extraction_model.kwargs["api_base"] == "http://internal:8080"
+
+
+def test_custom_adapter_class_requires_opt_in():
     program = Predict("input -> output")
     program.adapter = _SpyAdapter()
     state = program.dump_state()
-    assert "adapter" not in state
 
-    loaded = Predict("input -> output").load_state(state)
+    with pytest.raises(ValueError, match="custom serialized adapter class"):
+        Predict("input -> output").load_state(state)
+
+    loaded = Predict("input -> output").load_state(state, allow_custom_adapter_class=True)
+    assert type(loaded.adapter) is _SpyAdapter
+
+
+def test_custom_adapter_subclass_extends_state_contract():
+    """A subclass with extra constructor configuration round-trips by overriding `dump_state` alone."""
+    program = Predict("input -> output")
+    program.adapter = _TunableAdapter(style="verbose", use_json_adapter_fallback=False)
+    state = orjson.loads(orjson.dumps(program.dump_state()))
+
+    loaded = Predict("input -> output").load_state(state, allow_custom_adapter_class=True)
+    assert type(loaded.adapter) is _TunableAdapter
+    assert loaded.adapter.style == "verbose"
+    assert loaded.adapter.use_json_adapter_fallback is False
+
+
+def test_custom_native_response_type_requires_opt_in():
+    class CustomType(dspy.Type):
+        pass
+
+    program = Predict("input -> output")
+    program.adapter = dspy.ChatAdapter(native_response_types=[CustomType])
+    state = program.dump_state()
+    # The adapter class itself is built-in; only the native response type is custom.
+    with pytest.raises(ValueError, match="custom native response type"):
+        Predict("input -> output").load_state(state)
+
+
+def test_adapter_state_legacy_and_none():
+    # Legacy saved states have no "adapter" key at all.
+    legacy_state = Predict("input -> output").dump_state()
+    del legacy_state["adapter"]
+    loaded = Predict("input -> output").load_state(legacy_state)
     assert loaded.adapter is None
+
+    # An unconfigured adapter round-trips as None and stays meaningful.
+    state = Predict("input -> output").dump_state()
+    assert state["adapter"] is None
+    reloaded = Predict("input -> output").load_state(state)
+    assert reloaded.adapter is None

@@ -110,8 +110,13 @@ Different predictors inside one program may hold different adapters when you tru
 one step targets a model that prefers JSON while the rest use the default. Start homogeneous; mix
 adapters only when a specific step needs it.
 
-Adapters are runtime configuration: they are not serialized when you save a program's state, so
-set them again after loading.
+An adapter attached to a predictor is part of the program's state: it is an inference strategy
+that can materially change behavior, and future optimizers may tune it automatically. Saving a
+program serializes each predictor's configured adapter (its concrete class and constructor
+configuration), and loading restores it. Predictors that inherit the adapter from settings save
+`adapter: null` and continue to inherit after loading. See
+[Saving and loading](../../diving-deeper/saving-and-loading.md) for the exact contract, including
+how custom adapter classes require a trusted opt-in at load time.
 
 ## Where Adapters Fit in the System
 
