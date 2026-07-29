@@ -1,8 +1,11 @@
+import json
+
 import pydantic
 import pytest
 
 from dspy.core.types import (
     LMAudioPart,
+    LMBinaryPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -140,6 +143,169 @@ def test_video_data_round_trips_through_history_messages():
     assert isinstance(round_tripped, LMVideoPart)
     assert round_tripped.data == "YWJj"
     assert round_tripped.media_type == "video/mp4"
+
+
+def test_tool_dicts_coerce_and_emit_strict_and_extras():
+    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
+
+    nested = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "f", "parameters": {}, "strict": True, "vendor_key": 1},
+            }
+        ],
+    ).tools[0]
+    assert nested.strict is True
+    assert nested.provider_data == {"vendor_key": 1}
+    assert tool_to_openai(nested) == {
+        "type": "function",
+        "function": {"name": "f", "parameters": {}, "strict": True, "vendor_key": 1},
+    }
+    assert tool_to_openai_responses(nested) == {
+        "type": "function",
+        "name": "f",
+        "parameters": {},
+        "strict": True,
+        "vendor_key": 1,
+    }
+
+    flat = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "name": "f", "parameters": {}, "strict": False, "custom_field": "x"}],
+    ).tools[0]
+    assert flat.strict is False
+    assert flat.provider_data == {"custom_field": "x"}
+
+
+def test_parsed_tool_call_replays_with_call_id_not_item_id():
+    from dspy.clients.openai_format import assistant_tool_call_to_openai, tool_call_to_responses_input
+
+    message = LMMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "fc_1",
+                "type": "function_call",
+                "name": "get_weather",
+                "arguments": json.dumps({"city": "Paris"}),
+                "call_id": "call_1",
+                "status": "completed",
+            }
+        ],
+    )
+    part = message.parts[0]
+    assert isinstance(part, LMToolCallPart)
+    assert part.id == "call_1"
+    assert part.name == "get_weather"
+    assert part.args == {"city": "Paris"}
+
+    part.provider_data = {"id": "fc_1", "call_id": "call_1", "status": "completed", "raw_arguments": "{}"}
+
+    chat_call = assistant_tool_call_to_openai(part)
+    assert chat_call["id"] == "call_1"
+    assert "status" not in chat_call and "raw_arguments" not in chat_call
+
+    responses_item = tool_call_to_responses_input(part)
+    assert responses_item["call_id"] == "call_1"
+    assert responses_item["arguments"] == json.dumps({"city": "Paris"})
+
+
+def test_tool_provider_extras_cannot_override_canonical_fields():
+    from dspy.clients.openai_format import tool_to_openai, tool_to_openai_responses
+
+    tool = LMRequest.from_call(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[
+            {
+                "type": "function",
+                "name": "safe_name",
+                "parameters": {"type": "object"},
+                "strict": True,
+                "provider_data": {
+                    "type": "web_search",
+                    "name": "overridden_name",
+                    "parameters": {"type": "string"},
+                    "strict": False,
+                    "vendor_key": 1,
+                },
+            }
+        ],
+    ).tools[0]
+
+    assert tool_to_openai(tool) == {
+        "type": "function",
+        "function": {
+            "name": "safe_name",
+            "parameters": {"type": "object"},
+            "strict": True,
+            "vendor_key": 1,
+        },
+    }
+    assert tool_to_openai_responses(tool) == {
+        "type": "function",
+        "name": "safe_name",
+        "parameters": {"type": "object"},
+        "strict": True,
+        "vendor_key": 1,
+    }
+
+
+def test_close_object_schemas_ignores_schema_shaped_defaults():
+    from dspy.clients.openai_format import response_format_to_responses
+
+    class WithDictDefault(pydantic.BaseModel):
+        payload: dict = {"type": "object"}
+
+    schema = response_format_to_responses(WithDictDefault)["schema"]
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["payload"]["default"] == {"type": "object"}
+
+
+def test_file_content_block_with_data_and_id_round_trips_losslessly_to_responses_format():
+    from dspy.clients.openai_format import to_openai_responses_request
+
+    message = LMMessage(
+        role="user",
+        content=[
+            {
+                "type": "file",
+                "file": {
+                    "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+                    "file_id": "file_123",
+                    "filename": "report.pdf",
+                },
+            }
+        ],
+    )
+    part = message.parts[0]
+
+    assert isinstance(part, LMBinaryPart)
+    assert part.metadata["legacy_content_block"] == {
+        "type": "file",
+        "file": {
+            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+            "file_id": "file_123",
+            "filename": "report.pdf",
+        },
+    }
+
+    request = LMRequest(model="model", messages=[message])
+    content = to_openai_responses_request(request)["input"][0]["content"]
+
+    assert content == [
+        {
+            "type": "input_file",
+            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+            "file_id": "file_123",
+            "filename": "report.pdf",
+        }
+    ]
 
 
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():

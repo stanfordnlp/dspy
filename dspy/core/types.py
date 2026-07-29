@@ -296,6 +296,7 @@ class LMToolSpec(BaseModel):
     name: str
     description: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    strict: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     provider_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -1839,7 +1840,9 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
     if not isinstance(function, Mapping):
         function = {}
 
-    args = function.get("arguments", {})
+    args = function.get("arguments")
+    if args is None:
+        args = tool_call.get("arguments", {})
     if isinstance(args, str):
         args = _parse_json_object(args)
     elif isinstance(args, Mapping):
@@ -1848,7 +1851,7 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
         args = {}
 
     return LMToolCallPart(
-        id=tool_call.get("id"),
+        id=tool_call.get("call_id") or tool_call.get("id"),
         name=function.get("name") or tool_call.get("name") or "",
         args=args,
     )
@@ -1888,9 +1891,19 @@ def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
-    if file.get("file_data") is not None:
-        media_type, data = _split_data_uri(file["file_data"])
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
+    # Stash the original block whenever the typed model can't re-emit it
+    # losslessly: both file_data and file_id present (a part holds one source),
+    # or file_data that isn't a data: URI (re-wrapping would invent a
+    # media type the caller never declared).
+    file_data = file.get("file_data")
+    needs_legacy_block = file_data is not None and (
+        file.get("file_id") is not None or not str(file_data).startswith("data:")
+    )
+    legacy_block = {"type": "file", "file": dict(file)} if needs_legacy_block else None
+    if file_data is not None:
+        media_type, data = _split_data_uri(file_data)
+        metadata = {"legacy_content_block": legacy_block} if legacy_block is not None else {}
+        return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"), metadata=metadata)
     if file.get("data") is not None:
         media_type, data = _split_data_uri(file["data"])
         return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
@@ -1965,13 +1978,28 @@ def _coerce_tool_spec(tool: Any) -> LMToolSpec:
     if isinstance(tool, dict):
         if "function" in tool:
             function = tool["function"]
+            # provider_data carries function-scoped extras (see tool_to_openai*);
+            # top-level extras on the nested form are folded into the same scope.
             provider_data = {key: value for key, value in tool.items() if key not in {"type", "function"}}
+            provider_data.update(
+                {
+                    key: value
+                    for key, value in function.items()
+                    if key not in {"name", "description", "parameters", "strict"}
+                }
+            )
             return LMToolSpec(
                 name=function.get("name"),
                 description=function.get("description"),
                 parameters=function.get("parameters", {}),
+                strict=function.get("strict"),
                 provider_data=provider_data,
             )
+        known_fields = set(LMToolSpec.model_fields)
+        extras = {key: value for key, value in tool.items() if key not in known_fields}
+        if extras:
+            tool = {key: value for key, value in tool.items() if key in known_fields}
+            tool["provider_data"] = {**tool.get("provider_data", {}), **extras}
         return LMToolSpec(**tool)
     raise TypeError(f"Cannot convert {type(tool)!r} to LMToolSpec.")
 

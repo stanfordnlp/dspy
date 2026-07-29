@@ -146,6 +146,19 @@ def test_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
 
+def test_format_as_litellm_function_call_excludes_defaulted_args_from_required():
+    # `x` has no default and must be required; `y` has a default and must be optional.
+    tool = Tool(dummy_function)
+
+    function_call = tool.format_as_litellm_function_call()
+    parameters = function_call["function"]["parameters"]
+
+    assert parameters["required"] == ["x"]
+    assert "y" not in parameters["required"]
+    # The default is still advertised on the property itself.
+    assert parameters["properties"]["y"]["default"] == "hello"
+
+
 def test_tool_from_class():
     class Foo:
         def __init__(self, user_id: str):
