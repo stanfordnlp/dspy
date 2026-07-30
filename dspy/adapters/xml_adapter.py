@@ -12,6 +12,7 @@ from dspy.signatures.signature import Signature
 from dspy.utils.exceptions import AdapterParseError
 
 _TAG_PATTERN = re.compile(r"<(?P<closing>/?)(?P<name>\w+)>")
+_TAG_SCAN = _TAG_PATTERN
 
 
 def _scan_tags(text: str) -> list[tuple[int, int, bool, str]]:
@@ -282,28 +283,36 @@ class XMLAdapter(ChatAdapter):
         never pull a later field into this one. While a nested span is still unbalanced the answer
         is None: more text may complete it, and settling early would truncate.
         """
-        opening, closing = f"<{field_name}>", f"</{field_name}>"
+        closing = f"</{field_name}>"
         lazy_end = content.find(closing)
         lazy_end = lazy_end if lazy_end != -1 else None
         if not XMLAdapter.value_opens_nested(field_name, content):
             return lazy_end
 
-        sibling_tags = tuple(f"<{name}>" for name in sibling_names if name != field_name)
+        siblings = frozenset(name for name in sibling_names if name != field_name)
         depth = 0
-        index = 0
-        while index < len(content):
-            if content.startswith(opening, index):
-                depth += 1
-                index += len(opening)
-            elif content.startswith(closing, index):
-                if depth == 0:
-                    return index
-                depth -= 1
-                index += len(closing)
-            elif any(content.startswith(tag, index) for tag in sibling_tags):
+        # Other elements opened inside the span. `_extract_field_blocks` only widens when every tag
+        # inside the span pairs inside it, so a span closing over an unpaired tag is not a nested
+        # document and must not be widened here either.
+        unpaired: dict[str, int] = {}
+        for match in _TAG_SCAN.finditer(content):
+            name, is_closing, index = match.group("name"), bool(match.group("closing")), match.start()
+            if name == field_name:
+                if not is_closing:
+                    depth += 1
+                elif depth == 0:
+                    return index if not unpaired else lazy_end
+                else:
+                    depth -= 1
+            elif name in siblings and not is_closing:
                 return lazy_end
+            elif is_closing:
+                if unpaired.get(name):
+                    unpaired[name] -= 1
+                    if not unpaired[name]:
+                        del unpaired[name]
             else:
-                index += 1
+                unpaired[name] = unpaired.get(name, 0) + 1
         return None
 
     @staticmethod
