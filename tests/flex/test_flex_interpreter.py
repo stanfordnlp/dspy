@@ -315,11 +315,13 @@ def test_predictor_call_budget_can_be_disabled() -> None:
 # =============================================================================
 # LM infrastructure errors keep their type across the boundary (no Deno)
 # =============================================================================
-# The JSON-RPC boundary flattens a host-tool exception into a type-name-in-message string, so a
-# bridged predictor's provider failure would surface as a generic CodeExecutionError. The bridge
-# stashes the typed error on the _Invocation and forward() re-raises it when that failure is what
-# killed the run: infrastructure failures are not the generated code's fault, and callers
-# discriminate by type (e.g. catching dspy.LMError to retry).
+# The JSON-RPC boundary flattens a host-tool exception into a message string, so a bridged
+# predictor's provider failure would surface as a generic CodeExecutionError. The bridge stashes
+# the typed error on the _Invocation and stamps a tag into the message that crosses the boundary;
+# forward() re-raises the typed error only when the failure that killed the run carries that tag.
+# Infrastructure failures are not the generated code's fault, and callers discriminate by type
+# (e.g. catching dspy.LMError to retry) — but a failure the generated code recovered from must
+# not repaint a later, unrelated crash as an infrastructure error.
 
 
 class _RateLimitedLM(DummyLM):
@@ -382,10 +384,29 @@ def test_recovered_lm_failure_does_not_hijack_a_later_crash() -> None:
         )
         try:
             tools[bridge.CALL_TOOL](handle="solve", inputs={"value": 2})
-        except LMError:
-            pass  # the generated code swallows the failure and falls back
+        except Exception:
+            pass  # the generated code swallows the flattened boundary error and falls back
         tools[bridge.CONSTRUCT_TOOL](kind="Predict", signature="q -> a", attr_name="fallback", kwargs={})
         raise NameError("name 'oops' is not defined")
+
+    flex = _boundary_flex(drive)
+    dspy.configure(lm=_RateLimitedLM([]))
+    with pytest.raises(CodeExecutionError, match="NameError"):
+        flex(value=2)
+
+
+def test_recovered_lm_failure_does_not_hijack_a_local_later_crash() -> None:
+    # Same recovery, but with NO bridge call between it and the crash — the host can't observe
+    # the recovery, so only the tag correlation tells the stale LMError apart from the local bug.
+    def drive(tools):
+        tools[bridge.CONSTRUCT_TOOL](
+            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
+        )
+        try:
+            tools[bridge.CALL_TOOL](handle="solve", inputs={"value": 2})
+        except Exception:
+            pass  # the generated code recovers from the provider failure
+        raise NameError("later sandbox bug")
 
     flex = _boundary_flex(drive)
     dspy.configure(lm=_RateLimitedLM([]))
@@ -590,6 +611,58 @@ def test_runaway_glue_is_stopped_by_budget_in_sandbox() -> None:
     with pytest.raises(Exception) as excinfo:  # the budget error propagates out of the sandbox
         flex(value=1)
     assert "budget" in str(excinfo.value).lower()
+
+
+# The real-boundary counterparts of the fake-boundary LM-error tests above: the tag call() stamps
+# into the boundary message must survive the actual Deno/Pyodide JSON-RPC round trip.
+LM_FAILURE_MODULE = textwrap.dedent(
+    """
+    class DoublerModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.solve = dspy.Predict("value: int -> result: int")
+
+        def forward(self, **inputs):
+            r = self.solve(value=inputs["value"])
+            return dspy.Prediction(result=r.result)
+    """
+).strip()
+
+RECOVERED_LM_FAILURE_MODULE = textwrap.dedent(
+    """
+    class DoublerModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.solve = dspy.Predict("value: int -> result: int")
+
+        def forward(self, **inputs):
+            try:
+                r = self.solve(value=inputs["value"])
+            except Exception:
+                pass  # recover from the provider failure...
+            return oops  # ...then crash locally, with no bridge call in between (NameError)
+    """
+).strip()
+
+
+@deno_required
+def test_lm_failure_type_survives_the_real_sandbox_boundary() -> None:
+    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
+    flex._bind_code(LM_FAILURE_MODULE)
+    dspy.configure(lm=_RateLimitedLM([]))
+    with pytest.raises(LMRateLimitError):
+        flex(value=2)
+
+
+@deno_required
+def test_recovered_lm_failure_does_not_hijack_through_the_real_sandbox() -> None:
+    flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
+    flex._bind_code(RECOVERED_LM_FAILURE_MODULE)
+    dspy.configure(lm=_RateLimitedLM([]))
+    with pytest.raises(CodeInterpreterError) as err:
+        flex(value=2)
+    assert not isinstance(err.value, LMError)  # the local NameError is not repainted as infra
+    assert "NameError" in str(err.value) or "oops" in str(err.value)
 
 
 # A module that constructs and calls a dspy.CodeAct with a Flex-level tool. CodeAct runs its own

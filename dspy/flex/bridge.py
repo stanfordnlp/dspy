@@ -149,7 +149,7 @@ class _Invocation:
         self._originals = originals
         self._predictors: dict[str, Any] = {}
         self._calls = 0
-        self._lm_error: LMError | None = None
+        self._lm_error: tuple[LMError, str] | None = None
 
     def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
         self._lm_error = None
@@ -177,8 +177,9 @@ class _Invocation:
         try:
             return prediction_to_fields(predictor(**restored))
         except LMError as e:
-            self._lm_error = e
-            raise
+            tag = f"[dspy bridge lm-error #{self._calls}]"
+            self._lm_error = (e, tag)
+            raise CodeInterpreterError(f"{tag} {type(e).__name__}: {e}") from e
 
 
 class BridgeRuntime:
@@ -230,7 +231,9 @@ class BridgeRuntime:
             result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
         except CodeInterpreterError as e:
             if invocation._lm_error is not None:
-                raise invocation._lm_error from e
+                lm_error, tag = invocation._lm_error
+                if tag in str(e):
+                    raise lm_error from e
             raise
         finally:
             try:
