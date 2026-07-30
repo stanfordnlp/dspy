@@ -138,7 +138,14 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
 
     Everything else keeps the lazy reading too: a value that merely *ends* with its own closing tag
     is indistinguishable from a value followed by trailing commentary, so widening the block there
-    would silently corrupt one reading to rescue the other. `_assert_unambiguous` reports those.
+    would silently corrupt one reading to rescue the other.
+
+    The lazy reading is a truncation whenever the value did own that closing tag, and
+    `_assert_unambiguous` reports it only when the surplus tag survives the block mask with real
+    text before it. Two shapes escape that and stay silently truncated: a value ending with its own
+    closing tag, where only whitespace separates the two readings, and a rejected span where a later
+    block either covers the surplus tag or is all that separates it from the value. Representing
+    either needs escaping, which this wire format does not have.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
@@ -254,12 +261,13 @@ class XMLAdapter(ChatAdapter):
         spans: dict[str, int],
         blocks: list[tuple[int, int]],
     ) -> None:
-        """Raise if a field's value is cut short by a closing tag that may belong to the value.
+        """Raise if a field's value is cut short by a closing tag left over in open text.
 
-        Nesting is decided by `_extract_field_blocks`, which is exact. What remains is the case
-        no parser can settle: `<answer>a</answer> b</answer>` reads either as the value `a`
-        followed by chatter or as the value `a</answer> b`, and the two are token-identical.
-        Report it rather than silently picking one and returning the wrong string.
+        Nesting is decided by `_extract_field_blocks`. What remains is the case no parser can
+        settle: `<answer>a</answer> b</answer>` reads either as the value `a` followed by chatter
+        or as the value `a</answer> b`, and the two are token-identical. Report it rather than
+        silently picking one and returning the wrong string. A truncation whose surplus tag is
+        *not* left over in open text is invisible here; `_extract_field_blocks` lists those shapes.
 
         `spans` holds where each output field's block ended; `blocks` holds every block found, in
         scan order, so they are sorted by start and never overlap. Blanking each block to spaces
@@ -314,9 +322,10 @@ class XMLAdapter(ChatAdapter):
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Extract each output field from its `<field_name>...</field_name>` block.
 
-        A value holding a nested element of the same name is recovered in full; a value that
-        merely ends with its own closing tag is ambiguous and raises `AdapterParseError` rather
-        than being silently truncated. The first complete block wins for a repeated field.
+        A value holding a nested element of the same name is recovered in full; a value whose own
+        closing tag is left over in open text is ambiguous and raises `AdapterParseError` rather
+        than being silently truncated. The first complete block wins for a repeated field. See
+        `_extract_field_blocks` for the two shapes that are still truncated silently.
         """
         fields = {}
         spans: dict[str, int] = {}
