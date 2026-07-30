@@ -1,4 +1,5 @@
 import sys
+import time
 from unittest import mock
 
 import pydantic
@@ -1042,3 +1043,45 @@ def test_xml_adapter_parse_reports_ambiguity_after_a_benign_duplicate():
     completion = "<answer>42</answer>\n</answer> rest of value</answer>"
     with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="unmatched"):
         dspy.XMLAdapter().parse(TestSignature, completion)
+
+
+def test_xml_adapter_parse_ignores_duplicated_closing_tag_after_a_balanced_block():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # A block between the value and the surplus tag is closed, so its text belongs to that block
+    # and the longer reading hides nothing. Treating the block as content would reject a common
+    # slip - trailing duplicate tag after later output - that has always parsed.
+    completion = "<answer>42</answer>\n<thinking>done</thinking>\n</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+
+    # Text sitting outside those blocks is still unaccounted for, so it is still reported.
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(TestSignature, "<answer>42</answer>\n<thinking>done</thinking> and</answer>")
+
+
+def test_xml_adapter_parse_ignores_earlier_field_closing_tag_after_a_balanced_block():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # Same slip for a field the later blocks are nested after rather than before: the answer
+    # block accounts for everything between reasoning's real closing tag and the stray copy.
+    completion = "<reasoning>think</reasoning>\n<answer>42</answer>\n</reasoning>"
+    assert dspy.XMLAdapter().parse(Two, completion) == {"reasoning": "think", "answer": "42"}
+
+
+def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # A degenerate completion that repeats one tag is cheap model output to produce, so the scan
+    # for it has to stay linear. Re-measuring the text before each surplus tag made this
+    # quadratic: 50k copies took tens of seconds before, and milliseconds now.
+    completion = "<answer>42</answer>" + "</answer>" * 50_000
+    start = time.time()
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+    assert time.time() - start < 5
