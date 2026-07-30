@@ -252,6 +252,23 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
+def test_truncate_trajectory_raises_on_single_tool_call():
+    # A trajectory with exactly one tool call has 4 keys (thought, tool_name, tool_args,
+    # observation). Per truncate_trajectory's own docstring/error message, this is the
+    # smallest trajectory that cannot be truncated further, so it must raise instead of
+    # silently popping every key and returning an empty trajectory.
+    react = dspy.ReAct("input_text -> output_text", tools=[])
+    trajectory = {
+        "thought_0": "Thought 0",
+        "tool_name_0": "finish",
+        "tool_args_0": {},
+        "observation_0": "Completed.",
+    }
+
+    with pytest.raises(ValueError):
+        react.truncate_trajectory(trajectory)
+
+
 @pytest.mark.asyncio
 async def test_context_window_exceeded_after_retries():
     def echo(text: str) -> str:
