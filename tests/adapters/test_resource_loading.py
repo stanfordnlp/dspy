@@ -67,6 +67,31 @@ def test_image_url_constructor_does_not_download(monkeypatch):
     assert image.url == "https://example.com/image.png"
 
 
+def test_image_validation_rejects_download_without_host_io(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
+        TypeAdapter(dspy.Image).validate_python(
+            {"url": "http://169.254.169.254/latest/meta-data", "download": True}
+        )
+
+
+def test_image_positional_download_compatibility_shim(monkeypatch):
+    class Response:
+        content = b"remote bytes"
+        headers = {"Content-Type": "image/png"}
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("dspy.adapters.types.image.requests.get", lambda *args, **kwargs: Response())
+
+    with pytest.warns(DeprecationWarning, match="download.*deprecated"):
+        image = dspy.Image("https://example.com/image.png", download=True)
+
+    assert base64.b64decode(image.url.split(",", 1)[1]) == b"remote bytes"
+
+
 def test_explicit_local_resource_factories(tmp_path):
     image_path = tmp_path / "image.png"
     image_path.write_bytes(b"image bytes")

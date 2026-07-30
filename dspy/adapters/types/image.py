@@ -61,6 +61,17 @@ class Image(Type):
 
         download_requested = download is not _UNSET
         verify_requested = verify is not _UNSET
+        if (download_requested or verify_requested) and source is None:
+            # `download`/`verify` are a compatibility shim for the positional constructor
+            # `Image(url, download=True)`. They must never be honored through the validation
+            # path: pydantic routes dict data into `__init__`, so an untrusted value such as
+            # `{"url": "http://169.254.169.254/...", "download": true}` would otherwise trigger
+            # a server-side fetch during output parsing. Requiring a positional source keeps the
+            # shim reachable only from direct developer construction.
+            raise TypeError(
+                "`download` and `verify` are only valid with a positional image source; "
+                "use Image.from_url(url, verify=...) to download a remote image."
+            )
         if download_requested or verify_requested:
             warnings.warn(
                 "The `download` and `verify` arguments to Image() are deprecated and will be removed in "
