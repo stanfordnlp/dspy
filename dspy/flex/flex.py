@@ -75,7 +75,6 @@ class Flex(Module, Parameter):
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        state.pop("_bridge", None)  # Ignore bridges persisted by prerelease versions.
         super().__setstate__(state)
         self._rebuild_bridge()
         if self._module_src is not None:
