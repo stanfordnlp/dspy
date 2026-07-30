@@ -932,6 +932,34 @@ def test_xml_adapter_parse_ignores_trailing_prose_mentioning_the_closing_tag():
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "final"}
 
 
+def test_xml_adapter_parse_ignores_duplicated_closing_tag():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # Emitting the closing tag twice is a common model slip. The extra copies are separated from
+    # the real closing tag by whitespace only, so they must not be absorbed into the value.
+    assert dspy.XMLAdapter().parse(TestSignature, "<answer>42</answer>\n</answer>") == {"answer": "42"}
+    assert dspy.XMLAdapter().parse(TestSignature, "<answer>42</answer>\n</answer>\n</answer>") == {"answer": "42"}
+
+    # The value may still legitimately contain the closing tag: only the trailing duplicate is
+    # dropped, and the earliest closing tag that is followed by nothing but duplicates wins.
+    completion = "<answer>see </answer> here</answer>\n</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "see </answer> here"}
+
+
+def test_xml_adapter_parse_ignores_duplicated_closing_tag_before_next_field():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # Same slip in a non-final field: the duplicate sits between the real closing tag and the
+    # next field's opening tag, so neither field may swallow it.
+    completion = "<reasoning>think</reasoning>\n</reasoning>\n<answer>42</answer>\n</answer>"
+    assert dspy.XMLAdapter().parse(Two, completion) == {"reasoning": "think", "answer": "42"}
+
+
 def test_xml_adapter_parse_allows_bare_ampersand_and_unknown_tags():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()

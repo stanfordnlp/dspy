@@ -8,6 +8,19 @@ from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
 
 
+def _skip_whitespace_and_tags(text: str, start: int, end: int, tag: str) -> int:
+    """Advance from `start` past whitespace and whole copies of `tag`, stopping at `end`."""
+    index = start
+    while index < end:
+        if text[index].isspace():
+            index += 1
+        elif text.startswith(tag, index) and index + len(tag) <= end:
+            index += len(tag)
+        else:
+            break
+    return index
+
+
 class XMLAdapter(ChatAdapter):
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
@@ -88,8 +101,18 @@ class XMLAdapter(ChatAdapter):
         closing tag, e.g. a `code` field whose body contains `</code>`. Scanning the completion
         with a single self-backreferencing pattern would end the value at the first closing tag
         and silently truncate it. Instead, walk the completion left to right and, for each field,
-        take the last closing tag before the next expected field's opening tag: that boundary is
-        the widest span that cannot belong to another field.
+        pick which of its closing tags ends the value:
+
+        1. Collect every closing tag after the opening one. Prefer those before the next expected
+           field's opening tag; if none precedes it, that opening tag was part of this value, so
+           all closing tags are reconsidered.
+        2. Take the last of those followed by nothing but whitespace, or by a still-pending field's
+           opening tag, so trailing prose that merely quotes the closing tag is not absorbed.
+        3. Narrow that choice back to the earliest closing tag separated from it by only
+           whitespace and further copies of the tag, so a duplicated closing tag - a common model
+           slip - does not widen the value.
+        4. If nothing qualifies under 2, fall back to the first closing tag, matching the
+           non-greedy behavior this adapter had before.
         """
         pending = list(signature.output_fields)
         opening_patterns = {name: re.compile(rf"<{re.escape(name)}>") for name in pending}
@@ -155,6 +178,17 @@ class XMLAdapter(ChatAdapter):
                 # No terminal candidate: the first closing tag is the safest guess, which matches
                 # the non-greedy behavior this adapter had before.
                 closing = pool[0]
+            else:
+                # A repeated closing tag is a common model slip, and letting the last copy win
+                # would absorb the real one into the value. When only whitespace and further
+                # copies of the tag separate an earlier candidate from the chosen one, the value
+                # already ended at that earlier candidate.
+                for pos in pool:
+                    if pos >= closing:
+                        break
+                    if _skip_whitespace_and_tags(completion, pos + len(closing_tag), closing, closing_tag) == closing:
+                        closing = pos
+                        break
 
             fields[name] = completion[value_start:closing].strip()
             pending.remove(name)
