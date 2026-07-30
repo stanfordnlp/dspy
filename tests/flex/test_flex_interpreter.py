@@ -25,8 +25,9 @@ import pytest
 
 import dspy
 from dspy.flex import Flex, bridge
-from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError
 from dspy.utils.dummies import DummyLM
+from dspy.utils.exceptions import LMError, LMRateLimitError
 from tests.mock_interpreter import MockInterpreter
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
@@ -309,6 +310,87 @@ def test_predictor_call_budget_can_be_disabled() -> None:
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     for _ in range(5):  # no cap -> all calls go through
         inv.call("solve", {"value": 1})
+
+
+# =============================================================================
+# LM infrastructure errors keep their type across the boundary (no Deno)
+# =============================================================================
+# The JSON-RPC boundary flattens a host-tool exception into a type-name-in-message string, so a
+# bridged predictor's provider failure would surface as a generic CodeExecutionError. The bridge
+# stashes the typed error on the _Invocation and forward() re-raises it when that failure is what
+# killed the run: infrastructure failures are not the generated code's fault, and callers
+# discriminate by type (e.g. catching dspy.LMError to retry).
+
+
+class _RateLimitedLM(DummyLM):
+    """A host LM whose provider is down: every call raises a typed LM infrastructure error."""
+
+    def forward(self, *args, **kwargs):
+        raise LMRateLimitError("429 from the provider", model="dummy")
+
+
+def _boundary_flex(drive):
+    """A Flex whose MockInterpreter drives the bridge callbacks the way the sandbox shim would.
+
+    ``drive(tools)`` plays the generated forward. Any exception it lets escape is flattened to a
+    ``CodeExecutionError`` carrying only the type name in its message, exactly like the real
+    boundary (``PythonInterpreter._handle_tool_call`` + the execute error path).
+    """
+    interps: list[MockInterpreter] = []
+
+    def execute_fn(code, variables):
+        if not variables:
+            return ""  # the shim-setup and class-definition steps
+        try:
+            drive(interps[-1].tools)
+        except Exception as e:
+            raise CodeExecutionError(f"{type(e).__name__}: {e}") from None
+        return ""
+
+    def factory():
+        interps.append(MockInterpreter(execute_fn=execute_fn))
+        return interps[-1]
+
+    return Flex(Doubler, interpreter_factory=factory)
+
+
+def test_bridged_lm_failure_keeps_its_type_across_the_boundary() -> None:
+    # An uncaught provider failure inside the generated forward reaches the caller as the real
+    # typed error, not as a CodeExecutionError that merely mentions the type name — so it can't
+    # be mistaken for (or absorbed as) a broken code candidate.
+    def drive(tools):
+        tools[bridge.CONSTRUCT_TOOL](
+            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
+        )
+        tools[bridge.CALL_TOOL](handle="solve", inputs={"value": 2})
+
+    flex = _boundary_flex(drive)
+    dspy.configure(lm=_RateLimitedLM([]))
+    with pytest.raises(LMRateLimitError) as err:
+        flex(value=2)
+    assert isinstance(err.value, LMError)  # catchable by the family callers actually handle
+    assert isinstance(err.value.__cause__, CodeExecutionError)  # the sandbox error stays attached
+
+
+def test_recovered_lm_failure_does_not_hijack_a_later_crash() -> None:
+    # If the generated code catches the LM failure and keeps going (proven by a later bridge
+    # callback), a subsequent crash is its own bug: the stale LMError must not repaint a
+    # candidate error as an infrastructure one.
+    def drive(tools):
+        tools[bridge.CONSTRUCT_TOOL](
+            kind="Predict", signature="value: int -> result: int", attr_name="solve", kwargs={}
+        )
+        try:
+            tools[bridge.CALL_TOOL](handle="solve", inputs={"value": 2})
+        except LMError:
+            pass  # the generated code swallows the failure and falls back
+        tools[bridge.CONSTRUCT_TOOL](kind="Predict", signature="q -> a", attr_name="fallback", kwargs={})
+        raise NameError("name 'oops' is not defined")
+
+    flex = _boundary_flex(drive)
+    dspy.configure(lm=_RateLimitedLM([]))
+    with pytest.raises(CodeExecutionError, match="NameError"):
+        flex(value=2)
 
 
 # =============================================================================

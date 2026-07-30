@@ -21,6 +21,8 @@ import dspy
 from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
+from dspy.utils.exceptions import LMRateLimitError
+from dspy.utils.exceptions import LMRateLimitError
 
 # A plain dspy.Predict module class that binds without an LM (no RLM interpreter needed).
 SIMPLE_MODULE = textwrap.dedent(
@@ -320,6 +322,44 @@ def test_propose_new_texts_uses_code_proposer_for_code_keys() -> None:
 
     out = adapter.propose_new_texts(candidate, reflective, [ckey])
     assert 'dspy.Predict("q -> a")' in out[ckey]
+
+
+def test_code_proposer_infra_error_propagates() -> None:
+    """An LM infrastructure failure during code proposal is not the candidate's fault. Keeping
+    the original source would make every iteration 'succeed' with an unchanged candidate and
+    silently burn the optimization budget; propagating matches the instruction-proposer paths
+    (and the build-time policy in DspyAdapter.evaluate)."""
+
+    class DownLM(DummyLM):
+        def forward(self, *args, **kwargs):
+            raise LMRateLimitError("429 from the provider", model="dummy")
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=DownLM([]))
+    candidate = {"self": student.module_src}
+    reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
+
+    with pytest.raises(LMRateLimitError):
+        adapter.propose_new_texts(candidate, reflective, ["self"])
+
+
+def test_code_proposer_bad_proposal_keeps_original() -> None:
+    """A proposal-level failure that is not LM infrastructure (e.g. reflection output the
+    proposal machinery can't handle) keeps that component's original source instead of
+    crashing the run."""
+
+    class GarbledLM(DummyLM):
+        def forward(self, *args, **kwargs):
+            raise RuntimeError("reflection output could not be handled")
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(student_module=student, metric_fn=_metric, feedback_map={}, reflection_lm=GarbledLM([]))
+    original = student.module_src
+    candidate = {"self": original}
+    reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
+
+    out = adapter.propose_new_texts(candidate, reflective, ["self"])
+    assert out == {"self": original}
 
 
 # --- GEPA.compile: seed mixes code + instruction components ------------------

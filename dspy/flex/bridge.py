@@ -13,6 +13,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
+from dspy.utils.exceptions import LMError
 
 logger = logging.getLogger(__name__)
 
@@ -148,8 +149,10 @@ class _Invocation:
         self._originals = originals
         self._predictors: dict[str, Any] = {}
         self._calls = 0
+        self._lm_error: LMError | None = None
 
     def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
+        self._lm_error = None
         if kind not in BRIDGEABLE_KINDS:
             raise CodeInterpreterError(
                 f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
@@ -159,6 +162,7 @@ class _Invocation:
         return attr_name
 
     def call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._lm_error = None
         self._calls += 1
         budget = self._runtime._max_predictor_calls
         if budget is not None and self._calls > budget:
@@ -170,7 +174,11 @@ class _Invocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
-        return prediction_to_fields(predictor(**restored))
+        try:
+            return prediction_to_fields(predictor(**restored))
+        except LMError as e:
+            self._lm_error = e
+            raise
 
 
 class BridgeRuntime:
@@ -220,6 +228,10 @@ class BridgeRuntime:
                 f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
             )
             result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+        except CodeInterpreterError as e:
+            if invocation._lm_error is not None:
+                raise invocation._lm_error from e
+            raise
         finally:
             try:
                 interp.shutdown()

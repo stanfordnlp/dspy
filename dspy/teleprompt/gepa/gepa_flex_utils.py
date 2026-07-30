@@ -9,6 +9,7 @@ from gepa import EvaluationBatch
 import dspy
 from dspy.primitives import Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
+from dspy.utils.exceptions import LMError
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,8 @@ def propose_code(
                     failures=_format_failures(reflective_dataset.get(ckey, [])),
                 )
                 results[ckey] = _strip_code_fences(out.revised_source)
+            except LMError:
+                raise
             except Exception as e:
                 logger.warning("Code proposer failed on %s (%s); keeping original.", ckey, e)
                 results[ckey] = candidate[ckey]
