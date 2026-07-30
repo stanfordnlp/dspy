@@ -184,7 +184,7 @@ Measure the real program before optimizing its adapter.
 
 ## Cross-links
 
-- [Adapters learn guide](../learn/programming/adapters.md) — the beginner-facing scope and precedence story.
+- [Learn Adapters](../learn/programming/adapters.md) — the beginner-facing adapter tutorial.
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
 - Tools, ReAct, and MCP DD page — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
