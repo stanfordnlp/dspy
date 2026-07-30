@@ -269,6 +269,60 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
+    def field_value_end(field_name: str, content: str, sibling_names: frozenset[str] = frozenset()) -> int | None:
+        """Index in `content` where `<field_name>`'s value ends, or None if it has not ended yet.
+
+        `content` is everything after the field's opening tag; `sibling_names` are the signature's
+        other output field names. Streaming calls this so a streamed value and `parse` settle on the
+        same boundary instead of each applying their own rule.
+
+        A value that opens with a same-named element is a nested document and ends at the closing
+        tag that balances it. Widening stops -- and the value ends at the first closing tag, which
+        is what `parse` also does -- if the span would reach another output field, so nesting can
+        never pull a later field into this one. While a nested span is still unbalanced the answer
+        is None: more text may complete it, and settling early would truncate.
+        """
+        opening, closing = f"<{field_name}>", f"</{field_name}>"
+        lazy_end = content.find(closing)
+        lazy_end = lazy_end if lazy_end != -1 else None
+        if not XMLAdapter.value_opens_nested(field_name, content):
+            return lazy_end
+
+        sibling_tags = tuple(f"<{name}>" for name in sibling_names if name != field_name)
+        depth = 0
+        index = 0
+        while index < len(content):
+            if content.startswith(opening, index):
+                depth += 1
+                index += len(opening)
+            elif content.startswith(closing, index):
+                if depth == 0:
+                    return index
+                depth -= 1
+                index += len(closing)
+            elif any(content.startswith(tag, index) for tag in sibling_tags):
+                return lazy_end
+            else:
+                index += 1
+        return None
+
+    @staticmethod
+    def value_opens_nested(field_name: str, content: str) -> bool | None:
+        """Whether a value is a nested same-named document. None while still undecidable.
+
+        Decided from the first non-whitespace run after the opening tag, so a streamed value can
+        be classified before it has fully arrived. None means the text so far is whitespace or a
+        prefix of the opening tag and more is needed.
+        """
+        opening = f"<{field_name}>"
+        stripped = content.lstrip()
+        if stripped.startswith(opening):
+            return True
+        if not stripped or opening.startswith(stripped):
+            return None
+        return False
+
+    @staticmethod
     def _assert_unambiguous(
         signature: type[Signature],
         completion: str,

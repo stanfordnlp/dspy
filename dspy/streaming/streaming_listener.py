@@ -22,6 +22,14 @@ if TYPE_CHECKING:
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 
+# A value that is itself a same-named element (`<code><code>x</code></code>`) cannot be streamed
+# token-by-token: which closing tag ends it is only known once the balancing tag arrives, and by
+# then an eagerly-emitted value would already be wrong. Such values are therefore buffered and
+# emitted once, so a streamed value always matches what `XMLAdapter.parse` returns. Set this to
+# False to restore the previous behaviour, where the field ended at the first closing tag and a
+# nested value was truncated in the stream while `parse` recovered it in full.
+STREAM_NESTED_XML_VALUES = True
+
 
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
@@ -55,6 +63,7 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.xml_adapter_state = {"field_accumulated_messages": "", "is_nested": None, "scan_pos": 0}
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -134,6 +143,7 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
+                self.xml_adapter_state = {"field_accumulated_messages": "", "is_nested": None, "scan_pos": 0}
                 self.stream_start = False
             else:
                 return
@@ -215,6 +225,11 @@ class StreamListener:
             # The stream is started, we keep returning the token until we see the start of the next field.
             self.field_end_queue.put(chunk_message)
 
+            if STREAM_NESTED_XML_VALUES and isinstance(settings.adapter, XMLAdapter):
+                handled, response = self._xml_nested_stream_chunk(chunk_message)
+                if handled:
+                    return response
+
             token = None
             concat_message = "".join(self.field_end_queue.queue).strip()
 
@@ -290,6 +305,57 @@ class StreamListener:
                 token,
                 is_last_chunk=self.stream_end,
             )
+
+    def _xml_nested_stream_chunk(self, chunk_message: str) -> tuple[bool, StreamResponse | None]:
+        """Buffer a nested same-named XML value and emit it once, whole.
+
+        Returns `(handled, response)`. `handled` is False for ordinary values, which fall through
+        to the unchanged token-by-token path; only a value that opens with its own tag is taken
+        over here. Nothing is emitted while such a value is incomplete, because the closing tag
+        that ends it is not known until the balancing tag arrives, and a chunk released before
+        then could not be taken back.
+
+        Deleting this method, its call site, and `STREAM_NESTED_XML_VALUES` restores the previous
+        behaviour exactly; no other path is touched.
+        """
+        state = self.xml_adapter_state
+        state["field_accumulated_messages"] += chunk_message
+        accumulated = state["field_accumulated_messages"]
+
+        if state["is_nested"] is None:
+            state["is_nested"] = XMLAdapter.value_opens_nested(self.signature_field_name, accumulated)
+            if state["is_nested"] is None:
+                # Still only whitespace or a partial opening tag: withhold rather than guess.
+                return True, None
+        if not state["is_nested"]:
+            return False, None
+
+        # The value can only end at a closing tag, so the balance check runs when a new one lands
+        # rather than on every chunk. Only the newly arrived tail is searched, minus an overlap the
+        # width of the tag so one split across chunks is still seen.
+        closing = f"</{self.signature_field_name}>"
+        search_from = max(state["scan_pos"], len(accumulated) - len(chunk_message) - len(closing) + 1)
+        found = accumulated.find(closing, max(0, search_from))
+        if found == -1:
+            return True, None
+        state["scan_pos"] = found + 1
+
+        try:
+            siblings = frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
+        except Exception:
+            siblings = frozenset()
+        value_end = XMLAdapter.field_value_end(self.signature_field_name, accumulated, siblings)
+        if value_end is None:
+            return True, None
+
+        self.stream_end = True
+        self.field_end_queue = Queue()
+        return True, StreamResponse(
+            self.predict_name,
+            self.signature_field_name,
+            accumulated[:value_end].strip(),
+            is_last_chunk=True,
+        )
 
     def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> StreamResponse | None:
         concat_message = "".join(self.field_end_queue.queue).strip()
