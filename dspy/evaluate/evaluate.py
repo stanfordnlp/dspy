@@ -88,9 +88,9 @@ class Evaluate:
         Args:
             devset (list[dspy.Example]): the evaluation dataset.
             metric (Callable): The per-example metric function to use for evaluation.
-            population_metric (Optional[Callable]): An optional metric that receives all examples and predictions
-                and determines the aggregate evaluation score. Its return value is scaled by 100 when stored in
-                `EvaluationResult.score`.
+            population_metric (Optional[Callable]): An optional metric that receives successfully evaluated examples
+                and predictions and determines the aggregate evaluation score. Items with tolerated per-example failures
+                are omitted. Its return value is scaled by 100 when stored in `EvaluationResult.score`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
@@ -144,9 +144,10 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
-            population_metric (Optional[Callable]): An optional metric that receives all examples and predictions
-                and determines the aggregate evaluation score. Its return value is scaled by 100 when stored in
-                `EvaluationResult.score`. if not provided, use `self.population_metric`.
+            population_metric (Optional[Callable]): An optional metric that receives successfully evaluated examples
+                and predictions and determines the aggregate evaluation score. Items with tolerated per-example failures
+                are omitted. Its return value is scaled by 100 when stored in `EvaluationResult.score`. if not provided,
+                use `self.population_metric`.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -193,10 +194,20 @@ class Evaluate:
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         if population_metric is not None:
-            examples = [example for example, _, _ in results]
-            predictions = [prediction for _, prediction, _ in results]
-            overall_score = round(100 * population_metric(examples, predictions), 2)
-            logger.info(f"Population Metric: {overall_score}%")
+            failed_indices = set(executor.failed_indices)
+            population_results = [
+                result for index, result in enumerate(results) if index not in failed_indices
+            ]
+            if population_results:
+                examples = [example for example, _, _ in population_results]
+                predictions = [prediction for _, prediction, _ in population_results]
+                overall_score = round(100 * population_metric(examples, predictions), 2)
+                logger.info(f"Population Metric: {overall_score}%")
+            else:
+                logger.warning(
+                    "Skipping population metric because all examples failed; "
+                    "using the average failure score instead."
+                )
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:

@@ -543,3 +543,65 @@ def test_evaluate_population_metric_per_call_override():
 
     assert result.score == 75.0
     assert [score for _, _, score in result.results] == [True, True]
+
+
+def test_evaluate_population_metric_skips_tolerated_program_failures():
+    devset = [new_example("broken", "correct"), new_example("healthy", "correct")]
+    captured = {}
+
+    def program(question):
+        if question == "broken":
+            raise ValueError("program failure")
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        max_errors=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 100.0
+    assert [score for _, _, score in result.results] == [0.0, True]
+    assert captured == {"questions": ["healthy"], "answers": ["correct"]}
+
+
+def test_evaluate_population_metric_skips_tolerated_metric_failures():
+    devset = [new_example("broken", "correct"), new_example("healthy", "correct")]
+    captured = {}
+
+    def program(question):
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        if example.question == "broken":
+            raise ValueError("metric failure")
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 0.75
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        max_errors=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 75.0
+    assert [score for _, _, score in result.results] == [0.0, True]
+    assert captured == {"questions": ["healthy"], "answers": ["correct"]}
