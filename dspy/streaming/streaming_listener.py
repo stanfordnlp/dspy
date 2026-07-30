@@ -335,16 +335,6 @@ class StreamListener:
                 state["field_accumulated_messages"] = ""
                 return False, None
 
-        # The value can only end at a closing tag, so the balance check runs when a new one lands
-        # rather than on every chunk. Only the newly arrived tail is searched, minus an overlap the
-        # width of the tag so one split across chunks is still seen.
-        closing = f"</{self.signature_field_name}>"
-        search_from = max(state["scan_pos"], len(accumulated) - len(chunk_message) - len(closing) + 1)
-        found = accumulated.find(closing, max(0, search_from))
-        if found == -1:
-            return True, None
-        state["scan_pos"] = found + 1
-
         try:
             siblings = frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
         except AttributeError:
@@ -353,6 +343,20 @@ class StreamListener:
             state["is_nested"] = False
             state["field_accumulated_messages"] = ""
             return False, None
+
+        # Two markers can settle the boundary, matching the two things `_nested_decision_ready`
+        # waits on: a closing tag, the only thing a block can end at, and a sibling's opening tag,
+        # which rejects the widening for good. Watching for the closing tag alone leaves a value
+        # whose deciding sibling arrives afterwards buffered until `finalize()`, long past its real
+        # boundary and lost entirely if `parse` then raises. So the scan runs when either lands,
+        # rather than on every chunk, over the text not yet searched -- which begins a marker's
+        # width back from the previous tail, so one split across chunks is still seen whole.
+        markers = (f"</{self.signature_field_name}>", *(f"<{name}>" for name in siblings))
+        searched_from = state["scan_pos"]
+        state["scan_pos"] = max(0, len(accumulated) - max(len(marker) for marker in markers) + 1)
+        if all(accumulated.find(marker, searched_from) == -1 for marker in markers):
+            return True, None
+
         value_end = XMLAdapter.field_value_end(self.signature_field_name, accumulated, siblings)
         if value_end is None:
             return True, None

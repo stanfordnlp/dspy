@@ -1014,6 +1014,47 @@ async def test_xml_adapter_nested_stream_never_leaks_a_later_field():
 
 
 @pytest.mark.anyio
+async def test_xml_adapter_nested_stream_emits_at_the_boundary_not_at_finalize():
+    """A buffered value must be released as soon as its boundary is settled, not once the stream ends.
+
+    Here nothing balances the `answer` span, so what settles it is `<other>` opening -- which
+    brings no closing tag. Waiting only on closing tags leaves the value stranded in the buffer
+    until `finalize()`, arriving after the whole completion and never arriving at all when `parse`
+    raises, since `finalize()` only runs once a `Prediction` is produced.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer>\n<answer>foo\n</answer>\n<other>bar baz qux quux</other>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+                dspy.streaming.StreamListener(signature_field_name="other"),
+            ],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            responses = [v async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    order = [response.signature_field_name for response in responses]
+    # `answer` lands before any of `other`'s tokens; a finalize-only emission would put it last.
+    assert order.index("answer") < order.index("other")
+    answer = "".join(r.chunk for r in responses if r.signature_field_name == "answer")
+    assert answer == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_xml_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):

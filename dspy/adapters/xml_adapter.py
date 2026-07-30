@@ -118,8 +118,13 @@ def _span_acceptor(
     return accepts
 
 
-def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list[tuple[str, str, int, int]]:
-    """Split ``completion`` into ``(field_name, raw_value, start, end)`` tuples, left to right.
+def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list[tuple[str, int, int, int, int]]:
+    """Split ``completion`` into ``(field_name, value_start, value_end, start, end)``, left to right.
+
+    Blocks are reported as offsets into ``completion`` rather than as substrings: ``value_start``
+    and ``value_end`` bound the raw value, ``start`` and ``end`` the whole block including its
+    tags. Callers slice only the values they keep, so a completion full of tags naming nothing in
+    the signature costs no copies.
 
     One rule goes beyond a plain lazy ``<name>(.*?)</name>`` scan, so that a value which is itself
     a same-named element is not truncated at the inner closing tag:
@@ -147,15 +152,17 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     `_assert_unambiguous` reports it only when the surplus tag survives the block mask with real
     text before it. Two shapes escape that and stay silently truncated: a value ending with its own
     closing tag, where only whitespace separates the two readings, and a rejected span where a later
-    block either covers the surplus tag or is all that separates it from the value. Representing
-    either needs escaping, which this wire format does not have.
+    block -- which need not belong to a declared field, so an unrelated `<note>...</note>` counts --
+    either covers the surplus tag or is all that separates it from the value. Representing either
+    needs escaping, which this wire format does not have. This paragraph is the one statement of
+    those limits; everything else that mentions them points here.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
     next_closing = _next_closing_tags(tags)
     span_is_self_contained = _span_acceptor(tags, partners, output_names)
 
-    blocks: list[tuple[str, str, int, int]] = []
+    blocks: list[tuple[str, int, int, int, int]] = []
     index = 0
     while index < len(tags):
         _, open_end, is_closing, name = tags[index]
@@ -179,7 +186,7 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
             index += 1
             continue
 
-        blocks.append((name, completion[open_end : tags[end][0]], tags[index][0], tags[end][1]))
+        blocks.append((name, open_end, tags[end][0], tags[index][0], tags[end][1]))
         index = end + 1
     return blocks
 
@@ -194,7 +201,8 @@ class XMLAdapter(ChatAdapter):
     The wire format has no escaping, so a value containing its own closing tag cannot always be
     told apart from a value followed by trailing commentary. Rather than guess, `parse` raises
     `AdapterParseError` when the surplus closing tag is left over in open text with real text
-    before it. Use `ChatAdapter` or `JSONAdapter` for content that can contain the closing tag.
+    before it; `_extract_field_blocks` names the shapes that slip past that check and truncate
+    silently. Use `ChatAdapter` or `JSONAdapter` for content that can contain the closing tag.
     """
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
@@ -286,7 +294,7 @@ class XMLAdapter(ChatAdapter):
 
         opening = f"<{field_name}>"
         blocks = _extract_field_blocks(opening + content, sibling_names | {field_name})
-        for name, _, start, end in blocks:
+        for name, _, _, start, end in blocks:
             if start == 0:
                 # `end` is past the closing tag, in the reconstructed string; report where the
                 # value stops, in `content`.
@@ -410,17 +418,18 @@ class XMLAdapter(ChatAdapter):
         than being silently truncated. The first complete block wins for a repeated field.
 
         Two shapes stay silently truncated, because representing either needs escaping this wire
-        format does not have: a value that *ends* with its own closing tag, and a nested value
-        whose surplus closing tag any later balanced block covers or is all that separates
-        from the value -- that block need not belong to a declared field. `_extract_field_blocks` spells out why each is undecidable.
+        format does not have; `_extract_field_blocks` names them and spells out why each is
+        undecidable.
         """
         fields = {}
         spans: dict[str, int] = {}
         blocks: list[tuple[int, int]] = []
-        for name, content, start, end in _extract_field_blocks(completion, frozenset(signature.output_fields)):
+        for name, value_start, value_end, start, end in _extract_field_blocks(
+            completion, frozenset(signature.output_fields)
+        ):
             blocks.append((start, end))
             if name in signature.output_fields and name not in fields:
-                fields[name] = content.strip()
+                fields[name] = completion[value_start:value_end].strip()
                 spans[name] = end
         # Report a missing field before reading a stray tag of an earlier field as an ambiguity.
         if fields.keys() != signature.output_fields.keys():
