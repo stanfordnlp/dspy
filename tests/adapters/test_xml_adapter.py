@@ -1180,3 +1180,28 @@ def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
     start = time.perf_counter()
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
     assert time.perf_counter() - start < 5
+
+
+@pytest.mark.parametrize(
+    ("label", "tail"),
+    [
+        # A tag inside the span that pairs with nothing.
+        ("unpaired", "<b>" + "</code>" * 20_000),
+        # A tag inside the span that pairs after it.
+        ("crossing", "<x>" + "</code>" * 20_000 + "</x>"),
+        # Another output field inside the span.
+        ("other field", "<answer>y</answer>" + "</code>" * 20_000),
+    ],
+)
+def test_xml_adapter_parse_rejects_unwidenable_spans_in_linear_time(label, tail):
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # Every `<code><code>` pair below looks like a nested value worth widening, and each tail then
+    # rules the widened span out. Walking a span to reject it cost its length, so these took half a
+    # minute of CPU before and milliseconds now; the answer itself is unaffected either way.
+    completion = "<answer>42</answer>" + "<code><code></code>" * 20_000 + tail
+    start = time.perf_counter()
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+    assert time.perf_counter() - start < 5

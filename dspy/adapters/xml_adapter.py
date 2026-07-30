@@ -1,4 +1,7 @@
+import heapq
 import re
+from bisect import bisect_left, bisect_right
+from collections.abc import Callable
 from typing import Any
 
 from pydantic.fields import FieldInfo
@@ -50,22 +53,88 @@ def _next_closing_tags(tags: list[tuple[int, int, bool, str]]) -> list[int | Non
     return following
 
 
+def _first_straddling_close(tags: list[tuple[int, int, bool, str]], partners: dict[int, int]) -> list[int]:
+    """For each tag, the earliest closing tag after it whose own opening tag lies before it.
+
+    A closing tag with no opening tag at all straddles every position, so it is pending from the
+    start. `len(tags)` means there is none, so every closing tag after that position pairs with an
+    opening tag at or after it.
+    """
+    paired_closes = set(partners.values())
+    pending = [index for index, (_, _, is_closing, _) in enumerate(tags) if is_closing and index not in paired_closes]
+    heapq.heapify(pending)
+
+    straddling: list[int] = [len(tags)] * len(tags)
+    for index in range(len(tags)):
+        while pending and pending[0] <= index:
+            heapq.heappop(pending)
+        straddling[index] = pending[0] if pending else len(tags)
+        partner = partners.get(index)
+        if partner is not None:
+            heapq.heappush(pending, partner)
+    return straddling
+
+
+def _span_acceptor(
+    tags: list[tuple[int, int, bool, str]],
+    partners: dict[int, int],
+    output_names: frozenset[str],
+) -> Callable[[int, int], bool]:
+    """Build the test deciding whether a depth-balanced span is believable as a single value.
+
+    A span qualifies when every tag inside it pairs inside it, and when it holds no opening tag of
+    a different output field. Walking a span to answer that costs its length, and a completion
+    made of spans that are all rejected then costs their sum, so each question is instead answered
+    from prefix data in constant time:
+
+    * A tag inside the span pairs to the *left* of it only if some closing tag inside pairs with an
+      opening tag before the span, which `_first_straddling_close` reports directly.
+    * With that ruled out every closing tag inside pairs inside, so an opening tag that pairs to
+      the *right* of the span, or with nothing at all, is exactly a surplus of opening tags over
+      closing ones, which the running `balance` measures.
+    * Opening tags naming an output field are counted the same way, discounting repeats of the
+      span's own name, which are the nesting being recovered rather than a swallowed field.
+    """
+    straddling_close = _first_straddling_close(tags, partners)
+    balance = [0] * (len(tags) + 1)
+    field_opens = [0] * (len(tags) + 1)
+    opens_by_name: dict[str, list[int]] = {}
+    for index, (_, _, is_closing, name) in enumerate(tags):
+        balance[index + 1] = balance[index] + (-1 if is_closing else 1)
+        field_opens[index + 1] = field_opens[index] + (0 if is_closing or name not in output_names else 1)
+        if not is_closing:
+            opens_by_name.setdefault(name, []).append(index)
+
+    def accepts(open_index: int, close_index: int) -> bool:
+        if straddling_close[open_index] < close_index or balance[close_index] != balance[open_index + 1]:
+            return False
+        inside_field_opens = field_opens[close_index] - field_opens[open_index + 1]
+        name = tags[open_index][3]
+        if name in output_names:
+            repeats = opens_by_name[name]
+            inside_field_opens -= bisect_left(repeats, close_index) - bisect_right(repeats, open_index)
+        return inside_field_opens == 0
+
+    return accepts
+
+
 def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list[tuple[str, str, int, int]]:
     """Split ``completion`` into ``(field_name, raw_value, start, end)`` tuples, left to right.
 
-    Runs in linear time. One rule goes beyond a plain lazy ``<name>(.*?)</name>`` scan, so that a
-    value which is itself a same-named element is not truncated at the inner closing tag:
+    One rule goes beyond a plain lazy ``<name>(.*?)</name>`` scan, so that a value which is itself
+    a same-named element is not truncated at the inner closing tag:
 
     * **Nesting.** When an opening tag is followed, after whitespace only, by another opening tag
       of the same name, the value is a nested document and the block ends at the depth-balanced
       closing tag. A tag name merely mentioned inside prose is not preceded by whitespace alone,
       so it keeps the lazy reading.
 
-    The widened span has to be self-contained to be believable, so it is rejected unless every tag
-    inside it pairs inside it, and unless it is free of other output fields. Without the first
-    check the depth-balanced partner can be borrowed from a different element and the value gets
-    stitched out of that element's markup; without the second, a later field is swallowed and its
-    absence reported as a missing field. A rejected span falls back to the lazy reading.
+    The widened span has to be self-contained to be believable, so `_span_acceptor` rejects it
+    unless every tag inside it pairs inside it, and unless it is free of other output fields.
+    Without the first check the depth-balanced partner can be borrowed from a different element and
+    the value gets stitched out of that element's markup; without the second, a later field is
+    swallowed and its absence reported as a missing field. A rejected span falls back to the lazy
+    reading, and costs no more than an accepted one to rule out.
 
     Everything else keeps the lazy reading too: a value that merely *ends* with its own closing tag
     is indistinguishable from a value followed by trailing commentary, so widening the block there
@@ -74,17 +143,7 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
     next_closing = _next_closing_tags(tags)
-    paired = dict(partners)
-    paired.update({close: open_ for open_, close in partners.items()})
-
-    def span_is_self_contained(open_index: int, close_index: int) -> bool:
-        for inner in range(open_index + 1, close_index):
-            partner = paired.get(inner)
-            if partner is None or not open_index < partner < close_index:
-                return False
-            if not tags[inner][2] and tags[inner][3] in output_names and tags[inner][3] != tags[open_index][3]:
-                return False
-        return True
+    span_is_self_contained = _span_acceptor(tags, partners, output_names)
 
     blocks: list[tuple[str, str, int, int]] = []
     index = 0
@@ -287,7 +346,7 @@ class XMLAdapter(ChatAdapter):
         try:
             return parse_value(raw, field_info.annotation)
         except Exception as e:
-                raise AdapterParseError(
+            raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
                 lm_response=completion,
