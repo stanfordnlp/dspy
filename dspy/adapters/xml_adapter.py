@@ -89,6 +89,7 @@ class XMLAdapter(ChatAdapter):
         completion: str,
         fields: dict[str, str],
         spans: dict[str, tuple[int, int]],
+        blocks: list[tuple[int, int]],
     ) -> None:
         """Raise if a field's value is cut short by a closing tag that may belong to the value.
 
@@ -96,69 +97,65 @@ class XMLAdapter(ChatAdapter):
         ambiguous: `" b"` may be the rest of the value or trailing chatter, and nothing in the
         text tells the two apart. Rather than silently keeping whichever reading the scan
         reached first, report it and let the caller pick a format that can express the value.
+
+        `spans` holds each output field's own block; `blocks` holds every balanced block found,
+        including tags that are not output fields.
         """
         for name, (_, block_end) in spans.items():
             closing_tag = f"</{name}>"
-            chosen = block_end - len(closing_tag)
-
-            # A later copy of this tag only matters if it sits in open text. Two things account
-            # for one: nesting inside another field's block, where it belongs to that field's
-            # value, and a repeated block of this same field, where an unmatched opening tag
-            # ahead of it means it closes that block rather than this one.
             opening_tag = f"<{name}>"
-            others = [span for other, span in spans.items() if other != name]
-            surplus = None
+
             search_from = block_end
             while True:
                 found = completion.find(closing_tag, search_from)
                 if found == -1:
                     break
-                nested = any(start <= found < end for start, end in others)
-                reopened = completion.count(opening_tag, block_end, found) > completion.count(
-                    closing_tag, block_end, found
-                )
-                if not nested and not reopened:
-                    surplus = found
-                    break
                 search_from = found + len(closing_tag)
-            if surplus is None:
-                continue
 
-            # Only whitespace and further copies of the tag in between means a duplicated-tag
-            # slip. The two readings still differ - "a" versus "a</answer>\n" - but the trailing
-            # copy carries no content, so the shorter reading loses nothing and stays silent.
-            between = completion[chosen + len(closing_tag) : surplus].replace(closing_tag, "")
-            if not between.strip():
-                continue
+                # A later copy of this tag only matters if it sits in open text. Two things
+                # account for one: nesting inside any balanced block, whether or not that block
+                # is an output field, where the tag belongs to that block's value, and a repeated
+                # block of this same field, where an unmatched opening tag ahead of it means it
+                # closes that block rather than this one.
+                if any(start <= found < end for start, end in blocks):
+                    continue
+                if completion.count(opening_tag, block_end, found) > completion.count(closing_tag, block_end, found):
+                    continue
 
-            raise AdapterParseError(
-                adapter_name="XMLAdapter",
-                signature=signature,
-                lm_response=completion,
-                parsed_result=fields,
-                message=(
-                    f"Field `{name}` is followed by an unmatched `{closing_tag}`, so its value cannot "
-                    f"be determined: the text after the first `{closing_tag}` may belong to the value "
-                    f"or may be trailing commentary. Returning either reading risks silently giving "
-                    f"back the wrong value. Use ChatAdapter or JSONAdapter, whose wire formats "
-                    f"delimit values unambiguously, for content that can contain `{closing_tag}`."
-                ),
-            )
+                # Only whitespace and further copies of the tag in between means a duplicated-tag
+                # slip. The two readings still differ - "a" versus "a</answer>\n" - but the
+                # trailing copy carries no content, so the shorter reading loses nothing and stays
+                # silent. Keep scanning past it: a later copy may still hide content.
+                if not completion[block_end:found].replace(closing_tag, "").strip():
+                    continue
+
+                raise AdapterParseError(
+                    adapter_name="XMLAdapter",
+                    signature=signature,
+                    lm_response=completion,
+                    parsed_result=fields,
+                    message=(
+                        f"Field `{name}` is followed by an unmatched `{closing_tag}`, so its value cannot "
+                        f"be determined: the text after the first `{closing_tag}` may belong to the value "
+                        f"or may be trailing commentary. Returning either reading risks silently giving "
+                        f"back the wrong value. Use ChatAdapter or JSONAdapter, whose wire formats "
+                        f"delimit values unambiguously, for content that can contain `{closing_tag}`."
+                    ),
+                )
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = {}
         spans: dict[str, tuple[int, int]] = {}
+        blocks: list[tuple[int, int]] = []
         for match in self.field_pattern.finditer(completion):
             name = match.group("name")
             content = match.group("content").strip()
+            blocks.append(match.span())
             if name in signature.output_fields and name not in fields:
                 fields[name] = content
                 spans[name] = match.span()
-        # A surplus closing tag makes the value ambiguous; fail loudly rather than truncate.
-        self._assert_unambiguous(signature, completion, fields, spans)
-        # Cast values using base class parse_value helper
-        for k, v in fields.items():
-            fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
+        # A field with no closing tag anywhere leaves a stray copy of an earlier field's tag in
+        # open text, so report the missing field before reading that stray tag as an ambiguity.
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
@@ -166,6 +163,11 @@ class XMLAdapter(ChatAdapter):
                 lm_response=completion,
                 parsed_result=fields,
             )
+        # A surplus closing tag makes the value ambiguous; fail loudly rather than truncate.
+        self._assert_unambiguous(signature, completion, fields, spans, blocks)
+        # Cast values using base class parse_value helper
+        for k, v in fields.items():
+            fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
         return fields
 
     def _parse_field_value(self, field_info, raw, completion, signature):

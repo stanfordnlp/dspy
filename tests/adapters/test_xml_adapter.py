@@ -1004,3 +1004,41 @@ def test_xml_adapter_parse_raises_when_closing_tag_is_missing():
         dspy.XMLAdapter().parse(Two, completion)
     assert e.value.parsed_result == {"reasoning": "r"}
     assert "answer" in str(e.value)
+
+
+def test_xml_adapter_parse_allows_closing_tag_nested_in_a_non_output_tag():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # A tag that is not an output field still delimits its own content, so a copy of `</answer>`
+    # inside it is accounted for and hides nothing from the answer's value.
+    completion = "<answer>42</answer>\n<thinking>close with </answer></thinking>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+
+
+def test_xml_adapter_parse_reports_the_missing_field_not_the_stray_tag():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # The `</answer>` sits in a block that is never closed, so the real fault is the missing
+    # `reasoning` field. Reporting the ambiguity first would point at the wrong field entirely.
+    completion = "<answer>a</answer>\n<reasoning>oops </answer> unclosed"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        dspy.XMLAdapter().parse(Two, completion)
+    assert e.value.parsed_result == {"answer": "a"}
+    assert "unmatched" not in str(e.value)
+
+
+def test_xml_adapter_parse_reports_ambiguity_after_a_benign_duplicate():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # The first surplus tag is a harmless duplicate, but the scan must carry on past it: the next
+    # copy has real text before it, so content is being dropped and that has to be reported.
+    completion = "<answer>42</answer>\n</answer> rest of value</answer>"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(TestSignature, completion)
