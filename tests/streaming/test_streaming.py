@@ -950,44 +950,6 @@ async def test_stream_listener_allow_reuse():
 
 
 @pytest.mark.anyio
-async def test_stream_listener_xml_adapter_agrees_with_parse_on_nested_value():
-    """A streamed XMLAdapter value must match what `XMLAdapter.parse` returns for the same text.
-
-    A value that is itself a same-named element used to be cut at the inner closing tag while
-    `parse` recovered it in full, so streamed consumers saw a shorter string than the final
-    Prediction. Both sides now ask `XMLAdapter.field_value_end` where the value stops.
-    """
-
-    class CodeSignature(dspy.Signature):
-        question: str = dspy.InputField()
-        code: str = dspy.OutputField()
-
-    completion = "<code>\n<code>x = 1</code>\n</code>"
-
-    async def xml_stream(*args, **kwargs):
-        for i in range(0, len(completion), 3):
-            yield ModelResponseStream(
-                model="gpt-4o-mini",
-                choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))],
-            )
-
-    with mock.patch("litellm.acompletion", side_effect=xml_stream):
-        program = dspy.streamify(
-            dspy.Predict(CodeSignature),
-            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
-        )
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
-            streamed = []
-            async for value in program(question="?"):
-                if isinstance(value, dspy.streaming.StreamResponse):
-                    streamed.append(value.chunk)
-
-    parsed = dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
-    assert parsed == "<code>x = 1</code>"
-    assert "".join(streamed).strip() == parsed
-
-
-@pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_xml_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):

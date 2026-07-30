@@ -269,40 +269,6 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
-    def field_value_end(field_name: str, content: str) -> int | None:
-        """Index in `content` where `<field_name>`'s value ends, or None if it has not closed yet.
-
-        `content` is everything after the field's opening tag. Streaming calls this so a streamed
-        value and `parse` decide the same boundary: the rule here is the same one
-        `_extract_field_blocks` applies, so the two cannot drift apart. A value that opens with a
-        same-named element is read as nesting and ends at the closing tag that balances it;
-        anything else ends at the first closing tag.
-
-        The self-containment checks `_extract_field_blocks` runs are deliberately not replicated:
-        they need the whole completion, which a stream does not have yet. The shapes they reject
-        are the ones already documented as undecidable.
-        """
-        opening, closing = f"<{field_name}>", f"</{field_name}>"
-        if not content.lstrip().startswith(opening):
-            index = content.find(closing)
-            return index if index != -1 else None
-
-        depth = 0
-        index = 0
-        while index < len(content):
-            if content.startswith(opening, index):
-                depth += 1
-                index += len(opening)
-            elif content.startswith(closing, index):
-                if depth == 0:
-                    return index
-                depth -= 1
-                index += len(closing)
-            else:
-                index += 1
-        return None
-
-    @staticmethod
     def _assert_unambiguous(
         signature: type[Signature],
         completion: str,
