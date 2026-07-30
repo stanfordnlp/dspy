@@ -50,24 +50,41 @@ def _next_closing_tags(tags: list[tuple[int, int, bool, str]]) -> list[int | Non
     return following
 
 
-def _extract_field_blocks(completion: str) -> list[tuple[str, str, int, int]]:
+def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list[tuple[str, str, int, int]]:
     """Split ``completion`` into ``(field_name, raw_value, start, end)`` tuples, left to right.
 
-    Runs in linear time. Two rules go beyond a plain lazy ``<name>(.*?)</name>`` scan so
-    that values which contain their own closing tag are not silently truncated:
+    Runs in linear time. One rule goes beyond a plain lazy ``<name>(.*?)</name>`` scan, so that a
+    value which is itself a same-named element is not truncated at the inner closing tag:
 
-    * **Nesting.** When an opening tag is followed, after whitespace only, by another
-      opening tag of the same name, the value is a nested document and the block ends at
-      the depth-balanced closing tag. A tag name merely mentioned inside prose is not
-      preceded by whitespace alone, so it keeps the lazy reading.
-    Everything else keeps the lazy reading: a value that merely *ends* with its own closing
-    tag is indistinguishable from a value followed by trailing commentary, so widening the
-    block there would silently corrupt one reading to rescue the other. `_assert_unambiguous`
-    reports those instead.
+    * **Nesting.** When an opening tag is followed, after whitespace only, by another opening tag
+      of the same name, the value is a nested document and the block ends at the depth-balanced
+      closing tag. A tag name merely mentioned inside prose is not preceded by whitespace alone,
+      so it keeps the lazy reading.
+
+    The widened span has to be self-contained to be believable, so it is rejected unless every tag
+    inside it pairs inside it, and unless it is free of other output fields. Without the first
+    check the depth-balanced partner can be borrowed from a different element and the value gets
+    stitched out of that element's markup; without the second, a later field is swallowed and its
+    absence reported as a missing field. A rejected span falls back to the lazy reading.
+
+    Everything else keeps the lazy reading too: a value that merely *ends* with its own closing tag
+    is indistinguishable from a value followed by trailing commentary, so widening the block there
+    would silently corrupt one reading to rescue the other. `_assert_unambiguous` reports those.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
     next_closing = _next_closing_tags(tags)
+    paired = dict(partners)
+    paired.update({close: open_ for open_, close in partners.items()})
+
+    def span_is_self_contained(open_index: int, close_index: int) -> bool:
+        for inner in range(open_index + 1, close_index):
+            partner = paired.get(inner)
+            if partner is None or not open_index < partner < close_index:
+                return False
+            if not tags[inner][2] and tags[inner][3] in output_names and tags[inner][3] != tags[open_index][3]:
+                return False
+        return True
 
     blocks: list[tuple[str, str, int, int]] = []
     index = 0
@@ -84,6 +101,8 @@ def _extract_field_blocks(completion: str) -> list[tuple[str, str, int, int]]:
             and not completion[open_end : tags[index + 1][0]].strip()
         )
         end = partners.get(index) if nested else None
+        if end is not None and not span_is_self_contained(index, end):
+            end = None
         if end is None:
             end = next_closing[index]
         if end is None:
@@ -243,7 +262,7 @@ class XMLAdapter(ChatAdapter):
         fields = {}
         spans: dict[str, int] = {}
         blocks: list[tuple[int, int]] = []
-        for name, content, start, end in _extract_field_blocks(completion):
+        for name, content, start, end in _extract_field_blocks(completion, frozenset(signature.output_fields)):
             blocks.append((start, end))
             if name in signature.output_fields and name not in fields:
                 fields[name] = content.strip()

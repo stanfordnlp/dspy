@@ -1101,6 +1101,34 @@ def test_xml_adapter_parse_allows_a_repeated_block_nesting_the_same_tag():
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "a"}
 
 
+def test_xml_adapter_parse_rejects_a_nested_span_that_is_not_self_contained():
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    class CodeExplanation(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+
+    # The depth-balanced partner here lives inside `<note>`, so widening to it would build the
+    # value out of another element's markup, trailing `<note>` and all. The span is not
+    # self-contained, so the lazy reading stands.
+    completion = "<code>\n<code>x</code>\n<note></code></note>"
+    assert adapter.parse(CodeSig, completion) == {"code": "<code>x"}
+
+    # Here the span *is* balanced but contains another output field, so widening would eat
+    # `explanation` whole and report it missing. Both fields must still be found.
+    completion = "<code>\n<code>x</code>\n<explanation>hi</explanation>\n</code>"
+    assert adapter.parse(CodeExplanation, completion) == {"code": "<code>x", "explanation": "hi"}
+
+    # A nested value that closes before the next field keeps the widened reading.
+    completion = "<code>\n<code>x</code>\n</code>\n<explanation>hi</explanation>"
+    assert adapter.parse(CodeExplanation, completion) == {"code": "<code>x</code>", "explanation": "hi"}
+
+
 def test_xml_adapter_parse_recovers_a_value_that_nests_its_own_tag():
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
