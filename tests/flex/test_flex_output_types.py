@@ -28,6 +28,7 @@ import pytest
 import dspy
 from dspy.flex import Flex, bridge
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 from tests.flex import _offstack_types  # imported as a module: `Contact` is never a name here
@@ -274,7 +275,8 @@ def test_gepa_scores_a_type_mismatch_as_a_failure_in_place() -> None:
     result = adapter.evaluate(batch, {"self": source}, capture_traces=False)
 
     assert result.scores == [1.0, 0.0, 1.0]  # the type error is scored, not raised
-    assert result.outputs[1] is None
+    assert isinstance(result.outputs[1], FailedPrediction)
+    assert "not a valid" in result.outputs[1].completion_text
     assert result.outputs[0].person == Person(name="Ada", age=1)  # and it is a real model, parsed
 
 
