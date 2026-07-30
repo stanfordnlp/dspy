@@ -875,7 +875,7 @@ def test_xml_adapter_parse_reports_second_field_value_containing_its_own_closing
         dspy.XMLAdapter().parse(Two, completion)
 
 
-def test_xml_adapter_format_parse_round_trip_with_closing_tag_in_value():
+def test_xml_adapter_format_parse_round_trip_reports_closing_tag_in_value():
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
@@ -883,16 +883,35 @@ def test_xml_adapter_format_parse_round_trip_with_closing_tag_in_value():
     value = "before </code> after"
     adapter = dspy.XMLAdapter()
 
-    # The formatter escapes the field's own closing tag, so the adapter reads back exactly what
-    # it wrote. This is the demo/few-shot path: format_assistant_message_content -> parse.
+    # The wire format cannot express this value, so the adapter cannot read back what it wrote.
+    # It says so instead of silently returning "before". Escaping the tag here would need a full
+    # entity scheme: a half-measure that only rewrites `</code>` is not reversible, because a
+    # value legitimately containing the escaped text would be corrupted on the way back.
     assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": value})
-    assert adapter.parse(CodeSig, assistant_message) == {"code": value}
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        adapter.parse(CodeSig, assistant_message)
 
-    # Same guarantee through the lower-level formatter the assistant message is built from.
+    # An entity-looking value survives untouched, which is what a rewrite would have broken.
+    literal = "use &lt;/code> to escape it"
     formatted = adapter.format_field_with_value(
-        {FieldInfoWithName(name="code", info=CodeSig.output_fields["code"]): value}
+        {FieldInfoWithName(name="code", info=CodeSig.output_fields["code"]): literal}
     )
-    assert adapter.parse(CodeSig, formatted) == {"code": value}
+    assert adapter.parse(CodeSig, formatted) == {"code": literal}
+
+
+def test_xml_adapter_parse_allows_closing_tag_nested_in_another_field():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    # `</answer>` inside the explanation block belongs to the explanation's value and is fully
+    # accounted for, so the answer field is not ambiguous and must still parse.
+    completion = "<answer>42</answer>\n<explanation>the </answer> tag ends it</explanation>"
+    assert dspy.XMLAdapter().parse(Two, completion) == {
+        "answer": "42",
+        "explanation": "the </answer> tag ends it",
+    }
 
 
 def test_xml_adapter_parse_keeps_first_of_duplicate_field_blocks():

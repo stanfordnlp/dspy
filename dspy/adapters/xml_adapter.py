@@ -6,6 +6,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
+from dspy.utils.exceptions import AdapterParseError
 
 
 class XMLAdapter(ChatAdapter):
@@ -15,9 +16,6 @@ class XMLAdapter(ChatAdapter):
         output = []
         for field, field_value in fields_with_values.items():
             formatted = format_field_value(field_info=field.info, value=field_value)
-            # A value holding its own closing tag would make the block ambiguous to read back,
-            # so escape that one sequence; `parse` reverses it.
-            formatted = self._escape_closing_tag(field.name, formatted)
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
@@ -86,44 +84,52 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
-    def _escape_closing_tag(name: str, value: str) -> str:
-        """Escape a field's own closing tag inside its value so the block stays unambiguous."""
-        return value.replace(f"</{name}>", f"&lt;/{name}>")
-
-    @staticmethod
-    def _unescape_closing_tag(name: str, value: str) -> str:
-        """Inverse of `_escape_closing_tag`."""
-        return value.replace(f"&lt;/{name}>", f"</{name}>")
-
-    @staticmethod
-    def _assert_unambiguous(signature: type[Signature], completion: str, fields: dict[str, str]) -> None:
-        """Raise if a field's block holds an unmatched closing tag that hides part of its value.
+    def _assert_unambiguous(
+        signature: type[Signature],
+        completion: str,
+        fields: dict[str, str],
+        spans: dict[str, tuple[int, int]],
+    ) -> None:
+        """Raise if a field's value is cut short by a closing tag that may belong to the value.
 
         The wire format does not escape values, so `<answer>a</answer> b</answer>` is genuinely
-        ambiguous: `" b"` may be the rest of the value or trailing chatter. Nothing in the text
-        distinguishes the two, so the adapter reports the ambiguity instead of silently keeping
-        whichever reading the scan happened to reach.
+        ambiguous: `" b"` may be the rest of the value or trailing chatter, and nothing in the
+        text tells the two apart. Rather than silently keeping whichever reading the scan
+        reached first, report it and let the caller pick a format that can express the value.
         """
-        for name in fields:
-            opening_tag, closing_tag = f"<{name}>", f"</{name}>"
-            # A repeated *block* pairs every closing tag with an opening one and is not ambiguous;
-            # only a surplus closing tag can hide content.
-            if completion.count(closing_tag) <= completion.count(opening_tag):
+        for name, (_, block_end) in spans.items():
+            closing_tag = f"</{name}>"
+            chosen = block_end - len(closing_tag)
+
+            # A later copy of this tag only matters if it sits in open text. Two things account
+            # for one: nesting inside another field's block, where it belongs to that field's
+            # value, and a repeated block of this same field, where an unmatched opening tag
+            # ahead of it means it closes that block rather than this one.
+            opening_tag = f"<{name}>"
+            others = [span for other, span in spans.items() if other != name]
+            surplus = None
+            search_from = block_end
+            while True:
+                found = completion.find(closing_tag, search_from)
+                if found == -1:
+                    break
+                nested = any(start <= found < end for start, end in others)
+                reopened = completion.count(opening_tag, block_end, found) > completion.count(
+                    closing_tag, block_end, found
+                )
+                if not nested and not reopened:
+                    surplus = found
+                    break
+                search_from = found + len(closing_tag)
+            if surplus is None:
                 continue
 
-            opened = completion.find(opening_tag)
-            chosen = completion.find(closing_tag, opened + len(opening_tag))
-            last = completion.rfind(closing_tag)
-            if chosen == -1 or last <= chosen:
-                continue
-
-            # Whitespace and further copies of the tag between the two are a duplicated-tag slip,
-            # not lost content: the value is the same either way.
-            between = completion[chosen + len(closing_tag) : last].replace(closing_tag, "")
+            # Only whitespace and further copies of the tag in between means a duplicated-tag
+            # slip. The two readings still differ - "a" versus "a</answer>\n" - but the trailing
+            # copy carries no content, so the shorter reading loses nothing and stays silent.
+            between = completion[chosen + len(closing_tag) : surplus].replace(closing_tag, "")
             if not between.strip():
                 continue
-
-            from dspy.utils.exceptions import AdapterParseError
 
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
@@ -131,30 +137,29 @@ class XMLAdapter(ChatAdapter):
                 lm_response=completion,
                 parsed_result=fields,
                 message=(
-                    f"Field `{name}` contains an unmatched `{closing_tag}`, so its value cannot be "
-                    f"determined: the text after the first `{closing_tag}` may belong to the value or "
-                    f"may be trailing commentary. Parsing it either way risks silently returning the "
-                    f"wrong value. Emit the field with `{closing_tag}` escaped as `&lt;/{name}>`, or "
-                    f"use ChatAdapter or JSONAdapter, whose wire formats delimit values unambiguously."
+                    f"Field `{name}` is followed by an unmatched `{closing_tag}`, so its value cannot "
+                    f"be determined: the text after the first `{closing_tag}` may belong to the value "
+                    f"or may be trailing commentary. Returning either reading risks silently giving "
+                    f"back the wrong value. Use ChatAdapter or JSONAdapter, whose wire formats "
+                    f"delimit values unambiguously, for content that can contain `{closing_tag}`."
                 ),
             )
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = {}
+        spans: dict[str, tuple[int, int]] = {}
         for match in self.field_pattern.finditer(completion):
             name = match.group("name")
             content = match.group("content").strip()
             if name in signature.output_fields and name not in fields:
                 fields[name] = content
+                spans[name] = match.span()
         # A surplus closing tag makes the value ambiguous; fail loudly rather than truncate.
-        self._assert_unambiguous(signature, completion, fields)
-        fields = {k: self._unescape_closing_tag(k, v) for k, v in fields.items()}
+        self._assert_unambiguous(signature, completion, fields, spans)
         # Cast values using base class parse_value helper
         for k, v in fields.items():
             fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
         if fields.keys() != signature.output_fields.keys():
-            from dspy.utils.exceptions import AdapterParseError
-
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
@@ -169,8 +174,6 @@ class XMLAdapter(ChatAdapter):
         try:
             return parse_value(raw, field_info.annotation)
         except Exception as e:
-            from dspy.utils.exceptions import AdapterParseError
-
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
