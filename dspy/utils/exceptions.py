@@ -80,6 +80,18 @@ class LMNotConfiguredError(LMConfigurationError):
     default_code = "not_configured"
 
 
+class LMStateError(LMConfigurationError):
+    """Serialized LM state cannot be loaded safely.
+
+    Raised when a saved program's LM state contains endpoint configuration
+    that untrusted loads refuse to honor. The message names the offending
+    keys and the exits: `allow_unsafe_lm_state=True` for trusted files, or
+    passing `lm=` to `load()` / `load_state()` to supply the route from code.
+    """
+
+    default_code = "lm_state_error"
+
+
 class LMUnsupportedFeatureError(LMError):
     """The LM, provider, or DSPy provider wrapper does not support a requested feature.
 

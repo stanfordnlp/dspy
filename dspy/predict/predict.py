@@ -15,6 +15,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.constants import IS_TYPE_UNDEFINED
+from dspy.utils.exceptions import LMStateError
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +31,12 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
     if not unsafe_keys:
         return lm_state
 
-    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
-    logger.warning(
-        "Ignoring unsafe LM config key(s) during state load: %s. "
-        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
-        unsafe_keys,
+    raise LMStateError(
+        f"Refusing to load serialized LM state containing endpoint configuration: {unsafe_keys}. "
+        "A tampered file could reroute requests, and the prompts inside them, to an attacker's endpoint, "
+        "so these keys are only honored from trusted files. Either pass allow_unsafe_lm_state=True if you "
+        "trust this file, or pass lm=<a configured LM> to load()/load_state() to supply the route from code."
     )
-    return sanitized_lm_state
 
 
 class Predict(Module, Parameter):
@@ -88,17 +88,25 @@ class Predict(Module, Parameter):
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
-    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
+    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False, lm: BaseLM | None = None) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
             state: The saved state of a `Predict` object.
-            allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
-                serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
+            allow_unsafe_lm_state: If True, preserves endpoint configuration (`api_base`, `base_url`,
+                and `model_list`) from serialized LM state and allows importing
+                custom LM classes. Enable only when loading trusted files. Without it, state whose LM
+                carries endpoint configuration fails with a typed `dspy.LMStateError`.
+            lm: If provided, use this LM instead of reconstructing one from the saved state. This is
+                the safe way to load a program whose saved LM pointed at a custom endpoint: the route
+                comes from your code, not from the file.
 
         Returns:
             Self to allow method chaining.
         """
+        if lm is not None and not isinstance(lm, BaseLM):
+            raise ValueError(f"lm must be an instance of `dspy.BaseLM`, not {type(lm)}.")
+
         excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
@@ -106,12 +114,15 @@ class Predict(Module, Parameter):
                 setattr(self, name, value)
 
         self.signature = self.signature.load_state(state["signature"])
-        sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
-        self.lm = (
-            BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
-            if sanitized_lm_state
-            else None
-        )
+        if lm is not None:
+            self.lm = lm
+        else:
+            sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
+            self.lm = (
+                BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
+                if sanitized_lm_state
+                else None
+            )
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
