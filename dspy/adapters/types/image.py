@@ -7,8 +7,8 @@ from functools import lru_cache
 from typing import Any, Union
 from urllib.parse import urlparse
 
+import httpx
 import pydantic
-import requests
 
 from dspy.adapters.types.base_type import Type
 
@@ -197,7 +197,7 @@ def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
         image_url: The URL of the image to download.
         verify: Whether to verify SSL certificates. Set to False for self-signed certs.
     """
-    response = requests.get(image_url, verify=verify)
+    response = httpx.get(image_url, verify=verify, follow_redirects=True)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "")
 

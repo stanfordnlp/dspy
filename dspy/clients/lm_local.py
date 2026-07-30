@@ -8,7 +8,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-import requests
+import httpx
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, save_data
@@ -343,9 +343,10 @@ def wait_for_server(base_url: str, timeout: int | None = None) -> None:
     start_time = time.time()
     while True:
         try:
-            response = requests.get(
+            response = httpx.get(
                 f"{base_url}/v1/models",
                 headers={"Authorization": "Bearer None"},
+                follow_redirects=True,
             )
             if response.status_code == 200:
                 # A small extra sleep to ensure server is fully up.
@@ -354,8 +355,8 @@ def wait_for_server(base_url: str, timeout: int | None = None) -> None:
 
             if timeout and (time.time() - start_time) > timeout:
                 raise TimeoutError("Server did not become ready within timeout period")
-        except requests.exceptions.RequestException:
-            # Server not up yet, wait and retry
+        except httpx.HTTPError:
+            # Server not up yet, wait and retry (ConnectError is a subclass of HTTPError)
             time.sleep(1)
 
 

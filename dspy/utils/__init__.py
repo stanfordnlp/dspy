@@ -1,6 +1,6 @@
 import os
 
-import requests
+import httpx
 
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider
 from dspy.utils import exceptions
@@ -13,13 +13,13 @@ from dspy.utils.syncify import syncify
 
 def download(url):
     filename = os.path.basename(url)
-    remote_size = int(requests.head(url, allow_redirects=True).headers.get("Content-Length", 0))
+    remote_size = int(httpx.head(url, follow_redirects=True).headers.get("Content-Length", 0))
     local_size = os.path.getsize(filename) if os.path.exists(filename) else 0
 
     if not os.path.exists(filename) or local_size != remote_size:
         print(f"Downloading '{filename}'...")
-        with requests.get(url, stream=True) as r, open(filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
+        with httpx.stream("GET", url, follow_redirects=True, timeout=300) as r, open(filename, "wb") as f:
+            for chunk in r.iter_bytes(chunk_size=8192):
                 f.write(chunk)
 
 

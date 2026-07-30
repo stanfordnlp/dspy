@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import Any
 
-import requests
+import httpx
 
 import dspy
 from dspy.primitives.prediction import Prediction
@@ -441,10 +441,11 @@ class DatabricksRM(dspy.Retrieve):
             payload["query_text"] = query_text
         elif query_vector is not None:
             payload["query_vector"] = query_vector
-        response = requests.post(
+        response = httpx.post(
             f"{databricks_endpoint}/api/2.0/vector-search/indexes/{index_name}/query",
             json=payload,
             headers=headers,
+            follow_redirects=True,
         )
         results = response.json()
         if "error_code" in results:
