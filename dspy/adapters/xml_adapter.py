@@ -88,7 +88,7 @@ class XMLAdapter(ChatAdapter):
         signature: type[Signature],
         completion: str,
         fields: dict[str, str],
-        spans: dict[str, tuple[int, int]],
+        spans: dict[str, int],
         blocks: list[tuple[int, int]],
     ) -> None:
         """Raise if a field's value is cut short by a closing tag that may belong to the value.
@@ -98,8 +98,8 @@ class XMLAdapter(ChatAdapter):
         text tells the two apart. Rather than silently keeping whichever reading the scan
         reached first, report it and let the caller pick a format that can express the value.
 
-        `spans` holds each output field's own block; `blocks` holds every balanced block found,
-        in scan order, so they are sorted by start and never overlap. Blanking each block out to
+        `spans` holds where each output field's value stopped; `blocks` holds every balanced block
+        found, in scan order, so they are sorted by start and never overlap. Blanking each block to
         spaces once, keeping every offset, leaves exactly the text no block accounts for: a copy
         of a closing tag that survives that mask is by construction in open text, and so is any
         text between two such copies. A tag can neither straddle a block boundary nor be forged
@@ -114,7 +114,7 @@ class XMLAdapter(ChatAdapter):
         pieces.append(completion[cursor:])
         masked = "".join(pieces)
 
-        for name, (_, block_end) in spans.items():
+        for name, block_end in spans.items():
             closing_tag = f"</{name}>"
 
             scanned = block_end
@@ -146,8 +146,16 @@ class XMLAdapter(ChatAdapter):
                 )
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
+        """Extract each output field from its `<field_name>...</field_name>` block.
+
+        The first complete block wins for a repeated field. Because the wire format does not escape
+        values, a value that itself contains its own closing tag cannot be told apart from a value
+        followed by trailing commentary. Rather than silently returning the truncated reading, such
+        a completion raises `AdapterParseError`; use `ChatAdapter` or `JSONAdapter`, whose formats
+        delimit values unambiguously, for content that can contain the closing tag.
+        """
         fields = {}
-        spans: dict[str, tuple[int, int]] = {}
+        spans: dict[str, int] = {}
         blocks: list[tuple[int, int]] = []
         for match in self.field_pattern.finditer(completion):
             name = match.group("name")
@@ -155,7 +163,7 @@ class XMLAdapter(ChatAdapter):
             blocks.append(match.span())
             if name in signature.output_fields and name not in fields:
                 fields[name] = content
-                spans[name] = match.span()
+                spans[name] = match.end()
         # A field with no closing tag anywhere leaves a stray copy of an earlier field's tag in
         # open text, so report the missing field before reading that stray tag as an ambiguity.
         if fields.keys() != signature.output_fields.keys():
