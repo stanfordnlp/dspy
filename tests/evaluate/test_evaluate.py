@@ -461,3 +461,85 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_population_metric_overrides_sample_mean():
+    devset = [new_example("first", "correct"), new_example("second", "correct")]
+    answers = {"first": "correct", "second": "incorrect"}
+
+    def program(question):
+        return dspy.Prediction(answer=answers[question])
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        assert examples == devset
+        assert [prediction.answer for prediction in predictions] == ["correct", "incorrect"]
+        return 0.25
+
+    evaluator = Evaluate(devset=devset, metric=sample_metric, population_metric=population_metric)
+    result = evaluator(program)
+
+    assert result.score == 25.0
+    assert [score for _, _, score in result.results] == [True, False]
+
+
+def test_evaluate_population_metric_preserves_parallel_order():
+    import time
+
+    devset = [new_example("slow", "slow-result"), new_example("fast", "fast-result")]
+    captured = {}
+
+    def program(question):
+        if question == "slow":
+            time.sleep(0.05)
+        return dspy.Prediction(answer=f"{question}-result")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        num_threads=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 100.0
+    assert captured == {
+        "questions": ["slow", "fast"],
+        "answers": ["slow-result", "fast-result"],
+    }
+
+
+def test_evaluate_population_metric_per_call_override():
+    devset = [new_example("first", "correct"), new_example("second", "correct")]
+
+    def program(question):
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def default_population_metric(examples, predictions):
+        return 0.1
+
+    def override_population_metric(examples, predictions):
+        return 0.75
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=default_population_metric,
+    )
+    result = evaluator(program, population_metric=override_population_metric)
+
+    assert result.score == 75.0
+    assert [score for _, _, score in result.results] == [True, True]

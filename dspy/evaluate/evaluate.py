@@ -73,6 +73,7 @@ class Evaluate:
         *,
         devset: list["dspy.Example"],
         metric: Callable | None = None,
+        population_metric: Callable | None = None,
         num_threads: int | None = None,
         display_progress: bool = False,
         display_table: bool | int = False,
@@ -86,7 +87,10 @@ class Evaluate:
         """
         Args:
             devset (list[dspy.Example]): the evaluation dataset.
-            metric (Callable): The metric function to use for evaluation.
+            metric (Callable): The per-example metric function to use for evaluation.
+            population_metric (Optional[Callable]): An optional metric that receives all examples and predictions
+                and determines the aggregate evaluation score. Its return value is scaled by 100 when stored in
+                `EvaluationResult.score`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
@@ -101,6 +105,7 @@ class Evaluate:
         """
         self.devset = devset
         self.metric = metric
+        self.population_metric = population_metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -125,11 +130,12 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        population_metric: Callable | None = None,
     ) -> EvaluationResult:
         """
         Args:
             program (dspy.Module): The DSPy program to evaluate.
-            metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
+            metric (Callable): The per-example metric function to use for evaluation. if not provided, use `self.metric`.
             devset (list[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation. if not provided, use
                 `self.num_threads`.
@@ -138,6 +144,9 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            population_metric (Optional[Callable]): An optional metric that receives all examples and predictions
+                and determines the aggregate evaluation score. Its return value is scaled by 100 when stored in
+                `EvaluationResult.score`. if not provided, use `self.population_metric`.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -147,6 +156,7 @@ class Evaluate:
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
+        population_metric = population_metric if population_metric is not None else self.population_metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -178,8 +188,15 @@ class Evaluate:
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+        overall_score = round(100 * ncorrect / ntotal, 2)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+
+        if population_metric is not None:
+            examples = [example for example, _, _ in results]
+            predictions = [prediction for _, prediction, _ in results]
+            overall_score = round(100 * population_metric(examples, predictions), 2)
+            logger.info(f"Population Metric: {overall_score}%")
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
@@ -221,7 +238,7 @@ class Evaluate:
                 json.dump(data, f)
 
         return EvaluationResult(
-            score=round(100 * ncorrect / ntotal, 2),
+            score=overall_score,
             results=results,
         )
 
