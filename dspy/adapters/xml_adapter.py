@@ -182,6 +182,18 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
 
 
 class XMLAdapter(ChatAdapter):
+    """Adapter that wraps every field in `<field_name>...</field_name>` tags.
+
+    Each input and output field is rendered as its own XML element, and the response is read back
+    with a single scan over the tags, tolerant of surrounding whitespace. A value that is itself a
+    same-named element (`<code><code>x</code></code>`) is recovered in full.
+
+    The wire format has no escaping, so a value containing its own closing tag cannot always be
+    told apart from a value followed by trailing commentary. Rather than guess, `parse` raises
+    `AdapterParseError` when the surplus closing tag is left over in open text with real text
+    before it. Use `ChatAdapter` or `JSONAdapter` for content that can contain the closing tag.
+    """
+
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
@@ -324,8 +336,12 @@ class XMLAdapter(ChatAdapter):
 
         A value holding a nested element of the same name is recovered in full; a value whose own
         closing tag is left over in open text is ambiguous and raises `AdapterParseError` rather
-        than being silently truncated. The first complete block wins for a repeated field. See
-        `_extract_field_blocks` for the two shapes that are still truncated silently.
+        than being silently truncated. The first complete block wins for a repeated field.
+
+        Two shapes stay silently truncated, because representing either needs escaping this wire
+        format does not have: a value that *ends* with its own closing tag, and a nested value
+        whose surplus closing tag a later field's block either covers or is all that separates it
+        from the value. `_extract_field_blocks` spells out why each is undecidable.
         """
         fields = {}
         spans: dict[str, int] = {}
