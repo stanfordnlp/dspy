@@ -9,8 +9,6 @@ from dspy.signatures.signature import Signature
 
 
 class XMLAdapter(ChatAdapter):
-    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
-
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
@@ -82,13 +80,90 @@ class XMLAdapter(ChatAdapter):
         message += "."
         return message
 
+    @staticmethod
+    def _extract_field_values(signature: type[Signature], completion: str) -> dict[str, str]:
+        """Extract the raw text of each output field, anchored to the signature's field names.
+
+        The XML wire format does not escape values, so a value can legitimately contain its own
+        closing tag, e.g. a `code` field whose body contains `</code>`. Scanning the completion
+        with a single self-backreferencing pattern would end the value at the first closing tag
+        and silently truncate it. Instead, walk the completion left to right and, for each field,
+        take the last closing tag before the next expected field's opening tag: that boundary is
+        the widest span that cannot belong to another field.
+        """
+        pending = list(signature.output_fields)
+        opening_patterns = {name: re.compile(rf"<{re.escape(name)}>") for name in pending}
+        fields: dict[str, str] = {}
+        cursor = 0
+
+        while pending and cursor < len(completion):
+            # The next field to extract is whichever expected field opens first, so fields
+            # emitted out of signature order are still handled.
+            opening = None
+            for name in pending:
+                match = opening_patterns[name].search(completion, cursor)
+                if match and (opening is None or match.start() < opening[0].start()):
+                    opening = (match, name)
+            if opening is None:
+                break
+
+            match, name = opening
+            value_start = match.end()
+            # The opening tag of any field still to be extracted bounds this value. A second
+            # opening tag for the same field bounds it too, so a repeated block is not merged.
+            boundary = len(completion)
+            for other in pending:
+                next_opening = opening_patterns[other].search(completion, value_start)
+                if next_opening:
+                    boundary = min(boundary, next_opening.start())
+
+            closing_tag = f"</{name}>"
+            candidates = []
+            search_from = value_start
+            while True:
+                found = completion.find(closing_tag, search_from)
+                if found == -1:
+                    break
+                candidates.append(found)
+                search_from = found + 1
+            if not candidates:
+                # An opening tag with no closing tag anywhere: skip it and keep scanning.
+                cursor = value_start
+                continue
+
+            # Prefer closing tags before the boundary; if the boundary tag turned out to be part
+            # of this field's value, no candidate precedes it and the whole list is reconsidered.
+            in_bounds = [pos for pos in candidates if pos < boundary]
+            pool = in_bounds or candidates
+
+            # A closing tag really ends the value only if nothing but another field follows it.
+            # Trailing prose that merely mentions a closing tag, e.g. "...always close with
+            # `</answer>`", must not be absorbed, so a candidate qualifies only when the rest of
+            # the completion is blank or starts with a pending field's opening tag. Whitespace is
+            # skipped by index rather than by slicing so a long completion is not recopied per
+            # candidate.
+            successors = [opening_patterns[other] for other in pending if other != name]
+            closing = None
+            for pos in reversed(pool):
+                after = pos + len(closing_tag)
+                while after < len(completion) and completion[after].isspace():
+                    after += 1
+                if after == len(completion) or any(p.match(completion, after) for p in successors):
+                    closing = pos
+                    break
+            if closing is None:
+                # No terminal candidate: the first closing tag is the safest guess, which matches
+                # the non-greedy behavior this adapter had before.
+                closing = pool[0]
+
+            fields[name] = completion[value_start:closing].strip()
+            pending.remove(name)
+            cursor = closing + len(closing_tag)
+
+        return fields
+
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        fields = {}
-        for match in self.field_pattern.finditer(completion):
-            name = match.group("name")
-            content = match.group("content").strip()
-            if name in signature.output_fields and name not in fields:
-                fields[name] = content
+        fields = self._extract_field_values(signature, completion)
         # Cast values using base class parse_value helper
         for k, v in fields.items():
             fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)

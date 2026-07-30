@@ -841,3 +841,118 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_xml_adapter_parse_keeps_value_containing_its_own_closing_tag():
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    completion = "<code>\nif x:\n    print('</code>')\n</code>\n"
+    expected = "if x:\n    print('</code>')"
+
+    # XMLAdapter used to stop at the first `</code>` and return "if x:\n    print('".
+    assert dspy.XMLAdapter().parse(CodeSig, completion) == {"code": expected}
+
+    # ChatAdapter is the independent oracle: its delimiters cannot collide with the value,
+    # so it has always recovered the whole string. The two adapters must now agree.
+    chat_completion = dspy.ChatAdapter().format_assistant_message_content(CodeSig, {"code": expected})
+    assert dspy.ChatAdapter().parse(CodeSig, chat_completion) == {"code": expected}
+
+
+def test_xml_adapter_parse_keeps_second_field_value_containing_its_own_closing_tag():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    completion = "<reasoning>\nthink\n</reasoning>\n<answer>\nsee </answer> above\n</answer>\n"
+
+    # Previously returned {"reasoning": "think", "answer": "see"} with no error raised.
+    assert dspy.XMLAdapter().parse(Two, completion) == {
+        "reasoning": "think",
+        "answer": "see </answer> above",
+    }
+
+
+def test_xml_adapter_format_parse_round_trip_with_closing_tag_in_value():
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    value = "before </code> after"
+    adapter = dspy.XMLAdapter()
+
+    # The wire format does not escape values, so the adapter must at least read back what it
+    # itself wrote. This is the demo/few-shot path: format_assistant_message_content -> parse.
+    assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": value})
+    assert adapter.parse(CodeSig, assistant_message) == {"code": value}
+
+    # Same guarantee through the lower-level formatter the assistant message is built from.
+    formatted = adapter.format_field_with_value(
+        {FieldInfoWithName(name="code", info=CodeSig.output_fields["code"]): value}
+    )
+    assert adapter.parse(CodeSig, formatted) == {"code": value}
+
+
+def test_xml_adapter_parse_keeps_first_of_duplicate_field_blocks():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # A repeated block must not be merged into one value nor resolved to the last block:
+    # the first complete block wins, matching ChatAdapter's "first header wins" rule.
+    completion = "<answer>Paris</answer>\n<answer>Berlin</answer>\n<answer>Rome</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "Paris"}
+
+
+def test_xml_adapter_parse_value_containing_next_field_opening_tag():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # The reasoning text mentions `<answer>`, which must not be mistaken for the start of the
+    # answer field, and the answer itself must still be found afterwards.
+    completion = "<reasoning>put it in <answer> tags</reasoning><answer>42</answer>"
+    assert dspy.XMLAdapter().parse(Two, completion) == {
+        "reasoning": "put it in <answer> tags",
+        "answer": "42",
+    }
+
+
+def test_xml_adapter_parse_ignores_trailing_prose_mentioning_the_closing_tag():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # Widening the value to the last `</answer>` would swallow the sign-off. The value ends at
+    # the real closing tag, not at the one quoted in the chatter that follows.
+    completion = "<answer>final</answer>\n\nRemember to close with `</answer>`."
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "final"}
+
+
+def test_xml_adapter_parse_allows_bare_ampersand_and_unknown_tags():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # The parser is text-anchored, not a strict XML parser: a bare `&` is not an entity error,
+    # and tags that are not output fields are ignored rather than parsed.
+    completion = "<thinking>hmm</thinking><answer>Tom & Jerry</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "Tom & Jerry"}
+
+
+def test_xml_adapter_parse_raises_when_closing_tag_is_missing():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # An opening tag with no closing tag anywhere must fail loudly rather than guess a span.
+    # The truncation bug was bad because it was silent; a field we cannot delimit stays absent.
+    completion = "<reasoning>r</reasoning>\n<answer>unterminated"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        dspy.XMLAdapter().parse(Two, completion)
+    assert e.value.parsed_result == {"reasoning": "r"}
+    assert "answer" in str(e.value)
