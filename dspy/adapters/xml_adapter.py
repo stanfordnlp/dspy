@@ -8,10 +8,95 @@ from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
 from dspy.utils.exceptions import AdapterParseError
 
+_TAG_PATTERN = re.compile(r"<(?P<closing>/?)(?P<name>\w+)>")
+
+
+def _scan_tags(text: str) -> list[tuple[int, int, bool, str]]:
+    """Return every ``<name>``/``</name>`` tag as ``(start, end, is_closing, name)``."""
+    return [
+        (match.start(), match.end(), bool(match.group("closing")), match.group("name"))
+        for match in _TAG_PATTERN.finditer(text)
+    ]
+
+
+def _balanced_partners(tags: list[tuple[int, int, bool, str]]) -> dict[int, int]:
+    """Map each opening tag to the closing tag that balances it, per tag name.
+
+    Computed with one stack per tag name in a single pass, so a value that legitimately
+    contains a nested element of the same name (``<code><code>x</code></code>``) resolves
+    to the *outer* closing tag rather than the first one.
+    """
+    partners: dict[int, int] = {}
+    stacks: dict[str, list[int]] = {}
+    for index, (_, _, is_closing, name) in enumerate(tags):
+        if is_closing:
+            stack = stacks.get(name)
+            if stack:
+                partners[stack.pop()] = index
+        else:
+            stacks.setdefault(name, []).append(index)
+    return partners
+
+
+def _next_closing_tags(tags: list[tuple[int, int, bool, str]]) -> list[int | None]:
+    """For each tag, the index of the next closing tag sharing its name (or ``None``)."""
+    following: list[int | None] = [None] * len(tags)
+    latest: dict[str, int] = {}
+    for index in range(len(tags) - 1, -1, -1):
+        _, _, is_closing, name = tags[index]
+        following[index] = latest.get(name)
+        if is_closing:
+            latest[name] = index
+    return following
+
+
+def _extract_field_blocks(completion: str) -> list[tuple[str, str, int, int]]:
+    """Split ``completion`` into ``(field_name, raw_value, start, end)`` tuples, left to right.
+
+    Runs in linear time. Two rules go beyond a plain lazy ``<name>(.*?)</name>`` scan so
+    that values which contain their own closing tag are not silently truncated:
+
+    * **Nesting.** When an opening tag is followed, after whitespace only, by another
+      opening tag of the same name, the value is a nested document and the block ends at
+      the depth-balanced closing tag. A tag name merely mentioned inside prose is not
+      preceded by whitespace alone, so it keeps the lazy reading.
+    Everything else keeps the lazy reading: a value that merely *ends* with its own closing
+    tag is indistinguishable from a value followed by trailing commentary, so widening the
+    block there would silently corrupt one reading to rescue the other. `_assert_unambiguous`
+    reports those instead.
+    """
+    tags = _scan_tags(completion)
+    partners = _balanced_partners(tags)
+    next_closing = _next_closing_tags(tags)
+
+    blocks: list[tuple[str, str, int, int]] = []
+    index = 0
+    while index < len(tags):
+        _, open_end, is_closing, name = tags[index]
+        if is_closing:
+            index += 1
+            continue
+
+        nested = (
+            index + 1 < len(tags)
+            and not tags[index + 1][2]
+            and tags[index + 1][3] == name
+            and not completion[open_end : tags[index + 1][0]].strip()
+        )
+        end = partners.get(index) if nested else None
+        if end is None:
+            end = next_closing[index]
+        if end is None:
+            # No closing tag for this name anywhere later; treat the tag as plain text.
+            index += 1
+            continue
+
+        blocks.append((name, completion[open_end : tags[end][0]], tags[index][0], tags[end][1]))
+        index = end + 1
+    return blocks
+
 
 class XMLAdapter(ChatAdapter):
-    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
-
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
@@ -93,17 +178,17 @@ class XMLAdapter(ChatAdapter):
     ) -> None:
         """Raise if a field's value is cut short by a closing tag that may belong to the value.
 
-        The wire format does not escape values, so `<answer>a</answer> b</answer>` is genuinely
-        ambiguous: `" b"` may be the rest of the value or trailing chatter, and nothing in the
-        text tells the two apart. Rather than silently keeping whichever reading the scan
-        reached first, report it and let the caller pick a format that can express the value.
+        Nesting is decided by `_extract_field_blocks`, which is exact. What remains is the case
+        no parser can settle: `<answer>a</answer> b</answer>` reads either as the value `a`
+        followed by chatter or as the value `a</answer> b`, and the two are token-identical.
+        Report it rather than silently picking one and returning the wrong string.
 
-        `spans` holds where each output field's value stopped; `blocks` holds every balanced block
-        found, in scan order, so they are sorted by start and never overlap. Blanking each block to
-        spaces once, keeping every offset, leaves exactly the text no block accounts for: a copy
-        of a closing tag that survives that mask is by construction in open text, and so is any
-        text between two such copies. A tag can neither straddle a block boundary nor be forged
-        out of blanks, because a block both starts and ends on the only `<` and `>` a tag has.
+        `spans` holds where each output field's block ended; `blocks` holds every block found, in
+        scan order, so they are sorted by start and never overlap. Blanking each block to spaces
+        once, keeping every offset, leaves exactly the text no block accounts for: a closing tag
+        surviving that mask is by construction in open text, and so is any text between two such
+        copies. A tag can neither straddle a block boundary nor be forged out of blanks, because a
+        block both starts and ends on the only `<` and `>` a tag has.
         """
         # Masking only ever blanks characters, so a tag absent from the raw text after a value is
         # absent from the mask too: the common well-formed completion needs no mask at all.
@@ -128,9 +213,8 @@ class XMLAdapter(ChatAdapter):
                     break
 
                 # Whitespace alone between the value and a surplus copy means a duplicated-tag
-                # slip: the two readings still differ - "a" versus "a</answer>\n" - but they
-                # differ only by a copy of the tag itself, so no text the model wrote is lost and
-                # the parse stays silent. Keep scanning: a later copy may still hide content.
+                # slip: the readings differ only by a copy of the tag itself, so no text the model
+                # wrote is lost and the parse stays silent. Keep scanning for a later copy.
                 if not masked[scanned:found].strip():
                     scanned = found + len(closing_tag)
                     continue
@@ -152,29 +236,19 @@ class XMLAdapter(ChatAdapter):
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Extract each output field from its `<field_name>...</field_name>` block.
 
-        The first complete block wins for a repeated field. Because the wire format does not escape
-        values, a value that itself contains its own closing tag cannot be told apart from a value
-        followed by trailing commentary. Where that ambiguity is visible the completion raises
-        `AdapterParseError` rather than returning the truncated reading; use `ChatAdapter` or
-        `JSONAdapter`, whose formats delimit values unambiguously, for content that can contain the
-        closing tag. Two cases stay silent. A surplus closing tag separated from the value by only
-        whitespace or whole balanced blocks is taken as the model closing the field twice, since
-        the readings differ by the tag text alone. And when the value re-opens the field's own tag
-        or ends with its closing tag, the regex closes the block early and nothing surplus remains
-        to detect, so that shape truncates exactly as it did before.
+        A value holding a nested element of the same name is recovered in full; a value that
+        merely ends with its own closing tag is ambiguous and raises `AdapterParseError` rather
+        than being silently truncated. The first complete block wins for a repeated field.
         """
         fields = {}
         spans: dict[str, int] = {}
         blocks: list[tuple[int, int]] = []
-        for match in self.field_pattern.finditer(completion):
-            name = match.group("name")
-            content = match.group("content").strip()
-            blocks.append(match.span())
+        for name, content, start, end in _extract_field_blocks(completion):
+            blocks.append((start, end))
             if name in signature.output_fields and name not in fields:
-                fields[name] = content
-                spans[name] = match.end()
-        # A field with no closing tag anywhere leaves a stray copy of an earlier field's tag in
-        # open text, so report the missing field before reading that stray tag as an ambiguity.
+                fields[name] = content.strip()
+                spans[name] = end
+        # Report a missing field before reading a stray tag of an earlier field as an ambiguity.
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
@@ -182,7 +256,6 @@ class XMLAdapter(ChatAdapter):
                 lm_response=completion,
                 parsed_result=fields,
             )
-        # A surplus closing tag makes the value ambiguous; fail loudly rather than truncate.
         self._assert_unambiguous(signature, completion, fields, spans, blocks)
         # Cast values using base class parse_value helper
         for k, v in fields.items():
@@ -195,7 +268,7 @@ class XMLAdapter(ChatAdapter):
         try:
             return parse_value(raw, field_info.annotation)
         except Exception as e:
-            raise AdapterParseError(
+                raise AdapterParseError(
                 adapter_name="XMLAdapter",
                 signature=signature,
                 lm_response=completion,

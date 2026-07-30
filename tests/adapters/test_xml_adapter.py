@@ -1101,32 +1101,42 @@ def test_xml_adapter_parse_allows_a_repeated_block_nesting_the_same_tag():
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "a"}
 
 
-def test_xml_adapter_parse_still_truncates_a_value_that_reopens_its_own_tag():
+def test_xml_adapter_parse_recovers_a_value_that_nests_its_own_tag():
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
 
+    class HtmlSig(dspy.Signature):
+        task: str = dspy.InputField()
+        html: str = dspy.OutputField()
+
     adapter = dspy.XMLAdapter()
 
-    # KNOWN LIMITATION, unchanged from before this check existed. The regex closes the block on the
-    # inner `</code>`, so the value stops early and the trailing copy is only ever whitespace away
-    # from it: no surplus tag is left in open text for the check to see. The same holds when the
-    # value simply ends with its closing tag. Detecting these needs the block matching itself to
-    # change, not a wider ambiguity check -- an earlier attempt to special-case them instead
-    # rejected `<reasoning>wrap in <reasoning> tags</reasoning>\n</reasoning>`, which parses fine.
-    assert adapter.parse(CodeSig, "<code>\n<code>x</code>\n</code>") == {"code": "<code>x"}
+    # A value that is itself a same-named element is NOT ambiguous: the tags are depth-balanced,
+    # so exactly one reading exists and it can be recovered outright rather than reported.
+    assert adapter.parse(CodeSig, "<code>\n<code>x</code>\n</code>") == {"code": "<code>x</code>"}
+    assert adapter.parse(HtmlSig, "<html>\n<html><body>x</body></html>\n</html>") == {
+        "html": "<html><body>x</body></html>",
+    }
+    assert adapter.parse(CodeSig, "<code>\n<code>\n<code>x</code>\n</code>\n</code>") == {
+        "code": "<code>\n<code>x</code>\n</code>",
+    }
+
+    # KNOWN LIMITATION: a value that merely *ends* with its closing tag has no nested opening tag
+    # to balance against, so the scan closes the block early and only whitespace follows -- nothing
+    # surplus is left in open text to detect. Representing it needs escaping, which this wire
+    # format does not have.
     assert adapter.parse(CodeSig, "<code>\nbefore </code>\n</code>") == {"code": "before"}
 
-    # The regression that attempt caused: a value mentioning its own opening tag, closed once,
-    # followed by a duplicate closing tag. This parses on main and must keep parsing.
+    # Nesting is gated on the inner opening tag following after whitespace only. A value that
+    # merely mentions its own opening tag mid-prose keeps the lazy reading, so this still parses
+    # -- an earlier attempt at a broader rule rejected it, which was a regression against main.
     class Reasoning(dspy.Signature):
         task: str = dspy.InputField()
         reasoning: str = dspy.OutputField()
 
     completion = "<reasoning>wrap in <reasoning> tags</reasoning>\n</reasoning>"
     assert adapter.parse(Reasoning, completion) == {"reasoning": "wrap in <reasoning> tags"}
-
-    # A value that merely mentions the opening tag and is closed once stays unambiguous.
     assert adapter.parse(CodeSig, "<code>use <code> tags</code>") == {"code": "use <code> tags"}
 
 
