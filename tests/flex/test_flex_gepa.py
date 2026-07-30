@@ -13,6 +13,7 @@ Covers the behavior:
 
 from __future__ import annotations
 
+import shutil
 import textwrap
 
 import pytest
@@ -23,6 +24,8 @@ from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMRateLimitError
+
+deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
 
 # A plain dspy.Predict module class that binds without an LM (no RLM interpreter needed).
 SIMPLE_MODULE = textwrap.dedent(
@@ -145,6 +148,7 @@ def test_build_program_rebinds_flex_code() -> None:
 # --- adapter: selection eval passes the trace to a flex metric ---------------
 
 
+@deno_required
 def test_selection_eval_passes_program_trace_to_declaring_metric() -> None:
     """The selection eval (capture_traces=False) must pass the execution trace to a metric that
     declares `program_trace`, so a trace-dependent score (e.g. an LLM-call penalty that rewards
@@ -168,6 +172,7 @@ def test_selection_eval_passes_program_trace_to_declaring_metric() -> None:
     assert seen.get("trace") is None  # eval-mode semantics of the `trace` argument are preserved
 
 
+@deno_required
 def test_selection_eval_keeps_vanilla_semantics_for_legacy_metric() -> None:
     seen: dict[str, object] = {}
 
@@ -189,6 +194,7 @@ def test_selection_eval_keeps_vanilla_semantics_for_legacy_metric() -> None:
     assert batch.scores == [0.75]
 
 
+@deno_required
 def test_selection_eval_binds_metric_with_required_contract_params() -> None:
     """A metric written to the full GEPAFeedbackMetric signature with `trace`/`pred_name`/
     `pred_trace` REQUIRED (no defaults) must still bind at flex scoring time: flex passes those
@@ -231,6 +237,7 @@ CRASHY_MODULE = textwrap.dedent(
 ).strip()
 
 
+@deno_required
 def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
     """A code candidate that binds fine but raises at runtime on one input must still score
     one-per-example, aligned by position — the gepa engine pairs scores with example ids

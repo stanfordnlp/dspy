@@ -24,15 +24,18 @@ class Flex(Module, Parameter):
     The optimizer-authored code runs inside an interpreter. ``Flex`` never
     runs it in the host Python process. ``interpreter_factory`` defaults to ``dspy.PythonInterpreter``
     (Deno/Pyodide) and must be a zero-argument callable returning a new ``CodeInterpreter``.
+    Flex may validate or lower source and install its guest shim before execution; a custom
+    interpreter therefore defines the Python and standard-library subset available to that source.
     The optimizer-authored glue runs isolated; only provided-tool calls, predictor construction,
     and predictor calls bridge back to the host, which makes the real LM calls.
 
     Args:
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
-        interpreter_factory: Zero-argument callable returning a ``CodeInterpreter`` for each forward
-            pass. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
-        max_predictor_calls: Cap on bridged LM calls per ``forward``; ``None`` disables it.
+        interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
+            sandbox session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
+        max_predictor_calls: Cap on predictor invocations admitted by the Flex bridge per
+            ``forward``; ``None`` disables it.
     """
 
     def __init__(
@@ -58,10 +61,25 @@ class Flex(Module, Parameter):
         self._interpreter_factory = interpreter_factory
         self._max_predictor_calls = max_predictor_calls
 
+        self._rebuild_bridge()
+        self._bind_code(self._baseline_src())
+
+    def _rebuild_bridge(self) -> None:
         from dspy.flex.bridge import BridgeRuntime
 
         self._bridge: BridgeRuntime = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
-        self._bind_code(self._baseline_src())
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state.pop("_bridge", None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        state.pop("_bridge", None)  # Ignore bridges persisted by prerelease versions.
+        super().__setstate__(state)
+        self._rebuild_bridge()
+        if self._module_src is not None:
+            self._bridge.bind(self._module_src)
 
     @property
     def signature(self) -> Any:

@@ -818,7 +818,7 @@ def test_nested_rlm_tool_provenance() -> None:
         )
     )
 
-    MODULE = textwrap.dedent(
+    module = textwrap.dedent(
         """
         class ProbeModule(dspy.Module):
             def __init__(self):
@@ -838,7 +838,7 @@ def test_nested_rlm_tool_provenance() -> None:
     ).strip()
 
     flex = Flex(ProbeSig, tools=[probe, spawn_inner], interpreter_factory=lambda: dspy.PythonInterpreter())
-    flex._bind_code(MODULE)
+    flex._bind_code(module)
     flex(task="go")
 
     # Every layer ran inside a Pyodide sandbox, not the host process:

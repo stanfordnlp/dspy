@@ -283,10 +283,13 @@ def test_save_program_roundtrips_via_cloudpickle(tmp_path) -> None:
 
     program = Program()
     program.flex._bind_code(ECHO_MODULE)
+    assert "_bridge" not in program.flex.__getstate__()
     program.save(tmp_path, save_program=True)
 
     loaded = dspy.load(str(tmp_path), allow_pickle=True)
     assert loaded.flex.module_src == ECHO_MODULE
+    assert loaded.flex._bridge._flex is loaded.flex
+    assert loaded.flex._bridge._module_src == ECHO_MODULE
 
 
 @deno_required

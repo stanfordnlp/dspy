@@ -34,7 +34,9 @@ class SolveModule(dspy.Module):
 ```
 
 `dspy` is already in scope — do NOT add `import` statements at module scope (import
-stdlib modules like `re` *inside* `forward` if you need them).
+stdlib modules like `re` *inside* `forward` if you need them). Python and standard-library
+availability is defined by this Flex's configured interpreter; candidates are evaluated in that
+interpreter and should not assume host-Python access.
 
 Available DSPy primitives:
 

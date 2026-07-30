@@ -90,9 +90,9 @@ The `program_trace` parameter is opt-in *by declaration*: only metrics that name
 
 ## Sandboxed Execution
 
-`Flex` always runs its generated code in a sandbox — like `dspy.RLM`, it never runs it in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so each parallel evaluation during optimization gets its own session. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. The optimizer-authored glue — control flow, string work, arithmetic, imports — runs inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
+`Flex` always runs its generated code in a sandbox — like `dspy.RLM`, it never runs it in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per sandbox session, including separate sessions requested by nested code-executing modules. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
 
-Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed and raises with install instructions otherwise — construction, save, and load are interpreter-free; each call spins up a fresh sandbox and tears it down on return. To customize the sandbox — grant filesystem or network access, or use another `CodeInterpreter` backend — pass your own factory:
+Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed and raises with install instructions otherwise — construction, save, and load are interpreter-free; each call owns a fresh outer sandbox and tears it down on return. To customize execution, pass your own factory. This is a low-level hook: Flex may validate or lower source and install its guest shim before execution, while the interpreter determines the Python and standard-library subset actually available. Source optimized for one interpreter is not guaranteed to run unchanged on another.
 
 ```python
 solve = dspy.Flex(
@@ -101,7 +101,7 @@ solve = dspy.Flex(
 )
 ```
 
-There is nothing to clean up: each call creates its own interpreter and shuts it down on return, so a `Flex` holds no live sessions between calls.
+There is nothing to clean up: each call owns and shuts down every interpreter session it creates, so a `Flex` holds no live sessions between calls.
 
 ## Tools
 
@@ -136,8 +136,8 @@ The interpreter, like the LM, is a **runtime dependency and is not serialized**.
 |-----------|------|---------|-------------|
 | `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
 | `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning the sandbox that runs the generated code; defaults to `dspy.PythonInterpreter` (needs Deno), like `dspy.RLM`. A bare interpreter instance is not accepted. |
-| `max_predictor_calls` | `int` | `100` | Cap on bridged LM calls per `forward` (a runaway guard). `None` disables it. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno), like `dspy.RLM`. A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent. |
+| `max_predictor_calls` | `int` | `100` | Cap on predictor invocations admitted by the Flex bridge per `forward` (a runaway guard). This is not a count of every internal LM call made by compound modules. `None` disables it. |
 
 ## Notes
 
