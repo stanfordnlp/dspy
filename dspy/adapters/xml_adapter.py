@@ -9,7 +9,11 @@ from dspy.signatures.signature import Signature
 
 
 class XMLAdapter(ChatAdapter):
-    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
+    # Greedy `.*` with backreference `\1` matches the LAST closing tag for
+    # each field name, so content containing the field's own closing tag
+    # (e.g. code with `</code>`) is captured in full instead of being
+    # truncated at the first occurrence (#10102).
+    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*))</\1>", re.DOTALL)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []

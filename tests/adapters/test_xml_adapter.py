@@ -841,3 +841,51 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_xml_adapter_parse_content_containing_own_closing_tag():
+    """Regression #10102: a field value containing its own closing tag must
+    be captured in full, not truncated at the first occurrence."""
+
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    completion = "<code>\nif x:\n    print('</code>')\n</code>\n"
+    parsed = adapter.parse(CodeSig, completion)
+    assert parsed == {"code": "if x:\n    print('</code>')"}
+
+
+def test_xml_adapter_parse_two_fields_with_nested_closing_tag():
+    """Regression #10102: with two output fields, the second field's value
+    containing its own closing tag must not be truncated."""
+
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    completion = (
+        "<reasoning>\nthink\n</reasoning>\n"
+        "<answer>\nsee </answer> above\n</answer>\n"
+    )
+    parsed = adapter.parse(Two, completion)
+    assert parsed == {"reasoning": "think", "answer": "see </answer> above"}
+
+
+def test_xml_adapter_parse_round_trip_with_closing_tag_in_value():
+    """Regression #10102: round-tripping through the adapter's own formatter
+    must preserve a value that contains the closing tag."""
+
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(
+        CodeSig, {"code": "before </code> after"}
+    )
+    parsed = adapter.parse(CodeSig, formatted)
+    assert parsed == {"code": "before </code> after"}
