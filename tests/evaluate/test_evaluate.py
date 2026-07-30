@@ -462,6 +462,29 @@ def test_evaluate_save_as_csv_with_history():
             os.unlink(temp_csv)
 
 
+
+def test_evaluate_population_metric_without_per_example_metric():
+    devset = [new_example("first", "a"), new_example("second", "b")]
+    captured = {}
+
+    def program(question):
+        return dspy.Prediction(answer={"first": "a", "second": "wrong"}[question])
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 0.6
+
+    evaluator = Evaluate(devset=devset, population_metric=population_metric)
+    result = evaluator(program)
+
+    assert result.score == 60.0
+    assert [score for _, _, score in result.results] == [0.0, 0.0]
+    assert captured == {
+        "questions": ["first", "second"],
+        "answers": ["a", "wrong"],
+    }
+
 def test_evaluate_population_metric_overrides_sample_mean():
     devset = [new_example("first", "correct"), new_example("second", "correct")]
     answers = {"first": "correct", "second": "incorrect"}

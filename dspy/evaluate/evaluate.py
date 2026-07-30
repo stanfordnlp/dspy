@@ -180,7 +180,7 @@ class Evaluate:
 
         def process_item(example):
             prediction = program(**example.inputs())
-            score = metric(example, prediction)
+            score = metric(example, prediction) if metric is not None else 0.0
             return prediction, score
 
         results = executor.execute(process_item, devset)
@@ -191,7 +191,8 @@ class Evaluate:
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
         overall_score = round(100 * ncorrect / ntotal, 2)
 
-        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        if metric is not None:
+            logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         if population_metric is not None:
             failed_indices = set(executor.failed_indices)
@@ -212,7 +213,11 @@ class Evaluate:
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
                 # Rename the 'correct' column to the name of the metric object
-                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+                metric_name = (
+                    metric.__name__
+                    if isinstance(metric, types.FunctionType)
+                    else metric.__class__.__name__ if metric is not None else "score"
+                )
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
 
@@ -224,7 +229,7 @@ class Evaluate:
             metric_name = (
                 metric.__name__
                 if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
+                else metric.__class__.__name__ if metric is not None else "score"
             )
             data = self._prepare_results_output(results, metric_name)
 
@@ -239,7 +244,7 @@ class Evaluate:
             metric_name = (
                 metric.__name__
                 if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
+                else metric.__class__.__name__ if metric is not None else "score"
             )
             data = self._prepare_results_output(results, metric_name)
             with open(
