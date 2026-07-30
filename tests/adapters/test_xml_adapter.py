@@ -8,6 +8,7 @@ from litellm import Choices, Message, ModelResponse
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.utils.exceptions import AdapterParseError
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
@@ -843,36 +844,35 @@ In adhering to this structure, your objective is:\x20
     assert system_message == expected_system_message
 
 
-def test_xml_adapter_parse_keeps_value_containing_its_own_closing_tag():
+def test_xml_adapter_parse_reports_value_containing_its_own_closing_tag():
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
 
+    # The wire format does not escape values, so `</code>` inside the value is indistinguishable
+    # from the tag that ends it. XMLAdapter used to resolve that silently, returning the
+    # truncated "if x:\n    print('". It now reports the ambiguity instead.
     completion = "<code>\nif x:\n    print('</code>')\n</code>\n"
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(CodeSig, completion)
+
+    # ChatAdapter's delimiters cannot collide with the value, so it carries the string fine.
+    # The point of the error is to send users here rather than hand back a short string.
     expected = "if x:\n    print('</code>')"
-
-    # XMLAdapter used to stop at the first `</code>` and return "if x:\n    print('".
-    assert dspy.XMLAdapter().parse(CodeSig, completion) == {"code": expected}
-
-    # ChatAdapter is the independent oracle: its delimiters cannot collide with the value,
-    # so it has always recovered the whole string. The two adapters must now agree.
     chat_completion = dspy.ChatAdapter().format_assistant_message_content(CodeSig, {"code": expected})
     assert dspy.ChatAdapter().parse(CodeSig, chat_completion) == {"code": expected}
 
 
-def test_xml_adapter_parse_keeps_second_field_value_containing_its_own_closing_tag():
+def test_xml_adapter_parse_reports_second_field_value_containing_its_own_closing_tag():
     class Two(dspy.Signature):
         q: str = dspy.InputField()
         reasoning: str = dspy.OutputField()
         answer: str = dspy.OutputField()
 
-    completion = "<reasoning>\nthink\n</reasoning>\n<answer>\nsee </answer> above\n</answer>\n"
-
     # Previously returned {"reasoning": "think", "answer": "see"} with no error raised.
-    assert dspy.XMLAdapter().parse(Two, completion) == {
-        "reasoning": "think",
-        "answer": "see </answer> above",
-    }
+    completion = "<reasoning>\nthink\n</reasoning>\n<answer>\nsee </answer> above\n</answer>\n"
+    with pytest.raises(AdapterParseError, match="`answer`"):
+        dspy.XMLAdapter().parse(Two, completion)
 
 
 def test_xml_adapter_format_parse_round_trip_with_closing_tag_in_value():
@@ -883,8 +883,8 @@ def test_xml_adapter_format_parse_round_trip_with_closing_tag_in_value():
     value = "before </code> after"
     adapter = dspy.XMLAdapter()
 
-    # The wire format does not escape values, so the adapter must at least read back what it
-    # itself wrote. This is the demo/few-shot path: format_assistant_message_content -> parse.
+    # The formatter escapes the field's own closing tag, so the adapter reads back exactly what
+    # it wrote. This is the demo/few-shot path: format_assistant_message_content -> parse.
     assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": value})
     assert adapter.parse(CodeSig, assistant_message) == {"code": value}
 
@@ -921,15 +921,17 @@ def test_xml_adapter_parse_value_containing_next_field_opening_tag():
     }
 
 
-def test_xml_adapter_parse_ignores_trailing_prose_mentioning_the_closing_tag():
+def test_xml_adapter_parse_reports_trailing_prose_mentioning_the_closing_tag():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    # Widening the value to the last `</answer>` would swallow the sign-off. The value ends at
-    # the real closing tag, not at the one quoted in the chatter that follows.
+    # "final" is the intuitive reading, but the adapter cannot prove the sign-off is not part of
+    # the value, so it reports rather than guesses. Guessing the other way silently corrupts the
+    # value, which is the failure this module is trying to stop making.
     completion = "<answer>final</answer>\n\nRemember to close with `</answer>`."
-    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "final"}
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(TestSignature, completion)
 
 
 def test_xml_adapter_parse_ignores_duplicated_closing_tag():
@@ -937,15 +939,14 @@ def test_xml_adapter_parse_ignores_duplicated_closing_tag():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    # Emitting the closing tag twice is a common model slip. The extra copies are separated from
-    # the real closing tag by whitespace only, so they must not be absorbed into the value.
+    # Emitting the closing tag twice is a common model slip. Only whitespace separates the copies,
+    # so no content can be hidden between them and the value is unambiguous: no error.
     assert dspy.XMLAdapter().parse(TestSignature, "<answer>42</answer>\n</answer>") == {"answer": "42"}
     assert dspy.XMLAdapter().parse(TestSignature, "<answer>42</answer>\n</answer>\n</answer>") == {"answer": "42"}
 
-    # The value may still legitimately contain the closing tag: only the trailing duplicate is
-    # dropped, and the earliest closing tag that is followed by nothing but duplicates wins.
-    completion = "<answer>see </answer> here</answer>\n</answer>"
-    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "see </answer> here"}
+    # But once real text sits between the copies, which one closes the value is unknowable.
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(TestSignature, "<answer>see </answer> here</answer>\n</answer>")
 
 
 def test_xml_adapter_parse_ignores_duplicated_closing_tag_before_next_field():

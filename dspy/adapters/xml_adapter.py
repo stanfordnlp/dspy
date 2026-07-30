@@ -8,24 +8,16 @@ from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
 
 
-def _skip_whitespace_and_tags(text: str, start: int, end: int, tag: str) -> int:
-    """Advance from `start` past whitespace and whole copies of `tag`, stopping at `end`."""
-    index = start
-    while index < end:
-        if text[index].isspace():
-            index += 1
-        elif text.startswith(tag, index) and index + len(tag) <= end:
-            index += len(tag)
-        else:
-            break
-    return index
-
-
 class XMLAdapter(ChatAdapter):
+    field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
+
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
             formatted = format_field_value(field_info=field.info, value=field_value)
+            # A value holding its own closing tag would make the block ambiguous to read back,
+            # so escape that one sequence; `parse` reverses it.
+            formatted = self._escape_closing_tag(field.name, formatted)
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
@@ -94,110 +86,69 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
-    def _extract_field_values(signature: type[Signature], completion: str) -> dict[str, str]:
-        """Extract the raw text of each output field, anchored to the signature's field names.
+    def _escape_closing_tag(name: str, value: str) -> str:
+        """Escape a field's own closing tag inside its value so the block stays unambiguous."""
+        return value.replace(f"</{name}>", f"&lt;/{name}>")
 
-        The XML wire format does not escape values, so a value can legitimately contain its own
-        closing tag, e.g. a `code` field whose body contains `</code>`. Scanning the completion
-        with a single self-backreferencing pattern would end the value at the first closing tag
-        and silently truncate it. Instead, walk the completion left to right and, for each field,
-        pick which of its closing tags ends the value:
+    @staticmethod
+    def _unescape_closing_tag(name: str, value: str) -> str:
+        """Inverse of `_escape_closing_tag`."""
+        return value.replace(f"&lt;/{name}>", f"</{name}>")
 
-        1. Collect every closing tag after the opening one. Prefer those before the next expected
-           field's opening tag; if none precedes it, that opening tag was part of this value, so
-           all closing tags are reconsidered.
-        2. Take the last of those followed by nothing but whitespace, or by a still-pending field's
-           opening tag, so trailing prose that merely quotes the closing tag is not absorbed.
-        3. Narrow that choice back to the earliest closing tag separated from it by only
-           whitespace and further copies of the tag, so a duplicated closing tag - a common model
-           slip - does not widen the value.
-        4. If nothing qualifies under 2, fall back to the first closing tag, matching the
-           non-greedy behavior this adapter had before.
+    @staticmethod
+    def _assert_unambiguous(signature: type[Signature], completion: str, fields: dict[str, str]) -> None:
+        """Raise if a field's block holds an unmatched closing tag that hides part of its value.
+
+        The wire format does not escape values, so `<answer>a</answer> b</answer>` is genuinely
+        ambiguous: `" b"` may be the rest of the value or trailing chatter. Nothing in the text
+        distinguishes the two, so the adapter reports the ambiguity instead of silently keeping
+        whichever reading the scan happened to reach.
         """
-        pending = list(signature.output_fields)
-        opening_patterns = {name: re.compile(rf"<{re.escape(name)}>") for name in pending}
-        fields: dict[str, str] = {}
-        cursor = 0
-
-        while pending and cursor < len(completion):
-            # The next field to extract is whichever expected field opens first, so fields
-            # emitted out of signature order are still handled.
-            opening = None
-            for name in pending:
-                match = opening_patterns[name].search(completion, cursor)
-                if match and (opening is None or match.start() < opening[0].start()):
-                    opening = (match, name)
-            if opening is None:
-                break
-
-            match, name = opening
-            value_start = match.end()
-            # The opening tag of any field still to be extracted bounds this value. A second
-            # opening tag for the same field bounds it too, so a repeated block is not merged.
-            boundary = len(completion)
-            for other in pending:
-                next_opening = opening_patterns[other].search(completion, value_start)
-                if next_opening:
-                    boundary = min(boundary, next_opening.start())
-
-            closing_tag = f"</{name}>"
-            candidates = []
-            search_from = value_start
-            while True:
-                found = completion.find(closing_tag, search_from)
-                if found == -1:
-                    break
-                candidates.append(found)
-                search_from = found + 1
-            if not candidates:
-                # An opening tag with no closing tag anywhere: skip it and keep scanning.
-                cursor = value_start
+        for name in fields:
+            opening_tag, closing_tag = f"<{name}>", f"</{name}>"
+            # A repeated *block* pairs every closing tag with an opening one and is not ambiguous;
+            # only a surplus closing tag can hide content.
+            if completion.count(closing_tag) <= completion.count(opening_tag):
                 continue
 
-            # Prefer closing tags before the boundary; if the boundary tag turned out to be part
-            # of this field's value, no candidate precedes it and the whole list is reconsidered.
-            in_bounds = [pos for pos in candidates if pos < boundary]
-            pool = in_bounds or candidates
+            opened = completion.find(opening_tag)
+            chosen = completion.find(closing_tag, opened + len(opening_tag))
+            last = completion.rfind(closing_tag)
+            if chosen == -1 or last <= chosen:
+                continue
 
-            # A closing tag really ends the value only if nothing but another field follows it.
-            # Trailing prose that merely mentions a closing tag, e.g. "...always close with
-            # `</answer>`", must not be absorbed, so a candidate qualifies only when the rest of
-            # the completion is blank or starts with a pending field's opening tag. Whitespace is
-            # skipped by index rather than by slicing so a long completion is not recopied per
-            # candidate.
-            successors = [opening_patterns[other] for other in pending if other != name]
-            closing = None
-            for pos in reversed(pool):
-                after = pos + len(closing_tag)
-                while after < len(completion) and completion[after].isspace():
-                    after += 1
-                if after == len(completion) or any(p.match(completion, after) for p in successors):
-                    closing = pos
-                    break
-            if closing is None:
-                # No terminal candidate: the first closing tag is the safest guess, which matches
-                # the non-greedy behavior this adapter had before.
-                closing = pool[0]
-            else:
-                # A repeated closing tag is a common model slip, and letting the last copy win
-                # would absorb the real one into the value. When only whitespace and further
-                # copies of the tag separate an earlier candidate from the chosen one, the value
-                # already ended at that earlier candidate.
-                for pos in pool:
-                    if pos >= closing:
-                        break
-                    if _skip_whitespace_and_tags(completion, pos + len(closing_tag), closing, closing_tag) == closing:
-                        closing = pos
-                        break
+            # Whitespace and further copies of the tag between the two are a duplicated-tag slip,
+            # not lost content: the value is the same either way.
+            between = completion[chosen + len(closing_tag) : last].replace(closing_tag, "")
+            if not between.strip():
+                continue
 
-            fields[name] = completion[value_start:closing].strip()
-            pending.remove(name)
-            cursor = closing + len(closing_tag)
+            from dspy.utils.exceptions import AdapterParseError
 
-        return fields
+            raise AdapterParseError(
+                adapter_name="XMLAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=fields,
+                message=(
+                    f"Field `{name}` contains an unmatched `{closing_tag}`, so its value cannot be "
+                    f"determined: the text after the first `{closing_tag}` may belong to the value or "
+                    f"may be trailing commentary. Parsing it either way risks silently returning the "
+                    f"wrong value. Emit the field with `{closing_tag}` escaped as `&lt;/{name}>`, or "
+                    f"use ChatAdapter or JSONAdapter, whose wire formats delimit values unambiguously."
+                ),
+            )
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        fields = self._extract_field_values(signature, completion)
+        fields = {}
+        for match in self.field_pattern.finditer(completion):
+            name = match.group("name")
+            content = match.group("content").strip()
+            if name in signature.output_fields and name not in fields:
+                fields[name] = content
+        # A surplus closing tag makes the value ambiguous; fail loudly rather than truncate.
+        self._assert_unambiguous(signature, completion, fields)
+        fields = {k: self._unescape_closing_tag(k, v) for k, v in fields.items()}
         # Cast values using base class parse_value helper
         for k, v in fields.items():
             fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
