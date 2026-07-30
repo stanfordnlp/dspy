@@ -1073,6 +1073,34 @@ def test_xml_adapter_parse_ignores_earlier_field_closing_tag_after_a_balanced_bl
     assert dspy.XMLAdapter().parse(Two, completion) == {"reasoning": "think", "answer": "42"}
 
 
+def test_xml_adapter_parse_reports_ambiguity_despite_a_mentioned_opening_tag():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        thinking: str = dspy.OutputField()
+
+    # The `<answer>` inside the thinking block is part of that block's value, not the start of a
+    # second answer block, so it cannot explain away the trailing `</answer>`. Letting a mere
+    # mention account for it would hand back "42" and drop the correction after it.
+    completion = (
+        "<answer>42</answer>\n<thinking>wrap it in <answer> tags</thinking>\nActually the answer is 43</answer>"
+    )
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        dspy.XMLAdapter().parse(Two, completion)
+
+
+def test_xml_adapter_parse_allows_a_repeated_block_nesting_the_same_tag():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # The first block wins, and the trailing `</answer>` closes the repeated block rather than
+    # hanging off the value: every byte between the two is inside that block, so nothing is
+    # hidden and the parse must stay silent.
+    completion = "<answer>a</answer>\n<answer>x<answer>y</answer></answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "a"}
+
+
 def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -1082,6 +1110,6 @@ def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
     # for it has to stay linear. Re-measuring the text before each surplus tag made this
     # quadratic: 50k copies took tens of seconds before, and milliseconds now.
     completion = "<answer>42</answer>" + "</answer>" * 50_000
-    start = time.time()
+    start = time.perf_counter()
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
-    assert time.time() - start < 5
+    assert time.perf_counter() - start < 5

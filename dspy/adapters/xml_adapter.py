@@ -99,63 +99,36 @@ class XMLAdapter(ChatAdapter):
         reached first, report it and let the caller pick a format that can express the value.
 
         `spans` holds each output field's own block; `blocks` holds every balanced block found,
-        in scan order, so they are sorted by start and never overlap. Every cursor below only
-        moves forward over them, which keeps a field's whole scan linear in the length of the
-        completion however many surplus tags it holds.
+        in scan order, so they are sorted by start and never overlap. Blanking each block out to
+        spaces once, keeping every offset, leaves exactly the text no block accounts for: a copy
+        of a closing tag that survives that mask is by construction in open text, and so is any
+        text between two such copies. A tag can neither straddle a block boundary nor be forged
+        out of blanks, because a block both starts and ends on the only `<` and `>` a tag has.
         """
+        pieces = []
+        cursor = 0
+        for start, end in blocks:
+            pieces.append(completion[cursor:start])
+            pieces.append(" " * (end - start))
+            cursor = end
+        pieces.append(completion[cursor:])
+        masked = "".join(pieces)
+
         for name, (_, block_end) in spans.items():
             closing_tag = f"</{name}>"
-            opening_tag = f"<{name}>"
 
-            containing = 0
-            skipping = 0
-            openings = 0
-            closings = 0
-            next_opening = completion.find(opening_tag, block_end)
             scanned = block_end
-            hides_content = False
-
-            search_from = block_end
             while True:
-                found = completion.find(closing_tag, search_from)
+                found = masked.find(closing_tag, scanned)
                 if found == -1:
                     break
-                search_from = found + len(closing_tag)
 
-                while next_opening != -1 and next_opening + len(opening_tag) <= found:
-                    openings += 1
-                    next_opening = completion.find(opening_tag, next_opening + len(opening_tag))
-                while containing < len(blocks) and blocks[containing][1] <= found:
-                    containing += 1
-                preceding_closings = closings
-                closings += 1
-
-                # A later copy of this tag only matters if it sits in open text. Two things
-                # account for one: nesting inside any balanced block, whether or not that block
-                # is an output field, where the tag belongs to that block's value, and a repeated
-                # block of this same field, where an unmatched opening tag ahead of it means it
-                # closes that block rather than this one.
-                if containing < len(blocks) and blocks[containing][0] <= found:
-                    continue
-                if openings > preceding_closings:
-                    continue
-
-                # Only text that no block accounts for can be hidden by the longer reading, so
-                # classify the gap a piece at a time, skipping whole blocks and further copies of
-                # the tag. Whitespace and bare copies in between mean a duplicated-tag slip: the
-                # two readings still differ - "a" versus "a</answer>\n" - but the trailing copy
-                # carries no content, so the shorter reading loses nothing and stays silent. Keep
-                # scanning past it: a later copy may still hide content.
-                while scanned < found and not hides_content:
-                    while skipping < len(blocks) and blocks[skipping][1] <= scanned:
-                        skipping += 1
-                    if skipping < len(blocks) and blocks[skipping][0] <= scanned:
-                        scanned = min(blocks[skipping][1], found)
-                        continue
-                    stop = min(blocks[skipping][0], found) if skipping < len(blocks) else found
-                    hides_content = bool(completion[scanned:stop].replace(closing_tag, "").strip())
-                    scanned = stop
-                if not hides_content:
+                # Whitespace alone between the value and a surplus copy means a duplicated-tag
+                # slip: the two readings still differ - "a" versus "a</answer>\n" - but the
+                # trailing copy carries no content, so the shorter reading loses nothing and
+                # stays silent. Keep scanning past it: a later copy may still hide content.
+                if not masked[scanned:found].strip():
+                    scanned = found + len(closing_tag)
                     continue
 
                 raise AdapterParseError(
