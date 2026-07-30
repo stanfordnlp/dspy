@@ -12,7 +12,6 @@ from dspy.signatures.signature import Signature
 from dspy.utils.exceptions import AdapterParseError
 
 _TAG_PATTERN = re.compile(r"<(?P<closing>/?)(?P<name>\w+)>")
-_TAG_SCAN = _TAG_PATTERN
 
 
 def _scan_tags(text: str) -> list[tuple[int, int, bool, str]]:
@@ -274,46 +273,52 @@ class XMLAdapter(ChatAdapter):
         """Index in `content` where `<field_name>`'s value ends, or None if it has not ended yet.
 
         `content` is everything after the field's opening tag; `sibling_names` are the signature's
-        other output field names. Streaming calls this so a streamed value and `parse` settle on the
-        same boundary instead of each applying their own rule.
+        other output field names.
 
-        A value that opens with a same-named element is a nested document and ends at the closing
-        tag that balances it. Widening stops -- and the value ends at the first closing tag, which
-        is what `parse` also does -- if the span would reach another output field, so nesting can
-        never pull a later field into this one. While a nested span is still unbalanced the answer
-        is None: more text may complete it, and settling early would truncate.
+        The boundary is decided by running `_extract_field_blocks` -- the same scan `parse` uses --
+        over the reconstructed block, rather than by reimplementing its rule. An earlier version
+        did reimplement it and drifted twice, widening spans `parse` rejects, so agreement is left
+        to be structural instead of asserted. None means the block has not closed yet under that
+        scan, which mid-stream means more content may still complete it.
         """
-        closing = f"</{field_name}>"
-        lazy_end = content.find(closing)
-        lazy_end = lazy_end if lazy_end != -1 else None
-        if not XMLAdapter.value_opens_nested(field_name, content):
-            return lazy_end
+        if not XMLAdapter._nested_decision_ready(field_name, content, sibling_names):
+            return None
 
-        siblings = frozenset(name for name in sibling_names if name != field_name)
-        depth = 0
-        # Other elements opened inside the span. `_extract_field_blocks` only widens when every tag
-        # inside the span pairs inside it, so a span closing over an unpaired tag is not a nested
-        # document and must not be widened here either.
-        unpaired: dict[str, int] = {}
-        for match in _TAG_SCAN.finditer(content):
-            name, is_closing, index = match.group("name"), bool(match.group("closing")), match.start()
-            if name == field_name:
-                if not is_closing:
-                    depth += 1
-                elif depth == 0:
-                    return index if not unpaired else lazy_end
-                else:
-                    depth -= 1
-            elif name in siblings and not is_closing:
-                return lazy_end
-            elif is_closing:
-                if unpaired.get(name):
-                    unpaired[name] -= 1
-                    if not unpaired[name]:
-                        del unpaired[name]
-            else:
-                unpaired[name] = unpaired.get(name, 0) + 1
+        opening = f"<{field_name}>"
+        blocks = _extract_field_blocks(opening + content, sibling_names | {field_name})
+        for name, _, start, end in blocks:
+            if start == 0:
+                # `end` is past the closing tag, in the reconstructed string; report where the
+                # value stops, in `content`.
+                return end - len(f"</{name}>") - len(opening) if name == field_name else None
         return None
+
+    @staticmethod
+    def _nested_decision_ready(field_name: str, content: str, sibling_names: frozenset[str]) -> bool:
+        """Whether enough of a nested value has arrived for its boundary to be decidable.
+
+        `_extract_field_blocks` answers for a finished completion: when a nested span has no
+        balancing tag it falls back to the lazy reading, which is right at parse time and premature
+        mid-stream, where the balancing tag may simply not have arrived. Two things settle it: the
+        span closing, or a sibling field opening, which rejects the widening for good. Until one of
+        them happens the answer can still change, so the caller must keep waiting.
+        """
+        if not XMLAdapter.value_opens_nested(field_name, content):
+            return True
+        if any(f"<{name}>" in content for name in sibling_names if name != field_name):
+            return True
+
+        depth = 0
+        for match in _TAG_PATTERN.finditer(content):
+            if match.group("name") != field_name:
+                continue
+            if match.group("closing"):
+                if depth == 0:
+                    return True
+                depth -= 1
+            else:
+                depth += 1
+        return False
 
     @staticmethod
     def value_opens_nested(field_name: str, content: str) -> bool | None:
