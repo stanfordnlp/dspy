@@ -121,12 +121,6 @@ class XMLAdapter(ChatAdapter):
 
         for name, block_end in spans.items():
             closing_tag = f"</{name}>"
-            # The value stops at the first closing tag, so it can never contain one: an opening
-            # copy inside it is therefore unmatched, and a surplus closing tag pairs with it under
-            # the nested reading. That is a whole value being dropped, not a duplicated tag, so
-            # the whitespace exemption below must not cover it.
-            reopens_own_tag = f"<{name}>" in fields[name]
-
             scanned = block_end
             while True:
                 found = masked.find(closing_tag, scanned)
@@ -137,7 +131,7 @@ class XMLAdapter(ChatAdapter):
                 # slip: the two readings still differ - "a" versus "a</answer>\n" - but they
                 # differ only by a copy of the tag itself, so no text the model wrote is lost and
                 # the parse stays silent. Keep scanning: a later copy may still hide content.
-                if not reopens_own_tag and not masked[scanned:found].strip():
+                if not masked[scanned:found].strip():
                     scanned = found + len(closing_tag)
                     continue
 
@@ -160,12 +154,14 @@ class XMLAdapter(ChatAdapter):
 
         The first complete block wins for a repeated field. Because the wire format does not escape
         values, a value that itself contains its own closing tag cannot be told apart from a value
-        followed by trailing commentary. Rather than silently returning the truncated reading, such
-        a completion raises `AdapterParseError`; use `ChatAdapter` or `JSONAdapter`, whose formats
-        delimit values unambiguously, for content that can contain the closing tag. The sole
-        exception is a surplus closing tag that only whitespace separates from the value and that
-        no opening tag inside the value pairs with: the readings then differ by the tag text alone,
-        so it is taken as the model closing the field twice and the parse stays silent.
+        followed by trailing commentary. Where that ambiguity is visible the completion raises
+        `AdapterParseError` rather than returning the truncated reading; use `ChatAdapter` or
+        `JSONAdapter`, whose formats delimit values unambiguously, for content that can contain the
+        closing tag. Two cases stay silent. A surplus closing tag separated from the value by only
+        whitespace or whole balanced blocks is taken as the model closing the field twice, since
+        the readings differ by the tag text alone. And when the value re-opens the field's own tag
+        or ends with its closing tag, the regex closes the block early and nothing surplus remains
+        to detect, so that shape truncates exactly as it did before.
         """
         fields = {}
         spans: dict[str, int] = {}

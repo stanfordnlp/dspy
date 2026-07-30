@@ -1101,25 +1101,30 @@ def test_xml_adapter_parse_allows_a_repeated_block_nesting_the_same_tag():
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "a"}
 
 
-def test_xml_adapter_parse_reports_a_value_that_reopens_its_own_tag():
+def test_xml_adapter_parse_still_truncates_a_value_that_reopens_its_own_tag():
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
 
-    # The value stops at the first `</code>`, so the `<code>` left inside it has no partner and the
-    # trailing copy closes it under the nested reading. Whitespace between the two is no longer
-    # enough to call this a duplicated-tag slip: the shorter reading drops `</code>` and the
-    # newline, which is the silent truncation this module exists to stop.
-    with pytest.raises(AdapterParseError, match="unmatched"):
-        adapter.parse(CodeSig, "<code>\n<code>x</code>\n</code>")
+    # KNOWN LIMITATION, unchanged from before this check existed. The regex closes the block on the
+    # inner `</code>`, so the value stops early and the trailing copy is only ever whitespace away
+    # from it: no surplus tag is left in open text for the check to see. The same holds when the
+    # value simply ends with its closing tag. Detecting these needs the block matching itself to
+    # change, not a wider ambiguity check -- an earlier attempt to special-case them instead
+    # rejected `<reasoning>wrap in <reasoning> tags</reasoning>\n</reasoning>`, which parses fine.
+    assert adapter.parse(CodeSig, "<code>\n<code>x</code>\n</code>") == {"code": "<code>x"}
+    assert adapter.parse(CodeSig, "<code>\nbefore </code>\n</code>") == {"code": "before"}
 
-    # Which is exactly what the adapter's own wire format produces for such a value, so the
-    # round trip has to report rather than hand back `<code>x`.
-    assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": "<code>x</code>"})
-    with pytest.raises(AdapterParseError, match="unmatched"):
-        adapter.parse(CodeSig, assistant_message)
+    # The regression that attempt caused: a value mentioning its own opening tag, closed once,
+    # followed by a duplicate closing tag. This parses on main and must keep parsing.
+    class Reasoning(dspy.Signature):
+        task: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+
+    completion = "<reasoning>wrap in <reasoning> tags</reasoning>\n</reasoning>"
+    assert adapter.parse(Reasoning, completion) == {"reasoning": "wrap in <reasoning> tags"}
 
     # A value that merely mentions the opening tag and is closed once stays unambiguous.
     assert adapter.parse(CodeSig, "<code>use <code> tags</code>") == {"code": "use <code> tags"}
