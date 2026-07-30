@@ -230,6 +230,7 @@ def evaluate_with_trace(
         num_threads=num_threads,
         raise_on_error=False,
         capture_failed_parses=True,
+        capture_crashes=True,
         failure_score=failure_score,
         format_failure_score=failure_score,
         callback_metadata=callback_metadata,

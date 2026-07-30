@@ -18,10 +18,10 @@ import textwrap
 import pytest
 
 import dspy
+from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
-from dspy.utils.exceptions import LMRateLimitError
 from dspy.utils.exceptions import LMRateLimitError
 
 # A plain dspy.Predict module class that binds without an LM (no RLM interpreter needed).
@@ -232,10 +232,10 @@ CRASHY_MODULE = textwrap.dedent(
 
 
 def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
-    """A code candidate that binds fine but raises at runtime on one input gets dropped from
-    bootstrap_trace_data's results. Scores must still come back one-per-example, aligned by
-    position — the gepa engine pairs scores with example ids positionally, so a short list would
-    credit example N+1's score to example N (and crash its state bookkeeping)."""
+    """A code candidate that binds fine but raises at runtime on one input must still score
+    one-per-example, aligned by position — the gepa engine pairs scores with example ids
+    positionally, so a short list would credit example N+1's score to example N (and crash its
+    state bookkeeping). The crashed slot carries a FailedPrediction with the error."""
 
     def exact_match(gold, pred, trace=None, pred_name=None, pred_trace=None):
         return 1.0 if getattr(pred, "a", None) == gold.a else 0.0
@@ -252,8 +252,43 @@ def test_evaluate_scores_stay_aligned_when_an_example_crashes() -> None:
     result = adapter.evaluate(batch, candidate, capture_traces=False)
 
     assert result.scores == [1.0, 0.0, 1.0]  # crashed example scores as a failure, in place
-    assert result.outputs[1] is None  # no prediction for the crashed example
+    assert isinstance(result.outputs[1], FailedPrediction)  # the crash is captured, not dropped
+    assert "runtime crash on this input" in result.outputs[1].completion_text
     assert getattr(result.outputs[2], "a", None) == "yo"  # later examples keep their own results
+
+
+def test_crashed_examples_still_reach_code_reflective_records() -> None:
+    """An example whose forward raised must reach the code proposer's reflective records with
+    the failing input and the error — for a code candidate the crash IS the feedback. If it
+    were dropped (bootstrap_trace_data's default), GEPA would score the slot as a failure yet
+    reflection would never learn which input broke or how, and would keep proposing code with
+    the same bug."""
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.flex = dspy.Flex(Echo)  # a flex submodule routes evaluation through the trace path
+
+        def forward(self, **kwargs):
+            if kwargs["q"] == "boom":
+                raise RuntimeError("runtime crash on this input")
+            return dspy.Prediction(a=kwargs["q"])
+
+    adapter = DspyAdapter(student_module=Prog(), metric_fn=_metric, feedback_map={})
+    candidate = {"flex": SIMPLE_MODULE}
+    batch = [
+        dspy.Example(q="hi", a="hi").with_inputs("q"),
+        dspy.Example(q="boom", a="boom").with_inputs("q"),  # raises inside forward
+    ]
+
+    eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+    assert eval_batch.scores == [1.0, 0.0]
+
+    recs = adapter.make_reflective_dataset(candidate, eval_batch, ["flex"])["flex"]
+    assert len(recs) == 2  # the crashed example is not silently dropped from reflection
+    crashed = recs[1]
+    assert crashed["Inputs"] == {"q": "boom"}  # the proposer sees which input broke
+    assert "RuntimeError: runtime crash on this input" in str(crashed["Generated Outputs"])  # and how
 
 
 # --- adapter: which build failures are absorbed ------------------------------
@@ -285,7 +320,9 @@ def test_a_candidate_that_cannot_bind_scores_as_a_failure(label, source) -> None
     result = adapter.evaluate([ex, ex], {"self": source}, capture_traces=False)
 
     assert result.scores == [-1.0, -1.0], label
-    assert result.outputs == [None, None]
+    # No usable prediction either way: a bind failure yields None (the batch never ran); a
+    # source that binds but breaks at forward yields a FailedPrediction carrying the error.
+    assert all(o is None or isinstance(o, FailedPrediction) for o in result.outputs), label
 
 
 def test_an_infrastructure_error_during_build_is_not_scored_as_a_failure(monkeypatch) -> None:

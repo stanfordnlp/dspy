@@ -38,6 +38,7 @@ def bootstrap_trace_data(
     format_failure_score: float = -1,
     log_format_failures: bool = False,
     callback_metadata: dict[str, Any] | None = None,
+    capture_crashes: bool = False,
 ) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -107,6 +108,12 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
+            except Exception as e:
+                if not capture_crashes:
+                    raise
+                logger.warning("Program raised on an example; capturing it as a failed prediction: %s: %s",
+                               type(e).__name__, e)
+                return FailedPrediction(completion_text=f"{type(e).__name__}: {e}"), dspy.settings.trace.copy()
 
     program.forward = MethodType(patched_forward, program)
 
