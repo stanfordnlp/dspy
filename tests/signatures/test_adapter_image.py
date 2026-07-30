@@ -422,7 +422,7 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image(tmp_file_path)
+        pdf_image = dspy.Image(tmp_file_path, allow_local_files=True)
 
         # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url

@@ -122,11 +122,20 @@ class Audio(Type):
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
-def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
+def encode_audio(
+    audio: Union[str, bytes, dict, "Audio", Any],
+    sampling_rate: int = 16000,
+    format: str = "wav",
+    allow_local_files: bool = False,
+) -> dict:
     """
     Encode audio to a dict with 'data' and 'audio_format'.
-    
-    Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
+
+    Accepts: local file path (only when ``allow_local_files=True``), URL, data
+    URI, dict, Audio instance, numpy array, or bytes (with known format).
+
+    Local filesystem reads are opt-in so untrusted LM output cannot trigger
+    host file reads (#10067 / GHSA-frf5-486g-243f).
     """
     if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
         return audio
@@ -143,7 +152,7 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
             return {"data": b64data, "audio_format": audio_format}
         except Exception as e:
             raise ValueError(f"Malformed audio data URI: {e}")
-    elif isinstance(audio, str) and os.path.isfile(audio):
+    elif allow_local_files and isinstance(audio, str) and os.path.isfile(audio):
         a = Audio.from_file(audio)
         return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, str) and audio.startswith("http"):

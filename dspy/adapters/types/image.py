@@ -30,7 +30,15 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, url: Any = None, *, download: bool = False, verify: bool = True, **data):
+    def __init__(
+        self,
+        url: Any = None,
+        *,
+        download: bool = False,
+        verify: bool = True,
+        allow_local_files: bool = False,
+        **data,
+    ):
         """Create an Image.
 
         Parameters
@@ -38,7 +46,8 @@ class Image(Type):
         url:
             The image source. Supported values include
 
-            - ``str``: HTTP(S)/GS URL or local file path
+            - ``str``: HTTP(S)/GS URL or local file path (local paths require
+              ``allow_local_files=True``; use :meth:`from_file` for a clear API)
             - ``bytes``: raw image bytes
             - ``PIL.Image.Image``: a PIL image instance
             - ``dict`` with a single ``{"url": value}`` entry (legacy form)
@@ -50,6 +59,13 @@ class Image(Type):
         verify:
             Whether to verify SSL certificates when downloading images from URLs.
             Set to False for self-signed certificates. Default is True.
+
+        allow_local_files:
+            Whether a string path may be read from the local filesystem.
+            Defaults to ``False`` so values originating from LM output parsing
+            (via ``TypeAdapter.validate_python``) cannot exfiltrate host files
+            (#10067 / GHSA-frf5-486g-243f). Developer code that intentionally
+            loads a path should pass ``True`` or use :meth:`from_file`.
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
         """
@@ -65,7 +81,13 @@ class Image(Type):
 
         if "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.
-            data["url"] = encode_image(data["url"], download_images=download, verify=verify)
+            # Local filesystem reads require allow_local_files=True (or Image.from_file).
+            data["url"] = encode_image(
+                data["url"],
+                download_images=download,
+                verify=verify,
+                allow_local_files=allow_local_files,
+            )
 
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
@@ -94,7 +116,7 @@ class Image(Type):
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls(file_path)
+        return cls(file_path, allow_local_files=True)
 
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
@@ -125,7 +147,12 @@ def is_url(string: str) -> bool:
         return False
 
 
-def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_images: bool = False, verify: bool = True) -> str:
+def encode_image(
+    image: Union[str, bytes, "PILImage.Image", dict],
+    download_images: bool = False,
+    verify: bool = True,
+    allow_local_files: bool = False,
+) -> str:
     """
     Encode an image or file to a base64 data URI.
 
@@ -133,6 +160,8 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         image: The image or file to encode. Can be a PIL Image, file path, URL, or data URI.
         download_images: Whether to download images from URLs.
         verify: Whether to verify SSL certificates when downloading images.
+        allow_local_files: Whether local filesystem paths may be read. Defaults
+            to False so untrusted LM output cannot trigger host file reads (#10067).
 
     Returns:
         str: The data URI of the file or the URL if download_images is False.
@@ -147,8 +176,8 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         if image.startswith("data:"):
             # Already a data URI
             return image
-        elif os.path.isfile(image):
-            # File path
+        elif allow_local_files and os.path.isfile(image):
+            # Explicit local file load (developer opt-in only)
             return _encode_image_from_file(image)
         elif is_url(image):
             # URL
@@ -158,8 +187,13 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
                 # Return the URL as is
                 return image
         else:
-            # Unsupported string format
-            raise ValueError(f"Unrecognized file string: {image}; If this file type should be supported, please open an issue.")
+            # Existing local path without allow_local_files: keep the raw string
+            # so LM-output parsing cannot exfiltrate host files (#10067).
+            if (not allow_local_files) and os.path.isfile(image):
+                return image
+            raise ValueError(
+                f"Unrecognized file string: {image}; If this file type should be supported, please open an issue."
+            )
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
