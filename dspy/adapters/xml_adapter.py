@@ -126,8 +126,11 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
 
     * **Nesting.** When an opening tag is followed, after whitespace only, by another opening tag
       of the same name, the value is a nested document and the block ends at the depth-balanced
-      closing tag. A tag name merely mentioned inside prose is not preceded by whitespace alone,
-      so it keeps the lazy reading.
+      closing tag. The whitespace test is what separates a nested document from a mention: a
+      mention that follows other text (`<answer>x<answer> ...`) keeps the lazy reading, while one
+      that opens the value (`<answer> <answer> ...`) is read as nesting and, if a balancing close
+      exists, widens the value past it. A mention with no second closing tag is unaffected either
+      way, since nothing balances it.
 
     The widened span has to be self-contained to be believable, so `_span_acceptor` rejects it
     unless every tag inside it pairs inside it, and unless it is free of other output fields.
@@ -266,6 +269,40 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
+    def field_value_end(field_name: str, content: str) -> int | None:
+        """Index in `content` where `<field_name>`'s value ends, or None if it has not closed yet.
+
+        `content` is everything after the field's opening tag. Streaming calls this so a streamed
+        value and `parse` decide the same boundary: the rule here is the same one
+        `_extract_field_blocks` applies, so the two cannot drift apart. A value that opens with a
+        same-named element is read as nesting and ends at the closing tag that balances it;
+        anything else ends at the first closing tag.
+
+        The self-containment checks `_extract_field_blocks` runs are deliberately not replicated:
+        they need the whole completion, which a stream does not have yet. The shapes they reject
+        are the ones already documented as undecidable.
+        """
+        opening, closing = f"<{field_name}>", f"</{field_name}>"
+        if not content.lstrip().startswith(opening):
+            index = content.find(closing)
+            return index if index != -1 else None
+
+        depth = 0
+        index = 0
+        while index < len(content):
+            if content.startswith(opening, index):
+                depth += 1
+                index += len(opening)
+            elif content.startswith(closing, index):
+                if depth == 0:
+                    return index
+                depth -= 1
+                index += len(closing)
+            else:
+                index += 1
+        return None
+
+    @staticmethod
     def _assert_unambiguous(
         signature: type[Signature],
         completion: str,
@@ -340,8 +377,8 @@ class XMLAdapter(ChatAdapter):
 
         Two shapes stay silently truncated, because representing either needs escaping this wire
         format does not have: a value that *ends* with its own closing tag, and a nested value
-        whose surplus closing tag a later field's block either covers or is all that separates it
-        from the value. `_extract_field_blocks` spells out why each is undecidable.
+        whose surplus closing tag any later balanced block covers or is all that separates
+        from the value -- that block need not belong to a declared field. `_extract_field_blocks` spells out why each is undecidable.
         """
         fields = {}
         spans: dict[str, int] = {}

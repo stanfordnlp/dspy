@@ -55,6 +55,9 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
+        # XMLAdapter needs the whole field value so far, not just the tail buffer, to tell a
+        # nested same-name element from the tag that closes the field.
+        self.xml_adapter_state = {"field_accumulated_messages": ""}
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -134,6 +137,7 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
+                self.xml_adapter_state["field_accumulated_messages"] = ""
                 self.stream_start = False
             else:
                 return
@@ -234,6 +238,9 @@ class StreamListener:
                 # JSONAdapter uses partial json parsing to detect the end of the field we are listening to, instead of
                 # relying on the end_identifier.
                 return self._json_adapter_handle_stream_chunk(token, chunk_message)
+            elif isinstance(settings.adapter, XMLAdapter):
+                self.xml_adapter_state["field_accumulated_messages"] += chunk_message
+                return self._default_handle_stream_chunk(token, end_identifier)
             else:
                 # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
                 return self._default_handle_stream_chunk(token, end_identifier)
@@ -294,7 +301,19 @@ class StreamListener:
     def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> StreamResponse | None:
         concat_message = "".join(self.field_end_queue.queue).strip()
 
-        if re.search(end_identifier, concat_message):
+        if isinstance(settings.adapter, XMLAdapter):
+            # Ask the adapter where the value ends rather than stopping at the first closing tag,
+            # so a streamed nested value matches what `XMLAdapter.parse` returns for it.
+            field_ended = (
+                XMLAdapter.field_value_end(
+                    self.signature_field_name, self.xml_adapter_state["field_accumulated_messages"]
+                )
+                is not None
+            )
+        else:
+            field_ended = bool(re.search(end_identifier, concat_message))
+
+        if field_ended:
             # The next field is identified, we can end the stream and flush out all tokens in the buffer.
             self.stream_end = True
             last_token = self.flush()
@@ -321,9 +340,14 @@ class StreamListener:
         if isinstance(settings.adapter, JSONAdapter):
             return last_tokens
         elif isinstance(settings.adapter, XMLAdapter):
-            boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
-            if boundary_index == -1:
+            # `last_tokens` is the not-yet-yielded suffix of the field value, so the value's end
+            # translates into it by subtracting everything already sent.
+            accumulated = self.xml_adapter_state["field_accumulated_messages"]
+            value_end = XMLAdapter.field_value_end(self.signature_field_name, accumulated)
+            if value_end is None:
                 boundary_index = len(last_tokens)
+            else:
+                boundary_index = max(0, value_end - (len(accumulated) - len(last_tokens)))
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
