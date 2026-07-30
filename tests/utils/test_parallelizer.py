@@ -102,6 +102,20 @@ def test_parallel_executor_tracks_failed_indices_and_exceptions():
     assert str(executor.exceptions_map[4]) == "test error for 5"
 
 
+
+def test_successful_retry_clears_failure_bookkeeping():
+    executor = ParallelExecutor(num_threads=2, max_errors=3)
+    results = [None]
+
+    executor._process_outcome(results, 0, ValueError("first attempt failed"))
+    executor._process_outcome(results, 0, RuntimeError("retry attempt failed"))
+    executor._process_outcome(results, 0, "recovered")
+
+    assert results == ["recovered"]
+    assert executor.failed_indices == []
+    assert executor.exceptions_map == {}
+
+
 def test_sequential_execution_runs_on_main_thread():
     """With num_threads=1, all work should run on the main thread (not in a ThreadPoolExecutor)."""
     execution_threads = []
