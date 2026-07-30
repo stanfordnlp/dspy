@@ -105,6 +105,11 @@ class XMLAdapter(ChatAdapter):
         text between two such copies. A tag can neither straddle a block boundary nor be forged
         out of blanks, because a block both starts and ends on the only `<` and `>` a tag has.
         """
+        # Masking only ever blanks characters, so a tag absent from the raw text after a value is
+        # absent from the mask too: the common well-formed completion needs no mask at all.
+        if all(completion.find(f"</{name}>", block_end) == -1 for name, block_end in spans.items()):
+            return
+
         pieces = []
         cursor = 0
         for start, end in blocks:
@@ -116,6 +121,11 @@ class XMLAdapter(ChatAdapter):
 
         for name, block_end in spans.items():
             closing_tag = f"</{name}>"
+            # The value stops at the first closing tag, so it can never contain one: an opening
+            # copy inside it is therefore unmatched, and a surplus closing tag pairs with it under
+            # the nested reading. That is a whole value being dropped, not a duplicated tag, so
+            # the whitespace exemption below must not cover it.
+            reopens_own_tag = f"<{name}>" in fields[name]
 
             scanned = block_end
             while True:
@@ -124,10 +134,10 @@ class XMLAdapter(ChatAdapter):
                     break
 
                 # Whitespace alone between the value and a surplus copy means a duplicated-tag
-                # slip: the two readings still differ - "a" versus "a</answer>\n" - but the
-                # trailing copy carries no content, so the shorter reading loses nothing and
-                # stays silent. Keep scanning past it: a later copy may still hide content.
-                if not masked[scanned:found].strip():
+                # slip: the two readings still differ - "a" versus "a</answer>\n" - but they
+                # differ only by a copy of the tag itself, so no text the model wrote is lost and
+                # the parse stays silent. Keep scanning: a later copy may still hide content.
+                if not reopens_own_tag and not masked[scanned:found].strip():
                     scanned = found + len(closing_tag)
                     continue
 
@@ -152,7 +162,10 @@ class XMLAdapter(ChatAdapter):
         values, a value that itself contains its own closing tag cannot be told apart from a value
         followed by trailing commentary. Rather than silently returning the truncated reading, such
         a completion raises `AdapterParseError`; use `ChatAdapter` or `JSONAdapter`, whose formats
-        delimit values unambiguously, for content that can contain the closing tag.
+        delimit values unambiguously, for content that can contain the closing tag. The sole
+        exception is a surplus closing tag that only whitespace separates from the value and that
+        no opening tag inside the value pairs with: the readings then differ by the tag text alone,
+        so it is taken as the model closing the field twice and the parse stays silent.
         """
         fields = {}
         spans: dict[str, int] = {}

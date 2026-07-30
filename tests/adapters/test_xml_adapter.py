@@ -1101,6 +1101,30 @@ def test_xml_adapter_parse_allows_a_repeated_block_nesting_the_same_tag():
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "a"}
 
 
+def test_xml_adapter_parse_reports_a_value_that_reopens_its_own_tag():
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+
+    # The value stops at the first `</code>`, so the `<code>` left inside it has no partner and the
+    # trailing copy closes it under the nested reading. Whitespace between the two is no longer
+    # enough to call this a duplicated-tag slip: the shorter reading drops `</code>` and the
+    # newline, which is the silent truncation this module exists to stop.
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        adapter.parse(CodeSig, "<code>\n<code>x</code>\n</code>")
+
+    # Which is exactly what the adapter's own wire format produces for such a value, so the
+    # round trip has to report rather than hand back `<code>x`.
+    assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": "<code>x</code>"})
+    with pytest.raises(AdapterParseError, match="unmatched"):
+        adapter.parse(CodeSig, assistant_message)
+
+    # A value that merely mentions the opening tag and is closed once stays unambiguous.
+    assert adapter.parse(CodeSig, "<code>use <code> tags</code>") == {"code": "use <code> tags"}
+
+
 def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
