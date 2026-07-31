@@ -285,6 +285,12 @@ class BaseCallback:
     def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
         pass
 
+    def on_optimizer_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        pass
+
+    def on_optimizer_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        pass
+
 
 def with_callbacks(fn):
     """Decorator to add callback functionality to instance methods."""
@@ -381,12 +387,16 @@ def with_callbacks(fn):
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
+    from dspy.teleprompt.teleprompt import Teleprompter
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
     elif isinstance(instance, dspy.CodeInterpreter):
         return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_start")
+    elif isinstance(instance, Teleprompter):
+        return callback.on_optimizer_start
 
     if isinstance(instance, dspy.Adapter):
         if fn.__name__ == "format":
@@ -405,12 +415,16 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
 
 def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
+    from dspy.teleprompt.teleprompt import Teleprompter
+
     if isinstance(instance, dspy.BaseLM):
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
     elif isinstance(instance, dspy.CodeInterpreter):
         return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_end")
+    elif isinstance(instance, Teleprompter):
+        return callback.on_optimizer_end
 
     if isinstance(instance, (dspy.Adapter)):
         if fn.__name__ == "format":
