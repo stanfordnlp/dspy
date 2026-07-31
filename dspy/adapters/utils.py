@@ -154,20 +154,23 @@ def parse_value(value, annotation, field_info: FieldInfo | None = None):
     constraints = tuple(field_info.metadata) if field_info is not None else ()
     target = Annotated[(annotation, *constraints)] if constraints else annotation
 
+    def enforce(resolved):
+        # Branches that resolve a value themselves still have to answer to the field's constraints.
+        return TypeAdapter(target).validate_python(resolved) if constraints else resolved
+
     if annotation is str:
         # Stringify rather than validate the raw value.
-        text = str(value)
-        return TypeAdapter(target).validate_python(text) if constraints else text
+        return enforce(str(value))
 
     if isinstance(annotation, enum.EnumMeta):
-        return find_enum_member(annotation, value)
+        return enforce(find_enum_member(annotation, value))
 
     origin = get_origin(annotation)
 
     if origin is Literal:
         allowed = get_args(annotation)
         if value in allowed:
-            return value
+            return enforce(value)
 
         if isinstance(value, str):
             v = value.strip()
@@ -177,7 +180,7 @@ def parse_value(value, annotation, field_info: FieldInfo | None = None):
                 v = v[1:-1]
 
             if v in allowed:
-                return v
+                return enforce(v)
 
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 

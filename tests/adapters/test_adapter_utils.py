@@ -1,5 +1,6 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
 import pydantic
@@ -183,3 +184,51 @@ def test_parse_value_without_field_info_keeps_previous_behavior():
 
     assert parse_value("toolong", field.annotation) == "toolong"
     assert parse_value(123, str) == "123"
+
+
+def test_parse_value_enforces_constraints_on_literal_annotation():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Literal["ok", "okay"] = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) == "ok"
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("okay", field.annotation, field)
+    # The quoted / bracketed forms resolve to the same value and must be checked too.
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("'okay'", field.annotation, field)
+
+
+def test_parse_value_enforces_constraints_on_enum_annotation():
+    class Choice(str, enum.Enum):
+        OK = "ok"
+        OKAY = "okay"
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Choice = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) is Choice.OK
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("okay", field.annotation, field)
+
+
+def test_parse_value_unconstrained_literal_and_enum_are_unchanged():
+    class Choice(str, enum.Enum):
+        OKAY = "okay"
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        lit: Literal["okay"] = dspy.OutputField()
+        choice: Choice = dspy.OutputField()
+
+    lit = Sig.output_fields["lit"]
+    choice = Sig.output_fields["choice"]
+
+    assert parse_value("okay", lit.annotation, lit) == "okay"
+    assert parse_value("'okay'", lit.annotation, lit) == "okay"
+    assert parse_value("okay", choice.annotation, choice) is Choice.OKAY
