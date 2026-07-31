@@ -1234,10 +1234,11 @@ def test_xml_adapter_nested_boundary_scan_resumes_without_drifting(value, chunk_
     siblings = frozenset({"answer", "note"})
 
     ready = closed = False
-    scan_pos = depth = 0
-    for end in range(chunk_size, len(value) + chunk_size, chunk_size):
-        found_ready, found_closed, scan_pos, depth = XMLAdapter._nested_boundary_scan(
-            "code", value[:end], siblings, scan_pos, depth
+    unscanned = ""
+    depth = 0
+    for start in range(0, len(value), chunk_size):
+        found_ready, found_closed, unscanned, depth = XMLAdapter._nested_boundary_scan(
+            "code", unscanned + value[start : start + chunk_size], siblings, depth
         )
         ready = ready or found_ready
         closed = closed or found_closed

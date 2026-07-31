@@ -325,28 +325,33 @@ class XMLAdapter(ChatAdapter):
         field_name: str,
         content: str,
         sibling_names: frozenset[str],
-        scan_pos: int = 0,
         depth: int = 0,
-    ) -> tuple[bool, bool, int, int]:
+    ) -> tuple[bool, bool, str, int]:
         """Walk the tags in `content` for what settles a nested value's boundary, resumably.
 
-        Returns `(ready, closed, next_scan_pos, depth)`. `ready` is `_nested_decision_ready`'s
-        answer -- the span closed, or a sibling opened -- and `closed` says a `</field_name>` went
-        by, which is the only thing a block can end at. So `ready and closed` is exactly when
+        Returns `(ready, closed, unscanned, depth)`. `ready` is `_nested_decision_ready`'s answer
+        -- the span closed, or a sibling opened -- and `closed` says a `</field_name>` went by,
+        which is the only thing a block can end at. So `ready and closed` is exactly when
         `_field_value_end` can answer, and a caller that waits for both never runs the full scan
         on a value whose boundary has not arrived.
 
         `ready` and `closed` report only what this pass saw; both are monotone in `content`, so a
-        caller resuming chunk by chunk keeps its own running `or`. Resuming is what keeps a
-        streamed value linear: starting over whenever a tag lands costs one pass over the whole
-        buffer per nested child. `next_scan_pos` steps back a tag's width so one split across two
-        chunks is still read whole, but never back over a tag already counted, and `depth` carries
-        the nesting level reached so far.
+        caller resuming chunk by chunk keeps its own running `or`, carries `depth` forward, and
+        passes the next chunk with `unscanned` prefixed. Resuming that way is what keeps a streamed
+        value linear in both work and copying: re-reading the buffer whenever a tag lands costs a
+        pass over it per nested child, and rebuilding the buffer to re-read costs a copy of it per
+        chunk.
+
+        `unscanned` is the tail that may hold the front of a tag split across two chunks. It never
+        reaches back over a tag already counted, and is otherwise one character short of the widest
+        closing tag, which carries whole every field and sibling tag -- the only names this scan
+        reacts to. A longer tag of some other name can be cut instead, which changes no answer,
+        since the scan ignores it either way and resuming inside it starts past the only `<` it has.
         """
         ready = False
         closed = False
-        last_end = scan_pos
-        for match in _TAG_PATTERN.finditer(content, scan_pos):
+        last_end = 0
+        for match in _TAG_PATTERN.finditer(content):
             last_end = match.end()
             name = match.group("name")
             is_closing = bool(match.group("closing"))
@@ -363,7 +368,7 @@ class XMLAdapter(ChatAdapter):
                 ready = True
 
         widest_tag = max(len(name) for name in sibling_names | {field_name}) + 3
-        return ready, closed, max(last_end, len(content) - widest_tag + 1), depth
+        return ready, closed, content[max(last_end, len(content) - widest_tag + 1) :], depth
 
     @staticmethod
     def _value_opens_nested(field_name: str, content: str) -> bool | None:

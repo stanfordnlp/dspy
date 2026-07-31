@@ -1060,9 +1060,12 @@ async def test_xml_adapter_nested_stream_decides_the_boundary_in_one_pass():
     """Settling the boundary must cost one pass over the value, however many children it holds.
 
     The decision used to start over at the top of the buffer every time a closing tag landed, so a
-    nested value made of balanced children cost a pass per child: quadratic, on the event loop,
-    on exactly the payloads this path exists for. Counting the passes pins that on any machine,
-    where a wall-clock bound would only pin it on an unloaded one.
+    nested value made of balanced children cost a pass per child; rebuilding the buffer to restart
+    on then cost a copy of it per chunk, which is worse still, there being far more chunks than
+    children. Both are quadratic, on the event loop, on exactly the payloads this path exists for.
+    Counting passes bounds the first and counting the characters handed to the scan -- each one a
+    character read and a character copied -- bounds the second, on any machine, where a wall-clock
+    bound would only pin either on an unloaded one.
     """
 
     class CodeSignature(dspy.Signature):
@@ -1070,6 +1073,7 @@ async def test_xml_adapter_nested_stream_decides_the_boundary_in_one_pass():
         code: str = dspy.OutputField()
 
     decide = XMLAdapter._nested_decision_ready
+    scan = XMLAdapter._nested_boundary_scan
 
     async def stream(children):
         completion = "<code>\n" + "".join(f"<code>{i}</code>" for i in range(children)) + "\n</code>"
@@ -1086,20 +1090,30 @@ async def test_xml_adapter_nested_stream_decides_the_boundary_in_one_pass():
         )
         with mock.patch("litellm.acompletion", side_effect=xml_stream):
             with mock.patch.object(XMLAdapter, "_nested_decision_ready", wraps=decide) as passes:
-                with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
-                    chunks = [
-                        v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
-                    ]
-        return passes.call_count, "".join(chunks).strip(), dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
+                with mock.patch.object(XMLAdapter, "_nested_boundary_scan", wraps=scan) as scans:
+                    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+                        chunks = [
+                            v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+                        ]
+        return (
+            passes.call_count,
+            sum(len(call.args[1]) for call in scans.call_args_list) / len(completion),
+            "".join(chunks).strip(),
+            dspy.XMLAdapter().parse(CodeSignature, completion)["code"],
+        )
 
-    few_passes, few_streamed, few_parsed = await stream(30)
-    many_passes, many_streamed, many_parsed = await stream(240)
+    few_passes, few_reads, few_streamed, few_parsed = await stream(30)
+    many_passes, many_reads, many_streamed, many_parsed = await stream(240)
 
     # Eight times the children, and the value still arrives whole -- so the counts below are not
     # those of a stream that gave up early.
     assert few_streamed == few_parsed
     assert many_streamed == many_parsed
     assert 1 <= few_passes == many_passes <= 2
+    # Per character of the value, not in total: a bound that grows with the value is what a
+    # quadratic scan would satisfy too. Restarting per chunk reads it once per chunk, so this ratio
+    # would rise with the value rather than staying put.
+    assert many_reads < 8 and many_reads < 2 * few_reads
 
 
 @pytest.mark.anyio

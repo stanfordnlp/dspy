@@ -32,11 +32,16 @@ STREAM_NESTED_XML_VALUES = True
 
 
 def _new_xml_adapter_state() -> dict[str, Any]:
-    """Per-stream state for the nested-value path, so its two call sites cannot drift apart."""
+    """Per-stream state for the nested-value path, so its two call sites cannot drift apart.
+
+    The value is held as the list of chunks it arrived in and joined once, at the boundary.
+    Re-joining it per chunk to re-read it would copy the whole buffer every time, which costs more
+    over a long value than the rescanning `unscanned` exists to avoid.
+    """
     return {
-        "field_accumulated_messages": "",
+        "chunks": [],
+        "unscanned": "",
         "is_nested": None,
-        "scan_pos": 0,
         "depth": 0,
         "ready": False,
         "closed": False,
@@ -335,16 +340,20 @@ class StreamListener:
             # Ordinary value: the token-by-token path owns it and nothing here is read again.
             return False, None
 
-        state["field_accumulated_messages"] += chunk_message
-        accumulated = state["field_accumulated_messages"]
+        state["chunks"].append(chunk_message)
+        # Everything the boundary scan has not read yet: the value so far while its shape is still
+        # undecided, and from then on only the tail that could hold the front of a split tag.
+        unscanned = state["unscanned"] + chunk_message
 
         if state["is_nested"] is None:
-            state["is_nested"] = XMLAdapter._value_opens_nested(self.signature_field_name, accumulated)
+            state["is_nested"] = XMLAdapter._value_opens_nested(self.signature_field_name, unscanned)
             if state["is_nested"] is None:
                 # Still only whitespace or a partial opening tag: withhold rather than guess.
+                state["unscanned"] = unscanned
                 return True, None
             if not state["is_nested"]:
-                state["field_accumulated_messages"] = ""
+                state["chunks"] = []
+                state["unscanned"] = ""
                 return False, None
 
         try:
@@ -353,24 +362,26 @@ class StreamListener:
             # Without the signature the sibling guard is gone, so a widened span could reach another
             # field. Fall back to the token-by-token path rather than stream a value we cannot bound.
             state["is_nested"] = False
-            state["field_accumulated_messages"] = ""
+            state["chunks"] = []
+            state["unscanned"] = ""
             return False, None
 
         # `_nested_boundary_scan` reports the two things that settle the boundary: the value's own
         # closing tag, the only thing a block can end at, and a sibling's opening tag, which
         # rejects the widening for good. Watching for the closing tag alone leaves a value whose
         # deciding sibling arrives afterwards buffered until `finalize()`, long past its real
-        # boundary and lost entirely if `parse` then raises. The scan resumes where the last chunk
-        # left it, so the value is walked once over the whole stream rather than once per chunk --
-        # a nested value with many balanced children would otherwise cost a pass per child.
-        ready, closed, state["scan_pos"], state["depth"] = XMLAdapter._nested_boundary_scan(
-            self.signature_field_name, accumulated, siblings, state["scan_pos"], state["depth"]
+        # boundary and lost entirely if `parse` then raises. Each chunk is handed to the scan once
+        # and only its unread tail is carried on, so the value is walked -- and copied -- once over
+        # the whole stream rather than once per chunk.
+        ready, closed, state["unscanned"], state["depth"] = XMLAdapter._nested_boundary_scan(
+            self.signature_field_name, unscanned, siblings, state["depth"]
         )
         state["ready"] = state["ready"] or ready
         state["closed"] = state["closed"] or closed
         if not (state["ready"] and state["closed"]):
             return True, None
 
+        accumulated = "".join(state["chunks"])
         value_end = XMLAdapter._field_value_end(self.signature_field_name, accumulated, siblings)
         if value_end is None:
             return True, None
