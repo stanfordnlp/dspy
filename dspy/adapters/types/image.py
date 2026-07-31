@@ -1,4 +1,5 @@
 import base64
+import contextvars
 import io
 import mimetypes
 import os
@@ -18,6 +19,33 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
+
+
+# Security: gate local file reads during LM output parsing (GHSA-frf5-486g-243f).
+# When set to False, encode_image/encode_audio will refuse to read local files,
+# preventing file exfiltration via untrusted LM output containing filesystem paths.
+_allow_local_file_access: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_allow_local_file_access", default=True
+)
+
+
+def disable_local_file_access():
+    """Context manager that disables local file reads in encode_image/encode_audio.
+
+    Use this when parsing untrusted LM output to prevent the model from
+    triggering arbitrary local file reads (GHSA-frf5-486g-243f / #10067).
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        token = _allow_local_file_access.set(False)
+        try:
+            yield
+        finally:
+            _allow_local_file_access.reset(token)
+
+    return _ctx()
 
 
 class Image(Type):
@@ -148,7 +176,12 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
             # Already a data URI
             return image
         elif os.path.isfile(image):
-            # File path
+            # File path — blocked during LM output parsing to prevent file exfiltration
+            if not _allow_local_file_access.get():
+                raise ValueError(
+                    f"Local file reads are disabled during LM output parsing (security, GHSA-frf5-486g-243f). "
+                    f"Received path-like string: {image!r}"
+                )
             return _encode_image_from_file(image)
         elif is_url(image):
             # URL
