@@ -153,6 +153,25 @@ The list of tool calls the LM produced, parsed from native function-calling resp
 **`dspy.adapters.types.Citations`**  
 Declared as a default native response type. When the provider returns citations natively (e.g., Anthropic), adapters extract them through the type’s `parse_lm_response`.
 
+### Migrating resource loading in 3.3
+
+In DSPy 3.3, constructing or validating `Image`, `Audio`, and `File` values no longer interprets locator-shaped strings as instructions to read a local file or fetch a remote URL. This keeps LM output parsing and other validation paths from implicitly granting access to the host. Resource loading now requires an explicit factory:
+
+| Before 3.3 | 3.3 replacement | Behavior |
+| --- | --- | --- |
+| `Image(path)` | `Image.from_path(path)` | Read and embed a local image |
+| `Image(url, download=True)` | `Image.from_url(url)` | Download and embed a remote image |
+| `Image.from_url(url)` or `Image.from_url(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
+| `Audio(path)` | `Audio.from_path(path)` | Read and embed a local audio file |
+| `Audio(url)` | `Audio.from_url(url)` | Download and embed remote audio |
+| `File(path)` | `File.from_path(path)` | Read and embed a local file |
+| `Image.from_file(path)` | `Image.from_path(path)` | Replace the deprecated alias |
+| `Audio.from_file(path)` | `Audio.from_path(path)` | Replace the deprecated alias |
+
+Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The deprecated direct call `Image(url, download=True)` continues to work with a warning through 3.3; `Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` are also scheduled for removal in 3.4.
+
+`Image.from_url()` and `Audio.from_url()` perform synchronous, caller-initiated HTTP requests and follow redirects. They do not validate destinations against an SSRF allowlist, so applications must validate or allowlist URLs derived from untrusted input before calling them.
+
 ### Configuring which adapter to use
 
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
