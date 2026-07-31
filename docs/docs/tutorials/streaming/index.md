@@ -121,6 +121,24 @@ Prediction(
 )
 ```
 
+### Streaming Nested Values with `dspy.XMLAdapter`
+
+`dspy.XMLAdapter` wraps each field in `<field_name>...</field_name>` tags, and a value may itself be a
+same-named element — for example a `code` field whose value is `<code>x = 1</code>`. Such a value cannot be
+streamed token by token: which closing tag ends the field is only known once the balancing tag arrives, and a
+token already handed to you could not be taken back. The listener therefore buffers a value of that shape and
+emits it as a single `StreamResponse` once its boundary is settled, so what you read from the stream always
+matches what `XMLAdapter.parse` puts in the final `Prediction`:
+
+```
+StreamResponse(predict_name='self', signature_field_name='code', chunk='<code>x = 1</code>')
+Prediction(
+    code='<code>x = 1</code>'
+)
+```
+
+Every other value — anything that does not open with its own tag — still streams token by token as usual.
+
 ### Streaming Multiple Fields
 
 You can monitor multiple fields by creating a `StreamListener` for each one. Here's an example with a multi-module program:
