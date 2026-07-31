@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR
+from tests.test_utils.server.openai_compat_server import openai_compat_server
 
 
 @pytest.fixture()

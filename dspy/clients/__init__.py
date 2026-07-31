@@ -55,7 +55,6 @@ def configure_cache(
     dspy.cache = DSPY_CACHE
 
 
-
 def _get_dspy_cache():
     disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
     disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
@@ -109,6 +108,7 @@ def disable_litellm_logging():
     litellm.suppress_debug_info = True
     litellm._dspy_logging_configured = True
     configure_litellm_logging("ERROR")
+
 
 __all__ = [
     "BaseLM",

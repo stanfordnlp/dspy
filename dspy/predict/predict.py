@@ -19,7 +19,9 @@ from dspy.utils.exceptions import LMStateError
 
 logger = logging.getLogger(__name__)
 
-UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
+# `engine` is the serialized engine-configuration block (see `dspy.LM.load_state`);
+# it carries the endpoint URL, so untrusted loads strip it like `api_base`.
+UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list", "engine"}
 
 
 def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
@@ -94,7 +96,7 @@ class Predict(Module, Parameter):
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves endpoint configuration (`api_base`, `base_url`,
-                and `model_list`) from serialized LM state and allows importing
+                `model_list`, and the `engine` block) from serialized LM state and allows importing
                 custom LM classes. Enable only when loading trusted files. Without it, state whose LM
                 carries endpoint configuration fails with a typed `dspy.LMStateError`.
             lm: If provided, use this LM instead of reconstructing one from the saved state. This is

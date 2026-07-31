@@ -141,8 +141,14 @@ class ParallelExecutor:
 
                 def handler(sig, frame):
                     self.cancel_jobs.set()
+                    self._interrupted = True
                     logger.warning("SIGINT received. Cancelling.")
-                    orig_handler(sig, frame)
+                    # The previous handler is not always callable: SIG_DFL and
+                    # SIG_IGN are enum values (e.g. in worker processes).
+                    if callable(orig_handler):
+                        orig_handler(sig, frame)
+                    elif orig_handler == signal.SIG_DFL:
+                        signal.default_int_handler(sig, frame)
 
                 signal.signal(signal.SIGINT, handler)
                 try:
@@ -225,6 +231,11 @@ class ParallelExecutor:
 
         if self.cancel_jobs.is_set():
             logger.warning("Execution cancelled due to errors or interruption.")
+            if getattr(self, "_interrupted", False):
+                # Cancellation came from SIGINT. Raise KeyboardInterrupt
+                # deterministically instead of relying on the previous signal
+                # handler to have raised it (SIG_IGN environments never do).
+                raise KeyboardInterrupt("Execution cancelled by SIGINT.")
             raise Exception("Execution cancelled due to errors or interruption.")
 
         return results

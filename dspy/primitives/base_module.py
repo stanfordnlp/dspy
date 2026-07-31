@@ -282,7 +282,7 @@ class BaseModule:
             allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
                 This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
             allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
-                `api_base`, `base_url`, and `model_list`) from loaded state and
+                `api_base`, `base_url`, `model_list`, and the `engine` block) from loaded state and
                 allows importing custom LM classes. Enable only for trusted files. Without it, saved
                 LM state carrying endpoint configuration fails with a typed `dspy.LMStateError`.
             lm (BaseLM | dict): If provided, use this instead of reconstructing LMs from the saved

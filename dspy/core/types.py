@@ -16,24 +16,41 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "Assistant",
+    "AsyncLMStream",
     "Developer",
+    "LMAnyDelta",
+    "LMAudioDelta",
     "LMAudioPart",
     "LMBinaryPart",
     "LMCacheConfig",
+    "LMCitationDelta",
     "LMCitationPart",
     "LMConfig",
+    "LMDelta",
     "LMDocumentPart",
+    "LMImageDelta",
     "LMImagePart",
     "LMMessage",
     "LMOutput",
+    "LMOutputBuilder",
     "LMPart",
     "LMPromptCacheConfig",
     "LMReasoningConfig",
     "LMRefusalPart",
     "LMRequest",
     "LMResponse",
+    "LMStream",
+    "LMStreamDeltaEvent",
+    "LMStreamEndEvent",
+    "LMStreamErrorEvent",
+    "LMStreamEvent",
+    "LMStreamOutputEndEvent",
+    "LMStreamStartEvent",
+    "LMTextDelta",
     "LMTextPart",
+    "LMThinkingDelta",
     "LMThinkingPart",
+    "LMToolCallDelta",
     "LMToolCallPart",
     "LMToolChoice",
     "LMToolResultPart",
@@ -44,6 +61,7 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "User",
+    "response_to_stream_events",
 ]
 
 
@@ -789,6 +807,10 @@ class LMOutput(BaseModel):
     def to_value(self) -> Any:
         values = [_part_to_value(part) for part in self.parts]
         values = [value for value in values if value is not None]
+        if not values:
+            # Keep the legacy `str | dict | None` output contract: an output
+            # with no parts (e.g. truncated before any content) is None, not [].
+            return None
         if len(values) == 1 and isinstance(values[0], str) and self.logprobs is None:
             return values[0]
         return values
@@ -1281,6 +1303,47 @@ class AsyncLMStream:
         if self._result is None:
             raise RuntimeError("Stream has not completed yet.")
         return self._result
+
+
+def _part_to_delta(part: LMPart) -> LMAnyDelta | None:
+    if isinstance(part, LMTextPart):
+        return LMTextDelta(text=part.text)
+    if isinstance(part, LMThinkingPart):
+        return LMThinkingDelta(text=part.text)
+    if isinstance(part, LMToolCallPart):
+        return LMToolCallDelta(id=part.id, name=part.name, args_delta=json.dumps(part.args))
+    if isinstance(part, LMCitationPart):
+        return LMCitationDelta(citation=part)
+    if isinstance(part, LMImagePart):
+        return LMImageDelta(image=part)
+    if isinstance(part, LMAudioPart):
+        return LMAudioDelta(audio=part)
+    return None
+
+
+def response_to_stream_events(response: LMResponse) -> list[LMStreamEvent]:
+    """Expand a complete `LMResponse` into the equivalent stream events.
+
+    Use this to present a buffered or cached response through the streaming
+    interface: consumers see the same event vocabulary as a live stream, with
+    each part arriving as a single delta and the final event carrying the
+    response itself.
+    """
+    events: list[LMStreamEvent] = [LMStreamStartEvent(model=response.model)]
+    for output_index, output in enumerate(response.outputs):
+        for part_index, part in enumerate(output.parts):
+            delta = _part_to_delta(part)
+            if delta is not None:
+                events.append(LMStreamDeltaEvent(output_index=output_index, part_index=part_index, delta=delta))
+        events.append(
+            LMStreamOutputEndEvent(
+                output_index=output_index,
+                finish_reason=output.finish_reason,
+                truncated=output.truncated,
+            )
+        )
+    events.append(LMStreamEndEvent(usage=response.usage, cost=response.cost, response=response))
+    return events
 
 
 def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:  # noqa: N802

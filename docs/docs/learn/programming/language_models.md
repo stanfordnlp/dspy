@@ -145,6 +145,16 @@ dspy.configure(lm=lm)
         ```
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
+### Direct OpenAI-compatible endpoints without LiteLLM
+
+DSPy ships an internal typed engine for OpenAI Chat Completions-compatible
+endpoints (vLLM, SGLang, Ollama, llama.cpp, gateways) that uses direct HTTP
+transport with no LiteLLM or OpenAI SDK dependency. It is not a public API:
+`dspy.LM` is the one user-facing interface, and the model string plus
+`api_base` shown above remain the way to reach these servers. As the LM router
+matures, `dspy.LM` will route such calls onto this engine under the hood
+without any change to your code.
+
 ## Calling the LM directly.
 
 It's easy to call the `lm` you configured above directly. This gives you a unified API and lets you benefit from utilities like automatic caching.
@@ -336,7 +346,7 @@ Custom LM classes are reloaded from their module-qualified class path, so they m
 program.load("program.json", allow_unsafe_lm_state=True)
 ```
 
-Use this only for files you trust. The flag also preserves serialized LM endpoint configuration such as `api_base`, `base_url`, and `model_list`.
+Use this only for files you trust. The flag also honors serialized LM endpoint configuration such as `api_base`, `base_url`, `model_list`, and the internal `engine` block; without it, state carrying those keys fails with a typed `dspy.LMStateError`. If you don't trust the file's endpoint but still want the program, pass a configured LM instead: `program.load("program.json", lm=dspy.LM(...))`.
 
 ### Copying custom LMs
 

@@ -43,9 +43,9 @@ Loading any pickle — state-PKL or full-program — requires `allow_pickle=True
 
 ### 5. Endpoint configuration in saved state refuses to load by default
 
-When loading state, LM-config keys that carry endpoint routing — `api_base`, `base_url`, and `model_list` — cause the load to fail with a typed `dspy.LMStateError` unless you opt in. The reasoning: a tampered file could reroute requests (and the prompts inside them) to an attacker's endpoint, and silently dropping the keys instead would reroute a local-server program to the provider's default endpoint — working, but differently. The error names both exits, and both are fully supported:
+When loading state, LM-config keys that carry endpoint routing — `api_base`, `base_url`, `model_list`, and the `engine` block — cause the load to fail with a typed `dspy.LMStateError` unless you opt in. The reasoning: a tampered file could reroute requests (and the prompts inside them) to an attacker's endpoint, and silently dropping the keys instead would reroute a local-server program to the provider's default endpoint — working, but differently. The error names both exits, and both are fully supported:
 
-**The trusted path — "just works", any number of LMs.** For a file you trust (you saved it, or it comes from a source you control), pass `allow_unsafe_lm_state=True`. Every saved LM — however many the program has — is reconstructed exactly as saved: same endpoints, same configuration. This is the right call for your own checkpoints and optimization artifacts.
+**The trusted path — "just works", any number of LMs.** For a file you trust (you saved it, or it comes from a source you control), pass `allow_unsafe_lm_state=True`. Every saved LM — however many the program has — is reconstructed exactly as saved: same endpoints, same engine configuration, same declared capabilities. This is the right call for your own checkpoints and optimization artifacts.
 
 ```python
 program = HaikuEnsemble()
@@ -67,9 +67,11 @@ program.load(
 
 This is deliberately manual: the safe path's whole point is that endpoint routes are typed into your code, where you can read them, not carried by a file you didn't write.
 
-### 6. API keys are never serialized
+### 6. API keys and call history are never serialized — on either path
 
-`LM.dump_state` explicitly excludes `api_key` from the saved kwargs, and there’s no flag to re-enable it. The LM client always needs its credentials configured fresh on the loading side. Anything else would be a credential leak waiting to happen.
+`LM.dump_state` explicitly excludes `api_key` from the saved kwargs, and there’s no flag to re-enable it. The full-program pickle path applies the same hygiene: while `save_program=True` pickles the module, LMs are serialized with credentials (string keys, credential callables, sensitive kwargs like `azure_ad_token`, and sensitive headers like `Authorization`) and `lm.history` scrubbed. The LM always needs its credentials configured fresh on the loading side. Anything else would be a credential leak waiting to happen — a saved artifact travels, and everything embedded in it travels too.
+
+This scrubbing applies only to saved artifacts: in-process `copy.deepcopy` and `lm.copy()` (which optimizers rely on) keep working credentials and history.
 
 ### 7. `load_state` is transactional
 
@@ -116,7 +118,7 @@ Registers each entry with `cloudpickle.register_pickle_by_value` before pickling
 Two entry points, matching the two save modes.
 
 **`Module.load(path, allow_pickle=False, allow_unsafe_lm_state=False, lm=None)`**  
-Loads state into an existing module instance. You instantiate the program the same way you built it, then call `.load()` on it. JSON paths load freely; `.pkl` paths require `allow_pickle=True`. If the saved LM state carries endpoint configuration (`api_base`, `base_url`, `model_list`), the load raises `dspy.LMStateError` unless you pass `allow_unsafe_lm_state=True` (trusted file) or `lm=` (a single LM for every predictor, or a dict of predictor names to LMs; matching predictors ignore their saved LM state).
+Loads state into an existing module instance. You instantiate the program the same way you built it, then call `.load()` on it. JSON paths load freely; `.pkl` paths require `allow_pickle=True`. If the saved LM state carries endpoint configuration (`api_base`, `base_url`, `model_list`, `engine`), the load raises `dspy.LMStateError` unless you pass `allow_unsafe_lm_state=True` (trusted file) or `lm=` (a single LM for every predictor, or a dict of predictor names to LMs; matching predictors ignore their saved LM state).
 
 ```python
 program = HaikuEnsemble()           # same construction as when saved
@@ -157,7 +159,7 @@ Two flags, two different concerns.
 Refuses to load any `.pkl` or full-program directory. Loading a pickle can execute arbitrary code; the flag forces the caller to acknowledge that the file is trusted. Applies to both `Module.load` and `dspy.load`.
 
 **`allow_unsafe_lm_state=False` (default)**  
-On state load, refuses LM config containing `api_base`, `base_url`, or `model_list`, raising a typed `dspy.LMStateError`. Pass `True` to honor the original endpoint configuration from a trusted file, or pass `lm=` to supply the route from code instead. The refusal exists because a saved program's endpoint may not be one the loader should talk to — and because a program must never load "successfully" onto a different endpoint than it was saved with.
+On state load, refuses LM config containing `api_base`, `base_url`, `model_list`, or an `engine` block, raising a typed `dspy.LMStateError`. Pass `True` to honor the original endpoint configuration from a trusted file, or pass `lm=` to supply the route from code instead. The refusal exists because a saved program's endpoint may not be one the loader should talk to — and because a program must never load "successfully" onto a different endpoint than it was saved with.
 
 API keys are never re-enabled by either flag. The loading side configures credentials fresh.
 

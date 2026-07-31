@@ -30,6 +30,7 @@ from typing import Any
 import pydantic
 
 from dspy.core.types import (
+    LMAnyDelta,
     LMAudioPart,
     LMBinaryPart,
     LMCitationPart,
@@ -41,8 +42,15 @@ from dspy.core.types import (
     LMRefusalPart,
     LMRequest,
     LMResponse,
+    LMStreamDeltaEvent,
+    LMStreamEndEvent,
+    LMStreamEvent,
+    LMStreamOutputEndEvent,
+    LMTextDelta,
     LMTextPart,
+    LMThinkingDelta,
     LMThinkingPart,
+    LMToolCallDelta,
     LMToolCallPart,
     LMToolChoice,
     LMToolResultPart,
@@ -61,6 +69,7 @@ __all__ = [
     "provider_tool_call_to_part",
     "responses_function_call_to_part",
     "usage_from_response",
+    "ChatCompletionChunkAssembler",
 ]
 
 
@@ -640,7 +649,9 @@ def choice_to_lm_output(choice: Any) -> LMOutput:
     message = get_value(choice, "message")
     parts = []
     if message is not None:
-        reasoning = get_value(message, "reasoning_content")
+        # vLLM >= 0.19 and some providers use "reasoning"; LiteLLM and older
+        # servers use "reasoning_content".
+        reasoning = get_value(message, "reasoning_content") or get_value(message, "reasoning")
         if reasoning:
             parts.append(LMThinkingPart(text=str(reasoning)))
         content = get_value(message, "content")
@@ -1009,6 +1020,81 @@ def legacy_outputs_from_lm_response(response: LMResponse) -> list[dict[str, Any]
         else:
             outputs.append(output.to_output_dict())
     return outputs
+
+
+class ChatCompletionChunkAssembler:
+    """Translate OpenAI Chat Completions stream chunks into normalized stream events.
+
+    One assembler handles one streamed response. Feed each parsed chunk
+    (a `chat.completion.chunk` dict or object) to `events()` and emit what it
+    returns; after the last chunk, emit `end_events()`. Part indices are
+    assigned per output in order of first appearance (thinking, text, and each
+    tool call get their own part), matching what `LMOutputBuilder` expects.
+
+    This class maps shapes only. Transport, SSE framing, retries, and caching
+    belong to the concrete LM.
+    """
+
+    def __init__(self):
+        self._part_indices: dict[int, dict[Any, int]] = {}
+        self._usage: LMUsage | None = None
+
+    def events(self, chunk: Any) -> list[LMStreamEvent]:
+        usage = usage_from_response(chunk)
+        if usage is not None:
+            self._usage = usage
+
+        events: list[LMStreamEvent] = []
+        for choice in get_value(chunk, "choices") or []:
+            output_index = get_value(choice, "index") or 0
+            delta = get_value(choice, "delta")
+            if delta is not None:
+                events.extend(self._delta_events(output_index, delta))
+            finish_reason = get_value(choice, "finish_reason")
+            if finish_reason:
+                events.append(
+                    LMStreamOutputEndEvent(
+                        output_index=output_index,
+                        finish_reason=finish_reason,
+                        truncated=finish_reason == "length",
+                    )
+                )
+        return events
+
+    def end_events(self) -> list[LMStreamEvent]:
+        return [LMStreamEndEvent(usage=self._usage)]
+
+    def _delta_events(self, output_index: int, delta: Any) -> list[LMStreamEvent]:
+        events: list[LMStreamEvent] = []
+        # vLLM >= 0.19 and some providers use "reasoning"; LiteLLM and older
+        # servers use "reasoning_content".
+        reasoning = get_value(delta, "reasoning_content") or get_value(delta, "reasoning")
+        if reasoning:
+            events.append(self._delta_event(output_index, "thinking", LMThinkingDelta(text=str(reasoning))))
+        content = get_value(delta, "content")
+        if content:
+            events.append(self._delta_event(output_index, "text", LMTextDelta(text=str(content))))
+        for tool_call in get_value(delta, "tool_calls") or []:
+            tool_index = get_value(tool_call, "index") or 0
+            function = get_value(tool_call, "function")
+            events.append(
+                self._delta_event(
+                    output_index,
+                    ("tool_call", tool_index),
+                    LMToolCallDelta(
+                        id=get_value(tool_call, "id"),
+                        name=get_value(function, "name"),
+                        args_delta=get_value(function, "arguments"),
+                    ),
+                )
+            )
+        return events
+
+    def _delta_event(self, output_index: int, part_key: Any, delta: LMAnyDelta) -> LMStreamDeltaEvent:
+        indices = self._part_indices.setdefault(output_index, {})
+        if part_key not in indices:
+            indices[part_key] = len(indices)
+        return LMStreamDeltaEvent(output_index=output_index, part_index=indices[part_key], delta=delta)
 
 
 def lm_output_from_legacy_output(output: dict[str, Any] | str | None) -> LMOutput:

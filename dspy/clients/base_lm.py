@@ -4,9 +4,15 @@ import copy as copy_module
 import datetime
 import importlib
 import inspect
+import queue
+import threading
 import uuid
 import warnings
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Literal, TextIO
+
+import anyio
+import anyio.to_thread
 
 from dspy.clients.openai_format import (
     completion_to_lm_response,
@@ -16,7 +22,15 @@ from dspy.clients.openai_format import (
     to_openai_chat_request,
     usage_from_response,
 )
-from dspy.core.types import LMHistoryEntry, LMRequest, LMResponse
+from dspy.core.types import (
+    AsyncLMStream,
+    LMHistoryEntry,
+    LMRequest,
+    LMResponse,
+    LMStream,
+    LMStreamEvent,
+    response_to_stream_events,
+)
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -24,7 +38,7 @@ from dspy.utils.inspect_history import pretty_print_history
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 LM_CLASS_STATE_KEY = "_dspy_lm_class"
-_BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+_BUILTIN_LM_CLASS_PATHS = frozenset({"dspy.clients.lm.LM"})
 ForwardContract = Literal["legacy", "typed_lm"]
 
 # Kwarg names that hold credentials and must never reach a saved artifact.
@@ -57,7 +71,7 @@ def scrub_lm_state_on_pickle():
         _scrub_lm_state_on_pickle.reset(token)
 
 
-def _scrub_sensitive_headers(headers):
+def _scrub_sensitive_headers(headers: Any) -> Any:
     if not isinstance(headers, dict):
         return headers
     return {key: value for key, value in headers.items() if str(key).lower() not in SENSITIVE_HEADER_NAMES}
@@ -726,6 +740,163 @@ class BaseLM:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether this LM streams incrementally through `forward_stream`.
+
+        When False, `stream()` and `astream()` still work: they run the
+        buffered `forward()` / `aforward()` call and replay the finished
+        response as stream events, so consumers see one event vocabulary
+        regardless of the backend.
+        """
+        return False
+
+    def forward_stream(self, request: LMRequest) -> Iterator[LMStreamEvent]:
+        """Yield normalized stream events for one request.
+
+        Subclasses that support native streaming should implement this and
+        declare `supports_streaming = True`. The event sequence must be:
+        one `LMStreamStartEvent`, zero or more `LMStreamDeltaEvent`s with
+        contiguous part indices, one `LMStreamOutputEndEvent` per output, and
+        one final `LMStreamEndEvent`. Raise `dspy.LMError` subclasses for
+        failures, exactly as in `forward()`.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement forward_stream(). "
+            "Use stream() for the buffered fallback, or implement forward_stream() "
+            "and declare supports_streaming=True."
+        )
+
+    async def aforward_stream(self, request: LMRequest) -> AsyncIterator[LMStreamEvent]:
+        """Async variant of `forward_stream`.
+
+        The default implementation bridges the synchronous `forward_stream`
+        through a worker thread, so sync-only streaming LMs stream
+        incrementally under async callers without extra work.
+        """
+        event_queue: queue.Queue[Any] = queue.Queue(maxsize=16)
+        consumer_gone = threading.Event()
+        done = object()
+
+        def produce() -> None:
+            def put(item: Any) -> bool:
+                while not consumer_gone.is_set():
+                    try:
+                        event_queue.put(item, timeout=0.1)
+                        return True
+                    except queue.Full:
+                        continue
+                return False
+
+            try:
+                for event in self.forward_stream(request):
+                    if not put(event):
+                        return
+            except BaseException as error:
+                put(error)
+                return
+            put(done)
+
+        producer = threading.Thread(target=produce, name="dspy-lm-stream", daemon=True)
+        producer.start()
+        try:
+            while True:
+                item = await anyio.to_thread.run_sync(event_queue.get)
+                if item is done:
+                    return
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            consumer_gone.set()
+
+    def stream(
+        self,
+        *items: Any,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        request: LMRequest | None = None,
+        **kwargs,
+    ) -> LMStream:
+        """Stream one LM call as normalized events.
+
+        Accepts the same inputs as `__call__()`. Returns a `dspy.LMStream`:
+        iterate it for `LMStreamEvent`s, then call `.result()` for the final
+        `LMResponse`. History and usage are recorded when the stream
+        completes, identically to a non-streaming call.
+
+        When the LM does not support native streaming, the call runs buffered
+        and the finished response is replayed as events.
+
+        Example:
+            ```python
+            stream = lm.stream("Write a haiku about rivers.")
+            for event in stream:
+                if event.type == "delta" and event.delta.type == "text_delta":
+                    print(event.delta.text, end="", flush=True)
+            response = stream.result()
+            ```
+        """
+        normalized_request = self._normalize_lm_call(
+            *items, prompt=prompt, messages=messages, request=request, **kwargs
+        )
+        return LMStream(
+            request=normalized_request,
+            events=self._stream_events(normalized_request),
+            finalize=self._finalize_lm_response,
+        )
+
+    def astream(
+        self,
+        *items: Any,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        request: LMRequest | None = None,
+        **kwargs,
+    ) -> AsyncLMStream:
+        """Async variant of `stream()`; returns a `dspy.AsyncLMStream`."""
+        normalized_request = self._normalize_lm_call(
+            *items, prompt=prompt, messages=messages, request=request, **kwargs
+        )
+        return AsyncLMStream(
+            request=normalized_request,
+            events=self._astream_events(normalized_request),
+            finalize=self._finalize_lm_response,
+        )
+
+    def _stream_events(self, request: LMRequest) -> Iterator[LMStreamEvent]:
+        if self.supports_streaming:
+            yield from self.forward_stream(request)
+            return
+        yield from response_to_stream_events(self._buffered_stream_response(request))
+
+    async def _astream_events(self, request: LMRequest) -> AsyncIterator[LMStreamEvent]:
+        if self.supports_streaming:
+            async for event in self.aforward_stream(request):
+                yield event
+            return
+        for event in response_to_stream_events(await self._abuffered_stream_response(request)):
+            yield event
+
+    def _buffered_stream_response(self, request: LMRequest) -> LMResponse:
+        """Run one buffered call for the stream fallback, without recording history.
+
+        The surrounding `LMStream` records history and usage through its
+        `finalize` callback, so recording is suppressed here to keep streamed
+        and non-streamed calls identical in what they log.
+        """
+        if self._get_forward_contract() == "typed_lm":
+            return self._validate_typed_lm_response(self.forward(request))
+        with settings.context(disable_history=True, usage_tracker=None):
+            return self._legacy_forward_as_lm_response(request)
+
+    async def _abuffered_stream_response(self, request: LMRequest) -> LMResponse:
+        """Async variant of `_buffered_stream_response`."""
+        if self._get_forward_contract() == "typed_lm":
+            return self._validate_typed_lm_response(await self.aforward(request))
+        with settings.context(disable_history=True, usage_tracker=None):
+            return await self._legacy_aforward_as_lm_response(request)
+
     def dump_state(self) -> dict[str, Any]:
         """Return a sanitized reconstruction state for this LM.
 
@@ -780,7 +951,7 @@ class BaseLM:
 
                 return LM(**state)
 
-            if class_path != _BUILTIN_LM_CLASS_PATH and not allow_custom_lm_class:
+            if class_path not in _BUILTIN_LM_CLASS_PATHS and not allow_custom_lm_class:
                 raise ValueError(
                     f"Refusing to import custom serialized LM class `{class_path}`. "
                     "Pass allow_unsafe_lm_state=True when loading trusted files to enable custom LM classes."
