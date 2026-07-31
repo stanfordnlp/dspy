@@ -465,11 +465,14 @@ def test_image_repr():
     assert "base64" in str(pil_image)
 
 
-def test_image_constructor_supports_source_and_url_keywords():
+def test_image_constructor_supports_positional_source_and_url_keyword():
     source = "https://example.com/dog.jpg"
 
-    assert dspy.Image(source=source).url == source
+    assert dspy.Image(source).url == source
     assert dspy.Image(url=source).url == source
+
+    with pytest.raises(pydantic.ValidationError, match="source"):
+        dspy.Image(source=source)
 
     with pytest.raises(TypeError, match="both `source` and `url`"):
         dspy.Image(source, url=source)

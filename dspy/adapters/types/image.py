@@ -34,13 +34,13 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, source: Any = None, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
+    def __init__(self, source: Any = None, /, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
         """Create an Image.
 
         Parameters
         ----------
         source:
-            The image source. Supported values include
+            The positional-only image source. Supported values include
 
             - ``str``: HTTP(S)/GS URL or an encoded data URI
             - ``bytes``: raw image bytes

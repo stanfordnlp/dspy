@@ -71,9 +71,14 @@ def test_image_validation_rejects_download_without_host_io(monkeypatch):
     _forbid_host_io(monkeypatch)
 
     with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
-        TypeAdapter(dspy.Image).validate_python(
-            {"url": "http://169.254.169.254/latest/meta-data", "download": True}
-        )
+        TypeAdapter(dspy.Image).validate_python({"url": "http://169.254.169.254/latest/meta-data", "download": True})
+
+
+def test_image_validation_rejects_download_with_source_keyword_without_host_io(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
+        TypeAdapter(dspy.Image).validate_python({"source": "http://169.254.169.254/latest/meta-data", "download": True})
 
 
 def test_image_positional_download_compatibility_shim(monkeypatch):
