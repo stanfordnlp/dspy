@@ -155,7 +155,8 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     block -- which need not belong to a declared field, so an unrelated `<note>...</note>` counts --
     either covers the surplus tag or is all that separates it from the value. Representing either
     needs escaping, which this wire format does not have. This paragraph is the one statement of
-    those limits; everything else that mentions them points here.
+    those limits in the code -- everything else here that mentions them points at it, and the
+    adapters guide restates them for users.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
@@ -288,18 +289,22 @@ class XMLAdapter(ChatAdapter):
         did reimplement it and drifted twice, widening spans `parse` rejects, so agreement is left
         to be structural instead of asserted. None means the block has not closed yet under that
         scan, which mid-stream means more content may still complete it.
+
+        Tag 0 of the reconstructed string is the field's own opening tag, so the first block is the
+        value's own whenever it starts at offset 0. When tag 0 closes nowhere it yields no block at
+        all and every later block starts past the opening tag, which is the not-closed-yet case.
         """
         if not XMLAdapter._nested_decision_ready(field_name, content, sibling_names):
             return None
 
         opening = f"<{field_name}>"
         blocks = _extract_field_blocks(opening + content, sibling_names | {field_name})
-        for name, _, _, start, end in blocks:
-            if start == 0:
-                # `end` is past the closing tag, in the reconstructed string; report where the
-                # value stops, in `content`.
-                return end - len(f"</{name}>") - len(opening) if name == field_name else None
-        return None
+        if not blocks:
+            return None
+        _, _, value_end, block_start, _ = blocks[0]
+        if block_start != 0:
+            return None
+        return value_end - len(opening)
 
     @staticmethod
     def _nested_decision_ready(field_name: str, content: str, sibling_names: frozenset[str]) -> bool:
@@ -313,20 +318,52 @@ class XMLAdapter(ChatAdapter):
         """
         if not XMLAdapter._value_opens_nested(field_name, content):
             return True
-        if any(f"<{name}>" in content for name in sibling_names if name != field_name):
-            return True
+        return XMLAdapter._nested_boundary_scan(field_name, content, sibling_names)[0]
 
-        depth = 0
-        for match in _TAG_PATTERN.finditer(content):
-            if match.group("name") != field_name:
-                continue
-            if match.group("closing"):
-                if depth == 0:
-                    return True
-                depth -= 1
-            else:
-                depth += 1
-        return False
+    @staticmethod
+    def _nested_boundary_scan(
+        field_name: str,
+        content: str,
+        sibling_names: frozenset[str],
+        scan_pos: int = 0,
+        depth: int = 0,
+    ) -> tuple[bool, bool, int, int]:
+        """Walk the tags in `content` for what settles a nested value's boundary, resumably.
+
+        Returns `(ready, closed, next_scan_pos, depth)`. `ready` is `_nested_decision_ready`'s
+        answer -- the span closed, or a sibling opened -- and `closed` says a `</field_name>` went
+        by, which is the only thing a block can end at. So `ready and closed` is exactly when
+        `_field_value_end` can answer, and a caller that waits for both never runs the full scan
+        on a value whose boundary has not arrived.
+
+        `ready` and `closed` report only what this pass saw; both are monotone in `content`, so a
+        caller resuming chunk by chunk keeps its own running `or`. Resuming is what keeps a
+        streamed value linear: starting over whenever a tag lands costs one pass over the whole
+        buffer per nested child. `next_scan_pos` steps back a tag's width so one split across two
+        chunks is still read whole, but never back over a tag already counted, and `depth` carries
+        the nesting level reached so far.
+        """
+        ready = False
+        closed = False
+        last_end = scan_pos
+        for match in _TAG_PATTERN.finditer(content, scan_pos):
+            last_end = match.end()
+            name = match.group("name")
+            is_closing = bool(match.group("closing"))
+            if name == field_name:
+                if not is_closing:
+                    depth += 1
+                else:
+                    closed = True
+                    if depth == 0:
+                        ready = True
+                    else:
+                        depth -= 1
+            elif not is_closing and name in sibling_names:
+                ready = True
+
+        widest_tag = max(len(name) for name in sibling_names | {field_name}) + 3
+        return ready, closed, max(last_end, len(content) - widest_tag + 1), depth
 
     @staticmethod
     def _value_opens_nested(field_name: str, content: str) -> bool | None:

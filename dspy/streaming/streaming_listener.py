@@ -31,6 +31,18 @@ ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 STREAM_NESTED_XML_VALUES = True
 
 
+def _new_xml_adapter_state() -> dict[str, Any]:
+    """Per-stream state for the nested-value path, so its two call sites cannot drift apart."""
+    return {
+        "field_accumulated_messages": "",
+        "is_nested": None,
+        "scan_pos": 0,
+        "depth": 0,
+        "ready": False,
+        "closed": False,
+    }
+
+
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
@@ -63,7 +75,7 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
-        self.xml_adapter_state = {"field_accumulated_messages": "", "is_nested": None, "scan_pos": 0}
+        self.xml_adapter_state = _new_xml_adapter_state()
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -143,7 +155,7 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
-                self.xml_adapter_state = {"field_accumulated_messages": "", "is_nested": None, "scan_pos": 0}
+                self.xml_adapter_state = _new_xml_adapter_state()
                 self.stream_start = False
             else:
                 return
@@ -344,17 +356,19 @@ class StreamListener:
             state["field_accumulated_messages"] = ""
             return False, None
 
-        # Two markers can settle the boundary, matching the two things `_nested_decision_ready`
-        # waits on: a closing tag, the only thing a block can end at, and a sibling's opening tag,
-        # which rejects the widening for good. Watching for the closing tag alone leaves a value
-        # whose deciding sibling arrives afterwards buffered until `finalize()`, long past its real
-        # boundary and lost entirely if `parse` then raises. So the scan runs when either lands,
-        # rather than on every chunk, over the text not yet searched -- which begins a marker's
-        # width back from the previous tail, so one split across chunks is still seen whole.
-        markers = (f"</{self.signature_field_name}>", *(f"<{name}>" for name in siblings))
-        searched_from = state["scan_pos"]
-        state["scan_pos"] = max(0, len(accumulated) - max(len(marker) for marker in markers) + 1)
-        if all(accumulated.find(marker, searched_from) == -1 for marker in markers):
+        # `_nested_boundary_scan` reports the two things that settle the boundary: the value's own
+        # closing tag, the only thing a block can end at, and a sibling's opening tag, which
+        # rejects the widening for good. Watching for the closing tag alone leaves a value whose
+        # deciding sibling arrives afterwards buffered until `finalize()`, long past its real
+        # boundary and lost entirely if `parse` then raises. The scan resumes where the last chunk
+        # left it, so the value is walked once over the whole stream rather than once per chunk --
+        # a nested value with many balanced children would otherwise cost a pass per child.
+        ready, closed, state["scan_pos"], state["depth"] = XMLAdapter._nested_boundary_scan(
+            self.signature_field_name, accumulated, siblings, state["scan_pos"], state["depth"]
+        )
+        state["ready"] = state["ready"] or ready
+        state["closed"] = state["closed"] or closed
+        if not (state["ready"] and state["closed"]):
             return True, None
 
         value_end = XMLAdapter._field_value_end(self.signature_field_name, accumulated, siblings)

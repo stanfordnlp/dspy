@@ -1205,3 +1205,42 @@ def test_xml_adapter_parse_rejects_unwidenable_spans_in_linear_time(label, tail)
     start = time.perf_counter()
     assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
     assert time.perf_counter() - start < 5
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 5, 7, 13])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "<code>x</code></code>",
+        "<code>a</code><code>b</code><code>c</code></code>",
+        "\n <code>outer <code>in</code></code>\n</code>",
+        "<code>never balances<answer>y</answer>",
+        "<code>a</code>",
+        "<code>a</code></code><note>n</note>",
+        "<code>a</code>b</code>c</code>",
+        "<code>a</cod",
+        "<code>a</code",
+    ],
+)
+def test_xml_adapter_nested_boundary_scan_resumes_without_drifting(value, chunk_size):
+    """Answering one chunk at a time must match one pass over the whole value.
+
+    The streaming path resumes this scan rather than restarting it, which is what keeps a streamed
+    nested value linear. Resuming is only sound if a tag split across two chunks is still read
+    whole and a tag already counted is never counted twice, and both failures are invisible in the
+    common case -- so they are pinned here across chunk sizes rather than left to a payload that
+    happens to straddle a boundary.
+    """
+    siblings = frozenset({"answer", "note"})
+
+    ready = closed = False
+    scan_pos = depth = 0
+    for end in range(chunk_size, len(value) + chunk_size, chunk_size):
+        found_ready, found_closed, scan_pos, depth = XMLAdapter._nested_boundary_scan(
+            "code", value[:end], siblings, scan_pos, depth
+        )
+        ready = ready or found_ready
+        closed = closed or found_closed
+
+    assert ready == XMLAdapter._nested_decision_ready("code", value, siblings)
+    assert closed == ("</code>" in value)

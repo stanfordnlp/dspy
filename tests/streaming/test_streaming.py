@@ -11,6 +11,7 @@ from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.adapters.types import Type
+from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
 
@@ -1052,6 +1053,53 @@ async def test_xml_adapter_nested_stream_emits_at_the_boundary_not_at_finalize()
     assert order.index("answer") < order.index("other")
     answer = "".join(r.chunk for r in responses if r.signature_field_name == "answer")
     assert answer == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_decides_the_boundary_in_one_pass():
+    """Settling the boundary must cost one pass over the value, however many children it holds.
+
+    The decision used to start over at the top of the buffer every time a closing tag landed, so a
+    nested value made of balanced children cost a pass per child: quadratic, on the event loop,
+    on exactly the payloads this path exists for. Counting the passes pins that on any machine,
+    where a wall-clock bound would only pin it on an unloaded one.
+    """
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    decide = XMLAdapter._nested_decision_ready
+
+    async def stream(children):
+        completion = "<code>\n" + "".join(f"<code>{i}</code>" for i in range(children)) + "\n</code>"
+
+        async def xml_stream(*args, **kwargs):
+            for i in range(0, len(completion), 3):
+                yield ModelResponseStream(
+                    model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+                )
+
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with mock.patch("litellm.acompletion", side_effect=xml_stream):
+            with mock.patch.object(XMLAdapter, "_nested_decision_ready", wraps=decide) as passes:
+                with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+                    chunks = [
+                        v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+                    ]
+        return passes.call_count, "".join(chunks).strip(), dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
+
+    few_passes, few_streamed, few_parsed = await stream(30)
+    many_passes, many_streamed, many_parsed = await stream(240)
+
+    # Eight times the children, and the value still arrives whole -- so the counts below are not
+    # those of a stream that gave up early.
+    assert few_streamed == few_parsed
+    assert many_streamed == many_parsed
+    assert 1 <= few_passes == many_passes <= 2
 
 
 @pytest.mark.anyio
