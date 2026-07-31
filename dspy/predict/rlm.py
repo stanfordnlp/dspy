@@ -579,7 +579,7 @@ class RLM(Module):
             field = self.signature.output_fields[name]
             annotation = getattr(field, "annotation", str)
             try:
-                parsed_outputs[name] = parse_value(raw_output[name], annotation)
+                parsed_outputs[name] = parse_value(raw_output[name], annotation, field)
             except (ValueError, pydantic.ValidationError) as e:
                 type_errors.append(
                     f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "

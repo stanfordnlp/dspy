@@ -4,7 +4,7 @@ import inspect
 import json
 import types
 from collections.abc import Mapping
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -146,9 +146,18 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
-def parse_value(value, annotation):
+def parse_value(value, annotation, field_info: FieldInfo | None = None):
+    # Constraints declared on a field (`max_length`, `ge`, `pattern`, ...) are stored in
+    # `FieldInfo.metadata`, not in its annotation, so validating against the annotation alone
+    # accepts any LM output that merely has the right type. Re-attach them here when the caller
+    # knows the field, and fall back to the bare annotation when it doesn't.
+    constraints = tuple(field_info.metadata) if field_info is not None else ()
+    target = Annotated[(annotation, *constraints)] if constraints else annotation
+
     if annotation is str:
-        return str(value)
+        # Stringify rather than validate the raw value.
+        text = str(value)
+        return TypeAdapter(target).validate_python(text) if constraints else text
 
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
@@ -173,11 +182,11 @@ def parse_value(value, annotation):
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
     if not isinstance(value, str):
-        return TypeAdapter(annotation).validate_python(value)
+        return TypeAdapter(target).validate_python(value)
 
     if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
-        return TypeAdapter(annotation).validate_python(value)
+        return TypeAdapter(target).validate_python(value)
 
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
@@ -187,12 +196,12 @@ def parse_value(value, annotation):
             candidate = value
 
     try:
-        return TypeAdapter(annotation).validate_python(candidate)
+        return TypeAdapter(target).validate_python(candidate)
     except pydantic.ValidationError as e:
         if _annotation_is_subclass(annotation, DspyType):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
-                return TypeAdapter(annotation).validate_python(value)
+                return TypeAdapter(target).validate_python(value)
             except Exception:
                 raise e
         raise
