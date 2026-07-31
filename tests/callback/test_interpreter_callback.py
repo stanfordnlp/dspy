@@ -8,11 +8,18 @@ from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback, with_callbacks
 
 
 class RecordingCallback(BaseCallback):
-    def __init__(self):
+    def __init__(self, name=None, observed=None):
         self.events = []
+        self.name = name
+        self.observed = observed
+
+    def _record(self, event):
+        self.events.append(event)
+        if self.observed is not None:
+            self.observed.append((self.name, event["handler"]))
 
     def _start(self, handler, call_id, instance, inputs):
-        self.events.append({
+        self._record({
             "handler": handler,
             "call_id": call_id,
             "parent_call_id": ACTIVE_CALL_ID.get(),
@@ -21,7 +28,7 @@ class RecordingCallback(BaseCallback):
         })
 
     def _end(self, handler, call_id, outputs, exception):
-        self.events.append({
+        self._record({
             "handler": handler,
             "call_id": call_id,
             "parent_call_id": ACTIVE_CALL_ID.get(),
@@ -167,14 +174,19 @@ def test_shutdown_callbacks_fire_for_each_idempotent_call():
 
 @pytest.mark.deno
 def test_real_interpreter_callbacks_preserve_lazy_startup_tool_nesting_and_final_output():
-    callback = RecordingCallback()
-    with dspy.PythonInterpreter(tools={"echo": lambda value: value}, callbacks=[callback]) as interpreter:
-        assert interpreter.execute("echo(value=payload)", variables={"payload": "first"}) == "first"
-        final_output = interpreter.execute("SUBMIT('done')")
+    observed = []
+    global_callback = RecordingCallback("global", observed)
+    instance_callback = RecordingCallback("instance", observed)
+    with dspy.context(callbacks=[global_callback]):
+        with dspy.PythonInterpreter(
+            tools={"echo": lambda value: value}, callbacks=[instance_callback]
+        ) as interpreter:
+            assert interpreter.execute("echo(value=payload)", variables={"payload": "first"}) == "first"
+            final_output = interpreter.execute("SUBMIT('done')")
 
     assert final_output == FinalOutput({"output": "done"})
 
-    assert [event["handler"] for event in callback.events] == [
+    expected_handlers = [
         "execute_start",
         "startup_start",
         "startup_end",
@@ -186,8 +198,15 @@ def test_real_interpreter_callbacks_preserve_lazy_startup_tool_nesting_and_final
         "shutdown_start",
         "shutdown_end",
     ]
-    first_execute, startup_start, startup_end, tool_start, tool_end, first_end = callback.events[:6]
-    second_execute, second_end, shutdown_start, shutdown_end = callback.events[6:]
+    assert [event["handler"] for event in global_callback.events] == expected_handlers
+    assert [event["handler"] for event in instance_callback.events] == expected_handlers
+    assert observed == [
+        (source, handler)
+        for handler in expected_handlers
+        for source in ("global", "instance")
+    ]
+    first_execute, startup_start, startup_end, tool_start, tool_end, first_end = instance_callback.events[:6]
+    second_execute, second_end, shutdown_start, shutdown_end = instance_callback.events[6:]
     assert first_execute["inputs"] == {
         "code": "echo(value=payload)",
         "variables": {"payload": "first"},
