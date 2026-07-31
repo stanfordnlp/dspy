@@ -7,7 +7,11 @@ from typing import Any
 from gepa import EvaluationBatch
 
 import dspy
+from dspy.flex import Flex
+from dspy.flex.ctx import _strip_code_fences
+from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
+from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.utils.exceptions import LMError
 
@@ -15,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 def enumerate_flex_submodules(root) -> dict[str, Any]:
     """Map parameter path -> module for every code-optimizable (``dspy.Flex``) submodule."""
-    from dspy.flex import Flex
-
     return {name: sub for name, sub in root.named_parameters() if isinstance(sub, Flex)}
 
 
@@ -132,9 +134,6 @@ def propose_code(
     reflection_lm,
 ) -> dict[str, str]:
     """Propose a revised ``module_src`` for each code component; keep the original on failure."""
-    from dspy.flex.ctx import _strip_code_fences
-    from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
-
     results: dict[str, str] = {}
     proposer = dspy.Predict(CodeProposalSignature)
     with dspy.context(lm=reflection_lm):
@@ -221,8 +220,6 @@ def evaluate_with_trace(
     scoring time (e.g. to penalize LM calls and reward deterministic code); its ``trace``
     argument stays None, preserving the eval-mode semantics of non-Flex GEPA scoring.
     """
-    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
-
     trajs = bootstrap_trace_module.bootstrap_trace_data(
         program=program,
         dataset=batch,

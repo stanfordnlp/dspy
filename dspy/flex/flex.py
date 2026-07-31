@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from dspy.dsp.utils.settings import settings
-from dspy.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
-from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
+from dspy.primitives.code_interpreter import CodeInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
 
-@experimental(version="3.3.0b2")
+@experimental(version="3.3.0")
 class Flex(Module, Parameter):
     """A module whose implementation is optimizable code, not just a prompt.
 
@@ -48,8 +47,6 @@ class Flex(Module, Parameter):
     ):
         super().__init__()
 
-        from dspy.signatures.signature import ensure_signature
-
         self._signature_cls = ensure_signature(signature)
         self._name = getattr(self._signature_cls, "__name__", None) or "Flex"
         self._flex_ctx = FlexContext(signature_cls=self._signature_cls, tools=list(tools or []))
@@ -65,8 +62,6 @@ class Flex(Module, Parameter):
         self._bind_code(self._baseline_src())
 
     def _rebuild_bridge(self) -> None:
-        from dspy.flex.bridge import BridgeRuntime
-
         self._bridge: BridgeRuntime = BridgeRuntime(self, self._interpreter_factory, self._max_predictor_calls)
 
     def __getstate__(self) -> dict[str, Any]:
@@ -81,7 +76,7 @@ class Flex(Module, Parameter):
             self._bridge.bind(self._module_src)
 
     @property
-    def signature(self) -> Any:
+    def signature(self) -> type[Signature]:
         return self._signature_cls
 
     @property
@@ -100,9 +95,6 @@ class Flex(Module, Parameter):
             self._bind_code(module_src)
         lm_state = state.get("lm")
         if lm_state:
-            from dspy.clients.base_lm import BaseLM
-            from dspy.predict.predict import _sanitize_lm_state
-
             sanitized = _sanitize_lm_state(lm_state, allow_unsafe_lm_state)
             self.lm = (
                 BaseLM.load_state(sanitized, allow_custom_lm_class=allow_unsafe_lm_state) if sanitized else None
@@ -132,7 +124,7 @@ class Flex(Module, Parameter):
 
         Uses ``dspy.RLM`` when tools are provided; otherwise a single ``dspy.Predict``.
         """
-        cls: Any = self._signature_cls
+        cls: type[Signature] = self._signature_cls
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
         instructions = (getattr(cls, "instructions", "") or "").strip()

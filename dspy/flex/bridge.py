@@ -1,19 +1,8 @@
 from __future__ import annotations
 
 import ast
-import functools
-import inspect
-import json
 import logging
 from pathlib import Path
-from typing import Any, Callable
-
-from pydantic_core import PydanticSerializationError, to_jsonable_python
-
-import dspy
-from dspy.adapters.types.base_type import Type as _CustomType
-from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
-from dspy.utils.exceptions import LMError
 
 logger = logging.getLogger(__name__)
 
@@ -248,8 +237,6 @@ class BridgeRuntime:
         return self._to_prediction(json.loads(result))
 
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
-        from dspy.adapters.utils import parse_value
-
         signature = self._flex.signature
         missing = [name for name in signature.output_fields if name not in fields]
         if missing:
