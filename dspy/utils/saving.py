@@ -1,7 +1,8 @@
+import copyreg
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO
 
 import cloudpickle
 import orjson
@@ -10,6 +11,50 @@ if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
 logger = logging.getLogger(__name__)
+
+UNSAFE_PROGRAM_LM_CONFIG_KEYS = frozenset({"api_key", "api_base", "base_url", "model_list"})
+AUTH_HEADER_NAMES = frozenset({"authorization", "proxy-authorization", "api-key", "x-api-key", "cookie", "set-cookie"})
+
+
+def _sanitize_program_lm_config(config: dict) -> dict:
+    """Remove known unsafe values from DSPy-owned LM configuration."""
+    sanitized = {key: value for key, value in config.items() if key not in UNSAFE_PROGRAM_LM_CONFIG_KEYS}
+    for header_field in ("headers", "extra_headers"):
+        headers = sanitized.get(header_field)
+        if isinstance(headers, dict):
+            sanitized[header_field] = {
+                key: value for key, value in headers.items() if str(key).lower() not in AUTH_HEADER_NAMES
+            }
+    return sanitized
+
+
+def _reduce_program_lm(lm):
+    state = lm.__dict__.copy()
+    state["history"] = []
+    state["kwargs"] = _sanitize_program_lm_config(state.get("kwargs") or {})
+    return copyreg.__newobj__, (type(lm),), state
+
+
+def _reduce_program_predict(predict):
+    state = predict.__getstate__()
+    state["config"] = _sanitize_program_lm_config(state.get("config") or {})
+    return copyreg.__newobj__, (type(predict),), state
+
+
+def dump_program(program: "Module", file: BinaryIO) -> None:
+    """Serialize a program while sanitizing known DSPy-owned LM configuration."""
+    from dspy.clients.lm import LM
+    from dspy.predict.predict import Predict
+
+    class ProgramPickler(cloudpickle.CloudPickler):
+        dispatch_table = cloudpickle.CloudPickler.dispatch_table.new_child(
+            {
+                LM: _reduce_program_lm,
+                Predict: _reduce_program_predict,
+            }
+        )
+
+    ProgramPickler(file).dump(program)
 
 
 def get_dependency_versions():
