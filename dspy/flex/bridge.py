@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import logging
 from pathlib import Path
+
+from dspy import CodeInterpreterError
 
 logger = logging.getLogger(__name__)
 

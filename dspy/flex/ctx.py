@@ -139,8 +139,6 @@ def _parseable_type_str(annotation: Any, custom_types: dict[str, type] | None = 
         if not candidate:
             continue
         try:
-            # Instructions are irrelevant here; passing one skips generating a default for a
-            # signature that is thrown away. Only the parsed annotation is read back.
             probe = make_signature(f"x: {candidate} -> y", "probe", custom_types=custom_types)
         except Exception:
             continue
