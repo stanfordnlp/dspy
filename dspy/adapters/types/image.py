@@ -55,8 +55,9 @@ class Image(Type):
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
 
-        The constructor never touches the filesystem or network. Local files and remote
-        resources must be loaded explicitly with :meth:`from_path` and :meth:`from_url`.
+        Ordinary construction never touches the filesystem or network. Local files and remote
+        resources must be loaded explicitly with :meth:`from_path` and :meth:`from_url`. The
+        deprecated positional ``Image(url, download=True)`` compatibility call also downloads.
         """
 
         download_requested = download is not _UNSET

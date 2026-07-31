@@ -10,6 +10,7 @@
             - extract_custom_type_from_annotation
             - format
             - from_PIL
+            - from_file
             - from_path
             - from_url
             - is_streamable
