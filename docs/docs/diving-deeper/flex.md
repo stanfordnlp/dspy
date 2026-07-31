@@ -50,7 +50,7 @@ Everything the generated code returns crosses back as JSON, so a field declared 
 
 ### 11. Flex is experimental and the interface is in flux
 
-The class carries the `@experimental` decorator. The moving parts — the code proposer's prompt, the sandbox bridge, trace-aware scoring, the failure-handling contracts — are still settling. Treat the API as subject to change between releases and pin a version if you depend on it.
+The class carries the `@experimental` decorator. Treat the API and serialization format as subject to change between minor releases and pin a version if you depend on it.
 
 ## API walkthrough
 
