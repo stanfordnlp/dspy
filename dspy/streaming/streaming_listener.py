@@ -212,7 +212,7 @@ class StreamListener:
                 self.cache_hit = True
                 self.stream_start = True
                 self.stream_end = True
-                return
+                return self._cache_hit_response(message_after_start_identifier)
 
         if len(self.field_start_queue) == 0 and not self.stream_start and start_indicator in chunk_message:
             # We look for the pattern of start_identifier, i.e., "[[ ## {self.signature_field_name} ## ]]" for
@@ -348,6 +348,31 @@ class StreamListener:
             return frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
         except AttributeError:
             return None
+
+    def _cache_hit_response(self, message_after_start_identifier: str) -> StreamResponse | None:
+        """The field's value, when the whole field arrived inside one chunk.
+
+        For XMLAdapter the value's end is already known here, so it is handed over rather than
+        dropped: a caller listening to the field would otherwise receive nothing at all while
+        `parse` returns the value, which is the mismatch this module exists to avoid. Other
+        adapters keep the previous behaviour and rely on the final `Prediction`, since nothing
+        here knows where their values stop.
+        """
+        if not isinstance(settings.adapter, XMLAdapter):
+            return None
+
+        siblings = self._sibling_output_fields()
+        value_end = XMLAdapter._field_value_end(
+            self.signature_field_name, message_after_start_identifier, siblings or frozenset()
+        )
+        if value_end is None:
+            return None
+        return StreamResponse(
+            self.predict_name,
+            self.signature_field_name,
+            message_after_start_identifier[:value_end].strip(),
+            is_last_chunk=True,
+        )
 
     def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
         """Whether the field both starts and ends inside this one chunk.

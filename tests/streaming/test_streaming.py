@@ -951,6 +951,44 @@ async def test_stream_listener_allow_reuse():
 
 
 @pytest.mark.parametrize(
+    ("completion", "expected"),
+    [
+        ("<code>\n<code>x</code>\n</code>", "<code>x</code>"),
+        ("<code>\nhello\n</code>", "hello"),
+    ],
+)
+@pytest.mark.anyio
+async def test_xml_adapter_streams_a_field_that_arrives_in_one_chunk(completion, expected):
+    """A field delivered whole in a single chunk must still reach the listener.
+
+    Providers that batch tokens can send the entire field at once. That path used to end the
+    stream and emit nothing, so a listener saw no value at all while `parse` returned one.
+    """
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    async def xml_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion))]
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [
+                v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+            ]
+
+    assert "".join(streamed).strip() == expected
+    assert dspy.XMLAdapter().parse(CodeSignature, completion)["code"] == expected
+
+
+@pytest.mark.parametrize(
     ("chunks", "expected"),
     [
         # The chunk that completes the opening tag also carries the nested value's inner closing
