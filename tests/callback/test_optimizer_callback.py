@@ -231,3 +231,47 @@ def test_bettertogether_nests_child_optimizer_callback():
     assert ends[0]["parent_call_id"] == starts[0]["call_id"]
     assert ends[1]["call_id"] == starts[0]["call_id"]
     assert ends[1]["parent_call_id"] is None
+
+
+def test_bettertogether_reports_child_failure_but_completes_outer_run():
+    expected_error = RuntimeError("child compile failed")
+
+    class Student(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = dspy.Predict("question -> answer")
+
+        def forward(self, question):
+            return self.predictor(question=question)
+
+    class FailingChildOptimizer(Teleprompter):
+        def compile(self, student, *, trainset):
+            raise expected_error
+
+    callback = RecordingCallback()
+    child = FailingChildOptimizer()
+    optimizer = BetterTogether(metric=lambda example, prediction, trace=None: 1.0, child=child)
+    student = Student()
+    student.set_lm(DummyLM([{"answer": "answer"}]))
+    trainset = [dspy.Example(question="question", answer="answer").with_inputs("question")]
+
+    with (
+        patch("dspy.teleprompt.bettertogether.eval_candidate_program", return_value=Mock(score=1.0)),
+        patch("dspy.teleprompt.bettertogether.launch_lms"),
+        patch("dspy.teleprompt.bettertogether.kill_lms"),
+        dspy.context(callbacks=[callback]),
+    ):
+        compiled = optimizer.compile(student, trainset=trainset, valset=trainset, strategy="child")
+
+    starts = events_for(callback, "optimizer_start")
+    ends = events_for(callback, "optimizer_end")
+    assert len(starts) == len(ends) == 2
+    assert starts[1]["instance"] is child
+    assert starts[1]["parent_call_id"] == starts[0]["call_id"]
+    assert ends[0]["call_id"] == starts[1]["call_id"]
+    assert ends[0]["outputs"] is None
+    assert ends[0]["exception"] is expected_error
+    assert ends[1]["call_id"] == starts[0]["call_id"]
+    assert ends[1]["outputs"] is compiled
+    assert ends[1]["exception"] is None
+    assert compiled.flag_compilation_error_occurred is True
