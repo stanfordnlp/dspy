@@ -1,3 +1,30 @@
+"""Host side of the dspy.Flex sandbox bridge.
+
+A ``Flex`` never executes its optimizer-authored ``module_src`` in the host process. Instead,
+every ``forward``:
+
+1. creates a fresh interpreter from the Flex's ``interpreter_factory`` (``BridgeRuntime.forward``);
+2. injects the sandbox-side shim (``_sandbox_shim.py``), which fakes a tiny ``dspy`` module whose
+   predictor constructors and calls are proxies;
+3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
+
+Only three things cross the sandbox boundary, all as JSON over the interpreter's tool-call
+protocol (``CodeInterpreter.tools``):
+
+- ``__dspy_construct__``: the shim asks the host to build a real predictor (``_Invocation.construct``).
+  The host constructs it from the serialized signature/kwargs and returns a string handle.
+- ``__dspy_call__``: the shim runs a predictor by handle (``_Invocation.call``); the host makes the
+  real LM call and returns the prediction's fields as JSON.
+- user tools passed to ``dspy.Flex(tools=...)``, registered by name so sandbox code can call them
+  directly; the callables themselves stay on the host.
+
+All per-forward state, including the constructed predictors, the predictor-call budget, custom-type
+originals, and the last LM infrastructure error, lives in a ``_Invocation`` created for that
+forward, never on the shared ``Flex``, so concurrent forwards (e.g. threaded evaluation) are
+isolated. The final ``dspy.Prediction`` is parsed against the Flex signature's declared output
+types on the way out (``BridgeRuntime._to_prediction``).
+"""
+
 from __future__ import annotations
 
 import ast
@@ -175,19 +202,19 @@ class _Invocation:
 
 
 class BridgeRuntime:
-    """Owns the host-side bridge callbacks and per-forward interpreter runs for one ``Flex``.
+    """Host side of the dspy.Flex bridge: runs the bound ``module_src`` for one ``Flex``.
 
-    Every ``forward`` creates a fresh interpreter from the factory, executes the shim and the
-    bound source, runs the instance, and shuts the interpreter down. Predictors are built on the
-    host but live in that forward's ``_Invocation`` — nothing is set on the ``Flex`` itself — so
-    nothing outlives the call and parallel forwards are isolated.
-    ``_max_predictor_calls`` caps bridged LM calls per ``forward``.
+    Each ``forward`` creates a fresh interpreter from the factory, executes the shim and the
+    bound source, runs the module instance, and shuts the interpreter down. Predictors are built
+    host-side but held by that forward's ``_Invocation`` — never set on the ``Flex`` — so nothing
+    outlives the call and parallel forwards stay isolated. ``_max_predictor_calls`` caps bridged
+    predictor calls per forward.
 
-    User ``tools`` are registered with the interpreter (callable by name from sandbox) and
-    resolved by name when passed to a bridged sub-predictor; tools authored inside the generated module
-    live in the sandbox. A code-executing sub-predictor (RLM/CodeAct/ProgramOfThought)
-    gets a fresh interpreter from the same factory, so its inner code runs in the backend chosen for
-    Flex. See ``_sub_interpreter_factory``.
+    User ``tools`` are registered with the interpreter, callable by name from the sandbox, and
+    resolved by name when handed to a bridged sub-predictor; functions defined inside the
+    generated module stay in the sandbox. A code-executing sub-predictor (RLM, CodeAct,
+    ProgramOfThought) receives the same interpreter factory, so its inner code runs on the
+    backend chosen for the Flex.
     """
 
     def __init__(self, flex: Any, factory: Callable[[], Any], max_predictor_calls: int | None = 100) -> None:
@@ -241,6 +268,9 @@ class BridgeRuntime:
 
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
         signature = self._flex.signature
+        # Every declared output field is required, matching dspy's adapters: a Predict whose LM
+        # response omits a field raises AdapterParseError even for Optional annotations (an
+        # Optional field must still be present, as an explicit null). Same contract here.
         missing = [name for name in signature.output_fields if name not in fields]
         if missing:
             raise CodeInterpreterError(
