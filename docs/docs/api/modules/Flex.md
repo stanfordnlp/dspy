@@ -28,7 +28,7 @@ result = solve(invoice="2 widgets @ $3.50, shipping $1.00")
 print(result.total_cents)
 ```
 
-Out of the box, `solve` is just a `dspy.Predict` over the signature, wrapped in a module. The point of `Flex` is what happens when you optimize it (see [Optimizing with GEPA](#optimizing-with-gepa)): GEPA can replace that baseline with, say, a predictor that only extracts quantities and unit prices, and a line of Python that multiplies and sums them.
+Out of the box, `solve` is just a `dspy.Predict` over the signature, wrapped in a module (with `tools`, it starts as a `dspy.RLM` instead — see [Tools](#tools)). The point of `Flex` is what happens when you optimize it (see [Optimizing with GEPA](#optimizing-with-gepa)): GEPA can replace that baseline with, say, a predictor that only extracts quantities and unit prices, and a line of Python that multiplies and sums them.
 
 The generated code always runs in a sandbox (`interpreter_factory` defaults to `dspy.PythonInterpreter`), so the example above needs [Deno](https://deno.land/) installed — see [Sandboxed Execution](#sandboxed-execution).
 
