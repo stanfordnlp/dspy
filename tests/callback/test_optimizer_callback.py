@@ -1,9 +1,13 @@
+from unittest.mock import Mock, patch
+
 import pytest
 
 import dspy
+from dspy.teleprompt.bettertogether import BetterTogether
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.vanilla import LabeledFewShot
 from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback
+from dspy.utils.dummies import DummyLM
 
 
 class RecordingCallback(BaseCallback):
@@ -186,3 +190,44 @@ def test_existing_optimizer_compile_is_instrumented():
     assert start["inputs"] == {"student": student, "trainset": [], "sample": True}
     assert end["outputs"] is compiled
     assert end["exception"] is None
+
+
+def test_bettertogether_nests_child_optimizer_callback():
+    class Student(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = dspy.Predict("question -> answer")
+
+        def forward(self, question):
+            return self.predictor(question=question)
+
+    class ChildOptimizer(Teleprompter):
+        def compile(self, student, *, trainset):
+            return student
+
+    callback = RecordingCallback()
+    child = ChildOptimizer()
+    optimizer = BetterTogether(metric=lambda example, prediction, trace=None: 1.0, child=child)
+    student = Student()
+    student.set_lm(DummyLM([{"answer": "answer"}]))
+    trainset = [dspy.Example(question="question", answer="answer").with_inputs("question")]
+
+    with (
+        patch("dspy.teleprompt.bettertogether.eval_candidate_program", return_value=Mock(score=1.0)),
+        patch("dspy.teleprompt.bettertogether.launch_lms"),
+        patch("dspy.teleprompt.bettertogether.kill_lms"),
+        dspy.context(callbacks=[callback]),
+    ):
+        optimizer.compile(student, trainset=trainset, valset=trainset, strategy="child")
+
+    starts = events_for(callback, "optimizer_start")
+    ends = events_for(callback, "optimizer_end")
+    assert len(starts) == len(ends) == 2
+    assert starts[0]["instance"] is optimizer
+    assert starts[0]["parent_call_id"] is None
+    assert starts[1]["instance"] is child
+    assert starts[1]["parent_call_id"] == starts[0]["call_id"]
+    assert ends[0]["call_id"] == starts[1]["call_id"]
+    assert ends[0]["parent_call_id"] == starts[0]["call_id"]
+    assert ends[1]["call_id"] == starts[0]["call_id"]
+    assert ends[1]["parent_call_id"] is None
