@@ -950,6 +950,52 @@ async def test_stream_listener_allow_reuse():
     assert concat_message == "To get to the other side!To get to the other side!"
 
 
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        # The chunk that completes the opening tag also carries the nested value's inner closing
+        # tag. Matching the closing tag directly would read that inner tag as the field's end.
+        (["<answer><answer>inner</answer>", "</answer>", "<other>sib</other>"], "<answer>inner</answer>"),
+        # The sibling's opening tag is split across chunks, and the field's own opening tag is
+        # still part-way through arriving when the inner tags land.
+        (["<answer>", "\n<answer>inner</answer>\n", "<ot", "her>sib</other>"], "<answer>inner"),
+    ],
+)
+@pytest.mark.anyio
+async def test_xml_adapter_nested_value_survives_awkward_chunk_boundaries(chunks, expected):
+    """A nested value must still reach the consumer when tags straddle chunk boundaries.
+
+    Both layouts used to emit nothing at all: the cache-hit shortcut saw a start identifier
+    followed by some `</field>` and ended the stream, either on the value's inner closing tag or
+    on an opening tag that was really part of the value.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    async def xml_stream(*args, **kwargs):
+        for token in chunks:
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [
+                v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+            ]
+
+    assert "".join(streamed).strip() == expected
+    # And it still matches what parse returns for the same completion.
+    assert dspy.XMLAdapter().parse(TwoFields, "".join(chunks))["answer"] == expected
+
+
 @pytest.mark.anyio
 async def test_xml_adapter_streams_nested_value_whole_and_matches_parse():
     """A nested same-named value must reach the consumer exactly as `parse` returns it.

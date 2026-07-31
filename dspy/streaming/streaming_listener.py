@@ -188,14 +188,24 @@ class StreamListener:
         except Exception:
             return
 
-        if chunk_message and start_identifier in chunk_message and not isinstance(settings.adapter, JSONAdapter):
+        if (
+            chunk_message
+            and not self.stream_start
+            and not self.field_start_queue
+            and start_identifier in chunk_message
+            and not isinstance(settings.adapter, JSONAdapter)
+        ):
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
             # tokens, so it's possible that response only has one chunk, we also fall back to this logic.
+            # This only makes sense before the field has started, and before a start identifier is
+            # part-way through arriving: once either is true, a later chunk carrying the identifier
+            # again is content -- an XML value nesting its own tag, say -- not a second start, and
+            # treating it as one ends the stream mid-value.
             message_after_start_identifier = chunk_message[
                 chunk_message.find(start_identifier) + len(start_identifier) :
             ]
-            if re.search(end_identifier, message_after_start_identifier):
+            if self._chunk_completes_field(message_after_start_identifier, end_identifier):
                 self.cache_hit = True
                 self.stream_start = True
                 self.stream_end = True
@@ -322,6 +332,25 @@ class StreamListener:
                 token,
                 is_last_chunk=self.stream_end,
             )
+
+    def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
+        """Whether the field both starts and ends inside this one chunk.
+
+        For XMLAdapter the first `</field_name>` is not necessarily the end: a value that nests its
+        own tag closes on the balancing one, so the adapter is asked where the value stops rather
+        than the identifier being matched directly. Getting this wrong ends the stream on the inner
+        tag and the field is never emitted at all.
+        """
+        if isinstance(settings.adapter, XMLAdapter):
+            try:
+                siblings = frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
+            except AttributeError:
+                siblings = frozenset()
+            return (
+                XMLAdapter._field_value_end(self.signature_field_name, message_after_start_identifier, siblings)
+                is not None
+            )
+        return bool(re.search(end_identifier, message_after_start_identifier))
 
     def _xml_nested_stream_chunk(self, chunk_message: str) -> tuple[bool, StreamResponse | None]:
         """Buffer a nested same-named XML value and emit it once, whole.
