@@ -18,7 +18,9 @@ import textwrap
 import pytest
 
 import dspy
-from dspy.predict.flex.flex import Flex
+from dspy.predict.flex import Flex
+from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
@@ -145,8 +147,8 @@ def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
     """
     import re
 
-    from dspy.flex.bridge import SHIM_SETUP
-    from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
+    from dspy.predict.flex.bridge import SHIM_SETUP
+    from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
     from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
 
     # The shim only registers itself as the importable `dspy` inside the sandbox (where the host

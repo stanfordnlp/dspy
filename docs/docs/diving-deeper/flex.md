@@ -108,7 +108,7 @@ The optimizer-authored code does not run against the real `dspy` package. Inside
 - Class-based signatures, typed field declarations, and `import dspy` at module scope (`dspy` is already in scope; the source must be one class definition and nothing else).
 - Host objects generally: values cross as JSON, so a tool you define inside `forward` cannot be passed to a bridged sub-predictor, and a predictor field that isn't JSON-serializable raises rather than silently degrading.
 
-Anything outside this surface fails when the candidate binds, which GEPA scores as a failure — so a missing name costs a search step rather than crashing the run, but it also isn't diagnosed for you. The shim lives in `dspy/flex/_sandbox_shim.py` and the proposer-facing version of this list is `dspy/flex/primitives_doc.py`; the two are kept in sync by a test.
+Anything outside this surface fails when the candidate binds, which GEPA scores as a failure — so a missing name costs a search step rather than crashing the run, but it also isn't diagnosed for you. The shim lives in `dspy/predict/flex/_sandbox_shim.py` and the proposer-facing version of this list is `dspy/predict/flex/primitives_doc.py`; the two are kept in sync by a test.
 
 ### Saving and loading
 

@@ -24,7 +24,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.predict.flex.flex import Flex
+from dspy.predict.flex import Flex, bridge
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMError, LMRateLimitError

@@ -28,11 +28,22 @@ types on the way out (``BridgeRuntime._to_prediction``).
 from __future__ import annotations
 
 import ast
+import functools
 import inspect
+import json
 import logging
 from pathlib import Path
+from typing import Any, Callable
 
+from pydantic_core import PydanticSerializationError, to_jsonable_python
+
+import dspy
 from dspy import CodeInterpreterError
+from dspy.adapters.types.base_type import Type as _CustomType
+from dspy.adapters.utils import parse_value
+from dspy.primitives.code_interpreter import _create_interpreter
+from dspy.signatures.signature import make_signature
+from dspy.utils.exceptions import LMError
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +94,6 @@ def _accepts_interpreter_factory(cls: type) -> bool:
 
 def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = None) -> Any:
     """Turn a shim signature payload back into something a host predictor accepts."""
-    from dspy.signatures.signature import make_signature
-
     if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
         # marker always carries a string signature; make_signature applies instructions if given
         return make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)

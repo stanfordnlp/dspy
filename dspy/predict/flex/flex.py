@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from dspy.clients.base_lm import BaseLM
+from dspy.dsp.utils.settings import settings
+from dspy.predict.flex.bridge import BridgeRuntime
+from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
-from dspy.primitives.code_interpreter import CodeInterpreter
+from dspy.predict.predict import _sanitize_lm_state
+from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.annotation import experimental
 
 

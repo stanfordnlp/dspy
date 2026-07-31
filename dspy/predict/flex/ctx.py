@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from dspy.adapters.utils import get_annotation_name
+from dspy.signatures.signature import make_signature
+
 
 @dataclass
 class FlexContext:
@@ -125,9 +128,6 @@ def _parseable_type_str(annotation: Any, custom_types: dict[str, type] | None = 
     """A signature-string type token DSPy's parser can read back, else None."""
     if annotation in _SIMPLE_TYPES:
         return annotation.__name__
-
-    from dspy.adapters.utils import get_annotation_name
-    from dspy.signatures.signature import make_signature
 
     name = getattr(annotation, "__name__", None)
     candidates = [

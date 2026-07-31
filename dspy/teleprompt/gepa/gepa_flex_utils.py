@@ -7,9 +7,9 @@ from typing import Any
 from gepa import EvaluationBatch
 
 import dspy
-from dspy.flex import Flex
-from dspy.flex.ctx import _strip_code_fences
-from dspy.flex.primitives_doc import PRIMITIVES_CATALOG
+from dspy.predict.flex import Flex
+from dspy.predict.flex.ctx import _strip_code_fences
+from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
 from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
