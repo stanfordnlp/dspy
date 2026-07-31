@@ -333,6 +333,19 @@ class StreamListener:
                 is_last_chunk=self.stream_end,
             )
 
+    def _sibling_output_fields(self) -> frozenset[str] | None:
+        """The signature's other output field names, or None when the signature is unreachable.
+
+        Both XMLAdapter paths need this set, and neither may substitute an empty one for it: the
+        set is what stops a widened span from swallowing a later field, so guessing it empty reads
+        `<answer>x</answer><judgement>ok</judgement></answer>` as one value holding `judgement`.
+        Returning None instead makes the missing signature a case each caller answers out loud.
+        """
+        try:
+            return frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
+        except AttributeError:
+            return None
+
     def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
         """Whether the field both starts and ends inside this one chunk.
 
@@ -340,16 +353,18 @@ class StreamListener:
         own tag closes on the balancing one, so the adapter is asked where the value stops rather
         than the identifier being matched directly. Getting this wrong ends the stream on the inner
         tag and the field is never emitted at all.
+
+        Without the signature that question cannot be asked safely, so the first closing tag is
+        taken as the end -- the same reading `_xml_nested_stream_chunk` falls back to, which is what
+        keeps one signature-less listener from bounding the value two different ways.
         """
         if isinstance(settings.adapter, XMLAdapter):
-            try:
-                siblings = frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
-            except AttributeError:
-                siblings = frozenset()
-            return (
-                XMLAdapter._field_value_end(self.signature_field_name, message_after_start_identifier, siblings)
-                is not None
-            )
+            siblings = self._sibling_output_fields()
+            if siblings is not None:
+                return (
+                    XMLAdapter._field_value_end(self.signature_field_name, message_after_start_identifier, siblings)
+                    is not None
+                )
         return bool(re.search(end_identifier, message_after_start_identifier))
 
     def _xml_nested_stream_chunk(self, chunk_message: str) -> tuple[bool, StreamResponse | None]:
@@ -385,9 +400,8 @@ class StreamListener:
                 state["unscanned"] = ""
                 return False, None
 
-        try:
-            siblings = frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
-        except AttributeError:
+        siblings = self._sibling_output_fields()
+        if siblings is None:
             # Without the signature the sibling guard is gone, so a widened span could reach another
             # field. Fall back to the token-by-token path rather than stream a value we cannot bound.
             state["is_nested"] = False
