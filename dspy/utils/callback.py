@@ -9,6 +9,13 @@ from dspy.utils.callback_context import ACTIVE_CALL_ID
 
 logger = logging.getLogger(__name__)
 
+_INTERPRETER_OPERATIONS = {
+    "execute": "execute",
+    "invoke_tool": "tool_call",
+    "_spawn_process": "startup",
+    "shutdown": "shutdown",
+}
+
 
 class BaseCallback:
     """A base class for defining callback handlers for DSPy components.
@@ -252,6 +259,30 @@ class BaseCallback:
         """
         pass
 
+    def on_interpreter_execute_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        pass
+
+    def on_interpreter_execute_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        pass
+
+    def on_interpreter_tool_call_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        pass
+
+    def on_interpreter_tool_call_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        pass
+
+    def on_interpreter_startup_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        pass
+
+    def on_interpreter_startup_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        pass
+
+    def on_interpreter_shutdown_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
+        pass
+
+    def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+        pass
+
 
 def with_callbacks(fn):
     """Decorator to add callback functionality to instance methods."""
@@ -352,6 +383,8 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
+    elif isinstance(instance, dspy.CodeInterpreter):
+        return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_start")
 
     if isinstance(instance, dspy.Adapter):
         if fn.__name__ == "format":
@@ -374,6 +407,8 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
+    elif isinstance(instance, dspy.CodeInterpreter):
+        return getattr(callback, f"on_interpreter_{_INTERPRETER_OPERATIONS[fn.__name__]}_end")
 
     if isinstance(instance, (dspy.Adapter)):
         if fn.__name__ == "format":
