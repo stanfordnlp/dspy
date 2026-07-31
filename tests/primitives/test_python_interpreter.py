@@ -3,6 +3,8 @@ import dataclasses
 import json
 import os
 import random
+import threading
+from collections import namedtuple
 from datetime import datetime
 from enum import Enum
 from typing import NamedTuple
@@ -11,7 +13,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import PythonInterpreter, _make_jsonable
+from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD, PythonInterpreter, _make_jsonable
 
 
 class _Hit(BaseModel):
@@ -839,8 +841,6 @@ class _TypedPoint(NamedTuple):
     label: str
 
 
-from collections import namedtuple
-
 _Point = namedtuple("_Point", ["x", "y"])
 
 
@@ -868,7 +868,6 @@ def test_tool_returns_collections_namedtuple(configure_pooled_interpreter):
 
 def test_tool_returns_dataclass_with_unserializable_field_falls_back(configure_pooled_interpreter):
     """Dataclass with non-serializable fields should fall back to str() gracefully."""
-    import threading
 
     @dataclasses.dataclass
     class _Holder:
@@ -990,8 +989,6 @@ def test_extract_parameters_complex_types():
 
 def test_large_variable_injection(pooled_interpreter):
     """Test that large strings are injected via filesystem to avoid Pyodide's FFI size limit."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Create a string just over the threshold
     large_data = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
@@ -1002,8 +999,6 @@ def test_large_variable_injection(pooled_interpreter):
 
 def test_large_variable_content_integrity(pooled_interpreter):
     """Test that large variable content is preserved exactly through filesystem injection."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Create a string with recognizable pattern just over threshold
     pattern = "ABCDEFGHIJ" * 100
     large_data = pattern * ((LARGE_VAR_THRESHOLD // len(pattern)) + 1)
@@ -1022,8 +1017,6 @@ last_100 = data[-100:]
 
 def test_mixed_small_and_large_variables(pooled_interpreter):
     """Test that small and large variables can be used together."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     small_var = "hello"
     large_var = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
@@ -1036,8 +1029,6 @@ def test_mixed_small_and_large_variables(pooled_interpreter):
 
 def test_multiple_large_variables(pooled_interpreter):
     """Test that multiple large variables can be injected."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     large_a = "a" * (LARGE_VAR_THRESHOLD + 100)
     large_b = "b" * (LARGE_VAR_THRESHOLD + 200)
 
@@ -1049,8 +1040,6 @@ def test_multiple_large_variables(pooled_interpreter):
 
 def test_large_list_variable(pooled_interpreter):
     """Test that large list variables are injected via filesystem and JSON parsed."""
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Each element "x" serializes to ~3 chars, so divide threshold by 3
     num_elements = LARGE_VAR_THRESHOLD // 3
     large_list = ["x"] * num_elements
@@ -1090,8 +1079,6 @@ def test_large_variable_threshold_boundary():
     The threshold applies to the serialized size, not the original value.
     For strings, serialization adds 2 bytes (quotes).
     """
-    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
-
     # Serialized size at threshold - should use embedded (not filesystem)
     # Account for 2 bytes of quotes added by repr()
     at_threshold = "x" * (LARGE_VAR_THRESHOLD - 2)

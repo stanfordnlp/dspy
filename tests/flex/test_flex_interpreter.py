@@ -18,6 +18,7 @@ import enum
 import inspect
 import json
 import shutil
+import sys
 import textwrap
 
 import pydantic
@@ -774,9 +775,7 @@ def test_nested_rlm_tool_provenance() -> None:
     (``spawn_inner``) that constructs and runs it on the host, passing ``probe`` further down; only
     that sub-agent's ``out`` string crosses back, so its trajectory never touches the Flex bridge.
     """
-    import sys as _sys
-
-    host_platform = _sys.platform
+    host_platform = sys.platform
     assert host_platform != "emscripten"  # sanity: the test itself is the real host, not the sandbox
     record: dict[str, dict[str, str]] = {}
     host_seen: dict[str, str] = {}

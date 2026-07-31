@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import enum
 import json
+import logging
 import shutil
 import textwrap
 from typing import Callable
@@ -286,8 +287,6 @@ def test_custom_type_inputs_are_restored_across_the_bridge(caplog) -> None:
     bridge hands the original object back to the host predictor, so Predict sees a real Image —
     no spurious "Type mismatch" warning, and adapters get the object rather than a tagged string.
     """
-    import logging
-
     class Caption(dspy.Signature):
         image: dspy.Image = dspy.InputField()
         a: str = dspy.OutputField()

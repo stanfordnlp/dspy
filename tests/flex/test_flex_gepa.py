@@ -20,6 +20,7 @@ import pytest
 
 import dspy
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
+from dspy.teleprompt.gepa.gepa import DspyGEPAResult
 from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
@@ -454,7 +455,6 @@ def test_result_to_dict_keeps_flex_code_components() -> None:
     """to_dict() must serialize the same components GEPA optimized: the full module_src per Flex
     under its parameter path, and no entries for the Flex's internal predictors (whose
     instructions are written by that code, not optimized on their own)."""
-    from dspy.teleprompt.gepa.gepa import DspyGEPAResult
 
     class Prog(dspy.Module):
         def __init__(self):

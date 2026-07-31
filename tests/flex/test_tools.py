@@ -12,6 +12,7 @@ generated code are marked ``deno_required``.
 
 from __future__ import annotations
 
+import re
 import shutil
 import textwrap
 
@@ -19,7 +20,11 @@ import pytest
 
 import dspy
 from dspy.predict.flex import Flex
+from dspy.predict.flex.bridge import SHIM_SETUP
+from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter
 
@@ -145,12 +150,6 @@ def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
     advertised but not defined becomes an AttributeError at bind time, and GEPA scores the
     candidate as a failure with nothing pointing at the real cause.
     """
-    import re
-
-    from dspy.predict.flex.bridge import SHIM_SETUP
-    from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
-    from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
-
     # The shim only registers itself as the importable `dspy` inside the sandbox (where the host
     # bridge tools are in globals), so running it here just builds the module object to inspect.
     namespace: dict = {}
@@ -166,7 +165,6 @@ def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
 
 def test_gepa_proposer_is_told_about_tools() -> None:
     """GEPA can optimize tool usage because the proposer is shown the available tools."""
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
     def _metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
         return 1.0
