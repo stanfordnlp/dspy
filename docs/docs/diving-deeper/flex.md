@@ -12,7 +12,7 @@ An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s
 
 ### 2. It drops into any signature and starts from a simple baseline
 
-You construct `Flex` from the same signature you'd give `Predict`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is deliberately the simplest thing that works — one call, no decomposition — because it's meant to be the starting point of a search, not the answer. This is what lets you adopt `Flex` by changing one line and revert just as cheaply.
+You construct `Flex` from any `dspy.Signature`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is the simplest thing that works as the starting point of a search.
 
 ### 3. GEPA discovers `Flex` by type and optimizes code instead of text
 
