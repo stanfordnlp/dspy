@@ -172,13 +172,13 @@ def get_dspy_source_code(module):
             except TypeError:
                 continue
             if isinstance(item, Parameter):
-                if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:
+                if hasattr(item, "signature") and item.signature is not None and id(item.signature) not in completed_set:
                     try:
                         header.append(inspect.getsource(item.signature))
                         print(inspect.getsource(item.signature))
                     except (TypeError, OSError):
                         header.append(str(item.signature))
-                    completed_set.add(item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig")
+                    completed_set.add(id(item.signature))
             if isinstance(item, dspy.Module):
                 code = get_dspy_source_code(item).strip()
                 if code not in completed_set:
