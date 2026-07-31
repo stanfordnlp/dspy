@@ -26,10 +26,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.flex import Flex, bridge
-from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.teleprompt.bootstrap_trace import FailedPrediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+from dspy.predict.flex.flex import Flex
 from dspy.utils.dummies import DummyLM
 from tests.flex import _offstack_types  # imported as a module: `Contact` is never a name here
 from tests.mock_interpreter import MockInterpreter

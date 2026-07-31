@@ -18,7 +18,7 @@ import textwrap
 import pytest
 
 import dspy
-from dspy.flex import Flex
+from dspy.predict.flex.flex import Flex
 from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter
 

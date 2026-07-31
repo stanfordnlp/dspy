@@ -18,9 +18,7 @@ import textwrap
 import pytest
 
 import dspy
-from dspy.flex import Flex
-from dspy.primitives.code_interpreter import CodeInterpreterError
-from dspy.utils.dummies import DummyLM
+from dspy.predict.flex.flex import Flex
 from tests.mock_interpreter import MockInterpreter
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")

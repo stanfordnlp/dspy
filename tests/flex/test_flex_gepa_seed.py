@@ -11,7 +11,7 @@ not executed.
 from __future__ import annotations
 
 import dspy
-from dspy.flex import Flex
+from dspy.predict.flex.flex import Flex
 from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
 from tests.mock_interpreter import MockInterpreter
 
