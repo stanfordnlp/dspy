@@ -1215,18 +1215,15 @@ def test_lm_replaces_system_with_developer_role():
 
 
 @pytest.mark.parametrize(
-    ("provider_fields", "expected_provider_fields"),
+    "provider_fields",
     [
-        ({}, {}),
-        ({"caller": None, "namespace": None}, {}),
-        (
-            {"caller": {"type": "direct"}, "namespace": "collaboration"},
-            {"caller": {"type": "direct"}, "namespace": "collaboration"},
-        ),
+        {},
+        {"caller": None, "namespace": None},
+        {"caller": {"type": "direct"}, "namespace": "collaboration"},
     ],
     ids=["legacy", "empty-provider-fields", "populated-provider-fields"],
 )
-def test_responses_api_tool_calls(litellm_test_server, provider_fields, expected_provider_fields):
+def test_responses_api_tool_calls(litellm_test_server, provider_fields):
     api_base, _ = litellm_test_server
     base_tool_call = {
         "type": "function_call",
@@ -1234,9 +1231,23 @@ def test_responses_api_tool_calls(litellm_test_server, provider_fields, expected
         "arguments": json.dumps({"city": "Paris"}),
         "call_id": "call_1",
         "status": "completed",
-        "id": "call_1",
+        "id": "fc_1",
     }
-    expected_response = [{"tool_calls": [{**base_tool_call, **expected_provider_fields}]}]
+    # Legacy outputs use the chat-unified tool-call shape regardless of which
+    # provider fields the Responses item carries; the full provider item stays
+    # available on the typed path via LMToolCallPart.provider_data.
+    expected_response = [
+        {
+            "text": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
+                    "id": "call_1",
+                }
+            ],
+        }
+    ]
 
     api_response = make_response(
         output_blocks=[{**base_tool_call, **provider_fields}],
@@ -1295,10 +1306,37 @@ def test_responses_api_cache_hit_preserves_outputs_and_skips_usage(tmp_path):
         dspy.cache = original_cache
 
 
+def test_responses_api_joins_multiple_text_outputs():
+    """Multiple message items must join into one text string, never leak a list."""
+    api_response = make_response(
+        output_blocks=[
+            ResponseOutputMessage(
+                id="msg_1",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "part one. ", "annotations": []}],
+            ),
+            ResponseOutputMessage(
+                id="msg_2",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "part two.", "annotations": []}],
+            ),
+        ],
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response):
+        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        outputs = lm("multi part query")
+
+    assert outputs == [{"text": "part one. part two."}]
+
+
 def test_reasoning_effort_responses_api():
     """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
-    with mock.patch("litellm.responses") as mock_responses:
-        # OpenAI model with Responses API - should normalize
+    with mock.patch("litellm.responses", return_value=make_response([])) as mock_responses:
         lm = dspy.LM(
             model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
@@ -2078,3 +2116,44 @@ def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
     sent = responses.call_args.kwargs
     assert sent["temperature"] == 0.7
     assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
+def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls():
+    from dspy.clients.openai_format import responses_to_lm_response
+    from dspy.core.types import LMRequest, LMThinkingPart
+
+    response = make_response(
+        [
+            ResponseOutputMessage(
+                id="msg_1",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "I should use weather.", "annotations": []}],
+            ),
+            {
+                "type": "function_call",
+                "name": "get_weather",
+                "arguments": '{"city": "Paris",}',
+                "call_id": "call_1",
+                "id": "fc_1",
+                "status": "completed",
+            },
+            ResponseReasoningItem(
+                id="reasoning_1",
+                type="reasoning",
+                summary=[Summary(type="summary_text", text="Need live weather.")],
+            ),
+        ]
+    )
+
+    lm_response = responses_to_lm_response(response, LMRequest(model="openai/dspy-test-model", messages=[]))
+    output = lm_response.outputs[0]
+
+    assert output.text == "I should use weather."
+    assert output.reasoning_content == "Need live weather."
+    assert isinstance(output.parts[2], LMThinkingPart)
+    assert output.tool_calls[0].id == "call_1"
+    assert output.tool_calls[0].name == "get_weather"
+    assert output.tool_calls[0].args == {}
+    assert output.tool_calls[0].provider_data["raw_arguments"] == '{"city": "Paris",}'
+    assert "arguments_parse_error" in output.tool_calls[0].provider_data
+    assert lm_response.usage.total_tokens == 2
