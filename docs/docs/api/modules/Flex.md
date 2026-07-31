@@ -2,7 +2,7 @@
 
 `Flex` is a DSPy module whose implementation is *optimizable code* rather than a fixed prompt. You construct it from a signature, and it defaults to a thin baseline over that signature. What makes it different is what an optimizer is allowed to do with it: instead of only rewriting instructions, `dspy.GEPA` can rewrite the module's entire source — splitting the task into multiple predictors, folding deterministic steps into plain Python, and authoring its own helper tools. Being a `Flex` — recognized by type — is what tells GEPA the module's code is an optimizable parameter.
 
-Reach for `Flex` when you don't yet know the right *shape* of a solution — how many LM calls it needs, where code should replace a call, how the work should decompose — and you'd rather have the optimizer discover that structure than hand-write it.
+Reach for `Flex` when you are indifferent to the shape of the solution. You'd rather have the optimizer learn the structure of the function than hand-write it.
 
 ## When to Use Flex
 

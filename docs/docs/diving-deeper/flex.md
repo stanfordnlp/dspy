@@ -12,7 +12,7 @@ An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s
 
 ### 2. It drops into any signature and starts from a simple baseline
 
-You construct `Flex` from the same signature you'd give `Predict`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is deliberately the simplest thing that works — one call, no decomposition — because it's meant to be the starting point of a search, not the answer. This is what lets you adopt `Flex` by changing one line and revert just as cheaply.
+You construct `Flex` from any `dspy.Signature`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is the simplest thing that works as the starting point of a search.
 
 ### 3. GEPA discovers `Flex` by type and optimizes code instead of text
 
@@ -50,7 +50,7 @@ Everything the generated code returns crosses back as JSON, so a field declared 
 
 ### 11. Flex is experimental and the interface is in flux
 
-The class carries the `@experimental` decorator. The moving parts — the code proposer's prompt, the sandbox bridge, trace-aware scoring, the failure-handling contracts — are still settling. Treat the API as subject to change between releases and pin a version if you depend on it.
+The class carries the `@experimental` decorator. Treat the API and serialization format as subject to change between minor releases and pin a version if you depend on it.
 
 ## API walkthrough
 
