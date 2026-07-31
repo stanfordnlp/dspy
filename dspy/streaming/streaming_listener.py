@@ -327,7 +327,7 @@ class StreamListener:
         accumulated = state["field_accumulated_messages"]
 
         if state["is_nested"] is None:
-            state["is_nested"] = XMLAdapter.value_opens_nested(self.signature_field_name, accumulated)
+            state["is_nested"] = XMLAdapter._value_opens_nested(self.signature_field_name, accumulated)
             if state["is_nested"] is None:
                 # Still only whitespace or a partial opening tag: withhold rather than guess.
                 return True, None
@@ -357,7 +357,7 @@ class StreamListener:
         if all(accumulated.find(marker, searched_from) == -1 for marker in markers):
             return True, None
 
-        value_end = XMLAdapter.field_value_end(self.signature_field_name, accumulated, siblings)
+        value_end = XMLAdapter._field_value_end(self.signature_field_name, accumulated, siblings)
         if value_end is None:
             return True, None
 

@@ -277,7 +277,7 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
-    def field_value_end(field_name: str, content: str, sibling_names: frozenset[str] = frozenset()) -> int | None:
+    def _field_value_end(field_name: str, content: str, sibling_names: frozenset[str] = frozenset()) -> int | None:
         """Index in `content` where `<field_name>`'s value ends, or None if it has not ended yet.
 
         `content` is everything after the field's opening tag; `sibling_names` are the signature's
@@ -311,7 +311,7 @@ class XMLAdapter(ChatAdapter):
         span closing, or a sibling field opening, which rejects the widening for good. Until one of
         them happens the answer can still change, so the caller must keep waiting.
         """
-        if not XMLAdapter.value_opens_nested(field_name, content):
+        if not XMLAdapter._value_opens_nested(field_name, content):
             return True
         if any(f"<{name}>" in content for name in sibling_names if name != field_name):
             return True
@@ -329,7 +329,7 @@ class XMLAdapter(ChatAdapter):
         return False
 
     @staticmethod
-    def value_opens_nested(field_name: str, content: str) -> bool | None:
+    def _value_opens_nested(field_name: str, content: str) -> bool | None:
         """Whether a value is a nested same-named document. None while still undecidable.
 
         Decided from the first non-whitespace run after the opening tag, so a streamed value can
