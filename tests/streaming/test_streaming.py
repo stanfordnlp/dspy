@@ -977,9 +977,7 @@ async def test_xml_adapter_nested_value_survives_awkward_chunk_boundaries(chunks
 
     async def xml_stream(*args, **kwargs):
         for token in chunks:
-            yield ModelResponseStream(
-                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))]
-            )
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
 
     with mock.patch("litellm.acompletion", side_effect=xml_stream):
         program = dspy.streamify(
@@ -987,9 +985,7 @@ async def test_xml_adapter_nested_value_survives_awkward_chunk_boundaries(chunks
             stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
         )
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
-            streamed = [
-                v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
-            ]
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
 
     assert "".join(streamed).strip() == expected
     # And it still matches what parse returns for the same completion.
