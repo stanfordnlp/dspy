@@ -204,6 +204,10 @@ class XMLAdapter(ChatAdapter):
     `AdapterParseError` when the surplus closing tag is left over in open text with real text
     before it; `_extract_field_blocks` names the shapes that slip past that check and truncate
     silently. Use `ChatAdapter` or `JSONAdapter` for content that can contain the closing tag.
+
+    Under `dspy.streamify` a value of the nested shape is buffered and delivered as one chunk
+    rather than token by token, because the tag that ends it is not known until it arrives, so a
+    streamed value never disagrees with `parse`.
     """
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:

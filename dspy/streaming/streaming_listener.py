@@ -26,8 +26,11 @@ ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 # token-by-token: which closing tag ends it is only known once the balancing tag arrives, and by
 # then an eagerly-emitted value would already be wrong. Such values are therefore buffered and
 # emitted once, so a streamed value always matches what `XMLAdapter.parse` returns. Set this to
-# False to restore the previous behaviour, where the field ended at the first closing tag and a
-# nested value was truncated in the stream while `parse` recovered it in full.
+# False to restore the previous token-by-token path, where the field ended at the first closing tag
+# and a nested value was truncated in the stream while `parse` recovered it in full. The flag does
+# not reach the cache-hit shortcut in `receive`, which asks `_chunk_completes_field` where the value
+# stops for every XMLAdapter stream: flag or no flag, a chunk holding only the front of a nested
+# value is not read as a finished field just because an inner closing tag went by.
 STREAM_NESTED_XML_VALUES = True
 
 
@@ -377,7 +380,9 @@ class StreamListener:
         then could not be taken back.
 
         Deleting this method, its call site, and `STREAM_NESTED_XML_VALUES` restores the previous
-        behaviour exactly; no other path is touched.
+        token-by-token path. The cache-hit shortcut in `receive` is the one other place nesting is
+        accounted for, and it stays accounted for either way: `_chunk_completes_field` is not gated
+        on the flag, because a shortcut that ended on the inner tag would drop the field entirely.
         """
         state = self.xml_adapter_state
         if state["is_nested"] is False:
