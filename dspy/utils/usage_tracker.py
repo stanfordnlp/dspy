@@ -76,11 +76,13 @@ def track_usage() -> Generator[UsageTracker, None, None]:
     tracker = UsageTracker()
     parent_tracker = settings.usage_tracker  # may be None if not nested
 
-    with settings.context(usage_tracker=tracker):
-        yield tracker
-
-    # Roll up into the enclosing tracker so outer scopes see nested usage.
-    if parent_tracker is not None:
-        for lm, entries in tracker.usage_data.items():
-            for entry in entries:
-                parent_tracker.add_usage(lm, entry)
+    try:
+        with settings.context(usage_tracker=tracker):
+            yield tracker
+    finally:
+        # Roll up into the enclosing tracker so outer scopes see nested usage.
+        # This runs even if the nested block raises an exception.
+        if parent_tracker is not None:
+            for lm, entries in tracker.usage_data.items():
+                for entry in entries:
+                    parent_tracker.add_usage(lm, entry)
