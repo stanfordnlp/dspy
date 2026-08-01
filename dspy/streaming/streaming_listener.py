@@ -11,7 +11,7 @@ import jiter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
-from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.adapters.xml_adapter import XMLAdapter, _extract_field_blocks
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
@@ -212,7 +212,7 @@ class StreamListener:
                 self.cache_hit = True
                 self.stream_start = True
                 self.stream_end = True
-                return self._cache_hit_response(message_after_start_identifier)
+                return self._cache_hit_response(chunk_message)
 
         if len(self.field_start_queue) == 0 and not self.stream_start and start_indicator in chunk_message:
             # We look for the pattern of start_identifier, i.e., "[[ ## {self.signature_field_name} ## ]]" for
@@ -349,30 +349,33 @@ class StreamListener:
         except AttributeError:
             return None
 
-    def _cache_hit_response(self, message_after_start_identifier: str) -> StreamResponse | None:
+    def _cache_hit_response(self, chunk_message: str) -> StreamResponse | None:
         """The field's value, when the whole field arrived inside one chunk.
 
-        For XMLAdapter the value's end is already known here, so it is handed over rather than
-        dropped: a caller listening to the field would otherwise receive nothing at all while
-        `parse` returns the value, which is the mismatch this module exists to avoid. Other
-        adapters keep the previous behaviour and rely on the final `Prediction`, since nothing
-        here knows where their values stop.
+        For XMLAdapter the value is located with `_extract_field_blocks`, the scan `parse` uses,
+        rather than from the first occurrence of the opening tag: an earlier field's value may
+        mention this field's tag, and starting there emits a value spanning the earlier field.
+        Handing the value over matters because a listener would otherwise receive nothing at all
+        while `parse` returns it. Other adapters keep the previous behaviour and rely on the final
+        `Prediction`, since nothing here knows where their values stop.
         """
         if not isinstance(settings.adapter, XMLAdapter):
             return None
 
-        siblings = self._sibling_output_fields()
-        value_end = XMLAdapter._field_value_end(
-            self.signature_field_name, message_after_start_identifier, siblings or frozenset()
-        )
-        if value_end is None:
+        try:
+            output_names = frozenset(self.predict.signature.output_fields)
+        except AttributeError:
             return None
-        return StreamResponse(
-            self.predict_name,
-            self.signature_field_name,
-            message_after_start_identifier[:value_end].strip(),
-            is_last_chunk=True,
-        )
+
+        for name, value_start, value_end, _, _ in _extract_field_blocks(chunk_message, output_names):
+            if name == self.signature_field_name:
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    chunk_message[value_start:value_end].strip(),
+                    is_last_chunk=True,
+                )
+        return None
 
     def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
         """Whether the field both starts and ends inside this one chunk.

@@ -988,6 +988,40 @@ async def test_xml_adapter_streams_a_field_that_arrives_in_one_chunk(completion,
     assert dspy.XMLAdapter().parse(CodeSignature, completion)["code"] == expected
 
 
+@pytest.mark.anyio
+async def test_xml_adapter_one_chunk_ignores_a_tag_mentioned_by_an_earlier_field():
+    """The value is located by the parser's scan, not by the first occurrence of the opening tag.
+
+    An earlier field's value can mention this field's tag, and starting there emits a value
+    spanning the earlier field rather than this one's.
+    """
+
+    class Two(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    completion = "<reasoning>put it in <answer> tags</reasoning><answer>42</answer>"
+
+    async def xml_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion))]
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(Two),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [
+                v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+            ]
+
+    assert "".join(streamed).strip() == "42"
+    assert dspy.XMLAdapter().parse(Two, completion)["answer"] == "42"
+
+
 @pytest.mark.parametrize(
     ("chunks", "expected"),
     [
