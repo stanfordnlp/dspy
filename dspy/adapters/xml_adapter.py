@@ -138,7 +138,9 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
       way, since nothing balances it.
 
     The widened span has to be self-contained to be believable, so `_span_acceptor` rejects it
-    unless every tag inside it pairs inside it, and unless it is free of other output fields.
+    unless every tag inside it pairs inside it, and unless it is free of other output fields. Its
+    prefix data is built on the first candidate span rather than up front, so a completion with no
+    nested value -- which is nearly all of them -- never pays for it.
     Without the first check the depth-balanced partner can be borrowed from a different element and
     the value gets stitched out of that element's markup; without the second, a later field is
     swallowed and its absence reported as a missing field. A rejected span falls back to the lazy
@@ -161,7 +163,7 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
     next_closing = _next_closing_tags(tags)
-    span_is_self_contained = _span_acceptor(tags, partners, output_names)
+    span_is_self_contained: Callable[[int, int], bool] | None = None
 
     blocks: list[tuple[str, int, int, int, int]] = []
     index = 0
@@ -178,8 +180,11 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
             and not completion[open_end : tags[index + 1][0]].strip()
         )
         end = partners.get(index) if nested else None
-        if end is not None and not span_is_self_contained(index, end):
-            end = None
+        if end is not None:
+            if span_is_self_contained is None:
+                span_is_self_contained = _span_acceptor(tags, partners, output_names)
+            if not span_is_self_contained(index, end):
+                end = None
         if end is None:
             end = next_closing[index]
         if end is None:
@@ -340,8 +345,14 @@ class XMLAdapter(ChatAdapter):
         mid-stream, where the balancing tag may simply not have arrived. Two things settle it: the
         span closing, or a sibling field opening, which rejects the widening for good. Until one of
         them happens the answer can still change, so the caller must keep waiting.
+
+        A value too short for `_value_opens_nested` to classify is not ready either: it may still
+        turn out nested, so answering for it would be answering before its shape is known.
         """
-        if not XMLAdapter._value_opens_nested(field_name, content):
+        opens_nested = XMLAdapter._value_opens_nested(field_name, content)
+        if opens_nested is None:
+            return False
+        if not opens_nested:
             return True
         return XMLAdapter._nested_boundary_scan(field_name, content, sibling_names)[0]
 
