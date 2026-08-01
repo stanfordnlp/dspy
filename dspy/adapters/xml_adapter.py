@@ -207,7 +207,7 @@ class XMLAdapter(ChatAdapter):
 
     Under `dspy.streamify` a value of the nested shape is buffered and delivered as one chunk
     rather than token by token, because the tag that ends it is not known until it arrives, so a
-    streamed value never disagrees with `parse`.
+    streamed value matches what `parse` returns for it.
     """
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
