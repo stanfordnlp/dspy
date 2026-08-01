@@ -59,7 +59,6 @@ SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
 # back to the real tool object passed to dspy.Flex(tools=...).
 TOOL_MARKER = "__dspy_tool__"
-
 # Variable/identifier names used in the per-forward driver code (namespaced to avoid clashing with
 # whatever the optimizer-authored module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"

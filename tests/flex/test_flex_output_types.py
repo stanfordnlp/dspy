@@ -87,8 +87,8 @@ def test_baseline_signature_string_names_generic_and_enum_types() -> None:
 
 
 def test_baseline_omits_a_type_the_signature_parser_cannot_read_back() -> None:
-    # An annotation that cannot round-trip through a signature string is emitted untyped rather
-    # than rendered into source that would fail to bind.
+    # An annotation the signature-string grammar cannot carry is emitted untyped rather than
+    # rendered into source that would fail to bind.
     class Unrenderable(dspy.Signature):
         text: str = dspy.InputField()
         fn: Callable[[int], int] = dspy.OutputField()
@@ -374,3 +374,57 @@ def test_optional_none_round_trips_through_the_sandbox() -> None:
     program = Flex(MaybeAnswer, interpreter_factory=_sandbox)
     program._bind_code(source)
     assert program(q="x").a is None
+
+
+# =============================================================================
+# render_annotation: the signature parser's inverse (no Deno)
+# =============================================================================
+
+
+def test_render_annotation_round_trips_through_the_signature_parser() -> None:
+    """``render_annotation`` mirrors dspy's ``_parse_type_node``: for every annotation it
+    accepts, the emitted token parses back to the identical annotation under the same
+    ``custom_types``. This round trip is the renderer's correctness contract."""
+    from typing import Any, Literal, Optional
+
+    from dspy.predict.flex.ctx import render_annotation
+    from dspy.signatures.signature import make_signature
+
+    custom = {"Person": Person, "Color": Color}
+    cases = [
+        str,
+        int,
+        bool,
+        Person,
+        Color,
+        list[Person],
+        dict[str, int],
+        dict[str, Any],
+        tuple[int, ...],
+        str | None,
+        Optional[float],  # noqa: UP045 — covers the typing.Union spelling, distinct origin from `float | None`
+        str | int | None,
+        Literal["a", "b"],
+        Literal[1, 2],
+        list[dict[str, list[int]]],
+        Any,
+    ]
+    for annotation in cases:
+        token = render_annotation(annotation, custom)
+        probe = make_signature(f"x: {token} -> y", custom_types=custom)
+        assert probe.input_fields["x"].annotation == annotation, f"{annotation!r} -> {token!r}"
+
+
+def test_render_annotation_rejects_what_the_grammar_cannot_carry() -> None:
+    from dspy.predict.flex.ctx import render_annotation
+
+    with pytest.raises(ValueError):
+        render_annotation(Callable[[int], int])
+
+    class NotShared(pydantic.BaseModel):
+        x: int
+
+    # A class the parser could not resolve by name (absent from custom_types) is refused at
+    # render time instead of producing a token that fails to parse back.
+    with pytest.raises(ValueError):
+        render_annotation(NotShared)

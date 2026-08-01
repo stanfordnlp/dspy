@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import ast
+import types
+import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
-
-from dspy.adapters.utils import get_annotation_name
-from dspy.signatures.signature import make_signature
 
 
 @dataclass
@@ -65,8 +65,10 @@ class FlexContext:
         def _render(fields_dict: dict[str, Any]) -> str:
             parts: list[str] = []
             for fname, finfo in fields_dict.items():
-                type_str = _parseable_type_str(finfo.annotation, custom)
-                parts.append(f"{fname}: {type_str}" if type_str else fname)
+                try:
+                    parts.append(f"{fname}: {render_annotation(finfo.annotation, custom)}")
+                except ValueError:
+                    parts.append(fname)
             return ", ".join(parts)
 
         return f"{_render(cls.input_fields)} -> {_render(cls.output_fields)}"
@@ -106,9 +108,6 @@ def _type_name(t: Any) -> str:
     return str(t).replace("typing.", "")
 
 
-_SIMPLE_TYPES = (str, int, float, bool, list, dict, tuple, set)
-
-
 def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:
     """Add every non-builtin type named anywhere in ``annotation`` to ``out``, keyed by name."""
     for arg in get_args(annotation):
@@ -120,27 +119,49 @@ def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:
         out[name] = annotation
 
 
-def _parseable_type_str(annotation: Any, custom_types: dict[str, type] | None = None) -> str | None:
-    """A signature-string type token DSPy's parser can read back, else None."""
-    if annotation in _SIMPLE_TYPES:
-        return annotation.__name__
+_BUILTIN_TYPES = (int, str, float, bool, list, tuple, dict, set, frozenset, complex, bytes, bytearray)
 
-    name = getattr(annotation, "__name__", None)
-    candidates = [
-        name if name and name.isidentifier() else None,
-        get_annotation_name(annotation),
-        str(annotation).replace("typing.", ""),
-    ]
-    for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            probe = make_signature(f"x: {candidate} -> y", "probe", custom_types=custom_types)
-        except Exception:
-            continue
-        if probe.input_fields["x"].annotation == annotation:
-            return candidate
-    return None
+
+def render_annotation(annotation: Any, custom_types: dict[str, type] | None = None) -> str:
+    """Render ``annotation`` as a signature-string type token, the inverse of dspy's
+    ``_parse_type_node``."""
+    return ast.unparse(_render_type_node(annotation, custom_types or {}))
+
+
+def _render_type_node(annotation: Any, custom_types: dict[str, type]) -> ast.expr:
+    """Build the annotation AST for ``annotation``, emitting only nodes ``_parse_type_node`` handles."""
+    if annotation is type(None):
+        return ast.Constant(value=None)
+
+    origin = get_origin(annotation)
+    if origin is None:
+        name = getattr(annotation, "__name__", None)
+        if annotation in _BUILTIN_TYPES:
+            return ast.Name(id=annotation.__name__)
+        if annotation is Any or (name and typing.__dict__.get(name) is annotation):
+            return ast.Name(id=name or "Any")
+        if isinstance(annotation, type) and name and custom_types.get(name) is annotation:
+            return ast.Name(id=name)
+        raise ValueError(
+            f"Annotation {annotation!r} has no name the signature-string grammar can resolve; "
+            "pass it via custom_types to make it renderable."
+        )
+
+    args = get_args(annotation)
+    if origin in (typing.Union, types.UnionType):
+        node = _render_type_node(args[0], custom_types)
+        for arg in args[1:]:
+            node = ast.BinOp(left=node, op=ast.BitOr(), right=_render_type_node(arg, custom_types))
+        return node
+    if origin is typing.Literal:
+        if not all(v is None or isinstance(v, (str, int, bool, bytes)) for v in args):
+            raise ValueError(f"Literal values in {annotation!r} are not signature-string constants.")
+        elts: list[ast.expr] = [ast.Constant(value=v) for v in args]
+        return ast.Subscript(value=ast.Name(id="Literal"), slice=ast.Tuple(elts=elts) if len(elts) > 1 else elts[0])
+
+    base = _render_type_node(origin, custom_types)
+    elts = [ast.Constant(value=...) if a is Ellipsis else _render_type_node(a, custom_types) for a in args]
+    return ast.Subscript(value=base, slice=ast.Tuple(elts=elts) if len(elts) > 1 else elts[0])
 
 
 def _strip_code_fences(s: str) -> str:
