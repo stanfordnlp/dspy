@@ -1,4 +1,4 @@
-# Flex: LLM-generating a module's code
+# Flex: Optimizable module code
 
 ## Intent
 
@@ -38,7 +38,7 @@ A code candidate can bind cleanly and still raise mid-`forward` on some inputs �
 
 ### 8. Generated code always runs in an interpreter, never in-process
 
-`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host. The factory creates a fresh interpreter for each sandbox session; a forward owns an outer session and nested code-executing modules may request separate sessions. Flex may validate or lower source and install its guest shim before execution, while each interpreter defines its supported Python and standard-library subset, so source portability between custom interpreters is not automatic. `max_predictor_calls` caps predictor invocations admitted by the Flex bridge per `forward`; compound modules may make additional internal LM calls.
+`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), matching `dspy.RLM`, and — like `dspy.RLM` — must be a *zero-argument factory* (a bare instance or `None` is rejected). Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host. The factory creates a fresh interpreter for each sandbox session; a forward owns an outer session and nested code-executing modules may request separate sessions. Flex may validate or lower source and install its guest shim before execution, while each interpreter defines its supported Python and standard-library subset, so source portability between custom interpreters is not automatic. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
 
 ### 9. The declared output types are enforced at the sandbox boundary
 
@@ -85,7 +85,7 @@ Plain functions or `dspy.Tool` instances, referenced by name in the generated co
 Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno), like `dspy.RLM`. Must be a zero-argument callable returning a fresh `CodeInterpreter` for each sandbox session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source or standard-library portability between different interpreters.
 
 **`max_predictor_calls`**
-Caps predictor invocations admitted by the Flex bridge per `forward` as a runaway guard. It does not count every internal LM call made by a compound module. `None` disables it.
+The maximum number of predictor calls the generated code can make in one `forward`. It guards against runaway loops. `None` removes the limit.
 
 ### What the generated code can use
 

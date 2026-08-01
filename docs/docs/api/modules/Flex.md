@@ -124,12 +124,12 @@ The interpreter is a **runtime dependency and is not serialized**. Reconstructin
 
 ## Constructor Parameters
 
-| Parameter | Type | Default | Description                                                                                                                                                                                                   |
-|-----------|------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`).                                                                                                                              |
-| `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`.                                                                                                       |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent. |
-| `max_predictor_calls` | `int` | `100` | Cap on predictor invocations admitted by the Flex bridge per `forward`. This is not a count of every internal LM call made by compound modules. `None` disables it.                                           |
+| Parameter | Type | Default | Description                                                                                                                                                                                                                                                |
+|-----------|------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`).                                                                                                                                                                           |
+| `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`.                                                                                                                                                    |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent.                                              |
+| `max_predictor_calls` | `int` | `100` | Maximum number of predictor calls the generated code can make in one `forward`. It acts as a guard against runaway loops.`None` removes the limit. |
 
 ## Notes
 
