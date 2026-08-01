@@ -214,6 +214,41 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         raise ValueError("Multiple LMs are being used in the module. There's no unique LM to return.")
 
+    def set_adapter(self, adapter):
+        """Set the adapter for all predictors in this module.
+
+        This method recursively sets the adapter for all Predict instances
+        contained within this module.
+
+        Args:
+            adapter: The adapter instance to use for all predictors, or `None`
+                to fall back to the globally configured adapter.
+
+        Examples:
+            >>> import dspy
+            >>> program = dspy.Predict("question -> answer")
+            >>> program.set_adapter(dspy.JSONAdapter())
+        """
+        for _, param in self.named_predictors():
+            param.adapter = adapter
+
+    def get_adapter(self):
+        """Get the adapter configured on this module's predictors.
+
+        Returns:
+            The shared adapter, or `None` when every predictor inherits the
+            adapter from DSPy settings.
+
+        Raises:
+            ValueError: If the predictors use different adapters.
+        """
+        all_used_adapters = [param.adapter for _, param in self.named_predictors()]
+
+        if len(set(all_used_adapters)) == 1:
+            return all_used_adapters[0]
+
+        raise ValueError("Multiple adapters are being used in the module. There's no unique adapter to return.")
+
     def __repr__(self):
         s = []
 

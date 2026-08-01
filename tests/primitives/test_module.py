@@ -243,3 +243,63 @@ def test_load_state_is_transactional():
         assert template.a.predict.demos == [], (
             "load_state partially mutated module before failing"
         )
+
+
+def test_load_state_adapter_failure_is_atomic():
+    """A refused adapter class in one predictor must leave the whole program untouched."""
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.a = dspy.Predict("question -> answer")
+            self.b = dspy.Predict("question -> answer")
+
+    source = Prog()
+    source.a.adapter = dspy.JSONAdapter()
+    source.b.adapter = dspy.XMLAdapter()
+    state = source.dump_state()
+    state["b"]["adapter"]["_dspy_adapter_class"] = "evil.package.Adapter"
+
+    template = Prog()
+    with pytest.raises(ValueError, match="custom serialized adapter class"):
+        template.load_state(state)
+
+    assert template.a.adapter is None, "load_state partially mutated module before failing"
+    assert template.b.adapter is None
+
+
+def test_set_adapter_reaches_nested_predictors():
+    class OuterModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.hop = HopModule()
+            self.predict = dspy.Predict("question -> answer")
+
+    module = OuterModule()
+    adapter = dspy.ChatAdapter()
+    module.set_adapter(adapter)
+    assert module.hop.predict1.adapter is adapter
+    assert module.hop.predict2.adapter is adapter
+    assert module.predict.adapter is adapter
+    assert module.get_adapter() is adapter
+
+
+def test_set_adapter_recursively():
+    module = HopModule()
+    adapter = dspy.ChatAdapter()
+    module.set_adapter(adapter)
+    assert module.predict1.adapter is adapter
+    assert module.predict2.adapter is adapter
+    assert module.get_adapter() is adapter
+
+    module.set_adapter(None)
+    assert module.predict1.adapter is None
+    assert module.get_adapter() is None
+
+
+def test_get_adapter_heterogeneous():
+    module = HopModule()
+    module.predict1.adapter = dspy.ChatAdapter()
+    module.predict2.adapter = dspy.JSONAdapter()
+    with pytest.raises(ValueError, match="Multiple adapters"):
+        module.get_adapter()

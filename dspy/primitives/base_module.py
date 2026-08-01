@@ -156,13 +156,17 @@ class BaseModule:
     def dump_state(self, json_mode=True):
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
-    def load_state(self, state, *, allow_unsafe_lm_state=False):
+    def load_state(self, state, *, allow_unsafe_lm_state=False, allow_custom_adapter_class=False):
         from dspy.predict.predict import Predict
 
         def _apply(module):
             for name, param in module.named_parameters():
                 if isinstance(param, Predict):
-                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+                    param.load_state(
+                        state[name],
+                        allow_unsafe_lm_state=allow_unsafe_lm_state,
+                        allow_custom_adapter_class=allow_custom_adapter_class,
+                    )
                 else:
                     param.load_state(state[name])
 
@@ -251,7 +255,7 @@ class BaseModule:
         else:
             raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
-    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False):
+    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False, allow_custom_adapter_class=False):
         """Load the saved module. You may also want to check out dspy.load, if you want to
         load an entire program, not just the state for an existing program.
 
@@ -262,6 +266,8 @@ class BaseModule:
             allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
                 `api_base`, `base_url`, and `model_list`) from loaded state and allows importing custom LM classes.
                 Enable only for trusted files.
+            allow_custom_adapter_class (bool): If True, allows importing custom `Adapter` subclasses
+                recorded in saved adapter state. Enable only for trusted files.
         """
         path = Path(path)
 
@@ -289,4 +295,6 @@ class BaseModule:
                     "on the loaded model, please consider loading the model in the same environment as the "
                     "saving environment."
                 )
-        self.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+        self.load_state(
+            state, allow_unsafe_lm_state=allow_unsafe_lm_state, allow_custom_adapter_class=allow_custom_adapter_class
+        )

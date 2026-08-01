@@ -285,6 +285,7 @@ RLM returns a `Prediction` with:
             - batch
             - deepcopy
             - dump_state
+            - get_adapter
             - get_lm
             - load
             - load_state
@@ -294,6 +295,7 @@ RLM returns a `Prediction` with:
             - predictors
             - reset_copy
             - save
+            - set_adapter
             - set_lm
         show_source: true
         show_root_heading: true

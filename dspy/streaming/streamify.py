@@ -13,7 +13,11 @@ from anyio.streams.memory import MemoryObjectSendStream
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
-from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
+from dspy.streaming.streaming_listener import (
+    StreamListener,
+    find_predictor_for_stream_listeners,
+    stamp_chunk_adapter_name,
+)
 from dspy.utils.asyncify import asyncify
 
 logger = logging.getLogger(__name__)
@@ -26,6 +30,27 @@ def _is_litellm_model_response_stream(value: Any) -> bool:
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
+
+
+class _AdapterStampingSendStream:
+    """Send-stream proxy that stamps unstamped LM chunks with the sender's resolved adapter.
+
+    Custom/legacy LM paths send `ModelResponseStream` chunks from the caller's context, where
+    the scoped adapter is resolved, while the stream consumer runs in a sibling task that only
+    sees the global adapter. Stamping at send time lets `StreamListener` parse those chunks
+    with the correct adapter. Chunks already stamped (e.g. by the built-in LiteLLM streaming
+    path) are left untouched.
+    """
+
+    def __init__(self, stream: MemoryObjectSendStream):
+        self._stream = stream
+
+    async def send(self, item: Any):
+        stamp_chunk_adapter_name(item)
+        await self._stream.send(item)
+
+    def __getattr__(self, name: str):
+        return getattr(self._stream, name)
 
 
 def streamify(
@@ -171,7 +196,8 @@ def streamify(
         callbacks.append(status_streaming_callback)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+        send_stream = _AdapterStampingSendStream(stream)
+        with settings.context(send_stream=send_stream, callbacks=callbacks, stream_listeners=stream_listeners):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)

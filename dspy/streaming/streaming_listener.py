@@ -23,6 +23,40 @@ if TYPE_CHECKING:
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 
 
+def resolve_adapter_name(adapter: Any) -> str:
+    """Map an adapter instance to the stable name used for streaming chunk parsing."""
+    if adapter is None:
+        return "ChatAdapter"
+    if isinstance(adapter, JSONAdapter):
+        return "JSONAdapter"
+    if isinstance(adapter, XMLAdapter):
+        return "XMLAdapter"
+    if isinstance(adapter, ChatAdapter):
+        return "ChatAdapter"
+    return adapter.__class__.__name__
+
+
+def stamp_chunk_adapter_name(chunk: Any) -> None:
+    """Stamp the sender-resolved adapter identity on an LM stream chunk.
+
+    Stream chunks are consumed by `StreamListener` in a sibling task that only sees the
+    global adapter, so the scoped (per-call or per-Predict) adapter identity must travel
+    with the chunk. This is a no-op when the chunk is not a litellm `ModelResponseStream`,
+    is already stamped, or no adapter is configured in the sender's context.
+
+    Args:
+        chunk: The value being sent through the streaming channel.
+    """
+    cls = type(chunk)
+    if not (cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")):
+        return
+    if getattr(chunk, "adapter_name", None) is not None:
+        return
+    adapter = settings.adapter
+    if adapter is not None:
+        chunk.adapter_name = resolve_adapter_name(adapter)
+
+
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
@@ -55,6 +89,9 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
+        # Adapter name resolved from stream chunk metadata (falls back to `settings.adapter`). Stored so that
+        # `flush()`/`finalize()` use the same adapter after the final chunk is received.
+        self._resolved_adapter_name: str | None = None
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -116,7 +153,10 @@ class StreamListener:
         return False
 
     def receive(self, chunk: ModelResponseStream):
-        adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
+        # Prefer the adapter identity stamped on the chunk by the LM streaming producer, which reflects the
+        # adapter resolved in the caller's context. Fall back to `settings.adapter` for custom/legacy chunks.
+        adapter_name = getattr(chunk, "adapter_name", None) or resolve_adapter_name(settings.adapter)
+        self._resolved_adapter_name = adapter_name
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
                 f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
@@ -135,6 +175,7 @@ class StreamListener:
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
                 self.stream_start = False
+                self._resolved_adapter_name = None
             else:
                 return
 
@@ -161,7 +202,7 @@ class StreamListener:
         except Exception:
             return
 
-        if chunk_message and start_identifier in chunk_message and not isinstance(settings.adapter, JSONAdapter):
+        if chunk_message and start_identifier in chunk_message and adapter_name != "JSONAdapter":
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
             # tokens, so it's possible that response only has one chunk, we also fall back to this logic.
@@ -195,7 +236,7 @@ class StreamListener:
                 value_start_index = concat_message.find(start_identifier) + len(start_identifier)
                 chunk_message = concat_message[value_start_index:].lstrip()
 
-                if isinstance(settings.adapter, JSONAdapter):
+                if adapter_name == "JSONAdapter":
                     # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
                     # to, so we need to maintain a few extra states to help us with that.
                     # We add an extra "{" to the beginning of the field_accumulated_messages, so we can detect the
@@ -230,7 +271,7 @@ class StreamListener:
             # TODO: Put adapter streaming handling into individual classes, e.g., `JSONAdapterStreamListener`,
             # `ChatAdapterStreamListener`, `XMLAdapterStreamListener` instead of having many adhoc code in the
             # `StreamListener` class.
-            if isinstance(settings.adapter, JSONAdapter):
+            if adapter_name == "JSONAdapter":
                 # JSONAdapter uses partial json parsing to detect the end of the field we are listening to, instead of
                 # relying on the end_identifier.
                 return self._json_adapter_handle_stream_chunk(token, chunk_message)
@@ -318,21 +359,22 @@ class StreamListener:
         """
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
-        if isinstance(settings.adapter, JSONAdapter):
+        adapter_name = self._resolved_adapter_name or resolve_adapter_name(settings.adapter)
+        if adapter_name == "JSONAdapter":
             return last_tokens
-        elif isinstance(settings.adapter, XMLAdapter):
+        elif adapter_name == "XMLAdapter":
             boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
-        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
+        elif adapter_name == "ChatAdapter":
             boundary_index = last_tokens.find("[[")
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         else:
             raise ValueError(
-                f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
+                f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
 

@@ -1,7 +1,7 @@
 import copy as copy_module
 import datetime
-import importlib
 import inspect
+import logging
 import uuid
 import warnings
 from typing import Any, Literal, TextIO
@@ -17,41 +17,49 @@ from dspy.clients.openai_format import (
 from dspy.core.types import LMHistoryEntry, LMRequest, LMResponse
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.import_utils import import_class_from_path
 from dspy.utils.inspect_history import pretty_print_history
+
+logger = logging.getLogger(__name__)
 
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 LM_CLASS_STATE_KEY = "_dspy_lm_class"
 _BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
 ForwardContract = Literal["legacy", "typed_lm"]
 
 
+def sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
+    """Drop unsafe endpoint keys from serialized LM state unless explicitly allowed.
+
+    Args:
+        lm_state: Serialized LM state produced by `BaseLM.dump_state`.
+        allow_unsafe_lm_state: If True, return the state unchanged, preserving
+            `api_base`, `base_url`, and `model_list`. Enable only for trusted files.
+
+    Returns:
+        The sanitized LM state dictionary.
+    """
+    if allow_unsafe_lm_state:
+        return lm_state
+
+    unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
+
+    if not unsafe_keys:
+        return lm_state
+
+    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
+    logger.warning(
+        "Ignoring unsafe LM config key(s) during state load: %s. "
+        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
+        unsafe_keys,
+    )
+    return sanitized_lm_state
+
+
 def _import_lm_class(class_path: str) -> type:
-    parts = class_path.split(".")
-    last_error = None
-
-    for split_index in range(len(parts) - 1, 0, -1):
-        module_name = ".".join(parts[:split_index])
-        try:
-            obj = importlib.import_module(module_name)
-        except ModuleNotFoundError as exc:
-            if exc.name == module_name or module_name.startswith(f"{exc.name}."):
-                last_error = exc
-                continue
-            raise
-
-        try:
-            for attr in parts[split_index:]:
-                obj = getattr(obj, attr)
-        except AttributeError as exc:
-            last_error = exc
-            continue
-
-        if not isinstance(obj, type):
-            raise TypeError(f"Serialized LM class `{class_path}` did not resolve to a class.")
-        return obj
-
-    raise ImportError(f"Could not import serialized LM class `{class_path}`.") from last_error
+    return import_class_from_path(class_path, description="LM class")
 
 
 class BaseLM:

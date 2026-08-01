@@ -34,7 +34,7 @@ Overrides propagate correctly across `await` and `asyncio.create_task`. `threadi
 
 ### 7. Settings are read lazily at call sites
 
-Predict reads `settings.lm` at call time; Adapter reads `settings.adapter`; Module reads `settings.track_usage`. No constructor takes a `settings` argument. The cost is implicit dependency — a module’s behavior depends on whatever context surrounds the call. The benefit is composition: settings overrides flow into every sub-module without rewiring.
+Predict reads `settings.lm` and `settings.adapter` at call time; Module reads `settings.track_usage`. No constructor takes a `settings` argument. The cost is implicit dependency — a module’s behavior depends on whatever context surrounds the call. The benefit is composition: settings overrides flow into every sub-module without rewiring. One caveat: `lm` and `adapter` set directly on a `Predict` instance (e.g. via `set_lm` / `set_adapter`) outrank the settings layers, and a call-time `lm=`/`adapter=` keyword outranks the instance. See [Adapters](adapters.md) for the full resolution order.
 
 ### 8. Some knobs live on `dspy.LM`, not settings
 
@@ -72,7 +72,7 @@ Standard keys (defined in `DEFAULT_CONFIG`):
 | Key | Default | Purpose |
 |---|---|---|
 | `lm` | `None` | Default LM for every `Predict`. |
-| `adapter` | `None` (falls back to `ChatAdapter()`) | Adapter used to format and parse. |
+| `adapter` | `None` (falls back to `ChatAdapter()`) | Default adapter used to format and parse, unless a `Predict` has its own. |
 | `rm` | `None` | Default retriever for `dspy.Retrieve()`. |
 | `callbacks` | `[]` | Callback handlers fired around module calls. |
 | `track_usage` | `False` | Enable token-usage accounting. |
