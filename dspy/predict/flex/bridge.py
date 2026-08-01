@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
@@ -277,9 +278,6 @@ class BridgeRuntime:
 
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
         signature = self._flex.signature
-        # Every declared output field is required, matching dspy's adapters: a Predict whose LM
-        # response omits a field raises AdapterParseError even for Optional annotations (an
-        # Optional field must still be present, as an explicit null). Same contract here.
         missing = [name for name in signature.output_fields if name not in fields]
         if missing:
             raise CodeInterpreterError(
@@ -289,7 +287,10 @@ class BridgeRuntime:
         out = dict(fields)
         for name, field in signature.output_fields.items():
             try:
-                out[name] = parse_value(out[name], field.annotation)
+                if out[name] is None:
+                    out[name] = TypeAdapter(field.annotation).validate_python(None)
+                else:
+                    out[name] = parse_value(out[name], field.annotation)
             except Exception as e:
                 raise CodeInterpreterError(
                     f"Sandboxed forward returned {out[name]!r} for output field {name!r}, which is "

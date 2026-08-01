@@ -299,3 +299,78 @@ def test_custom_type_inputs_are_restored_across_the_bridge(caplog) -> None:
     assert out.a == "a cat"
     mismatch_warnings = [r.getMessage() for r in caplog.records if "Type mismatch" in r.getMessage()]
     assert mismatch_warnings == []
+
+
+# =============================================================================
+# Optional / defaulted output fields: presence is required, None only where admitted
+# =============================================================================
+
+
+def test_optional_output_field_accepts_explicit_none() -> None:
+    """Optionality applies to the value, not the key: an explicit null stays None."""
+    class MaybeAnswer(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str | None = dspy.OutputField()
+
+    program = Flex(MaybeAnswer, interpreter_factory=MockInterpreter)
+    assert program._bridge._to_prediction({"a": None}).a is None
+
+
+def test_optional_output_field_must_still_be_present() -> None:
+    """Matching dspy's adapters, an Optional output field may not be omitted."""
+    class MaybeAnswer(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str | None = dspy.OutputField()
+
+    program = Flex(MaybeAnswer, interpreter_factory=MockInterpreter)
+    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['a'\]"):
+        program._bridge._to_prediction({})
+
+
+def test_output_field_default_is_not_used_for_a_missing_field() -> None:
+    """Output-field defaults are inert in dspy's adapters — a missing field is an error even when
+    a default exists. The bridge keeps that contract rather than quietly filling the default in."""
+    class Defaulted(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField(default="fallback")
+
+    program = Flex(Defaulted, interpreter_factory=MockInterpreter)
+    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['a'\]"):
+        program._bridge._to_prediction({})
+
+
+def test_none_for_a_non_optional_output_field_is_rejected() -> None:
+    """A JSON null for `a: str` must not be stringified into "None" — a value the generated
+    program never produced (natively the caller would see None, and an adapter can only ever
+    yield text). The bridge surfaces the type mismatch instead."""
+    class Strict(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    program = Flex(Strict, interpreter_factory=MockInterpreter)
+    with pytest.raises(CodeInterpreterError, match=r"returned None for output field 'a'"):
+        program._bridge._to_prediction({"a": None})
+
+
+@deno_required
+def test_optional_none_round_trips_through_the_sandbox() -> None:
+    """End to end: a generated forward returning an explicit None crosses as JSON null and the
+    caller receives a real None, not a "None" string."""
+    class MaybeAnswer(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str | None = dspy.OutputField()
+
+    source = textwrap.dedent(
+        """
+        class MaybeModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, **inputs):
+                return dspy.Prediction(a=None)
+        """
+    ).strip()
+
+    program = Flex(MaybeAnswer, interpreter_factory=_sandbox)
+    program._bind_code(source)
+    assert program(q="x").a is None

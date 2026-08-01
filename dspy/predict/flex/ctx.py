@@ -58,11 +58,7 @@ class FlexContext:
         )
 
     def render_signature_string(self) -> str:
-        """Render a parseable ``"in: T, in2 -> out: T2"`` string for the baseline ``dspy.RLM``.
-
-        Emits types (unlike the names-only ``Signature.signature``); unresolvable annotations
-        are emitted untyped so baseline construction never fails on them.
-        """
+        """Render a parseable ``"in: T, in2 -> out: T2"`` string for the baseline."""
         cls = self.signature_cls
         custom = self.custom_types()
 
