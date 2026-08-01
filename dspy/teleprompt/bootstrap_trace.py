@@ -8,7 +8,7 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, LMError
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,8 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
+            except LMError:
+                raise
             except Exception as e:
                 if not capture_crashes:
                     raise
