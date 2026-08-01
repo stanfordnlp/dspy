@@ -22,6 +22,22 @@ def new_example(question, answer):
     ).with_inputs("question")
 
 
+def _population_only_score_case():
+    devset = [
+        dspy.Example(question="no-score", answer="c").with_inputs("question"),
+        dspy.Example(question="example-owned", answer="a", score=0.25).with_inputs("question"),
+        dspy.Example(question="prediction-owned", answer="b").with_inputs("question"),
+    ]
+    answers = {"no-score": "c", "example-owned": "a", "prediction-owned": "b"}
+
+    def program(question):
+        if question == "prediction-owned":
+            return dspy.Prediction(answer=answers[question], score=0.75)
+        return dspy.Prediction(answer=answers[question])
+
+    return devset, program
+
+
 def test_evaluate_initialization():
     devset = [new_example("What is 1+1?", "2")]
     ev = Evaluate(
@@ -484,6 +500,75 @@ def test_evaluate_population_metric_without_per_example_metric():
         "questions": ["first", "second"],
         "answers": ["a", "wrong"],
     }
+
+def test_evaluate_population_only_output_preserves_user_scores():
+    devset, program = _population_only_score_case()
+    evaluator = Evaluate(devset=devset, population_metric=lambda examples, predictions: 1.0)
+
+    result = evaluator(program)
+    data = evaluator._prepare_results_output(result.results, metric_name=None)
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert "score" not in data[0]
+    assert data[1]["score"] == 0.25
+    assert data[2]["score"] == 0.75
+
+
+@pytest.mark.extra
+def test_evaluate_population_only_table_preserves_user_scores():
+    import pandas as pd
+
+    devset, program = _population_only_score_case()
+    evaluator = Evaluate(devset=devset, population_metric=lambda examples, predictions: 1.0)
+
+    with patch.object(evaluator, "_display_result_table") as display_result_table:
+        result = evaluator(program, display_table=True)
+
+    result_df, display_table, metric_name = display_result_table.call_args.args
+    assert display_table is True
+    assert metric_name is None
+    assert pd.isna(result_df.loc[0, "score"])
+    assert result_df.loc[1, "score"] == 0.25
+    assert result_df.loc[2, "score"] == 0.75
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+
+
+def test_evaluate_population_only_json_preserves_user_scores(tmp_path):
+    devset, program = _population_only_score_case()
+    output_path = tmp_path / "population-results.json"
+    evaluator = Evaluate(
+        devset=devset,
+        population_metric=lambda examples, predictions: 1.0,
+        save_as_json=str(output_path),
+    )
+
+    result = evaluator(program)
+    data = json.loads(output_path.read_text())
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert "score" not in data[0]
+    assert data[1]["score"] == 0.25
+    assert data[2]["score"] == 0.75
+
+
+def test_evaluate_population_only_csv_preserves_user_scores(tmp_path):
+    import csv
+
+    devset, program = _population_only_score_case()
+    output_path = tmp_path / "population-results.csv"
+    evaluator = Evaluate(
+        devset=devset,
+        population_metric=lambda examples, predictions: 1.0,
+        save_as_csv=str(output_path),
+    )
+
+    result = evaluator(program)
+    with output_path.open(newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert [row["score"] for row in rows] == ["", "0.25", "0.75"]
+
 
 def test_evaluate_population_metric_overrides_sample_mean():
     devset = [new_example("first", "correct"), new_example("second", "correct")]

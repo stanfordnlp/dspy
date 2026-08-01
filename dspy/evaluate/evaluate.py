@@ -210,14 +210,14 @@ class Evaluate:
                     "using the average failure score instead."
                 )
 
+        metric_name = (
+            metric.__name__
+            if isinstance(metric, types.FunctionType)
+            else metric.__class__.__name__ if metric is not None else None
+        )
+
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
-                # Rename the 'correct' column to the name of the metric object
-                metric_name = (
-                    metric.__name__
-                    if isinstance(metric, types.FunctionType)
-                    else metric.__class__.__name__ if metric is not None else "score"
-                )
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
 
@@ -226,26 +226,16 @@ class Evaluate:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
         if save_as_csv:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__ if metric is not None else "score"
-            )
             data = self._prepare_results_output(results, metric_name)
 
             with open(save_as_csv, "w", newline="") as csvfile:
-                fieldnames = data[0].keys()
+                fieldnames = list(dict.fromkeys(key for row in data for key in row))
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
                 writer.writeheader()
                 for row in data:
                     writer.writerow(row)
         if save_as_json:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__ if metric is not None else "score"
-            )
             data = self._prepare_results_output(results, metric_name)
             with open(
                     save_as_json,
@@ -260,19 +250,20 @@ class Evaluate:
 
     @staticmethod
     def _prepare_results_output(
-            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str | None
     ):
         return [
             (
-                merge_dicts(example, prediction) | {metric_name: score}
+                merge_dicts(example, prediction)
                 if prediction_is_dictlike(prediction)
-                else example.toDict() | {"prediction": prediction, metric_name: score}
+                else example.toDict() | {"prediction": prediction}
             )
+            | ({metric_name: score} if metric_name is not None else {})
             for example, prediction, score in results
         ]
 
     def _construct_result_table(
-        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str | None
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -280,7 +271,8 @@ class Evaluate:
 
         Args:
             results: The list of results to construct the result DataFrame from.
-            metric_name: The name of the metric used for evaluation.
+            metric_name: The name of the per-example metric used for evaluation. If `None`, no synthetic metric
+                column is added to the table.
 
         Returns:
             The constructed pandas DataFrame.
@@ -293,9 +285,9 @@ class Evaluate:
         result_df = pd.DataFrame(data)
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
-        return result_df.rename(columns={"correct": metric_name})
+        return result_df.rename(columns={"correct": metric_name}) if metric_name is not None else result_df
 
-    def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str):
+    def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str | None):
         """
         Display the specified result DataFrame in a table format.
 
@@ -303,7 +295,8 @@ class Evaluate:
             result_df: The result DataFrame to display.
             display_table: Whether to display the evaluation results in a table.
                 If a number is passed, the evaluation results will be truncated to that number before displayed.
-            metric_name: The name of the metric used for evaluation.
+            metric_name: The name of the per-example metric used for evaluation. If `None`, no metric column is
+                styled.
         """
         if isinstance(display_table, bool):
             df_to_display = result_df.copy()
@@ -312,7 +305,8 @@ class Evaluate:
             df_to_display = result_df.head(display_table).copy()
             truncated_rows = len(result_df) - display_table
 
-        df_to_display = stylize_metric_name(df_to_display, metric_name)
+        if metric_name is not None:
+            df_to_display = stylize_metric_name(df_to_display, metric_name)
 
         display_dataframe(df_to_display)
 
