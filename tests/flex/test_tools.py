@@ -267,3 +267,37 @@ def test_direct_tool_calls_go_through_the_tool_wrapper() -> None:
     program._bind_code(src('"3"'))
     with pytest.raises(CodeInterpreterError, match="not of type 'integer'"):
         program(q="x")
+
+
+@deno_required
+def test_direct_tool_calls_receive_restored_custom_type_inputs() -> None:
+    """A custom-type input (dspy.Image) crosses into the sandbox as its serialized string; a
+    direct tool call must hand the tool the original object, exactly as a bridged predictor
+    receives it via ``_Invocation.call``."""
+    seen: dict = {}
+
+    def describe(img) -> str:
+        """Describe an image."""
+        seen["img"] = img
+        return "a cat"
+
+    class Caption(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    src = textwrap.dedent(
+        """
+        class CaptionModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, **inputs):
+                return dspy.Prediction(a=describe(img=inputs["image"]))
+        """
+    ).strip()
+
+    program = Flex(Caption, tools=[describe], interpreter_factory=lambda: dspy.PythonInterpreter())
+    program._bind_code(src)
+    image = dspy.Image(url="https://example.com/x.png")
+    assert program(image=image).a == "a cat"
+    assert seen["img"] is image  # the original object, not the serialized tag string

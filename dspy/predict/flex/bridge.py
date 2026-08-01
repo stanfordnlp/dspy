@@ -145,6 +145,16 @@ def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
     return entrypoint
 
 
+def _restoring_entrypoint(fn: Callable[..., Any], originals: dict[str, Any]) -> Callable[..., Any]:
+    """Wrap a tool entrypoint so serialized custom-type inputs arrive as the original objects."""
+
+    @functools.wraps(fn)
+    def entrypoint(**kwargs: Any) -> Any:
+        return fn(**{k: _restore_custom_types(v, originals) for k, v in kwargs.items()})
+
+    return entrypoint
+
+
 def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
     """Record custom-type instances by their serialized string, recursing into containers."""
     if isinstance(value, _CustomType):
@@ -248,7 +258,10 @@ class BridgeRuntime:
         interp = _create_interpreter(self._factory)
         try:
             interp.tools.update({CONSTRUCT_TOOL: invocation.construct, CALL_TOOL: invocation.call})
-            interp.tools.update(self._tool_callables())  # user tools callable by name in the sandbox
+            # User tools callable by name in the sandbox.
+            interp.tools.update(
+                {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
+            )
             interp.execute(SHIM_SETUP)
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
