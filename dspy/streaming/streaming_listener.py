@@ -11,7 +11,7 @@ import jiter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
-from dspy.adapters.xml_adapter import _TAG_PATTERN, XMLAdapter
+from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
@@ -28,7 +28,7 @@ ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 # emitted once, so a streamed value always matches what `XMLAdapter.parse` returns. Set this to
 # False to restore the previous token-by-token path, where the field ended at the first closing tag
 # and a nested value was truncated in the stream while `parse` recovered it in full. The flag does
-# not reach the cache-hit shortcut in `receive`, which asks `_whole_field_in_one_chunk` where the value
+# not reach the cache-hit shortcut in `receive`, which asks `_chunk_completes_field` where the value
 # stops for every XMLAdapter stream: flag or no flag, a chunk holding only the front of a nested
 # value is not read as a finished field just because an inner closing tag went by.
 STREAM_NESTED_XML_VALUES = True
@@ -208,14 +208,11 @@ class StreamListener:
             message_after_start_identifier = chunk_message[
                 chunk_message.find(start_identifier) + len(start_identifier) :
             ]
-            completed, response = self._whole_field_in_one_chunk(
-                chunk_message, message_after_start_identifier, end_identifier
-            )
-            if completed:
+            if self._chunk_completes_field(message_after_start_identifier, end_identifier):
                 self.cache_hit = True
                 self.stream_start = True
                 self.stream_end = True
-                return response
+                return
 
         if len(self.field_start_queue) == 0 and not self.stream_start and start_indicator in chunk_message:
             # We look for the pattern of start_identifier, i.e., "[[ ## {self.signature_field_name} ## ]]" for
@@ -230,13 +227,12 @@ class StreamListener:
             self.field_start_queue.append(chunk_message)
             concat_message = "".join(self.field_start_queue)
 
-            start_index = self._field_start_index(concat_message, start_identifier)
-            if start_index != -1:
+            if start_identifier in concat_message:
                 # We have a full identifier, we can start the stream.
                 self.stream_start = True
                 self.field_start_queue = []
                 # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
-                value_start_index = start_index + len(start_identifier)
+                value_start_index = concat_message.find(start_identifier) + len(start_identifier)
                 chunk_message = concat_message[value_start_index:].lstrip()
 
                 if isinstance(settings.adapter, JSONAdapter):
@@ -353,69 +349,26 @@ class StreamListener:
         except AttributeError:
             return None
 
-    def _field_start_index(self, concat_message: str, start_identifier: str) -> int:
-        """Index of the field's own opening tag in `concat_message`, or -1 if it has not arrived.
+    def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
+        """Whether the field both starts and ends inside this one chunk.
 
-        For XMLAdapter an occurrence of the tag is only the field's start when no other output
-        field is still open: an earlier field whose value mentions this tag -- `<reasoning>put it
-        in <answer> tags</reasoning>` -- would otherwise be read as the start, and the listener
-        would stream that field's tail as this field's value. Waiting for the other field to close
-        matches how `parse` reads the same text.
+        For XMLAdapter the first `</field_name>` is not necessarily the end: a value that nests its
+        own tag closes on the balancing one, so the adapter is asked where the value stops rather
+        than the identifier being matched directly. Reading the inner tag as the end would stop the
+        stream part-way through the value and the field would never be emitted at all.
+
+        Nothing is streamed on this path either way -- the value reaches the caller on the final
+        `Prediction`, as it did before. Emitting it here needs a signal that the chunk is the whole
+        response rather than a prefix that happens to parse, which the stream does not carry.
         """
-        if not isinstance(settings.adapter, XMLAdapter):
-            return concat_message.find(start_identifier)
-
-        siblings = self._sibling_output_fields()
-        if siblings is None:
-            return concat_message.find(start_identifier)
-
-        open_siblings: dict[str, int] = {}
-        for match in _TAG_PATTERN.finditer(concat_message):
-            name = match.group("name")
-            if name == self.signature_field_name and not match.group("closing") and not open_siblings:
-                return match.start()
-            if name in siblings:
-                if match.group("closing"):
-                    if open_siblings.get(name):
-                        open_siblings[name] -= 1
-                        if not open_siblings[name]:
-                            del open_siblings[name]
-                else:
-                    open_siblings[name] = open_siblings.get(name, 0) + 1
-        return -1
-
-    def _whole_field_in_one_chunk(
-        self, chunk_message: str, message_after_start_identifier: str, end_identifier: str
-    ) -> tuple[bool, StreamResponse | None]:
-        """Whether this chunk holds the entire response, and the field's value if so.
-
-        For XMLAdapter the question is answered by parsing the chunk: if it parses, the chunk is a
-        whole response and the value handed over is by construction the one `parse` returns for it.
-        Deciding from tag positions instead is not safe on a prefix -- an earlier field that has
-        not closed yet makes a mention of this field's tag look like a block of its own, and a
-        later chunk changes the reading. Parsing rejects that prefix outright, so the stream simply
-        carries on token by token.
-
-        Other adapters keep the previous test and emit nothing, relying on the final `Prediction`,
-        since nothing here knows where their values stop.
-        """
-        if not isinstance(settings.adapter, XMLAdapter):
-            return bool(re.search(end_identifier, message_after_start_identifier)), None
-
-        try:
-            parsed = settings.adapter.parse(self.predict.signature, chunk_message)
-        except Exception:
-            # Not a whole response -- or one `parse` refuses -- so there is nothing to shortcut.
-            return False, None
-
-        if self.signature_field_name not in parsed:
-            return False, None
-        return True, StreamResponse(
-            self.predict_name,
-            self.signature_field_name,
-            str(parsed[self.signature_field_name]).strip(),
-            is_last_chunk=True,
-        )
+        if isinstance(settings.adapter, XMLAdapter):
+            siblings = self._sibling_output_fields()
+            if siblings is not None:
+                return (
+                    XMLAdapter._field_value_end(self.signature_field_name, message_after_start_identifier, siblings)
+                    is not None
+                )
+        return bool(re.search(end_identifier, message_after_start_identifier))
 
     def _xml_nested_stream_chunk(self, chunk_message: str) -> tuple[bool, StreamResponse | None]:
         """Buffer a nested same-named XML value and emit it once, whole.
@@ -428,7 +381,7 @@ class StreamListener:
 
         Deleting this method, its call site, and `STREAM_NESTED_XML_VALUES` restores the previous
         token-by-token path. The cache-hit shortcut in `receive` is the one other place nesting is
-        accounted for, and it stays accounted for either way: `_whole_field_in_one_chunk` is not gated
+        accounted for, and it stays accounted for either way: `_chunk_completes_field` is not gated
         on the flag, because a shortcut that ended on the inner tag would drop the field entirely.
         """
         state = self.xml_adapter_state
