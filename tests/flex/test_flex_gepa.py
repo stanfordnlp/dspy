@@ -510,3 +510,32 @@ def test_gepa_plain_module_requires_trainset() -> None:
     optimizer = dspy.GEPA(metric=_metric, reflection_lm=DummyLM([]), max_metric_calls=10)
     with pytest.raises(AssertionError, match=r"[Tt]rainset"):
         optimizer.compile(Plain(), trainset=[])
+
+
+def test_metric_exception_scores_failure_instead_of_aborting() -> None:
+    """Parity with non-Flex GEPA scoring: there the metric runs inside Evaluate's executor, so a
+    raising metric costs that example failure_score. The flex path calls the metric directly and
+    must convert the exception the same way rather than aborting the whole optimization."""
+    from dspy.teleprompt.gepa.gepa_flex_utils import evaluate_with_trace
+
+    class Echo2(dspy.Module):
+        def forward(self, **kwargs):
+            return dspy.Prediction(a=kwargs["q"])
+
+    def metric(example, pred, trace=None):
+        if example.q == "bad":
+            raise RuntimeError("metric bug on this example")
+        return 1.0
+
+    batch = [dspy.Example(q="good").with_inputs("q"), dspy.Example(q="bad").with_inputs("q")]
+    result = evaluate_with_trace(
+        Echo2(),
+        batch,
+        metric_fn=metric,
+        num_threads=1,
+        failure_score=0.0,
+        callback_metadata=None,
+        capture_traces=True,
+    )
+    assert result.scores == [1.0, 0.0]  # the raising example scores failure_score, the rest still count
+    assert result.outputs[0].a == "good"

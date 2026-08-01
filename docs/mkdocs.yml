@@ -245,6 +245,7 @@ plugins:
     - mkdocstrings:
         handlers:
             python:
+                paths: [".."]
                 options:
                     docstring_style: google
                     show_source: true

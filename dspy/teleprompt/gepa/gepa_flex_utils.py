@@ -240,7 +240,15 @@ def evaluate_with_trace(
         if isinstance(pred, FailedPrediction):
             result = failure_score
         else:
-            result = metric_fn(t["example"], pred, **_metric_scoring_kwargs(metric_fn, t["trace"]))
+            try:
+                result = metric_fn(t["example"], pred, **_metric_scoring_kwargs(metric_fn, t["trace"]))
+            except Exception as e:
+                logger.warning(
+                    "Metric raised while scoring an example; scoring it at failure_score: %s: %s",
+                    type(e).__name__,
+                    e,
+                )
+                result = failure_score
         t["score"] = result  # make_reflective_dataset reads this for the (trace-aware) feedback
         score = result["score"] if hasattr(result, "score") else result
         scores[t["example_ind"]] = failure_score if score is None else score
