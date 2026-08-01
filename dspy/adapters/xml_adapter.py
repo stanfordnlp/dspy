@@ -192,6 +192,25 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     return blocks
 
 
+def _mask_blocks(completion: str, blocks: list[tuple[int, int]]) -> str:
+    """Blank every block in ``completion`` out to spaces, keeping every offset.
+
+    ``blocks`` holds every block found, in scan order, so they are sorted by start and never
+    overlap. What survives the mask is exactly the text no block accounts for: a closing tag left
+    standing is by construction in open text, and so is any text between two such copies. A tag can
+    neither straddle a block boundary nor be forged out of blanks, because a block both starts and
+    ends on the only ``<`` and ``>`` a tag has.
+    """
+    pieces = []
+    cursor = 0
+    for start, end in blocks:
+        pieces.append(completion[cursor:start])
+        pieces.append(" " * (end - start))
+        cursor = end
+    pieces.append(completion[cursor:])
+    return "".join(pieces)
+
+
 class XMLAdapter(ChatAdapter):
     """Adapter that wraps every field in `<field_name>...</field_name>` tags.
 
@@ -282,11 +301,13 @@ class XMLAdapter(ChatAdapter):
         return message
 
     @staticmethod
-    def _field_value_end(field_name: str, content: str, sibling_names: frozenset[str] = frozenset()) -> int | None:
+    def _field_value_end(field_name: str, content: str, sibling_names: frozenset[str]) -> int | None:
         """Index in `content` where `<field_name>`'s value ends, or None if it has not ended yet.
 
         `content` is everything after the field's opening tag; `sibling_names` are the signature's
-        other output field names.
+        other output field names, and is required rather than defaulted because an empty set is a
+        wrong answer that reads like a missing one: it is what stops a widened span from swallowing
+        a later field, so a caller that cannot supply it has to say so instead of passing nothing.
 
         The boundary is decided by running `_extract_field_blocks` -- the same scan `parse` uses --
         over the reconstructed block, rather than by reimplementing its rule. An earlier version
@@ -406,26 +427,20 @@ class XMLAdapter(ChatAdapter):
         silently picking one and returning the wrong string. A truncation whose surplus tag is
         *not* left over in open text is invisible here; `_extract_field_blocks` lists those shapes.
 
-        `spans` holds where each output field's block ended; `blocks` holds every block found, in
-        scan order, so they are sorted by start and never overlap. Blanking each block to spaces
-        once, keeping every offset, leaves exactly the text no block accounts for: a closing tag
-        surviving that mask is by construction in open text, and so is any text between two such
-        copies. A tag can neither straddle a block boundary nor be forged out of blanks, because a
-        block both starts and ends on the only `<` and `>` a tag has.
+        `spans` holds where each output field's block ended; `blocks` holds every block found, and
+        `_mask_blocks` blanks them out so that what is left standing is exactly the open text.
+
+        A degenerate completion can repeat one closing tag thousands of times, so the search below
+        measures each gap from where the previous copy stopped rather than from the value: the gaps
+        then partition the text between the copies exactly once, and reading them all costs one
+        pass over the completion rather than one per copy.
         """
         # Masking only ever blanks characters, so a tag absent from the raw text after a value is
         # absent from the mask too: the common well-formed completion needs no mask at all.
         if all(completion.find(f"</{name}>", block_end) == -1 for name, block_end in spans.items()):
             return
 
-        pieces = []
-        cursor = 0
-        for start, end in blocks:
-            pieces.append(completion[cursor:start])
-            pieces.append(" " * (end - start))
-            cursor = end
-        pieces.append(completion[cursor:])
-        masked = "".join(pieces)
+        masked = _mask_blocks(completion, blocks)
 
         for name, block_end in spans.items():
             closing_tag = f"</{name}>"

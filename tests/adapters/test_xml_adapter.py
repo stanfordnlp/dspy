@@ -1,5 +1,4 @@
 import sys
-import time
 from unittest import mock
 
 import pydantic
@@ -7,6 +6,7 @@ import pytest
 from litellm import Choices, Message, ModelResponse
 
 import dspy
+from dspy.adapters import xml_adapter
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.utils.exceptions import AdapterParseError
@@ -1168,43 +1168,101 @@ def test_xml_adapter_parse_recovers_a_value_that_nests_its_own_tag():
     assert adapter.parse(CodeSig, "<code>use <code> tags</code>") == {"code": "use <code> tags"}
 
 
-def test_xml_adapter_parse_scans_surplus_closing_tags_in_linear_time():
+# The two tests below guard a scan that was quadratic, and they count the work rather than time it:
+# a wall-clock bound loose enough never to flake on a loaded shared runner is also loose enough to
+# let a regression through, and one tight enough to catch it flakes. Counting reads instead means
+# the same thing on any machine, and a regression fails in a second rather than hanging.
+class _CountedMask(str):
+    """The block mask, recording how many characters each scan over it reads."""
+
+    def __new__(cls, value, reads):
+        text = super().__new__(cls, value)
+        text.reads = reads
+        return text
+
+    def find(self, sub, start=0, end=None):
+        found = super().find(sub, start) if end is None else super().find(sub, start, end)
+        # A find that hits scans up to the match; one that misses scans to the end.
+        self.reads.append((len(self) if found == -1 else found + len(sub)) - start)
+        return found
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            start, stop, _ = item.indices(len(self))
+            self.reads.append(max(0, stop - start))
+        return str.__getitem__(self, item)
+
+
+class _CountedTags(list):
+    """The scanned tags, recording how many of them the extraction reads."""
+
+    def __init__(self, tags, reads):
+        super().__init__(tags)
+        self.reads = reads
+
+    def __getitem__(self, index):
+        self.reads[0] += 1
+        return list.__getitem__(self, index)
+
+
+def test_xml_adapter_parse_scans_surplus_closing_tags_in_one_pass():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
     # A degenerate completion that repeats one tag is cheap model output to produce, so the scan
-    # for it has to stay linear. Re-measuring the text before each surplus tag made this
-    # quadratic: 50k copies took tens of seconds before, and milliseconds now.
+    # for it has to stay linear. Re-measuring the text before each surplus tag made this quadratic:
+    # 50k copies read half a billion characters before, and read the completion once now.
     completion = "<answer>42</answer>" + "</answer>" * 50_000
-    start = time.perf_counter()
-    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
-    assert time.perf_counter() - start < 5
+    reads = []
+    mask = xml_adapter._mask_blocks
+
+    def counted_mask(text, blocks):
+        return _CountedMask(mask(text, blocks), reads)
+
+    with mock.patch.object(xml_adapter, "_mask_blocks", counted_mask):
+        assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+
+    # The gaps between the copies partition the text between them exactly once, so every copy
+    # together costs one pass. Re-measuring from the value each time reads it once per copy, which
+    # blows this by four orders of magnitude on the completion above.
+    assert 0 < sum(reads) <= 2 * len(completion)
 
 
 @pytest.mark.parametrize(
-    ("label", "tail"),
+    "tail",
     [
         # A tag inside the span that pairs with nothing.
-        ("unpaired", "<b>" + "</code>" * 20_000),
+        pytest.param(lambda pairs: "<b>" + "</code>" * pairs, id="unpaired"),
         # A tag inside the span that pairs after it.
-        ("crossing", "<x>" + "</code>" * 20_000 + "</x>"),
+        pytest.param(lambda pairs: "<x>" + "</code>" * pairs + "</x>", id="crossing"),
         # Another output field inside the span.
-        ("other field", "<answer>y</answer>" + "</code>" * 20_000),
+        pytest.param(lambda pairs: "<answer>y</answer>" + "</code>" * pairs, id="other field"),
     ],
 )
-def test_xml_adapter_parse_rejects_unwidenable_spans_in_linear_time(label, tail):
+def test_xml_adapter_parse_rejects_unwidenable_spans_without_walking_them(tail):
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    # Every `<code><code>` pair below looks like a nested value worth widening, and each tail then
-    # rules the widened span out. Walking a span to reject it cost its length, so these took half a
-    # minute of CPU before and milliseconds now; the answer itself is unaffected either way.
-    completion = "<answer>42</answer>" + "<code><code></code>" * 20_000 + tail
-    start = time.perf_counter()
-    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
-    assert time.perf_counter() - start < 5
+    scan = xml_adapter._scan_tags
+
+    def reads_per_tag(pairs):
+        # Every `<code><code>` pair looks like a nested value worth widening, and the tail then
+        # rules the widened span out. Rejecting one has to cost the same whatever it spans, so the
+        # tags read per tag present is what stays put -- walking each span to reject it reads the
+        # span per span, which grows with the completion instead.
+        completion = "<answer>42</answer>" + "<code><code></code>" * pairs + tail(pairs)
+        reads = [0]
+        with mock.patch.object(xml_adapter, "_scan_tags", lambda text: _CountedTags(scan(text), reads)):
+            assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "42"}
+        return reads[0] / len(scan(completion))
+
+    # Ten times the spans to reject, and the work per tag has to stay flat. It rose by ten with the
+    # payload when a span was walked, so anything short of quadratic clears this by a wide margin.
+    few = reads_per_tag(500)
+    many = reads_per_tag(5_000)
+    assert 0 < many < 2 * few
 
 
 @pytest.mark.parametrize("chunk_size", [1, 2, 3, 5, 7, 13])

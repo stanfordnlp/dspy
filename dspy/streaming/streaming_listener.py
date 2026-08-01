@@ -37,12 +37,12 @@ STREAM_NESTED_XML_VALUES = True
 def _new_xml_adapter_state() -> dict[str, Any]:
     """Per-stream state for the nested-value path, so its two call sites cannot drift apart.
 
-    The value is held as the list of chunks it arrived in and joined once, at the boundary.
-    Re-joining it per chunk to re-read it would copy the whole buffer every time, which costs more
-    over a long value than the rescanning `unscanned` exists to avoid.
+    The value itself is not held here: `field_end_queue` already holds every chunk of it, since the
+    nested path never drains that queue, and a second copy would retain the whole value twice. It
+    is joined once, at the boundary. Re-joining it per chunk to re-read it would copy the whole
+    buffer every time, which costs more over a long value than the rescanning `unscanned` avoids.
     """
     return {
-        "chunks": [],
         "unscanned": "",
         "is_nested": None,
         "depth": 0,
@@ -389,7 +389,6 @@ class StreamListener:
             # Ordinary value: the token-by-token path owns it and nothing here is read again.
             return False, None
 
-        state["chunks"].append(chunk_message)
         # Everything the boundary scan has not read yet: the value so far while its shape is still
         # undecided, and from then on only the tail that could hold the front of a split tag.
         unscanned = state["unscanned"] + chunk_message
@@ -401,7 +400,6 @@ class StreamListener:
                 state["unscanned"] = unscanned
                 return True, None
             if not state["is_nested"]:
-                state["chunks"] = []
                 state["unscanned"] = ""
                 return False, None
 
@@ -410,7 +408,6 @@ class StreamListener:
             # Without the signature the sibling guard is gone, so a widened span could reach another
             # field. Fall back to the token-by-token path rather than stream a value we cannot bound.
             state["is_nested"] = False
-            state["chunks"] = []
             state["unscanned"] = ""
             return False, None
 
@@ -429,7 +426,7 @@ class StreamListener:
         if not (state["ready"] and state["closed"]):
             return True, None
 
-        accumulated = "".join(state["chunks"])
+        accumulated = "".join(self.field_end_queue.queue)
         value_end = XMLAdapter._field_value_end(self.signature_field_name, accumulated, siblings)
         if value_end is None:
             return True, None
