@@ -234,7 +234,7 @@ def test_missing_declared_output_field_raises() -> None:
     ).strip()
     program = Flex(Extract, interpreter_factory=_sandbox)
     program._bind_code(source)
-    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['person'\]"):
+    with pytest.raises(CodeInterpreterError, match=r"missing required output field\(s\) \['person'\]"):
         program(text="Ada is 36")
 
 
@@ -316,26 +316,58 @@ def test_optional_output_field_accepts_explicit_none() -> None:
     assert program._bridge._to_prediction({"a": None}).a is None
 
 
-def test_optional_output_field_must_still_be_present() -> None:
-    """Matching dspy's adapters, an Optional output field may not be omitted."""
+def test_optional_output_field_may_be_omitted() -> None:
+    """The Flex exit is a module boundary, not an LM response: the signature's own declarations
+    apply, so an Optional field the generated code omits comes back as None."""
     class MaybeAnswer(dspy.Signature):
         q: str = dspy.InputField()
         a: str | None = dspy.OutputField()
+        b: str = dspy.OutputField()
 
     program = Flex(MaybeAnswer, interpreter_factory=MockInterpreter)
-    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['a'\]"):
-        program._bridge._to_prediction({})
+    pred = program._bridge._to_prediction({"b": "x"})
+    assert pred.a is None
+    assert pred.b == "x"
 
 
-def test_output_field_default_is_not_used_for_a_missing_field() -> None:
-    """Output-field defaults are inert in dspy's adapters — a missing field is an error even when
-    a default exists. The bridge keeps that contract rather than quietly filling the default in."""
+def test_output_field_default_fills_a_missing_field() -> None:
+    """A field declared with a default falls back to it when the generated code omits it."""
     class Defaulted(dspy.Signature):
         q: str = dspy.InputField()
         a: str = dspy.OutputField(default="fallback")
 
     program = Flex(Defaulted, interpreter_factory=MockInterpreter)
-    with pytest.raises(CodeInterpreterError, match=r"missing declared output field\(s\) \['a'\]"):
+    assert program._bridge._to_prediction({}).a == "fallback"
+
+
+def test_complex_output_field_defaults_fill_host_side_per_forward() -> None:
+    """Defaults fill on the host, after the JSON crossing: any object works, regardless of the
+    sandbox's boundary, and each forward gets a fresh copy (pydantic deep-copies plain defaults;
+    factories are called per fill) — mutating one prediction cannot poison later forwards."""
+    class Complex(dspy.Signature):
+        q: str = dspy.InputField()
+        person: Person = dspy.OutputField(default=Person(name="unknown", age=0))
+        tags: list[str] = dspy.OutputField(default_factory=lambda: ["fresh"])
+
+    program = Flex(Complex, interpreter_factory=MockInterpreter)
+    first = program._bridge._to_prediction({})
+    assert first.person == Person(name="unknown", age=0)
+    first.person.name = "MUTATED"
+    first.tags.append("MUTATED")
+
+    second = program._bridge._to_prediction({})
+    assert second.person == Person(name="unknown", age=0)  # fresh copy, unaffected
+    assert second.tags == ["fresh"]  # factory re-invoked per fill
+
+
+def test_missing_required_output_field_still_raises() -> None:
+    """No default and not Optional means required: omitting it is the candidate's error."""
+    class Strict(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    program = Flex(Strict, interpreter_factory=MockInterpreter)
+    with pytest.raises(CodeInterpreterError, match=r"missing required output field\(s\) \['a'\]"):
         program._bridge._to_prediction({})
 
 

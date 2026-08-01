@@ -32,8 +32,9 @@ import functools
 import inspect
 import json
 import logging
+import types
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Union, get_args, get_origin
 
 from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -177,6 +178,13 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
+def _is_field_optional(annotation: Any) -> bool:
+    """True if the field annotation is optional, a union admitting None."""
+    return annotation is type(None) or (
+        get_origin(annotation) in (Union, types.UnionType) and type(None) in get_args(annotation)
+    )
+
+
 class _Invocation:
     """Per-forward bridge state: the predictors this forward constructed (keyed by the sandbox
     attribute name), its predictor-call budget, and the original custom-type objects to restore
@@ -290,14 +298,28 @@ class BridgeRuntime:
 
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
         signature = self._flex.signature
-        missing = [name for name in signature.output_fields if name not in fields]
+        out = dict(fields)
+        filled: set[str] = set()
+        missing: list[str] = []
+        for name, field in signature.output_fields.items():
+            if name in out:
+                continue
+            if not field.is_required():
+                out[name] = field.get_default(call_default_factory=True)
+                filled.add(name)
+            elif _is_field_optional(field.annotation):
+                out[name] = None
+                filled.add(name)
+            else:
+                missing.append(name)
         if missing:
             raise CodeInterpreterError(
-                f"Sandboxed forward returned a dspy.Prediction missing declared output field(s) "
+                f"Sandboxed forward returned a dspy.Prediction missing required output field(s) "
                 f"{missing}; the signature declares {list(signature.output_fields)}."
             )
-        out = dict(fields)
         for name, field in signature.output_fields.items():
+            if name in filled:
+                continue
             try:
                 if out[name] is None:
                     out[name] = TypeAdapter(field.annotation).validate_python(None)
