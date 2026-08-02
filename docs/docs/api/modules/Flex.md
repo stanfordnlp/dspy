@@ -1,12 +1,12 @@
 # dspy.Flex
 
-`Flex` is a DSPy module whose implementation is *optimizable code* rather than a fixed prompt. You construct it from a signature, and it defaults to a thin baseline over that signature. What makes it different is what an optimizer is allowed to do with it: instead of only rewriting instructions, `dspy.GEPA` can rewrite the module's entire source — splitting the task into multiple predictors, folding deterministic steps into plain Python, and authoring its own helper tools. The module being a `Flex` is what tells GEPA the module's code is an optimizable parameter.
+`Flex` is a DSPy module whose implementation is *optimizable code* rather than a fixed prompt. You construct it from a signature, and it defaults to a thin baseline over that signature. What makes it different is what an optimizer is allowed to do with it: instead of only rewriting instructions, `dspy.GEPA` can rewrite the module's entire source — splitting the task into multiple predictors, folding deterministic steps into plain Python, and authoring its own helper functions. Being a `Flex` is what tells GEPA that the module's code is an optimizable parameter.
 
 ## When to Use Flex
 
-Reach for `Flex` when you are indifferent to the shape of the solution. You'd rather have the optimizer learn the structure of the function than hand-write it. That's for example the case when:
+Reach for `Flex` when you'd rather have the optimizer discover the program's structure than hand-write it. That's the case when:
 
-- The best decomposition is **unknown or worth searching** — you have a metric and a dataset, and you'd rather optimize the program's structure than hand-write it.
+- The best decomposition is **unknown or worth searching** — you have a metric and a dataset to judge candidate structures against.
 - Parts of the task are **deterministic** and shouldn't cost an LM call — arithmetic, parsing, lookups, normalization.
 - You want the optimizer to **trade accuracy against cost** — e.g. rewarding programs that answer clear cases in code and reserve the LM for genuinely hard ones.
 
@@ -31,9 +31,9 @@ The generated code always runs in a sandbox (`interpreter_factory` defaults to `
 
 ## How Optimization Works
 
-`dspy.GEPA` discovers `Flex` submodules by type. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your evals. GEPA binds the candidate source, evaluates it, and keeps it if it scores better. It's the same Pareto-based search GEPA runs for prompts, applied to code.
+`dspy.GEPA` discovers `Flex` submodules by type. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your metric's feedback on failing examples. GEPA binds the candidate source, evaluates it, and keeps the candidates that advance the Pareto frontier — the same search GEPA runs for prompts, applied to code.
 
-One thing to note is that a broken GEPA candidate can't crash the optimization run. If the reflection model emits source that fails to import or bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
+A broken candidate can't crash the optimization run. If the reflection model emits source that fails to import or bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
 
 ## Optimizing with GEPA
 
@@ -84,14 +84,14 @@ The `program_trace` parameter is opt-in *by declaration*: only metrics that name
 
 ## Sandboxed Execution
 
-`Flex` always runs its generated code in a sandbox, it never runs it in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per sandbox session, including separate sessions requested by nested code-executing modules. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
+`Flex` always runs its generated code in a sandbox — never in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per sandbox session, including separate sessions requested by nested code-executing modules. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
 
 Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed and raises otherwise.
 
 ```python
 solve = dspy.Flex(
     "invoice: str -> total_cents: int",
-    interpreter_factory=lambda: dspy.PythonInterpreter(),  # dspy.PythonInterpreter is the default; you can optionally swap in your own interpreter factory
+    interpreter_factory=lambda: dspy.PythonInterpreter(),  # the default; swap in your own CodeInterpreter factory here
 )
 ```
 
@@ -100,6 +100,7 @@ Each call owns and shuts down every interpreter session it creates, so a `Flex` 
 ## Tools
 
 Pass `tools` and the baseline starts as a `dspy.RLM` instead of a `dspy.Predict`.
+
 ```python
 def lookup_sku(code: str) -> dict:
     """Look up a product by SKU."""
@@ -109,6 +110,7 @@ solve = dspy.Flex("order: str -> total_cents: int", tools=[lookup_sku])
 ```
 
 The optimizer can then wire your tools into `dspy.RLM(..., tools=[...])` / `dspy.ReAct(..., tools=[...])`, or call them directly from `forward`.
+
 ## Saving and Loading
 
 A `Flex` serializes its `module_src`, so saving and loading a program restores the optimized code:
@@ -120,16 +122,16 @@ restored = dspy.Flex("invoice: str -> total_cents: int")
 restored.load("solver.json")  # rebinds the saved module_src
 ```
 
-The interpreter is a **runtime dependency and is not serialized**. Reconstructing with `dspy.Flex(signature)` restores the default sandbox automatically; if you optimized with a customized `interpreter_factory`, you may pass the same one when you reconstruct the module before calling `load`.
+The interpreter is a **runtime dependency and is not serialized**. Reconstructing with `dspy.Flex(signature)` restores the default sandbox automatically; if you optimized with a custom `interpreter_factory`, pass the same one when you reconstruct the module before calling `load`.
 
 ## Constructor Parameters
 
-| Parameter | Type | Default | Description                                                                                                                                                                                                                                                |
-|-----------|------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`).                                                                                                                                                                           |
-| `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`.                                                                                                                                                    |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent.                                              |
-| `max_predictor_calls` | `int` | `100` | Maximum number of predictor calls the generated code can make in one `forward`. It acts as a guard against runaway loops.`None` removes the limit. |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
+| `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent. |
+| `max_predictor_calls` | `int \| None` | `100` | Maximum number of predictor calls the generated code can make in one `forward`. It acts as a guard against runaway loops. `None` removes the limit. |
 
 ## Notes
 
