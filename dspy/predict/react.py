@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
+import pydantic
+
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
@@ -55,15 +57,22 @@ class ReAct(Module):
                 "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
+                f"When you have all information needed, call the `finish` tool with the final value for each of {outputs} passed as next_tool_args.",
                 "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
             ]
         )
 
         tools["finish"] = Tool(
-            func=lambda: "Completed.",
+            func=lambda **kwargs: "Completed.",
             name="finish",
-            desc=f"Marks the task as complete. That is, signals that all information for producing the outputs, i.e. {outputs}, are now available to be extracted.",
-            args={},
+            desc=(
+                f"Marks the task as complete and provides the final outputs. Call this with the final value for "
+                f"each of {outputs} passed as arguments, once all information for producing them is available."
+            ),
+            args={
+                name: _json_schema_for_annotation(field.annotation) for name, field in signature.output_fields.items()
+            },
+            arg_types={name: field.annotation for name, field in signature.output_fields.items()},
         )
 
         for idx, tool in enumerate(tools.values()):
@@ -115,6 +124,9 @@ class ReAct(Module):
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
             if pred.next_tool_name == "finish":
+                parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
+                if parsed_outputs is not None:
+                    return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
@@ -143,10 +155,44 @@ class ReAct(Module):
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
             if pred.next_tool_name == "finish":
+                parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
+                if parsed_outputs is not None:
+                    return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def _extract_outputs_from_finish_args(self, next_tool_args: dict[str, Any]) -> dict[str, Any] | None:
+        """Parse the signature's output fields from the args of a `finish` tool call.
+
+        Returns a mapping from output field names to values validated against the fields' declared
+        annotations, or None when any output field is missing, None, or fails validation — in which
+        case the caller falls back to the legacy extract step.
+        """
+        if not isinstance(next_tool_args, dict) or not next_tool_args:
+            return None
+
+        outputs = {}
+        for name, field in self.signature.output_fields.items():
+            if next_tool_args.get(name) is None:
+                return None
+            value = next_tool_args[name]
+            try:
+                type_adapter = pydantic.TypeAdapter(field.annotation)
+                try:
+                    outputs[name] = type_adapter.validate_python(value)
+                except pydantic.ValidationError:
+                    # The value may be a JSON-encoded string of the annotated type, e.g. a pydantic
+                    # model passed as '{"field": "value"}'.
+                    if isinstance(value, str) and field.annotation is not str:
+                        outputs[name] = type_adapter.validate_json(value)
+                    else:
+                        raise
+            except (pydantic.ValidationError, TypeError) as err:
+                logger.debug(f"Falling back to extract: `finish` arg `{name}` failed validation: {err}")
+                return None
+        return outputs
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         last_error = None
@@ -197,6 +243,14 @@ class ReAct(Module):
             trajectory.pop(key)
 
         return trajectory
+
+
+def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
+    try:
+        return pydantic.TypeAdapter(annotation).json_schema()
+    except Exception:
+        return {"type": "string"}
+
 
 
 """

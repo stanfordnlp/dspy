@@ -489,6 +489,310 @@ async def test_async_tool_calling_with_pydantic_args():
     assert outputs.trajectory == expected_trajectory
 
 
+class _CountingExtract:
+    """Wraps `react.extract` to count how many times the extract fallback runs."""
+
+    def __init__(self, extract):
+        self.extract = extract
+        self.calls = 0
+
+    def __call__(self, **kwargs):
+        self.calls += 1
+        return self.extract(**kwargs)
+
+    async def acall(self, **kwargs):
+        self.calls += 1
+        return await self.extract.acall(**kwargs)
+
+
+def test_finish_with_typed_args_skips_extract():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("question -> answer", tools=[add])
+    counting_extract = _CountingExtract(react.extract)
+    react.extract = counting_extract
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "1 + 2 is 3, so I can finish with the answer directly.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "The sum is 3."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="What is 1 + 2?")
+
+    assert outputs.answer == "The sum is 3."
+    assert outputs.reasoning == "1 + 2 is 3, so I can finish with the answer directly."
+    assert counting_extract.calls == 0
+    assert len(lm.history) == 1
+    assert outputs.trajectory == {
+        "thought_0": "1 + 2 is 3, so I can finish with the answer directly.",
+        "tool_name_0": "finish",
+        "tool_args_0": {"answer": "The sum is 3."},
+        "observation_0": "Completed.",
+    }
+
+
+def test_finish_args_validate_output_field_types():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        title: str = dspy.OutputField()
+        count: int = dspy.OutputField()
+        tags: list[str] = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "title": "Science Fair",
+                    "count": 2,
+                    "tags": ["science", "fair"],
+                    "event": {"name": "Science Fair", "year": 2026},
+                },
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="Describe the event")
+
+    assert outputs.title == "Science Fair"
+    assert outputs.count == 2
+    assert isinstance(outputs.count, int)
+    assert outputs.tags == ["science", "fair"]
+    assert isinstance(outputs.event, Event)
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+
+
+def test_finish_args_coerced_from_strings():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "count": "7",
+                    "event": '{"name": "Science Fair", "year": 2026}',
+                },
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="Describe the event")
+
+    assert outputs.count == 7
+    assert isinstance(outputs.count, int)
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+
+
+def test_finish_with_empty_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I know the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted reasoning.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.reasoning == "Extracted reasoning."
+    assert len(lm.history) == 2
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
+def test_finish_with_partial_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer, source", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with only part of the outputs.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "partial"},
+            },
+            {"reasoning": "Extracted.", "answer": "extracted answer", "source": "extracted source"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.source == "extracted source"
+    assert len(lm.history) == 2
+
+
+def test_finish_with_uncoercible_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> count: int", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with a bad value.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"count": "not a number"},
+            },
+            {"reasoning": "Extracted.", "count": 42},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.count == 42
+    assert len(lm.history) == 2
+
+
+def test_max_iters_exhausted_without_finish_still_calls_extract():
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("question -> answer", tools=[echo])
+    lm = DummyLM(
+        [
+            {"next_thought": "Echo once.", "next_tool_name": "echo", "next_tool_args": {"text": "a"}},
+            {"next_thought": "Echo twice.", "next_tool_name": "echo", "next_tool_args": {"text": "b"}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q", max_iters=2)
+
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 3
+    assert outputs.trajectory["observation_1"] == "Echoed: b"
+
+
+def test_finish_fast_path_prefers_output_field_named_reasoning():
+    react = dspy.ReAct("question -> reasoning", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "The internal thought.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"reasoning": "The final reasoning output."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.reasoning == "The final reasoning output."
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_typed_args_skips_extract():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("question -> answer", tools=[add])
+    counting_extract = _CountingExtract(react.extract)
+    react.extract = counting_extract
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "1 + 2 is 3, so I can finish with the answer directly.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "The sum is 3."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="What is 1 + 2?")
+
+    assert outputs.answer == "The sum is 3."
+    assert outputs.reasoning == "1 + 2 is 3, so I can finish with the answer directly."
+    assert counting_extract.calls == 0
+    assert len(lm.history) == 1
+    assert outputs.trajectory == {
+        "thought_0": "1 + 2 is 3, so I can finish with the answer directly.",
+        "tool_name_0": "finish",
+        "tool_args_0": {"answer": "The sum is 3."},
+        "observation_0": "Completed.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_async_finish_args_coerced_to_declared_types():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "count": 7,
+                    "event": '{"name": "Science Fair", "year": 2026}',
+                },
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="Describe the event")
+
+    assert outputs.count == 7
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_empty_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I know the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted reasoning.", "answer": "extracted answer"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.reasoning == "Extracted reasoning."
+    assert len(lm.history) == 2
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
 @pytest.mark.asyncio
 async def test_async_error_retry():
     # A tiny tool that always fails
