@@ -14,6 +14,7 @@ from dspy.adapters.types import Type
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+from dspy.utils.exceptions import AdapterParseError
 
 
 @pytest.mark.anyio
@@ -990,6 +991,95 @@ async def test_xml_adapter_nested_value_survives_awkward_chunk_boundaries(chunks
     assert "".join(streamed).strip() == expected
     # And it still matches what parse returns for the same completion.
     assert dspy.XMLAdapter().parse(TwoFields, "".join(chunks))["answer"] == expected
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_stream_surfaces_the_sibling_masked_ambiguity_from_parse():
+    """A nested value truncated by a sibling inside its span must end in a loud error.
+
+    The stream can only emit the lazy reading as tokens arrive -- a sent chunk cannot be
+    recalled -- but the run must not conclude as if that truncated value were the answer:
+    `parse` reports the ambiguity and the error reaches the stream consumer.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer><answer>nested</answer><other>sibling</other></answer>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+            adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
+        ):
+            # The task group inside streamify re-raises as an exception group, so unwrap
+            # rather than match the group type: the assertion is about the parse error.
+            with pytest.raises(BaseException) as err:
+                async for _ in program(question="?"):
+                    pass
+
+    # Unwrap by the group attribute rather than the type: `BaseExceptionGroup` is not a
+    # builtin on Python 3.10, where anyio raises the `exceptiongroup` backport instead.
+    def leaves(exc):
+        subexceptions = getattr(exc, "exceptions", None)
+        if subexceptions is None:
+            return [exc]
+        return [leaf for sub in subexceptions for leaf in leaves(sub)]
+
+    assert any(isinstance(leaf, AdapterParseError) for leaf in leaves(err.value)), (
+        f"expected an AdapterParseError, got {err.value!r}"
+    )
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_one_chunk_nested_value_lands_whole_in_the_prediction():
+    """A nested value arriving in one chunk must land in the prediction untruncated.
+
+    A completion that arrives whole in a single chunk takes the cache-hit path and emits no
+    StreamResponse -- the pre-existing contract for every one-chunk response, plain or nested.
+    What this pins is the value itself: the prediction must carry the full nested value, not
+    the truncation the lazy scan used to produce.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer><answer>inner</answer></answer><other>sibling</other>"
+
+    async def xml_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion))])
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = []
+            prediction = None
+            async for value in program(question="?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    streamed.append(value.chunk)
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+
+    assert streamed == []
+    assert prediction.answer == "<answer>inner</answer>"
+    assert prediction.answer == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
 
 
 @pytest.mark.anyio

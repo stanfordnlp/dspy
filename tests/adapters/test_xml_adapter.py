@@ -1286,14 +1286,47 @@ def test_xml_adapter_parse_rejects_a_nested_span_that_is_not_self_contained():
     completion = "<code>\n<code>x</code>\n<note></code></note>"
     assert adapter.parse(CodeSig, completion) == {"code": "<code>x"}
 
-    # Here the span *is* balanced but contains another output field, so widening would eat
-    # `explanation` whole and report it missing. Both fields must still be found.
+    # Here the span *is* balanced but contains another output field, so neither reading is safe:
+    # widening would eat `explanation` whole, and the lazy reading truncates `code` at the inner
+    # closing tag. Both readings lose text the model wrote, so parse must report it, not pick one.
     completion = "<code>\n<code>x</code>\n<explanation>hi</explanation>\n</code>"
-    assert adapter.parse(CodeExplanation, completion) == {"code": "<code>x", "explanation": "hi"}
+    with pytest.raises(AdapterParseError):
+        adapter.parse(CodeExplanation, completion)
 
     # A nested value that closes before the next field keeps the widened reading.
     completion = "<code>\n<code>x</code>\n</code>\n<explanation>hi</explanation>"
     assert adapter.parse(CodeExplanation, completion) == {"code": "<code>x</code>", "explanation": "hi"}
+
+
+def test_xml_adapter_parse_reports_a_nested_value_truncated_by_a_sibling_field():
+    """A sibling field inside a balanced nested span makes the value ambiguous, not shorter.
+
+    The widened reading swallows the sibling; the lazy reading truncates the value at the inner
+    closing tag and lets the surplus outer tag hide behind the sibling's masked block. Returning
+    the lazy reading silently loses answer content, so parse must raise instead.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer><answer>nested</answer><other>sibling</other></answer>"
+    with pytest.raises(AdapterParseError) as err:
+        dspy.XMLAdapter().parse(TwoFields, completion)
+    assert "answer" in str(err.value)
+
+    # The same rejection for a *structural* reason stays lazy and silent: the balanced partner
+    # lives inside another element, so the wide reading was never believable and the lazy reading
+    # is the only candidate -- there is no second reading to be ambiguous against.
+    stitched = "<answer><answer>nested</answer><note></answer></note><other>sibling</other>"
+    parsed = dspy.XMLAdapter().parse(TwoFields, stitched)
+    assert parsed["answer"] == "<answer>nested"
+
+    # A trailing duplicated closing tag with no nesting keeps parsing: the value is complete and
+    # only a copy of the tag itself follows, so nothing the model wrote is lost.
+    duplicated = "<answer>v</answer><other>s</other></answer>"
+    assert dspy.XMLAdapter().parse(TwoFields, duplicated) == {"answer": "v", "other": "s"}
 
 
 def test_xml_adapter_parse_recovers_a_value_that_nests_its_own_tag():

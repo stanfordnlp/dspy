@@ -113,13 +113,17 @@ def _span_acceptor(
     tags: list[tuple[int, int, bool, str]],
     partners: dict[int, int],
     output_names: frozenset[str],
-) -> Callable[[int, int], bool]:
+) -> Callable[[int, int], str]:
     """Build the test deciding whether a depth-balanced span is believable as a single value.
 
-    A span qualifies when every tag inside it pairs inside it, and when it holds no opening tag of
-    a different output field. Walking a span to answer that costs its length, and a completion
-    made of spans that are all rejected then costs their sum, so each question is instead answered
-    from prefix data in constant time:
+    A span qualifies (`"ok"`) when every tag inside it pairs inside it, and when it holds no
+    opening tag of a different output field. The two rejections are reported apart because the
+    caller treats them differently: `"stitched"` means the span borrows structure from another
+    element and was never believable, so the lazy reading is the only candidate; `"field"` means
+    the span is structurally sound but swallows a declared field, so the lazy and wide readings
+    genuinely compete and `parse` must report the ambiguity rather than pick one. Walking a span
+    to answer costs its length, and a completion made of spans that are all rejected then costs
+    their sum, so each question is instead answered from prefix data in constant time:
 
     * A tag inside the span pairs to the *left* of it only if some closing tag inside pairs with an
       opening tag before the span, which `_first_straddling_close` reports directly.
@@ -139,26 +143,30 @@ def _span_acceptor(
         if not is_closing:
             opens_by_name.setdefault(name, []).append(index)
 
-    def accepts(open_index: int, close_index: int) -> bool:
+    def accepts(open_index: int, close_index: int) -> str:
         if straddling_close[open_index] < close_index or balance[close_index] != balance[open_index + 1]:
-            return False
+            return "stitched"
         inside_field_opens = field_opens[close_index] - field_opens[open_index + 1]
         name = tags[open_index][3]
         if name in output_names:
             repeats = opens_by_name[name]
             inside_field_opens -= bisect_left(repeats, close_index) - bisect_right(repeats, open_index)
-        return inside_field_opens == 0
+        return "field" if inside_field_opens else "ok"
 
     return accepts
 
 
-def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list[tuple[str, int, int, int, int]]:
+def _extract_field_blocks(
+    completion: str, output_names: frozenset[str]
+) -> tuple[list[tuple[str, int, int, int, int]], set[int]]:
     """Split ``completion`` into ``(field_name, value_start, value_end, start, end)``, left to right.
 
     Blocks are reported as offsets into ``completion`` rather than as substrings: ``value_start``
     and ``value_end`` bound the raw value, ``start`` and ``end`` the whole block including its
     tags. Callers slice only the values they keep, so a completion full of tags naming nothing in
-    the signature costs no copies.
+    the signature costs no copies. The second return value indexes the blocks whose value is
+    ambiguous -- see the rejection rule below -- for `parse` to report; the streaming caller
+    ignores it, emits the lazy reading as the tokens arrive, and leaves the error to `parse`.
 
     One rule goes beyond a plain lazy ``<name>(.*?)</name>`` scan, so that a value which is itself
     a same-named element is not truncated at the inner closing tag:
@@ -177,8 +185,12 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     nested value -- which is nearly all of them -- never pays for it.
     Without the first check the depth-balanced partner can be borrowed from a different element and
     the value gets stitched out of that element's markup; without the second, a later field is
-    swallowed and its absence reported as a missing field. A rejected span falls back to the lazy
-    reading, and costs no more than an accepted one to rule out.
+    swallowed and its absence reported as a missing field. The two rejections read back
+    differently. A stitched span was never believable, so the lazy reading is the only candidate
+    and stands silently. A span rejected for holding a declared field is structurally sound, so
+    two readings genuinely compete -- wide swallows the field, lazy drops the tail of the value --
+    and the block is flagged ambiguous for `parse` to report rather than resolved by picking one.
+    Either rejection costs no more than an acceptance to rule out.
 
     Everything else keeps the lazy reading too: a value that merely *ends* with its own closing tag
     is indistinguishable from a value followed by trailing commentary, so widening the block there
@@ -187,20 +199,23 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     The lazy reading is a truncation whenever the value did own that closing tag, and
     `_assert_unambiguous` reports it only when the surplus tag survives the block mask with real
     text before it. Two shapes escape that and stay silently truncated: a value ending with its own
-    closing tag, where only whitespace separates the two readings, and a rejected span where a later
-    block -- which need not belong to a declared field, so an unrelated `<note>...</note>` counts --
-    either covers the surplus tag or is all that separates it from the value. Both shapes need a
-    raw `<` in the value, which a completion following the escape instruction (`<` written as
-    `&lt;`) never produces -- they are limits of reading a non-compliant completion, not of the
-    wire format. This paragraph is the one statement of those limits in the code -- everything
-    else here that mentions them points at it, and the adapters guide restates them for users.
+    closing tag, where only whitespace separates the two readings, and a *stitched-rejected* span
+    where a later block -- which need not belong to a declared field, so an unrelated
+    `<note>...</note>` counts -- either covers the surplus tag or is all that separates it from
+    the value. A field-rejected span never truncates silently: its block is flagged and `parse`
+    reports it. Both silent shapes need a raw `<` in the value, which a completion following the
+    escape instruction (`<` written as `&lt;`) never produces -- they are limits of reading a
+    non-compliant completion, not of the wire format. This paragraph is the one statement of those
+    limits in the code -- everything else here that mentions them points at it, and the adapters
+    guide restates them for users.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
     next_closing = _next_closing_tags(tags)
-    span_is_self_contained: Callable[[int, int], bool] | None = None
+    span_verdict: Callable[[int, int], str] | None = None
 
     blocks: list[tuple[str, int, int, int, int]] = []
+    ambiguous: set[int] = set()
     index = 0
     while index < len(tags):
         _, open_end, is_closing, name = tags[index]
@@ -215,10 +230,13 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
             and not completion[open_end : tags[index + 1][0]].strip()
         )
         end = partners.get(index) if nested else None
+        swallows_field = False
         if end is not None:
-            if span_is_self_contained is None:
-                span_is_self_contained = _span_acceptor(tags, partners, output_names)
-            if not span_is_self_contained(index, end):
+            if span_verdict is None:
+                span_verdict = _span_acceptor(tags, partners, output_names)
+            verdict = span_verdict(index, end)
+            if verdict != "ok":
+                swallows_field = verdict == "field" and name in output_names
                 end = None
         if end is None:
             end = next_closing[index]
@@ -227,9 +245,11 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
             index += 1
             continue
 
+        if swallows_field:
+            ambiguous.add(len(blocks))
         blocks.append((name, open_end, tags[end][0], tags[index][0], tags[end][1]))
         index = end + 1
-    return blocks
+    return blocks, ambiguous
 
 
 def _mask_blocks(completion: str, blocks: list[tuple[int, int]]) -> str:
@@ -262,10 +282,11 @@ class XMLAdapter(ChatAdapter):
 
     A completion that ignores that instruction and leaves `<` raw falls back to the tag machinery:
     a value that is itself a same-named element (`<code><code>x</code></code>`) is recovered in
-    full, and a value whose own closing tag is left over in open text raises `AdapterParseError`
-    rather than being silently truncated; `_extract_field_blocks` names the shapes that slip past
-    that check. The decode applies to every completion, so a legacy response that spells `&lt;` or
-    `&amp;` literally reads back decoded.
+    full, a value whose own closing tag is left over in open text raises `AdapterParseError`
+    rather than being silently truncated, and so does a nested value whose span holds another
+    output field, where neither the wide nor the lazy reading is safe; `_extract_field_blocks`
+    names the shapes that slip past both checks. The decode applies to every completion, so a
+    legacy response that spells `&lt;` or `&amp;` literally reads back decoded.
 
     Under `dspy.streamify` the stream decodes the same escapes at emission, and a non-compliant
     value of the nested shape is buffered and delivered as one chunk rather than token by token,
@@ -384,7 +405,7 @@ class XMLAdapter(ChatAdapter):
             return None
 
         opening = f"<{field_name}>"
-        blocks = _extract_field_blocks(opening + content, sibling_names | {field_name})
+        blocks, _ = _extract_field_blocks(opening + content, sibling_names | {field_name})
         if not blocks:
             return None
         _, _, value_end, block_start, _ = blocks[0]
@@ -552,19 +573,23 @@ class XMLAdapter(ChatAdapter):
         A non-compliant completion that leaves `<` raw falls back to the tag machinery: a value
         holding a nested element of the same name is recovered in full, one whose own closing tag
         is left over in open text raises `AdapterParseError` rather than being silently truncated,
-        and the two shapes `_extract_field_blocks` names stay silently truncated. The decode
-        applies either way, so a legacy completion spelling `&lt;` literally reads back as `<`.
+        one whose nested span holds another output field raises the same way -- neither reading of
+        it is safe -- and the two shapes `_extract_field_blocks` names stay silently truncated.
+        The decode applies either way, so a legacy completion spelling `&lt;` literally reads
+        back as `<`.
         """
         fields = {}
         spans: dict[str, int] = {}
         blocks: list[tuple[int, int]] = []
-        for name, value_start, value_end, start, end in _extract_field_blocks(
-            completion, frozenset(signature.output_fields)
-        ):
+        ambiguous_fields: list[str] = []
+        found_blocks, ambiguous_indexes = _extract_field_blocks(completion, frozenset(signature.output_fields))
+        for block_index, (name, value_start, value_end, start, end) in enumerate(found_blocks):
             blocks.append((start, end))
             if name in signature.output_fields and name not in fields:
                 fields[name] = completion[value_start:value_end].strip()
                 spans[name] = end
+                if block_index in ambiguous_indexes:
+                    ambiguous_fields.append(name)
         # Report a missing field before reading a stray tag of an earlier field as an ambiguity.
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
@@ -572,6 +597,22 @@ class XMLAdapter(ChatAdapter):
                 signature=signature,
                 lm_response=completion,
                 parsed_result=fields,
+            )
+        if ambiguous_fields:
+            name = ambiguous_fields[0]
+            raise AdapterParseError(
+                adapter_name="XMLAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=fields,
+                message=(
+                    f"Field `{name}` opens as a nested `<{name}>` document, but its depth-balanced "
+                    f"span contains another output field, so no reading is safe: widening the value "
+                    f"would swallow that field, and stopping at the first `</{name}>` would silently "
+                    f"drop the rest of the value. A compliant response escapes `<` inside values as "
+                    f"`&lt;`, which cannot produce this shape. Use ChatAdapter or JSONAdapter if the "
+                    f"LM cannot be made to escape."
+                ),
             )
         self._assert_unambiguous(signature, completion, fields, spans, blocks)
         # Decode the wire escapes, then cast with the base class parse_value helper. Decoding
