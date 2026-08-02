@@ -30,7 +30,7 @@ On each iteration the LM produces three output fields: `next_thought` (free text
 
 ### 6. The `finish` tool is auto-added and is how the loop terminates
 
-ReAct registers an extra `finish` tool — a no-arg callable — and the loop exits when the LM selects it. Making termination a tool rather than a special-cased flag keeps the LM’s choice uniform: pick from the same list every turn, no extra parsing logic. A separate `max_iters` cap is the hard upper bound for cases where the LM never selects `finish`.
+ReAct registers an extra `finish` tool — its arguments are the signature’s output fields, with JSON schemas derived from each field’s annotation — and the loop exits when the LM selects it, delivering the final outputs as the call’s arguments. Making termination a tool rather than a special-cased flag keeps the LM’s choice uniform: pick from the same list every turn, no extra parsing logic. A separate `max_iters` cap is the hard upper bound for cases where the LM never selects `finish`.
 
 ### 7. The trajectory is a dict; the adapter decides how it’s rendered
 
@@ -40,9 +40,9 @@ ReAct registers an extra `finish` tool — a no-arg callable — and the loop ex
 
 A raised exception from a tool is caught inside `forward` and recorded as `observation_i = "Execution error in <tool>: <traceback>"`. The LM sees the error text on the next iteration and can react to it. Surfacing failures into the LM’s reasoning loop, rather than terminating the program, is the default an agent expects — the model is supposed to recover.
 
-### 9. A separate extractor module produces the declared outputs
+### 9. Outputs come from the `finish` args; a fallback extractor covers the rest
 
-After the loop ends, ReAct hands the trajectory to a `dspy.ChainOfThought` over a fallback signature that includes the original output fields plus a `trajectory` input. The extractor’s job is to read the trajectory and produce the signature’s declared outputs in their correct types. Decoupling navigation (the loop) from extraction (the typed answer) makes both halves easier to optimize and easier to debug.
+When the LM calls `finish`, ReAct validates each argument against the corresponding output field’s annotation via a precomputed `pydantic.TypeAdapter` (a JSON-encoded string of the annotated type is also accepted) and returns the validated values directly, with the final `next_thought` as `reasoning` — no extra LM call. Only when an output field is missing, `None`, or fails validation — or the loop ends without a `finish` call — does ReAct hand the trajectory to a `dspy.ChainOfThought` over a fallback signature that includes the original output fields plus a `trajectory` input, whose job is to read the trajectory and produce the declared outputs in their correct types. The fast path saves one LM round-trip per call; the fallback keeps the module robust when the final arguments don’t validate.
 
 ### 10. Trajectory truncation drops the oldest tool call on context overflow
 
@@ -80,10 +80,10 @@ Class method. Wraps a LangChain `BaseTool` so it can be passed to DSPy modules t
 ### The ReAct module
 
 **`dspy.ReAct(signature, tools, max_iters=20)`**
-On construction, ReAct coerces every entry in `tools` to a `dspy.Tool`, registers the auto-generated `finish` tool, and builds two internal modules: a `dspy.Predict` over a signature whose outputs are `next_thought`, `next_tool_name` (a `Literal` over the tool names), and `next_tool_args` (a `dict`); and a `dspy.ChainOfThought` extractor whose signature contains the original output fields plus a `trajectory` input. The system instructions are assembled with a numbered tool list and embedded into the predict’s signature.
+On construction, ReAct coerces every entry in `tools` to a `dspy.Tool`, registers the auto-generated `finish` tool (whose arguments are the signature’s output fields, with schemas from per-field `pydantic.TypeAdapter`s precomputed here), and builds two internal modules: a `dspy.Predict` over a signature whose outputs are `next_thought`, `next_tool_name` (a `Literal` over the tool names), and `next_tool_args` (a `dict`); and a `dspy.ChainOfThought` fallback extractor whose signature contains the original output fields plus a `trajectory` input. The system instructions are assembled with a numbered tool list and embedded into the predict’s signature.
 
 **`ReAct.forward(**inputs)` / `ReAct.aforward(**inputs)`**
-Runs the loop described above. Each iteration formats the trajectory through the current adapter and passes it as the `trajectory` input to the predict; tool exceptions are caught and stringified into the trajectory; the loop exits when the LM picks `finish` or `max_iters` is reached. The extractor then reads the final trajectory and produces the declared outputs. Returns a `dspy.Prediction` carrying both the trajectory and the extracted fields.
+Runs the loop described above. Each iteration formats the trajectory through the current adapter and passes it as the `trajectory` input to the predict; tool exceptions are caught and stringified into the trajectory; the loop exits when the LM picks `finish` or `max_iters` is reached. A `finish` call whose arguments validate against the output fields’ annotations returns immediately with the validated outputs and the final thought as `reasoning`; otherwise the fallback extractor reads the final trajectory and produces the declared outputs. Either way, returns a `dspy.Prediction` carrying both the trajectory and the output fields.
 
 **`ReAct.truncate_trajectory(trajectory)`**
 Removes the first four keys of the trajectory dict — one complete tool call. Called from `_call_with_potential_trajectory_truncation` after a `ContextWindowExceededError`, with up to three rounds before the module raises. Override to keep summaries, slide a window, or implement any other policy.
