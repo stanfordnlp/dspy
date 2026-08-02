@@ -34,7 +34,7 @@ The reflection model authors code, and code can be wrong. A candidate that doesn
 
 ### 7. Generated code always runs in an interpreter, never in-process
 
-`Flex` runs `module_src` in a sandbox: the `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide), the argument must be a *zero-argument factory*. A bare instance or `None` is rejected. Since the code is authored by the reflection model, isolating it keeps it from running with the host's full permissions: the optimizer-authored glue runs isolated, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host. The factory creates a fresh interpreter for each sandbox session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
+`Flex` runs `module_src` in a sandbox: `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a *zero-argument factory* — a bare instance or `None` is rejected. Since the code is authored by the reflection model, it never gets the host's full permissions: everything it does stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. The factory creates a fresh interpreter for each sandbox session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
 
 ### 8. The declared output types are enforced at the sandbox boundary
 
@@ -67,15 +67,15 @@ A read-only property holding the current implementation as source — one `dspy.
 Compiling a program that contains one or more `Flex` submodules optimizes each `Flex`'s code and every non-flex predictor's instructions together, under one budget. Returns a new program whose `module_src` (per flex submodule) is the best code found. The auto-budget counts each flex submodule as one component alongside the instruction predictors.
 
 **The metric's `feedback`**
-As with any GEPA metric, the feedback string is the prompt handed to the proposer — here, the *code* proposer. Feedback that diagnoses *why* an output was wrong and hints at structure steers rewrites far better than a bare score.
+As with any GEPA metric, the feedback string goes into the prompt handed to the proposer — here, the *code* proposer. Feedback that diagnoses *why* an output was wrong and hints at structure steers rewrites far better than a bare score.
 
 **Trace-aware metrics (`program_trace`)**
-Add `program_trace=None` as a sixth parameter to your metric and GEPA passes the execution trace at scoring time, so you can score against how the answer was produced. For instance, you may use`len(program_trace)` as an LM-call count to fold a small per-call penalty into the score.
+Add `program_trace=None` as a sixth parameter to your metric and GEPA passes the execution trace at scoring time, so you can score against how the answer was produced. For instance, you may use `len(program_trace)` as an LM-call count to fold a small per-call penalty into the score.
 
 ### Tools and sandboxing
 
 **`tools=[...]`**
-Plain functions or `dspy.Tool` instances, referenced by name in the generated code, so each name must be a valid Python identifier. Providing tools makes the baseline a `dspy.RLM` and tells the code proposer the tools are in scope — to wire into `dspy.RLM`/`dspy.ReAct`, call directly, or supplement with its own inline helpers.
+Plain functions or `dspy.Tool` instances, referenced by name in the generated code, so each name must be a valid Python identifier. Providing tools makes the baseline a `dspy.RLM` and tells the code proposer they are in scope — it can wire them into `dspy.RLM`/`dspy.ReAct`, call them directly, or supplement them with its own inline helpers.
 
 **`interpreter_factory=...`**
 Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). Must be a zero-argument callable returning a fresh `CodeInterpreter` for each sandbox session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source or standard-library portability between different interpreters.
@@ -109,11 +109,11 @@ Anything outside this surface fails when the candidate runs, and GEPA scores it 
 ### Saving and loading
 
 **`save(path)` / `load(path)` / `dump_state()` / `load_state(state)`**
-`module_src` travels in the serialized state (along with any LM set on the module), so loading restores the optimized code; the predictors are rebuilt from it on each `forward`. The interpreter is not serialized; reconstructing with `dspy.Flex(signature)` restores the default sandbox, so re-supply it in the constructor before `load` only if you used a custom the `interpreter_factory`.
+`module_src` travels in the serialized state (along with any LM set on the module), so loading restores the optimized code; the predictors are rebuilt from it on each `forward`. The interpreter is not serialized; reconstructing with `dspy.Flex(signature)` restores the default sandbox, so re-supply it in the constructor before `load` only if you used a custom `interpreter_factory`.
 
 ## Cross-links
 
-- [`dspy.Flex` API reference](../api/modules/Flex.md) — constructor table, worked examples, and the full method list.
+- [`dspy.Flex` API reference](../api/modules/Flex.md) — constructor table, examples, and the full method list.
 - [Built-in module variants](built-in-module-variants.md) — where `Flex` sits among the other non-`Predict` modules.
 - [GEPA in depth](gepa-in-depth.md) — the reflective optimizer that drives `Flex`'s code search.
-- [RLM: exploring large contexts with code](rlm.md) — the module `Flex` uses as its tool-enabled baseline, and a close cousin in how it runs generated code.
+- [RLM: exploring large contexts with code](rlm.md) — the module `Flex` uses as its tool-enabled baseline.

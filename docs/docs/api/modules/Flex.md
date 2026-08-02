@@ -20,7 +20,7 @@ dspy.configure(lm=dspy.LM("openai/gpt-5"))
 # Construct Flex from a signature, like any module.
 solve = dspy.Flex("invoice: str -> total_cents: int")
 
-# Runs using baseline (a single dspy.Predict).
+# Runs the baseline (a single dspy.Predict).
 result = solve(invoice="2 widgets @ $3.50, shipping $1.00")
 print(result.total_cents)
 ```
@@ -31,9 +31,9 @@ The generated code always runs in a sandbox (`interpreter_factory` defaults to `
 
 ## How Optimization Works
 
-`dspy.GEPA` discovers `Flex` submodules by type. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your metric's feedback on failing examples. GEPA binds the candidate source, evaluates it, and keeps the candidates that advance the Pareto frontier — the same search GEPA runs for prompts, applied to code.
+`dspy.GEPA` discovers `Flex` submodules by type. When GEPA compiles a program containing one or more `Flex` submodules, it treats each one as a **code component**: rather than proposing a new instruction string, its reflection model proposes a new *whole module source*, guided by the signature, any available tools, and your metric's feedback on failing examples. GEPA binds the candidate source, evaluates it, and keeps it if it advances the Pareto frontier — the same search GEPA runs for prompts, applied to code.
 
-A broken candidate can't crash the optimization run. If the reflection model emits source that fails to import or bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
+A broken candidate can't crash the optimization run. If the reflection model emits source that fails to bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
 
 ## Optimizing with GEPA
 
@@ -86,7 +86,7 @@ The `program_trace` parameter is opt-in *by declaration*: only metrics that name
 
 `Flex` always runs its generated code in a sandbox — never in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per sandbox session, including separate sessions requested by nested code-executing modules. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
 
-Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed and raises otherwise.
+Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed; without it, the call raises.
 
 ```python
 solve = dspy.Flex(
@@ -131,7 +131,7 @@ The interpreter is a **runtime dependency and is not serialized**. Reconstructin
 | `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
 | `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
 | `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent. |
-| `max_predictor_calls` | `int \| None` | `100` | Maximum number of predictor calls the generated code can make in one `forward`. It acts as a guard against runaway loops. `None` removes the limit. |
+| `max_predictor_calls` | `int \| None` | `100` | Maximum number of predictor calls the generated code can make in one `forward` — a guard against runaway loops. `None` removes the limit. |
 
 ## Notes
 
