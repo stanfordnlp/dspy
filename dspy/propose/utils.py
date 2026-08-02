@@ -173,6 +173,9 @@ def get_dspy_source_code(module):
                 continue
             if isinstance(item, Parameter):
                 if hasattr(item, "signature") and item.signature is not None:
+                    # Which branch runs is determined by the signature's origin (source availability),
+                    # not by call order, so a given signature always yields the same sig_source here
+                    # and can't be emitted twice under two different representations.
                     try:
                         sig_source = inspect.getsource(item.signature)
                     except (TypeError, OSError):
