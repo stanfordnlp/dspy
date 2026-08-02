@@ -13,6 +13,40 @@ from dspy.utils.exceptions import AdapterParseError
 
 _TAG_PATTERN = re.compile(r"<(?P<closing>/?)(?P<name>\w+)>")
 
+# The wire escape for output values, applied in this order. Escaping `&` first -- and at all -- is
+# what makes the pair injective: a value that already spells `&lt;` escapes to `&amp;lt;` and comes
+# back byte-identical, where a scheme that rewrote only `<` would decode it to `<` and corrupt it.
+_WIRE_ESCAPES = (("&", "&amp;"), ("<", "&lt;"))
+
+
+def _escape_value(text: str) -> str:
+    """Escape `&` and `<` in an output value for the wire; `_unescape_value` inverts this exactly."""
+    for raw, entity in _WIRE_ESCAPES:
+        text = text.replace(raw, entity)
+    return text
+
+
+def _unescape_value(text: str) -> str:
+    """Decode `&lt;` then `&amp;`, inverting `_escape_value`; text without entities is unchanged."""
+    for raw, entity in reversed(_WIRE_ESCAPES):
+        text = text.replace(entity, raw)
+    return text
+
+
+def _entity_prefix_start(text: str) -> int:
+    """Where a trailing proper prefix of a wire entity begins, or ``len(text)`` when there is none.
+
+    A streamed chunk can end mid-entity (the ``&l`` of ``&lt;``), and decoding the halves
+    separately would miss it. The caller emits ``text[:start]`` decoded and carries the tail into
+    the next chunk. An entity is at most five characters, so a proper prefix fits in the last four.
+    """
+    start = text.rfind("&", max(0, len(text) - 4))
+    if start != -1:
+        tail = text[start:]
+        if any(entity.startswith(tail) and entity != tail for _, entity in _WIRE_ESCAPES):
+            return start
+    return len(text)
+
 
 def _scan_tags(text: str) -> list[tuple[int, int, bool, str]]:
     """Return every ``<name>``/``</name>`` tag as ``(start, end, is_closing, name)``."""
@@ -155,10 +189,11 @@ def _extract_field_blocks(completion: str, output_names: frozenset[str]) -> list
     text before it. Two shapes escape that and stay silently truncated: a value ending with its own
     closing tag, where only whitespace separates the two readings, and a rejected span where a later
     block -- which need not belong to a declared field, so an unrelated `<note>...</note>` counts --
-    either covers the surplus tag or is all that separates it from the value. Representing either
-    needs escaping, which this wire format does not have. This paragraph is the one statement of
-    those limits in the code -- everything else here that mentions them points at it, and the
-    adapters guide restates them for users.
+    either covers the surplus tag or is all that separates it from the value. Both shapes need a
+    raw `<` in the value, which a completion following the escape instruction (`<` written as
+    `&lt;`) never produces -- they are limits of reading a non-compliant completion, not of the
+    wire format. This paragraph is the one statement of those limits in the code -- everything
+    else here that mentions them points at it, and the adapters guide restates them for users.
     """
     tags = _scan_tags(completion)
     partners = _balanced_partners(tags)
@@ -220,24 +255,37 @@ class XMLAdapter(ChatAdapter):
     """Adapter that wraps every field in `<field_name>...</field_name>` tags.
 
     Each input and output field is rendered as its own XML element, and the response is read back
-    with a single scan over the tags, tolerant of surrounding whitespace. A value that is itself a
-    same-named element (`<code><code>x</code></code>`) is recovered in full.
+    with a single scan over the tags, tolerant of surrounding whitespace. Output values are escaped
+    on the wire -- `&` as `&amp;` and `<` as `&lt;`, decoded again by `parse` -- so the
+    format -> parse round trip is lossless even for a value that contains its own closing tag, and
+    the prompt instructs the LM to escape its values the same way.
 
-    The wire format has no escaping, so a value containing its own closing tag cannot always be
-    told apart from a value followed by trailing commentary. Rather than guess, `parse` raises
-    `AdapterParseError` when the surplus closing tag is left over in open text with real text
-    before it; `_extract_field_blocks` names the shapes that slip past that check and truncate
-    silently. Use `ChatAdapter` or `JSONAdapter` for content that can contain the closing tag.
+    A completion that ignores that instruction and leaves `<` raw falls back to the tag machinery:
+    a value that is itself a same-named element (`<code><code>x</code></code>`) is recovered in
+    full, and a value whose own closing tag is left over in open text raises `AdapterParseError`
+    rather than being silently truncated; `_extract_field_blocks` names the shapes that slip past
+    that check. The decode applies to every completion, so a legacy response that spells `&lt;` or
+    `&amp;` literally reads back decoded.
 
-    Under `dspy.streamify` a value of the nested shape is buffered and delivered as one chunk
-    rather than token by token, because the tag that ends it is not known until it arrives, so a
-    streamed value matches what `parse` returns for it.
+    Under `dspy.streamify` the stream decodes the same escapes at emission, and a non-compliant
+    value of the nested shape is buffered and delivered as one chunk rather than token by token,
+    because the tag that ends it is not known until it arrives, so a streamed value matches what
+    `parse` returns for it.
     """
 
-    def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
+    def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any], role: str = "user") -> str:
+        """Format each field as `<name>...</name>`, escaping output values for the wire.
+
+        With `role="assistant"` the serialized value has `&` and `<` escaped, so a value
+        containing its own closing tag survives the round trip; `parse` decodes the entities
+        again. Input values (`role="user"`) are left raw: the LM reads them in place, and nothing
+        parses them back out of their tags.
+        """
         output = []
         for field, field_value in fields_with_values.items():
             formatted = format_field_value(field_info=field.info, value=field_value)
+            if role == "assistant":
+                formatted = _escape_value(formatted)
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
@@ -259,6 +307,10 @@ class XMLAdapter(ChatAdapter):
 
         parts.append(format_signature_fields_for_instructions(signature.input_fields))
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append(
+            "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+            "keep the wrapping tags unescaped."
+        )
         return "\n\n".join(parts).strip()
 
     def format_user_message_content(
@@ -297,6 +349,7 @@ class XMLAdapter(ChatAdapter):
                 FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
                 for k, v in signature.output_fields.items()
             },
+            role="assistant",
         )
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
@@ -445,6 +498,9 @@ class XMLAdapter(ChatAdapter):
         measures each gap from where the previous copy stopped rather than from the value: the gaps
         then partition the text between the copies exactly once, and reading them all costs one
         pass over the completion rather than one per copy.
+
+        This runs on the raw wire text, before entity decoding, and only a non-compliant
+        completion can trip it: an escaped value contains no raw `<` to form the surplus tag.
         """
         # Masking only ever blanks characters, so a tag absent from the raw text after a value is
         # absent from the mask too: the common well-formed completion needs no mask at all.
@@ -477,21 +533,24 @@ class XMLAdapter(ChatAdapter):
                         f"Field `{name}` is followed by an unmatched `{closing_tag}`, so its value cannot "
                         f"be determined: the text after the first `{closing_tag}` may belong to the value "
                         f"or may be trailing commentary. Returning either reading risks silently giving "
-                        f"back the wrong value. Use ChatAdapter or JSONAdapter, whose wire formats "
-                        f"delimit values unambiguously, for content that can contain `{closing_tag}`."
+                        f"back the wrong value. A compliant response escapes `<` inside values as `&lt;`, "
+                        f"which cannot collide with the tag; this response did not. Use ChatAdapter or "
+                        f"JSONAdapter if the LM cannot be made to escape."
                     ),
                 )
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Extract each output field from its `<field_name>...</field_name>` block.
 
-        A value holding a nested element of the same name is recovered in full; a value whose own
-        closing tag is left over in open text is ambiguous and raises `AdapterParseError` rather
-        than being silently truncated. The first complete block wins for a repeated field.
+        Wire escapes are decoded after extraction -- `&lt;` to `<`, then `&amp;` to `&` -- so a
+        compliant completion, whose values hold no raw `<`, round-trips any value. The first
+        complete block wins for a repeated field.
 
-        Two shapes stay silently truncated, because representing either needs escaping this wire
-        format does not have; `_extract_field_blocks` names them and spells out why each is
-        undecidable.
+        A non-compliant completion that leaves `<` raw falls back to the tag machinery: a value
+        holding a nested element of the same name is recovered in full, one whose own closing tag
+        is left over in open text raises `AdapterParseError` rather than being silently truncated,
+        and the two shapes `_extract_field_blocks` names stay silently truncated. The decode
+        applies either way, so a legacy completion spelling `&lt;` literally reads back as `<`.
         """
         fields = {}
         spans: dict[str, int] = {}
@@ -512,9 +571,10 @@ class XMLAdapter(ChatAdapter):
                 parsed_result=fields,
             )
         self._assert_unambiguous(signature, completion, fields, spans, blocks)
-        # Cast values using base class parse_value helper
+        # Decode the wire escapes, then cast with the base class parse_value helper. Decoding
+        # comes after `_assert_unambiguous`, which reasons about the raw wire text.
         for k, v in fields.items():
-            fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
+            fields[k] = self._parse_field_value(signature.output_fields[k], _unescape_value(v), completion, signature)
         return fields
 
     def _parse_field_value(self, field_info, raw, completion, signature):

@@ -291,7 +291,9 @@ def test_xml_adapter_full_prompt():
         "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
         "<query>\n{query}\n</query>\n\n"
         "<context>\n{context}\n</context>\n\n"
-        "<answer>\n{answer}\n</answer>\n"
+        "<answer>\n{answer}\n</answer>\n\n"
+        "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+        "keep the wrapping tags unescaped.\n"
         "In adhering to this structure, your objective is: \n"
         "        Given the fields `query`, `context`, produce the fields `answer`."
     )
@@ -335,6 +337,8 @@ All interactions will be structured in the following way, with the appropriate v
 <answer>
 {answer}
 </answer>
+
+In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; keep the wrapping tags unescaped.
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, produce the fields `answer`.""",
         },
@@ -436,6 +440,8 @@ All interactions will be structured in the following way, with the appropriate v
 <judgement>
 {judgement}
 </judgement>
+
+In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; keep the wrapping tags unescaped.
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, `answer`, produce the fields `judgement`.""",
         },
@@ -490,6 +496,8 @@ All interactions will be structured in the following way, with the appropriate v
 <score>
 {score}        # note: the value you produce must be a single float value
 </score>
+
+In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; keep the wrapping tags unescaped.
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, produce the fields `answer`, `score`.""",
         },
@@ -623,6 +631,9 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
                  '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
                  '</answer>\n'
+                 "\n"
+                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+                 "keep the wrapping tags unescaped.\n"
                  'In adhering to this structure, your objective is: \n'
                  '        Answer using all supplied context.'},
      {"role": "user",
@@ -726,6 +737,9 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  '{"address": {"$ref": "#/$defs/XmlAddress"}, "title": {"type": "string", "title": '
                  '"Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
                  '</summary>\n'
+                 "\n"
+                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+                 "keep the wrapping tags unescaped.\n"
                  'In adhering to this structure, your objective is: \n'
                  '        Given the fields `question`, produce the fields `summary`.'},
      {"role": "user",
@@ -777,6 +791,9 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
                  "<score>\n"
                  "{score}        # note: the value you produce must be a single float value\n"
                  "</score>\n"
+                 "\n"
+                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+                 "keep the wrapping tags unescaped.\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, `context`, produce the fields `answer`, "
                  "`score`."},
@@ -840,6 +857,8 @@ All interactions will be structured in the following way, with the appropriate v
 <scores>
 {scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
 </scores>
+
+In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; keep the wrapping tags unescaped.
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
@@ -850,9 +869,9 @@ def test_xml_adapter_parse_reports_value_containing_its_own_closing_tag():
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
 
-    # The wire format does not escape values, so `</code>` inside the value is indistinguishable
-    # from the tag that ends it. XMLAdapter used to resolve that silently, returning the
-    # truncated "if x:\n    print('". It now reports the ambiguity instead.
+    # A non-compliant completion leaves the value unescaped, so `</code>` inside it is
+    # indistinguishable from the tag that ends it. XMLAdapter used to resolve that silently,
+    # returning the truncated "if x:\n    print('". It now reports the ambiguity instead.
     completion = "<code>\nif x:\n    print('</code>')\n</code>\n"
     with pytest.raises(AdapterParseError, match="unmatched"):
         dspy.XMLAdapter().parse(CodeSig, completion)
@@ -876,28 +895,131 @@ def test_xml_adapter_parse_reports_second_field_value_containing_its_own_closing
         dspy.XMLAdapter().parse(Two, completion)
 
 
-def test_xml_adapter_format_parse_round_trip_reports_closing_tag_in_value():
+@pytest.mark.parametrize(
+    "value",
+    [
+        # The reporter's case A: the value's own closing tag, inside a string literal.
+        "if x:\n    print('</code>')",
+        "before </code> after",
+        # A nested same-named document (case D) and one that trails past the nesting.
+        "<code>x = 1</code>",
+        "outer <code>inner</code> tail",
+        # Values that already spell an entity must come back byte-identical. A scheme that escaped
+        # only `<` would decode these to the wrong string on the way back; escaping `&` as well is
+        # what makes the pair injective, and is exactly what a dropped earlier escape got wrong.
+        "amp & already &lt; encoded",
+        "use &lt;/code> to escape it",
+        "&amp;",
+        "a < b and c > d",
+        "",
+    ],
+)
+def test_xml_adapter_format_parse_round_trip_is_lossless(value):
     class CodeSig(dspy.Signature):
         task: str = dspy.InputField()
         code: str = dspy.OutputField()
 
-    value = "before </code> after"
     adapter = dspy.XMLAdapter()
+    # The assistant-side formatter escapes `&` and `<` in the value, so the wire holds no raw
+    # markup and `parse` -- which decodes the entities again -- reads back exactly what was written.
+    message = adapter.format_assistant_message_content(CodeSig, {"code": value})
+    assert adapter.parse(CodeSig, message) == {"code": value}
 
-    # The wire format cannot express this value, so the adapter cannot read back what it wrote.
-    # It says so instead of silently returning "before". Escaping the tag here would need a full
-    # entity scheme: a half-measure that only rewrites `</code>` is not reversible, because a
-    # value legitimately containing the escaped text would be corrupted on the way back.
-    assistant_message = adapter.format_assistant_message_content(CodeSig, {"code": value})
-    with pytest.raises(AdapterParseError, match="unmatched"):
-        adapter.parse(CodeSig, assistant_message)
 
-    # An entity-looking value survives untouched, which is what a rewrite would have broken.
-    literal = "use &lt;/code> to escape it"
-    formatted = adapter.format_field_with_value(
-        {FieldInfoWithName(name="code", info=CodeSig.output_fields["code"]): literal}
-    )
-    assert adapter.parse(CodeSig, formatted) == {"code": literal}
+def test_xml_adapter_format_parse_round_trip_multiple_fields():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # One value mentions the other field's tags; unescaped, that swallowed the second field.
+    outputs = {
+        "reasoning": "wrap it in <answer> tags & close with </answer>",
+        "answer": "see </answer> above",
+    }
+    adapter = dspy.XMLAdapter()
+    message = adapter.format_assistant_message_content(Two, outputs)
+    assert adapter.parse(Two, message) == outputs
+
+
+def test_xml_adapter_format_parse_round_trip_typed_value():
+    class Snippet(pydantic.BaseModel):
+        language: str
+        source: str
+
+    class TypedSig(dspy.Signature):
+        task: str = dspy.InputField()
+        snippet: Snippet = dspy.OutputField()
+
+    # The JSON serialization of the model carries the adversarial text; escaping happens after
+    # serialization, decoding before type casting, so the typed value round-trips too.
+    snippet = Snippet(language="html", source="<b>bold & </snippet>")
+    adapter = dspy.XMLAdapter()
+    message = adapter.format_assistant_message_content(TypedSig, {"snippet": snippet})
+    assert adapter.parse(TypedSig, message) == {"snippet": snippet}
+
+
+def test_xml_adapter_round_trips_adversarial_value_through_dummy_lm():
+    from dspy.utils.dummies import DummyLM
+
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # DummyLM probes `format_field_with_value(role="assistant")`, so its mock wire is escaped the
+    # same way a compliant LM's would be, and the full Predict round trip returns the raw value.
+    value = "close with </answer> & move on"
+    lm = DummyLM([{"answer": value}], adapter=dspy.XMLAdapter())
+    with dspy.context(lm=lm, adapter=dspy.XMLAdapter()):
+        prediction = dspy.Predict(QA)(question="?")
+    assert prediction.answer == value
+
+
+def test_xml_adapter_parse_decodes_escaped_entities():
+    class CodeSig(dspy.Signature):
+        task: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    # The reporter's case A on a compliant wire: the closing tag inside the value is escaped, so
+    # the completion is unambiguous and decodes to the intended string.
+    completion = "<code>\nif x:\n    print('&lt;/code>')\n</code>"
+    assert dspy.XMLAdapter().parse(CodeSig, completion) == {"code": "if x:\n    print('</code>')"}
+
+
+def test_xml_adapter_parse_decodes_escaped_entities_across_fields():
+    class Two(dspy.Signature):
+        q: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    # Case B: with a second field present, the escaped wire keeps both values intact.
+    completion = "<reasoning>\nthink &amp; check\n</reasoning>\n<answer>\nsee &lt;/answer> above\n</answer>"
+    assert dspy.XMLAdapter().parse(Two, completion) == {
+        "reasoning": "think & check",
+        "answer": "see </answer> above",
+    }
+
+
+def test_xml_adapter_parse_first_block_wins_on_escaped_wire():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # Case G: escaping leaves the duplicated-field guard untouched -- first block still wins.
+    completion = "<answer>\nfirst &amp; foremost\n</answer>\n<answer>\nsecond\n</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "first & foremost"}
+
+
+def test_xml_adapter_parse_decodes_entities_in_legacy_completions_too():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # The documented tradeoff of the escape scheme: the decode cannot know whether a completion
+    # followed the instruction, so a non-compliant response that spells `&lt;` or `&amp;`
+    # literally now reads back decoded, where it used to pass through untouched.
+    completion = "<answer>use &lt;b> for bold &amp; strong</answer>"
+    assert dspy.XMLAdapter().parse(TestSignature, completion) == {"answer": "use <b> for bold & strong"}
 
 
 def test_xml_adapter_parse_allows_closing_tag_nested_in_another_field():
@@ -1152,8 +1274,8 @@ def test_xml_adapter_parse_recovers_a_value_that_nests_its_own_tag():
 
     # KNOWN LIMITATION: a value that merely *ends* with its closing tag has no nested opening tag
     # to balance against, so the scan closes the block early and only whitespace follows -- nothing
-    # surplus is left in open text to detect. Representing it needs escaping, which this wire
-    # format does not have.
+    # surplus is left in open text to detect. A compliant completion escapes `<` and never
+    # produces this shape; on a raw legacy wire it stays a silent truncation.
     assert adapter.parse(CodeSig, "<code>\nbefore </code>\n</code>") == {"code": "before"}
 
     # Nesting is gated on the inner opening tag following after whitespace only. A value that

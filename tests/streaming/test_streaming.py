@@ -1233,6 +1233,129 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
 
 
 @pytest.mark.anyio
+async def test_xml_adapter_stream_decodes_escaped_value_and_matches_parse():
+    """A compliant (escaped) wire must stream as the decoded value `parse` returns.
+
+    The first `&lt;` arrives split across two chunks as `&l` | `t;`, so the decode has to hold the
+    partial entity back rather than emit it raw or read it in halves.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    chunks = ["<answer>", "\nif a &l", "t; b: print('&lt;/answer>')\n", "</answer>", "\n<other>ok</other>"]
+
+    async def xml_stream(*args, **kwargs):
+        for token in chunks:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    value = "".join(streamed).strip()
+    assert value == "if a < b: print('</answer>')"
+    assert value == dspy.XMLAdapter().parse(TwoFields, "".join(chunks))["answer"]
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 5])
+@pytest.mark.anyio
+async def test_xml_adapter_stream_decode_is_chunking_invariant(chunk_size):
+    """However the wire is chunked, the streamed value must equal what `parse` returns.
+
+    The value below stacks entities back to back, including the escaped form of a literal `&lt;`,
+    so every chunk size cuts some entity somewhere.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer>\na &amp;&amp; b &lt;&lt; c &amp;lt; d\n</answer>\n<other>ok</other>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), chunk_size):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + chunk_size]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    assert "".join(streamed).strip() == "a && b << c &lt; d"
+    assert "".join(streamed).strip() == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_decodes_entities_like_parse():
+    """The buffered nested-value emission must decode entities exactly as `parse` does."""
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    # A non-compliant wire: raw nested tags around an escaped `&`. The nested path buffers it and
+    # must emit the decoded value, or the stream and the final Prediction would disagree.
+    completion = "<code>\n<code>a &amp; b</code>\n</code>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            chunks = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    parsed = dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
+    assert parsed == "<code>a & b</code>"
+    assert "".join(chunks).strip() == parsed
+
+
+def test_xml_adapter_finalize_releases_a_held_entity_carry():
+    """A partial entity held back mid-stream must come out, decoded, when the stream ends.
+
+    The field-end queue is empty here -- the carry is all that is left -- so `finalize()` cannot
+    rely on `flush()` alone; before the carry existed it returned None for an empty queue.
+    """
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+
+    def chunk(content):
+        return ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    with dspy.context(adapter=dspy.XMLAdapter()):
+        emitted = []
+        for content in ["<answer>", "x &am"]:
+            response = listener.receive(chunk(content))
+            if response is not None:
+                emitted.append(response.chunk)
+        final = listener.finalize()
+
+    # Mid-stream the listener must not emit the half-entity `&am`...
+    assert emitted == ["x "]
+    # ...and at the end the tail has fully arrived: it was never an entity, so it comes out raw.
+    assert final is not None and final.is_last_chunk
+    assert final.chunk == "&am"
+
+
+@pytest.mark.anyio
 async def test_streaming_allows_custom_chunk_types():
     @dataclass
     class CustomChunk:

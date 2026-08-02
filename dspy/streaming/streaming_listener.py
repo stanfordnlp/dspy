@@ -11,7 +11,7 @@ import jiter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
-from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.adapters.xml_adapter import XMLAdapter, _entity_prefix_start, _unescape_value
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
@@ -41,6 +41,10 @@ def _new_xml_adapter_state() -> dict[str, Any]:
     nested path never drains that queue, and a second copy would retain the whole value twice. It
     is joined once, at the boundary. Re-joining it per chunk to re-read it would copy the whole
     buffer every time, which costs more over a long value than the rescanning `unscanned` avoids.
+
+    `pending` belongs to the token-by-token path: the tail of the last outgoing chunk that could
+    be the front of a wire entity split across chunks (the `&l` of `&lt;`), at most four
+    characters, held back until the rest arrives so the decode never reads half an entity.
     """
     return {
         "unscanned": "",
@@ -48,6 +52,7 @@ def _new_xml_adapter_state() -> dict[str, Any]:
         "depth": 0,
         "ready": False,
         "closed": False,
+        "pending": "",
     }
 
 
@@ -109,7 +114,7 @@ class StreamListener:
             },
         }
 
-    def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
+    def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> bool:
         for i in range(len(concat_message)):
             if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
                 return True
@@ -433,14 +438,31 @@ class StreamListener:
 
         self.stream_end = True
         self.field_end_queue = Queue()
+        # Decode wire entities exactly as `parse` will, so the emitted value matches the Prediction.
         return True, StreamResponse(
             self.predict_name,
             self.signature_field_name,
-            accumulated[:value_end].strip(),
+            _unescape_value(accumulated[:value_end].strip()),
             is_last_chunk=True,
         )
 
-    def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> StreamResponse | None:
+    def _xml_decode_stream_token(self, token: str) -> str:
+        """Decode wire entities in an outgoing chunk, carrying a trailing partial entity.
+
+        `flush()` and the end-identifier scan work on raw wire text, so decoding happens here, at
+        emission. A chunk can end mid-entity; that tail is held in `pending` and prefixed to the
+        next chunk -- or decoded as it stands on the last one, where whatever it is has fully
+        arrived. The concatenation of the emitted chunks therefore equals the decoded value.
+        """
+        text = self.xml_adapter_state["pending"] + token
+        if self.stream_end:
+            self.xml_adapter_state["pending"] = ""
+            return _unescape_value(text)
+        keep = _entity_prefix_start(text)
+        self.xml_adapter_state["pending"] = text[keep:]
+        return _unescape_value(text[:keep])
+
+    def _default_handle_stream_chunk(self, token: str | None, end_identifier: str) -> StreamResponse | None:
         concat_message = "".join(self.field_end_queue.queue).strip()
 
         if re.search(end_identifier, concat_message):
@@ -449,6 +471,9 @@ class StreamListener:
             last_token = self.flush()
             token = token + last_token if token else last_token
             token = token.rstrip()  # Remove the trailing \n\n
+
+        if isinstance(settings.adapter, XMLAdapter):
+            token = self._xml_decode_stream_token(token or "")
 
         if token or self.stream_end:
             return StreamResponse(
@@ -464,6 +489,9 @@ class StreamListener:
         This method is called to flush out the last a few tokens when the stream is ended. These tokens
         are in the buffer because we don't directly yield the tokens received by the stream listener
         with the purpose to not yield the end_identifier tokens, e.g., "[[ ## ... ## ]]" for ChatAdapter.
+
+        The returned text is raw wire text: for XMLAdapter the `</field>` boundary search below must
+        run before entity decoding, which callers apply at emission via `_xml_decode_stream_token`.
         """
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
@@ -500,15 +528,18 @@ class StreamListener:
             return None
 
         self.stream_end = True
-        if self.field_end_queue.qsize() > 0:
-            token = self.flush()
-            if token:
-                return StreamResponse(
-                    self.predict_name,
-                    self.signature_field_name,
-                    token,
-                    is_last_chunk=True,
-                )
+        token = self.flush() if self.field_end_queue.qsize() > 0 else ""
+        if isinstance(settings.adapter, XMLAdapter):
+            # Decode wire entities, and release the entity carry even when the queue itself is
+            # empty -- the stream can end right after a chunk whose tail looked like `&am`.
+            token = self._xml_decode_stream_token(token)
+        if token:
+            return StreamResponse(
+                self.predict_name,
+                self.signature_field_name,
+                token,
+                is_last_chunk=True,
+            )
         return None
 
     @property
