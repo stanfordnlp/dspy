@@ -149,6 +149,11 @@ Prediction(
 
 Every other value — anything that does not open with its own tag — still streams token by token as usual.
 
+A nested value whose balanced span contains another output field is a shape the stream cannot resolve: it
+can only emit the lazy reading as tokens arrive, since a chunk already sent cannot be recalled. `parse` then
+finds the sibling inside the span and raises `AdapterParseError` rather than returning that truncated value,
+so the run ends in the error instead of a `Prediction`.
+
 ### Streaming Multiple Fields
 
 You can monitor multiple fields by creating a `StreamListener` for each one. Here's an example with a multi-module program:
