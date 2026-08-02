@@ -152,11 +152,9 @@ def test_file_str():
     assert "<<CUSTOM-TYPE-END-IDENTIFIER>>" in str_repr
 
 
-def test_encode_file_to_dict_from_path(sample_text_file):
-    result = encode_file_to_dict(sample_text_file)
-    assert "file_data" in result
-    assert result["file_data"].startswith("data:text/plain;base64,")
-    assert "filename" in result
+def test_encode_file_to_dict_rejects_path(sample_text_file):
+    with pytest.raises(ValueError, match=r"File\.from_path"):
+        encode_file_to_dict(sample_text_file)
 
 
 def test_encode_file_to_dict_from_bytes():
@@ -165,8 +163,25 @@ def test_encode_file_to_dict_from_bytes():
     assert result["file_data"].startswith("data:application/octet-stream;base64,")
 
 
+def test_file_constructor_from_bytes():
+    file_obj = dspy.File(b"test content", filename="test.txt")
+    assert file_obj.file_data.startswith("data:application/octet-stream;base64,")
+    assert file_obj.filename == "test.txt"
+
+
+def test_file_constructor_from_data_uri():
+    data_uri = "data:text/plain;base64,aGVsbG8="
+    file_obj = dspy.File(data_uri)
+    assert file_obj.file_data == data_uri
+
+
+def test_file_constructor_rejects_conflicting_keyword():
+    with pytest.raises(TypeError, match="file_data"):
+        dspy.File(b"test content", file_data="data:text/plain;base64,aGVsbG8=")
+
+
 def test_invalid_file_string():
-    with pytest.raises(ValueError, match="Unrecognized"):
+    with pytest.raises(ValueError, match=r"File\.from_path"):
         encode_file_to_dict("https://this_is_not_a_file_path")
 
 
