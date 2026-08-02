@@ -609,6 +609,7 @@ def test_finish_args_coerced_from_strings():
     assert isinstance(outputs.count, int)
     assert outputs.event == Event(name="Science Fair", year=2026)
     assert len(lm.history) == 1
+    assert outputs.trajectory["observation_0"] == "Completed."
 
 
 def test_finish_with_empty_args_falls_back_to_extract():
@@ -773,6 +774,7 @@ async def test_async_finish_args_coerced_to_declared_types():
     assert outputs.count == 7
     assert outputs.event == Event(name="Science Fair", year=2026)
     assert len(lm.history) == 1
+    assert outputs.trajectory["observation_0"] == "Completed."
 
 
 @pytest.mark.asyncio

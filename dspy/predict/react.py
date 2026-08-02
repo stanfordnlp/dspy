@@ -62,6 +62,10 @@ class ReAct(Module):
             ]
         )
 
+        self._output_type_adapters = {
+            name: _type_adapter_for_annotation(field.annotation) for name, field in signature.output_fields.items()
+        }
+
         tools["finish"] = Tool(
             func=lambda **kwargs: "Completed.",
             name="finish",
@@ -70,7 +74,8 @@ class ReAct(Module):
                 f"each of {outputs} passed as arguments, once all information for producing them is available."
             ),
             args={
-                name: _json_schema_for_annotation(field.annotation) for name, field in signature.output_fields.items()
+                name: _json_schema_for_type_adapter(self._output_type_adapters[name])
+                for name in signature.output_fields
             },
             arg_types={name: field.annotation for name, field in signature.output_fields.items()},
         )
@@ -118,16 +123,17 @@ class ReAct(Module):
             trajectory[f"tool_name_{idx}"] = pred.next_tool_name
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
-            try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
-
             if pred.next_tool_name == "finish":
+                trajectory[f"observation_{idx}"] = "Completed."
                 parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
                 if parsed_outputs is not None:
                     return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
                 break
+
+            try:
+                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+            except Exception as err:
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
@@ -149,16 +155,17 @@ class ReAct(Module):
             trajectory[f"tool_name_{idx}"] = pred.next_tool_name
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
-            try:
-                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
-
             if pred.next_tool_name == "finish":
+                trajectory[f"observation_{idx}"] = "Completed."
                 parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
                 if parsed_outputs is not None:
                     return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
                 break
+
+            try:
+                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
+            except Exception as err:
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
@@ -178,8 +185,10 @@ class ReAct(Module):
             if next_tool_args.get(name) is None:
                 return None
             value = next_tool_args[name]
+            type_adapter = self._output_type_adapters.get(name)
+            if type_adapter is None:
+                return None
             try:
-                type_adapter = pydantic.TypeAdapter(field.annotation)
                 try:
                     outputs[name] = type_adapter.validate_python(value)
                 except pydantic.ValidationError:
@@ -245,11 +254,20 @@ class ReAct(Module):
         return trajectory
 
 
-def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
+def _type_adapter_for_annotation(annotation: Any) -> "pydantic.TypeAdapter | None":
     try:
-        return pydantic.TypeAdapter(annotation).json_schema()
+        return pydantic.TypeAdapter(annotation)
     except Exception:
-        return {"type": "string"}
+        return None
+
+
+def _json_schema_for_type_adapter(type_adapter: "pydantic.TypeAdapter | None") -> dict[str, Any]:
+    if type_adapter is not None:
+        try:
+            return type_adapter.json_schema()
+        except Exception:
+            pass
+    return {"type": "string"}
 
 
 
