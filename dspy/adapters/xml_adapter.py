@@ -323,12 +323,15 @@ class XMLAdapter(ChatAdapter):
     ) -> str:
         messages = [prefix]
 
-        messages.append(self.format_field_with_value(
-            {
-                FieldInfoWithName(name=k, info=v): inputs.get(k)
-                for k, v in signature.input_fields.items() if k in inputs
-            },
-        ))
+        messages.append(
+            self.format_field_with_value(
+                {
+                    FieldInfoWithName(name=k, info=v): inputs.get(k)
+                    for k, v in signature.input_fields.items()
+                    if k in inputs
+                },
+            )
+        )
 
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)

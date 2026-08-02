@@ -312,7 +312,8 @@ def test_xml_adapter_format_exact_messages_for_simple_signature():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?"},
@@ -397,7 +398,7 @@ def test_xml_adapter_format_exact_non_native_tool_result_history_field():
         "</question>\n"
         "\n"
         "<tools>\n"
-        '["search. It takes arguments {\'query\': {\'type\': \'string\'}}."]\n'
+        "[\"search. It takes arguments {'query': {'type': 'string'}}.\"]\n"
         "</tools>\n"
         "\n"
         "Respond with the corresponding output fields wrapped in XML tags `<next_thought>`, then `<tool_calls>`."
@@ -410,7 +411,8 @@ def test_xml_adapter_format_exact_messages_for_two_input_signature():
         answer: str = dspy.InputField()
         judgement: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?", "answer": "To get to the other side!"},
@@ -466,7 +468,8 @@ def test_xml_adapter_format_exact_messages_with_demo_and_typed_output():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         MultiAnswer,
         demos=[{"question": "Q1", "answer": "A1", "score": 0.9}],
         inputs={"question": "Q2"},
@@ -501,9 +504,12 @@ In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; keep 
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, produce the fields `answer`, `score`.""",
         },
-        {"role": "user", "content": """<question>
+        {
+            "role": "user",
+            "content": """<question>
 Q1
-</question>"""},
+</question>""",
+        },
         {
             "role": "assistant",
             "content": """<answer>
@@ -573,7 +579,8 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
             }
         ]
     )
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         RichRenderingSignature,
         demos=[
             {
@@ -593,114 +600,139 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
         },
     )
 
-    expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `answer` (AnswerCard):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<history>\n'
-                 '{history}\n'
-                 '</history>\n'
-                 '\n'
-                 '<image>\n'
-                 '{image}\n'
-                 '</image>\n'
-                 '\n'
-                 '<tools>\n'
-                 '{tools}\n'
-                 '</tools>\n'
-                 '\n'
-                 '<profile>\n'
-                 '{profile}\n'
-                 '</profile>\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<answer>\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
-                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
-                 '</answer>\n'
-                 "\n"
-                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
-                 "keep the wrapping tags unescaped.\n"
-                 'In adhering to this structure, your objective is: \n'
-                 '        Answer using all supplied context.'},
-     {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "<image>\n"},
-                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
-                  {"type": "text",
-                   "text": '\n'
-                           '</image>\n'
-                           '\n'
-                           '<tools>\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
-                           '</tools>\n'
-                           '\n'
-                           '<profile>\n'
-                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
-                           '"interests": ["math", "machines"]}\n'
-                           '</profile>\n'
-                           '\n'
-                           '<question>\n'
-                           'What should we mention?\n'
-                           '</question>'}]},
-     {"role": "assistant",
-      "content": '<answer>\n{"answer": "Mention analytical engines.", "sources": ["demo"]}\n</answer>'},
-     {"role": "user",
-      "content": '<profile>\n'
-                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
-                 '["math", "machines"]}\n'
-                 '</profile>\n'
-                 '\n'
-                 '<question>\n'
-                 'Who is Ada?\n'
-                 '</question>'},
-     {"role": "assistant",
-      "content": '<answer>\n{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n</answer>'},
-     {"role": "user",
-      "content": [{"type": "text", "text": "<image>\n"},
-                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
-                  {"type": "text",
-                   "text": '\n'
-                           '</image>\n'
-                           '\n'
-                           '<tools>\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
-                           '</tools>\n'
-                           '\n'
-                           '<profile>\n'
-                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
-                           '"interests": ["compilers", "navy"]}\n'
-                           '</profile>\n'
-                           '\n'
-                           '<question>\n'
-                           'What should the answer include?\n'
-                           '</question>\n'
-                           '\n'
-                           'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`.'}]}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `history` (History): \n"
+            "2. `image` (Image): \n"
+            "3. `tools` (list[Tool]): \n"
+            "4. `profile` (Profile): \n"
+            "5. `question` (str):\n"
+            "Your output fields are:\n"
+            "1. `answer` (AnswerCard):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<history>\n"
+            "{history}\n"
+            "</history>\n"
+            "\n"
+            "<image>\n"
+            "{image}\n"
+            "</image>\n"
+            "\n"
+            "<tools>\n"
+            "{tools}\n"
+            "</tools>\n"
+            "\n"
+            "<profile>\n"
+            "{profile}\n"
+            "</profile>\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<answer>\n"
+            "{answer}        # note: the value you produce must adhere to the JSON schema: "
+            '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
+            '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
+            '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
+            "</answer>\n"
+            "\n"
+            "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+            "keep the wrapping tags unescaped.\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Answer using all supplied context.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "This is an example of the task, though some input or output fields are not "
+                    "supplied.\n"
+                    "\n"
+                    "<image>\n",
+                },
+                {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                {
+                    "type": "text",
+                    "text": "\n"
+                    "</image>\n"
+                    "\n"
+                    "<tools>\n"
+                    '["search, whose description is <desc>Search for documents.</desc>. It '
+                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                    "'default': 3}}.\"]\n"
+                    "</tools>\n"
+                    "\n"
+                    "<profile>\n"
+                    '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                    '"interests": ["math", "machines"]}\n'
+                    "</profile>\n"
+                    "\n"
+                    "<question>\n"
+                    "What should we mention?\n"
+                    "</question>",
+                },
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": '<answer>\n{"answer": "Mention analytical engines.", "sources": ["demo"]}\n</answer>',
+        },
+        {
+            "role": "user",
+            "content": "<profile>\n"
+            '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+            '["math", "machines"]}\n'
+            "</profile>\n"
+            "\n"
+            "<question>\n"
+            "Who is Ada?\n"
+            "</question>",
+        },
+        {
+            "role": "assistant",
+            "content": '<answer>\n{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n</answer>',
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "<image>\n"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                {
+                    "type": "text",
+                    "text": "\n"
+                    "</image>\n"
+                    "\n"
+                    "<tools>\n"
+                    '["search, whose description is <desc>Search for documents.</desc>. It '
+                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                    "'default': 3}}.\"]\n"
+                    "</tools>\n"
+                    "\n"
+                    "<profile>\n"
+                    '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                    '"interests": ["compilers", "navy"]}\n'
+                    "</profile>\n"
+                    "\n"
+                    "<question>\n"
+                    "What should the answer include?\n"
+                    "</question>\n"
+                    "\n"
+                    "Respond with the corresponding output fields wrapped in XML tags "
+                    "`<answer>`.",
+                },
+            ],
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
 
 def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
     class XmlAddress(pydantic.BaseModel):
@@ -715,39 +747,47 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
         question: str = dspy.InputField()
         summary: XmlSummary = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"})
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"}
+    )
 
-    expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `summary` (XmlSummary):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<summary>\n'
-                 '{summary}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "$defs": {"XmlAddress": {"type": "object", "properties": {"city": '
-                 '{"type": "string", "title": "City"}, "country": {"type": "string", "title": '
-                 '"Country"}}, "required": ["city", "country"], "title": "XmlAddress"}}, "properties": '
-                 '{"address": {"$ref": "#/$defs/XmlAddress"}, "title": {"type": "string", "title": '
-                 '"Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
-                 '</summary>\n'
-                 "\n"
-                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
-                 "keep the wrapping tags unescaped.\n"
-                 'In adhering to this structure, your objective is: \n'
-                 '        Given the fields `question`, produce the fields `summary`.'},
-     {"role": "user",
-      "content": "<question>\n"
-                 "Summarize\n"
-                 "</question>\n"
-                 "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`."}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `question` (str):\n"
+            "Your output fields are:\n"
+            "1. `summary` (XmlSummary):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<summary>\n"
+            "{summary}        # note: the value you produce must adhere to the JSON schema: "
+            '{"type": "object", "$defs": {"XmlAddress": {"type": "object", "properties": {"city": '
+            '{"type": "string", "title": "City"}, "country": {"type": "string", "title": '
+            '"Country"}}, "required": ["city", "country"], "title": "XmlAddress"}}, "properties": '
+            '{"address": {"$ref": "#/$defs/XmlAddress"}, "title": {"type": "string", "title": '
+            '"Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
+            "</summary>\n"
+            "\n"
+            "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+            "keep the wrapping tags unescaped.\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Given the fields `question`, produce the fields `summary`.",
+        },
+        {
+            "role": "user",
+            "content": "<question>\n"
+            "Summarize\n"
+            "</question>\n"
+            "\n"
+            "Respond with the corresponding output fields wrapped in XML tags `<summary>`.",
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -760,69 +800,74 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         IncompleteDemoSignature,
         [{"question": "Q1", "answer": "A1"}],
         {"question": "Q2", "context": "C2"},
     )
 
-    expected_messages = [{"role": "system",
-      "content": "Your input fields are:\n"
-                 "1. `question` (str): \n"
-                 "2. `context` (str):\n"
-                 "Your output fields are:\n"
-                 "1. `answer` (str): \n"
-                 "2. `score` (float):\n"
-                 "All interactions will be structured in the following way, with the appropriate "
-                 "values filled in.\n"
-                 "\n"
-                 "<question>\n"
-                 "{question}\n"
-                 "</question>\n"
-                 "\n"
-                 "<context>\n"
-                 "{context}\n"
-                 "</context>\n"
-                 "\n"
-                 "<answer>\n"
-                 "{answer}\n"
-                 "</answer>\n"
-                 "\n"
-                 "<score>\n"
-                 "{score}        # note: the value you produce must be a single float value\n"
-                 "</score>\n"
-                 "\n"
-                 "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
-                 "keep the wrapping tags unescaped.\n"
-                 "In adhering to this structure, your objective is: \n"
-                 "        Given the fields `question`, `context`, produce the fields `answer`, "
-                 "`score`."},
-     {"role": "user",
-      "content": "This is an example of the task, though some input or output fields are not "
-                 "supplied.\n"
-                 "\n"
-                 "<question>\n"
-                 "Q1\n"
-                 "</question>"},
-     {"role": "assistant",
-      "content": "<answer>\n"
-                 "A1\n"
-                 "</answer>\n"
-                 "\n"
-                 "<score>\n"
-                 "Not supplied for this particular example. \n"
-                 "</score>"},
-     {"role": "user",
-      "content": "<question>\n"
-                 "Q2\n"
-                 "</question>\n"
-                 "\n"
-                 "<context>\n"
-                 "C2\n"
-                 "</context>\n"
-                 "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<answer>`, then "
-                 "`<score>`."}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `question` (str): \n"
+            "2. `context` (str):\n"
+            "Your output fields are:\n"
+            "1. `answer` (str): \n"
+            "2. `score` (float):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<context>\n"
+            "{context}\n"
+            "</context>\n"
+            "\n"
+            "<answer>\n"
+            "{answer}\n"
+            "</answer>\n"
+            "\n"
+            "<score>\n"
+            "{score}        # note: the value you produce must be a single float value\n"
+            "</score>\n"
+            "\n"
+            "In output values, escape literal `&` as `&amp;` and literal `<` as `&lt;`; "
+            "keep the wrapping tags unescaped.\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Given the fields `question`, `context`, produce the fields `answer`, "
+            "`score`.",
+        },
+        {
+            "role": "user",
+            "content": "This is an example of the task, though some input or output fields are not "
+            "supplied.\n"
+            "\n"
+            "<question>\n"
+            "Q1\n"
+            "</question>",
+        },
+        {
+            "role": "assistant",
+            "content": "<answer>\nA1\n</answer>\n\n<score>\nNot supplied for this particular example. \n</score>",
+        },
+        {
+            "role": "user",
+            "content": "<question>\n"
+            "Q2\n"
+            "</question>\n"
+            "\n"
+            "<context>\n"
+            "C2\n"
+            "</context>\n"
+            "\n"
+            "Respond with the corresponding output fields wrapped in XML tags `<answer>`, then "
+            "`<score>`.",
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
