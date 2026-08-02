@@ -121,14 +121,24 @@ Prediction(
 )
 ```
 
+### Streaming Escaped Values with `dspy.XMLAdapter`
+
+`dspy.XMLAdapter` wraps each field in `<field_name>...</field_name>` tags and escapes output values on the
+wire — the model is instructed to write `&` as `&amp;` and `<` as `&lt;`, and `parse` decodes them again. The
+stream applies the same decode as it emits, so the chunks you receive spell the decoded value, exactly as
+`XMLAdapter.parse` puts it in the final `Prediction`. An entity split across two stream chunks (`&l` arriving
+before `t;`) is held back until it completes, so you never see half an entity — and never more than four
+characters are held. One consequence worth knowing: the decode cannot tell a compliant completion from a
+legacy one, so a model that literally writes `&lt;` without meaning to escape now streams (and parses) as `<`.
+
 ### Streaming Nested Values with `dspy.XMLAdapter`
 
-`dspy.XMLAdapter` wraps each field in `<field_name>...</field_name>` tags, and a value may itself be a
+A completion that ignores the escape instruction can still carry raw markup, and a value may then itself be a
 same-named element — for example a `code` field whose value is `<code>x = 1</code>`. Such a value cannot be
 streamed token by token: which closing tag ends the field is only known once the balancing tag arrives, and a
 token already handed to you could not be taken back. The listener therefore buffers a value of that shape and
-emits it as a single `StreamResponse` once its boundary is settled, so what you read from the stream always
-matches what `XMLAdapter.parse` puts in the final `Prediction`:
+emits it as a single `StreamResponse` (entity-decoded, like every emission) once its boundary is settled, so
+what you read from the stream always matches what `XMLAdapter.parse` puts in the final `Prediction`:
 
 ```
 StreamResponse(predict_name='self', signature_field_name='code', chunk='<code>x = 1</code>')
