@@ -2,21 +2,21 @@
 
 ## Intent
 
-`dspy.Flex` is for tasks where you don't know the right *shape* of the solution up front. Every other module fixes its structure when you construct it — `Predict` is one call, `ChainOfThought` is one call with reasoning, `ReAct` is a tool loop — and optimization only tunes the text around that fixed structure. `Flex` moves the structure itself into the search space. You give it a signature; it starts as a trivial baseline; and `dspy.GEPA` rewrites its entire implementation — how many predictors, which primitives, what runs in Python instead of an LM — against your metric. Reach for it when the best decomposition is something you'd rather discover and optimize.
+`dspy.Flex` is for tasks where you don't know the right *shape* of the solution up front. Every other module fixes its structure when you construct it — `Predict` is one call, `ChainOfThought` is one call with reasoning, `ReAct` is a tool loop — and optimization only tunes the prompt around that fixed structure. `Flex` moves the structure itself into the search space. You give it a signature; it starts as a `dspy.Predict` or `dspy.RLM` baseline; and `dspy.GEPA` rewrites its entire implementation — how many predictors, which primitives, what runs in Python instead of an LM — against your metric. Reach for it when the best decomposition is something you'd rather discover and optimize.
 
 ## Design decisions
 
 ### 1. A Flex is a module whose source code is the optimizable parameter
 
-An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole `dspy.Module` subclass, held as a source string and exposed as `module_src`. That class has the usual two methods: `__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program is.
+An ordinary module's tunable surface is its predictors' instructions. A `Flex`'s tunable surface is a whole `dspy.Module` subclass, held as a source string and exposed as `module_src`. That class has the usual two methods: `__init__` constructs whatever predictors it needs, and `forward` calls them and returns a `dspy.Prediction`. Optimizing the module means replacing that source with a better version — different predictors, different control flow, more or less Python. The prompt is no longer the unit of optimization; the program code is.
 
 ### 2. It drops into any signature and starts from a simple baseline
 
-You construct `Flex` from any `dspy.Signature`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a single `dspy.RLM` so the baseline can call them. The baseline is the simplest thing that works as the starting point of a search.
+You construct `Flex` from any `dspy.Signature`, and it's immediately runnable. With no tools, its baseline source is a single `dspy.Predict` over the whole signature; with tools, a `dspy.RLM` so the baseline can call them. The baseline is the simplest thing that works as the starting point of a search.
 
 ### 3. GEPA discovers `Flex` by type and optimizes code instead of text
 
-When GEPA compiles a program, it enumerates the `Flex` submodules — by type, so only genuine `Flex` instances qualify — and splits its work: each `Flex` becomes a **code component**, every other predictor stays an **instruction component**. Code components are seeded with their current `module_src` and evolved by a dedicated code proposer; instruction components are seeded with their current instructions and optimized using GEPA. A custom `instruction_proposer` replaces the instruction proposer only; code components stay on the code proposer, since a proposer written to rewrite prompts would return prose where a `dspy.Module` subclass is required.
+When GEPA compiles a program, it enumerates the `Flex` submodules and splits its work: each `Flex` becomes a **code component**, every other predictor stays an **instruction component**. Code components are seeded with their current `module_src` and evolved by a dedicated code proposer; instruction components are seeded with their current instructions and optimized using GEPA. A custom `instruction_proposer` replaces the instruction proposer only; code components stay on the code proposer.
 
 ### 4. The code proposer reflects on whole-program behavior
 
@@ -24,7 +24,7 @@ Instruction optimization in GEPA is per-predictor: it looks at one predictor's i
 
 ### 5. Predictors inside a Flex are owned by its code, not tuned in parallel
 
-When you mix a `Flex` with ordinary modules in one program, GEPA optimizes the `Flex`'s code and the other predictors' instructions — but never the instructions of predictors that live *inside* the `Flex`. Those predictors are constructed by the current `module_src` and will be replaced wholesale by the next code candidate, so tuning their instructions would be optimizing something about to be overwritten.
+When you mix a `Flex` with ordinary modules in one program, GEPA optimizes the `Flex`'s code and the other predictors' instructions — but never the instructions of predictors that live *inside* the `Flex`. Those predictors are constructed by the current `module_src` and will be replaced wholesale by the next code candidate, so tuning their instructions would be optimizing something that can be potentially overwritten.
 
 The mechanism is structural: `Flex` is a `Parameter` (like `dspy.Predict`), so a parent program's `named_parameters()` yields it as one state-bearing leaf and never recurses into it. That single fact drives saving (the parent's state nests the `Flex`'s state, `module_src` included), GEPA discovery (each `Flex` is one code component), and opacity — a parent's `named_predictors()`, `predictors()`, `set_lm()`, and demo/instruction optimizers like `BootstrapFewShot` don't see the `Flex`'s internals, so nothing tunes them behind the code's back. The `Flex` reports the same about itself: `flex.named_predictors()` is empty — its update unit is its code, not the predictors the code constructs. A `Flex` holds no LM of its own: like any module, its bridged predictor calls resolve the ambient LM at call time (`dspy.configure(lm=...)`, or a caller's `dspy.context(lm=...)`). `reset_copy()` resets a `Flex` the way it resets a `Predict`: internal predictor state is cleared while `module_src` is kept, just as tuned instructions are.
 
