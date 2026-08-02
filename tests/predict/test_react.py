@@ -25,7 +25,6 @@ def test_tool_observation_preserves_custom_type():
     def make_images():
         return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
 
-
     adapter = SpyChatAdapter()
     lm = DummyLM(
         [
