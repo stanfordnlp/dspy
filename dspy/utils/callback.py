@@ -5,7 +5,9 @@ import uuid
 from typing import Any, Callable
 
 import dspy
-from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+# Re-exported for backwards compatibility; the wrappers below import it lazily instead.
+from dspy.utils.callback_context import ACTIVE_CALL_ID  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +299,10 @@ def with_callbacks(fn):
 
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
 
+            # Imported here, not at module level, so cloudpickle does not capture the ContextVar
+            # by value when serializing a decorated class.
+            from dspy.utils.callback_context import ACTIVE_CALL_ID
+
             # Active ID must be set right before the function is called, not before calling the callbacks.
             parent_call_id = ACTIVE_CALL_ID.get()
             ACTIVE_CALL_ID.set(call_id)
@@ -326,6 +332,10 @@ def with_callbacks(fn):
             call_id = uuid.uuid4().hex
 
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
+
+            # Imported here, not at module level, so cloudpickle does not capture the ContextVar
+            # by value when serializing a decorated class.
+            from dspy.utils.callback_context import ACTIVE_CALL_ID
 
             # Active ID must be set right before the function is called, not before calling the callbacks.
             parent_call_id = ACTIVE_CALL_ID.get()

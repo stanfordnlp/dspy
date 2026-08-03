@@ -262,3 +262,42 @@ def callback(x):
         # Only need to clean up sys.path
         if str(tmp_path) in sys.path:
             sys.path.remove(str(tmp_path))
+
+
+def test_settings_save_with_custom_adapter_subclass(tmp_path):
+    custom_module_path = tmp_path / "custom_adapter.py"
+    with open(custom_module_path, "w") as f:
+        f.write(
+            """
+from dspy.adapters.chat_adapter import ChatAdapter
+
+
+class MyAdapter(ChatAdapter):
+    pass
+"""
+        )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_adapter
+
+        dspy.configure(adapter=custom_adapter.MyAdapter())
+
+        settings_path = tmp_path / "settings.pkl"
+        dspy.settings.save(settings_path, modules_to_serialize=[custom_adapter])
+
+        # Remove the custom module again to simulate it not being available at load time
+        sys.modules.pop("custom_adapter", None)
+        sys.path.remove(str(tmp_path))
+        del custom_adapter
+
+        dspy.configure(adapter=None)
+
+        loaded_settings = dspy.load_settings(settings_path, allow_pickle=True)
+        dspy.settings.configure(**loaded_settings)
+
+        assert type(dspy.settings.adapter).__name__ == "MyAdapter"
+
+    finally:
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))

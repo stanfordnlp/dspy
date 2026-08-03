@@ -1,5 +1,6 @@
 import time
 
+import cloudpickle
 import pytest
 
 import dspy
@@ -73,6 +74,16 @@ def test_bind_active_call_id_restores_context_after_exception():
 
     assert observed_call_ids == ["parent-call"]
     assert ACTIVE_CALL_ID.get() is None
+
+
+def test_with_callbacks_wrapper_is_picklable():
+    # The wrappers must not capture ACTIVE_CALL_ID by value, otherwise cloudpickle cannot
+    # serialize any class whose methods they decorate, e.g. every Adapter subclass.
+    async def async_fn(self):
+        return None
+
+    cloudpickle.dumps(with_callbacks(lambda self: None))
+    cloudpickle.dumps(with_callbacks(async_fn))
 
 
 @pytest.mark.parametrize(
