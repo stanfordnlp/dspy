@@ -178,6 +178,29 @@ def test_inherited_compile_is_not_wrapped_twice_and_override_is_wrapped_once():
     assert starts[1]["parent_call_id"] is None
 
 
+@pytest.mark.asyncio
+async def test_async_override_calling_super_emits_one_optimizer_callback_pair():
+    class BaseOptimizer(Teleprompter):
+        async def compile(self, student, *, trainset):
+            return student
+
+    class OverridingOptimizer(BaseOptimizer):
+        async def compile(self, student, *, trainset):
+            return await super().compile(student, trainset=trainset)
+
+    callback = RecordingCallback()
+    optimizer = OverridingOptimizer()
+    student = dspy.Module()
+
+    with dspy.context(callbacks=[callback]):
+        assert await optimizer.compile(student, trainset=[]) is student
+
+    start, end = callback.events
+    assert start["instance"] is optimizer
+    assert start["parent_call_id"] is None
+    assert end["call_id"] == start["call_id"]
+
+
 def test_optimizer_callback_wrapper_round_trips_through_cloudpickle():
     class Optimizer(Teleprompter):
         def compile(self, student, *, trainset):
