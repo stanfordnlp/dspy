@@ -1,4 +1,5 @@
 import functools
+import inspect
 from typing import Any
 
 import dspy.utils.callback_context as callback_context
@@ -8,6 +9,20 @@ from dspy.utils.callback import with_callbacks
 
 def _with_compile_callbacks(fn):
     callback_fn = with_callbacks(fn)
+
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def async_wrapper(instance, *args, **kwargs):
+            active_optimizers = callback_context._ACTIVE_OPTIMIZERS.get()
+            if id(instance) in active_optimizers:
+                return await fn(instance, *args, **kwargs)
+            token = callback_context._ACTIVE_OPTIMIZERS.set((*active_optimizers, id(instance)))
+            try:
+                return await callback_fn(instance, *args, **kwargs)
+            finally:
+                callback_context._ACTIVE_OPTIMIZERS.reset(token)
+
+        return async_wrapper
 
     @functools.wraps(fn)
     def wrapper(instance, *args, **kwargs):
