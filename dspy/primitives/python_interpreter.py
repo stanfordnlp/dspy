@@ -21,7 +21,7 @@ from os import PathLike
 from typing import Any, Callable, NoReturn
 
 from pydantic import BaseModel
-from pydantic_core import PydanticSerializationError
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
 
@@ -112,8 +112,11 @@ def _make_jsonable(value: Any) -> Any:
 
     Handles Pydantic BaseModel, dataclasses, and namedtuples so that
     ``json.dumps()`` can serialize tool results without falling back to
-    ``str()``.
+    ``str()``. Anything else JSON-mode serializable (datetimes, enums, UUIDs,
+    sets, ...) is converted the way it would serialize into a JSON body.
     """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
     if isinstance(value, BaseModel):
         return _make_jsonable(_dump_pydantic(value))
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -129,7 +132,10 @@ def _make_jsonable(value: Any) -> Any:
         return [_make_jsonable(v) for v in value]
     if isinstance(value, tuple):
         return tuple(_make_jsonable(v) for v in value)
-    return value
+    try:
+        return to_jsonable_python(value)
+    except PydanticSerializationError:
+        return value
 
 
 class PythonInterpreter:
@@ -528,7 +534,11 @@ class PythonInterpreter:
             except TypeError:
                 return [self._to_json_compatible(v) for v in value]
         else:
-            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._to_json_compatible(coerced)
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
@@ -595,7 +605,11 @@ class PythonInterpreter:
             items = ", ".join(self._serialize_value(item) for item in sorted_items)
             return f"[{items}]"
         else:
-            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._serialize_value(coerced)
 
     def _inject_large_var(self, name: str, value: str) -> None:
         """Inject a large variable via the virtual filesystem."""

@@ -74,11 +74,13 @@ class CodeInterpreter(Protocol):
     """
 
     @property
-    def tools(self) -> dict[str, Callable[..., str]]:
+    def tools(self) -> dict[str, Callable[..., Any]]:
         """Tools available for interpreter code to call.
 
         Tools are host-side functions that can be invoked from within the
-        interpreter. Each tool accepts keyword arguments and returns a string.
+        interpreter. Each tool accepts keyword arguments. Return values must
+        satisfy the boundary supported by the interpreter; Flex tools must
+        return JSON-compatible values.
 
         Implementations should accept tools via constructor and expose them
         through this property.
