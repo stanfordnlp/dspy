@@ -121,7 +121,7 @@ class ReActV2(Module):
             pending_inputs = {}
 
             if final_outputs is not None:
-                return Prediction(**final_outputs, history=history, termination_reason="submit")
+                return _prediction_with_metadata(final_outputs, history, "submit")
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
@@ -197,7 +197,7 @@ class ReActV2(Module):
         _append_history_event(history, event)
 
         if final_outputs is not None:
-            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+            return _prediction_with_metadata(final_outputs, history, "forced_submit")
 
         return Prediction(history=history, termination_reason=break_reason or "failed")
 
@@ -244,6 +244,15 @@ def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int) -> ToolCalls:
 def _append_history_event(history: dspy.History, event: dict[str, Any]) -> None:
     if event:
         history.messages.append(event)
+
+
+def _prediction_with_metadata(
+    final_outputs: dict[str, Any], history: dspy.History, termination_reason: str
+) -> Prediction:
+    prediction_values = dict(final_outputs)
+    prediction_values.setdefault("history", history)
+    prediction_values.setdefault("termination_reason", termination_reason)
+    return Prediction(**prediction_values)
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
