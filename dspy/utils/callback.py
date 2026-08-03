@@ -5,7 +5,9 @@ import uuid
 from typing import Any, Callable
 
 import dspy
-from dspy.utils.callback_context import ACTIVE_CALL_ID
+import dspy.utils.callback_context as callback_context
+
+ACTIVE_CALL_ID = callback_context.ACTIVE_CALL_ID
 
 logger = logging.getLogger(__name__)
 
@@ -329,8 +331,8 @@ def with_callbacks(fn):
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
 
             # Active ID must be set right before the function is called, not before calling the callbacks.
-            parent_call_id = ACTIVE_CALL_ID.get()
-            ACTIVE_CALL_ID.set(call_id)
+            parent_call_id = callback_context.ACTIVE_CALL_ID.get()
+            callback_context.ACTIVE_CALL_ID.set(call_id)
 
             results = None
             exception = None
@@ -341,7 +343,7 @@ def with_callbacks(fn):
                 exception = e
                 raise exception
             finally:
-                ACTIVE_CALL_ID.set(parent_call_id)
+                callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
         return async_wrapper
@@ -359,8 +361,8 @@ def with_callbacks(fn):
             _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
 
             # Active ID must be set right before the function is called, not before calling the callbacks.
-            parent_call_id = ACTIVE_CALL_ID.get()
-            ACTIVE_CALL_ID.set(call_id)
+            parent_call_id = callback_context.ACTIVE_CALL_ID.get()
+            callback_context.ACTIVE_CALL_ID.set(call_id)
 
             results = None
             exception = None
@@ -371,7 +373,7 @@ def with_callbacks(fn):
                 exception = e
                 raise exception
             finally:
-                ACTIVE_CALL_ID.set(parent_call_id)
+                callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
         return sync_wrapper

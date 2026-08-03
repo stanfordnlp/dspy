@@ -1,5 +1,6 @@
 import time
 
+import cloudpickle
 import pytest
 
 import dspy
@@ -73,6 +74,18 @@ def test_bind_active_call_id_restores_context_after_exception():
 
     assert observed_call_ids == ["parent-call"]
     assert ACTIVE_CALL_ID.get() is None
+
+
+@pytest.mark.asyncio
+async def test_with_callbacks_wrappers_round_trip_through_cloudpickle():
+    async def async_fn(self):
+        return "async"
+
+    sync_fn = cloudpickle.loads(cloudpickle.dumps(with_callbacks(lambda self: "sync")))
+    async_fn = cloudpickle.loads(cloudpickle.dumps(with_callbacks(async_fn)))
+
+    assert sync_fn(object()) == "sync"
+    assert await async_fn(object()) == "async"
 
 
 @pytest.mark.parametrize(
