@@ -1,11 +1,9 @@
-import contextvars
 import functools
 from typing import Any
 
+import dspy.utils.callback_context as callback_context
 from dspy.primitives import Example, Module
 from dspy.utils.callback import with_callbacks
-
-_ACTIVE_OPTIMIZERS = contextvars.ContextVar("active_optimizers", default=())
 
 
 def _with_compile_callbacks(fn):
@@ -13,13 +11,14 @@ def _with_compile_callbacks(fn):
 
     @functools.wraps(fn)
     def wrapper(instance, *args, **kwargs):
-        if id(instance) in _ACTIVE_OPTIMIZERS.get():
+        active_optimizers = callback_context._ACTIVE_OPTIMIZERS.get()
+        if id(instance) in active_optimizers:
             return fn(instance, *args, **kwargs)
-        token = _ACTIVE_OPTIMIZERS.set((*_ACTIVE_OPTIMIZERS.get(), id(instance)))
+        token = callback_context._ACTIVE_OPTIMIZERS.set((*active_optimizers, id(instance)))
         try:
             return callback_fn(instance, *args, **kwargs)
         finally:
-            _ACTIVE_OPTIMIZERS.reset(token)
+            callback_context._ACTIVE_OPTIMIZERS.reset(token)
 
     return wrapper
 

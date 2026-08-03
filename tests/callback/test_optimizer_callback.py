@@ -1,5 +1,6 @@
 from unittest.mock import Mock, patch
 
+import cloudpickle
 import pytest
 
 import dspy
@@ -175,6 +176,23 @@ def test_inherited_compile_is_not_wrapped_twice_and_override_is_wrapped_once():
     assert isinstance(starts[0]["instance"], InheritedOptimizer)
     assert isinstance(starts[1]["instance"], OverridingOptimizer)
     assert starts[1]["parent_call_id"] is None
+
+
+def test_optimizer_callback_wrapper_round_trips_through_cloudpickle():
+    class Optimizer(Teleprompter):
+        def compile(self, student, *, trainset):
+            return student
+
+    optimizer = cloudpickle.loads(cloudpickle.dumps(Optimizer))()
+    callback = RecordingCallback()
+    student = dspy.Module()
+
+    with dspy.context(callbacks=[callback]):
+        assert optimizer.compile(student, trainset=[]) is student
+
+    start, end = callback.events
+    assert start["instance"] is optimizer
+    assert end["call_id"] == start["call_id"]
 
 
 def test_existing_optimizer_compile_is_instrumented():
