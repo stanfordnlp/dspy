@@ -19,6 +19,27 @@ sys.stdout, sys.stderr = buf_stdout, buf_stderr
 def last_exception_args():
     return json.dumps(sys.last_exc.args) if sys.last_exc else None
 
+def final_output_json():
+    # Serialize the FinalOutput payload with Python json and hand the string
+    # through JSON-RPC untouched, so values that are valid Python but not
+    # JS-JSON-safe survive: ints beyond 2**53 would be silently rounded by
+    # JSON.parse in JS, and nan/inf (emitted as bare NaN/Infinity by Python
+    # json) would make JSON.parse throw. The host parses with Python
+    # json.loads, which accepts both.
+    if not (sys.last_exc and sys.last_exc.args):
+        return None
+    def _default(o):
+        if isinstance(o, (set, frozenset)):
+            try:
+                return sorted(o)
+            except TypeError:
+                return list(o)
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+    try:
+        return json.dumps(sys.last_exc.args[0], default=_default)
+    except TypeError:
+        return None
+
 class FinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
@@ -349,6 +370,15 @@ while (true) {
 
       // Handle FinalOutput as a success result, not an error
       if (errorType === "FinalOutput") {
+        // Serialize the payload on the Python side and pass the JSON text
+        // through untouched; JSON.parse here would round ints beyond 2**53
+        // and throw on the NaN/Infinity literals Python json emits.
+        const finalOutputJson = pyodide.globals.get("final_output_json");
+        const serialized = finalOutputJson();
+        if (serialized !== null && serialized !== undefined) {
+          console.log(jsonrpcResult({ final_json: serialized }, requestId));
+          continue;
+        }
         const last_exception_args = pyodide.globals.get("last_exception_args");
         const errorArgs = JSON.parse(last_exception_args()) || [];
         const answer = errorArgs[0] || null;

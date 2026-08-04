@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import math
 import os
 import random
 import threading
@@ -130,6 +131,35 @@ def test_submit_with_list(pooled_interpreter):
     assert isinstance(result, FinalOutput)
     # SUBMIT now always returns a dict with "output" key for single-output default
     assert result.output == {"output": ["The result is", token]}
+
+
+def test_submit_big_int_round_trip(pooled_interpreter):
+    """Regression test: SUBMIT payloads with ints beyond 2**53 must not be rounded.
+
+    The payload previously crossed the boundary through JS JSON.parse, which
+    represents all numbers as float64, silently corrupting larger ints.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT(2**60 + 1)")
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"output": 2**60 + 1}
+
+
+def test_submit_non_finite_floats(pooled_interpreter):
+    """Regression test: SUBMIT with nan/inf must not crash execution.
+
+    Python json serializes the payload with bare NaN/Infinity literals, which
+    JS JSON.parse rejects, so SUBMIT(float("nan")) previously raised
+    CodeExecutionError instead of returning the value.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT(float('nan'))")
+    assert isinstance(result, FinalOutput)
+    assert math.isnan(result.output["output"])
+
+    result = interpreter.execute("SUBMIT({'value': float('inf')})")
+    assert isinstance(result, FinalOutput)
+    assert result.output["output"] == {"value": float("inf")}
 
 
 def test_enable_env_vars_flag():
