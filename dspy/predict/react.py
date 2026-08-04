@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 import pydantic
 
 import dspy
-from dspy.adapters.types.tool import Tool
+from dspy.adapters.types.tool import Tool, _resolve_json_schema_reference
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
@@ -265,7 +265,7 @@ def _type_adapter_for_annotation(annotation: Any) -> "pydantic.TypeAdapter | Non
 def _json_schema_for_type_adapter(type_adapter: "pydantic.TypeAdapter | None") -> dict[str, Any]:
     if type_adapter is not None:
         try:
-            return type_adapter.json_schema()
+            return _resolve_json_schema_reference(type_adapter.json_schema())
         except Exception:
             pass
     return {"type": "string"}
