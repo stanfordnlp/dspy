@@ -74,8 +74,8 @@ class ReAct(Module):
                 f"each of {outputs} passed as arguments, once all information for producing them is available."
             ),
             args={
-                name: _json_schema_for_type_adapter(self._output_type_adapters[name])
-                for name in signature.output_fields
+                name: _json_schema_for_type_adapter(self._output_type_adapters[name], field.annotation)
+                for name, field in signature.output_fields.items()
             },
             arg_types={name: field.annotation for name, field in signature.output_fields.items()},
         )
@@ -199,7 +199,7 @@ class ReAct(Module):
                         outputs[name] = type_adapter.validate_json(value)
                     else:
                         raise
-            except (pydantic.ValidationError, TypeError) as err:
+            except Exception as err:
                 logger.debug(f"Falling back to extract: `finish` arg `{name}` failed validation: {err}")
                 return None
         return outputs
@@ -258,18 +258,21 @@ class ReAct(Module):
 def _type_adapter_for_annotation(annotation: Any) -> "pydantic.TypeAdapter | None":
     try:
         return pydantic.TypeAdapter(annotation)
-    except Exception:
+    except Exception as err:
+        logger.debug(f"Could not build a pydantic TypeAdapter for the annotation `{annotation}`: {err}")
         return None
 
 
-def _json_schema_for_type_adapter(type_adapter: "pydantic.TypeAdapter | None") -> dict[str, Any]:
+def _json_schema_for_type_adapter(type_adapter: "pydantic.TypeAdapter | None", annotation: Any) -> dict[str, Any]:
     if type_adapter is not None:
         try:
             return _resolve_json_schema_reference(type_adapter.json_schema())
-        except Exception:
-            pass
+        except Exception as err:
+            logger.debug(
+                f"Could not build a JSON schema for the annotation `{annotation}`, advertising it to the LM as a "
+                f"string instead: {err}"
+            )
     return {"type": "string"}
-
 
 
 """

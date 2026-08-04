@@ -1,8 +1,9 @@
+import logging
 import re
 from typing import Optional
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 import dspy
 import dspy.adapters.base as adapter_base
@@ -669,6 +670,80 @@ def test_finish_with_uncoercible_args_falls_back_to_extract():
 
     assert outputs.count == 42
     assert len(lm.history) == 2
+
+
+def test_finish_args_raising_non_validation_error_falls_back_to_extract():
+    class Item(BaseModel):
+        name: str
+
+        @model_validator(mode="before")
+        @classmethod
+        def normalize(cls, value):
+            if isinstance(value, dict):
+                return value
+            # Pydantic only converts ValueError/AssertionError into a ValidationError, so this
+            # raises AttributeError straight out of `validate_python` for non-string values.
+            return {"name": value.strip()}
+
+    class ItemSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        item: Item = dspy.OutputField()
+
+    react = dspy.ReAct(ItemSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with a value the validator chokes on.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"item": 123},
+            },
+            {"reasoning": "Extracted.", "item": {"name": "extracted"}},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.item == Item(name="extracted")
+    assert len(lm.history) == 2
+
+
+def test_unrepresentable_output_annotation_advertises_string_schema_and_logs(caplog):
+    class Node(BaseModel):
+        value: str
+        children: list["Node"] = []
+
+    class TreeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tree: Node = dspy.OutputField()
+
+    # The `dspy` logger does not propagate to the root logger that caplog installs itself on.
+    dspy_logger = logging.getLogger("dspy")
+    dspy_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="dspy.predict.react"):
+            react = dspy.ReAct(TreeSignature, tools=[])
+    finally:
+        dspy_logger.removeHandler(caplog.handler)
+
+    assert react.tools["finish"].args["tree"] == {"type": "string"}
+    assert any("Node" in record.message for record in caplog.records)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "The tree is ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"tree": {"value": "root", "children": [{"value": "leaf"}]}},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.tree == Node(value="root", children=[Node(value="leaf")])
+    assert len(lm.history) == 1
 
 
 def test_finish_with_explicit_none_for_optional_output_skips_extract():
