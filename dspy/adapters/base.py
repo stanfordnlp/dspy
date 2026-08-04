@@ -11,7 +11,7 @@ from dspy.adapters._legacy_type_markers import (
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
-from dspy.adapters.utils import serialize_for_json
+from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.openai_format import (
     legacy_outputs_from_lm_response,
@@ -176,7 +176,8 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
-            # Fields removed for native features are absent from the processed parse.
+            # Fields removed for native features are absent from the processed parse
+            value = apply_output_field_defaults(original_signature, value)
             for field_name in original_signature.output_fields:
                 value.setdefault(field_name, None)
 
