@@ -162,6 +162,19 @@ def test_submit_non_finite_floats(pooled_interpreter):
     assert result.output["output"] == {"value": float("inf")}
 
 
+def test_submit_set_round_trip(pooled_interpreter):
+    """Regression test: SUBMIT with a set must not crash, and must follow the
+    same set-to-sorted-list convention as variable injection.
+
+    The payload was previously serialized with a plain json.dumps, which raises
+    TypeError on sets, crashing the execution.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT({3, 1, 2})")
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"output": [1, 2, 3]}
+
+
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 
