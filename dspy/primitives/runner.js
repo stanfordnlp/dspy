@@ -37,7 +37,8 @@ def final_output_json():
         raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
     try:
         return json.dumps(sys.last_exc.args[0], default=_default)
-    except TypeError:
+    except (TypeError, ValueError):
+        # TypeError: unsupported type; ValueError: circular reference.
         return None
 
 class FinalOutput(BaseException):
@@ -379,10 +380,19 @@ while (true) {
           console.log(jsonrpcResult({ final_json: serialized }, requestId));
           continue;
         }
-        const last_exception_args = pyodide.globals.get("last_exception_args");
-        const errorArgs = JSON.parse(last_exception_args()) || [];
-        const answer = errorArgs[0] || null;
-        console.log(jsonrpcResult({ final: answer }, requestId));
+        // The legacy path also serializes with Python json (in
+        // last_exception_args), so a payload the serializer rejected can throw
+        // again here. Surface that as a structured error instead of letting it
+        // escape as an unhandled rejection that kills the session.
+        try {
+          const last_exception_args = pyodide.globals.get("last_exception_args");
+          const errorArgs = JSON.parse(last_exception_args()) || [];
+          const answer = errorArgs[0] || null;
+          console.log(jsonrpcResult({ final: answer }, requestId));
+        } catch (e) {
+          const message = `SUBMIT payload is not JSON-serializable: ${e.message || e}`;
+          console.log(jsonrpcError(JSONRPC_APP_ERRORS.ValueError, message, requestId, { type: "ValueError", args: [message] }));
+        }
         continue;
       }
 

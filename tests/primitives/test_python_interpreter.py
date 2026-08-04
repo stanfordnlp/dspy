@@ -175,6 +175,19 @@ def test_submit_set_round_trip(pooled_interpreter):
     assert result.output == {"output": [1, 2, 3]}
 
 
+def test_submit_circular_payload_raises_cleanly(pooled_interpreter):
+    """Regression test: a circular SUBMIT payload must raise a structured error.
+
+    json.dumps raises ValueError on circular references, which previously
+    escaped as an unhandled async rejection and terminated the Deno session.
+    """
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="not JSON-serializable"):
+        interpreter.execute("x = []\nx.append(x)\nSUBMIT(x)")
+    # The session must survive the failed SUBMIT.
+    assert interpreter.execute("1 + 1") == 2
+
+
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 
