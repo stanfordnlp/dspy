@@ -231,10 +231,10 @@ def format_error_for_lm(error: BaseException, *, traceback_frames: int = 0) -> s
 
     Args:
         error: The exception to format.
-        traceback_frames: How many stack frames to keep, from the innermost
-            outwards. When 0 (the default), only `str(error)` is returned; when
-            positive, a newline-prefixed traceback summary limited to that many
-            frames is returned.
+        traceback_frames: Maximum number of stack frames to include. When 0
+            (the default), only `str(error)` is returned; when positive, a
+            newline-prefixed traceback summary limited to that many frames is
+            returned.
     """
     if traceback_frames <= 0:
         return str(error)
