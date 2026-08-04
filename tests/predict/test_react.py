@@ -2,13 +2,16 @@ import enum
 import logging
 import re
 from typing import Optional
+from unittest import mock
 
 import pytest
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 from pydantic import BaseModel, model_validator
 
 import dspy
 import dspy.adapters.base as adapter_base
 import dspy.adapters.utils as adapter_utils
+from dspy.utils.callback import BaseCallback
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import ContextWindowExceededError
 
@@ -1128,3 +1131,140 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def _chat_adapter_chunks(text: str):
+    """Split `text` into token-sized streaming chunks, the way an LM emits them."""
+    return [
+        ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
+        for token in re.findall(r"\s*\S+", text)
+    ]
+
+
+_EXTRACT_STREAM = (
+    "[[ ## reasoning ## ]]\n"
+    "The trajectory already contains the population.\n\n"
+    "[[ ## answer ## ]]\n"
+    "Camp Meeker has a population of 179.\n\n"
+    "[[ ## completed ## ]]"
+)
+
+
+async def _stream_react_program(react_outputs, extract_stream=_EXTRACT_STREAM):
+    """Run a streamed `dspy.ReAct` with a listener on `answer`.
+
+    The listener binds to `extract.predict`, so only that predictor streams; the react step runs on a
+    `DummyLM` and replies with `react_outputs`, while the extract step, when it runs at all, consumes
+    `extract_stream` through the mocked streaming LM.
+    """
+    react = dspy.ReAct("question -> answer", tools=[])
+    react.react.lm = DummyLM(react_outputs)
+
+    async def completion_side_effect(*args, **kwargs):
+        async def stream():
+            for chunk in _chat_adapter_chunks(extract_stream):
+                yield chunk
+
+        return stream()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        program = dspy.streamify(
+            react,
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            chunks, prediction = [], None
+            async for value in program(question="What is the population of Camp Meeker?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+    return chunks, prediction
+
+
+@pytest.mark.anyio
+async def test_finish_fast_path_does_not_stream_final_output_field():
+    # Documented side effect of the `finish` fast path: a `StreamListener` on a final output field
+    # auto-binds to the fallback extractor, the only predictor whose signature contains that field.
+    # The fast path never runs the extractor, so the listener emits nothing even though the final
+    # prediction is correct. See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
+    chunks, prediction = await _stream_react_program(
+        [
+            {
+                "next_thought": "I already know the answer, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "Camp Meeker has a population of 179."},
+            }
+        ]
+    )
+
+    assert [chunk for chunk in chunks if chunk.signature_field_name == "answer"] == []
+    assert prediction.answer == "Camp Meeker has a population of 179."
+    assert prediction.trajectory["observation_0"] == "Completed."
+
+
+@pytest.mark.anyio
+async def test_fallback_path_still_streams_final_output_field():
+    # The counterpart to the test above: when the `finish` args do not yield every output field, the
+    # extract fallback runs and the listener streams the field as it always has.
+    chunks, prediction = await _stream_react_program(
+        [
+            {
+                "next_thought": "I already know the answer, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            }
+        ]
+    )
+
+    answer_chunks = [chunk for chunk in chunks if chunk.signature_field_name == "answer"]
+    assert len(answer_chunks) > 0
+    assert all(chunk.predict_name == "extract.predict" for chunk in answer_chunks)
+    assert "".join(chunk.chunk for chunk in answer_chunks).strip() == "Camp Meeker has a population of 179."
+    assert prediction.answer == "Camp Meeker has a population of 179."
+
+
+def test_finish_fast_path_skips_tool_callbacks():
+    # Documented side effect of the `finish` fast path: `finish` is handled before tool dispatch, so
+    # its function never runs and `on_tool_start`/`on_tool_end` do not fire for it. Regular tools are
+    # unaffected. See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
+    class ToolTracker(BaseCallback):
+        def __init__(self):
+            self.started = []
+            self.ended = 0
+
+        def on_tool_start(self, call_id, instance, inputs):
+            self.started.append(instance.name)
+
+        def on_tool_end(self, call_id, outputs, exception):
+            self.ended += 1
+
+    def get_population(city: str) -> int:
+        """Returns the population of a city."""
+        return 179
+
+    tracker = ToolTracker()
+    react = dspy.ReAct("question -> answer", tools=[get_population])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need the population of Camp Meeker.",
+                "next_tool_name": "get_population",
+                "next_tool_args": {"city": "Camp Meeker"},
+            },
+            {
+                "next_thought": "I have the population, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "179 people."},
+            },
+        ]
+    )
+    dspy.configure(lm=lm, callbacks=[tracker])
+
+    outputs = react(question="What is the population of Camp Meeker?")
+
+    assert outputs.answer == "179 people."
+    assert tracker.started == ["get_population"]
+    assert tracker.ended == 1
+    assert outputs.trajectory["tool_name_1"] == "finish"
+    assert outputs.trajectory["observation_1"] == "Completed."
