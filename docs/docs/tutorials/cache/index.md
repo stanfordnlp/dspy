@@ -261,3 +261,117 @@ print(f"Time elapse: {time.time() - start: 2f}")
 ```
 
 You will observe that the cache is hit on the second call, demonstrating the effect of the custom cache key logic.
+
+## Distributed Caching with Valkey
+
+For production deployments, you may want to share cache state across multiple workers or pods.
+DSPy includes a built-in Valkey (Redis-compatible) cache backend that stores LLM responses in
+a Valkey server instead of local disk.
+
+### Installation
+
+Install DSPy with the Valkey extra:
+
+```bash
+pip install dspy[valkey]
+```
+
+This installs the [valkey-glide](https://github.com/valkey-io/valkey-glide) client library.
+
+### Basic Usage
+
+```python
+import dspy
+from dspy.clients import ValkeyCache
+
+# Connect to a local Valkey instance
+dspy.cache = ValkeyCache(host="localhost", port=6379)
+
+# With TTL (entries expire after 1 hour)
+dspy.cache = ValkeyCache(host="localhost", port=6379, ttl_seconds=3600)
+
+# Context manager for guaranteed cleanup
+with ValkeyCache(host="localhost", port=6379) as cache:
+    dspy.cache = cache
+    # ... use dspy ...
+```
+
+### Authentication and TLS
+
+```python
+# Password authentication
+dspy.cache = ValkeyCache(
+    host="valkey.prod.internal",
+    port=6379,
+    password="your-password",
+    tls=True,
+)
+
+# ACL authentication (Valkey 6+)
+dspy.cache = ValkeyCache(
+    host="valkey.prod.internal",
+    port=6379,
+    username="app-user",
+    password="your-password",
+    tls=True,
+)
+```
+
+### Cluster Mode
+
+For Valkey clusters, set `cluster=True`. The client handles topology discovery, slot routing,
+and failover automatically:
+
+```python
+dspy.cache = ValkeyCache(
+    host="cluster-node-1.prod.internal",
+    port=6379,
+    cluster=True,
+    tls=True,
+)
+```
+
+### Multi-Tenant Isolation
+
+Use distinct `key_prefix` values to isolate cache entries per tenant or application:
+
+```python
+# Tenant A
+dspy.cache = ValkeyCache(key_prefix="tenant-a:cache:")
+
+# Tenant B
+dspy.cache = ValkeyCache(key_prefix="tenant-b:cache:")
+```
+
+### Security: Restricted Pickle Deserialization
+
+By default, `ValkeyCache` uses the same restricted pickle mechanism described in [Restricting Pickle Deserialization](#restricting-pickle-deserialization) above. This is especially important for shared Valkey instances where multiple writers can poison cache entries.
+
+```python
+# Default: restricted (recommended for shared instances)
+dspy.cache = ValkeyCache(restrict_pickle=True)
+
+# Add custom safe types if you cache non-standard response objects
+from myapp.models import CustomResponse
+dspy.cache = ValkeyCache(safe_types=[CustomResponse])
+
+# Disable restriction (only for trusted, single-tenant instances)
+dspy.cache = ValkeyCache(restrict_pickle=False)
+```
+
+### Configuration Reference
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `host` | `"localhost"` | Valkey server hostname |
+| `port` | `6379` | Valkey server port |
+| `ttl_seconds` | `None` | Cache entry TTL in seconds (None = no expiry) |
+| `tls` | `False` | Enable TLS encryption |
+| `tls_config` | `None` | Advanced TLS config (custom CA, mTLS) |
+| `request_timeout` | `500` | Per-command timeout in milliseconds |
+| `password` | `None` | AUTH password |
+| `username` | `None` | ACL username (Valkey 6+) |
+| `cluster` | `False` | Enable cluster mode |
+| `key_prefix` | `"dspy:cache:"` | Namespace prefix for keys |
+| `restrict_pickle` | `True` | Restrict deserialization to safe types |
+| `safe_types` | `None` | Additional types to allow |

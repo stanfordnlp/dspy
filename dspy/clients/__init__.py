@@ -9,6 +9,7 @@ from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.valkey_cache import ValkeyCache
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,6 @@ def configure_cache(
 
     # Update the reference to point to the new cache
     dspy.cache = DSPY_CACHE
-
 
 
 def _get_dspy_cache():
@@ -110,6 +110,7 @@ def disable_litellm_logging():
     litellm._dspy_logging_configured = True
     configure_litellm_logging("ERROR")
 
+
 __all__ = [
     "BaseLM",
     "LM",
@@ -120,4 +121,5 @@ __all__ = [
     "enable_litellm_logging",
     "disable_litellm_logging",
     "configure_cache",
+    "ValkeyCache",
 ]
