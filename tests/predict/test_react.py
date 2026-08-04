@@ -962,6 +962,52 @@ def test_finish_fast_path_prefers_output_field_named_reasoning():
     assert len(lm.history) == 1
 
 
+def test_finish_fast_path_with_output_field_named_trajectory():
+    class TrajectorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        trajectory: str = dspy.OutputField()
+
+    react = dspy.ReAct(TrajectorySignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"trajectory": "The final trajectory output."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    # The module's trajectory wins over a same-named output field, as it does on the fallback path.
+    assert outputs.trajectory["tool_args_0"] == {"trajectory": "The final trajectory output."}
+    assert outputs.reasoning == "Done."
+    assert len(lm.history) == 1
+
+
+def test_fallback_with_output_field_named_trajectory():
+    class TrajectorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        trajectory: str = dspy.OutputField()
+
+    react = dspy.ReAct(TrajectorySignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without the output.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "trajectory": "The extracted trajectory output."},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.trajectory["tool_args_0"] == {}
+    assert outputs.reasoning == "Extracted."
+    assert len(lm.history) == 2
+
+
 @pytest.mark.asyncio
 async def test_async_finish_with_typed_args_skips_extract():
     def add(a: int, b: int) -> int:

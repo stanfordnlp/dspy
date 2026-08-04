@@ -145,7 +145,7 @@ class ReAct(Module):
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        return dspy.Prediction(**{**extract, "trajectory": trajectory})
 
     async def aforward(self, **input_args):
         trajectory = {}
@@ -176,22 +176,26 @@ class ReAct(Module):
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        return dspy.Prediction(**{**extract, "trajectory": trajectory})
 
     def _finish_prediction(self, trajectory: dict[str, Any], idx: int, pred) -> "dspy.Prediction | None":
         """Record the `finish` call in the trajectory and build the final prediction from its args.
 
         Returns None when the args do not yield every output field, in which case the caller breaks out
         of the loop and falls back to the extract step.
+
+        The module's `trajectory` is applied last, so a signature that declares its own `trajectory`
+        output field never collides with it — the same precedence `forward` and `aforward` give the
+        extract step's outputs.
         """
         finish_args = pred.next_tool_args if isinstance(pred.next_tool_args, dict) else {}
         trajectory[f"observation_{idx}"] = _run_finish_tool(self.tools["finish"], **finish_args)
-        parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
+        parsed_outputs = self._extract_outputs_from_finish_args(finish_args)
         if parsed_outputs is None:
             return None
-        return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
+        return dspy.Prediction(**{"reasoning": pred.next_thought, **parsed_outputs, "trajectory": trajectory})
 
-    def _extract_outputs_from_finish_args(self, next_tool_args: dict[str, Any]) -> dict[str, Any] | None:
+    def _extract_outputs_from_finish_args(self, finish_args: dict[str, Any]) -> dict[str, Any] | None:
         """Parse the signature's output fields from the args of a `finish` tool call.
 
         Values are coerced with the same `parse_value` the extract step's adapter uses, so anything
@@ -205,20 +209,17 @@ class ReAct(Module):
         against the annotation itself so that a non-nullable field falls back rather than being
         coerced into the string "None".
         """
-        if not isinstance(next_tool_args, dict) or not next_tool_args:
+        if not finish_args:
             return None
 
         outputs = {}
         for name, field in self.signature.output_fields.items():
-            if name not in next_tool_args:
+            if name not in finish_args:
                 return None
-            value = next_tool_args[name]
-            type_adapter = self._output_type_adapters.get(name)
-            if type_adapter is None:
-                return None
+            value = finish_args[name]
             try:
                 if value is None:
-                    outputs[name] = type_adapter.validate_python(None)
+                    outputs[name] = self._output_type_adapters[name].validate_python(None)
                 else:
                     outputs[name] = parse_value(value, field.annotation)
             except Exception as err:
