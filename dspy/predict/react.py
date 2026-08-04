@@ -189,7 +189,7 @@ class ReAct(Module):
         extract step's outputs.
         """
         finish_args = pred.next_tool_args if isinstance(pred.next_tool_args, dict) else {}
-        trajectory[f"observation_{idx}"] = _run_finish_tool(self.tools["finish"], **finish_args)
+        trajectory[f"observation_{idx}"] = _run_finish_tool(self.tools["finish"], finish_args)
         parsed_outputs = self._extract_outputs_from_finish_args(finish_args)
         if parsed_outputs is None:
             return None
@@ -279,13 +279,16 @@ class ReAct(Module):
 
 
 @with_callbacks
-def _run_finish_tool(instance: Tool, **kwargs) -> str:
+def _run_finish_tool(instance: Tool, kwargs: dict[str, Any]) -> str:
     """Execute the `finish` tool without `Tool.__call__`'s strict argument validation.
 
     The fast path accepts laxly-coercible args that the tool's jsonschema validation would
     reject, so the function is invoked directly; routing it through `with_callbacks` (with the
     tool as `instance`) preserves the `on_tool_start`/`on_tool_end` lifecycle that tracing and
     accounting integrations rely on.
+
+    `kwargs` is passed positionally, never splatted: the arg names come from the LM, and an
+    `instance` key would otherwise collide with the parameter `with_callbacks` binds by name.
     """
     return instance.func(**kwargs)
 

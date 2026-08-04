@@ -1008,6 +1008,80 @@ def test_fallback_with_output_field_named_trajectory():
     assert len(lm.history) == 2
 
 
+def test_finish_fast_path_with_output_field_named_instance():
+    class InstanceSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        instance: str = dspy.OutputField()
+
+    class ToolTracker(BaseCallback):
+        def __init__(self):
+            self.inputs = []
+
+        def on_tool_start(self, call_id, instance, inputs):
+            self.inputs.append((instance.name, inputs))
+
+    tracker = ToolTracker()
+    react = dspy.ReAct(InstanceSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"instance": "The final instance output."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = react(question="q")
+
+    assert outputs.instance == "The final instance output."
+    assert outputs.reasoning == "Done."
+    assert len(lm.history) == 1
+    assert tracker.inputs == [("finish", {"kwargs": {"instance": "The final instance output."}})]
+
+
+def test_finish_fast_path_with_hallucinated_instance_arg():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "the answer", "instance": "hallucinated"},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "the answer"
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_fast_path_with_output_field_named_instance():
+    class InstanceSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        instance: str = dspy.OutputField()
+
+    react = dspy.ReAct(InstanceSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"instance": "The final instance output."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.instance == "The final instance output."
+    assert len(lm.history) == 1
+
+
 @pytest.mark.asyncio
 async def test_async_finish_with_typed_args_skips_extract():
     def add(a: int, b: int) -> int:
