@@ -316,6 +316,15 @@ def test_result_set_round_trip(pooled_interpreter):
     assert interpreter.execute("{'unique': {2, 1}}") == {"unique": [1, 2]}
 
 
+def test_result_set_mixed_types_round_trip(pooled_interpreter):
+    """Mixed-type sets can't be sorted, so they return as a list in arbitrary
+    order rather than failing serialization, mirroring the injection fallback."""
+    interpreter = pooled_interpreter
+    result = interpreter.execute("{1, 'a'}")
+    assert isinstance(result, list)
+    assert set(result) == {1, "a"}
+
+
 def test_result_non_finite_floats_round_trip(pooled_interpreter):
     """Regression test: nan/inf inside results must not be silently nulled.
 
