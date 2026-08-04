@@ -21,6 +21,7 @@ def wikipedia_search(query: str) -> list[str]:
 The `dspy.ReAct` module presents it like so:
 
 ```
+When you have all information needed, call the `finish` tool with the final value for each of `haiku` passed as next_tool_args.
 When selecting the next_tool_name and its next_tool_args, the tool must be one of:
         
 (1) wikipedia_search, whose description is <desc>Search Wikipedia for the given query and return a list of page titles.</desc>. It takes arguments {'query': {'type': 'string'}}.
