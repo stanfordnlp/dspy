@@ -5,7 +5,7 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.exceptions import ContextWindowExceededError
+from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class ReAct(Module):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
             except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {format_error_for_lm(err, traceback_frames=5)}")
                 break
 
             trajectory[f"thought_{idx}"] = pred.next_thought
@@ -109,7 +109,7 @@ class ReAct(Module):
             try:
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
             if pred.next_tool_name == "finish":
                 break
@@ -124,7 +124,7 @@ class ReAct(Module):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
             except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {format_error_for_lm(err, traceback_frames=5)}")
                 break
 
             trajectory[f"thought_{idx}"] = pred.next_thought
@@ -134,7 +134,7 @@ class ReAct(Module):
             try:
                 trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
             except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {format_error_for_lm(err, traceback_frames=5)}"
 
             if pred.next_tool_name == "finish":
                 break
@@ -183,17 +183,6 @@ class ReAct(Module):
             trajectory.pop(key)
 
         return trajectory
-
-
-def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
-    """
-    Return a one-string traceback summary.
-    * `limit` - how many stack frames to keep (from the innermost outwards).
-    """
-
-    import traceback
-
-    return "\n" + "".join(traceback.format_exception(type(err), err, err.__traceback__, limit=limit)).strip()
 
 
 """
