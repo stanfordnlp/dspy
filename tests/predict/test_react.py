@@ -1224,10 +1224,10 @@ async def test_fallback_path_still_streams_final_output_field():
     assert prediction.answer == "Camp Meeker has a population of 179."
 
 
-def test_finish_fast_path_skips_tool_callbacks():
-    # Documented side effect of the `finish` fast path: `finish` is handled before tool dispatch, so
-    # its function never runs and `on_tool_start`/`on_tool_end` do not fire for it. Regular tools are
-    # unaffected. See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
+def test_finish_fast_path_fires_tool_callbacks():
+    # `finish` is handled before tool dispatch so its args skip strict validation, but its
+    # `on_tool_start`/`on_tool_end` lifecycle must still fire for tracing integrations.
+    # See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
     class ToolTracker(BaseCallback):
         def __init__(self):
             self.started = []
@@ -1264,7 +1264,55 @@ def test_finish_fast_path_skips_tool_callbacks():
     outputs = react(question="What is the population of Camp Meeker?")
 
     assert outputs.answer == "179 people."
-    assert tracker.started == ["get_population"]
-    assert tracker.ended == 1
+    assert tracker.started == ["get_population", "finish"]
+    assert tracker.ended == 2
     assert outputs.trajectory["tool_name_1"] == "finish"
     assert outputs.trajectory["observation_1"] == "Completed."
+
+
+class _FinishTracker(BaseCallback):
+    def __init__(self):
+        self.started = []
+        self.ended = 0
+
+    def on_tool_start(self, call_id, instance, inputs):
+        self.started.append(instance.name)
+
+    def on_tool_end(self, call_id, outputs, exception):
+        self.ended += 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_fast_path_fires_tool_callbacks():
+    tracker = _FinishTracker()
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I can finish.", "next_tool_name": "finish", "next_tool_args": {"answer": "done"}},
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer == "done"
+    assert tracker.started == ["finish"]
+    assert tracker.ended == 1
+
+
+def test_finish_fallback_still_fires_tool_callbacks():
+    # A `finish` call whose args are rejected falls back to extract, but the tool lifecycle
+    # still fires, matching the pre-fast-path behavior where `finish` always executed.
+    tracker = _FinishTracker()
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without args.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert tracker.started == ["finish"]
+    assert tracker.ended == 1

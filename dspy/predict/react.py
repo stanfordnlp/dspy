@@ -9,6 +9,7 @@ from dspy.adapters.types.tool import Tool, _resolve_json_schema_reference
 from dspy.adapters.utils import get_annotation_name, parse_value
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
+from dspy.utils.callback import with_callbacks
 from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
 
 logger = logging.getLogger(__name__)
@@ -183,7 +184,8 @@ class ReAct(Module):
         Returns None when the args do not yield every output field, in which case the caller breaks out
         of the loop and falls back to the extract step.
         """
-        trajectory[f"observation_{idx}"] = "Completed."
+        finish_args = pred.next_tool_args if isinstance(pred.next_tool_args, dict) else {}
+        trajectory[f"observation_{idx}"] = _run_finish_tool(self.tools["finish"], **finish_args)
         parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
         if parsed_outputs is None:
             return None
@@ -273,6 +275,18 @@ class ReAct(Module):
             trajectory.pop(key)
 
         return trajectory
+
+
+@with_callbacks
+def _run_finish_tool(instance: Tool, **kwargs) -> str:
+    """Execute the `finish` tool without `Tool.__call__`'s strict argument validation.
+
+    The fast path accepts laxly-coercible args that the tool's jsonschema validation would
+    reject, so the function is invoked directly; routing it through `with_callbacks` (with the
+    tool as `instance`) preserves the `on_tool_start`/`on_tool_end` lifecycle that tracing and
+    accounting integrations rely on.
+    """
+    return instance.func(**kwargs)
 
 
 def _type_adapter_for_annotation(annotation: Any) -> "pydantic.TypeAdapter | None":
