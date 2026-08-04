@@ -197,7 +197,7 @@ class ParallelExecutor:
                         break
 
                     # Check stragglers if few remain
-                    if 0 < self.timeout and len(not_done) <= self.straggler_limit:
+                    if self.timeout is not None and 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
                             if f not in resubmitted:
@@ -206,13 +206,19 @@ class ParallelExecutor:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
                                     resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
+                                    try:
+                                        nf = executor.submit(
+                                            worker,
+                                            parent_overrides,
+                                            submission_counter,
+                                            idx,
+                                            item,
+                                        )
+                                    except RuntimeError:
+                                        # Executor is shutting down (e.g. after
+                                        # KeyboardInterrupt). The original future
+                                        # will eventually complete or be cancelled.
+                                        continue
                                     futures_map[nf] = (submission_counter, idx, item)
                                     futures_set.add(nf)
                                     submission_counter += 1
