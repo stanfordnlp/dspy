@@ -746,6 +746,40 @@ def test_unrepresentable_output_annotation_advertises_string_schema_and_logs(cap
     assert len(lm.history) == 1
 
 
+def test_finish_args_carry_output_field_descriptions_and_constraints():
+    class Cited(dspy.Type):
+        text: str
+
+        @classmethod
+        def description(cls):
+            return "Must include a citation."
+
+        def format(self):
+            return self.text
+
+    class Documented(BaseModel):
+        """A postal address."""
+
+        city: str
+
+    class DescribedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="Answer with a single number only")
+        score: int = dspy.OutputField(ge=0, le=10)
+        citations: list[Cited] = dspy.OutputField(desc="the cited answers")
+        address: Documented = dspy.OutputField()
+        plain: str = dspy.OutputField()
+
+    args = dspy.ReAct(DescribedSignature, tools=[]).tools["finish"].args
+
+    assert args["answer"]["description"] == "Answer with a single number only"
+    assert args["score"]["description"] == "Constraints: greater than or equal to: 0, less than or equal to: 10"
+    assert args["citations"]["description"] == "the cited answers\nType description of Cited: Must include a citation."
+    # A description inherited from the annotation itself is preserved rather than overwritten.
+    assert args["address"]["description"] == "A postal address."
+    assert "description" not in args["plain"]
+
+
 def test_finish_with_explicit_none_for_optional_output_skips_extract():
     class OptionalSignature(dspy.Signature):
         question: str = dspy.InputField()

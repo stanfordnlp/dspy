@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 import pydantic
 
 import dspy
+from dspy.adapters.types.base_type import Type as DspyType
 from dspy.adapters.types.tool import Tool, _resolve_json_schema_reference
+from dspy.adapters.utils import get_annotation_name
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
@@ -74,7 +76,7 @@ class ReAct(Module):
                 f"each of {outputs} passed as arguments, once all information for producing them is available."
             ),
             args={
-                name: _json_schema_for_type_adapter(self._output_type_adapters[name], field.annotation)
+                name: _finish_arg_schema(name, field, self._output_type_adapters[name])
                 for name, field in signature.output_fields.items()
             },
             arg_types={name: field.annotation for name, field in signature.output_fields.items()},
@@ -124,10 +126,9 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             if pred.next_tool_name == "finish":
-                trajectory[f"observation_{idx}"] = "Completed."
-                parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
-                if parsed_outputs is not None:
-                    return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
+                finish_prediction = self._finish_prediction(trajectory, idx, pred)
+                if finish_prediction is not None:
+                    return finish_prediction
                 break
 
             try:
@@ -156,10 +157,9 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             if pred.next_tool_name == "finish":
-                trajectory[f"observation_{idx}"] = "Completed."
-                parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
-                if parsed_outputs is not None:
-                    return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
+                finish_prediction = self._finish_prediction(trajectory, idx, pred)
+                if finish_prediction is not None:
+                    return finish_prediction
                 break
 
             try:
@@ -169,6 +169,18 @@ class ReAct(Module):
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def _finish_prediction(self, trajectory: dict[str, Any], idx: int, pred) -> "dspy.Prediction | None":
+        """Record the `finish` call in the trajectory and build the final prediction from its args.
+
+        Returns None when the args do not yield every output field, in which case the caller breaks out
+        of the loop and falls back to the extract step.
+        """
+        trajectory[f"observation_{idx}"] = "Completed."
+        parsed_outputs = self._extract_outputs_from_finish_args(pred.next_tool_args)
+        if parsed_outputs is None:
+            return None
+        return dspy.Prediction(trajectory=trajectory, **{"reasoning": pred.next_thought, **parsed_outputs})
 
     def _extract_outputs_from_finish_args(self, next_tool_args: dict[str, Any]) -> dict[str, Any] | None:
         """Parse the signature's output fields from the args of a `finish` tool call.
@@ -273,6 +285,42 @@ def _json_schema_for_type_adapter(type_adapter: "pydantic.TypeAdapter | None", a
                 f"string instead: {err}"
             )
     return {"type": "string"}
+
+
+def _finish_arg_schema(name: str, field: Any, type_adapter: "pydantic.TypeAdapter | None") -> dict[str, Any]:
+    """Build the `finish` tool's JSON schema for one output field.
+
+    The schema carries the field's `desc`, custom type descriptions, and constraints so that the LM
+    writing the final answer sees the same guidance the extract step's signature renders for it.
+    """
+    schema = dict(_json_schema_for_type_adapter(type_adapter, field.annotation))
+    description = _output_field_description(name, field, schema.get("description"))
+    if description:
+        schema["description"] = description
+    return schema
+
+
+def _output_field_description(name: str, field: Any, inherited_description: str | None = None) -> str:
+    parts = []
+    extra = field.json_schema_extra or {}
+
+    desc = extra.get("desc")
+    if desc and desc != f"${{{name}}}":
+        parts.append(desc)
+
+    for custom_type in DspyType.extract_custom_type_from_annotation(field.annotation):
+        type_description = custom_type.description()
+        if type_description:
+            parts.append(f"Type description of {get_annotation_name(custom_type)}: {type_description}")
+
+    constraints = extra.get("constraints")
+    if constraints:
+        parts.append(f"Constraints: {constraints}")
+
+    if inherited_description and inherited_description not in parts:
+        parts.append(inherited_description)
+
+    return "\n".join(parts)
 
 
 """
