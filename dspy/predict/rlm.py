@@ -182,6 +182,32 @@ class RLM(Module):
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
 
+    def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
+        """Load state, upgrading action demos saved before execution instructions were added."""
+        action_state = state.get("generate_action")
+        if action_state:
+            current_fields = self.generate_action.signature.dump_state()["fields"]
+            saved_fields = action_state.get("signature", {}).get("fields", [])
+            legacy_action_state = len(saved_fields) + 1 == len(current_fields) and saved_fields == current_fields[1:]
+            if legacy_action_state:
+                state = dict(state)
+                action_state = dict(action_state)
+                state["generate_action"] = action_state
+
+                signature_state = dict(action_state["signature"])
+                signature_state["fields"] = [current_fields[0], *saved_fields]
+                action_state["signature"] = signature_state
+
+                legacy_fields = set(self.generate_action.signature.fields) - {"execution_instructions"}
+                action_state["demos"] = [
+                    {**demo, "execution_instructions": ""}
+                    if "execution_instructions" not in demo and legacy_fields.issubset(demo)
+                    else demo
+                    for demo in action_state.get("demos", [])
+                ]
+
+        super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+
     # =========================================================================
     # Tool Creation and Validation
     # =========================================================================

@@ -7,6 +7,7 @@ Test organization:
 """
 
 import base64
+import json
 from contextlib import contextmanager
 
 import pytest
@@ -243,6 +244,41 @@ class TestRLMInitialization:
         assert rlm.max_llm_calls == 100
         assert rlm.sub_lm is mock_lm
         assert rlm._interpreter_factory is MockInterpreter
+
+    def test_load_migrates_legacy_action_demos(self, tmp_path):
+        import dspy
+
+        rlm = RLM("context -> answer", interpreter_factory=MockInterpreter)
+        rlm.generate_action.demos = [
+            {
+                "variables_info": "context: str",
+                "repl_history": REPLHistory(),
+                "iteration": "1/20",
+                "reasoning": "Inspect the context.",
+                "code": "```python\nprint(context)\n```",
+            }
+        ]
+        path = tmp_path / "legacy_rlm.json"
+        rlm.save(path)
+
+        state = json.loads(path.read_text())
+        action_state = state["generate_action"]
+        action_state["signature"]["fields"].pop(0)  # execution_instructions did not exist
+        path.write_text(json.dumps(state))
+
+        loaded = RLM("context -> answer", interpreter_factory=MockInterpreter)
+        loaded.load(path)
+
+        demo = loaded.generate_action.demos[0]
+        assert demo["execution_instructions"] == ""
+        assert (
+            loaded.generate_action.signature.fields["variables_info"].json_schema_extra["prefix"]
+            == "Variables Info:"
+        )
+        messages = dspy.ChatAdapter().format_demos(loaded.generate_action.signature, loaded.generate_action.demos)
+        assert not any(
+            "though some input or output fields are not supplied" in message["content"] for message in messages
+        )
 
     def test_forward_validates_required_inputs(self):
         """Test that forward() raises ValueError for missing required inputs."""
