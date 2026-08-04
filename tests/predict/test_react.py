@@ -1,3 +1,4 @@
+import enum
 import logging
 import re
 from typing import Optional
@@ -774,10 +775,70 @@ def test_finish_args_carry_output_field_descriptions_and_constraints():
 
     assert args["answer"]["description"] == "Answer with a single number only"
     assert args["score"]["description"] == "Constraints: greater than or equal to: 0, less than or equal to: 10"
-    assert args["citations"]["description"] == "the cited answers\nType description of Cited: Must include a citation."
+    # The parts are joined on a single line because `Tool.__str__` renders `args` through
+    # `str(dict)`, which would escape real newlines into a literal "\n" for the LM.
+    assert args["citations"]["description"] == "the cited answers; Type description of Cited: Must include a citation."
     # A description inherited from the annotation itself is preserved rather than overwritten.
     assert args["address"]["description"] == "A postal address."
     assert "description" not in args["plain"]
+
+
+@pytest.mark.parametrize(
+    ("finish_value", "expected"),
+    [(3, "3"), (True, "True"), (["a"], "['a']"), (2.5, "2.5")],
+)
+def test_finish_with_non_string_value_for_string_output_skips_extract(finish_value, expected):
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I know the answer.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": finish_value},
+            },
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == expected
+    assert len(lm.history) == 1
+
+
+@pytest.mark.parametrize("finish_value", ["RED", "red"])
+def test_finish_with_enum_name_or_value_skips_extract(finish_value):
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    class ColorSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Color = dspy.OutputField()
+
+    react = dspy.ReAct(ColorSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "It is red.", "next_tool_name": "finish", "next_tool_args": {"color": finish_value}},
+            {"reasoning": "Extracted.", "color": "blue"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.color == Color.RED
+    assert len(lm.history) == 1
+
+
+def test_finish_coercion_matches_the_extract_adapter():
+    """The fast path must not be stricter than the fallback, or it pays the extract call for nothing."""
+    react = dspy.ReAct("question -> answer", tools=[])
+    for value in (3, True, ["a"], {"k": "v"}):
+        assert react._extract_outputs_from_finish_args({"answer": value}) == {
+            "answer": adapter_utils.parse_value(value, str)
+        }
 
 
 def test_finish_with_explicit_none_for_optional_output_skips_extract():
@@ -819,6 +880,23 @@ def test_finish_with_explicit_none_for_union_none_output_skips_extract():
 
     assert outputs.answer is None
     assert len(lm.history) == 1
+
+
+def test_finish_with_explicit_none_for_non_nullable_output_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    # A non-nullable `str` output must never receive the stringified "None".
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 2
 
 
 def test_finish_missing_optional_output_still_falls_back_to_extract():

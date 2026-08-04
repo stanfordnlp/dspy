@@ -6,7 +6,7 @@ import pydantic
 import dspy
 from dspy.adapters.types.base_type import Type as DspyType
 from dspy.adapters.types.tool import Tool, _resolve_json_schema_reference
-from dspy.adapters.utils import get_annotation_name
+from dspy.adapters.utils import get_annotation_name, parse_value
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.exceptions import ContextWindowExceededError, format_error_for_lm
@@ -185,10 +185,16 @@ class ReAct(Module):
     def _extract_outputs_from_finish_args(self, next_tool_args: dict[str, Any]) -> dict[str, Any] | None:
         """Parse the signature's output fields from the args of a `finish` tool call.
 
+        Values are coerced with the same `parse_value` the extract step's adapter uses, so anything
+        the fallback would have accepted for a field is accepted here too (e.g. a bare `3` for a
+        `str` output, an enum member's name, or a JSON-encoded string of the annotated type).
+
         Returns a mapping from output field names to values validated against the fields' declared
         annotations, or None when any output field is absent from the args or fails validation — in
         which case the caller falls back to the legacy extract step. An explicit None is a valid
-        value for a nullable annotation (e.g. `str | None`), not a missing field.
+        value for a nullable annotation (e.g. `str | None`), not a missing field; it is validated
+        against the annotation itself so that a non-nullable field falls back rather than being
+        coerced into the string "None".
         """
         if not isinstance(next_tool_args, dict) or not next_tool_args:
             return None
@@ -202,15 +208,10 @@ class ReAct(Module):
             if type_adapter is None:
                 return None
             try:
-                try:
-                    outputs[name] = type_adapter.validate_python(value)
-                except pydantic.ValidationError:
-                    # The value may be a JSON-encoded string of the annotated type, e.g. a pydantic
-                    # model passed as '{"field": "value"}'.
-                    if isinstance(value, str) and field.annotation is not str:
-                        outputs[name] = type_adapter.validate_json(value)
-                    else:
-                        raise
+                if value is None:
+                    outputs[name] = type_adapter.validate_python(None)
+                else:
+                    outputs[name] = parse_value(value, field.annotation)
             except Exception as err:
                 logger.debug(f"Falling back to extract: `finish` arg `{name}` failed validation: {err}")
                 return None
@@ -320,7 +321,7 @@ def _output_field_description(name: str, field: Any, inherited_description: str 
     if inherited_description and inherited_description not in parts:
         parts.append(inherited_description)
 
-    return "\n".join(parts)
+    return "; ".join(parts)
 
 
 """
