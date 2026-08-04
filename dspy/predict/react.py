@@ -174,15 +174,16 @@ class ReAct(Module):
         """Parse the signature's output fields from the args of a `finish` tool call.
 
         Returns a mapping from output field names to values validated against the fields' declared
-        annotations, or None when any output field is missing, None, or fails validation — in which
-        case the caller falls back to the legacy extract step.
+        annotations, or None when any output field is absent from the args or fails validation — in
+        which case the caller falls back to the legacy extract step. An explicit None is a valid
+        value for a nullable annotation (e.g. `str | None`), not a missing field.
         """
         if not isinstance(next_tool_args, dict) or not next_tool_args:
             return None
 
         outputs = {}
         for name, field in self.signature.output_fields.items():
-            if next_tool_args.get(name) is None:
+            if name not in next_tool_args:
                 return None
             value = next_tool_args[name]
             type_adapter = self._output_type_adapters.get(name)

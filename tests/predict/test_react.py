@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 import pytest
 from pydantic import BaseModel
@@ -670,6 +671,67 @@ def test_finish_with_uncoercible_args_falls_back_to_extract():
     assert len(lm.history) == 2
 
 
+def test_finish_with_explicit_none_for_optional_output_skips_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Optional[str] = dspy.OutputField()  # noqa: UP045 - the typing.Optional spelling is what this test covers
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer is None
+    assert outputs.reasoning == "There is no answer."
+    assert len(lm.history) == 1
+
+
+def test_finish_with_explicit_none_for_union_none_output_skips_extract():
+    class NullableSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(NullableSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
+
+
+def test_finish_missing_optional_output_still_falls_back_to_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 2
+
+
 def test_max_iters_exhausted_without_finish_still_calls_extract():
     def echo(text: str) -> str:
         return f"Echoed: {text}"
@@ -774,6 +836,46 @@ async def test_async_finish_args_coerced_to_declared_types():
     assert outputs.event == Event(name="Science Fair", year=2026)
     assert len(lm.history) == 1
     assert outputs.trajectory["observation_0"] == "Completed."
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_explicit_none_for_optional_output_skips_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Optional[str] = dspy.OutputField()  # noqa: UP045 - the typing.Optional spelling is what this test covers
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_explicit_none_for_union_none_output_skips_extract():
+    class NullableSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(NullableSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
 
 
 @pytest.mark.asyncio
