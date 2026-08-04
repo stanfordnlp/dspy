@@ -63,7 +63,7 @@ Summer creek whispers old tales
 Quiet mind lingers
 ```
 
-Printing `result.reasoning` produces:
+Printing `result.reasoning` — the thought the model recorded in that final `finish` turn — produces:
 
 ```
 I gathered context about Camp Meeker, California—its redwood forest, Dutch Bill Creek, and the quiet summer atmosphere—from the Wikipedia page. I focused on a pensive mood and the summer season, weaving in imagery of towering trees and a gently flowing creek. The haiku follows the traditional 5‑7‑5 syllable structure, evoking the stillness and reflection of a summer day among the redwoods.

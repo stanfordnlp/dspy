@@ -26,6 +26,13 @@ class ReAct(Module):
         information or to finish the task based on its reasoning process. The DSPy version of ReAct is
         generalized to work over any signature, thanks to signature polymorphism.
 
+        The auto-registered `finish` tool takes the signature's output fields as its arguments, so the model
+        delivers the final outputs with the same call that ends the loop. Those arguments are coerced to the
+        fields' declared annotations and returned directly, with the final thought as `reasoning`, saving an
+        LM call. If an output field is missing from the arguments or fails to validate, or the loop ends
+        without a `finish` call, a `dspy.ChainOfThought` extractor reads the trajectory and produces the
+        outputs instead.
+
         Args:
             signature: The signature of the module, which defines the input and output of the react module.
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
