@@ -265,8 +265,30 @@ def test_truncate_trajectory_raises_on_single_tool_call():
         "observation_0": "Completed.",
     }
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ContextWindowExceededError):
         react.truncate_trajectory(trajectory)
+
+
+def test_truncation_exhausted_raises_context_window_exceeded_error():
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    def always_exceed(**kwargs):
+        raise ContextWindowExceededError()
+
+    trajectory = {}
+    for i in range(4):
+        trajectory[f"thought_{i}"] = f"Thought {i}"
+        trajectory[f"tool_name_{i}"] = "echo"
+        trajectory[f"tool_args_{i}"] = {"text": f"Text {i}"}
+        trajectory[f"observation_{i}"] = f"Echoed: Text {i}"
+
+    with pytest.raises(ContextWindowExceededError, match="even after 3 attempts") as exc_info:
+        react._call_with_potential_trajectory_truncation(always_exceed, trajectory, input_text="test input")
+
+    assert isinstance(exc_info.value.__cause__, ContextWindowExceededError)
 
 
 @pytest.mark.asyncio
