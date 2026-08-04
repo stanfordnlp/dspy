@@ -99,7 +99,7 @@ class ReAct(Module):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
             except ContextWindowExceededError as err:
-                logger.warning(f"Ending the trajectory: {_fmt_exc(err)}")
+                logger.warning(f"Ending the trajectory: {format_error_for_lm(err, traceback_frames=5)}")
                 break
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {format_error_for_lm(err, traceback_frames=5)}")
@@ -127,7 +127,7 @@ class ReAct(Module):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
             except ContextWindowExceededError as err:
-                logger.warning(f"Ending the trajectory: {_fmt_exc(err)}")
+                logger.warning(f"Ending the trajectory: {format_error_for_lm(err, traceback_frames=5)}")
                 break
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {format_error_for_lm(err, traceback_frames=5)}")
