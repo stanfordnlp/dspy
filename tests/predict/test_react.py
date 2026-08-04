@@ -365,6 +365,30 @@ def test_error_retry():
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
 
 
+def test_tool_error_observation_format():
+    def failing_tool():
+        raise ValueError("tool blew up")
+
+    react = dspy.ReAct("question -> answer", tools=[failing_tool])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I will call the tool.",
+                "next_tool_name": "failing_tool",
+                "next_tool_args": {},
+            },
+            {"reasoning": "The tool failed.", "answer": "n/a"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="What happens?", max_iters=1)
+    obs = outputs.trajectory["observation_0"]
+
+    assert obs.startswith("Execution error in failing_tool: \nTraceback (most recent call last):")
+    assert obs.endswith("ValueError: tool blew up")
+
+
 @pytest.mark.asyncio
 async def test_async_tool_calling_with_pydantic_args():
     class CalendarEvent(BaseModel):
