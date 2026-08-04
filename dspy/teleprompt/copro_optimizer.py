@@ -128,7 +128,7 @@ class COPRO(Teleprompter):
         parameters:
         student: program to optimize and left modified.
         trainset: iterable of `Example`s
-        eval_kwargs: optional, dict
+        eval_kwargs: optional, dict, defaults to None (no extra kwargs)
            Additional keywords to go into `Evaluate` for the metric.
 
         Returns optimized version of `student`.
