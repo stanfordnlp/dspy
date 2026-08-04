@@ -45,6 +45,7 @@ from dspy.utils.annotation import experimental
 from dspy.utils.exceptions import format_error_for_lm
 
 if TYPE_CHECKING:
+
     from dspy.signatures.signature import Signature
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ def _strip_code_fences(code: str) -> str:
 
     # Find the first opening fence (skip any text before it)
     fence_start = code.find("```")
-    lang_line, separator, remainder = code[fence_start + 3 :].partition("\n")
+    lang_line, separator, remainder = code[fence_start + 3:].partition("\n")
     if not separator:
         return code
 
@@ -276,7 +277,9 @@ class RLM(Module):
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
-                raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+                raise dspy.LMNotConfiguredError(
+                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
+                )
             response = target_lm(prompt)
             if isinstance(response, dspy.LMResponse):
                 text = response.text
@@ -338,7 +341,10 @@ class RLM(Module):
         # Simple names for SUBMIT() examples
         final_output_names = ", ".join(self.signature.output_fields.keys())
 
-        output_fields = "\n".join(f"- {translate_field_type(n, f)}" for n, f in self.signature.output_fields.items())
+        output_fields = "\n".join(
+            f"- {translate_field_type(n, f)}"
+            for n, f in self.signature.output_fields.items()
+        )
 
         # Include original signature instructions (docstring) if present
         task_instructions = f"{self.signature.instructions}\n\n" if self.signature.instructions else ""
@@ -347,45 +353,16 @@ class RLM(Module):
         tool_docs = self._format_tool_docs(self._user_tools)
 
         action_sig = (
-            dspy.Signature(
-                {},
-                task_instructions
-                + ACTION_INSTRUCTIONS_TEMPLATE.format(
-                    inputs=inputs_str,
-                    final_output_names=final_output_names,
-                    output_fields=output_fields,
-                    max_llm_calls=self.max_llm_calls,
-                )
-                + tool_docs,
-            )
-            .append(
-                "execution_instructions",
-                dspy.InputField(desc="Stable instructions and restrictions for the configured code interpreter"),
-                type_=str,
-            )
-            .append(
-                "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
-            )
-            .append(
-                "repl_history",
-                dspy.InputField(desc="Previous REPL code executions and their outputs"),
-                type_=REPLHistory,
-            )
-            .append(
-                "iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str
-            )
-            .append(
-                "reasoning",
-                dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."),
-                type_=str,
-            )
-            .append(
-                "code",
-                dspy.OutputField(
-                    desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"
-                ),
-                type_=str,
-            )
+            dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
+                inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
+                max_llm_calls=self.max_llm_calls,
+            ) + tool_docs)
+            .append("execution_instructions", dspy.InputField(desc="Stable instructions and restrictions for the configured code interpreter"), type_=str)
+            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
+            .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
+            .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
+            .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
+            .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
         )
 
         # Extract signature: includes the original signature's output fields and task instructions.
@@ -396,21 +373,15 @@ class RLM(Module):
         # Prepend original task instructions to extract instructions so the LLM knows what task to extract for
         extended_task_instructions = ""
         if task_instructions:
-            extended_task_instructions = (
-                "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
-            )
+            extended_task_instructions = "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
         full_extract_instructions = extended_task_instructions + extract_instructions
 
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
             full_extract_instructions,
         )
-        extract_sig = extract_sig.prepend(
-            "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
-        )
-        extract_sig = extract_sig.prepend(
-            "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
-        )
+        extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
+        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
 
@@ -464,9 +435,7 @@ class RLM(Module):
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
     def _prepare_serializable_vars(
-        self,
-        input_args: dict[str, Any],
-        repl: CodeInterpreter,
+        self, input_args: dict[str, Any], repl: CodeInterpreter,
     ) -> dict[str, Any]:
         """Inject SandboxSerializable values into the interpreter.
 
@@ -493,12 +462,10 @@ class RLM(Module):
                 except UnicodeDecodeError:
                     encoded_var_name = f"{raw_var_name}_base64"
                     payload_vars[encoded_var_name] = base64.b64encode(payload).decode("ascii")
-                    code_lines.extend(
-                        [
-                            "import base64",
-                            f"{raw_var_name} = base64.b64decode({encoded_var_name})",
-                        ]
-                    )
+                    code_lines.extend([
+                        "import base64",
+                        f"{raw_var_name} = base64.b64decode({encoded_var_name})",
+                    ])
             else:
                 payload_vars[raw_var_name] = str(payload)
 
@@ -516,11 +483,9 @@ class RLM(Module):
     def _make_interpreter_tool(self, tool: Tool) -> Callable:
         """Preserve function metadata while routing execution through Tool."""
         if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
-
             async def invoke(**kwargs):
                 return await tool.acall(**kwargs)
         else:
-
             def invoke(**kwargs):
                 return tool(**kwargs)
 
@@ -603,18 +568,12 @@ class RLM(Module):
 
         # Validate raw_output is a dict
         if not isinstance(raw_output, dict):
-            return (
-                None,
-                f"[Error] FINAL returned {type(raw_output).__name__}, expected dict with fields: {output_field_names}",
-            )
+            return None, f"[Error] FINAL returned {type(raw_output).__name__}, expected dict with fields: {output_field_names}"
 
         # Validate all required output fields are present
         missing = set(output_field_names) - set(raw_output.keys())
         if missing:
-            return (
-                None,
-                f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})",
-            )
+            return None, f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})"
 
         # Parse and validate each output field
         parsed_outputs = {}
@@ -669,7 +628,9 @@ class RLM(Module):
             if error:
                 return history.append(reasoning=pred.reasoning, code=code, output=error)
 
-            final_history = history.append(reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}")
+            final_history = history.append(
+                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
+            )
             return Prediction(
                 **parsed_outputs,
                 trajectory=[e.model_dump() for e in final_history],
@@ -719,7 +680,8 @@ class RLM(Module):
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iters}\nReasoning: {action.reasoning}\nCode:\n{action.code}"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
+                f"Reasoning: {action.reasoning}\nCode:\n{action.code}"
             )
 
         try:
@@ -818,7 +780,8 @@ class RLM(Module):
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iters}\nReasoning: {pred.reasoning}\nCode:\n{pred.code}"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
+                f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
             )
 
         try:

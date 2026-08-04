@@ -309,7 +309,12 @@ class PythonInterpreter:
             return os.environ["DENO_DIR"]
 
         try:
-            result = subprocess.run(["deno", "info", "--json"], capture_output=True, text=True, check=False)
+            result = subprocess.run(
+                ["deno", "info", "--json"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
                 return info.get("denoDir")
@@ -384,7 +389,10 @@ class PythonInterpreter:
         if self.tools:
             tools_info = []
             for name, fn in self.tools.items():
-                tools_info.append({"name": name, "parameters": self._extract_parameters(fn)})
+                tools_info.append({
+                    "name": name,
+                    "parameters": self._extract_parameters(fn)
+                })
             params["tools"] = tools_info
 
         if self.output_fields:
@@ -413,14 +421,10 @@ class PythonInterpreter:
                 result = _await_in_sync(result)
             result = _make_jsonable(result)
             if result is None or isinstance(result, str):
-                response = _jsonrpc_result(
-                    {"value": str(result) if result is not None else "", "type": "string"}, request_id
-                )
+                response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
             else:
                 try:
-                    response = _jsonrpc_result(
-                        {"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id
-                    )
+                    response = _jsonrpc_result({"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id)
                 except (TypeError, ValueError):
                     response = _jsonrpc_result({"value": str(result), "type": "string"}, request_id)
         except Exception as e:
@@ -450,7 +454,7 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=os.environ.copy(),
+                env=os.environ.copy()
             )
         except FileNotFoundError as e:
             install_instructions = (
@@ -604,7 +608,10 @@ class PythonInterpreter:
             items = ", ".join(self._serialize_value(item) for item in value)
             return f"[{items}]"
         elif isinstance(value, dict):
-            items = ", ".join(f"{self._serialize_value(k)}: {self._serialize_value(v)}" for k, v in value.items())
+            items = ", ".join(
+                f"{self._serialize_value(k)}: {self._serialize_value(v)}"
+                for k, v in value.items()
+            )
             return f"{{{items}}}"
         elif isinstance(value, set):
             # Sets become sorted lists (or unsorted if mixed types) for JSON compatibility
