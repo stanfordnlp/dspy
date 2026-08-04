@@ -621,6 +621,7 @@ def test_base_lm_legacy_bridge_records_typed_history_and_usage_once():
     assert len(lm.history) == 1
     assert lm.history[0].request == request
     assert lm.history[0].response == response
+    assert lm.history[0].duration > 0
     total_usage = usage_tracker.get_total_tokens()["custom-model"]
     assert total_usage["prompt_tokens"] == 1
     assert total_usage["completion_tokens"] == 2
@@ -1081,6 +1082,8 @@ async def test_async_lm_call():
 
         assert result == ["answer"]
         mock_acompletion.assert_called_once()
+        assert isinstance(lm.history[-1]["duration"], float)
+        assert lm.history[-1]["duration"] > 0
 
 
 @pytest.mark.asyncio
@@ -1119,6 +1122,40 @@ async def test_async_lm_call_with_cache(tmp_path):
         assert mock_alitellm_completion.call_count == 2
 
     dspy.cache = original_cache
+
+
+def test_lm_history_records_duration():
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="test answer"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm("query")
+
+    assert isinstance(lm.history[-1]["duration"], float)
+    assert lm.history[-1]["duration"] > 0
+
+
+def test_lm_cost_flows_into_usage_tracker():
+    mock_response = ModelResponse(
+        choices=[Choices(message=Message(content="answer"))],
+        usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        model="openai/gpt-4o-mini",
+    )
+    mock_response._hidden_params = {"response_cost": 0.25}
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = mock_response
+
+        lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+        with track_usage() as tracker:
+            lm("query")
+            lm("query")
+
+    assert lm.history[-1]["cost"] == 0.25
+    assert tracker.total_cost_by_model["openai/gpt-4o-mini"] == pytest.approx(0.5)
+    assert tracker.get_total_cost() == pytest.approx(0.5)
 
 
 def test_lm_history_size_limit():
