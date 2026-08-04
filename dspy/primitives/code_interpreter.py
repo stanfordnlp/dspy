@@ -9,11 +9,13 @@ code-executing modules to work with different interpreter implementations:
 
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from dspy.utils.exceptions import DSPyError
+
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
-class CodeInterpreterError(RuntimeError):
+class CodeInterpreterError(DSPyError, RuntimeError):
     """Base class for errors reported by a code interpreter.
 
     A bare instance indicates a failure that submitted code cannot repair, such
