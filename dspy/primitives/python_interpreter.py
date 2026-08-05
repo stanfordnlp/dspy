@@ -436,9 +436,8 @@ class PythonInterpreter:
                 "Create a new interpreter for a fresh session."
             )
 
-        self._spawn_process()
+        self.start()
 
-    @with_callbacks
     def _spawn_process(self) -> None:
         try:
             self.deno_process = subprocess.Popen(
@@ -709,6 +708,7 @@ class PythonInterpreter:
 
         self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) during execution")
 
+    @with_callbacks
     def start(self) -> None:
         """Initialize the Deno/Pyodide sandbox.
 
@@ -719,7 +719,11 @@ class PythonInterpreter:
         Idempotent while the session is active. A stopped or shut-down session
         cannot be restarted because its Python state cannot be reconstructed.
         """
-        self._ensure_deno_process()
+        if self.deno_process is None:
+            self._check_session_active()
+            self._spawn_process()
+        else:
+            self._ensure_deno_process()
 
     def __enter__(self):
         return self

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _INTERPRETER_OPERATIONS = {
     "execute": "execute",
     "invoke_tool": "tool_call",
-    "_spawn_process": "startup",
+    "start": "startup",
     "shutdown": "shutdown",
 }
 

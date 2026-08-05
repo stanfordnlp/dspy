@@ -65,11 +65,12 @@ def events_for(callback, handler):
     return [event for event in callback.events if event["handler"] == handler]
 
 
-def test_custom_interpreter_execute_uses_interpreter_callbacks():
+def test_custom_interpreter_protocol_methods_use_interpreter_callbacks():
     class CustomInterpreter:
         def __init__(self):
             self.tools = {}
 
+        @with_callbacks
         def start(self):
             pass
 
@@ -84,16 +85,24 @@ def test_custom_interpreter_execute_uses_interpreter_callbacks():
     interpreter = CustomInterpreter()
 
     with dspy.context(callbacks=[callback]):
+        interpreter.start()
         assert interpreter.execute("result", {"x": 1}) == "result"
 
-    start, end = callback.events
-    assert start["handler"] == "execute_start"
-    assert start["instance"] is interpreter
-    assert start["inputs"] == {"code": "result", "variables": {"x": 1}}
-    assert end["handler"] == "execute_end"
-    assert end["call_id"] == start["call_id"]
-    assert end["outputs"] == "result"
-    assert end["exception"] is None
+    startup_start, startup_end, execute_start, execute_end = callback.events
+    assert startup_start["handler"] == "startup_start"
+    assert startup_start["instance"] is interpreter
+    assert startup_start["inputs"] == {}
+    assert startup_end["handler"] == "startup_end"
+    assert startup_end["call_id"] == startup_start["call_id"]
+    assert startup_end["outputs"] is None
+    assert startup_end["exception"] is None
+    assert execute_start["handler"] == "execute_start"
+    assert execute_start["instance"] is interpreter
+    assert execute_start["inputs"] == {"code": "result", "variables": {"x": 1}}
+    assert execute_end["handler"] == "execute_end"
+    assert execute_end["call_id"] == execute_start["call_id"]
+    assert execute_end["outputs"] == "result"
+    assert execute_end["exception"] is None
 
 
 def test_invoke_tool_reports_raw_result_and_propagates_exception():
@@ -224,7 +233,7 @@ def test_real_interpreter_callbacks_preserve_lazy_startup_tool_nesting_and_final
 
 
 @pytest.mark.deno
-def test_explicit_startup_callback_fires_once_for_idempotent_start():
+def test_explicit_startup_callbacks_fire_for_each_idempotent_start_call():
     callback = RecordingCallback()
     interpreter = dspy.PythonInterpreter(callbacks=[callback])
 
@@ -234,12 +243,11 @@ def test_explicit_startup_callback_fires_once_for_idempotent_start():
 
     starts = events_for(callback, "startup_start")
     ends = events_for(callback, "startup_end")
-    assert len(starts) == len(ends) == 1
-    assert starts[0]["inputs"] == {}
-    assert starts[0]["parent_call_id"] is None
-    assert ends[0]["call_id"] == starts[0]["call_id"]
-    assert ends[0]["outputs"] is None
-    assert ends[0]["exception"] is None
+    assert len(starts) == len(ends) == 2
+    assert all(event["inputs"] == {} for event in starts)
+    assert all(event["parent_call_id"] is None for event in starts)
+    assert [event["call_id"] for event in starts] == [event["call_id"] for event in ends]
+    assert all(event["outputs"] is None and event["exception"] is None for event in ends)
 
 
 @pytest.mark.deno
