@@ -56,6 +56,8 @@ dev = [
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
     "numpy>=1.26.0",
+    # LiteLLM proxy imports an internal FastAPI helper removed in 0.140.7.
+    "fastapi<0.140.7; sys_platform != 'win32' and python_version < '3.14'",
     "litellm>=1.65.8; sys_platform == 'win32' or python_version == '3.14'",
     "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
 ]
