@@ -465,6 +465,23 @@ class TestRLMInitialization:
 
 
 class TestRLMInterpreterLifecycle:
+    def test_execution_context_preserves_existing_tools_with_rlm_precedence(self):
+        def backend_tool():
+            return "backend"
+
+        def stale_llm_query():
+            return "stale"
+
+        interpreter = MockInterpreter(tools={"backend_tool": backend_tool, "llm_query": stale_llm_query})
+        rlm = RLM("query -> answer")
+        execution_tools = rlm._prepare_execution_tools()
+
+        rlm._inject_execution_context(interpreter, execution_tools)
+
+        assert interpreter.tools["backend_tool"] is backend_tool
+        assert interpreter.tools["llm_query"] is execution_tools["llm_query"]
+        assert interpreter.tools["llm_query"] is not stale_llm_query
+
     def test_execution_instructions_are_read_before_start_and_passed_to_action(self):
         events = []
 

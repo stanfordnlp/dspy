@@ -5,6 +5,7 @@ import os
 import random
 import threading
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 from typing import NamedTuple
@@ -405,6 +406,83 @@ def test_tool_with_typed_signature(configure_pooled_interpreter):
     # Tool should be callable with typed signature
     result = sandbox.execute('my_tool(query="test", limit=5)')
     assert result == "searched 'test' with limit 5"
+
+
+def test_bind_after_start_replaces_tools_and_preserves_namespace(pooled_interpreter):
+    old_calls = []
+
+    def old_tool():
+        old_calls.append(True)
+        return "old"
+
+    pooled_interpreter.bind(tools={"old_tool": old_tool})
+    assert pooled_interpreter.execute("state = 41\nold_tool()") == "old"
+
+    pooled_interpreter.bind(tools={"new_tool": lambda: "new"})
+
+    assert pooled_interpreter.execute("state + 1") == 42
+    assert pooled_interpreter.execute("new_tool()") == "new"
+    with pytest.raises(CodeExecutionError):
+        pooled_interpreter.execute("old_tool()")
+    assert old_calls == [True]
+
+
+def test_bind_none_output_fields_restores_default_submit(pooled_interpreter):
+    pooled_interpreter.bind(tools={}, output_fields=[{"name": "answer", "type": "str"}])
+    assert pooled_interpreter.execute("SUBMIT(answer='typed')") == FinalOutput({"answer": "typed"})
+
+    pooled_interpreter.bind(tools={}, output_fields=None)
+
+    assert pooled_interpreter.execute("SUBMIT('default')") == FinalOutput({"output": "default"})
+
+
+def test_reentrant_execute_from_tool_is_rejected_without_protocol_corruption(pooled_interpreter):
+    def reenter():
+        return pooled_interpreter.execute("1 + 1")
+
+    pooled_interpreter.bind(tools={"reenter": reenter})
+
+    with pytest.raises(CodeExecutionError, match="active execution"):
+        pooled_interpreter.execute("reenter()")
+    assert pooled_interpreter.execute("2 + 2") == 4
+
+
+def test_bind_from_tool_is_rejected_without_changing_binding(pooled_interpreter):
+    def rebind():
+        pooled_interpreter.bind(tools={})
+
+    pooled_interpreter.bind(tools={"rebind": rebind})
+
+    with pytest.raises(CodeExecutionError, match="execution is active"):
+        pooled_interpreter.execute("rebind()")
+    assert "rebind" in pooled_interpreter.tools
+    assert pooled_interpreter.execute("1 + 1") == 2
+
+
+def test_bind_from_another_thread_during_execution_is_rejected():
+    started = threading.Event()
+    release = threading.Event()
+
+    def block():
+        started.set()
+        release.wait(timeout=10)
+        return "done"
+
+    interpreter = PythonInterpreter(tools={"block": block})
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            execution = executor.submit(interpreter.execute, "block()")
+            assert started.wait(timeout=10)
+
+            with pytest.raises(RuntimeError, match="execution is active"):
+                interpreter.bind(tools={})
+
+            release.set()
+            assert execution.result(timeout=10) == "done"
+            assert executor.submit(interpreter.execute, "2 + 2").result(timeout=10) == 4
+    finally:
+        release.set()
+        interpreter.shutdown()
 
 
 def test_tool_positional_args(configure_pooled_interpreter):

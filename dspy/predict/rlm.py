@@ -31,6 +31,7 @@ from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
+    _bind_interpreter,
     _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
@@ -124,8 +125,8 @@ class RLM(Module):
 
     The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but
     ``interpreter_factory`` can create another CodeInterpreter implementation,
-    such as an adapter for a remote sandbox. RLM updates the interpreter's
-    mutable ``tools`` dictionary with invocation-scoped tools before execution.
+    such as an adapter for a remote sandbox. RLM binds invocation-scoped tools
+    before execution while retaining any tools supplied by the interpreter.
     A caller-owned interpreter may be reused sequentially with the same RLM
     instance, but must not be shared by overlapping invocations.
 
@@ -163,7 +164,7 @@ class RLM(Module):
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
-                the returned interpreter's mutable ``tools`` dictionary before execution.
+                the returned interpreter's tool bindings before execution.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -532,12 +533,13 @@ class RLM(Module):
         even for user-provided interpreters. Each forward() call gets fresh tools with a
         fresh call counter, so we must inject on every execution.
         """
-        interpreter.tools.update(execution_tools)
-        if hasattr(interpreter, "output_fields"):
-            interpreter.output_fields = self._get_output_fields_info()
-        # Reset registration flag to force re-registration with fresh tools
-        if hasattr(interpreter, "_tools_registered"):
-            interpreter._tools_registered = False
+        tools = dict(interpreter.tools)
+        tools.update(execution_tools)
+        _bind_interpreter(
+            interpreter,
+            tools=tools,
+            output_fields=self._get_output_fields_info(),
+        )
 
     @contextmanager
     def _interpreter_context(

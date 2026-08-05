@@ -105,6 +105,36 @@ def test_tools_plus_interpreter_is_supported() -> None:
     assert flex._bridge._tool_callables()["shout"] is shout
 
 
+def test_forward_binds_complete_tool_registry_once() -> None:
+    def backend_tool():
+        return "backend"
+
+    instances = []
+
+    class BindAwareInterpreter(MockInterpreter):
+        def __init__(self):
+            super().__init__(responses=["", "", '{"result": 4}'], tools={"backend_tool": backend_tool})
+            self.bind_calls = []
+
+        def bind(self, *, tools, output_fields=None):
+            self.bind_calls.append((dict(tools), output_fields))
+            self.tools = dict(tools)
+
+    def factory():
+        interpreter = BindAwareInterpreter()
+        instances.append(interpreter)
+        return interpreter
+
+    result = Flex(Doubler, tools=[shout], interpreter_factory=factory)(value=2)
+
+    assert result.result == 4
+    assert len(instances) == 1
+    assert len(instances[0].bind_calls) == 1
+    bound_tools, output_fields = instances[0].bind_calls[0]
+    assert set(bound_tools) == {"backend_tool", bridge.CONSTRUCT_TOOL, bridge.CALL_TOOL, "shout"}
+    assert output_fields is None
+
+
 # =============================================================================
 # Host bridge callbacks (no Deno) — simulate what the sandbox drives
 # =============================================================================

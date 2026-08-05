@@ -43,7 +43,7 @@ import dspy
 from dspy import CodeInterpreterError
 from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.adapters.utils import parse_value
-from dspy.primitives.code_interpreter import _create_interpreter
+from dspy.primitives.code_interpreter import _bind_interpreter, _create_interpreter
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
 
@@ -264,11 +264,13 @@ class BridgeRuntime:
         invocation = _Invocation(self, originals)
         interp = _create_interpreter(self._factory)
         try:
-            interp.tools.update({CONSTRUCT_TOOL: invocation.construct, CALL_TOOL: invocation.call})
+            tools = dict(interp.tools)
+            tools.update({CONSTRUCT_TOOL: invocation.construct, CALL_TOOL: invocation.call})
             # User tools callable by name in the sandbox.
-            interp.tools.update(
+            tools.update(
                 {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
             )
+            _bind_interpreter(interp, tools=tools)
             interp.execute(SHIM_SETUP)
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (

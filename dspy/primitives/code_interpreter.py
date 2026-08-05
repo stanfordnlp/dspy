@@ -7,6 +7,7 @@ code-executing modules to work with different interpreter implementations:
 - MockInterpreter: Scriptable responses for testing
 """
 
+import inspect
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from dspy.utils.exceptions import DSPyError
@@ -56,6 +57,11 @@ class CodeInterpreter(Protocol):
     - start(): Initialize the interpreter (optional, can be lazy)
     - execute(): Run code and return results
     - shutdown(): Clean up resources
+
+    DSPy also detects two optional extensions without requiring them for
+    runtime protocol compatibility: ``execution_instructions`` describes stable
+    backend constraints, and ``bind(tools=..., output_fields=...)`` atomically
+    replaces invocation-scoped tools and the SUBMIT output shape.
 
     The interpreter maintains state across execute() calls within a session,
     allowing variables defined in one call to be used in subsequent calls.
@@ -177,3 +183,36 @@ def _validate_interpreter(interpreter: Any) -> None:
     """Validate a caller-owned interpreter."""
     if not isinstance(interpreter, CodeInterpreter):
         raise TypeError(f"interpreter must implement CodeInterpreter, not {type(interpreter).__name__}.")
+
+
+def _bind_interpreter(
+    interpreter: CodeInterpreter,
+    *,
+    tools: dict[str, Callable[..., Any]],
+    output_fields: list[dict[str, Any]] | None = None,
+) -> None:
+    """Bind invocation capabilities, with a fallback for existing interpreters."""
+    copied_tools = dict(tools)
+    copied_output_fields = None if output_fields is None else [dict(field) for field in output_fields]
+    bind = getattr(interpreter, "bind", None)
+
+    if callable(bind):
+        try:
+            inspect.signature(bind).bind(tools=copied_tools, output_fields=copied_output_fields)
+        except (TypeError, ValueError):
+            pass
+        else:
+            bind(tools=copied_tools, output_fields=copied_output_fields)
+            return
+
+    registry = interpreter.tools
+    if not hasattr(registry, "clear") or not hasattr(registry, "update"):
+        raise TypeError(
+            "CodeInterpreter must implement bind(tools=..., output_fields=...) or expose a mutable tools mapping."
+        )
+    registry.clear()
+    registry.update(copied_tools)
+    if hasattr(interpreter, "output_fields"):
+        interpreter.output_fields = copied_output_fields
+    if hasattr(interpreter, "_tools_registered"):
+        interpreter._tools_registered = False

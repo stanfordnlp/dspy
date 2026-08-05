@@ -17,6 +17,7 @@ import math
 import os
 import subprocess
 import threading
+from collections.abc import Mapping, Sequence
 from os import PathLike
 from typing import Any, Callable, NoReturn
 
@@ -199,7 +200,7 @@ class PythonInterpreter:
         self.sync_files = sync_files
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
-        self._tools_registered = False
+        self._tools_registered = not bool(self.tools or self.output_fields)
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         self._deno_command = list(deno_command) if deno_command else None
@@ -210,6 +211,8 @@ class PythonInterpreter:
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
         self._session_ended = False
+        self._state_lock = threading.Lock()
+        self._execution_active = False
 
     @property
     def execution_instructions(self) -> str:
@@ -302,6 +305,69 @@ class PythonInterpreter:
                 "Create a separate interpreter instance for each thread."
             )
 
+    def _begin_execution(self) -> None:
+        self._check_session_active()
+        self._check_thread_ownership()
+        with self._state_lock:
+            if self._execution_active:
+                raise RuntimeError("PythonInterpreter already has an active execution.")
+            self._execution_active = True
+
+    def _end_execution(self) -> None:
+        with self._state_lock:
+            self._execution_active = False
+
+    def bind(
+        self,
+        *,
+        tools: Mapping[str, Callable[..., Any]],
+        output_fields: Sequence[Mapping[str, Any]] | None = None,
+    ) -> None:
+        """Replace host tools and the SUBMIT output shape for subsequent executions."""
+        self._check_session_active()
+        if not isinstance(tools, Mapping):
+            raise TypeError(f"tools must be a mapping, not {type(tools).__name__}")
+
+        copied_tools: dict[str, Callable[..., Any]] = {}
+        for name, tool in tools.items():
+            if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name):
+                raise CodeInterpreterError(f"Invalid tool name: {name!r}")
+            if name == "SUBMIT":
+                raise CodeInterpreterError("Tool name 'SUBMIT' is reserved by the interpreter")
+            if not callable(tool):
+                raise CodeInterpreterError(f"Tool {name!r} must be callable, not {type(tool).__name__}")
+            copied_tools[name] = tool
+
+        copied_output_fields = None
+        if output_fields is not None:
+            if not isinstance(output_fields, Sequence) or isinstance(output_fields, (str, bytes)):
+                raise TypeError(f"output_fields must be a sequence, not {type(output_fields).__name__}")
+            copied_output_fields = []
+            seen_names = set()
+            supported_types = {simple_type.__name__ for simple_type in SIMPLE_TYPES}
+            for field in output_fields:
+                if not isinstance(field, Mapping):
+                    raise CodeInterpreterError("Each output field must be a mapping")
+                copied_field = dict(field)
+                name = copied_field.get("name")
+                if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name):
+                    raise CodeInterpreterError(f"Invalid output field name: {name!r}")
+                if name in seen_names:
+                    raise CodeInterpreterError(f"Duplicate output field name: {name!r}")
+                field_type = copied_field.get("type")
+                if field_type is not None and field_type not in supported_types:
+                    raise CodeInterpreterError(f"Unsupported output field type for {name!r}: {field_type!r}")
+                seen_names.add(name)
+                copied_output_fields.append(copied_field)
+
+        with self._state_lock:
+            self._check_session_active()
+            if self._execution_active:
+                raise RuntimeError("Cannot bind tools while PythonInterpreter execution is active.")
+            self.tools = copied_tools
+            self.output_fields = copied_output_fields
+            self._tools_registered = False
+
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _get_deno_dir() -> str | None:
@@ -383,25 +449,15 @@ class PythonInterpreter:
         if self._tools_registered:
             return
 
-        # Build registration params with typed tool signatures
-        params = {}
-
-        if self.tools:
-            tools_info = []
-            for name, fn in self.tools.items():
-                tools_info.append({
-                    "name": name,
-                    "parameters": self._extract_parameters(fn)
-                })
-            params["tools"] = tools_info
-
-        if self.output_fields:
-            params["outputs"] = self.output_fields
-
-        # Skip if nothing to register
-        if not params:
-            self._tools_registered = True
-            return
+        # Always send outputs, including an empty list that restores SUBMIT(output)
+        # after a previous typed binding.
+        tools_info = []
+        for name, fn in self.tools.items():
+            tools_info.append({
+                "name": name,
+                "parameters": self._extract_parameters(fn)
+            })
+        params = {"tools": tools_info, "outputs": self.output_fields or []}
 
         self._send_request("register", params, "registering tools/outputs")
         self._tools_registered = True
@@ -637,8 +693,17 @@ class PythonInterpreter:
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
-        self._check_session_active()
-        self._check_thread_ownership()
+        self._begin_execution()
+        try:
+            return self._execute(code, variables)
+        finally:
+            self._end_execution()
+
+    def _execute(
+        self,
+        code: str,
+        variables: dict[str, Any] | None = None,
+    ) -> Any:
         variables = variables or {}
         code = self._inject_variables(code, variables)
         self._ensure_deno_process()
