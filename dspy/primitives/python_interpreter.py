@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.utils.callback import BaseCallback, with_callbacks
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
 
@@ -173,6 +174,7 @@ class PythonInterpreter:
         sync_files: bool = True,
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
+        callbacks: list[BaseCallback] | None = None,
     ) -> None:
         """
         Args:
@@ -188,6 +190,7 @@ class PythonInterpreter:
                    Tools are callable directly from sandbox code by name.
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
+            callbacks: Optional instance-level callback handlers.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -199,6 +202,7 @@ class PythonInterpreter:
         self.sync_files = sync_files
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
+        self.callbacks = list(callbacks or [])
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -397,11 +401,7 @@ class PythonInterpreter:
         kwargs = params.get("kwargs", {})
 
         try:
-            if tool_name not in self.tools:
-                raise CodeInterpreterError(f"Unknown tool: {tool_name}")
-            result = self.tools[tool_name](**kwargs)
-            if asyncio.iscoroutine(result):
-                result = _await_in_sync(result)
+            result = self.invoke_tool(tool_name, kwargs)
             result = _make_jsonable(result)
             if result is None or isinstance(result, str):
                 response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
@@ -417,6 +417,13 @@ class PythonInterpreter:
 
         self._write_message(response, "while returning a tool result")
 
+    @with_callbacks
+    def invoke_tool(self, tool_name: str, kwargs: dict[str, Any]) -> Any:
+        if tool_name not in self.tools:
+            raise CodeInterpreterError(f"Unknown tool: {tool_name}")
+        result = self.tools[tool_name](**kwargs)
+        return _await_in_sync(result) if asyncio.iscoroutine(result) else result
+
     def _ensure_deno_process(self) -> None:
         self._check_session_active()
 
@@ -429,6 +436,9 @@ class PythonInterpreter:
                 "Create a new interpreter for a fresh session."
             )
 
+        self.start()
+
+    def _spawn_process(self) -> None:
         try:
             self.deno_process = subprocess.Popen(
                 self.deno_command,
@@ -615,6 +625,7 @@ class PythonInterpreter:
         """Inject a large variable via the virtual filesystem."""
         self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
 
+    @with_callbacks
     def execute(
         self,
         code: str,
@@ -697,6 +708,7 @@ class PythonInterpreter:
 
         self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) during execution")
 
+    @with_callbacks
     def start(self) -> None:
         """Initialize the Deno/Pyodide sandbox.
 
@@ -707,7 +719,11 @@ class PythonInterpreter:
         Idempotent while the session is active. A stopped or shut-down session
         cannot be restarted because its Python state cannot be reconstructed.
         """
-        self._ensure_deno_process()
+        if self.deno_process is None:
+            self._check_session_active()
+            self._spawn_process()
+        else:
+            self._ensure_deno_process()
 
     def __enter__(self):
         return self
@@ -722,6 +738,7 @@ class PythonInterpreter:
     ) -> Any:
         return self.execute(code, variables)
 
+    @with_callbacks
     def shutdown(self) -> None:
         session_was_active = not self._session_ended
         self._session_ended = True
