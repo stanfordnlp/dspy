@@ -79,6 +79,8 @@ class Evaluate:
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
         failure_score: float = 0.0,
+        timeout: float = 120,
+        straggler_limit: int = 3,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
         **kwargs,
@@ -95,6 +97,13 @@ class Evaluate:
                 stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
+            timeout (float): Per-example straggler timeout, in seconds, passed to the underlying
+                parallel executor. When fewer than ``straggler_limit`` examples remain, any that
+                have been running for longer than ``timeout`` are resubmitted once. Set to ``0``
+                to disable straggler resubmission entirely, which is useful for long-running
+                evaluations whose examples legitimately exceed the default 120s. Defaults to 120.
+            straggler_limit (int): The maximum number of remaining examples for which straggler
+                resubmission is considered. Defaults to 3.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
 
@@ -107,6 +116,8 @@ class Evaluate:
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
 
@@ -165,6 +176,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=self.timeout,
+            straggler_limit=self.straggler_limit,
         )
 
         def process_item(example):
