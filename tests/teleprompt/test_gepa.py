@@ -660,3 +660,59 @@ def test_tracked_reflection_lm_exposes_cost_totals():
     # Cache hits record cost=None; they must not break the sum.
     tracked.lm.history.append({"cost": None, "usage": {}})
     assert tracked.total_cost == 0.25
+
+
+def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):
+    from types import SimpleNamespace
+
+    import gepa as gepa_pkg
+    from gepa.strategies.proposal_sampling import SameParentSampling
+    from gepa.strategies.proposal_selection import BestImprovement
+
+    captured = {}
+
+    def fake_optimize(seed_candidate=None, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(best_candidate=seed_candidate)
+
+    monkeypatch.setattr(gepa_pkg, "optimize", fake_optimize)
+
+    lm = DummyLM([{"output": "b"}] * 10)
+    dspy.settings.configure(lm=lm)
+
+    sampling = SameParentSampling(2)
+    selection = BestImprovement()
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=5,
+        reflection_lm=DummyLM([{"new_instruction": "x"}] * 10),
+        sampling_strategy=sampling,
+        selection_strategy=selection,
+        acceptance_criterion="improvement_or_equal",
+        max_reflection_cost=12.5,
+        wandb_attach_existing=True,
+        mlflow_attach_existing=True,
+        tracking_key_prefix="gepa/",
+    )
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="a", output="b").with_inputs("input")]
+    optimizer.compile(student, trainset=trainset)
+
+    assert captured["sampling_strategy"] is sampling
+    assert captured["selection_strategy"] is selection
+    assert captured["acceptance_criterion"] == "improvement_or_equal"
+    assert captured["max_reflection_cost"] == 12.5
+    assert captured["wandb_attach_existing"] is True
+    assert captured["mlflow_attach_existing"] is True
+    assert captured["tracking_key_prefix"] == "gepa/"
+    assert hasattr(captured["reflection_lm"], "total_cost")
+
+
+def test_gepa_max_reflection_cost_requires_reflection_lm():
+    with pytest.raises(AssertionError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=5,
+            instruction_proposer=lambda candidate, reflective_dataset, components_to_update: {},
+            max_reflection_cost=1.0,
+        )
