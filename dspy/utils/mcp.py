@@ -46,20 +46,30 @@ def _is_wrapped_result_schema(output_schema: dict[str, Any] | None) -> bool:
     )
 
 
-def _text_renders_full_object(text_contents: list[Any], structured_content: dict[str, Any]) -> bool:
-    """Distinguish a genuine single-``result``-field object from the SDK's wrapper envelope.
-
-    The output schema of a tool that genuinely returns an object with one required
-    ``result`` property is identical to the envelope schema, but SDK servers render a
-    genuine object's text content as the full JSON object, while a wrapped value's text
-    is the serialization of the inner value alone.
-    """
-    if len(text_contents) != 1:
-        return False
+def _matches_serialized(text: str, value: Any) -> bool:
+    if text == str(value):
+        return True
     try:
-        return json.loads(text_contents[0].text) == structured_content
+        return json.loads(text) == value
     except ValueError:
         return False
+
+
+def _text_corroborates_envelope(text_contents: list[Any], inner: Any) -> bool:
+    """Distinguish the SDK's wrapper envelope from a genuine single-``result``-field object.
+
+    The two are indistinguishable by schema shape alone, so unwrapping requires positive
+    evidence. SDK servers always emit text content alongside a wrapped value: the inner
+    value's serialization as a single entry, or one entry per element for list returns.
+    A genuine object's text renders as the full JSON object instead, and a result with
+    no text content at all most likely did not come from an SDK wrapper.
+    """
+    texts = [content.text for content in text_contents]
+    if len(texts) == 1 and _matches_serialized(texts[0], inner):
+        return True
+    if isinstance(inner, list) and len(texts) == len(inner):
+        return all(_matches_serialized(text, element) for text, element in zip(texts, inner, strict=False))
+    return False
 
 
 def _convert_mcp_tool_result(
@@ -98,7 +108,7 @@ def _convert_mcp_tool_result(
             _is_wrapped_result_schema(output_schema)
             and isinstance(structured_content, dict)
             and set(structured_content) == {"result"}
-            and not _text_renders_full_object(text_contents, structured_content)
+            and _text_corroborates_envelope(text_contents, structured_content["result"])
         ):
             return structured_content["result"]
         return structured_content

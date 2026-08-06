@@ -41,9 +41,10 @@ def test_structured_content_preferred_over_text():
 def test_wrapped_structured_content_is_unwrapped():
     result = make_call_tool_result(texts=["3"], structured={"result": 3})
     assert _convert_mcp_tool_result(result, output_schema=WRAPPED_SCHEMA) == 3
-    # Without text content there is no evidence against the envelope reading.
-    result = make_call_tool_result(structured={"result": 3})
-    assert _convert_mcp_tool_result(result, output_schema=WRAPPED_SCHEMA) == 3
+    # List returns render as one text entry per element.
+    list_schema = {"type": "object", "properties": {"result": {"type": "array"}}, "required": ["result"]}
+    result = make_call_tool_result(texts=["a", "b"], structured={"result": ["a", "b"]})
+    assert _convert_mcp_tool_result(result, output_schema=list_schema) == ["a", "b"]
 
 
 @pytest.mark.extra
@@ -52,6 +53,10 @@ def test_genuine_single_result_field_object_is_not_unwrapped():
     # has the same output schema as the SDK's wrapper envelope, but its text content
     # renders the full object rather than the inner value.
     result = make_call_tool_result(texts=['{"result": 42}'], structured={"result": 42})
+    assert _convert_mcp_tool_result(result, output_schema=WRAPPED_SCHEMA) == {"result": 42}
+    # Without text content there is no positive evidence of wrapping, so the
+    # declared object shape is preserved.
+    result = make_call_tool_result(structured={"result": 42})
     assert _convert_mcp_tool_result(result, output_schema=WRAPPED_SCHEMA) == {"result": 42}
 
 
