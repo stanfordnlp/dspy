@@ -56,5 +56,15 @@ def get_profile() -> Profile:
     return Profile(name="Ann", age=30)
 
 
+class SingleFieldResult(BaseModel):
+    result: int
+
+
+@mcp.tool()
+def genuine_single_field() -> SingleFieldResult:
+    """Returns an object whose only field is named result"""
+    return SingleFieldResult(result=42)
+
+
 if __name__ == "__main__":
     mcp.run()

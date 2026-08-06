@@ -1,3 +1,4 @@
+import json
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _package_version
 from typing import TYPE_CHECKING, Any
@@ -45,6 +46,22 @@ def _is_wrapped_result_schema(output_schema: dict[str, Any] | None) -> bool:
     )
 
 
+def _text_renders_full_object(text_contents: list[Any], structured_content: dict[str, Any]) -> bool:
+    """Distinguish a genuine single-``result``-field object from the SDK's wrapper envelope.
+
+    The output schema of a tool that genuinely returns an object with one required
+    ``result`` property is identical to the envelope schema, but SDK servers render a
+    genuine object's text content as the full JSON object, while a wrapped value's text
+    is the serialization of the inner value alone.
+    """
+    if len(text_contents) != 1:
+        return False
+    try:
+        return json.loads(text_contents[0].text) == structured_content
+    except ValueError:
+        return False
+
+
 def _convert_mcp_tool_result(
     call_tool_result: "mcp.types.CallToolResult",
     output_schema: dict[str, Any] | None = None,
@@ -81,6 +98,7 @@ def _convert_mcp_tool_result(
             _is_wrapped_result_schema(output_schema)
             and isinstance(structured_content, dict)
             and set(structured_content) == {"result"}
+            and not _text_renders_full_object(text_contents, structured_content)
         ):
             return structured_content["result"]
         return structured_content
