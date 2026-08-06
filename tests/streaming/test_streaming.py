@@ -415,6 +415,21 @@ def test_sync_status_streaming():
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
 
+def test_apply_sync_streaming_propagates_generator_exceptions():
+    class StreamFailureError(RuntimeError):
+        pass
+
+    async def failing_stream():
+        yield "first"
+        raise StreamFailureError("stream broke")
+
+    sync_output = dspy.streaming.apply_sync_streaming(failing_stream())
+
+    assert next(sync_output) == "first"
+    with pytest.raises(StreamFailureError, match="stream broke"):
+        next(sync_output)
+
+
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
