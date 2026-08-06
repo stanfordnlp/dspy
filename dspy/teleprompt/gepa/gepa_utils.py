@@ -341,6 +341,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         with ThreadPoolExecutor(max_workers=min(len(items), 8)) as executor:
             return list(executor.map(_evaluate_pair, items))
 
+    def get_adapter_state(self) -> dict[str, Any]:
+        """Snapshot adapter state into gepa's checkpoint (gepa persists it via pickle)."""
+        return {"rng_state": self.rng.getstate()}
+
+    def set_adapter_state(self, state: dict[str, Any]) -> None:
+        """Restore adapter state on checkpoint resume."""
+        rng_state = state.get("rng_state")
+        if rng_state is not None:
+            self.rng.setstate(rng_state)
+
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
     ) -> dict[str, list[ReflectiveExample]]:

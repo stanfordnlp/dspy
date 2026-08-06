@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from typing import Any
 from unittest import mock
@@ -790,3 +791,21 @@ def test_batch_evaluate_propagates_thread_local_overrides():
     assert len(results) == 2
     for res in results:
         assert all(res.scores), f"expected override LM answers to score truthy, got {res.scores}"
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+        rng=random.Random(42),
+    )
+    saved = adapter.get_adapter_state()
+    first_draw = adapter.rng.random()
+
+    adapter.rng.random()  # advance further so restore actually rewinds
+    adapter.set_adapter_state(saved)
+    assert adapter.rng.random() == first_draw
