@@ -21,10 +21,22 @@ if TYPE_CHECKING:
 
 @experimental
 class ReActV2(Module):
+    # Field names ReActV2 attaches to every returned `Prediction`. A user output field with one
+    # of these names would collide with the keyword arguments below and raise an opaque TypeError
+    # mid-`forward()`, so we reject it up front.
+    _RESERVED_OUTPUT_FIELDS = ("history", "termination_reason")
+
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+
+        reserved = [name for name in self._RESERVED_OUTPUT_FIELDS if name in self.signature.output_fields]
+        if reserved:
+            raise ValueError(
+                f"ReActV2 reserves the output field name(s) {', '.join(reserved)} for its own metadata. "
+                "Please rename the conflicting field(s) in your signature."
+            )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}

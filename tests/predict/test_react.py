@@ -10,6 +10,14 @@ from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import ContextWindowExceededError
 
 
+def test_react_rejects_reserved_trajectory_output_field():
+    # Regression test for #9853: a clear error must be raised at construction instead of an
+    # opaque TypeError mid-forward when a user output field named `trajectory` collides with
+    # the `trajectory=...` keyword ReAct attaches to every Prediction.
+    with pytest.raises(ValueError, match="reserves the output field name `trajectory`"):
+        dspy.ReAct("question -> answer, trajectory: str", tools=[])
+
+
 @pytest.mark.extra
 def test_tool_observation_preserves_custom_type():
     pytest.importorskip("PIL.Image")
