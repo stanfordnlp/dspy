@@ -11,8 +11,10 @@ from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.adapters.types import Type
+from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+from dspy.utils.exceptions import AdapterParseError
 
 
 @pytest.mark.anyio
@@ -949,6 +951,303 @@ async def test_stream_listener_allow_reuse():
     assert concat_message == "To get to the other side!To get to the other side!"
 
 
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        # The chunk that completes the opening tag also carries the nested value's inner closing
+        # tag. Matching the closing tag directly would read that inner tag as the field's end.
+        (["<answer><answer>inner</answer>", "</answer>", "<other>sib</other>"], "<answer>inner</answer>"),
+        # The sibling's opening tag is split across chunks, and the field's own opening tag is
+        # still part-way through arriving when the inner tags land.
+        (["<answer>", "\n<answer>inner</answer>\n", "<ot", "her>sib</other>"], "<answer>inner"),
+    ],
+)
+@pytest.mark.anyio
+async def test_xml_adapter_nested_value_survives_awkward_chunk_boundaries(chunks, expected):
+    """A nested value must still reach the consumer when tags straddle chunk boundaries.
+
+    Both layouts used to emit nothing at all: the cache-hit shortcut saw a start identifier
+    followed by some `</field>` and ended the stream, either on the value's inner closing tag or
+    on an opening tag that was really part of the value.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    async def xml_stream(*args, **kwargs):
+        for token in chunks:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    assert "".join(streamed).strip() == expected
+    # And it still matches what parse returns for the same completion.
+    assert dspy.XMLAdapter().parse(TwoFields, "".join(chunks))["answer"] == expected
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_stream_surfaces_the_sibling_masked_ambiguity_from_parse():
+    """A nested value truncated by a sibling inside its span must end in a loud error.
+
+    The stream can only emit the lazy reading as tokens arrive -- a sent chunk cannot be
+    recalled -- but the run must not conclude as if that truncated value were the answer:
+    `parse` reports the ambiguity and the error reaches the stream consumer.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer><answer>nested</answer><other>sibling</other></answer>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+            adapter=dspy.XMLAdapter(use_json_adapter_fallback=False),
+        ):
+            # The task group inside streamify re-raises as an exception group, so unwrap
+            # rather than match the group type: the assertion is about the parse error.
+            with pytest.raises(BaseException) as err:
+                async for _ in program(question="?"):
+                    pass
+
+    # Unwrap by the group attribute rather than the type: `BaseExceptionGroup` is not a
+    # builtin on Python 3.10, where anyio raises the `exceptiongroup` backport instead.
+    def leaves(exc):
+        subexceptions = getattr(exc, "exceptions", None)
+        if subexceptions is None:
+            return [exc]
+        return [leaf for sub in subexceptions for leaf in leaves(sub)]
+
+    assert any(isinstance(leaf, AdapterParseError) for leaf in leaves(err.value)), (
+        f"expected an AdapterParseError, got {err.value!r}"
+    )
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_one_chunk_nested_value_lands_whole_in_the_prediction():
+    """A nested value arriving in one chunk must land in the prediction untruncated.
+
+    A completion that arrives whole in a single chunk takes the cache-hit path and emits no
+    StreamResponse -- the pre-existing contract for every one-chunk response, plain or nested.
+    What this pins is the value itself: the prediction must carry the full nested value, not
+    the truncation the lazy scan used to produce.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer><answer>inner</answer></answer><other>sibling</other>"
+
+    async def xml_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion))])
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = []
+            prediction = None
+            async for value in program(question="?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    streamed.append(value.chunk)
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+
+    assert streamed == []
+    assert prediction.answer == "<answer>inner</answer>"
+    assert prediction.answer == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_streams_nested_value_whole_and_matches_parse():
+    """A nested same-named value must reach the consumer exactly as `parse` returns it.
+
+    Which closing tag ends such a value is unknown until the balancing tag arrives, so the value
+    is buffered and emitted once rather than token-by-token.
+    """
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    completion = "<code>\n<code>x = 1</code>\n</code>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            chunks = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    parsed = dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
+    assert parsed == "<code>x = 1</code>"
+    assert "".join(chunks).strip() == parsed
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_never_leaks_a_later_field():
+    """Widening must stop at another output field rather than stream its value to the wrong listener."""
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    # The `answer` span never balances, and `<other>` follows. Streaming `answer` must not emit it.
+    completion = "<answer>\n<answer>foo\n</answer>\n<other>bar</other>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            chunks = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    streamed = "".join(chunks).strip()
+    assert "bar" not in streamed and "<other>" not in streamed
+    assert streamed == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_emits_at_the_boundary_not_at_finalize():
+    """A buffered value must be released as soon as its boundary is settled, not once the stream ends.
+
+    Here nothing balances the `answer` span, so what settles it is `<other>` opening -- which
+    brings no closing tag. Waiting only on closing tags leaves the value stranded in the buffer
+    until `finalize()`, arriving after the whole completion and never arriving at all when `parse`
+    raises, since `finalize()` only runs once a `Prediction` is produced.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer>\n<answer>foo\n</answer>\n<other>bar baz qux quux</other>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+                dspy.streaming.StreamListener(signature_field_name="other"),
+            ],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            responses = [v async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    order = [response.signature_field_name for response in responses]
+    # `answer` lands before any of `other`'s tokens; a finalize-only emission would put it last.
+    assert order.index("answer") < order.index("other")
+    answer = "".join(r.chunk for r in responses if r.signature_field_name == "answer")
+    assert answer == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_decides_the_boundary_in_one_pass():
+    """Settling the boundary must cost one pass over the value, however many children it holds.
+
+    The decision used to start over at the top of the buffer every time a closing tag landed, so a
+    nested value made of balanced children cost a pass per child; rebuilding the buffer to restart
+    on then cost a copy of it per chunk, which is worse still, there being far more chunks than
+    children. Both are quadratic, on the event loop, on exactly the payloads this path exists for.
+    Counting passes bounds the first and counting the characters handed to the scan -- each one a
+    character read and a character copied -- bounds the second, on any machine, where a wall-clock
+    bound would only pin either on an unloaded one.
+    """
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    decide = XMLAdapter._nested_decision_ready
+    scan = XMLAdapter._nested_boundary_scan
+
+    async def stream(children):
+        completion = "<code>\n" + "".join(f"<code>{i}</code>" for i in range(children)) + "\n</code>"
+
+        async def xml_stream(*args, **kwargs):
+            for i in range(0, len(completion), 3):
+                yield ModelResponseStream(
+                    model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+                )
+
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with mock.patch("litellm.acompletion", side_effect=xml_stream):
+            with mock.patch.object(XMLAdapter, "_nested_decision_ready", wraps=decide) as passes:
+                with mock.patch.object(XMLAdapter, "_nested_boundary_scan", wraps=scan) as scans:
+                    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+                        chunks = [
+                            v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)
+                        ]
+        return (
+            passes.call_count,
+            sum(len(call.args[1]) for call in scans.call_args_list) / len(completion),
+            "".join(chunks).strip(),
+            dspy.XMLAdapter().parse(CodeSignature, completion)["code"],
+        )
+
+    few_passes, few_reads, few_streamed, few_parsed = await stream(30)
+    many_passes, many_reads, many_streamed, many_parsed = await stream(240)
+
+    # Eight times the children, and the value still arrives whole -- so the counts below are not
+    # those of a stream that gave up early.
+    assert few_streamed == few_parsed
+    assert many_streamed == many_parsed
+    assert 1 <= few_passes == many_passes <= 2
+    # Per character of the value, not in total: a bound that grows with the value is what a
+    # quadratic scan would satisfy too. Restarting per chunk reads it once per chunk, so this ratio
+    # would rise with the value rather than staying put.
+    assert many_reads < 8 and many_reads < 2 * few_reads
+
+
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_xml_adapter():
     class MyProgram(dspy.Module):
@@ -1021,6 +1320,129 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
     assert len(judgement_chunks) > 0
     assert judgement_chunks[0].predict_name == "predict2"
     assert "".join([chunk.chunk for chunk in judgement_chunks]) == "The answer is humorous."
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_stream_decodes_escaped_value_and_matches_parse():
+    """A compliant (escaped) wire must stream as the decoded value `parse` returns.
+
+    The first `&lt;` arrives split across two chunks as `&l` | `t;`, so the decode has to hold the
+    partial entity back rather than emit it raw or read it in halves.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    chunks = ["<answer>", "\nif a &l", "t; b: print('&lt;/answer>')\n", "</answer>", "\n<other>ok</other>"]
+
+    async def xml_stream(*args, **kwargs):
+        for token in chunks:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    value = "".join(streamed).strip()
+    assert value == "if a < b: print('</answer>')"
+    assert value == dspy.XMLAdapter().parse(TwoFields, "".join(chunks))["answer"]
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 5])
+@pytest.mark.anyio
+async def test_xml_adapter_stream_decode_is_chunking_invariant(chunk_size):
+    """However the wire is chunked, the streamed value must equal what `parse` returns.
+
+    The value below stacks entities back to back, including the escaped form of a literal `&lt;`,
+    so every chunk size cuts some entity somewhere.
+    """
+
+    class TwoFields(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        other: str = dspy.OutputField()
+
+    completion = "<answer>\na &amp;&amp; b &lt;&lt; c &amp;lt; d\n</answer>\n<other>ok</other>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), chunk_size):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + chunk_size]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(TwoFields),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            streamed = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    assert "".join(streamed).strip() == "a && b << c &lt; d"
+    assert "".join(streamed).strip() == dspy.XMLAdapter().parse(TwoFields, completion)["answer"]
+
+
+@pytest.mark.anyio
+async def test_xml_adapter_nested_stream_decodes_entities_like_parse():
+    """The buffered nested-value emission must decode entities exactly as `parse` does."""
+
+    class CodeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        code: str = dspy.OutputField()
+
+    # A non-compliant wire: raw nested tags around an escaped `&`. The nested path buffers it and
+    # must emit the decoded value, or the stream and the final Prediction would disagree.
+    completion = "<code>\n<code>a &amp; b</code>\n</code>"
+
+    async def xml_stream(*args, **kwargs):
+        for i in range(0, len(completion), 3):
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=completion[i : i + 3]))]
+            )
+
+    with mock.patch("litellm.acompletion", side_effect=xml_stream):
+        program = dspy.streamify(
+            dspy.Predict(CodeSignature),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="code")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            chunks = [v.chunk async for v in program(question="?") if isinstance(v, dspy.streaming.StreamResponse)]
+
+    parsed = dspy.XMLAdapter().parse(CodeSignature, completion)["code"]
+    assert parsed == "<code>a & b</code>"
+    assert "".join(chunks).strip() == parsed
+
+
+def test_xml_adapter_finalize_releases_a_held_entity_carry():
+    """A partial entity held back mid-stream must come out, decoded, when the stream ends.
+
+    The field-end queue is empty here -- the carry is all that is left -- so `finalize()` cannot
+    rely on `flush()` alone; before the carry existed it returned None for an empty queue.
+    """
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+
+    def chunk(content):
+        return ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    with dspy.context(adapter=dspy.XMLAdapter()):
+        emitted = []
+        for content in ["<answer>", "x &am"]:
+            response = listener.receive(chunk(content))
+            if response is not None:
+                emitted.append(response.chunk)
+        final = listener.finalize()
+
+    # Mid-stream the listener must not emit the half-entity `&am`...
+    assert emitted == ["x "]
+    # ...and at the end the tail has fully arrived: it was never an entity, so it comes out raw.
+    assert final is not None and final.is_last_chunk
+    assert final.chunk == "&am"
 
 
 @pytest.mark.anyio
@@ -1305,9 +1727,7 @@ async def test_chat_adapter_with_generic_type_annotation():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))]
-        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])

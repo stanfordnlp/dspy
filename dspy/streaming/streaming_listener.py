@@ -11,7 +11,7 @@ import jiter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
-from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.adapters.xml_adapter import XMLAdapter, _entity_prefix_start, _unescape_value
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
@@ -21,6 +21,39 @@ if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
+
+# A value that is itself a same-named element (`<code><code>x</code></code>`) cannot be streamed
+# token-by-token: which closing tag ends it is only known once the balancing tag arrives, and by
+# then an eagerly-emitted value would already be wrong. Such values are therefore buffered and
+# emitted once, so a streamed value always matches what `XMLAdapter.parse` returns. Set this to
+# False to restore the previous token-by-token path, where the field ended at the first closing tag
+# and a nested value was truncated in the stream while `parse` recovered it in full. The flag does
+# not reach the cache-hit shortcut in `receive`, which asks `_chunk_completes_field` where the value
+# stops for every XMLAdapter stream: flag or no flag, a chunk holding only the front of a nested
+# value is not read as a finished field just because an inner closing tag went by.
+STREAM_NESTED_XML_VALUES = True
+
+
+def _new_xml_adapter_state() -> dict[str, Any]:
+    """Per-stream state for the nested-value path, so its two call sites cannot drift apart.
+
+    The value itself is not held here: `field_end_queue` already holds every chunk of it, since the
+    nested path never drains that queue, and a second copy would retain the whole value twice. It
+    is joined once, at the boundary. Re-joining it per chunk to re-read it would copy the whole
+    buffer every time, which costs more over a long value than the rescanning `unscanned` avoids.
+
+    `pending` belongs to the token-by-token path: the tail of the last outgoing chunk that could
+    be the front of a wire entity split across chunks (the `&l` of `&lt;`), at most four
+    characters, held back until the rest arrives so the decode never reads half an entity.
+    """
+    return {
+        "unscanned": "",
+        "is_nested": None,
+        "depth": 0,
+        "ready": False,
+        "closed": False,
+        "pending": "",
+    }
 
 
 class StreamListener:
@@ -55,6 +88,7 @@ class StreamListener:
         self.allow_reuse = allow_reuse
 
         self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.xml_adapter_state = _new_xml_adapter_state()
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -80,7 +114,7 @@ class StreamListener:
             },
         }
 
-    def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
+    def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> bool:
         for i in range(len(concat_message)):
             if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
                 return True
@@ -134,6 +168,7 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
+                self.xml_adapter_state = _new_xml_adapter_state()
                 self.stream_start = False
             else:
                 return
@@ -161,14 +196,24 @@ class StreamListener:
         except Exception:
             return
 
-        if chunk_message and start_identifier in chunk_message and not isinstance(settings.adapter, JSONAdapter):
+        if (
+            chunk_message
+            and not self.stream_start
+            and not self.field_start_queue
+            and start_identifier in chunk_message
+            and not isinstance(settings.adapter, JSONAdapter)
+        ):
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
             # tokens, so it's possible that response only has one chunk, we also fall back to this logic.
+            # This only makes sense before the field has started, and before a start identifier is
+            # part-way through arriving: once either is true, a later chunk carrying the identifier
+            # again is content -- an XML value nesting its own tag, say -- not a second start, and
+            # treating it as one ends the stream mid-value.
             message_after_start_identifier = chunk_message[
                 chunk_message.find(start_identifier) + len(start_identifier) :
             ]
-            if re.search(end_identifier, message_after_start_identifier):
+            if self._chunk_completes_field(message_after_start_identifier, end_identifier):
                 self.cache_hit = True
                 self.stream_start = True
                 self.stream_end = True
@@ -214,6 +259,11 @@ class StreamListener:
         if self.stream_start and chunk_message:
             # The stream is started, we keep returning the token until we see the start of the next field.
             self.field_end_queue.put(chunk_message)
+
+            if STREAM_NESTED_XML_VALUES and isinstance(settings.adapter, XMLAdapter):
+                handled, response = self._xml_nested_stream_chunk(chunk_message)
+                if handled:
+                    return response
 
             token = None
             concat_message = "".join(self.field_end_queue.queue).strip()
@@ -291,7 +341,128 @@ class StreamListener:
                 is_last_chunk=self.stream_end,
             )
 
-    def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> StreamResponse | None:
+    def _sibling_output_fields(self) -> frozenset[str] | None:
+        """The signature's other output field names, or None when the signature is unreachable.
+
+        Both XMLAdapter paths need this set, and neither may substitute an empty one for it: the
+        set is what stops a widened span from swallowing a later field, so guessing it empty reads
+        `<answer>x</answer><judgement>ok</judgement></answer>` as one value holding `judgement`.
+        Returning None instead makes the missing signature a case each caller answers out loud.
+        """
+        try:
+            return frozenset(self.predict.signature.output_fields) - {self.signature_field_name}
+        except AttributeError:
+            return None
+
+    def _chunk_completes_field(self, message_after_start_identifier: str, end_identifier: str) -> bool:
+        """Whether the field both starts and ends inside this one chunk.
+
+        For XMLAdapter the first `</field_name>` is not necessarily the end: a value that nests its
+        own tag closes on the balancing one, so the adapter is asked where the value stops rather
+        than the identifier being matched directly. Reading the inner tag as the end would stop the
+        stream part-way through the value and the field would never be emitted at all.
+
+        Nothing is streamed on this path either way -- the value reaches the caller on the final
+        `Prediction`, as it did before. Emitting it here needs a signal that the chunk is the whole
+        response rather than a prefix that happens to parse, which the stream does not carry.
+        """
+        if isinstance(settings.adapter, XMLAdapter):
+            siblings = self._sibling_output_fields()
+            if siblings is not None:
+                return (
+                    XMLAdapter._field_value_end(self.signature_field_name, message_after_start_identifier, siblings)
+                    is not None
+                )
+        return bool(re.search(end_identifier, message_after_start_identifier))
+
+    def _xml_nested_stream_chunk(self, chunk_message: str) -> tuple[bool, StreamResponse | None]:
+        """Buffer a nested same-named XML value and emit it once, whole.
+
+        Returns `(handled, response)`. `handled` is False for ordinary values, which fall through
+        to the unchanged token-by-token path; only a value that opens with its own tag is taken
+        over here. Nothing is emitted while such a value is incomplete, because the closing tag
+        that ends it is not known until the balancing tag arrives, and a chunk released before
+        then could not be taken back.
+
+        Deleting this method, its call site, and `STREAM_NESTED_XML_VALUES` restores the previous
+        token-by-token path. The cache-hit shortcut in `receive` is the one other place nesting is
+        accounted for, and it stays accounted for either way: `_chunk_completes_field` is not gated
+        on the flag, because a shortcut that ended on the inner tag would drop the field entirely.
+        """
+        state = self.xml_adapter_state
+        if state["is_nested"] is False:
+            # Ordinary value: the token-by-token path owns it and nothing here is read again.
+            return False, None
+
+        # Everything the boundary scan has not read yet: the value so far while its shape is still
+        # undecided, and from then on only the tail that could hold the front of a split tag.
+        unscanned = state["unscanned"] + chunk_message
+
+        if state["is_nested"] is None:
+            state["is_nested"] = XMLAdapter._value_opens_nested(self.signature_field_name, unscanned)
+            if state["is_nested"] is None:
+                # Still only whitespace or a partial opening tag: withhold rather than guess.
+                state["unscanned"] = unscanned
+                return True, None
+            if not state["is_nested"]:
+                state["unscanned"] = ""
+                return False, None
+
+        siblings = self._sibling_output_fields()
+        if siblings is None:
+            # Without the signature the sibling guard is gone, so a widened span could reach another
+            # field. Fall back to the token-by-token path rather than stream a value we cannot bound.
+            state["is_nested"] = False
+            state["unscanned"] = ""
+            return False, None
+
+        # `_nested_boundary_scan` reports the two things that settle the boundary: the value's own
+        # closing tag, the only thing a block can end at, and a sibling's opening tag, which
+        # rejects the widening for good. Watching for the closing tag alone leaves a value whose
+        # deciding sibling arrives afterwards buffered until `finalize()`, long past its real
+        # boundary and lost entirely if `parse` then raises. Each chunk is handed to the scan once
+        # and only its unread tail is carried on, so the value is walked -- and copied -- once over
+        # the whole stream rather than once per chunk.
+        ready, closed, state["unscanned"], state["depth"] = XMLAdapter._nested_boundary_scan(
+            self.signature_field_name, unscanned, siblings, state["depth"]
+        )
+        state["ready"] = state["ready"] or ready
+        state["closed"] = state["closed"] or closed
+        if not (state["ready"] and state["closed"]):
+            return True, None
+
+        accumulated = "".join(self.field_end_queue.queue)
+        value_end = XMLAdapter._field_value_end(self.signature_field_name, accumulated, siblings)
+        if value_end is None:
+            return True, None
+
+        self.stream_end = True
+        self.field_end_queue = Queue()
+        # Decode wire entities exactly as `parse` will, so the emitted value matches the Prediction.
+        return True, StreamResponse(
+            self.predict_name,
+            self.signature_field_name,
+            _unescape_value(accumulated[:value_end].strip()),
+            is_last_chunk=True,
+        )
+
+    def _xml_decode_stream_token(self, token: str) -> str:
+        """Decode wire entities in an outgoing chunk, carrying a trailing partial entity.
+
+        `flush()` and the end-identifier scan work on raw wire text, so decoding happens here, at
+        emission. A chunk can end mid-entity; that tail is held in `pending` and prefixed to the
+        next chunk -- or decoded as it stands on the last one, where whatever it is has fully
+        arrived. The concatenation of the emitted chunks therefore equals the decoded value.
+        """
+        text = self.xml_adapter_state["pending"] + token
+        if self.stream_end:
+            self.xml_adapter_state["pending"] = ""
+            return _unescape_value(text)
+        keep = _entity_prefix_start(text)
+        self.xml_adapter_state["pending"] = text[keep:]
+        return _unescape_value(text[:keep])
+
+    def _default_handle_stream_chunk(self, token: str | None, end_identifier: str) -> StreamResponse | None:
         concat_message = "".join(self.field_end_queue.queue).strip()
 
         if re.search(end_identifier, concat_message):
@@ -300,6 +471,9 @@ class StreamListener:
             last_token = self.flush()
             token = token + last_token if token else last_token
             token = token.rstrip()  # Remove the trailing \n\n
+
+        if isinstance(settings.adapter, XMLAdapter):
+            token = self._xml_decode_stream_token(token or "")
 
         if token or self.stream_end:
             return StreamResponse(
@@ -315,6 +489,9 @@ class StreamListener:
         This method is called to flush out the last a few tokens when the stream is ended. These tokens
         are in the buffer because we don't directly yield the tokens received by the stream listener
         with the purpose to not yield the end_identifier tokens, e.g., "[[ ## ... ## ]]" for ChatAdapter.
+
+        The returned text is raw wire text: for XMLAdapter the `</field>` boundary search below must
+        run before entity decoding, which callers apply at emission via `_xml_decode_stream_token`.
         """
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
@@ -351,15 +528,18 @@ class StreamListener:
             return None
 
         self.stream_end = True
-        if self.field_end_queue.qsize() > 0:
-            token = self.flush()
-            if token:
-                return StreamResponse(
-                    self.predict_name,
-                    self.signature_field_name,
-                    token,
-                    is_last_chunk=True,
-                )
+        token = self.flush() if self.field_end_queue.qsize() > 0 else ""
+        if isinstance(settings.adapter, XMLAdapter):
+            # Decode wire entities, and release the entity carry even when the queue itself is
+            # empty -- the stream can end right after a chunk whose tail looked like `&am`.
+            token = self._xml_decode_stream_token(token)
+        if token:
+            return StreamResponse(
+                self.predict_name,
+                self.signature_field_name,
+                token,
+                is_last_chunk=True,
+            )
         return None
 
     @property
