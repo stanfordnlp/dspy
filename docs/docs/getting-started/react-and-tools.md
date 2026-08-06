@@ -10,8 +10,12 @@ A DSPy tool is a standard Python function, with type-hinted parameters and a doc
 
 For example, let’s define a tool that lets an agent search Wikipedia using the [`wikipedia`](https://pypi.org/project/wikipedia/) library (run `pip install wikipedia`, if you’re following along):
 
+(You should also set a user agent with contact information as [required by Wikipedia's API guidelines](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy), otherwise these requests may fail due to rate limiting of the default user agent set by the library.)
+
 ```py
 import wikipedia
+
+wikipedia.set_user_agent("research-assistant/0.1 (yourname@example.com)")
 
 def wikipedia_search(query: str) -> list[str]:
     """Search Wikipedia for the given query and return a list of page titles."""
