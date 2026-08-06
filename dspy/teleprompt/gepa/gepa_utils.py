@@ -1,5 +1,6 @@
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -10,6 +11,7 @@ import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.dsp.utils.settings import thread_local_overrides
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.primitives.code_interpreter import CodeInterpreterError
@@ -313,6 +315,31 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [r[2] for r in res.results]
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+
+    def batch_evaluate(self, items):
+        """Evaluate multiple (candidate, batch) pairs concurrently.
+
+        gepa's multi-proposal iterations (`sampling_strategy`) evaluate several
+        candidates per step; its fallback runs them one at a time, and each
+        `evaluate` call only parallelizes across the (small) minibatch. Candidates
+        are independent, so run them on worker threads. dspy settings overrides are
+        thread-local and must be copied into each worker.
+        """
+        if len(items) <= 1:
+            return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
+
+        parent_overrides = thread_local_overrides.get().copy()
+
+        def _evaluate_pair(pair):
+            candidate, batch = pair
+            token = thread_local_overrides.set({**thread_local_overrides.get(), **parent_overrides})
+            try:
+                return self.evaluate(batch, candidate, capture_traces=True)
+            finally:
+                thread_local_overrides.reset(token)
+
+        with ThreadPoolExecutor(max_workers=min(len(items), 8)) as executor:
+            return list(executor.map(_evaluate_pair, items))
 
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update

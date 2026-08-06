@@ -716,3 +716,50 @@ def test_gepa_max_reflection_cost_requires_reflection_lm():
             instruction_proposer=lambda candidate, reflective_dataset, components_to_update: {},
             max_reflection_cost=1.0,
         )
+
+
+def test_batch_evaluate_matches_sequential_evaluate():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    lm = DummyLM([{"output": "blue"}] * 20)
+    dspy.settings.configure(lm=lm)
+
+    batch = [
+        Example(input="What color is the sky?", output="blue").with_inputs("input"),
+        Example(input="What color is grass?", output="green").with_inputs("input"),
+    ]
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+        num_threads=2,
+    )
+    cand_a = {"predictor": "Answer the question."}
+    cand_b = {"predictor": "Answer concisely."}
+
+    sequential = [adapter.evaluate(batch, c, capture_traces=True) for c in (cand_a, cand_b)]
+    batched = adapter.batch_evaluate([(cand_a, batch), (cand_b, batch)])
+
+    assert len(batched) == 2
+    for seq, bat in zip(sequential, batched):
+        assert bat.scores == seq.scores
+        assert bat.trajectories is not None
+
+
+def test_batch_evaluate_single_item_stays_sequential():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    lm = DummyLM([{"output": "blue"}] * 10)
+    dspy.settings.configure(lm=lm)
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+    batch = [Example(input="What color is the sky?", output="blue").with_inputs("input")]
+    results = adapter.batch_evaluate([({"predictor": "Answer."}, batch)])
+    assert len(results) == 1
+    assert results[0].trajectories is not None
