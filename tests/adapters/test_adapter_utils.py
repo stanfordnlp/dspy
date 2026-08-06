@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import _extract_braces_raw, _extract_first_json_object, parse_value
 
 
 class Profile(BaseModel):
@@ -105,3 +105,71 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # JSON at the start of text
+        ('{"name": "John", "age": 30} and some trailing text', '{"name": "John", "age": 30}'),
+        # JSON in the middle of text
+        ('Here is your result: {"status": "success", "data": [1, 2, 3]} done', '{"status": "success", "data": [1, 2, 3]}'),
+        # JSON at the end of text
+        ('The answer is {"result": 42}', '{"result": 42}'),
+        # Nested JSON objects
+        ('Response: {"outer": {"inner": {"deep": "value"}}, "count": 5}', '{"outer": {"inner": {"deep": "value"}}, "count": 5}'),
+        # JSON with braces inside string values
+        ('{"message": "Use {placeholders} like {this}", "valid": true}', '{"message": "Use {placeholders} like {this}", "valid": true}'),
+        # JSON with escaped quotes in strings
+        ('{"quote": "She said \\"hello\\" to me"}', '{"quote": "She said \\"hello\\" to me"}'),
+        # String ending with escaped backslash (backslash before closing quote)
+        ('{"path": "C:\\\\"}', '{"path": "C:\\\\"}'),
+        # Escaped backslash followed by escaped quote (tests escape state reset)
+        ('{"a": "\\\\\\"\\""}', '{"a": "\\\\\\"\\""}'),
+        # No JSON present
+        ("This is just plain text without any JSON", None),
+        # Empty JSON object
+        ("Here is an empty object: {}", "{}"),
+        # Unbalanced braces (no valid JSON)
+        ("This has { an opening but no closing", None),
+        # Multiple JSON objects - should extract only the first
+        ('{"first": 1} and then {"second": 2}', '{"first": 1}'),
+        # JSON with newlines
+        ("""Here is the result:
+    {
+        "name": "Alice",
+        "scores": [95, 87, 92]
+    }
+    End of message""", """{
+        "name": "Alice",
+        "scores": [95, 87, 92]
+    }"""),
+    ],
+)
+def test_extract_first_json_object(text, expected):
+    result = _extract_first_json_object(text)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Basic case - same as _extract_first_json_object
+        ('{"key": "value"}', '{"key": "value"}'),
+        # Nested braces
+        ('{"outer": {"inner": 1}}', '{"outer": {"inner": 1}}'),
+        # Malformed string with unmatched quote - this is why the fallback exists
+        # _extract_first_json_object returns None, but _extract_braces_raw extracts it
+        ('{"key": "value with unmatched quote}', '{"key": "value with unmatched quote}'),
+        # Brace inside string - extracts incorrectly (stops at first })
+        # This is expected - the fallback is intentionally simple
+        ('{"msg": "hello }"}', '{"msg": "hello }'),
+        # No JSON
+        ("no json here", None),
+        # Unbalanced braces
+        ("{ no closing", None),
+    ],
+)
+def test_extract_braces_raw(text, expected):
+    result = _extract_braces_raw(text)
+    assert result == expected
