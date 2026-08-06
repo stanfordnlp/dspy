@@ -170,6 +170,13 @@ def parse_value(value, annotation):
             if v in allowed:
                 return v
 
+            # Non-string members (e.g. `Literal[1, 2, 3]`) never equal the raw
+            # text emitted by adapters that surface every field as a string, so
+            # fall back to matching on the stringified member.
+            for member in allowed:
+                if not isinstance(member, str) and v == str(member):
+                    return member
+
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
     if not isinstance(value, str):
