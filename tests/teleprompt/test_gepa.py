@@ -763,3 +763,30 @@ def test_batch_evaluate_single_item_stays_sequential():
     results = adapter.batch_evaluate([({"predictor": "Answer."}, batch)])
     assert len(results) == 1
     assert results[0].trajectories is not None
+
+
+def test_batch_evaluate_propagates_thread_local_overrides():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    global_lm = DummyLM([{"output": "blue"}] * 10)
+    override_lm = DummyLM([{"output": "red"}] * 10)
+    dspy.settings.configure(lm=global_lm)
+
+    batch = [Example(input="What color?", output="red").with_inputs("input")]
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+    cand_a = {"predictor": "Answer the question."}
+    cand_b = {"predictor": "Answer concisely."}
+
+    # The override is only visible inside the worker threads if batch_evaluate
+    # copies the caller's thread-local overrides across the thread hop.
+    with dspy.context(lm=override_lm):
+        results = adapter.batch_evaluate([(cand_a, batch), (cand_b, batch)])
+
+    assert len(results) == 2
+    for res in results:
+        assert all(res.scores), f"expected override LM answers to score truthy, got {res.scores}"
