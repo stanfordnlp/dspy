@@ -1,7 +1,13 @@
-from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
-mcp = FastMCP("test")
+try:
+    # mcp SDK v1
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:
+    # mcp SDK v2
+    from mcp.server import MCPServer
+
+mcp = MCPServer("test")
 
 
 class Profile(BaseModel):
@@ -42,6 +48,12 @@ def get_account_name(account: Account):
 def current_datetime() -> str:
     """Get the current datetime"""
     return "2025-07-23T09:10:10.0+00:00"
+
+
+@mcp.tool()
+def get_profile() -> Profile:
+    """Get a user profile as structured output"""
+    return Profile(name="Ann", age=30)
 
 
 if __name__ == "__main__":

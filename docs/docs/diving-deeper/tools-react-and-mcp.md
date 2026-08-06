@@ -72,7 +72,7 @@ Both go through `_validate_and_parse_args`, which JSON-schema-validates each kwa
 Returns the OpenAI/LiteLLM tool descriptor: `{"type": "function", "function": {"name", "description", "parameters": {"type": "object", "properties": args, "required": list(args)}}}`. Every declared arg is marked `required` — Pydantic-level defaults aren’t surfaced as optional in the function descriptor.
 
 **`Tool.from_mcp_tool(session, tool)`** → `Tool`
-Class method. Delegates to `dspy.utils.mcp.convert_mcp_tool`. Takes a live `mcp.ClientSession` and an `mcp.types.Tool` and returns an async DSPy tool wired to that session.
+Class method. Delegates to `dspy.utils.mcp.convert_mcp_tool`. Takes a live `mcp.ClientSession`, or the v2 `mcp.client.Client`, and an `mcp.types.Tool`, and returns an async DSPy tool wired to that session.
 
 **`Tool.from_langchain(tool)`** → `Tool`
 Class method. Wraps a LangChain `BaseTool` so it can be passed to DSPy modules that accept a `tools=` list. Implementation lives in `dspy.utils.langchain_tool`.
@@ -107,7 +107,14 @@ Constructor helper. Builds a `ToolCalls` from a list of `{"name", "args"}` dicts
 ### MCP bridge
 
 **`dspy.utils.mcp.convert_mcp_tool(session, tool)`** → `Tool`
-Builds a `Tool` whose `func` is an `async def` closure: it awaits `session.call_tool(tool.name, arguments=kwargs)` and unpacks the result. The unpacker pulls text from any `TextContent` entries (returning a single string when there’s one, a list otherwise) and returns non-text entries as-is. An `isError=True` response raises `RuntimeError`. The MCP tool’s `inputSchema` is mapped to DSPy’s `args`/`arg_types`/`arg_desc` via `convert_input_schema_to_tool_args`.
+Builds a `Tool` whose `func` is an `async def` closure. The closure awaits `session.call_tool(tool.name, arguments=kwargs)` and unpacks the result in this order:
+
+- A result with `result_type` of `"input_required"` raises `RuntimeError`. This is the multi round-trip request pattern from the 2026-07-28 specification, and the bridge cannot answer server-initiated input requests.
+- An error response, `isError` in SDK v1 and `is_error` in v2, raises `RuntimeError` with the error text.
+- Structured content is returned when the result carries it. When the tool's output schema declares the single-value envelope that SDK servers generate for typed returns (an object with exactly one required `result` property), the unpacker returns the inner value, so a tool annotated `-> int` returns an `int`.
+- Otherwise the unpacker pulls text from any `TextContent` entries, returning a single string when there's one and a list otherwise, and returns non-text entries as-is.
+
+At conversion time, the tool's input schema (`inputSchema` in v1, `input_schema` in v2) is mapped to DSPy's `args`/`arg_types`/`arg_desc` via `convert_input_schema_to_tool_args`, and a missing tool description falls back to the tool's `title`.
 
 **`dspy.utils.mcp.convert_input_schema_to_tool_args(schema)`** → `(args, arg_types, arg_desc)`
 Walks an MCP-style JSON schema and produces the three dicts a `Tool` needs. Resolves `$defs`, picks up `description` fields as `arg_desc`, and translates JSON-schema types to Python types via a `_TYPE_MAPPING` table. Exported in case callers want to write their own bridge against a non-MCP protocol with similar JSON-schema arguments.
