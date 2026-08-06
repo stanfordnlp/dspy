@@ -1,6 +1,5 @@
 import json
 import tempfile
-import time
 import warnings
 from pathlib import Path
 from unittest import mock
@@ -9,6 +8,7 @@ from unittest.mock import patch
 import litellm
 import pydantic
 import pytest
+import tenacity
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
@@ -357,8 +357,17 @@ def test_retry_made_on_system_errors():
         mock_response.status_code = 429
         raise RateLimitError(response=mock_response, message="message", body="error")
 
+    original_retrying = tenacity.Retrying
+
+    def immediate_retrying(*args, **kwargs):
+        kwargs["sleep"] = lambda _: None
+        return original_retrying(*args, **kwargs)
+
     lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
-    with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
+    with (
+        mock.patch("tenacity.Retrying", side_effect=immediate_retrying),
+        mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create),
+    ):
         with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
@@ -1009,24 +1018,30 @@ def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
 
 
 def test_exponential_backoff_retry():
-    time_counter = []
+    retry_delays = []
 
     def mock_create(*args, **kwargs):
-        time_counter.append(time.time())
         # These fields are called during the error handling
         mock_response = mock.Mock()
         mock_response.headers = {}
         mock_response.status_code = 429
         raise RateLimitError(response=mock_response, message="message", body="error")
 
+    original_retrying = tenacity.Retrying
+
+    def immediate_retrying(*args, **kwargs):
+        kwargs["sleep"] = retry_delays.append
+        return original_retrying(*args, **kwargs)
+
     lm = dspy.LM(model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
-    with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
+    with (
+        mock.patch("tenacity.Retrying", side_effect=immediate_retrying),
+        mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create),
+    ):
         with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
-    # The first retry happens immediately regardless of the configuration
-    for i in range(1, len(time_counter) - 1):
-        assert time_counter[i + 1] - time_counter[i] >= 2 ** (i - 1)
+    assert retry_delays == [1.0, 2.0]
 
 
 def test_logprobs_included_when_requested():
