@@ -23,7 +23,7 @@ Unbatchify.submit = submit
 def test_unbatchify_batch_size_trigger():
     """Test that the batch processes exactly when max_batch_size is reached."""
     batch_fn_mock = MagicMock(wraps=simple_batch_processor)
-    unbatcher = Unbatchify(batch_fn=batch_fn_mock, max_batch_size=2, max_wait_time=5.0)
+    unbatcher = Unbatchify(batch_fn=batch_fn_mock, max_batch_size=2, max_wait_time=0.5)
 
     futures = []
     futures.append(unbatcher.submit(10))
