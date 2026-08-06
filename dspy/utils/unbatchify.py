@@ -109,4 +109,5 @@ class Unbatchify:
         """
         Ensures the worker thread is terminated when the object is garbage collected.
         """
-        self.close()
+        if hasattr(self, "batch_fn"):
+            self.close()
