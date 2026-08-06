@@ -83,6 +83,51 @@ class PredictorFeedbackFn(Protocol):
         ...
 
 
+def _stripped_lm_outputs(lm, x: str) -> list[str]:
+    raw_outputs = lm(x)
+    outputs = []
+    for raw_output in raw_outputs:
+        if type(raw_output) == str:
+            outputs.append(raw_output)
+        elif type(raw_output) == dict:
+            if "text" not in raw_output:
+                raise KeyError("Missing 'text' field in the output from the base LM!")
+            outputs.append(raw_output["text"])
+        else:
+            raise TypeError("Unexpected output type from the base LM! Expected str or dict")
+    return outputs
+
+
+class TrackedReflectionLM:
+    """Reflection callable handed to `gepa.optimize` that exposes real cost totals.
+
+    gepa's `max_reflection_cost` stopper reads `total_cost` from the reflection LM;
+    plain callables get wrapped in a gepa `TrackingLM` that always reports 0.0, so
+    the stopper would never fire. Totals here are derived from the underlying
+    `dspy.LM.history`, which also captures reflection calls made by the instruction
+    and code proposers that never go through this callable. Requires LM history to
+    be enabled (it is unless `dspy.settings.disable_history` is set).
+    """
+
+    def __init__(self, lm):
+        self.lm = lm
+
+    def __call__(self, x: str) -> str:
+        return _stripped_lm_outputs(self.lm, x)[0]
+
+    @property
+    def total_cost(self) -> float:
+        return sum(entry.get("cost") or 0.0 for entry in self.lm.history)
+
+    @property
+    def total_tokens_in(self) -> int:
+        return sum((entry.get("usage") or {}).get("prompt_tokens") or 0 for entry in self.lm.history)
+
+    @property
+    def total_tokens_out(self) -> int:
+        return sum((entry.get("usage") or {}).get("completion_tokens") or 0 for entry in self.lm.history)
+
+
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
         self,
@@ -106,6 +151,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
+        self.tracked_reflection_lm = TrackedReflectionLM(reflection_lm) if reflection_lm is not None else None
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
@@ -402,17 +448,5 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # Always return strings from the LM outputs
     # Even when it returns a dict with e.g., "text" and "reasoning" fields
     def stripped_lm_call(self, x: str) -> list[str]:
-        raw_outputs = self.reflection_lm(x)
-        outputs = []
-        for raw_output in raw_outputs:
-            if type(raw_output) == str:
-                outputs.append(raw_output)
-            elif type(raw_output) == dict:
-                if "text" not in raw_output:
-                    raise KeyError("Missing 'text' field in the output from the base LM!")
-                outputs.append(raw_output["text"])
-            else:
-                raise TypeError("Unexpected output type from the base LM! Expected str or dict")
-
-        return outputs
+        return _stripped_lm_outputs(self.reflection_lm, x)
 

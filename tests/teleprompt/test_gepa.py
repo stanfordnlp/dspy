@@ -632,3 +632,31 @@ def test_track_best_outputs_result_structure():
         assert isinstance(entries, list)
         for cand_idx, output in entries:
             assert isinstance(cand_idx, int)
+
+
+class _StubReflectionLM:
+    """Stub with the two things TrackedReflectionLM reads: history and __call__."""
+
+    def __init__(self):
+        self.history = []
+
+    def __call__(self, x):
+        self.history.append({"cost": 0.25, "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+        return ["reflection output"]
+
+
+def test_tracked_reflection_lm_exposes_cost_totals():
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    tracked = TrackedReflectionLM(_StubReflectionLM())
+    assert tracked.total_cost == 0.0
+
+    out = tracked("some prompt")
+    assert out == "reflection output"
+    assert tracked.total_cost == 0.25
+    assert tracked.total_tokens_in == 10
+    assert tracked.total_tokens_out == 5
+
+    # Cache hits record cost=None; they must not break the sum.
+    tracked.lm.history.append({"cost": None, "usage": {}})
+    assert tracked.total_cost == 0.25

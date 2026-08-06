@@ -606,7 +606,7 @@ class GEPA(Teleprompter):
             valset=valset,
             adapter=adapter,
             # Reflection-based configuration
-            reflection_lm=(lambda x: adapter.stripped_lm_call(x)[0]) if self.reflection_lm is not None else None,
+            reflection_lm=adapter.tracked_reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
