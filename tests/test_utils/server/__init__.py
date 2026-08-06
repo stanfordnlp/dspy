@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -13,10 +14,18 @@ from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_
 
 
 @pytest.fixture()
-def litellm_test_server() -> tuple[str, str]:
+def litellm_test_server(_litellm_test_server: tuple[str, str]) -> Iterator[tuple[str, str]]:
+    """Provide the shared LiteLLM server with request logs isolated to this test."""
+    server_url, server_log_file_path = _litellm_test_server
+    open(server_log_file_path, "w").close()
+    yield server_url, server_log_file_path
+
+
+@pytest.fixture(scope="session")
+def _litellm_test_server() -> Iterator[tuple[str, str]]:
     """
-    Start a LiteLLM test server for a DSPy integration test case, and tear down the
-    server when the test case completes.
+    Start one LiteLLM test server per pytest worker and tear it down when the
+    session completes.
     """
     if sys.version_info[:2] == (3, 14):
         pytest.skip("Litellm proxy server is not supported on Python 3.14.")
@@ -36,7 +45,7 @@ def litellm_test_server() -> tuple[str, str]:
         )
 
         try:
-            _wait_for_port(host=host, port=port)
+            _wait_for_port(host=host, port=port, process=process)
         except TimeoutError as e:
             process.terminate()
             raise e
@@ -76,13 +85,15 @@ def _get_random_port():
         return s.getsockname()[1]
 
 
-def _wait_for_port(host, port, timeout=60):
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+def _wait_for_port(host, port, process=None, timeout=60):
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < timeout:
+        if process is not None and process.poll() is not None:
+            raise TimeoutError(f"Server process exited with status {process.returncode} before port {port} was ready.")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
                 sock.connect((host, port))
                 return True
             except ConnectionRefusedError:
-                time.sleep(0.5)  # Wait briefly before trying again
+                time.sleep(0.05)
     raise TimeoutError(f"Server on port {port} did not become ready within {timeout} seconds.")
