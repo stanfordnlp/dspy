@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from gepa.strategies.proposal_sampling import SamplingStrategy
     from gepa.strategies.proposal_selection import SelectionStrategy
 
+import dspy
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
@@ -283,7 +284,10 @@ class GEPA(Teleprompter):
             for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
         sampling_strategy: Controls how many (parent, minibatch) proposal tasks GEPA samples per iteration.
             Accepts a gepa `SamplingStrategy` such as `SameParentSampling(n)`, `IndependentSampling(n)`, or
-            `PxNSampling(p, n)`. Defaults to classic single-mutation GEPA.
+            `PxNSampling(p, n)`. Defaults to classic single-mutation GEPA. Multi-proposal iterations
+            evaluate up to 8 candidates concurrently (see `DspyAdapter.batch_evaluate`), each using up to
+            `num_threads` threads, so effective LM concurrency is multiplied accordingly — size
+            `num_threads` and provider rate limits with this in mind.
         selection_strategy: Decides which of an iteration's improving proposals enter the candidate pool.
             Accepts a gepa `SelectionStrategy` such as `BestImprovement` or `TopKImprovements(k)`. Defaults
             to accepting all improvements.
@@ -291,7 +295,10 @@ class GEPA(Teleprompter):
             `AcceptanceCriterion` instance controlling when a mutated candidate is considered an improvement.
         max_reflection_cost: Maximum cumulative reflection-LM spend in USD before GEPA stops. Requires
             `reflection_lm`. Cost is read from the reflection LM's call history, so it reflects actual
-            litellm-reported costs.
+            litellm-reported costs. Requires LM history to be enabled (`dspy.settings.disable_history`
+            must be False and `dspy.settings.max_history_size` must be nonzero); `compile()` raises if
+            history is disabled. This complements, but does not replace, the metric-call budget: one of
+            `auto`, `max_full_evals`, or `max_metric_calls` is still required.
         wandb_attach_existing: Log into the already-active wandb run instead of creating one. Use when GEPA
             is embedded in a training loop that owns the run.
         mlflow_attach_existing: Log into the already-active MLflow run instead of creating one.
@@ -640,6 +647,21 @@ class GEPA(Teleprompter):
         seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
         for path, flex in flex_submodules.items():
             seed_candidate[path] = flex.module_src
+
+        # TrackedReflectionLM derives max_reflection_cost's spend totals from the reflection LM's
+        # call history. If history is disabled (or capped at 0 entries), those totals stay 0.0
+        # forever and the stopper never fires, silently allowing unbounded spend. Checked here
+        # (not __init__) because settings can change between construction and compile.
+        if self.max_reflection_cost is not None and (
+            dspy.settings.disable_history or not dspy.settings.max_history_size
+        ):
+            raise ValueError(
+                "max_reflection_cost requires LM call history to be enabled, since reflection spend is "
+                "computed from the reflection LM's history. Currently "
+                f"dspy.settings.disable_history={dspy.settings.disable_history} and "
+                f"dspy.settings.max_history_size={dspy.settings.max_history_size}. Either unset "
+                "max_reflection_cost, or ensure disable_history is False and max_history_size is nonzero."
+            )
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,

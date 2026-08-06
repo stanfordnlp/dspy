@@ -663,6 +663,31 @@ def test_tracked_reflection_lm_exposes_cost_totals():
     assert tracked.total_cost == 0.25
 
 
+def test_tracked_reflection_lm_scopes_baseline_to_construction():
+    """A reflection_lm reused across compile() calls (or shared with the task LM) must not have
+    its prior history counted toward this run's budget: totals are scoped to entries appended
+    after construction."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    stub = _StubReflectionLM()
+    # Pre-populate history as if this LM was already used (e.g. a prior compile() call, or as
+    # the task LM) before TrackedReflectionLM wraps it.
+    stub.history.append({"cost": 1.0, "usage": {"prompt_tokens": 100, "completion_tokens": 50}})
+    stub.history.append({"cost": 2.0, "usage": {"prompt_tokens": 200, "completion_tokens": 75}})
+
+    tracked = TrackedReflectionLM(stub)
+    assert tracked.total_cost == 0.0
+    assert tracked.total_tokens_in == 0
+    assert tracked.total_tokens_out == 0
+
+    out = tracked("some prompt")
+    assert out == "reflection output"
+    # Only the new entry (appended after construction) counts.
+    assert tracked.total_cost == 0.25
+    assert tracked.total_tokens_in == 10
+    assert tracked.total_tokens_out == 5
+
+
 def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):
     from types import SimpleNamespace
 
@@ -717,6 +742,33 @@ def test_gepa_max_reflection_cost_requires_reflection_lm():
             instruction_proposer=lambda candidate, reflective_dataset, components_to_update: {},
             max_reflection_cost=1.0,
         )
+
+
+def test_gepa_max_reflection_cost_requires_history_enabled(monkeypatch):
+    """max_reflection_cost derives spend totals from LM history; if history is disabled the
+    stopper can never fire, silently allowing unbounded spend. compile() must raise instead."""
+    import gepa as gepa_pkg
+
+    def fake_optimize(seed_candidate=None, **kwargs):
+        pytest.fail("gepa.optimize should not be called when the history guard should have raised")
+
+    monkeypatch.setattr(gepa_pkg, "optimize", fake_optimize)
+
+    task_lm = DummyLM([{"output": "b"}] * 10)
+    dspy.settings.configure(lm=task_lm)
+
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([{"new_instruction": "x"}] * 10),
+        max_reflection_cost=1.0,
+        max_metric_calls=5,
+    )
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="a", output="b").with_inputs("input")]
+
+    with dspy.context(disable_history=True):
+        with pytest.raises(ValueError, match="history"):
+            optimizer.compile(student, trainset=trainset)
 
 
 def test_batch_evaluate_matches_sequential_evaluate():

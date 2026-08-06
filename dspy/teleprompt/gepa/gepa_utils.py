@@ -1,6 +1,7 @@
 import logging
 import random
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -109,25 +110,47 @@ class TrackedReflectionLM:
     `dspy.LM.history`, which also captures reflection calls made by the instruction
     and code proposers that never go through this callable. Requires LM history to
     be enabled (it is unless `dspy.settings.disable_history` is set).
+
+    Totals are scoped to this instance's lifetime: the sums present in `lm.history`
+    at construction time are snapshotted as a baseline and subtracted back out, so
+    reusing a `reflection_lm` across multiple `compile()` calls doesn't carry over
+    spend from a previous run (`DspyAdapter.__init__` constructs a fresh
+    `TrackedReflectionLM` per compile). This does NOT protect against sharing the
+    reflection LM instance as both the task LM and the reflection LM within the
+    same run: concurrent task-LM calls append to the same `history` list, so their
+    cost/usage would still be counted toward the reflection budget.
     """
 
     def __init__(self, lm):
         self.lm = lm
+        self._baseline_cost = self._sum_cost(lm.history)
+        self._baseline_tokens_in = self._sum_usage(lm.history, "prompt_tokens")
+        self._baseline_tokens_out = self._sum_usage(lm.history, "completion_tokens")
 
     def __call__(self, x: str) -> str:
         return _stripped_lm_outputs(self.lm, x)[0]
 
+    @staticmethod
+    def _sum_cost(history) -> float:
+        return sum(entry.get("cost") or 0.0 for entry in history if isinstance(entry, dict))
+
+    @staticmethod
+    def _sum_usage(history, key: str) -> int:
+        return sum((entry.get("usage") or {}).get(key) or 0 for entry in history if isinstance(entry, dict))
+
     @property
     def total_cost(self) -> float:
-        return sum(entry.get("cost") or 0.0 for entry in self.lm.history)
+        # max(0, ...) also tolerates history eviction at settings.max_history_size: if entries this
+        # instance counted toward the baseline get evicted, the raw sum can dip below the baseline.
+        return max(0.0, self._sum_cost(self.lm.history) - self._baseline_cost)
 
     @property
     def total_tokens_in(self) -> int:
-        return sum((entry.get("usage") or {}).get("prompt_tokens") or 0 for entry in self.lm.history)
+        return max(0, self._sum_usage(self.lm.history, "prompt_tokens") - self._baseline_tokens_in)
 
     @property
     def total_tokens_out(self) -> int:
-        return sum((entry.get("usage") or {}).get("completion_tokens") or 0 for entry in self.lm.history)
+        return max(0, self._sum_usage(self.lm.history, "completion_tokens") - self._baseline_tokens_out)
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -332,7 +355,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         def _evaluate_pair(pair):
             candidate, batch = pair
-            token = thread_local_overrides.set({**thread_local_overrides.get(), **parent_overrides})
+            new_overrides = {**thread_local_overrides.get(), **parent_overrides}
+            if new_overrides.get("usage_tracker"):
+                # Mirror dspy's ParallelExecutor: deep-copy the usage tracker per worker so each
+                # thread tracks its own usage instead of contending over one shared tracker.
+                new_overrides["usage_tracker"] = deepcopy(new_overrides["usage_tracker"])
+            token = thread_local_overrides.set(new_overrides)
             try:
                 return self.evaluate(batch, candidate, capture_traces=True)
             finally:
