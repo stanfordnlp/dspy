@@ -28,7 +28,7 @@ def get_limiter():
     return _limiter
 
 
-def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
+def asyncify(program: "Module") -> Callable[..., Awaitable[Any]]:
     """
     Wraps a DSPy program so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).
@@ -40,7 +40,12 @@ def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
 
     Returns:
         An async function: An async function that, when awaited, runs the program in a worker thread.
-            The current thread's configuration context is inherited for each call.
+            The current thread's configuration context is inherited for each call. The wrapper
+            forwards every positional/keyword argument the original program accepts, so the
+            wrapped callable is typed as ``Callable[..., Awaitable[Any]]`` rather than the
+            previous fixed-arity ``Callable[[Any, Any], Awaitable[Any]]`` that triggered
+            Pyright ``reportCallIssue`` on any call with more or fewer than two positional
+            arguments (#9058).
     """
 
     async def async_program(*args, **kwargs) -> Any:
