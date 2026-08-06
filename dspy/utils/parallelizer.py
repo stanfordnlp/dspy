@@ -207,14 +207,34 @@ class ParallelExecutor:
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
+                                    # Only resubmit if the executor is still accepting work. The
+                                    # executor may be in the middle of `shutdown()` when the wait
+                                    # loop exits (e.g. on SIGINT or after error cancellation); in
+                                    # that case `submit()` raises "cannot schedule new futures
+                                    # after shutdown". Treat this as a signal to simply stop
+                                    # resurrecting stragglers, rather than crash the whole eval.
+                                    try:
+                                        nf = executor.submit(
+                                            worker,
+                                            parent_overrides,
+                                            submission_counter,
+                                            idx,
+                                            item,
+                                        )
+                                    except RuntimeError:
+                                        logger.warning(
+                                            "Executor shutting down; skipping straggler resubmission for item %r.",
+                                            idx,
+                                        )
+                                        resubmitted.add(f)
+                                        continue
+                                    # Mark both the original future and its resubmission as
+                                    # resubmitted, honoring the "resubmit at most once per item"
+                                    # invariant. Otherwise a slow (but not hung) task that keeps
+                                    # exceeding `timeout` would spawn an unbounded chain of
+                                    # duplicates, saturating the worker pool with identical work.
                                     resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
+                                    resubmitted.add(nf)
                                     futures_map[nf] = (submission_counter, idx, item)
                                     futures_set.add(nf)
                                     submission_counter += 1
