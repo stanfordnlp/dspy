@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
 
@@ -6,6 +8,20 @@ class ReasoningDummyLM(dspy.utils.DummyLM):
     @property
     def supports_reasoning(self):
         return True
+
+
+@pytest.mark.parametrize(
+    ("signature", "reserved_name"),
+    [
+        ("history -> answer", "history"),
+        ("tools -> answer", "tools"),
+        ("question -> history", "history"),
+        ("question -> termination_reason", "termination_reason"),
+    ],
+)
+def test_react_v2_rejects_reserved_signature_fields(signature, reserved_name):
+    with pytest.raises(ValueError, match=rf"{reserved_name}.*reserved"):
+        dspy.ReActV2(signature, tools=[])
 
 
 def test_react_v2_submit_tool_returns_original_output_fields():
