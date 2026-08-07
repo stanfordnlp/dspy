@@ -79,6 +79,8 @@ class Evaluate:
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
         failure_score: float = 0.0,
+        timeout: int | None = None,
+        straggler_limit: int = 3,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
         **kwargs,
@@ -95,6 +97,12 @@ class Evaluate:
                 stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
+            timeout (Optional[int]): Seconds a task may run before it is considered a straggler and
+                resubmitted (default ``120`` in ``ParallelExecutor``). Set to ``0`` to disable
+                straggler resubmission entirely, which is recommended for long evals where individual
+                items legitimately take more than two minutes.
+            straggler_limit (int): Number of remaining tasks at or below which straggler detection is
+                active (default ``3``).
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
 
@@ -107,6 +115,8 @@ class Evaluate:
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
 
@@ -122,6 +132,8 @@ class Evaluate:
         num_threads: int | None = None,
         display_progress: bool | None = None,
         display_table: bool | int | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
@@ -138,6 +150,12 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[int]): Seconds a task may run before it is considered a straggler and
+                resubmitted (default ``120`` in ``ParallelExecutor``). Set to ``0`` to disable
+                straggler resubmission entirely, recommended for long evals where individual items
+                legitimately take more than two minutes.
+            straggler_limit (Optional[int]): Number of remaining tasks at or below which straggler
+                detection is active (default ``3``).
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -151,6 +169,8 @@ class Evaluate:
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
         display_table = display_table if display_table is not None else self.display_table
+        timeout = timeout if timeout is not None else self.timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
 
@@ -159,13 +179,16 @@ class Evaluate:
 
         tqdm.tqdm._instances.clear()
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            disable_progress_bar=not display_progress,
-            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
-            provide_traceback=self.provide_traceback,
-            compare_results=True,
-        )
+        executor_kwargs = dict(num_threads=num_threads, disable_progress_bar=not display_progress)
+        executor_kwargs["max_errors"] = self.max_errors if self.max_errors is not None else dspy.settings.max_errors
+        executor_kwargs["provide_traceback"] = self.provide_traceback
+        executor_kwargs["compare_results"] = True
+        if timeout is not None:
+            executor_kwargs["timeout"] = timeout
+        if straggler_limit is not None:
+            executor_kwargs["straggler_limit"] = straggler_limit
+
+        executor = ParallelExecutor(**executor_kwargs)
 
         def process_item(example):
             prediction = program(**example.inputs())
