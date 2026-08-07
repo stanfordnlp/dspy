@@ -48,6 +48,8 @@ jobs:
             baseline/uv.lock
       - name: Install dependencies
         run: |
+          uv venv baseline/.venv
+          uv venv candidate/.venv
           uv sync --project baseline --dev -p baseline/.venv --extra dev
           uv sync --project candidate --dev -p candidate/.venv --extra dev
       - name: Run paired full-suite benchmarks
