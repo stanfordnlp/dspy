@@ -172,7 +172,13 @@ class Tool(Type):
 
         if loop is None:
             return asyncio.run(coroutine)
-        return loop.run_until_complete(coroutine)
+
+        coroutine.close()
+        raise ValueError(
+            "You are calling `__call__` on an async tool from within a running event loop, which cannot be "
+            "converted to a sync call, even with `allow_tool_async_sync_conversion` enabled. Please use "
+            "`await tool.acall(...)` instead."
+        )
 
     @with_callbacks
     def __call__(self, **kwargs):
