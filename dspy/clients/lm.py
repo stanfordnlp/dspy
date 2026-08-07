@@ -507,36 +507,24 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     strict.
     """
     request = dict(request)
-<<<<<<< HEAD
-    if "messages" in request:
+    model = request.pop("model", None)
+    raw_messages = request.pop("messages", None)
+    tools = list(request.pop("tools", None) or [])
+
+    if raw_messages:
+        messages = [_sanitize_legacy_message(m) if isinstance(m, dict) else m for m in raw_messages]
         content_blocks = []
-        for msg in request.pop("messages"):
-            c = msg.get("content")
+        for msg in messages:
+            c = msg.get("content") if isinstance(msg, dict) else None
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                # Convert each content item from Chat API format to Responses API format
                 for item in c:
                     content_blocks.append(_convert_content_item_to_responses_format(item))
-        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
-    # Convert `reasoning_effort` to reasoning format supported by the Responses API
-=======
-    model = request.pop("model")
-    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
-    tools = list(request.pop("tools", None) or [])
+        request["input"] = [{"role": msg.get("role", "user") if isinstance(msg, dict) else "user", "content": content_blocks}]
 
-    # Reasoning models use `max_completion_tokens` in the chat path. The
-    # normalized Responses mapper expects the shared `max_tokens` name and emits
-    # `max_output_tokens`.
     if "max_completion_tokens" in request and "max_tokens" not in request:
         request["max_tokens"] = request.pop("max_completion_tokens")
-
-    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
-    # compatibility shim: requesting reasoning effort also asks OpenAI for an
-    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
-    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
-    # is discarded rather than merged.
->>>>>>> upstream/main
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
         if request.get("reasoning") is None:
