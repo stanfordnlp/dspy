@@ -1,0 +1,72 @@
+name: Paired CI Performance Benchmarks
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  benchmark:
+    name: Benchmark ${{ matrix.change }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - change: memory-cache
+            candidate: perf/test-memory-cache
+          - change: litellm-server
+            candidate: perf/reuse-litellm-test-server
+          - change: asyncify
+            candidate: perf/deterministic-asyncify-test
+          - change: unbatchify
+            candidate: perf/reduce-unbatchify-test-timeout
+    steps:
+      - name: Check out exact parent
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: 485ce445432af70317f7cc60768517356b3ded4d
+          path: baseline
+          persist-credentials: false
+      - name: Check out isolated candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ matrix.candidate }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            baseline/pyproject.toml
+            baseline/uv.lock
+      - name: Install dependencies
+        run: |
+          uv sync --project baseline --dev -p baseline/.venv --extra dev
+          uv sync --project candidate --dev -p candidate/.venv --extra dev
+      - name: Run paired full-suite benchmarks
+        shell: bash
+        run: |
+          run_suite() {
+            local label="$1"
+            local directory="$2"
+            local start end elapsed
+            start=$(date +%s)
+            (cd "$directory" && uv run -p .venv pytest -q -n auto --dist worksteal tests/)
+            end=$(date +%s)
+            elapsed=$((end - start))
+            echo "CI_BENCHMARK change=${{ matrix.change }} label=$label elapsed_seconds=$elapsed"
+          }
+
+          # Reverse the order in round two so runner warmup and filesystem cache
+          # effects do not consistently favor either revision.
+          run_suite baseline-r1 baseline
+          run_suite candidate-r1 candidate
+          run_suite candidate-r2 candidate
+          run_suite baseline-r2 baseline
