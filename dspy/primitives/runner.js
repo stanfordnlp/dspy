@@ -19,6 +19,9 @@ sys.stdout, sys.stderr = buf_stdout, buf_stderr
 def last_exception_args():
     return json.dumps(sys.last_exc.args) if sys.last_exc else None
 
+def last_exception_ends_execution():
+    return isinstance(sys.last_exc, (SystemExit, KeyboardInterrupt))
+
 class FinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
@@ -131,10 +134,12 @@ const jsonrpcError = (code, message, id, data = null) => {
   return JSON.stringify({ jsonrpc: "2.0", error: err, id });
 };
 
-// Global handler to prevent uncaught promise rejections from crashing Deno
-// These can occur during async Python <-> JS interop
+// Prevent promise rejections from async Python <-> JS interop from crashing Deno.
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
+  // Pyodide reports these as unhandled before runPythonAsync rejects into the execute
+  // handler, which will respond with the request ID. Do not emit a duplicate id:null error.
+  if (event.reason?.name === "PythonError" && pyodide.runPython("last_exception_ends_execution()")) return;
   console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
 });
 
