@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import Mock, patch
 
 import cloudpickle
@@ -199,6 +200,37 @@ async def test_async_override_calling_super_emits_one_compile_callback_pair():
     assert start["instance"] is optimizer
     assert start["parent_call_id"] is None
     assert end["call_id"] == start["call_id"]
+
+
+@pytest.mark.asyncio
+async def test_same_instance_compile_in_child_task_emits_nested_callback_pair():
+    class Optimizer(Teleprompter):
+        async def compile(self, student, *, trainset, child=False):
+            if not child:
+                return await asyncio.create_task(self.compile(student, trainset=trainset, child=True))
+            return student
+
+    callback = RecordingCallback()
+    optimizer = Optimizer()
+    student = dspy.Module()
+
+    with dspy.context(callbacks=[callback]):
+        assert await optimizer.compile(student, trainset=[]) is student
+
+    outer_start, child_start, child_end, outer_end = callback.events
+    assert [event["handler"] for event in callback.events] == [
+        "compile_start",
+        "compile_start",
+        "compile_end",
+        "compile_end",
+    ]
+    assert outer_start["instance"] is child_start["instance"] is optimizer
+    assert outer_start["parent_call_id"] is None
+    assert child_start["parent_call_id"] == outer_start["call_id"]
+    assert child_end["call_id"] == child_start["call_id"]
+    assert child_end["parent_call_id"] == outer_start["call_id"]
+    assert outer_end["call_id"] == outer_start["call_id"]
+    assert outer_end["parent_call_id"] is None
 
 
 def test_compile_callback_wrapper_round_trips_through_cloudpickle():

@@ -1,10 +1,20 @@
+import asyncio
 import functools
 import inspect
+import threading
 from typing import Any
 
 import dspy.utils.callback_context as callback_context
 from dspy.primitives import Example, Module
 from dspy.utils.callback import with_callbacks
+
+
+def _compile_invocation_key(instance):
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    return id(instance), threading.get_ident(), id(task) if task is not None else None
 
 
 def _with_compile_callbacks(fn):
@@ -13,27 +23,29 @@ def _with_compile_callbacks(fn):
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
         async def async_wrapper(instance, *args, **kwargs):
-            active_optimizers = callback_context._ACTIVE_OPTIMIZERS.get()
-            if id(instance) in active_optimizers:
+            active_compiles = callback_context._ACTIVE_COMPILES.get()
+            invocation_key = _compile_invocation_key(instance)
+            if invocation_key in active_compiles:
                 return await fn(instance, *args, **kwargs)
-            token = callback_context._ACTIVE_OPTIMIZERS.set((*active_optimizers, id(instance)))
+            token = callback_context._ACTIVE_COMPILES.set((*active_compiles, invocation_key))
             try:
                 return await callback_fn(instance, *args, **kwargs)
             finally:
-                callback_context._ACTIVE_OPTIMIZERS.reset(token)
+                callback_context._ACTIVE_COMPILES.reset(token)
 
         return async_wrapper
 
     @functools.wraps(fn)
     def wrapper(instance, *args, **kwargs):
-        active_optimizers = callback_context._ACTIVE_OPTIMIZERS.get()
-        if id(instance) in active_optimizers:
+        active_compiles = callback_context._ACTIVE_COMPILES.get()
+        invocation_key = _compile_invocation_key(instance)
+        if invocation_key in active_compiles:
             return fn(instance, *args, **kwargs)
-        token = callback_context._ACTIVE_OPTIMIZERS.set((*active_optimizers, id(instance)))
+        token = callback_context._ACTIVE_COMPILES.set((*active_compiles, invocation_key))
         try:
             return callback_fn(instance, *args, **kwargs)
         finally:
-            callback_context._ACTIVE_OPTIMIZERS.reset(token)
+            callback_context._ACTIVE_COMPILES.reset(token)
 
     return wrapper
 
@@ -44,6 +56,8 @@ class Teleprompter:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        # Cover conventional class-body overrides while preserving inherited wrapped methods.
+        # Replacing compile after class creation is not a supported instrumentation path.
         if "compile" in cls.__dict__:
             cls.compile = _with_compile_callbacks(cls.compile)
 
