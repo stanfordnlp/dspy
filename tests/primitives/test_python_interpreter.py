@@ -115,6 +115,8 @@ def test_base_exceptions_do_not_desync_interpreter():
         for code, error_type in [
             ("import sys\nsys.exit(0)", "SystemExit"),
             ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
         ]:
             with pytest.raises(CodeExecutionError, match=error_type):
                 interpreter.execute(code)
