@@ -10,6 +10,7 @@ docs_dir: "docs/"
 
 nav:
     - Overview: index.md
+    - Direction: roadmap.md
     - Getting Started:
         - Program, don't prompt: getting-started/program-dont-prompt.md
         - Setting up DSPy: getting-started/installation.md
@@ -321,13 +322,14 @@ plugins:
             "getting_started/12_where_to_go_next.md":   "getting-started/where-to-go-next.md"
     - llmstxt:
         markdown_description: >
-          DSPy is the framework for programming—rather than prompting—language models.
-          DSPy unifies techniques for prompting, fine-tuning, reasoning, tool use, and evaluation of LMs.
-          It provides a systematic approach to building AI applications through composable modules, 
-          optimization techniques, and evaluation frameworks.
+          DSPy is the framework for building programmable AI systems, rather than relying on ad-hoc prompts.
+          It combines ordinary Python control flow, declarative typed signatures, and feedback from examples
+          and metrics. DSPy unifies prompting, fine-tuning, reasoning, tool use, and evaluation through
+          composable modules and whole-program optimization.
         sections:
           Get Started:
             - index.md: DSPy overview and quick start guide
+            - roadmap.md: DSPy's design promise, scope criteria, and roadmap
           Getting Started:
             - getting-started/**.md
           Diving Deeper:
