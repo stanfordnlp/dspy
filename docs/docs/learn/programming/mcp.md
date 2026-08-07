@@ -22,13 +22,49 @@ MCP enables you to:
 - **Share tools across stacks** - Use the same tools across different frameworks.
 - **Simplify integration** - Convert MCP tools to DSPy tools with one line.
 
-DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass `mcp.ClientSession` to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
+DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass the client or session to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
+
+DSPy works with both major versions of the `mcp` Python SDK. The examples below note where the two versions differ.
 
 ## Using MCP with DSPy
 
 ### 1. HTTP Server (Remote)
 
-For remote MCP servers over HTTP, use the streamable HTTP transport:
+For remote MCP servers over HTTP, use the streamable HTTP transport. With `mcp` SDK v2, pass the server URL to the high-level `Client`:
+
+```python
+import asyncio
+import dspy
+from mcp.client import Client
+
+async def main():
+    # Connect to HTTP MCP server
+    async with Client("http://localhost:8000/mcp") as client:
+        # List and convert tools
+        response = await client.list_tools()
+        dspy_tools = [
+            dspy.Tool.from_mcp_tool(client, tool)
+            for tool in response.tools
+        ]
+
+        # Create and use ReAct agent
+        class TaskSignature(dspy.Signature):
+            task: str = dspy.InputField()
+            result: str = dspy.OutputField()
+
+        react_agent = dspy.ReAct(
+            signature=TaskSignature,
+            tools=dspy_tools,
+            max_iters=5
+        )
+
+        result = await react_agent.acall(task="Check the weather in Tokyo")
+        print(result.result)
+
+asyncio.run(main())
+```
+
+With `mcp` SDK v1, the same connection uses `streamablehttp_client` and a `ClientSession`:
 
 ```python
 import asyncio
@@ -37,39 +73,22 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 async def main():
-    # Connect to HTTP MCP server
     async with streamablehttp_client("http://localhost:8000/mcp") as (read, write):
         async with ClientSession(read, write) as session:
-            # Initialize the session
             await session.initialize()
-
-            # List and convert tools
             response = await session.list_tools()
             dspy_tools = [
                 dspy.Tool.from_mcp_tool(session, tool)
                 for tool in response.tools
             ]
-
-            # Create and use ReAct agent
-            class TaskSignature(dspy.Signature):
-                task: str = dspy.InputField()
-                result: str = dspy.OutputField()
-
-            react_agent = dspy.ReAct(
-                signature=TaskSignature,
-                tools=dspy_tools,
-                max_iters=5
-            )
-
-            result = await react_agent.acall(task="Check the weather in Tokyo")
-            print(result.result)
+            # Build and run your agent as in the v2 example above.
 
 asyncio.run(main())
 ```
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio:
+The most common way to use MCP is with a local server process communicating via stdio. This example works with both SDK versions. Under SDK v2 the protocol no longer has a handshake, and `session.initialize()` is kept as a compatibility method, so calling it is still safe:
 
 ```python
 import asyncio
@@ -142,6 +161,12 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 # Use it like any DSPy tool
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
+
+### Structured results
+
+When an MCP server returns structured content alongside text, the DSPy tool returns the structured value instead of the text rendering. Servers built with the official Python SDK produce structured content for any tool with a typed return value. A tool that returns a Pydantic model produces a plain dict, and a tool that returns a primitive value such as `int` produces that value directly. Tools without a declared return type keep returning text.
+
+If a server asks for additional input during a tool call, which the 2026-07-28 specification calls a multi round-trip request, the DSPy tool raises a `RuntimeError` that explains what the server requested. DSPy cannot answer these requests itself.
 
 ## Learn More
 
