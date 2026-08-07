@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import math
 import os
 import random
 import threading
@@ -289,6 +290,51 @@ def test_serialize_set_mixed_types(pooled_interpreter):
     result = interpreter.execute("x", variables={"x": {1, "a"}})
     assert isinstance(result, list)
     assert set(result) == {1, "a"}
+
+
+def test_result_big_int_round_trip(pooled_interpreter):
+    """Regression test: ints beyond 2**53 must survive the trip back to the host.
+
+    Pyodide converts them to JS BigInt, which JSON.stringify cannot serialize,
+    so returning one previously crashed the execution outright.
+    """
+    interpreter = pooled_interpreter
+    assert interpreter.execute("2**60 + 1") == 2**60 + 1
+    assert interpreter.execute("x", variables={"x": 10**30}) == 10**30
+    assert interpreter.execute("{'count': 2**60}") == {"count": 2**60}
+
+
+def test_result_set_round_trip(pooled_interpreter):
+    """Regression test: sets computed in the sandbox must not be silently dropped.
+
+    A set result previously became a JS Set, which JSON.stringify serializes as
+    {}. Sets now return as sorted lists, matching the variable-injection
+    convention for sets.
+    """
+    interpreter = pooled_interpreter
+    assert interpreter.execute("{3, 1, 2}") == [1, 2, 3]
+    assert interpreter.execute("{'unique': {2, 1}}") == {"unique": [1, 2]}
+
+
+def test_result_set_mixed_types_round_trip(pooled_interpreter):
+    """Mixed-type sets can't be sorted, so they return as a list in arbitrary
+    order rather than failing serialization, mirroring the injection fallback."""
+    interpreter = pooled_interpreter
+    result = interpreter.execute("{1, 'a'}")
+    assert isinstance(result, list)
+    assert set(result) == {1, "a"}
+
+
+def test_result_non_finite_floats_round_trip(pooled_interpreter):
+    """Regression test: nan/inf inside results must not be silently nulled.
+
+    Non-finite floats previously became None on the way back to the host because
+    JS JSON.stringify turns NaN and Infinity into null.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("{'a': [float('nan')], 'b': float('inf')}")
+    assert math.isnan(result["a"][0])
+    assert result["b"] == float("inf")
 
 
 def test_serialize_pydantic_variable(pooled_interpreter):
