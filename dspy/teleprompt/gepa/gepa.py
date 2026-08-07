@@ -297,8 +297,11 @@ class GEPA(Teleprompter):
             `reflection_lm`. Cost is read from the reflection LM's call history, so it reflects actual
             litellm-reported costs. Requires LM history to be enabled (`dspy.settings.disable_history`
             must be False and `dspy.settings.max_history_size` must be nonzero); `compile()` raises if
-            history is disabled. This complements, but does not replace, the metric-call budget: one of
-            `auto`, `max_full_evals`, or `max_metric_calls` is still required.
+            history is disabled. Spend is tallied cumulatively as calls happen, so a small
+            `max_history_size` is fine — except that a custom `instruction_proposer` making more direct
+            LM calls than the history window holds within a single proposal step can have the excess
+            evicted before it is tallied. This complements, but does not replace, the metric-call budget:
+            one of `auto`, `max_full_evals`, or `max_metric_calls` is still required.
         wandb_attach_existing: Log into the already-active wandb run instead of creating one. Use when GEPA
             is embedded in a training loop that owns the run.
         mlflow_attach_existing: Log into the already-active MLflow run instead of creating one.

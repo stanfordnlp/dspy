@@ -1,6 +1,7 @@
 import json
 import random
 import threading
+from collections.abc import Mapping
 from typing import Any
 from unittest import mock
 
@@ -636,13 +637,21 @@ def test_track_best_outputs_result_structure():
 
 
 class _StubReflectionLM:
-    """Stub with the two things TrackedReflectionLM reads: history and __call__."""
+    """Stub with the two things TrackedReflectionLM reads: history and __call__.
+
+    Entries carry a uuid like real dspy history entries (both the dict path and the
+    typed LMHistoryEntry path always populate one).
+    """
 
     def __init__(self):
         self.history = []
+        self._n = 0
 
     def __call__(self, x):
-        self.history.append({"cost": 0.25, "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+        self._n += 1
+        self.history.append(
+            {"cost": 0.25, "usage": {"prompt_tokens": 10, "completion_tokens": 5}, "uuid": f"stub-{self._n}"}
+        )
         return ["reflection output"]
 
 
@@ -659,7 +668,7 @@ def test_tracked_reflection_lm_exposes_cost_totals():
     assert tracked.total_tokens_out == 5
 
     # Cache hits record cost=None; they must not break the sum.
-    tracked.lm.history.append({"cost": None, "usage": {}})
+    tracked.lm.history.append({"cost": None, "usage": {}, "uuid": "cache-1"})
     assert tracked.total_cost == 0.25
 
 
@@ -672,8 +681,8 @@ def test_tracked_reflection_lm_scopes_baseline_to_construction():
     stub = _StubReflectionLM()
     # Pre-populate history as if this LM was already used (e.g. a prior compile() call, or as
     # the task LM) before TrackedReflectionLM wraps it.
-    stub.history.append({"cost": 1.0, "usage": {"prompt_tokens": 100, "completion_tokens": 50}})
-    stub.history.append({"cost": 2.0, "usage": {"prompt_tokens": 200, "completion_tokens": 75}})
+    stub.history.append({"cost": 1.0, "usage": {"prompt_tokens": 100, "completion_tokens": 50}, "uuid": "pre-1"})
+    stub.history.append({"cost": 2.0, "usage": {"prompt_tokens": 200, "completion_tokens": 75}, "uuid": "pre-2"})
 
     tracked = TrackedReflectionLM(stub)
     assert tracked.total_cost == 0.0
@@ -686,6 +695,70 @@ def test_tracked_reflection_lm_scopes_baseline_to_construction():
     assert tracked.total_cost == 0.25
     assert tracked.total_tokens_in == 10
     assert tracked.total_tokens_out == 5
+
+
+class _MappingHistoryEntry(Mapping):
+    """Mimics dspy's typed LMHistoryEntry: a Mapping that is not a dict."""
+
+    def __init__(self, uid, cost, tokens_in, tokens_out):
+        self._data = {
+            "uuid": uid,
+            "cost": cost,
+            "usage": {"prompt_tokens": tokens_in, "completion_tokens": tokens_out},
+        }
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+
+def test_tracked_reflection_lm_counts_mapping_history_entries():
+    """dspy's typed LM path appends LMHistoryEntry objects (Mapping, not dict); they must
+    count toward the reflection budget."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    stub = _StubReflectionLM()
+    tracked = TrackedReflectionLM(stub)
+    stub.history.append(_MappingHistoryEntry("typed-1", 0.5, 20, 10))
+    stub.history.append(_MappingHistoryEntry("typed-2", 0.25, 5, 5))
+
+    assert tracked.total_cost == 0.75
+    assert tracked.total_tokens_in == 25
+    assert tracked.total_tokens_out == 15
+
+
+def test_tracked_reflection_lm_survives_history_eviction():
+    """With a small settings.max_history_size, update_history evicts old entries; the budget
+    must accumulate spend cumulatively, not recompute it from the surviving window."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    class _EvictingStubLM:
+        def __init__(self, window):
+            self.history = []
+            self._window = window
+            self._n = 0
+
+        def __call__(self, x):
+            self._n += 1
+            if len(self.history) >= self._window:
+                self.history.pop(0)
+            self.history.append(
+                {"cost": 0.6, "usage": {"prompt_tokens": 10, "completion_tokens": 5}, "uuid": f"e{self._n}"}
+            )
+            return ["out"]
+
+    tracked = TrackedReflectionLM(_EvictingStubLM(window=1))
+    for _ in range(3):
+        tracked("prompt")
+
+    assert tracked.total_cost == pytest.approx(1.8)
+    assert tracked.total_tokens_in == 30
+    assert tracked.total_tokens_out == 15
 
 
 def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):

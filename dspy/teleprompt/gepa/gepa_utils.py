@@ -1,5 +1,7 @@
 import logging
 import random
+import threading
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from typing import Any, Callable, Protocol, TypedDict
@@ -106,51 +108,84 @@ class TrackedReflectionLM:
 
     gepa's `max_reflection_cost` stopper reads `total_cost` from the reflection LM;
     plain callables get wrapped in a gepa `TrackingLM` that always reports 0.0, so
-    the stopper would never fire. Totals here are derived from the underlying
-    `dspy.LM.history`, which also captures reflection calls made by the instruction
-    and code proposers that never go through this callable. Requires LM history to
-    be enabled (it is unless `dspy.settings.disable_history` is set).
+    the stopper would never fire. Totals accumulate from the underlying
+    `dspy.LM.history` — entries are tallied once (keyed by their `uuid`) on every
+    call through this wrapper or `DspyAdapter.stripped_lm_call`, and on every
+    property read — so spend survives history eviction at
+    `settings.max_history_size`, and reflection calls made by the instruction and
+    code proposers that never go through this callable are still counted. Requires
+    LM history to be enabled (it is unless `dspy.settings.disable_history` is set);
+    entries without a `uuid` (real dspy history entries always have one) are
+    ignored, as they cannot be safely de-duplicated.
 
-    Totals are scoped to this instance's lifetime: the sums present in `lm.history`
-    at construction time are snapshotted as a baseline and subtracted back out, so
-    reusing a `reflection_lm` across multiple `compile()` calls doesn't carry over
-    spend from a previous run (`DspyAdapter.__init__` constructs a fresh
-    `TrackedReflectionLM` per compile). This does NOT protect against sharing the
-    reflection LM instance as both the task LM and the reflection LM within the
-    same run: concurrent task-LM calls append to the same `history` list, so their
-    cost/usage would still be counted toward the reflection budget.
+    Totals are scoped to this instance's lifetime: entries already in `lm.history`
+    at construction are marked as counted without contributing, so reusing a
+    `reflection_lm` across multiple `compile()` calls doesn't carry over spend from
+    a previous run (`DspyAdapter.__init__` constructs a fresh `TrackedReflectionLM`
+    per compile). Two residual caveats: sharing the reflection LM instance as both
+    the task LM and the reflection LM counts task spend toward the reflection
+    budget, and a custom proposer that makes more direct LM calls than
+    `settings.max_history_size` between two syncs can have the excess evicted
+    before it is tallied.
     """
 
     def __init__(self, lm):
         self.lm = lm
-        self._baseline_cost = self._sum_cost(lm.history)
-        self._baseline_tokens_in = self._sum_usage(lm.history, "prompt_tokens")
-        self._baseline_tokens_out = self._sum_usage(lm.history, "completion_tokens")
+        self._counted_uuids: set[str] = set()
+        self._total_cost = 0.0
+        self._total_tokens_in = 0
+        self._total_tokens_out = 0
+        self._lock = threading.Lock()
+        with self._lock:
+            for entry in self._entries():
+                uid = entry.get("uuid")
+                if uid is not None:
+                    self._counted_uuids.add(uid)
 
     def __call__(self, x: str) -> str:
-        return _stripped_lm_outputs(self.lm, x)[0]
+        outputs = _stripped_lm_outputs(self.lm, x)
+        self._sync()
+        return outputs[0]
 
-    @staticmethod
-    def _sum_cost(history) -> float:
-        return sum(entry.get("cost") or 0.0 for entry in history if isinstance(entry, dict))
+    def _entries(self) -> list:
+        return [entry for entry in self.lm.history if isinstance(entry, Mapping)]
 
-    @staticmethod
-    def _sum_usage(history, key: str) -> int:
-        return sum((entry.get("usage") or {}).get(key) or 0 for entry in history if isinstance(entry, dict))
+    def _sync(self) -> None:
+        """Tally history entries not yet counted, then prune uuids evicted from the window.
+
+        Evicted uuids can never reappear (uuid4), so the set stays bounded by
+        `settings.max_history_size` without ever double-counting.
+        """
+        with self._lock:
+            window_uuids = set()
+            for entry in self._entries():
+                uid = entry.get("uuid")
+                if uid is None:
+                    continue
+                window_uuids.add(uid)
+                if uid in self._counted_uuids:
+                    continue
+                self._counted_uuids.add(uid)
+                self._total_cost += entry.get("cost") or 0.0
+                usage = entry.get("usage") or {}
+                self._total_tokens_in += usage.get("prompt_tokens") or 0
+                self._total_tokens_out += usage.get("completion_tokens") or 0
+            self._counted_uuids &= window_uuids
 
     @property
     def total_cost(self) -> float:
-        # max(0, ...) also tolerates history eviction at settings.max_history_size: if entries this
-        # instance counted toward the baseline get evicted, the raw sum can dip below the baseline.
-        return max(0.0, self._sum_cost(self.lm.history) - self._baseline_cost)
+        self._sync()
+        return self._total_cost
 
     @property
     def total_tokens_in(self) -> int:
-        return max(0, self._sum_usage(self.lm.history, "prompt_tokens") - self._baseline_tokens_in)
+        self._sync()
+        return self._total_tokens_in
 
     @property
     def total_tokens_out(self) -> int:
-        return max(0, self._sum_usage(self.lm.history, "completion_tokens") - self._baseline_tokens_out)
+        self._sync()
+        return self._total_tokens_out
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -513,5 +548,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # Always return strings from the LM outputs
     # Even when it returns a dict with e.g., "text" and "reasoning" fields
     def stripped_lm_call(self, x: str) -> list[str]:
-        return _stripped_lm_outputs(self.reflection_lm, x)
+        outputs = _stripped_lm_outputs(self.reflection_lm, x)
+        # Tally the call into the reflection budget while its history entry is
+        # guaranteed to still be inside the (possibly small) retention window.
+        if self.tracked_reflection_lm is not None:
+            self.tracked_reflection_lm._sync()
+        return outputs
 
