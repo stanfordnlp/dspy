@@ -2,6 +2,7 @@ import ast
 import enum
 import inspect
 import json
+import re
 import types
 from collections.abc import Mapping
 from typing import Any, Literal, Union, get_args, get_origin
@@ -146,6 +147,19 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
+_MARKDOWN_CODE_FENCE = re.compile(r"\s*```[^\n]*\n(?P<body>.*?)\n?```\s*\Z", re.DOTALL)
+
+
+def _strip_markdown_code_fence(text):
+    """Return the inner body of a single ```lang ... ``` markdown code fence, or None.
+
+    An LM sometimes wraps a dict/list value in a fenced code block. Returns None when
+    `text` is not a single fenced block, so callers can leave non-fenced input untouched.
+    """
+    match = _MARKDOWN_CODE_FENCE.fullmatch(text)
+    return match.group("body") if match else None
+
+
 def parse_value(value, annotation):
     if annotation is str:
         return str(value)
@@ -179,12 +193,23 @@ def parse_value(value, annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
-    if candidate == "" and value != "":
+    # An LM may wrap a dict/list value in a markdown code fence (```python ... ```).
+    # json_repair coerces the Python literal None into the string "None" (it only
+    # understands lowercase JSON null), so when the value is a single fenced block,
+    # strip the fence and ast.literal_eval it first so None/True/False survive (#8181).
+    unfenced = _strip_markdown_code_fence(value)
+    if unfenced is not None:
         try:
-            candidate = ast.literal_eval(value)
+            candidate = ast.literal_eval(unfenced)
         except (ValueError, SyntaxError):
-            candidate = value
+            unfenced = None
+    if unfenced is None:
+        candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+        if candidate == "" and value != "":
+            try:
+                candidate = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                candidate = value
 
     try:
         return TypeAdapter(annotation).validate_python(candidate)
