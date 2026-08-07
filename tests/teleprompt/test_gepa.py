@@ -761,6 +761,40 @@ def test_tracked_reflection_lm_survives_history_eviction():
     assert tracked.total_tokens_out == 15
 
 
+def test_batch_evaluate_preserves_active_call_id():
+    """Callbacks emitted inside batch_evaluate's worker threads must be children of the
+    enclosing trace, not new roots: the submitting thread's ACTIVE_CALL_ID (a ContextVar,
+    not part of thread_local_overrides) has to be bound into each worker."""
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+
+    seen = []
+
+    def fake_evaluate(batch, candidate, capture_traces=False):
+        seen.append(ACTIVE_CALL_ID.get())
+        return EvaluationBatch(outputs=[], scores=[], trajectories=[])
+
+    adapter.evaluate = fake_evaluate
+    batch = [Example(input="a", output="b").with_inputs("input")]
+
+    token = ACTIVE_CALL_ID.set("parent-call-id")
+    try:
+        adapter.batch_evaluate([({"predictor": "x"}, batch), ({"predictor": "y"}, batch)])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert seen == ["parent-call-id", "parent-call-id"]
+
+
 def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):
     from types import SimpleNamespace
 

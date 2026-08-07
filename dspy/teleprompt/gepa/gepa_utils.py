@@ -27,6 +27,7 @@ from dspy.teleprompt.gepa.gepa_flex_utils import (
     propose_code,
     rebind_flex_code,
 )
+from dspy.utils.callback_context import _bind_active_call_id
 
 logger = logging.getLogger(__name__)
 
@@ -380,8 +381,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         gepa's multi-proposal iterations (`sampling_strategy`) evaluate several
         candidates per step; its fallback runs them one at a time, and each
         `evaluate` call only parallelizes across the (small) minibatch. Candidates
-        are independent, so run them on worker threads. dspy settings overrides are
-        thread-local and must be copied into each worker.
+        are independent, so run them on worker threads. dspy settings overrides and
+        the active callback call ID are thread-local and must be copied into each
+        worker, or callbacks emitted there would start new root traces.
         """
         if len(items) <= 1:
             return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
@@ -402,7 +404,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 thread_local_overrides.reset(token)
 
         with ThreadPoolExecutor(max_workers=min(len(items), 8)) as executor:
-            return list(executor.map(_evaluate_pair, items))
+            return list(executor.map(_bind_active_call_id(_evaluate_pair), items))
 
     def get_adapter_state(self) -> dict[str, Any]:
         """Snapshot adapter state into gepa's checkpoint (gepa persists it via pickle)."""
