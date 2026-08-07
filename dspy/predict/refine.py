@@ -85,6 +85,11 @@ class Refine(Module):
             ```
         """
         self.module = module
+        for predictor in self.module.predictors():
+            predictor.signature = predictor.signature.append(
+                "hint_", InputField(desc="A hint to the module from an earlier run")
+            )
+
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
@@ -108,25 +113,28 @@ class Refine(Module):
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 
-            predictor2name = {predictor: name for name, predictor in mod.named_predictors()}
-            signature2name = {predictor.signature: name for name, predictor in mod.named_predictors()}
-            module_names = [name for name, _ in mod.named_predictors()]
+            named_predictors = mod.named_predictors()
+            predictor2name = {predictor: name for name, predictor in named_predictors}
+            module_names = [name for name, _ in named_predictors]
 
             try:
                 with dspy.context(trace=[]):
                     if not advice:
                         outputs = mod(**kwargs)
                     else:
+                        signature2hint = {
+                            predictor.signature: advice.get(name, "N/A") for name, predictor in named_predictors
+                        }
 
-                        class WrapperAdapter(adapter.__class__):
+                        class HintAdapter(adapter.__class__):
+                            def __init__(self, hints):
+                                self.hints = hints
+
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name.get(signature), "N/A")  # noqa: B023
-                                signature = signature.append(
-                                    "hint_", InputField(desc="A hint to the module from an earlier run")
-                                )
+                                inputs["hint_"] = self.hints.get(signature, "N/A")
                                 return adapter(lm, lm_kwargs, signature, demos, inputs)
 
-                        with dspy.context(adapter=WrapperAdapter()):
+                        with dspy.context(adapter=HintAdapter(signature2hint)):
                             outputs = mod(**kwargs)
 
                     trace = dspy.settings.trace.copy()

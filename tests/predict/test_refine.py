@@ -1,6 +1,7 @@
 import pytest
 
 import dspy
+from dspy.adapters import ChatAdapter
 from dspy.predict.predict import Predict
 from dspy.predict.refine import Refine
 from dspy.primitives.prediction import Prediction
@@ -15,6 +16,51 @@ class DummyModule(dspy.Module):
 
     def forward(self, **kwargs) -> Prediction:
         return self.forward_fn(self, **kwargs)
+
+
+def test_refine_adds_hint_to_sub_signatures_during_init():
+    predict = DummyModule("question -> answer", lambda self, **kwargs: self.predictor(**kwargs))
+    predict.other_predictor = Predict("context -> summary")
+
+    Refine(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=1.0)
+
+    assert list(predict.predictor.signature.input_fields) == ["question", "hint_"]
+    assert list(predict.other_predictor.signature.input_fields) == ["context", "hint_"]
+
+
+def test_refine_reuses_hint_signatures_during_retries():
+    class RecordingAdapter(ChatAdapter):
+        def __init__(self):
+            super().__init__()
+            self.predictor_calls = []
+
+        def __call__(self, lm, lm_kwargs, signature, demos, inputs):
+            if "answer" in signature.output_fields:
+                self.predictor_calls.append((signature, inputs.copy()))
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+
+    lm = DummyLM(
+        [
+            {"answer": "wrong"},
+            {"discussion": "The predictor can improve.", "advice": {"predictor": "Return the correct answer."}},
+            {"answer": "correct"},
+        ]
+    )
+    adapter = RecordingAdapter()
+    dspy.configure(lm=lm, adapter=adapter)
+    predict = DummyModule("question -> answer", lambda self, **kwargs: self.predictor(**kwargs))
+    refine = Refine(
+        module=predict,
+        N=2,
+        reward_fn=lambda _, pred: float(pred.answer == "correct"),
+        threshold=1.0,
+    )
+
+    result = refine(question="What is the capital of Belgium?")
+
+    assert result.answer == "correct"
+    assert [inputs.get("hint_") for _, inputs in adapter.predictor_calls] == [None, "Return the correct answer."]
+    assert all(signature is predict.predictor.signature for signature, _ in adapter.predictor_calls)
 
 
 def test_refine_forward_success_first_attempt():
