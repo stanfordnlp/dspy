@@ -36,15 +36,11 @@ print(result.answer)
 
 RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
 
-You can install Deno with: `brew install deno` on MacOS or `curl -fsSL https://deno.land/install.sh | sh` on MacOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
-
-After you have installed Deno, **Make sure to restart your shell.**
-
-Deno may get confused by existing `package.json` files it happens to find; use the environment variable `DENO_NO_PACKAGE_JSON=1` to ignore `package.json` entirely and resolve `npm:pyodide` from its own cache, which is what DSPy expects.
+Install DSPy's managed Deno runtime with `pip install "dspy[deno]"`. See the
+[`PythonInterpreter` installation guide](../tools/PythonInterpreter.md#deno-installation) for supported platforms,
+system-Deno fallback instructions, and dependency-isolation details.
 
 Then you can run `dspy.RLM`.
-
-Users have reported issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
 
 You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
 

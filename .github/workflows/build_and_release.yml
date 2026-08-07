@@ -71,6 +71,7 @@ jobs:
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest pytest-asyncio
           pytest tests/metadata/test_metadata.py tests/predict
+          (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
@@ -130,6 +131,7 @@ jobs:
           # Install the locally built wheel and testing dependencies
           pip install dist/*.whl pytest pytest-asyncio
           pytest tests/metadata/test_metadata.py tests/predict
+          (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
