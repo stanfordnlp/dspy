@@ -15,18 +15,18 @@ class RecordingCallback(BaseCallback):
     def __init__(self):
         self.events = []
 
-    def on_optimizer_start(self, call_id, instance, inputs):
+    def on_compile_start(self, call_id, instance, inputs):
         self.events.append({
-            "handler": "optimizer_start",
+            "handler": "compile_start",
             "call_id": call_id,
             "parent_call_id": ACTIVE_CALL_ID.get(),
             "instance": instance,
             "inputs": inputs,
         })
 
-    def on_optimizer_end(self, call_id, outputs, exception):
+    def on_compile_end(self, call_id, outputs, exception):
         self.events.append({
-            "handler": "optimizer_end",
+            "handler": "compile_end",
             "call_id": call_id,
             "parent_call_id": ACTIVE_CALL_ID.get(),
             "outputs": outputs,
@@ -56,7 +56,7 @@ def events_for(callback, handler):
     return [event for event in callback.events if event["handler"] == handler]
 
 
-def test_optimizer_callbacks_report_bound_inputs_output_and_call_id():
+def test_compile_callbacks_report_bound_inputs_output_and_call_id():
     class Optimizer(Teleprompter):
         def compile(self, student, *, trainset, teacher=None):
             return student
@@ -70,17 +70,17 @@ def test_optimizer_callbacks_report_bound_inputs_output_and_call_id():
         result = optimizer.compile(student, trainset=trainset)
 
     start, end = callback.events
-    assert start["handler"] == "optimizer_start"
+    assert start["handler"] == "compile_start"
     assert start["instance"] is optimizer
     assert start["inputs"] == {"student": student, "trainset": trainset, "teacher": None}
     assert start["parent_call_id"] is None
-    assert end["handler"] == "optimizer_end"
+    assert end["handler"] == "compile_end"
     assert end["call_id"] == start["call_id"]
     assert end["outputs"] is result is student
     assert end["exception"] is None
 
 
-def test_optimizer_callback_reports_and_propagates_same_exception():
+def test_compile_callback_reports_and_propagates_same_exception():
     expected_error = ValueError("compile failed")
 
     class FailingOptimizer(Teleprompter):
@@ -135,12 +135,12 @@ def test_nested_optimizer_and_module_callbacks_preserve_hierarchy():
         assert outer.compile(student, trainset=["value"], optimizer=inner) is student
 
     assert [event["handler"] for event in callback.events] == [
-        "optimizer_start",
-        "optimizer_start",
+        "compile_start",
+        "compile_start",
         "module_start",
         "module_end",
-        "optimizer_end",
-        "optimizer_end",
+        "compile_end",
+        "compile_end",
     ]
     outer_start, inner_start, module_start, module_end, inner_end, outer_end = callback.events
     assert inner_start["parent_call_id"] == outer_start["call_id"]
@@ -170,8 +170,8 @@ def test_inherited_compile_is_not_wrapped_twice_and_override_is_wrapped_once():
         InheritedOptimizer().compile(student, trainset=[])
         OverridingOptimizer().compile(student, trainset=[])
 
-    starts = events_for(callback, "optimizer_start")
-    ends = events_for(callback, "optimizer_end")
+    starts = events_for(callback, "compile_start")
+    ends = events_for(callback, "compile_end")
     assert len(starts) == len(ends) == 2
     assert isinstance(starts[0]["instance"], InheritedOptimizer)
     assert isinstance(starts[1]["instance"], OverridingOptimizer)
@@ -179,7 +179,7 @@ def test_inherited_compile_is_not_wrapped_twice_and_override_is_wrapped_once():
 
 
 @pytest.mark.asyncio
-async def test_async_override_calling_super_emits_one_optimizer_callback_pair():
+async def test_async_override_calling_super_emits_one_compile_callback_pair():
     class BaseOptimizer(Teleprompter):
         async def compile(self, student, *, trainset):
             return student
@@ -201,7 +201,7 @@ async def test_async_override_calling_super_emits_one_optimizer_callback_pair():
     assert end["call_id"] == start["call_id"]
 
 
-def test_optimizer_callback_wrapper_round_trips_through_cloudpickle():
+def test_compile_callback_wrapper_round_trips_through_cloudpickle():
     class Optimizer(Teleprompter):
         def compile(self, student, *, trainset):
             return student
@@ -233,7 +233,7 @@ def test_existing_optimizer_compile_is_instrumented():
     assert end["exception"] is None
 
 
-def test_bettertogether_nests_child_optimizer_callback():
+def test_bettertogether_nests_child_compile_callback():
     class Student(dspy.Module):
         def __init__(self):
             super().__init__()
@@ -261,8 +261,8 @@ def test_bettertogether_nests_child_optimizer_callback():
     ):
         optimizer.compile(student, trainset=trainset, valset=trainset, strategy="child")
 
-    starts = events_for(callback, "optimizer_start")
-    ends = events_for(callback, "optimizer_end")
+    starts = events_for(callback, "compile_start")
+    ends = events_for(callback, "compile_end")
     assert len(starts) == len(ends) == 2
     assert starts[0]["instance"] is optimizer
     assert starts[0]["parent_call_id"] is None
@@ -304,8 +304,8 @@ def test_bettertogether_reports_child_failure_but_completes_outer_run():
     ):
         compiled = optimizer.compile(student, trainset=trainset, valset=trainset, strategy="child")
 
-    starts = events_for(callback, "optimizer_start")
-    ends = events_for(callback, "optimizer_end")
+    starts = events_for(callback, "compile_start")
+    ends = events_for(callback, "compile_end")
     assert len(starts) == len(ends) == 2
     assert starts[1]["instance"] is child
     assert starts[1]["parent_call_id"] == starts[0]["call_id"]
