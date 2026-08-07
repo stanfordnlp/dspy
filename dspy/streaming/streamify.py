@@ -228,6 +228,18 @@ def streamify(
         return sync_streamer
 
 
+class _StreamingException:
+    """Wraps an exception raised inside apply_sync_streaming's producer thread.
+
+    A distinct wrapper (rather than checking isinstance(item, Exception) directly)
+    avoids any ambiguity with a legitimately-yielded stream item that happens to be
+    an exception instance itself.
+    """
+
+    def __init__(self, exc: Exception):
+        self.exc = exc
+
+
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     """Convert the async streaming generator to a sync generator."""
     queue = Queue()  # Queue to hold items from the async generator
@@ -243,6 +255,10 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
+            except Exception as e:
+                # Propagate the exception to the consumer instead of letting it
+                # vanish into the background thread once the stream ends.
+                queue.put(_StreamingException(e))
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -258,6 +274,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
+        if isinstance(item, _StreamingException):
+            raise item.exc
         yield item
 
 

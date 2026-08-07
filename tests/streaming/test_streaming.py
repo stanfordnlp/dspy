@@ -415,6 +415,38 @@ def test_sync_status_streaming():
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
 
+def test_apply_sync_streaming_propagates_exceptions():
+    """Regression test for #9142: apply_sync_streaming used to silently
+    swallow exceptions raised by the async generator -- the consumer just
+    saw the stream end normally, with no indication anything went wrong.
+    """
+
+    async def flaky_generator():
+        yield "chunk1"
+        yield "chunk2"
+        raise ValueError("boom")
+
+    chunks = []
+    with pytest.raises(ValueError, match="boom"):
+        for item in dspy.streaming.apply_sync_streaming(flaky_generator()):
+            chunks.append(item)
+
+    # Items produced before the failure should still have been yielded.
+    assert chunks == ["chunk1", "chunk2"]
+
+
+def test_apply_sync_streaming_no_exception_still_completes_normally():
+    """A generator that completes without raising should still be consumed
+    to completion (no regression from the exception-propagation change).
+    """
+
+    async def clean_generator():
+        yield "a"
+        yield "b"
+
+    assert list(dspy.streaming.apply_sync_streaming(clean_generator())) == ["a", "b"]
+
+
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
