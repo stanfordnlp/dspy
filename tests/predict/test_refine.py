@@ -25,9 +25,11 @@ def test_refine_adds_hint_to_sub_signatures_during_init():
 
     assert list(predict.predictor.signature.input_fields) == ["question", "hint_"]
     assert list(predict.other_predictor.signature.input_fields) == ["context", "hint_"]
+    assert predict.predictor.signature.input_fields["hint_"].default_factory is not None
+    assert predict.other_predictor.signature.input_fields["hint_"].default_factory is not None
 
 
-def test_refine_injects_hints_through_signature_defaults():
+def test_refine_injects_hints_without_modifying_signatures_during_runtime():
     lm = DummyLM(
         [
             {"answer": "wrong"},
@@ -37,8 +39,10 @@ def test_refine_injects_hints_through_signature_defaults():
     )
     dspy.configure(lm=lm)
     predictor_inputs = []
+    predictor_signatures = []
 
     def record_predictor_inputs(self, **kwargs):
+        predictor_signatures.append(self.predictor.signature)
         result = self.predictor(**kwargs)
         predictor_inputs.append(dspy.settings.trace[-1][1])
         return result
@@ -54,7 +58,8 @@ def test_refine_injects_hints_through_signature_defaults():
     result = refine(question="What is the capital of Belgium?")
 
     assert result.answer == "correct"
-    assert [inputs.get("hint_") for inputs in predictor_inputs] == [None, "Return the correct answer."]
+    assert [inputs["hint_"] for inputs in predictor_inputs] == ["N/A", "Return the correct answer."]
+    assert all(signature is predict.predictor.signature for signature in predictor_signatures)
 
 
 def test_refine_forward_success_first_attempt():

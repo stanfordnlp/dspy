@@ -1,6 +1,6 @@
 import inspect
 import textwrap
-from copy import deepcopy
+from functools import partial
 from typing import Callable
 
 import orjson
@@ -11,6 +11,10 @@ from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
 from .predict import Module
+
+
+def _get_refine_hint(module_name: str) -> str:
+    return dspy.settings.get("_refine_hints", {}).get(module_name, "N/A")
 
 
 class OfferFeedback(Signature):
@@ -86,9 +90,13 @@ class Refine(Module):
             ```
         """
         self.module = module
-        for predictor in self.module.predictors():
+        for name, predictor in self.module.named_predictors():
             predictor.signature = predictor.signature.append(
-                "hint_", InputField(desc="A hint to the module from an earlier run")
+                "hint_",
+                InputField(
+                    default_factory=partial(_get_refine_hint, name),
+                    desc="A hint to the module from an earlier run",
+                ),
             )
 
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
@@ -118,13 +126,7 @@ class Refine(Module):
             module_names = [name for name, _ in named_predictors]
 
             try:
-                if advice:
-                    for name, predictor in named_predictors:
-                        fields = deepcopy(predictor.signature.fields)
-                        fields["hint_"].default = advice.get(name, "N/A")
-                        predictor.signature = Signature(fields, predictor.signature.instructions)
-
-                with dspy.context(trace=[]):
+                with dspy.context(trace=[], _refine_hints=advice or {}):
                     outputs = mod(**kwargs)
 
                     trace = dspy.settings.trace.copy()
