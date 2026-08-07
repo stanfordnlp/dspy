@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
 
+# Keyword arguments that `dspy.Predict` consumes itself. An input field with one of these names would have its value
+# swallowed by `_forward_preprocess` and never reach the LM, so we reject such signatures instead.
+RESERVED_PREDICT_KWARGS = frozenset({"signature", "new_signature", "demos", "config", "lm"})
+
+
+def _validate_signature_input_fields(signature: type[Signature]) -> None:
+    colliding = sorted(name for name in signature.input_fields if name in RESERVED_PREDICT_KWARGS)
+    if not colliding:
+        return
+
+    fields_ = ", ".join(f"`{name}`" for name in colliding)
+    raise ValueError(
+        f"Signature input field(s) {fields_} collide with reserved `dspy.Predict` keyword argument(s) of the same "
+        f"name. Their values would be consumed by `dspy.Predict` and never reach the LM. Please rename the field(s), "
+        f"e.g. `{colliding[0]}` -> `{colliding[0]}_text`. Reserved keyword arguments: "
+        f"{', '.join(sorted(RESERVED_PREDICT_KWARGS))}."
+    )
+
 
 def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
     if allow_unsafe_lm_state:
@@ -52,12 +70,19 @@ class Predict(Module, Parameter):
 
                 predict = dspy.Predict("q -> a", rollout_id=1, temperature=1.0)
                 predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
+
+    Raises:
+        ValueError: If an *input* field of ``signature`` is named after one of the privileged keyword
+            arguments ``dspy.Predict`` consumes itself (``lm``, ``demos``, ``config``, ``signature``,
+            ``new_signature``). Such a field's value would be swallowed and never reach the language
+            model, so rename it, e.g. ``lm`` -> ``lm_text``. Output fields may use these names freely.
     """
 
     def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
+        _validate_signature_input_fields(self.signature)
         self.config = config
         self.reset()
 
@@ -140,8 +165,12 @@ class Predict(Module, Parameter):
 
     def _forward_preprocess(self, **kwargs):
         # Extract the three privileged keyword arguments.
-        assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
+        if "new_signature" in kwargs:
+            raise ValueError("`new_signature` is no longer a valid keyword argument.")
         signature = ensure_signature(kwargs.pop("signature", self.signature))
+        # The signature may have been swapped out since `__init__` (by an optimizer, or via a per-call `signature=`
+        # override), so validate whichever signature we actually resolved.
+        _validate_signature_input_fields(signature)
         demos = kwargs.pop("demos", self.demos)
         config = {**self.config, **kwargs.pop("config", {})}
 
@@ -191,8 +220,7 @@ class Predict(Module, Parameter):
         extra_fields = [k for k in kwargs if k not in signature.input_fields]
         if extra_fields:
             logger.warning(
-                "Input contains fields not in signature. These fields will be ignored: %s. "
-                "Expected fields: %s.",
+                "Input contains fields not in signature. These fields will be ignored: %s. Expected fields: %s.",
                 extra_fields,
                 list(signature.input_fields.keys()),
             )
@@ -282,6 +310,7 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
@@ -394,6 +423,7 @@ def _check_type(value: Any, expected: type) -> bool:
         return isinstance(value, expected)
 
     return False
+
 
 def serialize_object(obj):
     """
