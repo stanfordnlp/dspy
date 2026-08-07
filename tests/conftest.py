@@ -5,7 +5,11 @@ from typing import Any
 
 import pytest
 
-from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs  # noqa: F401
+from tests.test_utils.server import (  # noqa: F401
+    _litellm_test_server,
+    litellm_test_server,
+    read_litellm_test_server_request_logs,
+)
 
 SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]
 
