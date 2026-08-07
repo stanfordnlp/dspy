@@ -141,7 +141,7 @@ jobs:
       - name: Install dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra and deno tests
-        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
+        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist load
 
   llm_call_test:
     name: Run Tests with Real LM
