@@ -1699,3 +1699,33 @@ Outputs will be a JSON object with the following fields.
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_json_adapter_returns_empty_completions_from_common_call_path():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.JSONAdapter()
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        with mock.patch.object(dspy.JSONAdapter, "_json_adapter_call_common", return_value=[]):
+            result = adapter(lm, {}, signature, [], {"question": "Dummy question!"})
+
+    assert result == []
+    mock_completion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_returns_empty_completions_from_common_call_path_async():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.JSONAdapter()
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    async def empty_completions():
+        return []
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        with mock.patch.object(dspy.JSONAdapter, "_json_adapter_call_common", return_value=empty_completions()):
+            result = await adapter.acall(lm, {}, signature, [], {"question": "Dummy question!"})
+
+    assert result == []
+    mock_acompletion.assert_not_called()

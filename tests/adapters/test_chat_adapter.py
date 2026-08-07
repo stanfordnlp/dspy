@@ -2866,3 +2866,85 @@ def test_provider_tool_calls_preserve_id_and_repair_arguments():
             dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
         ]
     )
+
+
+def test_chat_adapter_non_parse_error_does_not_trigger_fallback():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch.object(dspy.ChatAdapter, "parse", side_effect=RuntimeError("bug in parse")):
+            with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+                with pytest.raises(RuntimeError, match="bug in parse"):
+                    adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+        mock_json_adapter_call.assert_not_called()
+        assert mock_completion.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_non_parse_error_does_not_trigger_fallback_async():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        mock_acompletion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch.object(dspy.ChatAdapter, "parse", side_effect=RuntimeError("bug in parse")):
+            with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
+                with pytest.raises(RuntimeError, match="bug in parse"):
+                    await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+        mock_json_adapter_acall.assert_not_called()
+        assert mock_acompletion.call_count == 1
+
+
+def test_chat_adapter_fallback_failure_chains_original_error():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+            adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert exc_info.value.adapter_name == "JSONAdapter"
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, dspy.utils.exceptions.AdapterParseError)
+    assert cause.adapter_name == "ChatAdapter"
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_fallback_failure_chains_original_error_async():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        mock_acompletion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+            await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert exc_info.value.adapter_name == "JSONAdapter"
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, dspy.utils.exceptions.AdapterParseError)
+    assert cause.adapter_name == "ChatAdapter"

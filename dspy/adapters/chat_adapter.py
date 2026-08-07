@@ -16,7 +16,7 @@ from dspy.adapters.utils import (
 from dspy.clients.base_lm import BaseLM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError, LMError
+from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -52,7 +52,7 @@ class ChatAdapter(Adapter):
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
-                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
+                If True, when the LM response cannot be parsed (`AdapterParseError`), the adapter will retry using
                 JSONAdapter. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
@@ -83,15 +83,18 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
+        except AdapterParseError as e:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
+            if isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                # If already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to retry with a
+                # different adapter. Raise the original error instead of the fallback error.
                 raise
-            return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
+            try:
+                return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
+            except Exception as fallback_error:
+                raise fallback_error from e
 
     async def acall(
         self,
@@ -103,15 +106,18 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
+        except AdapterParseError as e:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, LMError) or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
-                # On LM errors, already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to
-                # retry with a different adapter. Raise the original error instead of the fallback error.
+            if isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                # If already using JSONAdapter, or use_json_adapter_fallback is False, we don't want to retry with a
+                # different adapter. Raise the original error instead of the fallback error.
                 raise
-            return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
+            try:
+                return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
+            except Exception as fallback_error:
+                raise fallback_error from e
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (
