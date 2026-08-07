@@ -27,9 +27,9 @@
         </h1>
 
         <p class="hp-hero-sub">
-          DSPy is a Python framework for building AI systems. Express your
-          tasks as structured signatures, not prompts, to produce
-          maintainable, modular, and optimizable programs.
+          DSPy is a Python framework for building AI systems. Keep exact behavior
+          in code, express judgment as typed signatures, and use feedback to
+          improve the whole program.
         </p>
 
         <div class="hp-hero-actions">
@@ -118,6 +118,47 @@
     </div>
   </section>
 
+  <!-- ===== PROGRAMMABLE INTELLIGENCE ===== -->
+  <section class="hp-section hp-thesis">
+    <div class="hp-container">
+      <div class="hp-thesis-header">
+        <div>
+          <div class="hp-section-label"><span class="hp-rule"></span> THE PROGRAMMING MODEL</div>
+          <h2 class="hp-section-title">
+            Models provide intelligence. <span class="hp-hl">You specify the system.</span>
+          </h2>
+        </div>
+        <p>
+          A model call is not yet software. DSPy gives you three familiar ways
+          to express intent&mdash;and lets each one do the job it does best.
+        </p>
+      </div>
+
+      <div class="hp-intent-grid">
+        <div class="hp-intent-item">
+          <div class="hp-intent-num">01</div>
+          <h3>Code for what must be exact</h3>
+          <p>Use ordinary Python for control flow, state, constraints, and operations that must happen.</p>
+        </div>
+        <div class="hp-intent-item">
+          <div class="hp-intent-num">02</div>
+          <h3>Signatures for judgment</h3>
+          <p>Give fuzzy transformations clear, typed boundaries without tying them to one model or prompting trick.</p>
+        </div>
+        <div class="hp-intent-item">
+          <div class="hp-intent-num">03</div>
+          <h3>Feedback for hard cases</h3>
+          <p>Use examples and metrics to show what better means, then let optimizers adapt the program.</p>
+        </div>
+      </div>
+
+      <div class="hp-thesis-foot">
+        <span>Start with one signature. Add structure and optimization only when your system needs them.</span>
+        <a href="{{ 'roadmap/' | url }}">Read DSPy&rsquo;s design promise &amp; roadmap &rarr;</a>
+      </div>
+    </div>
+  </section>
+
   <!-- ===== THREE PRIMITIVES ===== -->
   <section class="hp-section hp-features">
     <div class="hp-container">
@@ -174,8 +215,8 @@
           <h3>Optimizers</h3>
           <div class="hp-feature-tagline">Compile your program against a metric.</div>
           <p>
-            Give DSPy examples and a scoring function. It tunes your
-            prompts automatically until quality converges.
+            Give DSPy examples and a scoring function. It can improve
+            instructions, demonstrations, or model weights against your goal.
           </p>
           <div class="hp-feature-cta">
             <a href="{{ 'getting-started/gepa-optimization/' | url }}" class="hp-cta-link">Try Optimizers &rarr;</a>
