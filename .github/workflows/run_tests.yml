@@ -141,7 +141,18 @@ jobs:
       - name: Install dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra and deno tests
-        run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
+        run: |
+          uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n 2 --dist worksteal \
+            -k 'not (large_list_variable or multiple_large_variables or enable_write_flag or interpreter_security_filesystem_access or read_file_access_control or enable_env_vars_flag or enable_net_flag)' &
+          remaining_pid=$!
+          uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n 2 --dist worksteal \
+            -k 'large_list_variable or multiple_large_variables or enable_write_flag or interpreter_security_filesystem_access or read_file_access_control or enable_env_vars_flag or enable_net_flag' &
+          heavy_pid=$!
+
+          status=0
+          wait "$remaining_pid" || status=$?
+          wait "$heavy_pid" || status=$?
+          exit "$status"
 
   llm_call_test:
     name: Run Tests with Real LM
