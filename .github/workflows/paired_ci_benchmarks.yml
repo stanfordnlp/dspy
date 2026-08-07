@@ -5,6 +5,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: paired-ci-benchmarks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   benchmark:
     name: Benchmark ${{ matrix.change }}
@@ -60,7 +64,7 @@ jobs:
             local directory="$2"
             local start end elapsed
             start=$(date +%s)
-            (cd "$directory" && uv run -p .venv pytest -q -n auto --dist worksteal tests/)
+            (cd "$directory" && uv run -p .venv pytest -vv -n auto --dist worksteal tests/)
             end=$(date +%s)
             elapsed=$((end - start))
             echo "CI_BENCHMARK change=${{ matrix.change }} label=$label elapsed_seconds=$elapsed"
