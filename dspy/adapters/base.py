@@ -423,7 +423,10 @@ class Adapter:
             )
 
         messages = []
-        system_message = self.format_system_message(signature)
+        # The history field is rendered natively as multiturn messages, so the system message must not
+        # instruct the LM to expect it as an inline field.
+        signature_for_instructions = signature_without_history if history_field_name else signature
+        system_message = self.format_system_message(signature_for_instructions)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:
