@@ -3,17 +3,29 @@ import dataclasses
 import json
 import os
 import random
+import shutil
+import sys
 import threading
+import types
 from collections import namedtuple
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD, PythonInterpreter, _make_jsonable
+from dspy.primitives.python_interpreter import (
+    LARGE_VAR_THRESHOLD,
+    PythonInterpreter,
+    _deno_subprocess_env,
+    _find_deno_executable,
+    _make_jsonable,
+    _validate_deno_version,
+)
 
 
 class _Hit(BaseModel):
@@ -388,6 +400,132 @@ def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):
         PythonInterpreter(deno_command={"invalid": "dict"})
+
+
+def test_custom_deno_command_is_unchanged():
+    command = ["custom-deno", "run", "custom-runner.js", "argument"]
+
+    interpreter = PythonInterpreter(deno_command=command)
+
+    assert interpreter.deno_command == command
+    assert interpreter.deno_command is not command
+
+
+def test_deno_subprocess_env_disables_package_json(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
+
+    env = _deno_subprocess_env()
+
+    assert env["DENO_NO_PACKAGE_JSON"] == "1"
+    assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
+    assert os.environ["DENO_NO_PACKAGE_JSON"] == "0"
+
+
+def test_managed_deno_package_is_preferred(monkeypatch):
+    managed_deno = types.SimpleNamespace(find_deno_bin=lambda: "/managed/bin/deno")
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+
+    assert _find_deno_executable() == "/managed/bin/deno"
+
+
+def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
+    def missing_binary():
+        raise FileNotFoundError
+
+    managed_deno = types.SimpleNamespace(find_deno_bin=missing_binary)
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+    monkeypatch.setattr(shutil, "which", lambda executable: "/system/bin/deno" if executable == "deno" else None)
+
+    assert _find_deno_executable() == "/system/bin/deno"
+
+
+def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
+    deno_executable = str(tmp_path / "managed-deno")
+    seen_executables = []
+    monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
+    monkeypatch.setattr(
+        python_interpreter,
+        "_validate_deno_version",
+        lambda executable: seen_executables.append(executable),
+    )
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_get_deno_dir",
+        staticmethod(lambda executable: seen_executables.append(executable) or str(tmp_path / "cache")),
+    )
+
+    interpreter = PythonInterpreter()
+
+    assert seen_executables == [deno_executable, deno_executable]
+    assert interpreter.deno_command[:5] == [
+        deno_executable,
+        "run",
+        "--no-config",
+        "--no-lock",
+        "--node-modules-dir=false",
+    ]
+    runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
+    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
+
+
+def test_rejects_unsupported_system_deno(monkeypatch):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: (1, 46, 3))
+
+    with pytest.raises(CodeInterpreterError, match=r"Unsupported Deno version 1\.46\.3"):
+        _validate_deno_version("/system/bin/deno")
+
+
+def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
+    deno_dir = str(tmp_path / "deno-cache")
+    monkeypatch.setenv("DENO_DIR", deno_dir)
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_query_deno_dir",
+        staticmethod(lambda executable: pytest.fail(f"unexpected Deno info query for {executable}")),
+    )
+
+    assert PythonInterpreter._get_deno_dir("/managed/bin/deno") == deno_dir
+
+
+def test_ignores_parent_package_json_and_node_modules(monkeypatch, tmp_path):
+    """A parent Node project must not redirect runner.js's Pyodide import."""
+    project_dir = tmp_path / "node-project"
+    runner_dir = project_dir / "runtime"
+    fake_pyodide_dir = project_dir / "node_modules" / "pyodide"
+    runner_dir.mkdir(parents=True)
+    fake_pyodide_dir.mkdir(parents=True)
+
+    runner_path = runner_dir / "runner.js"
+    shutil.copyfile(Path(python_interpreter.__file__).with_name("runner.js"), runner_path)
+    (project_dir / "package.json").write_text(json.dumps({"dependencies": {"pyodide": "0.29.4"}}))
+    (fake_pyodide_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "pyodide",
+                "version": "0.29.4",
+                "type": "module",
+                "exports": {"./pyodide.js": "./pyodide.js"},
+            }
+        )
+    )
+    (fake_pyodide_dir / "blocked.txt").write_text("ambient package was selected")
+    (fake_pyodide_dir / "pyodide.js").write_text(
+        'Deno.readTextFileSync(new URL("./blocked.txt", import.meta.url));\n'
+        'export default { loadPyodide() { throw new Error("DSPy loaded Pyodide from parent node_modules"); } };\n'
+    )
+
+    class ParentProjectInterpreter(PythonInterpreter):
+        def _get_runner_path(self):
+            return str(runner_path)
+
+    monkeypatch.chdir(runner_dir)
+    monkeypatch.delenv("DENO_NO_PACKAGE_JSON", raising=False)
+
+    with ParentProjectInterpreter() as interpreter:
+        assert interpreter.execute("6 * 7") == 42
+
+    assert not (project_dir / "deno.lock").exists()
 
 
 # =============================================================================
