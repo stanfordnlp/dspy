@@ -273,7 +273,6 @@ class PythonInterpreter:
             self.deno_command = list(deno_command)
         else:
             deno_executable = _find_deno_executable()
-            _validate_deno_version(deno_executable)
             args = [
                 deno_executable,
                 "run",
@@ -515,6 +514,9 @@ class PythonInterpreter:
         self.start()
 
     def _spawn_process(self) -> None:
+        if self._uses_default_deno_command:
+            _validate_deno_version(self.deno_command[0])
+
         try:
             self.deno_process = subprocess.Popen(
                 self.deno_command,

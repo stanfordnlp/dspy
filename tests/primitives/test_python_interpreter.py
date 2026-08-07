@@ -461,22 +461,22 @@ def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
 
 def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
     deno_executable = str(tmp_path / "managed-deno")
-    seen_executables = []
+    seen_operations = []
     monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
     monkeypatch.setattr(
         python_interpreter,
         "_validate_deno_version",
-        lambda executable: seen_executables.append(executable),
+        lambda executable: seen_operations.append(("version", executable)),
     )
     monkeypatch.setattr(
         PythonInterpreter,
         "_get_deno_dir",
-        staticmethod(lambda executable: seen_executables.append(executable) or str(tmp_path / "cache")),
+        staticmethod(lambda executable: seen_operations.append(("info", executable)) or str(tmp_path / "cache")),
     )
 
     interpreter = PythonInterpreter()
 
-    assert seen_executables == [deno_executable, deno_executable]
+    assert seen_operations == [("info", deno_executable)]
     assert interpreter.deno_command[:5] == [
         deno_executable,
         "run",
@@ -486,6 +486,12 @@ def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_pat
     ]
     runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
     assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+    interpreter._spawn_process()
+
+    assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
 
 
 def test_rejects_unsupported_system_deno(monkeypatch):
