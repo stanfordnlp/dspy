@@ -126,10 +126,11 @@ class Refine(Module):
             module_names = [name for name, _ in named_predictors]
 
             try:
-                with dspy.context(trace=[], _refine_hints=advice or {}):
+                attempt_trace = []
+                with dspy.context(trace=attempt_trace, _refine_hints=advice or {}):
                     outputs = mod(**kwargs)
 
-                    trace = dspy.settings.trace.copy()
+                    trace = attempt_trace.copy()
 
                     # TODO: Remove the hint from the trace, if it's there.
 
