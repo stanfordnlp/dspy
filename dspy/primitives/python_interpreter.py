@@ -100,13 +100,23 @@ def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
     except OSError:
         return None
 
+    if result.returncode != 0:
+        return None
+
     match = re.match(r"deno (\d+)\.(\d+)\.(\d+)", result.stdout)
     return tuple(map(int, match.groups())) if match else None
 
 
 def _validate_deno_version(deno_executable: str) -> None:
     version = _get_deno_version(deno_executable)
-    if version is not None and not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
+    if version is None:
+        raise CodeInterpreterError(
+            f"Unable to determine the Deno version from {deno_executable!r}. "
+            "PythonInterpreter requires Deno >=2.7.7,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
+
+    if not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
         version_text = ".".join(map(str, version))
         raise CodeInterpreterError(
             f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.7.7,<3.0.0. "
@@ -258,6 +268,7 @@ class PythonInterpreter:
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
+        self._uses_default_deno_command = not deno_command
         if deno_command:
             self.deno_command = list(deno_command)
         else:
@@ -512,7 +523,7 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=_deno_subprocess_env(),
+                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
             )
         except FileNotFoundError as e:
             install_instructions = (

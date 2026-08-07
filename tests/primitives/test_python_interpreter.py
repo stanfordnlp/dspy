@@ -411,6 +411,25 @@ def test_custom_deno_command_is_unchanged():
     assert interpreter.deno_command is not command
 
 
+def test_custom_deno_command_preserves_environment(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    captured = {}
+    interpreter = PythonInterpreter(deno_command=["custom-deno", "run"])
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return object()
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+
+    interpreter._spawn_process()
+
+    assert captured["command"] == ["custom-deno", "run"]
+    assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "0"
+
+
 def test_deno_subprocess_env_disables_package_json(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
@@ -474,6 +493,23 @@ def test_rejects_unsupported_system_deno(monkeypatch):
 
     with pytest.raises(CodeInterpreterError, match=r"Unsupported Deno version 1\.46\.3"):
         _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "stderr"),
+    [
+        (0, "not a Deno version", ""),
+        (0, "", "deno 2.9.5"),
+        (1, "deno 2.9.5", "version probe failed"),
+    ],
+)
+def test_rejects_invalid_deno_version_probe(monkeypatch, returncode, stdout, stderr):
+    result = types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+    monkeypatch.setattr(python_interpreter.subprocess, "run", lambda *args, **kwargs: result)
+    python_interpreter._get_deno_version.cache_clear()
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/fake/bin/deno")
 
 
 def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
