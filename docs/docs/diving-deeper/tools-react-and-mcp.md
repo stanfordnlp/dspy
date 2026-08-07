@@ -107,7 +107,7 @@ Constructor helper. Builds a `ToolCalls` from a list of `{"name", "args"}` dicts
 ### MCP bridge
 
 **`dspy.utils.mcp.convert_mcp_tool(session, tool)`** → `Tool`
-Builds a `Tool` whose `func` is an `async def` closure: it awaits `session.call_tool(tool.name, arguments=kwargs)` and unpacks the result. The unpacker pulls text from any `TextContent` entries (returning a single string when there’s one, a list otherwise) and returns non-text entries as-is. An `isError=True` response raises `RuntimeError`. The MCP tool’s `inputSchema` is mapped to DSPy’s `args`/`arg_types`/`arg_desc` via `convert_input_schema_to_tool_args`.
+Builds a `Tool` whose `func` is an `async def` closure: it awaits `session.call_tool(tool.name, arguments=kwargs)` and unpacks the result. The bridge supports the camelCase fields in mcp SDK v1 and their snake_case replacements in v2. An error result raises `RuntimeError`; structured content is returned exactly as sent; otherwise text and non-text content retain their existing behavior. The tool’s input schema is mapped to DSPy’s `args`/`arg_types`/`arg_desc` via `convert_input_schema_to_tool_args`, and a missing description falls back to its title.
 
 **`dspy.utils.mcp.convert_input_schema_to_tool_args(schema)`** → `(args, arg_types, arg_desc)`
 Walks an MCP-style JSON schema and produces the three dicts a `Tool` needs. Resolves `$defs`, picks up `description` fields as `arg_desc`, and translates JSON-schema types to Python types via a `_TYPE_MAPPING` table. Exported in case callers want to write their own bridge against a non-MCP protocol with similar JSON-schema arguments.
