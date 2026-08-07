@@ -1,5 +1,6 @@
 import inspect
 import textwrap
+from copy import deepcopy
 from typing import Callable
 
 import orjson
@@ -106,7 +107,6 @@ class Refine(Module):
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -118,24 +118,14 @@ class Refine(Module):
             module_names = [name for name, _ in named_predictors]
 
             try:
+                if advice:
+                    for name, predictor in named_predictors:
+                        fields = deepcopy(predictor.signature.fields)
+                        fields["hint_"].default = advice.get(name, "N/A")
+                        predictor.signature = Signature(fields, predictor.signature.instructions)
+
                 with dspy.context(trace=[]):
-                    if not advice:
-                        outputs = mod(**kwargs)
-                    else:
-                        signature2hint = {
-                            predictor.signature: advice.get(name, "N/A") for name, predictor in named_predictors
-                        }
-
-                        class HintAdapter(adapter.__class__):
-                            def __init__(self, hints):
-                                self.hints = hints
-
-                            def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = self.hints.get(signature, "N/A")
-                                return adapter(lm, lm_kwargs, signature, demos, inputs)
-
-                        with dspy.context(adapter=HintAdapter(signature2hint)):
-                            outputs = mod(**kwargs)
+                    outputs = mod(**kwargs)
 
                     trace = dspy.settings.trace.copy()
 
