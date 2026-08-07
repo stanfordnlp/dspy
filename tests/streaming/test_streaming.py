@@ -2061,3 +2061,143 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+def _responses_text_delta(text):
+    from litellm.types.llms.openai import OutputTextDeltaEvent
+
+    return OutputTextDeltaEvent(
+        type="response.output_text.delta",
+        item_id="msg_1",
+        output_index=0,
+        content_index=0,
+        delta=text,
+    )
+
+
+def _responses_reasoning_delta(text):
+    from litellm.types.llms.openai import ReasoningSummaryTextDeltaEvent
+
+    return ReasoningSummaryTextDeltaEvent(
+        type="response.reasoning_summary_text.delta",
+        item_id="reasoning_1",
+        output_index=0,
+        summary_index=0,
+        delta=text,
+    )
+
+
+def _responses_completed(text):
+    from litellm.types.llms.openai import ResponseAPIUsage, ResponseCompletedEvent, ResponsesAPIResponse
+    from openai.types.responses import ResponseOutputMessage
+
+    response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="openai/gpt-5-mini",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                id="msg_1",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": text, "annotations": []}],
+            )
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        user=None,
+    )
+    return ResponseCompletedEvent(type="response.completed", response=response)
+
+
+@pytest.mark.anyio
+async def test_stream_listener_returns_correct_chunk_responses_api():
+    my_program = dspy.Predict("question->answer")
+    program = dspy.streamify(
+        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
+    )
+
+    full_text = "[[ ## answer ## ]]\nTo get to the other side!\n\n[[ ## completed ## ]]"
+
+    async def responses_stream(*args, **kwargs):
+        for token in ["[[ ## answer ## ]]\n", "To", " get", " to", " the", " other", " side!", "\n\n[[ ## completed ## ]]"]:
+            yield _responses_text_delta(token)
+        yield _responses_completed(full_text)
+
+    with mock.patch("litellm.aresponses", side_effect=responses_stream):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-5-mini", model_type="responses", cache=False),
+            adapter=dspy.ChatAdapter(),
+        ):
+            output = program(question="What is the capital of France?")
+            all_chunks = []
+            final_prediction = None
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final_prediction = value
+
+    assert all_chunks[0].predict_name == "self"
+    assert all_chunks[0].signature_field_name == "answer"
+    assert "".join([chunk.chunk for chunk in all_chunks]) == "To get to the other side!"
+    assert all_chunks[-1].is_last_chunk is True
+    assert final_prediction is not None
+    assert final_prediction.answer == "To get to the other side!"
+
+
+@pytest.mark.anyio
+async def test_responses_streaming_calls_aresponses_with_stream():
+    my_program = dspy.Predict("question->answer")
+    program = dspy.streamify(
+        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
+    )
+
+    full_text = "[[ ## answer ## ]]\nblue\n\n[[ ## completed ## ]]"
+
+    async def responses_stream(*args, **kwargs):
+        yield _responses_text_delta("[[ ## answer ## ]]\n")
+        yield _responses_text_delta("blue")
+        yield _responses_text_delta("\n\n[[ ## completed ## ]]")
+        yield _responses_completed(full_text)
+
+    with mock.patch("litellm.aresponses", side_effect=responses_stream) as mock_aresponses:
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-5-mini", model_type="responses", cache=False),
+            adapter=dspy.ChatAdapter(),
+        ):
+            output = program(question="What color is the sky?")
+            async for _ in output:
+                pass
+
+    assert mock_aresponses.call_args.kwargs["stream"] is True
+
+
+@pytest.mark.anyio
+async def test_responses_streaming_reasoning_summary_deltas():
+    from dspy.clients.lm import _responses_stream_event_to_chunk
+
+    text_chunk = _responses_stream_event_to_chunk(_responses_text_delta("hello"))
+    assert text_chunk.choices[0].delta.content == "hello"
+
+    reasoning_chunk = _responses_stream_event_to_chunk(_responses_reasoning_delta("thinking"))
+    assert reasoning_chunk.choices[0].delta.reasoning_content == "thinking"
+
+    completed = _responses_completed("done")
+    assert _responses_stream_event_to_chunk(completed) is None
