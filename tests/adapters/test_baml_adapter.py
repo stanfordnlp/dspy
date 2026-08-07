@@ -186,6 +186,31 @@ def test_baml_adapter_handles_primitive_types():
     assert "flag: boolean," in schema
 
 
+def test_baml_adapter_handles_non_string_literals():
+    """Only string Literal members are quoted; int/bool/None members render bare (regression)."""
+
+    class ModelWithLiterals(pydantic.BaseModel):
+        status: Literal["active", "inactive"]
+        priority: Literal[1, 2, 3]
+        enabled: Literal[True, False]
+        mode: Literal["auto", None]
+
+    class TestSignature(dspy.Signature):
+        input: str = dspy.InputField()
+        output: ModelWithLiterals = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    schema = adapter.format_field_structure(TestSignature)
+
+    # String literals stay quoted...
+    assert 'status: "active" or "inactive",' in schema
+    # ...but int and bool literals must NOT be quoted (previously rendered as "1" or "2" or "3").
+    assert "priority: 1 or 2 or 3," in schema
+    assert "enabled: true or false," in schema
+    # None renders as JSON null (not Python None), matching Optional's "or null".
+    assert 'mode: "auto" or null,' in schema
+
+
 def test_baml_adapter_handles_lists_with_bracket_notation():
     """Test that lists of Pydantic models use proper bracket notation."""
 
