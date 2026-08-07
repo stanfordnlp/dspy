@@ -104,7 +104,10 @@ jobs:
           uv sync --dev -p .venv --extra dev
           uv pip list
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv -n auto --dist worksteal tests/
+        # The suite spends substantial time waiting on subprocesses, servers,
+        # and deliberate synchronization, so two workers per CI CPU reduce
+        # the critical path without changing test selection or behavior.
+        run: uv run -p .venv pytest -vv -n 8 --dist worksteal tests/
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra and deno tests
