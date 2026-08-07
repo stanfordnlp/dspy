@@ -107,7 +107,7 @@ class XMLAdapter(ChatAdapter):
         from dspy.adapters.utils import parse_value
 
         try:
-            return parse_value(raw, field_info.annotation)
+            return parse_value(raw, field_info.annotation, field_info)
         except Exception as e:
             from dspy.utils.exceptions import AdapterParseError
 
