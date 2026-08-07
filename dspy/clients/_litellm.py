@@ -40,3 +40,35 @@ def is_litellm_context_window_error(error: Exception) -> bool:
     litellm_module = sys.modules.get("litellm")
     context_window_error = getattr(litellm_module, "ContextWindowExceededError", None)
     return context_window_error is not None and isinstance(error, context_window_error)
+
+
+def normalize_litellm_error(error: Exception, model: str | None = None) -> Exception:
+    """Convert LiteLLM provider exceptions to DSPy exception hierarchy."""
+    import dspy.utils.exceptions as exc
+
+    if isinstance(error, exc.DSPyError):
+        return error
+
+    litellm_module = sys.modules.get("litellm")
+    if litellm_module is not None:
+        cw_err = getattr(litellm_module, "ContextWindowExceededError", None)
+        rl_err = getattr(litellm_module, "RateLimitError", None)
+        auth_err = getattr(litellm_module, "AuthenticationError", None)
+        inv_err = getattr(litellm_module, "InvalidRequestError", None)
+        api_err = getattr(litellm_module, "APIError", None)
+        timeout_err = getattr(litellm_module, "Timeout", None)
+
+        if cw_err and isinstance(error, cw_err):
+            return exc.ContextWindowExceededError(str(error), model=model)
+        if rl_err and isinstance(error, rl_err):
+            return exc.LMRateLimitError(str(error), model=model)
+        if auth_err and isinstance(error, auth_err):
+            return exc.LMAuthError(str(error), model=model)
+        if inv_err and isinstance(error, inv_err):
+            return exc.LMInvalidRequestError(str(error), model=model)
+        if timeout_err and isinstance(error, timeout_err):
+            return exc.LMTimeoutError(str(error), model=model)
+        if api_err and isinstance(error, api_err):
+            return exc.LMProviderError(str(error), model=model)
+
+    return exc.LMError(str(error), model=model)

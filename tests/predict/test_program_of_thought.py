@@ -1,10 +1,15 @@
-from unittest.mock import patch
+import threading
+from unittest.mock import Mock, patch
 
 import pytest
 
 import dspy
 from dspy import ProgramOfThought, Signature
+from dspy.evaluate.metrics import answer_exact_match
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.utils import DummyLM
+from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
 
 class BasicQA(Signature):
@@ -12,8 +17,30 @@ class BasicQA(Signature):
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 
 
+class StaticPredictor:
+    def __init__(self, **fields):
+        self.fields = fields
+
+    def __call__(self, **kwargs):
+        return dspy.Prediction(**self.fields)
+
+
+class RecordingPythonInterpreterFactory:
+    def __init__(self, parties: int):
+        self.instances = []
+        self._lock = threading.Lock()
+        self._barrier = threading.Barrier(parties)
+
+    def __call__(self):
+        interpreter = PythonInterpreter()
+        with self._lock:
+            self.instances.append(interpreter)
+        self._barrier.wait(timeout=30)
+        return interpreter
+
+
 @pytest.mark.deno
-def test_pot_code_generation():
+def test_pot_code_generation(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -25,14 +52,13 @@ def test_pot_code_generation():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
 
 
 # This test ensures the old finetuned saved models still work
 @pytest.mark.deno
-def test_old_style_pot():
+def test_old_style_pot(pooled_interpreter):
     lm = DummyLM(
         [
             {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
@@ -41,9 +67,8 @@ def test_old_style_pot():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
 
 
 class ExtremumFinder(Signature):
@@ -53,7 +78,7 @@ class ExtremumFinder(Signature):
 
 
 @pytest.mark.deno
-def test_pot_support_multiple_fields():
+def test_pot_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -65,14 +90,13 @@ def test_pot_support_multiple_fields():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(ExtremumFinder)
-    res = pot(input_list="2, 3, 5, 6")
+    res = pot(pooled_interpreter, input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
-    assert pot.interpreter.deno_process is None
 
 
 @pytest.mark.deno
-def test_pot_code_generation_with_one_error():
+def test_pot_code_generation_with_one_error(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -88,9 +112,119 @@ def test_pot_code_generation_with_one_error():
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(question="What is 1+1?")
+    res = pot(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
+
+
+@pytest.mark.deno
+def test_pot_evaluate_creates_one_interpreter_per_example():
+    factory = RecordingPythonInterpreterFactory(parties=4)
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
+    pot.generate_output = StaticPredictor(answer="2")
+    devset = [
+        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question")
+        for index in range(4)
+    ]
+
+    result = dspy.Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        num_threads=4,
+        display_progress=False,
+    )(pot)
+
+    assert result.score == 100.0
+    assert len(factory.instances) == 4
+    assert len({id(interpreter) for interpreter in factory.instances}) == 4
+    assert all(interpreter.deno_process is None for interpreter in factory.instances)
+
+
+def test_pot_factory_creates_fresh_interpreter_per_sequential_call():
+    factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "2"})])
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
+    pot.generate_output = StaticPredictor(answer="2")
+
+    first = pot(question="What is 1+1?")
+    second = pot(question="What is 1+1 again?")
+
+    assert first.answer == second.answer == "2"
+    assert len(factory.instances) == 2
+    assert factory.instances[0] is not factory.instances[1]
+    for interpreter in factory.instances:
+        with pytest.raises(CodeInterpreterError, match="shutdown"):
+            interpreter.execute("print('closed')")
+
+
+def test_pot_allows_interpreter_as_signature_input():
+    factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
+    pot = ProgramOfThought("interpreter -> answer", interpreter_factory=factory)
+    pot.code_generate = Mock(return_value=dspy.Prediction(generated_code="SUBMIT({'answer': interpreter})"))
+    pot.generate_output = StaticPredictor(answer="CPython")
+
+    result = pot(interpreter="CPython")
+
+    assert result.answer == "CPython"
+    pot.code_generate.assert_called_once_with(interpreter="CPython")
+
+
+def test_pot_rejects_keyword_interpreter_override():
+    factory = MockInterpreterFactory()
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+
+    with pytest.raises(TypeError, match="first positional argument"):
+        pot(question="What is 1+1?", interpreter=MockInterpreter())
+
+    assert factory.instances == []
+
+
+def test_pot_rejects_removed_constructor_interpreter_keyword():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'interpreter'"):
+        ProgramOfThought(BasicQA, interpreter=MockInterpreter())
+
+
+def test_pot_does_not_shutdown_caller_owned_interpreter():
+    factory = MockInterpreterFactory()
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
+    pot.generate_output = StaticPredictor(answer="2")
+    interpreter = MockInterpreter(responses=[FinalOutput({"answer": "2"})])
+
+    try:
+        result = pot(interpreter, question="What is 1+1?")
+
+        assert result.answer == "2"
+        assert factory.instances == []
+        assert interpreter.execute("print('still open')") == ""
+    finally:
+        interpreter.shutdown()
+
+
+def test_pot_shuts_down_factory_interpreter_when_execution_raises():
+    factory = MockInterpreterFactory(responses=[ValueError("unexpected interpreter failure")])
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="raise ValueError")
+
+    with pytest.raises(ValueError, match="unexpected interpreter failure"):
+        pot(question="What is 1+1?")
+
+    assert len(factory.instances) == 1
+    with pytest.raises(CodeInterpreterError, match="shutdown"):
+        factory.instances[0].execute("print('closed')")
+
+
+def test_pot_propagates_terminal_interpreter_failure_and_shuts_down():
+    factory = MockInterpreterFactory(responses=[CodeInterpreterError("protocol corrupt")])
+    pot = ProgramOfThought(BasicQA, interpreter_factory=factory)
+    pot.code_generate = StaticPredictor(generated_code="print('test')")
+
+    with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
+        pot(question="What is 1+1?")
+
+    assert len(factory.instances) == 1
+    with pytest.raises(CodeInterpreterError, match="shutdown"):
+        factory.instances[0].execute("print('closed')")
 
 
 @pytest.mark.deno
@@ -108,7 +242,7 @@ def test_pot_code_generation_persistent_errors():
     dspy.configure(lm=lm)
 
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
-    with pytest.raises(RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
+    with pytest.raises(RuntimeError, match=r"Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
         pot(question="What is 1+1?")
 
 
@@ -125,7 +259,7 @@ def test_pot_code_parse_error():
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,
         pytest.raises(
-            RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
+            RuntimeError, match=r"Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
         ),
     ):
         pot(question="What is 1+1?")

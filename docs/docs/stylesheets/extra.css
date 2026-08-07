@@ -281,18 +281,19 @@ h2.doc-heading {
 
 .dspy-logo-wall {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    /* Two rows of three so each logo gets ~2x the width and can be larger. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: center;
     justify-items: center;
-    gap: 1rem 1.5rem;
-    padding: 1.75rem 1rem;
+    gap: 1.75rem 2rem;
+    padding: 2.25rem 1rem;
     border-top: 1px solid var(--md-default-fg-color--lightest);
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
     margin: 1rem 0 1.5rem;
 }
-@media (max-width: 720px) {
+@media (max-width: 480px) {
     .dspy-logo-wall {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 .dspy-logo-wall a {
@@ -300,7 +301,7 @@ h2.doc-heading {
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 40px;
+    height: 52px;
     opacity: 0.85;
     transition: opacity 0.15s ease;
 }
@@ -309,15 +310,17 @@ h2.doc-heading {
 }
 .dspy-logo-wall img {
     width: auto;
+    max-width: 100%;
     object-fit: contain;
 }
-/* Per-logo sizing: tuned so each wordmark has similar visual presence */
-.dspy-logo-wall img.logo-shopify    { height: 30px; max-width: 130px; }
-.dspy-logo-wall img.logo-databricks { height: 26px; max-width: 150px; }
-.dspy-logo-wall img.logo-dropbox    { height: 26px; max-width: 150px; }
-.dspy-logo-wall img.logo-jetblue    { height: 22px; max-width: 100px; }
-.dspy-logo-wall img.logo-replit     { height: 28px; max-width: 32px; }
-.dspy-logo-wall img.logo-aws        { height: 26px; max-width: 60px; }
+/* Per-logo sizing: tuned so each wordmark has similar visual presence. Roomier now that
+   there are three per row. */
+.dspy-logo-wall img.logo-shopify    { height: 40px; max-width: min(100%, 190px); }
+.dspy-logo-wall img.logo-databricks { height: 34px; max-width: min(100%, 210px); }
+.dspy-logo-wall img.logo-dropbox    { height: 34px; max-width: min(100%, 210px); }
+.dspy-logo-wall img.logo-microsoft-ai { height: 34px; max-width: min(100%, 210px); }
+.dspy-logo-wall img.logo-replit     { height: 38px; max-width: min(100%, 44px); }
+.dspy-logo-wall img.logo-aws        { height: 34px; max-width: min(100%, 80px); }
 [data-md-color-scheme="slate"] .dspy-logo-wall img {
     filter: brightness(0) invert(1);
 }

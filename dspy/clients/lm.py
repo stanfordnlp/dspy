@@ -5,16 +5,20 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
+import anyio.from_thread
 import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
 import dspy
+from dspy.clients._litellm import normalize_litellm_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
+from dspy.clients.openai_format import to_openai_responses_request
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.core.types import LMRequest
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -156,11 +160,14 @@ class LM(BaseLM):
             completion = litellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except Exception as err:
+            raise normalize_litellm_error(err, model=self.model) from err
 
         self._check_truncation(results)
 
@@ -199,11 +206,14 @@ class LM(BaseLM):
             completion = alitellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = await completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = await completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except Exception as err:
+            raise normalize_litellm_error(err, model=self.model) from err
 
         self._check_truncation(results)
 
@@ -296,6 +306,8 @@ class LM(BaseLM):
             "finetuning_model",
             "launch_kwargs",
             "train_kwargs",
+            "use_developer_role",
+            "callbacks",
         ]
         # Exclude api_key from kwargs to prevent API keys from being saved in plain text
         filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
@@ -412,14 +424,14 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
+    stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=headers)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_add_dspy_identifier_to_headers(headers),
+            headers=headers,
             **request,
         )
 
@@ -487,12 +499,15 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """
-    Convert a chat request to a responses request
-    See https://platform.openai.com/docs/api-reference/responses/create for the responses API specification.
-    Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
+    """Convert legacy chat-shaped LM kwargs into Responses API kwargs.
+
+    This is the legacy door into the normalized Responses mapper. Inputs the
+    old pass-through converter forwarded verbatim — Responses-native shapes and
+    provider-SDK dumps — are tolerated here and only here; the typed path stays
+    strict.
     """
     request = dict(request)
+<<<<<<< HEAD
     if "messages" in request:
         content_blocks = []
         for msg in request.pop("messages"):
@@ -505,63 +520,86 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                     content_blocks.append(_convert_content_item_to_responses_format(item))
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
     # Convert `reasoning_effort` to reasoning format supported by the Responses API
+=======
+    model = request.pop("model")
+    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
+    tools = list(request.pop("tools", None) or [])
+
+    # Reasoning models use `max_completion_tokens` in the chat path. The
+    # normalized Responses mapper expects the shared `max_tokens` name and emits
+    # `max_output_tokens`.
+    if "max_completion_tokens" in request and "max_tokens" not in request:
+        request["max_tokens"] = request.pop("max_completion_tokens")
+
+    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
+    # compatibility shim: requesting reasoning effort also asks OpenAI for an
+    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
+    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
+    # is discarded rather than merged.
+>>>>>>> upstream/main
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
-        request["reasoning"] = {"effort": effort, "summary": "auto"}
+        if request.get("reasoning") is None:
+            request["reasoning"] = {"effort": effort, "summary": "auto"}
 
-    # Convert `response_format` to `text.format` for Responses API
-    if "response_format" in request:
-        response_format = request.pop("response_format")
-        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
-            response_format = {
-                "name": response_format.__name__,
-                "type": "json_schema",
-                "schema": response_format.model_json_schema(),
-            }
-        text = request.pop("text", {})
-        request["text"] = {**text, "format": response_format}
+    # Hosted Responses tools (web_search, file_search, code_interpreter, mcp, ...)
+    # have no normalized LMToolSpec representation; send them through unchanged.
+    function_tools = [tool for tool in tools if not _is_hosted_responses_tool(tool)]
 
-    return request
+    # tool_choice dicts that aren't the chat-nested function form are already
+    # Responses-native (flat function, hosted, allowed_tools, ...); send them
+    # through unchanged.
+    responses_native_tool_choice = None
+    if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
+        responses_native_tool_choice = request.pop("tool_choice")
+
+    lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
+    # The old converter never validated reasoning/temperature combinations
+    # client-side; keep the provider as the authority on this door.
+    data = to_openai_responses_request(lm_request, enforce_reasoning_temperature=False)
+    if tools:
+        normalized_function_tools = iter(data.pop("tools", []))
+        data["tools"] = [
+            tool if _is_hosted_responses_tool(tool) else next(normalized_function_tools) for tool in tools
+        ]
+    if responses_native_tool_choice is not None:
+        data["tool_choice"] = responses_native_tool_choice
+    return data
 
 
-def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
+def _is_hosted_responses_tool(tool: Any) -> bool:
+    return isinstance(tool, dict) and "function" not in tool and tool.get("type") not in (None, "function")
+
+
+def _sanitize_legacy_message(message: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one legacy message the old converter would have passed through.
+
+    Strips provider-SDK output fields that are not message inputs and rewrites
+    Responses-native content blocks into their chat forms so the mapper can
+    re-emit them with role-correct direction.
     """
-    Convert a content item from Chat API format to Responses API format.
+    if not isinstance(message, dict):
+        return message
+    message_keys = {"role", "content", "name", "metadata", "tool_calls", "tool_call_id"}
+    cleaned = {key: value for key, value in message.items() if key in message_keys}
+    content = cleaned.get("content")
+    if isinstance(content, list):
+        cleaned["content"] = [_normalize_legacy_content_block(block) for block in content]
+    return cleaned
 
-    For images, converts from:
-        {"type": "image_url", "image_url": {"url": "..."}}
-    To:
-        {"type": "input_image", "image_url": "..."}
 
-    For text, converts from:
-        {"type": "text", "text": "..."}
-    To:
-        {"type": "input_text", "text": "..."}
-
-    For other types, passes through as-is.
-    """
-    if item.get("type") == "image_url":
-        image_url = item.get("image_url", {}).get("url", "")
-        return {
-            "type": "input_image",
-            "image_url": image_url,
-        }
-    elif item.get("type") == "text":
-        return {
-            "type": "input_text",
-            "text": item.get("text", ""),
-        }
-    elif item.get("type") == "file":
-        file = item.get("file", {})
-        return {
-            "type": "input_file",
-            "file_data": file.get("file_data"),
-            "filename": file.get("filename"),
-            "file_id": file.get("file_id"),
-        }
-
-    # For other items, return as-is
-    return item
+def _normalize_legacy_content_block(block: Any) -> Any:
+    if not isinstance(block, dict):
+        return block
+    block_type = block.get("type")
+    if block_type in ("input_text", "output_text"):
+        return {"type": "text", "text": block.get("text", "")}
+    if block_type == "input_image" and isinstance(block.get("image_url"), str):
+        return {"type": "image_url", "image_url": {"url": block["image_url"]}}
+    if block_type == "input_file":
+        file = {key: block[key] for key in ("file_data", "file_id", "filename") if block.get(key) is not None}
+        return {"type": "file", "file": file}
+    return block
 
 
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):

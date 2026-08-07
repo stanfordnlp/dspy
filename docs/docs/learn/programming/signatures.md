@@ -164,7 +164,7 @@ class DogPictureSignature(dspy.Signature):
 
 image_url = "https://picsum.photos/id/237/200/300"
 classify = dspy.Predict(DogPictureSignature)
-classify(image_1=dspy.Image.from_url(image_url))
+classify(image_1=dspy.Image(image_url))
 ```
 
 **Possible Output:**

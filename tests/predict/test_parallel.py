@@ -1,4 +1,7 @@
+import threading
+
 import dspy
+from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback
 from dspy.utils.dummies import DummyLM
 
 
@@ -37,6 +40,41 @@ def test_parallel_module():
 
     expected_outputs = {f"test output {i}" for i in range(1, 6)}
     assert {r.output for r in output} == expected_outputs
+
+
+def test_parallel_children_inherit_parent_callback_call_id():
+    class Child(dspy.Module):
+        def forward(self, value):
+            return value
+
+    class Parent(dspy.Module):
+        def __init__(self, children):
+            self.children = children
+            self.parallel = dspy.Parallel(num_threads=2, disable_progress_bar=True)
+
+        def forward(self):
+            return self.parallel([(child, {"value": index}) for index, child in enumerate(self.children)])
+
+    class LineageCallback(BaseCallback):
+        def __init__(self):
+            self.calls = []
+            self.lock = threading.Lock()
+
+        def on_module_start(self, call_id, instance, inputs):
+            with self.lock:
+                self.calls.append((instance, call_id, ACTIVE_CALL_ID.get()))
+
+    children = [Child(), Child()]
+    parent = Parent(children)
+    callback = LineageCallback()
+    dspy.configure(callbacks=[callback])
+
+    assert parent() == [0, 1]
+
+    parent_call = next(call for call in callback.calls if call[0] is parent)
+    child_calls = [call for call in callback.calls if any(call[0] is child for child in children)]
+    assert len(child_calls) == 2
+    assert all(call[2] == parent_call[1] for call in child_calls)
 
 
 def test_batch_module():

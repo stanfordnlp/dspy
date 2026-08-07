@@ -32,7 +32,7 @@ The model steering the loop and the model answering snippets need not be the sam
 
 ### 7. Generated code runs in a pluggable sandboxed interpreter
 
-The model’s code is untrusted, so it runs in a sandbox. The default `PythonInterpreter` executes Python in a Deno and Pyodide WASM runtime with no filesystem or network access, created fresh per `forward()` and shut down afterward. You can pass any `CodeInterpreter` through `interpreter=`, such as a mock for tests or a remote sandbox like E2B or Modal for heavier work.
+The model’s code is untrusted, so it runs in a sandbox. The default `PythonInterpreter` executes Python in a Deno and Pyodide WASM runtime with no filesystem or network access. Each `forward()` creates one interpreter, uses it for the whole REPL loop, and shuts it down afterward. Supply `interpreter_factory=` to configure another `CodeInterpreter`, such as an adapter for a remote sandbox.
 
 ### 8. `SandboxSerializable` loads large inputs into the sandbox once
 
@@ -54,11 +54,11 @@ The class carries the `@experimental` decorator. The hard parts are still settli
 
 ### Defining and running an RLM
 
-**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter=None)`**
+**`dspy.RLM(signature, max_iters=20, max_llm_calls=50, max_output_chars=10_000, verbose=False, tools=None, sub_lm=None, interpreter_factory=PythonInterpreter)`**
 The constructor parses the signature and builds the two internal predictors, formatting your task instructions, input names, and output-field types into the action prompt and creating a separate extract signature for the fallback. The budgets and the sandbox configuration are all fixed here, so one instance carries one configuration.
 
-**`forward(**inputs)` / `aforward(**inputs)` / `__call__`**
-`forward()` validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iters`. `aforward()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`.
+**`__call__([interpreter], **inputs)` / `acall([interpreter], **inputs)`**
+The public call validates the inputs against the signature, builds the variable list, opens the interpreter, and runs the loop. Each turn asks the action predictor for code, runs it, and appends the result to history until the model submits or the loop reaches `max_iters`. `acall()` is the async twin and uses `acall` on the predictors. Both return a `Prediction`. An interpreter passed as the first positional argument is caller-owned: RLM updates its execution context but does not shut it down.
 
 ### Programming the loop with built-in tools
 
@@ -89,8 +89,11 @@ The model for `llm_query` and `llm_query_batched`. Left unset it falls back to `
 **`tools=[...]`**
 A list of plain functions or `dspy.Tool` objects. RLM normalizes each to a `Tool`, rejects names that aren’t valid identifiers or that collide with the built-ins, and documents their signatures in the action prompt. The model calls them as ordinary Python inside its code.
 
-**`interpreter=...`**
-Any `CodeInterpreter`. RLM injects the query tools and output-field metadata into it on each `forward()`, so a custom interpreter still gets `llm_query` and typed submission. Reach for this to run a remote sandbox or a test mock.
+**`interpreter_factory=...`**
+A zero-argument callable that returns a fresh `CodeInterpreter` for one invocation. RLM may call the factory concurrently, and it always shuts down the returned interpreter. A class such as `PythonInterpreter` is already a factory; use `functools.partial` or a callable provider object when construction needs configuration. RLM adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol.
+
+**`__call__(interpreter, **inputs)` / `acall(interpreter, **inputs)`**
+An escape hatch for a caller-owned interpreter, supplied as the first positional argument. RLM mutates its `tools` dictionary and, when supported, its output-field metadata, but does not shut down or restore the instance. Reuse is supported only for sequential calls to the same RLM instance, so retained variables and tool registrations stay within one program and trust boundary. Use `interpreter_factory` for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
 **`dspy.SandboxSerializable`**
 The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.

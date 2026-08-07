@@ -3,11 +3,13 @@ from dspy.primitives import *
 from dspy.retrievers import *
 from dspy.signatures import *
 from dspy.teleprompt import *
+from dspy.predict.flex import Flex
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStepAdapter, Image, Audio, File, History, Type, Tool, ToolCalls, ToolCallResults, Code, Reasoning  # isort: skip
 from dspy.core import LMResponse, System  # isort: skip
+from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
 from dspy.utils.exceptions import (
     AdapterParseError,
     ContextWindowExceededError,

@@ -7,20 +7,26 @@ protocol defined in interpreter.py.
 """
 
 import asyncio
+import dataclasses
 import functools
 import inspect
 import json
 import keyword
 import logging
+import math
 import os
 import subprocess
 import threading
 from os import PathLike
-from typing import Any, Callable
+from typing import Any, Callable, NoReturn
 
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
+from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-__all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.utils.callback import BaseCallback, with_callbacks
+
+__all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +100,45 @@ def _await_in_sync(coroutine: Any) -> Any:
     return loop.run_until_complete(coroutine)
 
 
+def _dump_pydantic(value: BaseModel) -> Any:
+    """Dump a Pydantic model to JSON-compatible values."""
+    try:
+        return value.model_dump(mode="json")
+    except PydanticSerializationError as e:
+        raise CodeInterpreterError(f"Unable to serialize {type(value).__name__} as JSON: {e}") from e
+
+
+def _make_jsonable(value: Any) -> Any:
+    """Recursively convert structured types to JSON-serializable values.
+
+    Handles Pydantic BaseModel, dataclasses, and namedtuples so that
+    ``json.dumps()`` can serialize tool results without falling back to
+    ``str()``. Anything else JSON-mode serializable (datetimes, enums, UUIDs,
+    sets, ...) is converted the way it would serialize into a JSON body.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, BaseModel):
+        return _make_jsonable(_dump_pydantic(value))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        try:
+            return _make_jsonable(dataclasses.asdict(value))
+        except Exception:
+            return value  # fall through to json.dumps/str fallback
+    if isinstance(value, tuple) and hasattr(value, "_fields") and hasattr(value, "_asdict"):
+        return _make_jsonable(value._asdict())
+    if isinstance(value, dict):
+        return {k: _make_jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_make_jsonable(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_make_jsonable(v) for v in value)
+    try:
+        return to_jsonable_python(value)
+    except PydanticSerializationError:
+        return value
+
+
 class PythonInterpreter:
     """Local interpreter for secure Python execution using Deno and Pyodide.
 
@@ -129,6 +174,7 @@ class PythonInterpreter:
         sync_files: bool = True,
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
+        callbacks: list[BaseCallback] | None = None,
     ) -> None:
         """
         Args:
@@ -144,6 +190,7 @@ class PythonInterpreter:
                    Tools are callable directly from sandbox code by name.
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
+            callbacks: Optional instance-level callback handlers.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -155,6 +202,7 @@ class PythonInterpreter:
         self.sync_files = sync_files
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
+        self.callbacks = list(callbacks or [])
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -196,6 +244,39 @@ class PythonInterpreter:
         self._request_id = 0
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
+        self._session_ended = False
+
+    def _check_session_active(self) -> None:
+        if self._session_ended:
+            raise CodeInterpreterError(
+                "PythonInterpreter session has ended; create a new interpreter for a fresh session."
+            )
+
+    def _raise_terminal_error(self, message: str, cause: Exception | None = None) -> NoReturn:
+        """End an unusable interpreter session and report its process/protocol failure."""
+        self._session_ended = True
+        if self.deno_process is not None and self.deno_process.poll() is None:
+            try:
+                self.deno_process.terminate()
+            except ProcessLookupError:
+                pass
+            self.deno_process.wait()
+
+        error = CodeInterpreterError(message)
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _write_message(self, message: str, context: str) -> None:
+        try:
+            self.deno_process.stdin.write(message + "\n")
+            self.deno_process.stdin.flush()
+        except BrokenPipeError as e:
+            self._raise_terminal_error(
+                f"Deno process stopped {context}; interpreter state was lost. "
+                "Create a new interpreter for a fresh session.",
+                e,
+            )
 
     def _check_thread_ownership(self) -> None:
         """Ensure this interpreter is only used from a single thread."""
@@ -266,8 +347,7 @@ class PythonInterpreter:
             virtual_path = f"/sandbox/{os.path.basename(str(path))}"
             host_path = _canonicalize_path(path)
             sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": host_path})
-            self.deno_process.stdin.write(sync_msg + "\n")
-            self.deno_process.stdin.flush()
+            self._write_message(sync_msg, "while syncing files")
 
     def _extract_parameters(self, fn: Callable) -> list[dict]:
         """Extract parameter info from a callable for sandbox registration."""
@@ -321,50 +401,65 @@ class PythonInterpreter:
         kwargs = params.get("kwargs", {})
 
         try:
-            if tool_name not in self.tools:
-                raise CodeInterpreterError(f"Unknown tool: {tool_name}")
-            result = self.tools[tool_name](**kwargs)
-            if asyncio.iscoroutine(result):
-                result = _await_in_sync(result)
-            is_json = isinstance(result, (list, dict))
-            response = _jsonrpc_result(
-                {"value": json.dumps(result) if is_json else (str(result) if result is not None else ""), "type": "json" if is_json else "string"},
-                request_id
-            )
+            result = self.invoke_tool(tool_name, kwargs)
+            result = _make_jsonable(result)
+            if result is None or isinstance(result, str):
+                response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
+            else:
+                try:
+                    response = _jsonrpc_result({"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id)
+                except (TypeError, ValueError):
+                    response = _jsonrpc_result({"value": str(result), "type": "string"}, request_id)
         except Exception as e:
             error_type = type(e).__name__
             error_code = JSONRPC_APP_ERRORS.get(error_type, JSONRPC_APP_ERRORS["Unknown"])
             response = _jsonrpc_error(error_code, str(e), request_id, {"type": error_type})
 
-        self.deno_process.stdin.write(response + "\n")
-        self.deno_process.stdin.flush()
+        self._write_message(response, "while returning a tool result")
+
+    @with_callbacks
+    def invoke_tool(self, tool_name: str, kwargs: dict[str, Any]) -> Any:
+        if tool_name not in self.tools:
+            raise CodeInterpreterError(f"Unknown tool: {tool_name}")
+        result = self.tools[tool_name](**kwargs)
+        return _await_in_sync(result) if asyncio.iscoroutine(result) else result
 
     def _ensure_deno_process(self) -> None:
-        if self.deno_process is None or self.deno_process.poll() is not None:
-            # Process identity changed (or process missing), so replay setup.
-            self._tools_registered = False
-            self._mounted_files = False
-            try:
-                self.deno_process = subprocess.Popen(
-                    self.deno_command,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="UTF-8",
-                    env=os.environ.copy()
-                )
-            except FileNotFoundError as e:
-                install_instructions = (
-                    "Deno executable not found. Please install Deno to proceed.\n"
-                    "Installation instructions:\n"
-                    "> curl -fsSL https://deno.land/install.sh | sh\n"
-                    "*or*, on macOS with Homebrew:\n"
-                    "> brew install deno\n"
-                    "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
-                )
-                raise CodeInterpreterError(install_instructions) from e
-            self._health_check()
+        self._check_session_active()
+
+        if self.deno_process is not None:
+            exit_code = self.deno_process.poll()
+            if exit_code is None:
+                return
+            self._raise_terminal_error(
+                f"Deno process exited (code {exit_code}); interpreter state was lost. "
+                "Create a new interpreter for a fresh session."
+            )
+
+        self.start()
+
+    def _spawn_process(self) -> None:
+        try:
+            self.deno_process = subprocess.Popen(
+                self.deno_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="UTF-8",
+                env=os.environ.copy()
+            )
+        except FileNotFoundError as e:
+            install_instructions = (
+                "Deno executable not found. Please install Deno to proceed.\n"
+                "Installation instructions:\n"
+                "> curl -fsSL https://deno.land/install.sh | sh\n"
+                "*or*, on macOS with Homebrew:\n"
+                "> brew install deno\n"
+                "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
+            )
+            raise CodeInterpreterError(install_instructions) from e
+        self._health_check()
 
     _MAX_SKIP_LINES = 100
 
@@ -377,8 +472,8 @@ class PythonInterpreter:
         exit_code = self.deno_process.poll()
         if exit_code is not None:
             stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-            raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
-        raise CodeInterpreterError(f"No response {context}")
+            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}")
+        self._raise_terminal_error(f"No response {context}")
 
     def _parse_response_line(self, response_line: str, context: str) -> dict | None:
         """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
@@ -401,8 +496,7 @@ class PythonInterpreter:
         self._request_id += 1
         request_id = self._request_id
         msg = _jsonrpc_request(method, params, request_id)
-        self.deno_process.stdin.write(msg + "\n")
-        self.deno_process.stdin.flush()
+        self._write_message(msg, context)
 
         skipped = 0
         while skipped <= self._MAX_SKIP_LINES:
@@ -413,23 +507,33 @@ class PythonInterpreter:
                 continue
 
             if response.get("id") != request_id:
-                raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
+                self._raise_terminal_error(
+                    f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}"
+                )
             if "error" in response:
-                raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
+                error = response["error"]
+                if not isinstance(error, dict):
+                    self._raise_terminal_error(f"Malformed error response {context}: {response}")
+                self._raise_terminal_error(f"Error {context}: {error.get('message', 'Unknown error')}")
+            if "result" not in response:
+                self._raise_terminal_error(f"Unexpected response {context}: {response}")
             return response
 
-        raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
+        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) {context}")
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
         response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
-        if response.get("result", {}).get("output", "").strip() != "2":
-            raise CodeInterpreterError(f"Unexpected ping response: {response}")
+        result = response["result"]
+        if not isinstance(result, dict) or result.get("output", "").strip() != "2":
+            self._raise_terminal_error(f"Unexpected ping response: {response}")
 
     def _to_json_compatible(self, value: Any) -> Any:
         """Recursively convert Python values to JSON-compatible types."""
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
+        elif isinstance(value, BaseModel):
+            return self._to_json_compatible(_dump_pydantic(value))
         elif isinstance(value, dict):
             return {k: self._to_json_compatible(v) for k, v in value.items()}
         elif isinstance(value, (list, tuple)):
@@ -440,7 +544,11 @@ class PythonInterpreter:
             except TypeError:
                 return [self._to_json_compatible(v) for v in value]
         else:
-            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._to_json_compatible(coerced)
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
@@ -480,8 +588,14 @@ class PythonInterpreter:
         elif isinstance(value, bool):
             # Must check bool before int since bool is a subclass of int
             return "True" if value else "False"
+        elif isinstance(value, float) and not math.isfinite(value):
+            # str(inf/-inf/nan) returns bare words ("inf", "nan") that are not valid
+            # Python literals; wrap them so they evaluate correctly in the sandbox.
+            return f"float('{value}')"
         elif isinstance(value, (int, float)):
             return str(value)
+        elif isinstance(value, BaseModel):
+            return self._serialize_value(_dump_pydantic(value))
         elif isinstance(value, (list, tuple)):
             # Tuples become lists for JSON compatibility
             items = ", ".join(self._serialize_value(item) for item in value)
@@ -501,17 +615,23 @@ class PythonInterpreter:
             items = ", ".join(self._serialize_value(item) for item in sorted_items)
             return f"[{items}]"
         else:
-            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._serialize_value(coerced)
 
     def _inject_large_var(self, name: str, value: str) -> None:
         """Inject a large variable via the virtual filesystem."""
         self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
 
+    @with_callbacks
     def execute(
         self,
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
+        self._check_session_active()
         self._check_thread_ownership()
         variables = variables or {}
         code = self._inject_variables(code, variables)
@@ -526,18 +646,7 @@ class PythonInterpreter:
         self._request_id += 1
         execute_request_id = self._request_id
         input_data = _jsonrpc_request("execute", {"code": code}, execute_request_id)
-        try:
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
-        except BrokenPipeError:
-            # If the process died, restart and try again once
-            self._ensure_deno_process()
-            self._mount_files()
-            self._register_tools()
-            for name, value in self._pending_large_vars.items():
-                self._inject_large_var(name, value)
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
+        self._write_message(input_data, "during execution")
 
         # Read and handle messages until we get the final output.
         # Loop is needed because tool calls require back-and-forth communication.
@@ -558,8 +667,12 @@ class PythonInterpreter:
             # Handle success response
             if "result" in msg:
                 if msg.get("id") != execute_request_id:
-                    raise CodeInterpreterError(f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}")
+                    self._raise_terminal_error(
+                        f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
+                    )
                 result = msg["result"]
+                if not isinstance(result, dict):
+                    self._raise_terminal_error(f"Malformed execution result: {msg}")
                 self._sync_files()
                 # Check for SUBMIT (encoded as success with "final" field)
                 if "final" in result:
@@ -571,23 +684,31 @@ class PythonInterpreter:
                 # Errors with id=null are unsolicited errors (e.g., unhandled async rejections)
                 # Treat them as errors for the current request
                 if msg.get("id") is not None and msg.get("id") != execute_request_id:
-                    raise CodeInterpreterError(f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}")
+                    self._raise_terminal_error(
+                        f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
+                    )
                 error = msg["error"]
+                if not isinstance(error, dict):
+                    self._raise_terminal_error(f"Malformed execution error: {msg}")
                 error_code = error.get("code", JSONRPC_APP_ERRORS["Unknown"])
                 error_message = error.get("message", "Unknown error")
                 error_data = error.get("data", {})
+                if not isinstance(error_data, dict):
+                    self._raise_terminal_error(f"Malformed execution error data: {msg}")
                 error_type = error_data.get("type", "Error")
 
                 if error_code == JSONRPC_APP_ERRORS["SyntaxError"]:
                     raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
-                else:
-                    raise CodeInterpreterError(f"{error_type}: {error_data.get('args') or error_message}")
+                if error_code in JSONRPC_APP_ERRORS.values():
+                    raise CodeExecutionError(f"{error_type}: {error_data.get('args') or error_message}")
+                self._raise_terminal_error(f"{error_type}: {error_data.get('args') or error_message}")
 
             # Unexpected message format - neither a recognized method nor a response
-            raise CodeInterpreterError(f"Unexpected message format from sandbox: {msg}")
+            self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")
 
-        raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) during execution")
+        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) during execution")
 
+    @with_callbacks
     def start(self) -> None:
         """Initialize the Deno/Pyodide sandbox.
 
@@ -595,9 +716,14 @@ class PythonInterpreter:
         Can be called explicitly for pooling, or will be called lazily
         on first execute().
 
-        Idempotent: safe to call multiple times.
+        Idempotent while the session is active. A stopped or shut-down session
+        cannot be restarted because its Python state cannot be reconstructed.
         """
-        self._ensure_deno_process()
+        if self.deno_process is None:
+            self._check_session_active()
+            self._spawn_process()
+        else:
+            self._ensure_deno_process()
 
     def __enter__(self):
         return self
@@ -612,11 +738,17 @@ class PythonInterpreter:
     ) -> Any:
         return self.execute(code, variables)
 
+    @with_callbacks
     def shutdown(self) -> None:
+        session_was_active = not self._session_ended
+        self._session_ended = True
         if self.deno_process and self.deno_process.poll() is None:
-            self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
-            self.deno_process.stdin.flush()
-            self.deno_process.stdin.close()
+            if session_was_active:
+                self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
+                self.deno_process.stdin.flush()
+                self.deno_process.stdin.close()
+            else:
+                self.deno_process.terminate()
             self.deno_process.wait()
         self.deno_process = None
         self._owner_thread = None

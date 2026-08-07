@@ -227,16 +227,22 @@ class Settings:
             )
 
     @classmethod
-    def load(cls, path: str) -> dict[str, Any]:
+    def load(cls, path: str, allow_pickle: bool = False) -> dict[str, Any]:
         """
         Load the settings from a file using cloudpickle.
 
         Args:
             path: The file path to load the settings from.
+            allow_pickle: Explicit opt-in flag required to deserialize pickle payloads.
 
         Returns:
             A dict that stores the loaded settings.
         """
+        if not allow_pickle:
+            raise ValueError(
+                "Loading settings files using cloudpickle requires explicit opt-in via allow_pickle=True "
+                "because pickle files can execute arbitrary code during deserialization."
+            )
         with open(path, "rb") as f:
             configs = cloudpickle.load(f)
 
