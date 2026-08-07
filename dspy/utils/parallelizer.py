@@ -52,6 +52,16 @@ class ParallelExecutor:
             return self._execute_sequential(wrapped, data)
         return self._execute_parallel(wrapped, data)
 
+    def _record_error(self, item, e):
+        with self.error_lock:
+            self.error_count += 1
+            if self.error_count >= self.max_errors:
+                self.cancel_jobs.set()
+        if self.provide_traceback:
+            logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
+        else:
+            logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
+
     def _wrap_function(self, user_function):
         def safe_func(item):
             if self.cancel_jobs.is_set():
@@ -59,14 +69,7 @@ class ParallelExecutor:
             try:
                 return user_function(item)
             except Exception as e:
-                with self.error_lock:
-                    self.error_count += 1
-                    if self.error_count >= self.max_errors:
-                        self.cancel_jobs.set()
-                if self.provide_traceback:
-                    logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
-                else:
-                    logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
+                self._record_error(item, e)
                 return e
 
         return safe_func
@@ -185,8 +188,14 @@ class ParallelExecutor:
                         futures_set.remove(f)
                         try:
                             index, outcome = f.result()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # A harness-internal failure (e.g. copying thread-local overrides), not a
+                            # user-function exception — record it the same way so it isn't silently dropped.
+                            _, idx, item = futures_map[f]
+                            if results[idx] is None:
+                                self._process_outcome(results, idx, e)
+                                self._record_error(item, e)
+                            self._report_progress(pbar, results, len(data))
                         else:
                             if outcome != job_cancelled and results[index] is None:
                                 self._process_outcome(results, index, outcome)

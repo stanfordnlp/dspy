@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+import dspy
 from dspy.utils.callback import ACTIVE_CALL_ID
 from dspy.utils.parallelizer import ParallelExecutor
 
@@ -100,6 +101,32 @@ def test_parallel_executor_tracks_failed_indices_and_exceptions():
     assert str(executor.exceptions_map[2]) == "test error for 3"
     assert isinstance(executor.exceptions_map[4], RuntimeError)
     assert str(executor.exceptions_map[4]) == "test error for 5"
+
+
+def test_parallel_executor_records_harness_level_exceptions(monkeypatch):
+    """An exception raised by the executor's own per-worker setup (e.g. deep-copying a
+    thread-local override), as opposed to the user function, must still be tracked and
+    logged like any other failure instead of silently leaving the result as None."""
+    import dspy.utils.parallelizer as parallelizer_module
+
+    def broken_deepcopy(*_args, **_kwargs):
+        raise RuntimeError("cannot deepcopy usage_tracker")
+
+    monkeypatch.setattr(parallelizer_module.copy, "deepcopy", broken_deepcopy)
+
+    def task(item):
+        return item
+
+    data = [1, 2, 3]
+    executor = ParallelExecutor(num_threads=3, max_errors=10)
+
+    with dspy.context(usage_tracker=object()):
+        results = executor.execute(task, data)
+
+    assert results == [None, None, None]
+    assert sorted(executor.failed_indices) == [0, 1, 2]
+    assert len(executor.exceptions_map) == 3
+    assert all(isinstance(e, RuntimeError) for e in executor.exceptions_map.values())
 
 
 def test_sequential_execution_runs_on_main_thread():
