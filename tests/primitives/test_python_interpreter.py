@@ -110,6 +110,17 @@ def test_exception_args(pooled_interpreter):
         interpreter.execute(code)
 
 
+def test_base_exceptions_do_not_desync_interpreter():
+    with PythonInterpreter() as interpreter:
+        for code, error_type in [
+            ("import sys\nsys.exit(0)", "SystemExit"),
+            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+        ]:
+            with pytest.raises(CodeExecutionError, match=error_type):
+                interpreter.execute(code)
+            assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
 def test_generated_exception_name_cannot_spoof_interpreter_failure(pooled_interpreter):
     interpreter = pooled_interpreter
     with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):

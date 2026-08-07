@@ -131,10 +131,12 @@ const jsonrpcError = (code, message, id, data = null) => {
   return JSON.stringify({ jsonrpc: "2.0", error: err, id });
 };
 
-// Global handler to prevent uncaught promise rejections from crashing Deno
-// These can occur during async Python <-> JS interop
+// Prevent promise rejections from async Python <-> JS interop from crashing Deno.
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
+  // Pyodide reports these as unhandled before runPythonAsync rejects into the execute
+  // handler, which will respond with the request ID. Do not emit a duplicate id:null error.
+  if (event.reason?.type === "SystemExit" || event.reason?.type === "KeyboardInterrupt") return;
   console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
 });
 
