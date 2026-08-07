@@ -46,11 +46,15 @@ it:
 import random
 import string
 
-from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer  # SDK v1
+except ImportError:
+    from mcp.server import MCPServer  # SDK v2
+
 # Create an MCP server
-mcp = FastMCP("Airline Agent")
+mcp = MCPServer("Airline Agent")
 
 
 class Date(BaseModel):
@@ -220,10 +224,10 @@ if __name__ == "__main__":
 
 Before we start the server, let's take a look at the code.
 
-We first create a `FastMCP` instance, which is a utility that helps quickly build an MCP server:
+We first create a server instance, using the class name provided by the installed SDK version:
 
 ```python
-mcp = FastMCP("Airline Agent")
+mcp = MCPServer("Airline Agent")
 ```
 
 Then we define our data structures, which in a real-world application would be the database schema, e.g.:
