@@ -76,6 +76,7 @@ class MIPROv2(Teleprompter):
         track_stats: bool = True,
         log_dir: str | None = None,
         metric_threshold: float | None = None,
+        population_metric: Callable | None = None,
     ):
         # Validate 'auto' parameter
         allowed_modes = {None, "light", "medium", "heavy"}
@@ -86,6 +87,7 @@ class MIPROv2(Teleprompter):
         self.num_instruct_candidates = num_candidates
         self.num_candidates = num_candidates
         self.metric = metric
+        self.population_metric = population_metric
         self.init_temperature = init_temperature
         self.task_model = task_model if task_model else dspy.settings.lm
         self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
@@ -219,6 +221,7 @@ class MIPROv2(Teleprompter):
         evaluate = Evaluate(
             devset=valset,
             metric=self.metric,
+            population_metric=self.population_metric,
             num_threads=self.num_threads,
             max_errors=effective_max_errors,
             display_table=False,

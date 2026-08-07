@@ -22,6 +22,22 @@ def new_example(question, answer):
     ).with_inputs("question")
 
 
+def _population_only_score_case():
+    devset = [
+        dspy.Example(question="no-score", answer="c").with_inputs("question"),
+        dspy.Example(question="example-owned", answer="a", score=0.25).with_inputs("question"),
+        dspy.Example(question="prediction-owned", answer="b").with_inputs("question"),
+    ]
+    answers = {"no-score": "c", "example-owned": "a", "prediction-owned": "b"}
+
+    def program(question):
+        if question == "prediction-owned":
+            return dspy.Prediction(answer=answers[question], score=0.75)
+        return dspy.Prediction(answer=answers[question])
+
+    return devset, program
+
+
 def test_evaluate_initialization():
     devset = [new_example("What is 1+1?", "2")]
     ev = Evaluate(
@@ -461,3 +477,239 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+
+def test_evaluate_population_metric_without_per_example_metric():
+    devset = [new_example("first", "a"), new_example("second", "b")]
+    captured = {}
+
+    def program(question):
+        return dspy.Prediction(answer={"first": "a", "second": "wrong"}[question])
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 0.6
+
+    evaluator = Evaluate(devset=devset, population_metric=population_metric)
+    result = evaluator(program)
+
+    assert result.score == 60.0
+    assert [score for _, _, score in result.results] == [0.0, 0.0]
+    assert captured == {
+        "questions": ["first", "second"],
+        "answers": ["a", "wrong"],
+    }
+
+def test_evaluate_population_only_output_preserves_user_scores():
+    devset, program = _population_only_score_case()
+    evaluator = Evaluate(devset=devset, population_metric=lambda examples, predictions: 1.0)
+
+    result = evaluator(program)
+    data = evaluator._prepare_results_output(result.results, metric_name=None)
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert "score" not in data[0]
+    assert data[1]["score"] == 0.25
+    assert data[2]["score"] == 0.75
+
+
+@pytest.mark.extra
+def test_evaluate_population_only_table_preserves_user_scores():
+    import pandas as pd
+
+    devset, program = _population_only_score_case()
+    evaluator = Evaluate(devset=devset, population_metric=lambda examples, predictions: 1.0)
+
+    with patch.object(evaluator, "_display_result_table") as display_result_table:
+        result = evaluator(program, display_table=True)
+
+    result_df, display_table, metric_name = display_result_table.call_args.args
+    assert display_table is True
+    assert metric_name is None
+    assert pd.isna(result_df.loc[0, "score"])
+    assert result_df.loc[1, "score"] == 0.25
+    assert result_df.loc[2, "score"] == 0.75
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+
+
+def test_evaluate_population_only_json_preserves_user_scores(tmp_path):
+    devset, program = _population_only_score_case()
+    output_path = tmp_path / "population-results.json"
+    evaluator = Evaluate(
+        devset=devset,
+        population_metric=lambda examples, predictions: 1.0,
+        save_as_json=str(output_path),
+    )
+
+    result = evaluator(program)
+    data = json.loads(output_path.read_text())
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert "score" not in data[0]
+    assert data[1]["score"] == 0.25
+    assert data[2]["score"] == 0.75
+
+
+def test_evaluate_population_only_csv_preserves_user_scores(tmp_path):
+    import csv
+
+    devset, program = _population_only_score_case()
+    output_path = tmp_path / "population-results.csv"
+    evaluator = Evaluate(
+        devset=devset,
+        population_metric=lambda examples, predictions: 1.0,
+        save_as_csv=str(output_path),
+    )
+
+    result = evaluator(program)
+    with output_path.open(newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    assert [score for _, _, score in result.results] == [0.0, 0.0, 0.0]
+    assert [row["score"] for row in rows] == ["", "0.25", "0.75"]
+
+
+def test_evaluate_population_metric_overrides_sample_mean():
+    devset = [new_example("first", "correct"), new_example("second", "correct")]
+    answers = {"first": "correct", "second": "incorrect"}
+
+    def program(question):
+        return dspy.Prediction(answer=answers[question])
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        assert examples == devset
+        assert [prediction.answer for prediction in predictions] == ["correct", "incorrect"]
+        return 0.25
+
+    evaluator = Evaluate(devset=devset, metric=sample_metric, population_metric=population_metric)
+    result = evaluator(program)
+
+    assert result.score == 25.0
+    assert [score for _, _, score in result.results] == [True, False]
+
+
+def test_evaluate_population_metric_preserves_parallel_order():
+    import time
+
+    devset = [new_example("slow", "slow-result"), new_example("fast", "fast-result")]
+    captured = {}
+
+    def program(question):
+        if question == "slow":
+            time.sleep(0.05)
+        return dspy.Prediction(answer=f"{question}-result")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        num_threads=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 100.0
+    assert captured == {
+        "questions": ["slow", "fast"],
+        "answers": ["slow-result", "fast-result"],
+    }
+
+
+def test_evaluate_population_metric_per_call_override():
+    devset = [new_example("first", "correct"), new_example("second", "correct")]
+
+    def program(question):
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def default_population_metric(examples, predictions):
+        return 0.1
+
+    def override_population_metric(examples, predictions):
+        return 0.75
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=default_population_metric,
+    )
+    result = evaluator(program, population_metric=override_population_metric)
+
+    assert result.score == 75.0
+    assert [score for _, _, score in result.results] == [True, True]
+
+
+def test_evaluate_population_metric_skips_tolerated_program_failures():
+    devset = [new_example("broken", "correct"), new_example("healthy", "correct")]
+    captured = {}
+
+    def program(question):
+        if question == "broken":
+            raise ValueError("program failure")
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 1.0
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        max_errors=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 100.0
+    assert [score for _, _, score in result.results] == [0.0, True]
+    assert captured == {"questions": ["healthy"], "answers": ["correct"]}
+
+
+def test_evaluate_population_metric_skips_tolerated_metric_failures():
+    devset = [new_example("broken", "correct"), new_example("healthy", "correct")]
+    captured = {}
+
+    def program(question):
+        return dspy.Prediction(answer="correct")
+
+    def sample_metric(example, prediction):
+        if example.question == "broken":
+            raise ValueError("metric failure")
+        return example.answer == prediction.answer
+
+    def population_metric(examples, predictions):
+        captured["questions"] = [example.question for example in examples]
+        captured["answers"] = [prediction.answer for prediction in predictions]
+        return 0.75
+
+    evaluator = Evaluate(
+        devset=devset,
+        metric=sample_metric,
+        population_metric=population_metric,
+        max_errors=2,
+        display_progress=False,
+    )
+    result = evaluator(program)
+
+    assert result.score == 75.0
+    assert [score for _, _, score in result.results] == [0.0, True]
+    assert captured == {"questions": ["healthy"], "answers": ["correct"]}
