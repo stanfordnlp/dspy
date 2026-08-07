@@ -111,10 +111,18 @@ jobs:
         run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
   
   llm_call_test:
-    name: Run Tests with Real LM
+    name: ${{ matrix.job_name }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - job_name: Run Tests with Real LM
+            test_expression: stream_listener_chat_adapter or stream_listener_json_adapter or single_module_call_with_usage_tracker
+          - job_name: Run Remaining Tests with Real LM
+            test_expression: not (stream_listener_chat_adapter or stream_listener_json_adapter or single_module_call_with_usage_tracker)
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -191,7 +199,9 @@ jobs:
       - name: Set LM environment variable
         run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> "$GITHUB_ENV"
       - name: Run tests
-        run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
+        run: >-
+          uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5
+          -k '${{ matrix.test_expression }}' tests/
       - name: Fix permissions for cache
         if: always()
         run: sudo chown -R "$USER":"$USER" ollama-data || true
