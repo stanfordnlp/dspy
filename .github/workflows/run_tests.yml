@@ -104,7 +104,7 @@ jobs:
           uv sync --dev -p .venv --extra dev
           uv pip list
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv -n auto --dist worksteal tests/
+        run: uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
 
   extra_test:
     name: Run Extra and Deno Tests
