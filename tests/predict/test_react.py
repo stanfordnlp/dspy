@@ -1,11 +1,17 @@
+import enum
+import logging
 import re
+from typing import Optional
+from unittest import mock
 
 import pytest
-from pydantic import BaseModel
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
+from pydantic import BaseModel, model_validator
 
 import dspy
 import dspy.adapters.base as adapter_base
 import dspy.adapters.utils as adapter_utils
+from dspy.utils.callback import BaseCallback
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import ContextWindowExceededError
 
@@ -24,7 +30,6 @@ def test_tool_observation_preserves_custom_type():
 
     def make_images():
         return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
-
 
     adapter = SpyChatAdapter()
     lm = DummyLM(
@@ -489,6 +494,718 @@ async def test_async_tool_calling_with_pydantic_args():
     assert outputs.trajectory == expected_trajectory
 
 
+class _CountingExtract:
+    """Wraps `react.extract` to count how many times the extract fallback runs."""
+
+    def __init__(self, extract):
+        self.extract = extract
+        self.calls = 0
+
+    def __call__(self, **kwargs):
+        self.calls += 1
+        return self.extract(**kwargs)
+
+    async def acall(self, **kwargs):
+        self.calls += 1
+        return await self.extract.acall(**kwargs)
+
+
+def test_finish_with_typed_args_skips_extract():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("question -> answer", tools=[add])
+    counting_extract = _CountingExtract(react.extract)
+    react.extract = counting_extract
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "1 + 2 is 3, so I can finish with the answer directly.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "The sum is 3."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="What is 1 + 2?")
+
+    assert outputs.answer == "The sum is 3."
+    assert outputs.reasoning == "1 + 2 is 3, so I can finish with the answer directly."
+    assert counting_extract.calls == 0
+    assert len(lm.history) == 1
+    assert outputs.trajectory == {
+        "thought_0": "1 + 2 is 3, so I can finish with the answer directly.",
+        "tool_name_0": "finish",
+        "tool_args_0": {"answer": "The sum is 3."},
+        "observation_0": "Completed.",
+    }
+
+
+def test_finish_args_validate_output_field_types():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        title: str = dspy.OutputField()
+        count: int = dspy.OutputField()
+        tags: list[str] = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "title": "Science Fair",
+                    "count": 2,
+                    "tags": ["science", "fair"],
+                    "event": {"name": "Science Fair", "year": 2026},
+                },
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="Describe the event")
+
+    assert outputs.title == "Science Fair"
+    assert outputs.count == 2
+    assert isinstance(outputs.count, int)
+    assert outputs.tags == ["science", "fair"]
+    assert isinstance(outputs.event, Event)
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+
+
+def test_finish_args_coerced_from_strings():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "count": "7",
+                    "event": '{"name": "Science Fair", "year": 2026}',
+                },
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="Describe the event")
+
+    assert outputs.count == 7
+    assert isinstance(outputs.count, int)
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
+def test_finish_with_empty_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I know the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted reasoning.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.reasoning == "Extracted reasoning."
+    assert len(lm.history) == 2
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
+def test_finish_with_partial_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer, source", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with only part of the outputs.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "partial"},
+            },
+            {"reasoning": "Extracted.", "answer": "extracted answer", "source": "extracted source"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.source == "extracted source"
+    assert len(lm.history) == 2
+
+
+def test_finish_with_uncoercible_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> count: int", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with a bad value.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"count": "not a number"},
+            },
+            {"reasoning": "Extracted.", "count": 42},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.count == 42
+    assert len(lm.history) == 2
+
+
+def test_finish_args_raising_non_validation_error_falls_back_to_extract():
+    class Item(BaseModel):
+        name: str
+
+        @model_validator(mode="before")
+        @classmethod
+        def normalize(cls, value):
+            if isinstance(value, dict):
+                return value
+            # Pydantic only converts ValueError/AssertionError into a ValidationError, so this
+            # raises AttributeError straight out of `validate_python` for non-string values.
+            return {"name": value.strip()}
+
+    class ItemSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        item: Item = dspy.OutputField()
+
+    react = dspy.ReAct(ItemSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Finishing with a value the validator chokes on.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"item": 123},
+            },
+            {"reasoning": "Extracted.", "item": {"name": "extracted"}},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.item == Item(name="extracted")
+    assert len(lm.history) == 2
+
+
+def test_unrepresentable_output_annotation_advertises_string_schema_and_logs(caplog):
+    class Node(BaseModel):
+        value: str
+        children: list["Node"] = []
+
+    class TreeSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tree: Node = dspy.OutputField()
+
+    # The `dspy` logger does not propagate to the root logger that caplog installs itself on.
+    dspy_logger = logging.getLogger("dspy")
+    dspy_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="dspy.predict.react"):
+            react = dspy.ReAct(TreeSignature, tools=[])
+    finally:
+        dspy_logger.removeHandler(caplog.handler)
+
+    assert react.tools["finish"].args["tree"] == {"type": "string"}
+    assert any("Node" in record.message for record in caplog.records)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "The tree is ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"tree": {"value": "root", "children": [{"value": "leaf"}]}},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.tree == Node(value="root", children=[Node(value="leaf")])
+    assert len(lm.history) == 1
+
+
+def test_finish_args_carry_output_field_descriptions_and_constraints():
+    class Cited(dspy.Type):
+        text: str
+
+        @classmethod
+        def description(cls):
+            return "Must include a citation."
+
+        def format(self):
+            return self.text
+
+    class Documented(BaseModel):
+        """A postal address."""
+
+        city: str
+
+    class DescribedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="Answer with a single number only")
+        score: int = dspy.OutputField(ge=0, le=10)
+        citations: list[Cited] = dspy.OutputField(desc="the cited answers")
+        address: Documented = dspy.OutputField()
+        plain: str = dspy.OutputField()
+
+    args = dspy.ReAct(DescribedSignature, tools=[]).tools["finish"].args
+
+    assert args["answer"]["description"] == "Answer with a single number only"
+    assert args["score"]["description"] == "Constraints: greater than or equal to: 0, less than or equal to: 10"
+    # The parts are joined on a single line because `Tool.__str__` renders `args` through
+    # `str(dict)`, which would escape real newlines into a literal "\n" for the LM.
+    assert args["citations"]["description"] == "the cited answers; Type description of Cited: Must include a citation."
+    # A description inherited from the annotation itself is preserved rather than overwritten.
+    assert args["address"]["description"] == "A postal address."
+    assert "description" not in args["plain"]
+
+
+@pytest.mark.parametrize(
+    ("finish_value", "expected"),
+    [(3, "3"), (True, "True"), (["a"], "['a']"), (2.5, "2.5")],
+)
+def test_finish_with_non_string_value_for_string_output_skips_extract(finish_value, expected):
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I know the answer.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": finish_value},
+            },
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == expected
+    assert len(lm.history) == 1
+
+
+@pytest.mark.parametrize("finish_value", ["RED", "red"])
+def test_finish_with_enum_name_or_value_skips_extract(finish_value):
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    class ColorSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Color = dspy.OutputField()
+
+    react = dspy.ReAct(ColorSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "It is red.", "next_tool_name": "finish", "next_tool_args": {"color": finish_value}},
+            {"reasoning": "Extracted.", "color": "blue"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.color == Color.RED
+    assert len(lm.history) == 1
+
+
+def test_finish_coercion_matches_the_extract_adapter():
+    """The fast path must not be stricter than the fallback, or it pays the extract call for nothing."""
+    react = dspy.ReAct("question -> answer", tools=[])
+    for value in (3, True, ["a"], {"k": "v"}):
+        assert react._extract_outputs_from_finish_args({"answer": value}) == {
+            "answer": adapter_utils.parse_value(value, str)
+        }
+
+
+def test_finish_with_explicit_none_for_optional_output_skips_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Optional[str] = dspy.OutputField()  # noqa: UP045 - the typing.Optional spelling is what this test covers
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer is None
+    assert outputs.reasoning == "There is no answer."
+    assert len(lm.history) == 1
+
+
+def test_finish_with_explicit_none_for_union_none_output_skips_extract():
+    class NullableSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(NullableSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
+
+
+def test_finish_with_explicit_none_for_non_nullable_output_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    # A non-nullable `str` output must never receive the stringified "None".
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 2
+
+
+def test_finish_missing_optional_output_still_falls_back_to_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 2
+
+
+def test_max_iters_exhausted_without_finish_still_calls_extract():
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("question -> answer", tools=[echo])
+    lm = DummyLM(
+        [
+            {"next_thought": "Echo once.", "next_tool_name": "echo", "next_tool_args": {"text": "a"}},
+            {"next_thought": "Echo twice.", "next_tool_name": "echo", "next_tool_args": {"text": "b"}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q", max_iters=2)
+
+    assert outputs.answer == "extracted answer"
+    assert len(lm.history) == 3
+    assert outputs.trajectory["observation_1"] == "Echoed: b"
+
+
+def test_finish_fast_path_prefers_output_field_named_reasoning():
+    react = dspy.ReAct("question -> reasoning", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "The internal thought.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"reasoning": "The final reasoning output."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.reasoning == "The final reasoning output."
+    assert len(lm.history) == 1
+
+
+def test_finish_fast_path_with_output_field_named_trajectory():
+    class TrajectorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        trajectory: str = dspy.OutputField()
+
+    react = dspy.ReAct(TrajectorySignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"trajectory": "The final trajectory output."},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    # The module's trajectory wins over a same-named output field, as it does on the fallback path.
+    assert outputs.trajectory["tool_args_0"] == {"trajectory": "The final trajectory output."}
+    assert outputs.reasoning == "Done."
+    assert len(lm.history) == 1
+
+
+def test_fallback_with_output_field_named_trajectory():
+    class TrajectorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        trajectory: str = dspy.OutputField()
+
+    react = dspy.ReAct(TrajectorySignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without the output.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "trajectory": "The extracted trajectory output."},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.trajectory["tool_args_0"] == {}
+    assert outputs.reasoning == "Extracted."
+    assert len(lm.history) == 2
+
+
+def test_finish_fast_path_with_output_field_named_instance():
+    class InstanceSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        instance: str = dspy.OutputField()
+
+    class ToolTracker(BaseCallback):
+        def __init__(self):
+            self.inputs = []
+
+        def on_tool_start(self, call_id, instance, inputs):
+            self.inputs.append((instance.name, inputs))
+
+    tracker = ToolTracker()
+    react = dspy.ReAct(InstanceSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"instance": "The final instance output."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = react(question="q")
+
+    assert outputs.instance == "The final instance output."
+    assert outputs.reasoning == "Done."
+    assert len(lm.history) == 1
+    assert tracker.inputs == [("finish", {"kwargs": {"instance": "The final instance output."}})]
+
+
+def test_finish_fast_path_with_hallucinated_instance_arg():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "the answer", "instance": "hallucinated"},
+            }
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="q")
+
+    assert outputs.answer == "the answer"
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_fast_path_with_output_field_named_instance():
+    class InstanceSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        instance: str = dspy.OutputField()
+
+    react = dspy.ReAct(InstanceSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "Done.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"instance": "The final instance output."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.instance == "The final instance output."
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_typed_args_skips_extract():
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("question -> answer", tools=[add])
+    counting_extract = _CountingExtract(react.extract)
+    react.extract = counting_extract
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "1 + 2 is 3, so I can finish with the answer directly.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "The sum is 3."},
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="What is 1 + 2?")
+
+    assert outputs.answer == "The sum is 3."
+    assert outputs.reasoning == "1 + 2 is 3, so I can finish with the answer directly."
+    assert counting_extract.calls == 0
+    assert len(lm.history) == 1
+    assert outputs.trajectory == {
+        "thought_0": "1 + 2 is 3, so I can finish with the answer directly.",
+        "tool_name_0": "finish",
+        "tool_args_0": {"answer": "The sum is 3."},
+        "observation_0": "Completed.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_async_finish_args_coerced_to_declared_types():
+    class Event(BaseModel):
+        name: str
+        year: int
+
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+        event: Event = dspy.OutputField()
+
+    react = dspy.ReAct(TypedSignature, tools=[])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "All outputs are ready.",
+                "next_tool_name": "finish",
+                "next_tool_args": {
+                    "count": 7,
+                    "event": '{"name": "Science Fair", "year": 2026}',
+                },
+            }
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="Describe the event")
+
+    assert outputs.count == 7
+    assert outputs.event == Event(name="Science Fair", year=2026)
+    assert len(lm.history) == 1
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_explicit_none_for_optional_output_skips_extract():
+    class OptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Optional[str] = dspy.OutputField()  # noqa: UP045 - the typing.Optional spelling is what this test covers
+
+    react = dspy.ReAct(OptionalSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_explicit_none_for_union_none_output_skips_extract():
+    class NullableSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField()
+
+    react = dspy.ReAct(NullableSignature, tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "There is no answer.", "next_tool_name": "finish", "next_tool_args": {"answer": None}},
+            {"reasoning": "Extracted.", "answer": "EXTRACT_FALLBACK"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer is None
+    assert len(lm.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_empty_args_falls_back_to_extract():
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I know the answer.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted reasoning.", "answer": "extracted answer"},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert outputs.reasoning == "Extracted reasoning."
+    assert len(lm.history) == 2
+    assert outputs.trajectory["observation_0"] == "Completed."
+
+
 @pytest.mark.asyncio
 async def test_async_error_retry():
     # A tiny tool that always fails
@@ -534,3 +1251,188 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def _chat_adapter_chunks(text: str):
+    """Split `text` into token-sized streaming chunks, the way an LM emits them."""
+    return [
+        ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=token))])
+        for token in re.findall(r"\s*\S+", text)
+    ]
+
+
+_EXTRACT_STREAM = (
+    "[[ ## reasoning ## ]]\n"
+    "The trajectory already contains the population.\n\n"
+    "[[ ## answer ## ]]\n"
+    "Camp Meeker has a population of 179.\n\n"
+    "[[ ## completed ## ]]"
+)
+
+
+async def _stream_react_program(react_outputs, extract_stream=_EXTRACT_STREAM):
+    """Run a streamed `dspy.ReAct` with a listener on `answer`.
+
+    The listener binds to `extract.predict`, so only that predictor streams; the react step runs on a
+    `DummyLM` and replies with `react_outputs`, while the extract step, when it runs at all, consumes
+    `extract_stream` through the mocked streaming LM.
+    """
+    react = dspy.ReAct("question -> answer", tools=[])
+    react.react.lm = DummyLM(react_outputs)
+
+    async def completion_side_effect(*args, **kwargs):
+        async def stream():
+            for chunk in _chat_adapter_chunks(extract_stream):
+                yield chunk
+
+        return stream()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        program = dspy.streamify(
+            react,
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            chunks, prediction = [], None
+            async for value in program(question="What is the population of Camp Meeker?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+    return chunks, prediction
+
+
+@pytest.mark.anyio
+async def test_finish_fast_path_does_not_stream_final_output_field():
+    # Documented side effect of the `finish` fast path: a `StreamListener` on a final output field
+    # auto-binds to the fallback extractor, the only predictor whose signature contains that field.
+    # The fast path never runs the extractor, so the listener emits nothing even though the final
+    # prediction is correct. See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
+    chunks, prediction = await _stream_react_program(
+        [
+            {
+                "next_thought": "I already know the answer, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "Camp Meeker has a population of 179."},
+            }
+        ]
+    )
+
+    assert [chunk for chunk in chunks if chunk.signature_field_name == "answer"] == []
+    assert prediction.answer == "Camp Meeker has a population of 179."
+    assert prediction.trajectory["observation_0"] == "Completed."
+
+
+@pytest.mark.anyio
+async def test_fallback_path_still_streams_final_output_field():
+    # The counterpart to the test above: when the `finish` args do not yield every output field, the
+    # extract fallback runs and the listener streams the field as it always has.
+    chunks, prediction = await _stream_react_program(
+        [
+            {
+                "next_thought": "I already know the answer, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            }
+        ]
+    )
+
+    answer_chunks = [chunk for chunk in chunks if chunk.signature_field_name == "answer"]
+    assert len(answer_chunks) > 0
+    assert all(chunk.predict_name == "extract.predict" for chunk in answer_chunks)
+    assert "".join(chunk.chunk for chunk in answer_chunks).strip() == "Camp Meeker has a population of 179."
+    assert prediction.answer == "Camp Meeker has a population of 179."
+
+
+def test_finish_fast_path_fires_tool_callbacks():
+    # `finish` is handled before tool dispatch so its args skip strict validation, but its
+    # `on_tool_start`/`on_tool_end` lifecycle must still fire for tracing integrations.
+    # See section 9 of docs/docs/diving-deeper/tools-react-and-mcp.md.
+    class ToolTracker(BaseCallback):
+        def __init__(self):
+            self.started = []
+            self.ended = 0
+
+        def on_tool_start(self, call_id, instance, inputs):
+            self.started.append(instance.name)
+
+        def on_tool_end(self, call_id, outputs, exception):
+            self.ended += 1
+
+    def get_population(city: str) -> int:
+        """Returns the population of a city."""
+        return 179
+
+    tracker = ToolTracker()
+    react = dspy.ReAct("question -> answer", tools=[get_population])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need the population of Camp Meeker.",
+                "next_tool_name": "get_population",
+                "next_tool_args": {"city": "Camp Meeker"},
+            },
+            {
+                "next_thought": "I have the population, so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "179 people."},
+            },
+        ]
+    )
+    dspy.configure(lm=lm, callbacks=[tracker])
+
+    outputs = react(question="What is the population of Camp Meeker?")
+
+    assert outputs.answer == "179 people."
+    assert tracker.started == ["get_population", "finish"]
+    assert tracker.ended == 2
+    assert outputs.trajectory["tool_name_1"] == "finish"
+    assert outputs.trajectory["observation_1"] == "Completed."
+
+
+class _FinishTracker(BaseCallback):
+    def __init__(self):
+        self.started = []
+        self.ended = 0
+
+    def on_tool_start(self, call_id, instance, inputs):
+        self.started.append(instance.name)
+
+    def on_tool_end(self, call_id, outputs, exception):
+        self.ended += 1
+
+
+@pytest.mark.asyncio
+async def test_async_finish_fast_path_fires_tool_callbacks():
+    tracker = _FinishTracker()
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I can finish.", "next_tool_name": "finish", "next_tool_args": {"answer": "done"}},
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = await react.acall(question="q")
+
+    assert outputs.answer == "done"
+    assert tracker.started == ["finish"]
+    assert tracker.ended == 1
+
+
+def test_finish_fallback_still_fires_tool_callbacks():
+    # A `finish` call whose args are rejected falls back to extract, but the tool lifecycle
+    # still fires, matching the pre-fast-path behavior where `finish` always executed.
+    tracker = _FinishTracker()
+    react = dspy.ReAct("question -> answer", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "Finishing without args.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Extracted.", "answer": "extracted answer"},
+        ]
+    )
+    with dspy.context(lm=lm, callbacks=[tracker]):
+        outputs = react(question="q")
+
+    assert outputs.answer == "extracted answer"
+    assert tracker.started == ["finish"]
+    assert tracker.ended == 1

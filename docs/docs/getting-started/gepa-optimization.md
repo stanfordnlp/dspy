@@ -108,11 +108,13 @@ optimized_haiku_bot.save("react_gpt_nano_haiku_optimized.json")
 
 ## GEPA’s improved prompt
 
-As previously discussed, `ReAct` is composed of a `Predict` module that reasons and decides what tools to call and a `ChainOfThought` module that synthesizes the final output. GEPA prompt optimized *both* of these modules.
+As previously discussed, `ReAct` is composed of a `Predict` module that reasons and decides what tools to call and a `ChainOfThought` module that synthesizes the final output when the model’s `finish` call doesn’t already carry it. GEPA prompt optimizes the module that reasons and calls tools, which runs on every example.
 
-Inside the JSON file containing our saved program state, we can see both improved instructions.
+The synthesis module is a fallback: it only runs when a `finish` call is missing an output field or sends one that fails validation. Because GEPA proposes new instructions from traces of what actually ran, a program whose `finish` calls all validate produces no traces for the fallback, and GEPA leaves its instructions untouched (logging `No valid reflective examples found for extract.predict`). It gets optimized only in proportion to how often the fast path falls back.
 
-Our program’s synthesis step started off with these instructions, which we defined in our signature docstring:
+The run below predates that fast path, so both modules were exercised and both were optimized. Inside the JSON file containing our saved program state, we can see both improved instructions.
+
+Our program’s fallback synthesis step started off with these instructions, which we defined in our signature docstring:
 
 ```
 Write a classical haiku given the provided inputs.

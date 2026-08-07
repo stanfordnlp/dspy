@@ -250,6 +250,12 @@ In this example, by setting `allow_reuse=True` in the StreamListener, you ensure
 available for every iteration, not just the first. When you run this code, you will see the streaming tokens for `next_thought`
 output each time the field is produced.
 
+Note that `dspy.ReAct` reads its declared output fields, like `answer`, from the arguments of the model's `finish` call, so
+those values arrive as part of the react predictor's `next_tool_args` rather than from a separate prediction. A listener on
+`answer` binds to ReAct's fallback extractor, which only runs when the `finish` arguments are missing or fail validation, so
+on a typical run it emits nothing. Stream `next_thought` to follow the agent as it works, and read the final value from the
+returned `dspy.Prediction`.
+
 #### Handling Duplicate Field Names
 
 When streaming fields with the same name from different modules, specify both the `predict` and `predict_name` in the `StreamListener`:
