@@ -184,6 +184,15 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: 3.11
+      - name: Prefetch Ollama image
+        run: |
+          (
+            if docker pull ollama/ollama:0.31.2 > "$RUNNER_TEMP/ollama-pull.log" 2>&1; then
+              echo 0 > "$RUNNER_TEMP/ollama-pull.status"
+            else
+              echo "$?" > "$RUNNER_TEMP/ollama-pull.status"
+            fi
+          ) &
       - name: Install uv with caching
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
@@ -207,6 +216,14 @@ jobs:
           key: ollama-llama3.2-3b-${{ runner.os }}-ollama0.31.2-v2
       - name: Start Ollama service
         run: |
+          for _ in {1..120}; do
+            [[ -f "$RUNNER_TEMP/ollama-pull.status" ]] && break
+            sleep 1
+          done
+          if [[ ! -f "$RUNNER_TEMP/ollama-pull.status" ]] || [[ "$(cat "$RUNNER_TEMP/ollama-pull.status")" != 0 ]]; then
+            cat "$RUNNER_TEMP/ollama-pull.log"
+            exit 1
+          fi
           mkdir -p ollama-data
           docker run -d --name ollama \
             -p 11434:11434 \
