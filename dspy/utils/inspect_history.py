@@ -51,9 +51,11 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
+        duration = item.get("duration")
+        header = f"[{timestamp}]" if duration is None else f"[{timestamp}] ({duration:.3f}s)"
 
         print("\n\n\n", file=out)
-        print(_blue(f"[{timestamp}]", use_colors=use_colors), file=out)
+        print(_blue(header, use_colors=use_colors), file=out)
 
         for msg in messages:
             print(_red(f"{msg['role'].capitalize()} message:", use_colors=use_colors), file=out)
