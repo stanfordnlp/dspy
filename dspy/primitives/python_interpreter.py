@@ -674,7 +674,11 @@ class PythonInterpreter:
                 if not isinstance(result, dict):
                     self._raise_terminal_error(f"Malformed execution result: {msg}")
                 self._sync_files()
-                # Check for SUBMIT (encoded as success with "final" field)
+                # Check for SUBMIT (encoded as success with "final_json" or "final")
+                if "final_json" in result:
+                    # Payload serialized with Python json inside the sandbox, so
+                    # big ints and nan/inf survive the JS boundary.
+                    return FinalOutput(json.loads(result["final_json"]))
                 if "final" in result:
                     return FinalOutput(result["final"])
                 return result.get("output", None)
