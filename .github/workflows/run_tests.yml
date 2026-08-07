@@ -73,6 +73,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      max-parallel: 3
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
@@ -106,6 +107,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      max-parallel: 3
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
@@ -316,6 +318,8 @@ jobs:
 
   build_package:
     name: Build Package
+    needs: [test, remaining_test]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
