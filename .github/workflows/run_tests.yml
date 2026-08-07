@@ -122,13 +122,15 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: 3.11
-      - name: Prefetch Ollama image
+      - name: Prefetch Ollama
         run: |
           (
-            if docker pull ollama/ollama:0.31.2 > "$RUNNER_TEMP/ollama-pull.log" 2>&1; then
-              echo 0 > "$RUNNER_TEMP/ollama-pull.status"
+            if curl --fail --location --silent --show-error \
+              --output "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" \
+              https://github.com/ollama/ollama/releases/download/v0.31.2/ollama-linux-amd64.tar.zst; then
+              echo 0 > "$RUNNER_TEMP/ollama-download.status"
             else
-              echo "$?" > "$RUNNER_TEMP/ollama-pull.status"
+              echo "$?" > "$RUNNER_TEMP/ollama-download.status"
             fi
           ) &
       - name: Install uv
@@ -152,28 +154,33 @@ jobs:
       - name: Start Ollama service
         run: |
           for _ in {1..120}; do
-            [[ -f "$RUNNER_TEMP/ollama-pull.status" ]] && break
+            [[ -f "$RUNNER_TEMP/ollama-download.status" ]] && break
             sleep 1
           done
-          if [[ ! -f "$RUNNER_TEMP/ollama-pull.status" ]] || [[ "$(cat "$RUNNER_TEMP/ollama-pull.status")" != 0 ]]; then
-            cat "$RUNNER_TEMP/ollama-pull.log"
+          if [[ ! -f "$RUNNER_TEMP/ollama-download.status" ]] || [[ "$(cat "$RUNNER_TEMP/ollama-download.status")" != 0 ]]; then
+            echo "Ollama download failed or timed out"
             exit 1
           fi
-          mkdir -p ollama-data
-          docker run -d --name ollama \
-            -p 11434:11434 \
-            -v "$GITHUB_WORKSPACE/ollama-data:/root/.ollama" \
-            ollama/ollama:0.31.2
+          echo "2c88f0f31a959bac5a3cad4cc5296ec568551d4aa79f548f554adb2b575b3133  $RUNNER_TEMP/ollama-linux-amd64.tar.zst" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/ollama-install"
+          tar --use-compress-program=unzstd -xf "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" -C "$RUNNER_TEMP/ollama-install"
           # Some GitHub runners are Sapphire-Rapids-class machines with AMX. llama.cpp's
           # AMX-repacked weight path segfaults there during model load (llama-server dies
           # with SIGSEGV in warm-up), while all non-AMX runners pass. Removing the AMX
           # backend variant makes ggml's autodetection fall back to the icelake kernels
           # that every other runner already uses.
-          docker exec ollama rm /usr/lib/ollama/libggml-cpu-sapphirerapids.so
+          rm "$RUNNER_TEMP/ollama-install/lib/ollama/libggml-cpu-sapphirerapids.so"
+          echo "$RUNNER_TEMP/ollama-install/bin" >> "$GITHUB_PATH"
+          mkdir -p ollama-data
+          echo "OLLAMA_MODELS=$GITHUB_WORKSPACE/ollama-data/models" >> "$GITHUB_ENV"
+          OLLAMA_MODELS="$GITHUB_WORKSPACE/ollama-data/models" \
+            LD_LIBRARY_PATH="$RUNNER_TEMP/ollama-install/lib/ollama${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            nohup "$RUNNER_TEMP/ollama-install/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/ollama.pid"
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
       - name: Pull LLM
         if: steps.cache-ollama.outputs.cache-hit != 'true'
-        run: docker exec ollama ollama pull llama3.2:3b
+        run: ollama pull llama3.2:3b
       - name: Warm up LLM
         run: |
           for i in 1 2 3; do
@@ -186,7 +193,7 @@ jobs:
             sleep 5
           done
           echo "Ollama failed to serve llama3.2:3b after 3 attempts"
-          docker logs ollama || true
+          cat "$RUNNER_TEMP/ollama.log" || true
           exit 1
       - name: Set LM environment variable
         run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> "$GITHUB_ENV"
@@ -197,7 +204,7 @@ jobs:
         run: sudo chown -R "$USER":"$USER" ollama-data || true
       - name: Stop Ollama service
         if: always()
-        run: docker stop ollama && docker rm ollama
+        run: kill "$(cat "$RUNNER_TEMP/ollama.pid")" || true
 
   build_package:
     name: Build Package
