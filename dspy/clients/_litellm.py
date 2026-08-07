@@ -55,6 +55,12 @@ def normalize_litellm_error(error: Exception, model: str | None = None) -> Excep
         rl_err = getattr(litellm_module, "RateLimitError", None)
         auth_err = getattr(litellm_module, "AuthenticationError", None)
         inv_err = getattr(litellm_module, "InvalidRequestError", None)
+        bad_req_err = getattr(litellm_module, "BadRequestError", None)
+        not_found_err = getattr(litellm_module, "NotFoundError", None)
+        unsupported_err = getattr(litellm_module, "UnsupportedParamsError", None)
+        conn_err = getattr(litellm_module, "APIConnectionError", None)
+        server_err = getattr(litellm_module, "ServiceUnavailableError", None)
+        internal_err = getattr(litellm_module, "InternalServerError", None)
         api_err = getattr(litellm_module, "APIError", None)
         timeout_err = getattr(litellm_module, "Timeout", None)
 
@@ -64,8 +70,16 @@ def normalize_litellm_error(error: Exception, model: str | None = None) -> Excep
             return exc.LMRateLimitError(str(error), model=model)
         if auth_err and isinstance(error, auth_err):
             return exc.LMAuthError(str(error), model=model)
-        if inv_err and isinstance(error, inv_err):
+        if unsupported_err and isinstance(error, unsupported_err):
+            return exc.LMUnsupportedFeatureError(str(error), model=model)
+        if not_found_err and isinstance(error, not_found_err):
+            return exc.LMUnsupportedModelError(str(error), model=model)
+        if (inv_err and isinstance(error, inv_err)) or (bad_req_err and isinstance(error, bad_req_err)):
             return exc.LMInvalidRequestError(str(error), model=model)
+        if conn_err and isinstance(error, conn_err):
+            return exc.LMTransportError(str(error), model=model)
+        if (server_err and isinstance(error, server_err)) or (internal_err and isinstance(error, internal_err)):
+            return exc.LMServerError(str(error), model=model)
         if timeout_err and isinstance(error, timeout_err):
             return exc.LMTimeoutError(str(error), model=model)
         if api_err and isinstance(error, api_err):
