@@ -206,38 +206,7 @@ class PythonInterpreter:
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
-        if deno_command:
-            self.deno_command = list(deno_command)
-        else:
-            args = ["deno", "run"]
-
-            # Also allow reading Deno's cache directory so Pyodide can load its files
-            deno_dir = self._get_deno_dir()
-            raw_read_paths = [
-                self._get_runner_path(),
-                *([deno_dir] if deno_dir else []),
-                *self.enable_read_paths,
-                *self.enable_write_paths,
-            ]
-            allowed_read_paths = [_canonicalize_path(p) for p in raw_read_paths]
-            args.append(f"--allow-read={','.join(allowed_read_paths)}")
-
-            self._env_arg = ""
-            if self.enable_env_vars:
-                user_vars = [str(v).strip() for v in self.enable_env_vars]
-                args.append("--allow-env=" + ",".join(user_vars))
-                self._env_arg = ",".join(user_vars)
-            if self.enable_network_access:
-                args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
-            if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
-
-            args.append(_canonicalize_path(self._get_runner_path()))
-
-            # For runner.js to load in env vars
-            if self._env_arg:
-                args.append(self._env_arg)
-            self.deno_command = args
+        self._deno_command = list(deno_command) if deno_command else None
 
         self.deno_process = None
         self._mounted_files = False
@@ -245,6 +214,54 @@ class PythonInterpreter:
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
         self._session_ended = False
+
+    @property
+    def execution_instructions(self) -> str:
+        """Describe stable constraints of the Deno/Pyodide execution environment."""
+        return (
+            "Code runs as Python in Pyodide inside a Deno-hosted WebAssembly environment. "
+            "State, imports, functions, and variables persist across executions in this session. "
+            "Pure-Python and Pyodide-compatible packages may be available; ordinary CPython native "
+            "extensions and subprocesses are unavailable. Host filesystem, environment, and network "
+            "access are unavailable unless explicitly enabled. Use the provided host tools for "
+            "capabilities not available in the sandbox."
+        )
+
+    @property
+    def deno_command(self) -> list[str]:
+        """Return the Deno command, resolving the cache directory lazily."""
+        if self._deno_command is None:
+            self._deno_command = self._build_deno_command()
+        return self._deno_command
+
+    def _build_deno_command(self) -> list[str]:
+        args = ["deno", "run"]
+
+        # Also allow reading Deno's cache directory so Pyodide can load its files.
+        deno_dir = self._get_deno_dir()
+        raw_read_paths = [
+            self._get_runner_path(),
+            *([deno_dir] if deno_dir else []),
+            *self.enable_read_paths,
+            *self.enable_write_paths,
+        ]
+        allowed_read_paths = [_canonicalize_path(p) for p in raw_read_paths]
+        args.append(f"--allow-read={','.join(allowed_read_paths)}")
+
+        env_arg = ""
+        if self.enable_env_vars:
+            user_vars = [str(v).strip() for v in self.enable_env_vars]
+            args.append("--allow-env=" + ",".join(user_vars))
+            env_arg = ",".join(user_vars)
+        if self.enable_network_access:
+            args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
+        if self.enable_write_paths:
+            args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
+
+        args.append(_canonicalize_path(self._get_runner_path()))
+        if env_arg:
+            args.append(env_arg)
+        return args
 
     def _check_session_active(self) -> None:
         if self._session_ended:

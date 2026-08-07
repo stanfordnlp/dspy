@@ -7,6 +7,7 @@ Test organization:
 """
 
 import base64
+import json
 from contextlib import contextmanager
 
 import pytest
@@ -36,6 +37,7 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
     class MockPredictor:
         def __init__(self):
             self.idx = 0
+            self.calls = []
 
         def _next_response(self):
             result = responses[self.idx % len(responses)]
@@ -43,9 +45,11 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
             return Prediction(**result)
 
         def __call__(self, **kwargs):
+            self.calls.append(kwargs)
             return self._next_response()
 
         async def acall(self, **kwargs):
+            self.calls.append(kwargs)
             return self._next_response()
 
     return MockPredictor()
@@ -241,6 +245,41 @@ class TestRLMInitialization:
         assert rlm.sub_lm is mock_lm
         assert rlm._interpreter_factory is MockInterpreter
 
+    def test_load_migrates_legacy_action_demos(self, tmp_path):
+        import dspy
+
+        rlm = RLM("context -> answer", interpreter_factory=MockInterpreter)
+        rlm.generate_action.demos = [
+            {
+                "variables_info": "context: str",
+                "repl_history": REPLHistory(),
+                "iteration": "1/20",
+                "reasoning": "Inspect the context.",
+                "code": "```python\nprint(context)\n```",
+            }
+        ]
+        path = tmp_path / "legacy_rlm.json"
+        rlm.save(path)
+
+        state = json.loads(path.read_text())
+        action_state = state["generate_action"]
+        action_state["signature"]["fields"].pop(0)  # execution_instructions did not exist
+        path.write_text(json.dumps(state))
+
+        loaded = RLM("context -> answer", interpreter_factory=MockInterpreter)
+        loaded.load(path)
+
+        demo = loaded.generate_action.demos[0]
+        assert demo["execution_instructions"] == ""
+        assert (
+            loaded.generate_action.signature.fields["variables_info"].json_schema_extra["prefix"]
+            == "Variables Info:"
+        )
+        messages = dspy.ChatAdapter().format_demos(loaded.generate_action.signature, loaded.generate_action.demos)
+        assert not any(
+            "though some input or output fields are not supplied" in message["content"] for message in messages
+        )
+
     def test_forward_validates_required_inputs(self):
         """Test that forward() raises ValueError for missing required inputs."""
         # Single missing input
@@ -426,6 +465,55 @@ class TestRLMInitialization:
 
 
 class TestRLMInterpreterLifecycle:
+    def test_execution_instructions_are_read_before_start_and_passed_to_action(self):
+        events = []
+
+        class InstructedInterpreter(MockInterpreter):
+            @property
+            def execution_instructions(self):
+                events.append("instructions")
+                return "Use this restricted runtime."
+
+            def start(self):
+                events.append("start")
+
+        interpreter = InstructedInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1)
+        predictor = make_mock_predictor([{"reasoning": "Return answer", "code": "SUBMIT('42')"}])
+        rlm.generate_action = predictor
+
+        result = rlm(interpreter, query="test")
+
+        assert result.answer == "42"
+        assert events == ["instructions", "start"]
+        assert predictor.calls[0]["execution_instructions"] == "Use this restricted runtime."
+
+    @pytest.mark.asyncio
+    async def test_async_execution_passes_execution_instructions(self):
+        class InstructedInterpreter(MockInterpreter):
+            execution_instructions = "Async runtime instructions."
+
+        interpreter = InstructedInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1)
+        predictor = make_mock_predictor([{"reasoning": "Return answer", "code": "SUBMIT('42')"}])
+        rlm.generate_action = predictor
+
+        result = await rlm.acall(interpreter, query="test")
+
+        assert result.answer == "42"
+        assert predictor.calls[0]["execution_instructions"] == "Async runtime instructions."
+
+    def test_legacy_interpreter_uses_empty_execution_instructions(self):
+        interpreter = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1)
+        predictor = make_mock_predictor([{"reasoning": "Return answer", "code": "SUBMIT('42')"}])
+        rlm.generate_action = predictor
+
+        result = rlm(interpreter, query="test")
+
+        assert result.answer == "42"
+        assert predictor.calls[0]["execution_instructions"] == ""
+
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)
@@ -556,6 +644,11 @@ class TestRLMFormatting:
         rlm = RLM("context -> answer")
         action_sig = rlm.generate_action.signature
         assert "iteration" in action_sig.input_fields
+
+    def test_action_signature_has_execution_instructions_field(self):
+        rlm = RLM("context -> answer")
+
+        assert "execution_instructions" in rlm.generate_action.signature.input_fields
 
     def test_format_output(self):
         """Test output formatting."""

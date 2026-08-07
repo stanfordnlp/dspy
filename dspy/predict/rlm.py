@@ -63,7 +63,8 @@ Available:
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
-- Standard libraries: re, json, collections, math, etc.
+
+The Python facilities and restrictions of this REPL are described in `execution_instructions`.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
 
@@ -180,6 +181,32 @@ class RLM(Module):
         action_sig, extract_sig = self._build_signatures()
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
+
+    def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
+        """Load state, upgrading action demos saved before execution instructions were added."""
+        action_state = state.get("generate_action")
+        if action_state:
+            current_fields = self.generate_action.signature.dump_state()["fields"]
+            saved_fields = action_state.get("signature", {}).get("fields", [])
+            legacy_action_state = len(saved_fields) + 1 == len(current_fields) and saved_fields == current_fields[1:]
+            if legacy_action_state:
+                state = dict(state)
+                action_state = dict(action_state)
+                state["generate_action"] = action_state
+
+                signature_state = dict(action_state["signature"])
+                signature_state["fields"] = [current_fields[0], *saved_fields]
+                action_state["signature"] = signature_state
+
+                legacy_fields = set(self.generate_action.signature.fields) - {"execution_instructions"}
+                action_state["demos"] = [
+                    {**demo, "execution_instructions": ""}
+                    if "execution_instructions" not in demo and legacy_fields.issubset(demo)
+                    else demo
+                    for demo in action_state.get("demos", [])
+                ]
+
+        super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
 
     # =========================================================================
     # Tool Creation and Validation
@@ -356,6 +383,7 @@ class RLM(Module):
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
             ) + tool_docs)
+            .append("execution_instructions", dspy.InputField(desc="Stable instructions and restrictions for the configured code interpreter"), type_=str)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
@@ -666,10 +694,12 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        execution_instructions: str,
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
         action = self.generate_action(
+            execution_instructions=execution_instructions,
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -716,12 +746,17 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
+            execution_instructions = getattr(repl, "execution_instructions", "")
+            if not isinstance(execution_instructions, str):
+                raise TypeError(
+                    f"interpreter.execution_instructions must be a string, not {type(execution_instructions).__name__}."
+                )
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, execution_instructions
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -759,10 +794,12 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        execution_instructions: str,
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
+            execution_instructions=execution_instructions,
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -805,12 +842,17 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
+            execution_instructions = getattr(repl, "execution_instructions", "")
+            if not isinstance(execution_instructions, str):
+                raise TypeError(
+                    f"interpreter.execution_instructions must be a string, not {type(execution_instructions).__name__}."
+                )
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, execution_instructions
                 )
                 if isinstance(result, Prediction):
                     return result
