@@ -22,47 +22,39 @@ class BaseModule:
 
     def named_parameters(self):
         """
-        Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        Unlike PyTorch, handles nested lists, tuples, and dictionaries of parameters too.
         """
 
         import dspy
         from dspy.predict.parameter import Parameter
 
-        visited = set()
+        visited = {id(self)}
         named_parameters = []
 
         def add_parameter(param_name, param_value):
-            if isinstance(param_value, Parameter):
-                if id(param_value) not in visited:
-                    visited.add(id(param_value))
-                    named_parameters.append((param_name, param_value))
+            if id(param_value) in visited:
+                return
+            visited.add(id(param_value))
 
+            if isinstance(param_value, Parameter):
+                named_parameters.append((param_name, param_value))
             elif isinstance(param_value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
                 if not getattr(param_value, "_compiled", False):
-                    for sub_name, param in param_value.named_parameters():
-                        add_parameter(f"{param_name}.{sub_name}", param)
+                    for sub_name, sub_value in param_value.__dict__.items():
+                        add_parameter(f"{param_name}.{sub_name}", sub_value)
+            elif isinstance(param_value, (list, tuple)):
+                for idx, item in enumerate(param_value):
+                    add_parameter(f"{param_name}[{idx}]", item)
+            elif isinstance(param_value, dict):
+                for key, item in param_value.items():
+                    add_parameter(f"{param_name}['{key}']", item)
 
         if isinstance(self, Parameter):
-            add_parameter("self", self)
+            named_parameters.append(("self", self))
 
         for name, value in self.__dict__.items():
-            if isinstance(value, Parameter):
-                add_parameter(name, value)
-
-            elif isinstance(value, dspy.Module):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, "_compiled", False):
-                    for sub_name, param in value.named_parameters():
-                        add_parameter(f"{name}.{sub_name}", param)
-
-            elif isinstance(value, (list, tuple)):
-                for idx, item in enumerate(value):
-                    add_parameter(f"{name}[{idx}]", item)
-
-            elif isinstance(value, dict):
-                for key, item in value.items():
-                    add_parameter(f"{name}['{key}']", item)
+            add_parameter(name, value)
 
         return named_parameters
 
