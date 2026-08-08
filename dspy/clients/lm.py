@@ -7,12 +7,11 @@ import warnings
 from typing import Any, Literal, cast
 
 import anyio.from_thread
-import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
-from dspy.clients._litellm import is_litellm_context_window_error
+from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.openai_format import to_openai_responses_request
@@ -41,6 +40,10 @@ from dspy.utils.exceptions import (
 from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
+
+
+def _get_litellm():
+    return get_litellm(feature="dspy.LM")
 
 
 class LM(BaseLM):
@@ -402,7 +405,7 @@ def _get_stream_completion_fn(
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        response = await litellm.acompletion(
+        response = await _get_litellm().acompletion(
             cache=cache_kwargs,
             stream=True,
             headers=headers,
@@ -415,7 +418,7 @@ def _get_stream_completion_fn(
                 chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
+        return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
         # Use anyio (already a runtime dependency) instead of asyncer so a clean
@@ -438,7 +441,7 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
     if stream_completion is None:
-        return litellm.completion(
+        return _get_litellm().completion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
@@ -466,7 +469,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(
+    return _get_litellm().text_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
@@ -486,7 +489,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=headers)
     if stream_completion is None:
-        return await litellm.acompletion(
+        return await _get_litellm().acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
@@ -512,7 +515,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return await litellm.atext_completion(
+    return await _get_litellm().atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
@@ -532,7 +535,7 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
     headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
-    return litellm.responses(
+    return _get_litellm().responses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
@@ -548,7 +551,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
-    return await litellm.aresponses(
+    return await _get_litellm().aresponses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
