@@ -281,7 +281,7 @@ if __name__ == "__main__":
 Now we have finished writing the server! Let's launch it:
 
 ```shell
-python path_to_your_working_directory/mcp_server.py
+python mcp_server.py
 ```
 
 ## Write a DSPy Program That Utilizes Tools in MCP Server
@@ -302,11 +302,14 @@ tools, and convert them to `dspy.Tool` using the static method `from_mcp_tool`:
 ```python
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from pathlib import Path
+
+SERVER_PATH = Path(__file__).with_name("mcp_server.py")
 
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
     command="python",  # Executable
-    args=["path_to_your_working_directory/mcp_server.py"],
+    args=[str(SERVER_PATH)],
     env=None,
 )
 
@@ -372,13 +375,16 @@ put together the complete code script:
 ```python
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from pathlib import Path
 
 import dspy
+
+SERVER_PATH = Path(__file__).with_name("mcp_server.py")
 
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
     command="python",  # Executable
-    args=["script_tmp/mcp_server.py"],  # Optional command line arguments
+    args=[str(SERVER_PATH)],  # Optional command line arguments
     env=None,  # Optional environment variables
 )
 
