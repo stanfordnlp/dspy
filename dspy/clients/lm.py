@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import re
@@ -9,7 +10,6 @@ import anyio.from_thread
 import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
 
 import dspy
 from dspy.clients._litellm import is_litellm_context_window_error
@@ -418,8 +418,9 @@ def _get_stream_completion_fn(
         return litellm.stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, cache_kwargs)
+        # Use anyio (already a runtime dependency) instead of asyncer so a clean
+        # locked install can import dspy without undeclared packages.
+        return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
