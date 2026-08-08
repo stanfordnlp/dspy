@@ -12,7 +12,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
 import dspy
-from dspy.clients._litellm import normalize_litellm_error
+from dspy.clients._litellm import is_litellm_context_window_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.openai_format import to_openai_responses_request
@@ -21,6 +21,22 @@ from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.core.types import LMRequest
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.exceptions import (
+    ContextWindowExceededError,
+    LMAuthError,
+    LMBillingError,
+    LMError,
+    LMInvalidRequestError,
+    LMNotConfiguredError,
+    LMProviderError,
+    LMRateLimitError,
+    LMServerError,
+    LMTimeoutError,
+    LMTransportError,
+    LMUnexpectedError,
+    LMUnsupportedFeatureError,
+    LMUnsupportedModelError,
+)
 
 from .base_lm import BaseLM
 
@@ -167,7 +183,7 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as err:
-            raise normalize_litellm_error(err, model=self.model) from err
+            raise self._wrap_litellm_exception(err) from err
 
         self._check_truncation(results)
 
@@ -214,7 +230,7 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as err:
-            raise normalize_litellm_error(err, model=self.model) from err
+            raise self._wrap_litellm_exception(err) from err
 
         self._check_truncation(results)
 
@@ -298,6 +314,41 @@ class LM(BaseLM):
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
         return Provider()
+
+    @property
+    def _provider_name(self) -> str:
+        """Extract the provider name from the model string (e.g. 'openai' from 'openai/gpt-4o')."""
+        if "/" in self.model:
+            return self.model.split("/", 1)[0]
+        return "openai"
+
+    def _wrap_litellm_exception(self, exc: Exception) -> LMError:
+        """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions.
+
+        Kept as an instance method so tests and call sites can exercise the full
+        metadata-preserving seam (status, request_id, retry_after, provider).
+        """
+        if isinstance(exc, LMError):
+            return exc
+
+        status = _exception_status(exc)
+        provider = getattr(exc, "llm_provider", None) or self._provider_name
+        model = getattr(exc, "model", None) or self.model
+        message = _exception_message(exc)
+        metadata = {
+            "model": model,
+            "provider": provider,
+            "provider_code": _exception_provider_code(exc),
+            "status": status,
+            "request_id": _exception_request_id(exc),
+            "retry_after": _exception_retry_after(exc),
+        }
+
+        if is_litellm_context_window_error(exc):
+            return ContextWindowExceededError(message=message or "Context window exceeded", **metadata)
+
+        exc_cls = _lm_error_class_from_litellm_exception(exc) or _lm_error_class_from_status(status)
+        return exc_cls(message, **metadata)
 
     def dump_state(self):
         """Return a sanitized reconstruction state for this LM.
@@ -512,26 +563,27 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     old pass-through converter forwarded verbatim — Responses-native shapes and
     provider-SDK dumps — are tolerated here and only here; the typed path stays
     strict.
+
+    Each chat message is converted independently so multi-message prompts keep
+    distinct roles (e.g. system + user) instead of collapsing into one item.
     """
     request = dict(request)
     model = request.pop("model", None)
-    raw_messages = request.pop("messages", None)
+    messages = [
+        _sanitize_legacy_message(message) if isinstance(message, dict) else message
+        for message in (request.pop("messages", None) or [])
+    ]
     tools = list(request.pop("tools", None) or [])
 
-    if raw_messages:
-        messages = [_sanitize_legacy_message(m) if isinstance(m, dict) else m for m in raw_messages]
-        content_blocks = []
-        for msg in messages:
-            c = msg.get("content") if isinstance(msg, dict) else None
-            if isinstance(c, str):
-                content_blocks.append({"type": "input_text", "text": c})
-            elif isinstance(c, list):
-                for item in c:
-                    content_blocks.append(_convert_content_item_to_responses_format(item))
-        request["input"] = [{"role": msg.get("role", "user") if isinstance(msg, dict) else "user", "content": content_blocks}]
-
+    # Reasoning models use `max_completion_tokens` in the chat path. The
+    # normalized Responses mapper expects the shared `max_tokens` name and emits
+    # `max_output_tokens`.
     if "max_completion_tokens" in request and "max_tokens" not in request:
         request["max_tokens"] = request.pop("max_completion_tokens")
+
+    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
+    # compatibility shim: requesting reasoning effort also asks OpenAI for an
+    # automatic reasoning summary.
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
         if request.get("reasoning") is None:
@@ -547,6 +599,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     responses_native_tool_choice = None
     if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
         responses_native_tool_choice = request.pop("tool_choice")
+
+    # Drop any pre-collapsed `input` leftover so the typed mapper owns role mapping.
+    request.pop("input", None)
 
     lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
     # The old converter never validated reasoning/temperature combinations
@@ -603,3 +658,123 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         "User-Agent": f"DSPy/{dspy.__version__}",
         **headers,
     }
+
+
+def _exception_status(exc: Exception) -> int | None:
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _exception_message(exc: Exception) -> str:
+    message = getattr(exc, "message", None)
+    if message is None:
+        message = str(exc)
+    return str(message)
+
+
+def _exception_headers(exc: Exception):
+    response = getattr(exc, "response", None)
+    return getattr(response, "headers", None) or getattr(exc, "headers", None) or {}
+
+
+def _exception_header(exc: Exception, name: str) -> str | None:
+    headers = _exception_headers(exc)
+    if not headers:
+        return None
+    try:
+        return headers.get(name) or headers.get(name.lower())
+    except AttributeError:
+        return None
+
+
+def _exception_request_id(exc: Exception) -> str | None:
+    return (
+        _exception_header(exc, "x-request-id")
+        or _exception_header(exc, "request-id")
+        or _exception_header(exc, "x-amzn-requestid")
+        or _exception_header(exc, "x-ms-request-id")
+    )
+
+
+def _exception_retry_after(exc: Exception) -> float | None:
+    retry_after = _exception_header(exc, "retry-after")
+    try:
+        return float(retry_after) if retry_after is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _exception_provider_code(exc: Exception) -> str | None:
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and error.get("code") is not None:
+            return str(error["code"])
+        if body.get("code") is not None:
+            return str(body["code"])
+    return None
+
+
+def _safe_litellm_exception_class(name: str) -> type[Exception] | None:
+    cls = getattr(litellm, name, None)
+    return cls if isinstance(cls, type) and issubclass(cls, Exception) else None
+
+
+def _lm_error_class_from_litellm_exception(exc: Exception) -> type[LMError] | None:
+    message = _exception_message(exc).lower()
+    class_name = type(exc).__name__.lower()
+    if _exception_status(exc) is None and any(
+        phrase in message for phrase in ("api key", "apikey", "credentials", "environment variable")
+    ):
+        return LMNotConfiguredError
+    if "timeout" in class_name or "timed out" in message or "timeout" in message:
+        return LMTimeoutError
+    if "connection" in class_name or "network" in message or "connection" in message:
+        return LMTransportError
+
+    mappings = [
+        ("AuthenticationError", LMAuthError),
+        ("RateLimitError", LMRateLimitError),
+        ("NotFoundError", LMUnsupportedModelError),
+        ("UnsupportedParamsError", LMUnsupportedFeatureError),
+        ("UnprocessableEntityError", LMInvalidRequestError),
+        ("ContentPolicyViolationError", LMInvalidRequestError),
+        ("BadRequestError", LMInvalidRequestError),
+        ("InvalidRequestError", LMInvalidRequestError),
+        ("InternalServerError", LMServerError),
+        ("ServiceUnavailableError", LMServerError),
+        ("APIConnectionError", LMTransportError),
+        ("APIResponseValidationError", LMProviderError),
+        ("BudgetExceededError", LMBillingError),
+        ("RouterRateLimitError", LMRateLimitError),
+        ("ContextWindowExceededError", ContextWindowExceededError),
+    ]
+    for litellm_name, dspy_cls in mappings:
+        litellm_cls = _safe_litellm_exception_class(litellm_name)
+        if litellm_cls is not None and isinstance(exc, litellm_cls):
+            return dspy_cls
+    return None
+
+
+def _lm_error_class_from_status(status: int | None) -> type[LMError]:
+    if status in (401, 403):
+        return LMAuthError
+    if status == 402:
+        return LMBillingError
+    if status == 404:
+        return LMUnsupportedModelError
+    if status == 408:
+        return LMTimeoutError
+    if status == 429:
+        return LMRateLimitError
+    if status is not None and 400 <= status < 500:
+        return LMInvalidRequestError
+    if status is not None and status >= 500:
+        return LMServerError
+    return LMUnexpectedError if status is None else LMProviderError
