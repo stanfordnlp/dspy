@@ -217,7 +217,7 @@ name = "apscheduler"
 version = "3.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "tzlocal", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "tzlocal" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4e/00/6d6814ddc19be2df62c8c898c4df6b5b1914f3bd024b780028caa392d186/apscheduler-3.11.0.tar.gz", hash = "sha256:4c622d250b0955a65d5d0eb91c33e6d43fd879834bf541e0a18661ae60460133", size = 107347, upload-time = "2024-11-24T19:39:26.463Z" }
 wheels = [
@@ -262,7 +262,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "cryptography", version = "43.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "cryptography", version = "43.0.3", source = { registry = "https://pypi.org/simple" } },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d3/30/6691fdc63b35f54a5a65e04fa1e59d827f4d4e8f4a39678ba7d3088ce0c8/authlib-1.6.12.tar.gz", hash = "sha256:0656d8482f28fc8221929d5f35b2bde5d13e10555ebc06b4561b0d622e83b1bd", size = 165368, upload-time = "2026-05-04T08:11:31.826Z" }
 wheels = [
@@ -281,8 +281,8 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "joserfc", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "joserfc" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/36/98/7d93f30d029643c0275dbc0bd6d5a6f670661ee6c9a94d93af7ab4887600/authlib-1.7.2.tar.gz", hash = "sha256:2cea25fefcd4e7173bdf1372c0afc265c8034b23a8cd5dcb6a9164b826c64231", size = 176511, upload-time = "2026-05-06T08:10:23.116Z" }
 wheels = [
@@ -346,9 +346,9 @@ name = "boto3"
 version = "1.34.34"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "jmespath", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "s3transfer", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/a0/f332de5bc770ddbcbddc244a9ced5476ac2d105a14fbd867c62f702a73ee/boto3-1.34.34.tar.gz", hash = "sha256:b2f321e20966f021ec800b7f2c01287a3dd04fc5965acdfbaa9c505a24ca45d1", size = 108364, upload-time = "2024-02-02T20:23:29.696Z" }
 wheels = [
@@ -360,9 +360,9 @@ name = "botocore"
 version = "1.34.162"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jmespath", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "python-dateutil", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "urllib3", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "jmespath" },
+    { name = "python-dateutil" },
+    { name = "urllib3" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/de/17d672eac6725da49bd5832e3bd2f74c4d212311cd393fd56b59f51a4e86/botocore-1.34.162.tar.gz", hash = "sha256:adc23be4fb99ad31961236342b7cbf3c0bfc62532cd02852196032e8c0d682f3", size = 12676693, upload-time = "2024-08-15T19:25:25.162Z" }
 wheels = [
@@ -583,7 +583,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "cffi", marker = "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'win32'" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/05/07b55d1fa21ac18c3a8c79f764e2514e6f6a9698f1be44994f5adf0d29db/cryptography-43.0.3.tar.gz", hash = "sha256:315b9001266a492a6ff443b61238f956b214dbec9910a081ba5b6646a055a805", size = 686989, upload-time = "2024-10-18T15:58:32.918Z" }
 wheels = [
@@ -618,7 +618,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "cffi", marker = "(python_full_version >= '3.14' and platform_python_implementation != 'PyPy') or (platform_python_implementation != 'PyPy' and sys_platform == 'win32')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fe/c8/a2a376a8711c1e11708b9c9972e0c3223f5fc682552c82d8db844393d6ce/cryptography-45.0.4.tar.gz", hash = "sha256:7405ade85c83c37682c8fe65554759800a4a8c54b2d96e0f8ad114d31b808d57", size = 744890, upload-time = "2025-06-10T00:03:51.297Z" }
 wheels = [
@@ -845,7 +845,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
     { name = "fastapi", marker = "python_full_version < '3.14' and sys_platform != 'win32' and extra == 'dev'", specifier = "<0.140.7" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.1.1" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.1.4" },
     { name = "json-repair", specifier = ">=0.54.2" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3.0" },
     { name = "langchain-core", marker = "extra == 'test-extras'", specifier = ">=0.3.0" },
@@ -884,8 +884,8 @@ name = "email-validator"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "dnspython", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "idna", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "dnspython" },
+    { name = "idna" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/48/ce/13508a1ec3f8bb981ae4ca79ea40384becc868bfae97fd1c942bb3a001b1/email_validator-2.2.0.tar.gz", hash = "sha256:cb690f344c617a714f22e66ae771445a1ceb46821152df8e165c5f9a364582b7", size = 48967, upload-time = "2024-06-20T11:30:30.034Z" }
 wheels = [
@@ -897,7 +897,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -918,9 +918,9 @@ name = "fastapi"
 version = "0.115.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pydantic", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "pydantic" },
+    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/20/64/ec0788201b5554e2a87c49af26b77a4d132f807a0fa9675257ac92c6aa0e/fastapi-0.115.13.tar.gz", hash = "sha256:55d1d25c2e1e0a0a50aceb1c8705cd932def273c102bff0b1c1da88b3c6eb307", size = 295680, upload-time = "2025-06-17T11:49:45.575Z" }
 wheels = [
@@ -932,10 +932,10 @@ name = "fastapi-sso"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fastapi", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "httpx", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "oauthlib", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pydantic", extra = ["email"], marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "oauthlib" },
+    { name = "pydantic", extra = ["email"] },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/57/9b/25c43c928b46ec919cb8941d3de53dd2e12bab12e1c0182646425dbefd60/fastapi_sso-0.16.0.tar.gz", hash = "sha256:f3941f986347566b7d3747c710cf474a907f581bfb6697ff3bb3e44eb76b438c", size = 16555, upload-time = "2024-11-04T11:54:38.579Z" }
 wheels = [
@@ -1070,11 +1070,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.1.1"
+version = "0.1.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e4/62/10f5a8f24c075e3b64f952be73ba8e15f0055584bbcdf9ce48d754a36679/gepa-0.1.1.tar.gz", hash = "sha256:643fda01c23de4c9f01306e01305dd69facc29bcb34ad59e4cd07e6621d34aa1", size = 272251, upload-time = "2026-03-16T10:17:53.131Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/56/925779e5690971f1b022f7d107caf015c33ec09560261273ec137e23a8f2/gepa-0.1.4.tar.gz", hash = "sha256:6dd153a676ae5481764860d19286a9c0e8ddb5ef70d7f13044faf24978bdb6b8", size = 351343, upload-time = "2026-07-15T14:53:59.929Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/b7/8c72dedbb950d88a6f64588fcbc590d2a21e2b9f19b36aa6c5016c54ec75/gepa-0.1.1-py3-none-any.whl", hash = "sha256:71ead7c591eafcc727b83509cdc4182f20264800a6ddf8520d61419daeb47466", size = 244246, upload-time = "2026-03-16T10:17:51.922Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/77/5b3a281cfd9caaa9e68349b434cf27f1ca448003ee0067a1ae2184dc52d1/gepa-0.1.4-py3-none-any.whl", hash = "sha256:12b971039599625c156d2231f6d72a29c31a22e9c237689459b5f1a3c353f532", size = 290167, upload-time = "2026-07-15T14:53:58.422Z" },
 ]
 
 [[package]]
@@ -1176,7 +1176,7 @@ name = "gunicorn"
 version = "23.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "packaging" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/34/72/9614c465dc206155d93eff0ca20d42e1e35afc533971379482de953521a4/gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec", size = 375031, upload-time = "2024-08-10T20:25:27.378Z" }
 wheels = [
@@ -1423,7 +1423,7 @@ name = "joserfc"
 version = "1.6.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" } },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3b/dc/5f768c2e391e9afabe5d18e3221346deb5fb6338565f1ccc9e7c6d7befdd/joserfc-1.6.5.tar.gz", hash = "sha256:1482a7db78fb4602e44ed89e51b599d052e091288c7c532c5b694e20149dec48", size = 231881, upload-time = "2026-05-06T04:58:13.408Z" }
 wheels = [
@@ -1534,17 +1534,17 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "aiohttp", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "click", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "httpx", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "importlib-metadata", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "jinja2", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "jsonschema", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "openai", version = "1.75.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pydantic", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "python-dotenv", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "tiktoken", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "tokenizers", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "aiohttp" },
+    { name = "click" },
+    { name = "httpx" },
+    { name = "importlib-metadata" },
+    { name = "jinja2" },
+    { name = "jsonschema" },
+    { name = "openai", version = "1.75.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "tiktoken" },
+    { name = "tokenizers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ba/22/138545b646303ca3f4841b69613c697b9d696322a1386083bb70bcbba60b/litellm-1.68.0.tar.gz", hash = "sha256:9fb24643db84dfda339b64bafca505a2eef857477afbc6e98fb56512c24dbbfa", size = 7314051, upload-time = "2025-05-04T05:41:48.081Z" }
 wheels = [
@@ -1553,24 +1553,24 @@ wheels = [
 
 [package.optional-dependencies]
 proxy = [
-    { name = "apscheduler", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "backoff", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "boto3", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "cryptography", version = "43.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "fastapi", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "fastapi-sso", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "gunicorn", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "litellm-proxy-extras", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "mcp", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "orjson", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pyjwt", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pynacl", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "python-multipart", version = "0.0.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pyyaml", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "rq", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "uvicorn", version = "0.29.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "uvloop", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "websockets", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "apscheduler" },
+    { name = "backoff" },
+    { name = "boto3" },
+    { name = "cryptography", version = "43.0.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "fastapi" },
+    { name = "fastapi-sso" },
+    { name = "gunicorn" },
+    { name = "litellm-proxy-extras" },
+    { name = "mcp", version = "1.5.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "orjson" },
+    { name = "pyjwt" },
+    { name = "pynacl" },
+    { name = "python-multipart", version = "0.0.18", source = { registry = "https://pypi.org/simple" } },
+    { name = "pyyaml" },
+    { name = "rq" },
+    { name = "uvicorn", version = "0.29.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "uvloop" },
+    { name = "websockets" },
 ]
 
 [[package]]
@@ -1585,17 +1585,17 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "aiohttp", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "click", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "httpx", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "importlib-metadata", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "jinja2", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "jsonschema", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "openai", version = "1.88.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "pydantic", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "python-dotenv", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "tiktoken", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "tokenizers", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "aiohttp" },
+    { name = "click" },
+    { name = "httpx" },
+    { name = "importlib-metadata" },
+    { name = "jinja2" },
+    { name = "jsonschema" },
+    { name = "openai", version = "1.88.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "tiktoken" },
+    { name = "tokenizers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8d/15/df75f278fd998f6d6900f692b9de2fba2814b316c123c99072a813668aac/litellm-1.72.6.tar.gz", hash = "sha256:4e5c7e4273b09b765302d2faaec30f77b42255c0055b427b55ea02b8092b8582", size = 8393603, upload-time = "2025-06-14T21:43:11.023Z" }
 wheels = [
@@ -1692,14 +1692,14 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "httpx", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "httpx-sse", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pydantic", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pydantic-settings", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "sse-starlette", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "uvicorn", version = "0.29.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "anyio" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "sse-starlette" },
+    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "uvicorn", version = "0.29.0", source = { registry = "https://pypi.org/simple" } },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6d/c9/c55764824e893fdebe777ac7223200986a275c3191dba9169f8eb6d7c978/mcp-1.5.0.tar.gz", hash = "sha256:5b2766c05e68e01a2034875e250139839498c61792163a7b221fc170c12f5aa9", size = 159128, upload-time = "2025-03-21T12:51:04.183Z" }
 wheels = [
@@ -1718,15 +1718,15 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "httpx", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "httpx-sse", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "pydantic", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "pydantic-settings", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "python-multipart", version = "0.0.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "sse-starlette", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "starlette", version = "0.47.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "uvicorn", version = "0.34.3", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.14' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
+    { name = "anyio" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-multipart", version = "0.0.20", source = { registry = "https://pypi.org/simple" } },
+    { name = "sse-starlette" },
+    { name = "starlette", version = "0.47.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "uvicorn", version = "0.34.3", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/f2/dc2450e566eeccf92d89a00c3e813234ad58e2ba1e31d11467a09ac4f3b9/mcp-1.9.4.tar.gz", hash = "sha256:cfb0bcd1a9535b42edaef89947b9e18a8feb49362e1cc059d6e7fc636f2cb09f", size = 333294, upload-time = "2025-06-12T08:20:30.158Z" }
 wheels = [
@@ -2056,14 +2056,14 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "distro", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "httpx", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "jiter", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "pydantic", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "sniffio", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "tqdm", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/99/b1/318f5d4c482f19c5fcbcde190801bfaaaec23413cda0b88a29f6897448ff/openai-1.75.0.tar.gz", hash = "sha256:fb3ea907efbdb1bcfd0c44507ad9c961afd7dce3147292b54505ecfd17be8fd1", size = 429492, upload-time = "2025-04-16T16:49:29.25Z" }
 wheels = [
@@ -2082,14 +2082,14 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "distro", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "httpx", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "jiter", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "pydantic", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "sniffio", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "tqdm", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5a/ea/bbeef604d1fe0f7e9111745bb8a81362973a95713b28855beb9a9832ab12/openai-1.88.0.tar.gz", hash = "sha256:122d35e42998255cf1fc84560f6ee49a844e65c054cd05d3e42fda506b832bb1", size = 470963, upload-time = "2025-06-17T05:04:45.856Z" }
 wheels = [
@@ -2594,7 +2594,7 @@ wheels = [
 
 [package.optional-dependencies]
 email = [
-    { name = "email-validator", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "email-validator" },
 ]
 
 [[package]]
@@ -2752,7 +2752,7 @@ name = "pynacl"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "cffi" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a7/22/27582568be639dfe22ddb3902225f91f2f17ceff88ce80e4db396c8986da/PyNaCl-1.5.0.tar.gz", hash = "sha256:8ac7448f09ab85811607bdd21ec2464495ac8b7c66d146bf545b0f08fb9220ba", size = 3392854, upload-time = "2022-01-07T22:05:41.134Z" }
 wheels = [
@@ -2941,7 +2941,7 @@ name = "redis"
 version = "6.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "async-timeout", marker = "python_full_version < '3.11.3' and sys_platform != 'win32'" },
+    { name = "async-timeout", marker = "python_full_version < '3.11.3' or python_full_version >= '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ea/9a/0551e01ba52b944f97480721656578c8a7c46b51b99d66814f85fe3a4f3e/redis-6.2.0.tar.gz", hash = "sha256:e821f129b75dde6cb99dd35e5c76e8c49512a5a0d8dfdc560b2fbd44b85ca977", size = 4639129, upload-time = "2025-05-28T05:01:18.91Z" }
 wheels = [
@@ -3214,8 +3214,8 @@ name = "rq"
 version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "redis", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "click" },
+    { name = "redis" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/f2/af00f6c89131ccd8dfe408e75ea631fd0c572785d7d69701b0a656171da0/rq-2.4.0.tar.gz", hash = "sha256:750bab5dbb7cf1ec8a0aa2ebe8949472fa58fc121afd446c7bf5f7797f5e0655", size = 661530, upload-time = "2025-06-14T03:57:49.795Z" }
 wheels = [
@@ -3252,7 +3252,7 @@ name = "s3transfer"
 version = "0.10.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "botocore" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/0a/1cdbabf9edd0ea7747efdf6c9ab4e7061b085aa7f9bfc36bb1601563b069/s3transfer-0.10.4.tar.gz", hash = "sha256:29edc09801743c21eb5ecbc617a152df41d3c287f67b615f73e5f750583666a7", size = 145287, upload-time = "2024-11-20T21:06:05.981Z" }
 wheels = [
@@ -3345,7 +3345,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "anyio" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5", size = 2580846, upload-time = "2025-04-13T13:56:17.942Z" }
 wheels = [
@@ -3364,7 +3364,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "anyio", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "anyio" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8b/d0/0332bd8a25779a0e2082b0e179805ad39afad642938b371ae0882e7f880d/starlette-0.47.0.tar.gz", hash = "sha256:1f64887e94a447fed5f23309fb6890ef23349b7e478faa7b24a851cd4eb844af", size = 2582856, upload-time = "2025-05-29T15:45:27.628Z" }
 wheels = [
@@ -3588,9 +3588,9 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "click", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "h11", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11' and sys_platform != 'win32'" },
+    { name = "click" },
+    { name = "h11" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11' or python_full_version >= '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/49/8d/5005d39cd79c9ae87baf7d7aafdcdfe0b13aa69d9a1e3b7f1c984a2ac6d2/uvicorn-0.29.0.tar.gz", hash = "sha256:6a69214c0b6a087462412670b3ef21224fa48cae0e452b5883e8e8bdfdd11dd0", size = 40894, upload-time = "2024-03-20T06:43:25.747Z" }
 wheels = [
@@ -3609,8 +3609,8 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "click", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "h11", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "click" },
+    { name = "h11" },
     { name = "typing-extensions", marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/de/ad/713be230bcda622eaa35c28f0d328c3675c371238470abdea52417f17a8e/uvicorn-0.34.3.tar.gz", hash = "sha256:35919a9a979d7a59334b6b10e05d77c1d0d574c50e0fc98b8b1a0f165708b55a", size = 76631, upload-time = "2025-06-01T07:48:17.531Z" }

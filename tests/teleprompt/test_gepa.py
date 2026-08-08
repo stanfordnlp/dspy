@@ -1,5 +1,7 @@
 import json
+import random
 import threading
+from collections.abc import Mapping
 from typing import Any
 from unittest import mock
 
@@ -632,3 +634,337 @@ def test_track_best_outputs_result_structure():
         assert isinstance(entries, list)
         for cand_idx, output in entries:
             assert isinstance(cand_idx, int)
+
+
+class _StubReflectionLM:
+    """Stub with the two things TrackedReflectionLM reads: history and __call__.
+
+    Entries carry a uuid like real dspy history entries (both the dict path and the
+    typed LMHistoryEntry path always populate one).
+    """
+
+    def __init__(self):
+        self.history = []
+        self._n = 0
+
+    def __call__(self, x):
+        self._n += 1
+        self.history.append(
+            {"cost": 0.25, "usage": {"prompt_tokens": 10, "completion_tokens": 5}, "uuid": f"stub-{self._n}"}
+        )
+        return ["reflection output"]
+
+
+def test_tracked_reflection_lm_exposes_cost_totals():
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    tracked = TrackedReflectionLM(_StubReflectionLM())
+    assert tracked.total_cost == 0.0
+
+    out = tracked("some prompt")
+    assert out == "reflection output"
+    assert tracked.total_cost == 0.25
+    assert tracked.total_tokens_in == 10
+    assert tracked.total_tokens_out == 5
+
+    # Cache hits record cost=None; they must not break the sum.
+    tracked.lm.history.append({"cost": None, "usage": {}, "uuid": "cache-1"})
+    assert tracked.total_cost == 0.25
+
+
+def test_tracked_reflection_lm_scopes_baseline_to_construction():
+    """A reflection_lm reused across compile() calls (or shared with the task LM) must not have
+    its prior history counted toward this run's budget: totals are scoped to entries appended
+    after construction."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    stub = _StubReflectionLM()
+    # Pre-populate history as if this LM was already used (e.g. a prior compile() call, or as
+    # the task LM) before TrackedReflectionLM wraps it.
+    stub.history.append({"cost": 1.0, "usage": {"prompt_tokens": 100, "completion_tokens": 50}, "uuid": "pre-1"})
+    stub.history.append({"cost": 2.0, "usage": {"prompt_tokens": 200, "completion_tokens": 75}, "uuid": "pre-2"})
+
+    tracked = TrackedReflectionLM(stub)
+    assert tracked.total_cost == 0.0
+    assert tracked.total_tokens_in == 0
+    assert tracked.total_tokens_out == 0
+
+    out = tracked("some prompt")
+    assert out == "reflection output"
+    # Only the new entry (appended after construction) counts.
+    assert tracked.total_cost == 0.25
+    assert tracked.total_tokens_in == 10
+    assert tracked.total_tokens_out == 5
+
+
+class _MappingHistoryEntry(Mapping):
+    """Mimics dspy's typed LMHistoryEntry: a Mapping that is not a dict."""
+
+    def __init__(self, uid, cost, tokens_in, tokens_out):
+        self._data = {
+            "uuid": uid,
+            "cost": cost,
+            "usage": {"prompt_tokens": tokens_in, "completion_tokens": tokens_out},
+        }
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+
+def test_tracked_reflection_lm_counts_mapping_history_entries():
+    """dspy's typed LM path appends LMHistoryEntry objects (Mapping, not dict); they must
+    count toward the reflection budget."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    stub = _StubReflectionLM()
+    tracked = TrackedReflectionLM(stub)
+    stub.history.append(_MappingHistoryEntry("typed-1", 0.5, 20, 10))
+    stub.history.append(_MappingHistoryEntry("typed-2", 0.25, 5, 5))
+
+    assert tracked.total_cost == 0.75
+    assert tracked.total_tokens_in == 25
+    assert tracked.total_tokens_out == 15
+
+
+def test_tracked_reflection_lm_survives_history_eviction():
+    """With a small settings.max_history_size, update_history evicts old entries; the budget
+    must accumulate spend cumulatively, not recompute it from the surviving window."""
+    from dspy.teleprompt.gepa.gepa_utils import TrackedReflectionLM
+
+    class _EvictingStubLM:
+        def __init__(self, window):
+            self.history = []
+            self._window = window
+            self._n = 0
+
+        def __call__(self, x):
+            self._n += 1
+            if len(self.history) >= self._window:
+                self.history.pop(0)
+            self.history.append(
+                {"cost": 0.6, "usage": {"prompt_tokens": 10, "completion_tokens": 5}, "uuid": f"e{self._n}"}
+            )
+            return ["out"]
+
+    tracked = TrackedReflectionLM(_EvictingStubLM(window=1))
+    for _ in range(3):
+        tracked("prompt")
+
+    assert tracked.total_cost == pytest.approx(1.8)
+    assert tracked.total_tokens_in == 30
+    assert tracked.total_tokens_out == 15
+
+
+def test_batch_evaluate_preserves_active_call_id():
+    """Callbacks emitted inside batch_evaluate's worker threads must be children of the
+    enclosing trace, not new roots: the submitting thread's ACTIVE_CALL_ID (a ContextVar,
+    not part of thread_local_overrides) has to be bound into each worker."""
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+
+    seen = []
+
+    def fake_evaluate(batch, candidate, capture_traces=False):
+        seen.append(ACTIVE_CALL_ID.get())
+        return EvaluationBatch(outputs=[], scores=[], trajectories=[])
+
+    adapter.evaluate = fake_evaluate
+    batch = [Example(input="a", output="b").with_inputs("input")]
+
+    token = ACTIVE_CALL_ID.set("parent-call-id")
+    try:
+        adapter.batch_evaluate([({"predictor": "x"}, batch), ({"predictor": "y"}, batch)])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert seen == ["parent-call-id", "parent-call-id"]
+
+
+def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):
+    from types import SimpleNamespace
+
+    import gepa as gepa_pkg
+    from gepa.strategies.proposal_sampling import SameParentSampling
+    from gepa.strategies.proposal_selection import BestImprovement
+
+    captured = {}
+
+    def fake_optimize(seed_candidate=None, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(best_candidate=seed_candidate)
+
+    monkeypatch.setattr(gepa_pkg, "optimize", fake_optimize)
+
+    lm = DummyLM([{"output": "b"}] * 10)
+    dspy.settings.configure(lm=lm)
+
+    sampling = SameParentSampling(2)
+    selection = BestImprovement()
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=5,
+        reflection_lm=DummyLM([{"new_instruction": "x"}] * 10),
+        sampling_strategy=sampling,
+        selection_strategy=selection,
+        acceptance_criterion="improvement_or_equal",
+        max_reflection_cost=12.5,
+        wandb_attach_existing=True,
+        mlflow_attach_existing=True,
+        tracking_key_prefix="gepa/",
+    )
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="a", output="b").with_inputs("input")]
+    optimizer.compile(student, trainset=trainset)
+
+    assert captured["sampling_strategy"] is sampling
+    assert captured["selection_strategy"] is selection
+    assert captured["acceptance_criterion"] == "improvement_or_equal"
+    assert captured["max_reflection_cost"] == 12.5
+    assert captured["wandb_attach_existing"] is True
+    assert captured["mlflow_attach_existing"] is True
+    assert captured["tracking_key_prefix"] == "gepa/"
+    assert hasattr(captured["reflection_lm"], "total_cost")
+
+
+def test_gepa_max_reflection_cost_requires_reflection_lm():
+    with pytest.raises(AssertionError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=5,
+            instruction_proposer=lambda candidate, reflective_dataset, components_to_update: {},
+            max_reflection_cost=1.0,
+        )
+
+
+def test_gepa_max_reflection_cost_requires_history_enabled(monkeypatch):
+    """max_reflection_cost derives spend totals from LM history; if history is disabled the
+    stopper can never fire, silently allowing unbounded spend. compile() must raise instead."""
+    import gepa as gepa_pkg
+
+    def fake_optimize(seed_candidate=None, **kwargs):
+        pytest.fail("gepa.optimize should not be called when the history guard should have raised")
+
+    monkeypatch.setattr(gepa_pkg, "optimize", fake_optimize)
+
+    task_lm = DummyLM([{"output": "b"}] * 10)
+    dspy.settings.configure(lm=task_lm)
+
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([{"new_instruction": "x"}] * 10),
+        max_reflection_cost=1.0,
+        max_metric_calls=5,
+    )
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="a", output="b").with_inputs("input")]
+
+    with dspy.context(disable_history=True):
+        with pytest.raises(ValueError, match="history"):
+            optimizer.compile(student, trainset=trainset)
+
+
+def test_batch_evaluate_matches_sequential_evaluate():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    lm = DummyLM([{"output": "blue"}] * 20)
+    dspy.settings.configure(lm=lm)
+
+    batch = [
+        Example(input="What color is the sky?", output="blue").with_inputs("input"),
+        Example(input="What color is grass?", output="green").with_inputs("input"),
+    ]
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+        num_threads=2,
+    )
+    cand_a = {"predictor": "Answer the question."}
+    cand_b = {"predictor": "Answer concisely."}
+
+    sequential = [adapter.evaluate(batch, c, capture_traces=True) for c in (cand_a, cand_b)]
+    batched = adapter.batch_evaluate([(cand_a, batch), (cand_b, batch)])
+
+    assert len(batched) == 2
+    for seq, bat in zip(sequential, batched):
+        assert bat.scores == seq.scores
+        assert bat.trajectories is not None
+
+
+def test_batch_evaluate_single_item_stays_sequential():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    lm = DummyLM([{"output": "blue"}] * 10)
+    dspy.settings.configure(lm=lm)
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+    batch = [Example(input="What color is the sky?", output="blue").with_inputs("input")]
+    results = adapter.batch_evaluate([({"predictor": "Answer."}, batch)])
+    assert len(results) == 1
+    assert results[0].trajectories is not None
+
+
+def test_batch_evaluate_propagates_thread_local_overrides():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    global_lm = DummyLM([{"output": "blue"}] * 10)
+    override_lm = DummyLM([{"output": "red"}] * 10)
+    dspy.settings.configure(lm=global_lm)
+
+    batch = [Example(input="What color?", output="red").with_inputs("input")]
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+    cand_a = {"predictor": "Answer the question."}
+    cand_b = {"predictor": "Answer concisely."}
+
+    # The override is only visible inside the worker threads if batch_evaluate
+    # copies the caller's thread-local overrides across the thread hop.
+    with dspy.context(lm=override_lm):
+        results = adapter.batch_evaluate([(cand_a, batch), (cand_b, batch)])
+
+    assert len(results) == 2
+    for res in results:
+        assert all(res.scores), f"expected override LM answers to score truthy, got {res.scores}"
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+        rng=random.Random(42),
+    )
+    saved = adapter.get_adapter_state()
+    first_draw = adapter.rng.random()
+
+    adapter.rng.random()  # advance further so restore actually rewinds
+    adapter.set_adapter_state(saved)
+    assert adapter.rng.random() == first_draw

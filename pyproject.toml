@@ -34,7 +34,7 @@ dependencies = [
     "anyio",
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
-    "gepa[dspy]==0.1.1",
+    "gepa[dspy]==0.1.4",
 ]
 
 [project.optional-dependencies]
