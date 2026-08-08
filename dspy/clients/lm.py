@@ -172,12 +172,13 @@ class LM(BaseLM):
         self._check_truncation(results)
 
         if not getattr(results, "cache_hit", False):
-            if dspy.settings.usage_tracker and hasattr(results, "usage"):
-                settings.usage_tracker.add_usage(self.model, dict(results.usage))
+            usage = getattr(results, "usage", None)
+            if dspy.settings.usage_tracker and usage is not None:
+                settings.usage_tracker.add_usage(self.model, dict(usage))
             if dspy.settings.cost_tracker:
                 cost = getattr(results, "_hidden_params", {}).get("response_cost")
-                usage = dict(results.usage) if hasattr(results, "usage") else None
-                settings.cost_tracker.add_cost(self.model, cost, usage)
+                usage_dict = dict(usage) if usage is not None else None
+                settings.cost_tracker.add_cost(self.model, cost, usage_dict)
         return results
 
     async def aforward(
@@ -218,12 +219,13 @@ class LM(BaseLM):
         self._check_truncation(results)
 
         if not getattr(results, "cache_hit", False):
-            if dspy.settings.usage_tracker and hasattr(results, "usage"):
-                settings.usage_tracker.add_usage(self.model, dict(results.usage))
+            usage = getattr(results, "usage", None)
+            if dspy.settings.usage_tracker and usage is not None:
+                settings.usage_tracker.add_usage(self.model, dict(usage))
             if dspy.settings.cost_tracker:
                 cost = getattr(results, "_hidden_params", {}).get("response_cost")
-                usage = dict(results.usage) if hasattr(results, "usage") else None
-                settings.cost_tracker.add_cost(self.model, cost, usage)
+                usage_dict = dict(usage) if usage is not None else None
+                settings.cost_tracker.add_cost(self.model, cost, usage_dict)
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
@@ -298,20 +300,25 @@ class LM(BaseLM):
         return Provider()
 
     def dump_state(self):
-        state_keys = [
-            "model",
-            "model_type",
-            "cache",
-            "num_retries",
-            "finetuning_model",
-            "launch_kwargs",
-            "train_kwargs",
-            "use_developer_role",
-            "callbacks",
-        ]
-        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
-        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
-        return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
+        """Return a sanitized reconstruction state for this LM.
+
+        Returns:
+            A dictionary that can be passed to `BaseLM.load_state` to
+            reconstruct this `LM`. The state excludes API keys and callbacks
+            (callbacks are runtime objects and not JSON-serializable).
+        """
+        state = super().dump_state()
+        state.update(
+            {
+                "finetuning_model": self.finetuning_model,
+                "launch_kwargs": self.launch_kwargs,
+                "train_kwargs": self.train_kwargs,
+            }
+        )
+        # Persist developer-role flag; omit callbacks (not serializable).
+        if self.use_developer_role:
+            state["use_developer_role"] = self.use_developer_role
+        return state
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
