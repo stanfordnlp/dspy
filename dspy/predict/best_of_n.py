@@ -45,13 +45,15 @@ class BestOfN(Module):
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
-        self.fail_count = fail_count or N  # default to N if fail_count is not provided
+        self.fail_count = N if fail_count is None else fail_count
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
+        failures = 0
+        last_exception = None
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -74,9 +76,13 @@ class BestOfN(Module):
 
             except Exception as e:
                 print(f"BestOfN: Attempt {idx + 1} failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
-                    raise e
-                self.fail_count -= 1
+                failures += 1
+                last_exception = e
+                if failures > self.fail_count:
+                    raise
+
+        if best_pred is None and last_exception is not None:
+            raise last_exception
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)
