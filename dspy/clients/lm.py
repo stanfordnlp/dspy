@@ -726,7 +726,7 @@ def _exception_provider_code(exc: Exception) -> str | None:
 
 
 def _safe_litellm_exception_class(name: str) -> type[Exception] | None:
-    cls = getattr(litellm, name, None)
+    cls = getattr(_get_litellm(), name, None)
     return cls if isinstance(cls, type) and issubclass(cls, Exception) else None
 
 
