@@ -327,7 +327,7 @@ def test_parallel_program_callbacks_are_children_of_evaluate_callback():
 
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
-    assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"
+    assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>, lm_calls=0)"
 
 
 def test_evaluate_save_as_json_with_history():
@@ -461,3 +461,106 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+
+class _UsageDummyLM(DummyLM):
+    """DummyLM that reports nonzero token usage, for usage-reporting tests."""
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        response = super().forward(prompt=prompt, messages=messages, **kwargs)
+        response.usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        return response
+
+
+def _usage_devset_and_program():
+    lm = _UsageDummyLM(
+        {
+            "What is 1+1?": {"answer": "2"},
+            "What is 2+2?": {"answer": "4"},
+        }
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    return lm, devset, Predict("question -> answer")
+
+
+@pytest.mark.parametrize("num_threads", [1, 2])
+def test_evaluate_reports_lm_usage(num_threads):
+    """Evaluate should report LM calls and token usage for the run, sequential or threaded."""
+    lm, devset, program = _usage_devset_and_program()
+    with dspy.context(lm=lm):
+        result = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            num_threads=num_threads,
+        )(program)
+
+    assert result.score == 100.0
+    assert result.lm_calls == {"dummy": 2}
+    assert result.lm_usage["dummy"]["prompt_tokens"] == 20
+    assert result.lm_usage["dummy"]["completion_tokens"] == 10
+    assert result.lm_usage["dummy"]["total_tokens"] == 30
+
+
+@pytest.mark.parametrize("num_threads", [1, 2])
+def test_track_usage_context_sees_threaded_evaluate(num_threads):
+    """An enclosing dspy.track_usage() block must capture usage from Evaluate worker threads."""
+    lm, devset, program = _usage_devset_and_program()
+    with dspy.context(lm=lm), dspy.track_usage() as tracker:
+        Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            num_threads=num_threads,
+        )(program)
+
+    assert tracker.get_call_counts() == {"dummy": 2}
+    assert tracker.get_total_tokens()["dummy"]["total_tokens"] == 30
+
+
+def test_evaluate_preserves_per_prediction_usage():
+    """With track_usage=True, predictions in threaded Evaluate results keep their own usage."""
+    lm, devset, program = _usage_devset_and_program()
+    with dspy.context(lm=lm, track_usage=True):
+        result = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            num_threads=2,
+        )(program)
+
+    for _, prediction, _ in result.results:
+        usage = prediction.get_lm_usage()
+        assert usage is not None
+        assert usage["dummy"]["total_tokens"] == 15
+
+
+def test_aborted_evaluate_still_reports_usage_to_enclosing_tracker():
+    """If max_errors aborts the run, usage already incurred still reaches an outer tracker."""
+
+    class ExplodingLM(_UsageDummyLM):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.calls = 0
+
+        def forward(self, prompt=None, messages=None, **kwargs):
+            self.calls += 1
+            if self.calls > 2:
+                raise RuntimeError("LM down")
+            return super().forward(prompt=prompt, messages=messages, **kwargs)
+
+    lm = ExplodingLM({f"q{i}?": {"answer": "x"} for i in range(10)})
+    devset = [new_example(f"q{i}?", "x") for i in range(10)]
+    evaluator = Evaluate(
+        devset=devset,
+        metric=lambda example, prediction: 1.0,
+        num_threads=1,
+        max_errors=1,
+        display_progress=False,
+    )
+    with dspy.context(lm=lm), dspy.track_usage() as tracker:
+        with pytest.raises(Exception, match="cancelled"):
+            evaluator(Predict("question -> answer"))
+
+    assert tracker.get_call_counts() == {"dummy": 2}
+    assert tracker.get_total_tokens()["dummy"]["total_tokens"] == 30

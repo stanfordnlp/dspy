@@ -14,6 +14,7 @@ import dspy
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
+from dspy.utils.usage_tracker import track_usage
 
 try:
     from IPython.display import HTML
@@ -52,13 +53,25 @@ class EvaluationResult(Prediction):
 
     - score: An float value (e.g., 67.30) representing the overall performance
     - results: a list of (example, prediction, score) tuples for each example in devset
+    - lm_usage: a dict mapping LM name to aggregated token usage for the run (same shape as
+      `Prediction.get_lm_usage()`); cache hits are not counted
+    - lm_calls: a dict mapping LM name to the number of LM calls made during the run
     """
 
-    def __init__(self, score: float, results: list[tuple["dspy.Example", "dspy.Example", Any]]):
-        super().__init__(score=score, results=results)
+    def __init__(
+        self,
+        score: float,
+        results: list[tuple["dspy.Example", "dspy.Example", Any]],
+        lm_usage: dict[str, dict[str, Any]] | None = None,
+        lm_calls: dict[str, int] | None = None,
+    ):
+        super().__init__(score=score, results=results, lm_usage=lm_usage or {}, lm_calls=lm_calls or {})
 
     def __repr__(self):
-        return f"EvaluationResult(score={self.score}, results=<list of {len(self.results)} results>)"
+        return (
+            f"EvaluationResult(score={self.score}, results=<list of {len(self.results)} results>, "
+            f"lm_calls={sum(self.lm_calls.values())})"
+        )
 
 
 class Evaluate:
@@ -145,6 +158,11 @@ class Evaluate:
             - score: A float percentage score (e.g., 67.30) representing overall performance
 
             - results: a list of (example, prediction, score) tuples for each example in devset
+
+            - lm_usage: a dict mapping LM name to aggregated token usage across the run
+              (program and metric calls; cache hits are not counted)
+
+            - lm_calls: a dict mapping LM name to the number of LM calls made during the run
         """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
@@ -172,7 +190,18 @@ class Evaluate:
             score = metric(example, prediction)
             return prediction, score
 
-        results = executor.execute(process_item, devset)
+        enclosing_tracker = dspy.settings.usage_tracker
+        with track_usage() as run_tracker:
+            try:
+                results = executor.execute(process_item, devset)
+            finally:
+                if enclosing_tracker is not None:
+                    # Keep an outer `with dspy.track_usage()` block accurate even when the run
+                    # aborts (e.g. max_errors): usage already incurred must not be lost.
+                    enclosing_tracker.merge_from(run_tracker)
+        lm_usage = run_tracker.get_total_tokens()
+        lm_calls = run_tracker.get_call_counts()
+
         assert len(devset) == len(results)
 
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
@@ -180,6 +209,13 @@ class Evaluate:
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        if lm_calls:
+            usage_summary = "; ".join(
+                f"{lm}: {lm_calls[lm]} calls, {usage.get('prompt_tokens', 0)} prompt + "
+                f"{usage.get('completion_tokens', 0)} completion tokens"
+                for lm, usage in lm_usage.items()
+            )
+            logger.info(f"LM usage: {usage_summary}")
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
@@ -223,6 +259,8 @@ class Evaluate:
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
             results=results,
+            lm_usage=lm_usage,
+            lm_calls=lm_calls,
         )
 
     @staticmethod
