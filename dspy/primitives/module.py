@@ -101,15 +101,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage:
                 # Record this call's usage in its own tracker so it can be attached to the
-                # output, then fold it into any enclosing tracker (e.g., one installed by
-                # dspy.track_usage() or a threaded Evaluate) so aggregate accounting still works.
+                # output; entries also stream into any enclosing tracker (e.g., one installed
+                # by dspy.track_usage() or a threaded Evaluate) as they are recorded, so
+                # completed LM calls are counted even if forward() raises afterwards.
                 enclosing_tracker = thread_local_overrides.get().get("usage_tracker")
-                with track_usage() as usage_tracker:
+                with track_usage(mirror=enclosing_tracker) as usage_tracker:
                     output = self.forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
                 self._set_lm_usage(tokens, output)
-                if enclosing_tracker is not None:
-                    enclosing_tracker.merge_from(usage_tracker)
 
                 return output
 
@@ -126,12 +125,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage:
                 enclosing_tracker = thread_local_overrides.get().get("usage_tracker")
-                with track_usage() as usage_tracker:
+                with track_usage(mirror=enclosing_tracker) as usage_tracker:
                     output = await self.aforward(*args, **kwargs)
                     tokens = usage_tracker.get_total_tokens()
                     self._set_lm_usage(tokens, output)
-                    if enclosing_tracker is not None:
-                        enclosing_tracker.merge_from(usage_tracker)
 
                     return output
 

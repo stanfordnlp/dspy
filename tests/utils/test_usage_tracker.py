@@ -408,3 +408,63 @@ def test_usage_tracker_is_picklable():
     # The restored tracker has a working lock.
     restored.add_usage("openai/gpt-4o-mini", {"prompt_tokens": 5, "completion_tokens": 1})
     assert restored.get_call_counts() == {"openai/gpt-4o-mini": 2}
+
+
+def test_usage_survives_module_failure():
+    """Usage from completed LM calls reaches the outer tracker even if forward() then raises."""
+    import asyncio
+
+    from dspy.utils.dummies import DummyLM
+
+    class OneCallThenBoom(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question -> answer")
+
+        def forward(self, question):
+            self.predict(question=question)
+            raise ValueError("post-processing failed")
+
+        async def aforward(self, question):
+            await self.predict.acall(question=question)
+            raise ValueError("post-processing failed")
+
+    with dspy.context(lm=DummyLM([{"answer": "x"}] * 2), track_usage=True), track_usage() as tracker:
+        try:
+            OneCallThenBoom()(question="q")
+        except ValueError:
+            pass
+        assert tracker.get_call_counts() == {"dummy": 1}
+
+        async def run_async():
+            try:
+                await OneCallThenBoom().acall(question="q")
+            except ValueError:
+                pass
+
+        asyncio.run(run_async())
+    assert tracker.get_call_counts() == {"dummy": 2}
+
+
+def test_worker_usage_streams_to_parent_in_real_time():
+    """Parent trackers see worker usage as it is recorded, not only at task completion.
+
+    This is what keeps usage from being lost when a worker outlives the executor, e.g. a
+    timeout-resubmitted straggler that finishes after Evaluate snapshots the run tracker.
+    """
+    parent_tracker = UsageTracker()
+    seen_mid_task = {}
+
+    def task():
+        dspy.settings.usage_tracker.add_usage("m", {"prompt_tokens": 7})
+        # Before the task ends (and before any end-of-task bookkeeping could run), the
+        # parent must already have the entry.
+        seen_mid_task["calls"] = dict(parent_tracker.get_call_counts())
+        # The worker's own view stays isolated to its task.
+        assert dspy.settings.usage_tracker.get_call_counts() == {"m": 1}
+
+    with dspy.context(track_usage=True, usage_tracker=parent_tracker):
+        dspy.Parallel()([(task, {})])
+
+    assert seen_mid_task["calls"] == {"m": 1}
+    assert parent_tracker.get_call_counts() == {"m": 1}

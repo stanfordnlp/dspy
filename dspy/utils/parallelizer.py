@@ -128,16 +128,16 @@ class ParallelExecutor:
             parent_tracker = new_overrides.get("usage_tracker")
             if parent_tracker is not None:
                 # Each worker records into its own tracker so per-task usage stays isolated,
-                # then folds its entries back into the parent tracker when the task finishes.
-                new_overrides["usage_tracker"] = UsageTracker()
+                # while every entry also streams into the parent tracker as it is recorded —
+                # so usage is never lost to task failures or to workers (e.g. timeout-resubmitted
+                # stragglers) that outlive the executor.
+                new_overrides["usage_tracker"] = UsageTracker(mirror=parent_tracker)
             token = thread_local_overrides.set(new_overrides)
 
             try:
                 return index, function(item)
             finally:
                 thread_local_overrides.reset(token)
-                if parent_tracker is not None:
-                    parent_tracker.merge_from(new_overrides["usage_tracker"])
 
         # Handle Ctrl-C in the main thread
         @contextlib.contextmanager

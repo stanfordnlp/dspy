@@ -12,9 +12,17 @@ from dspy.dsp.utils.settings import settings
 
 
 class UsageTracker:
-    """Tracks LM usage data within a context."""
+    """Tracks LM usage data within a context.
 
-    def __init__(self):
+    Args:
+        mirror: Optional enclosing tracker. Every entry added here is also forwarded to
+            ``mirror`` immediately, so usage recorded under a nested or per-thread tracker
+            reaches enclosing trackers in real time — it survives exceptions raised later in
+            the nested scope and is visible to the enclosing scope as soon as each LM call
+            completes, not only when the nested scope finishes.
+    """
+
+    def __init__(self, mirror: "UsageTracker | None" = None):
         # Map of LM name to list of usage entries. For example:
         # {
         #     "openai/gpt-4o-mini": [
@@ -23,25 +31,30 @@ class UsageTracker:
         #     ],
         # }
         self.usage_data = defaultdict(list)
-        # Trackers can be shared across threads (e.g., worker trackers merging into a
-        # parent tracker at the end of a parallel task), so guard mutations.
+        # Trackers can be read and mirrored into across threads, so guard mutations.
         self._lock = threading.Lock()
+        self._mirror = mirror
 
     def __deepcopy__(self, memo):
+        # The copy is an independent tracker: it keeps the recorded data but not the
+        # mirror link or the (uncopyable) lock.
         new_tracker = UsageTracker()
         with self._lock:
             new_tracker.usage_data = copy.deepcopy(self.usage_data, memo)
         return new_tracker
 
     def __getstate__(self):
-        # Locks aren't picklable; trackers can end up in pickled settings snapshots.
+        # Locks aren't picklable and the mirror chain shouldn't be serialized; trackers
+        # can end up in pickled settings snapshots.
         state = self.__dict__.copy()
         del state["_lock"]
+        del state["_mirror"]
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._lock = threading.Lock()
+        self._mirror = None
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
         result = {}
@@ -71,24 +84,12 @@ class UsageTracker:
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
-        """Add a usage entry to the tracker."""
+        """Add a usage entry to the tracker (and to its mirror chain, if any)."""
         if len(usage_entry) > 0:
             with self._lock:
                 self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
-
-    def merge_from(self, other: "UsageTracker") -> None:
-        """Fold another tracker's entries into this one.
-
-        Used to propagate usage recorded under a nested or per-thread tracker
-        (e.g., ``ParallelExecutor`` workers) back to the enclosing tracker.
-        """
-        if other is self:
-            return
-        with other._lock:
-            entries_by_lm = {lm: list(entries) for lm, entries in other.usage_data.items()}
-        with self._lock:
-            for lm, entries in entries_by_lm.items():
-                self.usage_data[lm].extend(entries)
+            if self._mirror is not None:
+                self._mirror.add_usage(lm, usage_entry)
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
@@ -109,9 +110,14 @@ class UsageTracker:
 
 
 @contextmanager
-def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
-    tracker = UsageTracker()
+def track_usage(mirror: UsageTracker | None = None) -> Generator[UsageTracker, None, None]:
+    """Context manager for tracking LM usage.
+
+    Args:
+        mirror: Optional enclosing tracker that also receives, in real time, every entry
+            recorded inside this context.
+    """
+    tracker = UsageTracker(mirror=mirror)
 
     with settings.context(usage_tracker=tracker):
         yield tracker

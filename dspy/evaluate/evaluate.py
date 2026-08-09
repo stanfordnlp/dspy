@@ -190,15 +190,11 @@ class Evaluate:
             score = metric(example, prediction)
             return prediction, score
 
-        enclosing_tracker = dspy.settings.usage_tracker
-        with track_usage() as run_tracker:
-            try:
-                results = executor.execute(process_item, devset)
-            finally:
-                if enclosing_tracker is not None:
-                    # Keep an outer `with dspy.track_usage()` block accurate even when the run
-                    # aborts (e.g. max_errors): usage already incurred must not be lost.
-                    enclosing_tracker.merge_from(run_tracker)
+        # Entries stream into run_tracker (and through it into any outer `dspy.track_usage()`
+        # block) as each LM call completes, so usage incurred before an aborted run or by a
+        # timeout-resubmitted worker is never lost.
+        with track_usage(mirror=dspy.settings.usage_tracker) as run_tracker:
+            results = executor.execute(process_item, devset)
         lm_usage = run_tracker.get_total_tokens()
         lm_calls = run_tracker.get_call_counts()
 
