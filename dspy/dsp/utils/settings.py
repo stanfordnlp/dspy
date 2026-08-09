@@ -35,6 +35,7 @@ DEFAULT_CONFIG = dotdict(
     allow_tool_async_sync_conversion=False,
     max_history_size=10000,
     max_trace_size=10000,
+    warn_on_type_mismatch=True,  # Whether to log type mismatches during prediction.
 )
 
 # Global base configuration and owner tracking
