@@ -420,9 +420,23 @@ def _get_stream_completion_fn(
         return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        # Drive a temporary event loop on the calling thread. anyio.from_thread.run
-        # requires an AnyIO worker thread and raises NoEventLoopError from MainThread.
-        return anyio.run(stream_completion, request, cache_kwargs)
+        # Bridge async streaming into a sync caller safely:
+        # - no running loop: drive one with anyio.run on this thread
+        # - loop already running (async apps / notebooks): use a worker thread
+        #   with its own loop (anyio.run fails on the loop-owning thread)
+        import asyncio
+        import concurrent.futures
+
+        def _run_in_fresh_loop():
+            return anyio.run(stream_completion, request, cache_kwargs)
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return _run_in_fresh_loop()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_run_in_fresh_loop).result()
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
