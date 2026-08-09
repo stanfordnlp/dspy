@@ -104,12 +104,45 @@ jobs:
           uv sync --dev -p .venv --extra dev
           uv pip list
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv -n auto --dist worksteal tests/
-      - name: Install optional dependencies
+        run: uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
+
+  extra_test:
+    name: Run Extra and Deno Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Deno
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: v2.7.7
+      - name: Verify Deno installation
+        run: deno --version
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra and deno tests
         run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
-  
+
   llm_call_test:
     name: Run Tests with Real LM
     runs-on: ubuntu-latest
@@ -122,6 +155,15 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: 3.11
+      - name: Prefetch Ollama image
+        run: |
+          (
+            if docker pull ollama/ollama:0.31.2 > "$RUNNER_TEMP/ollama-pull.log" 2>&1; then
+              echo 0 > "$RUNNER_TEMP/ollama-pull.status"
+            else
+              echo "$?" > "$RUNNER_TEMP/ollama-pull.status"
+            fi
+          ) &
       - name: Install uv with caching
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
@@ -145,6 +187,14 @@ jobs:
           key: ollama-llama3.2-3b-${{ runner.os }}-ollama0.31.2-v2
       - name: Start Ollama service
         run: |
+          for _ in {1..120}; do
+            [[ -f "$RUNNER_TEMP/ollama-pull.status" ]] && break
+            sleep 1
+          done
+          if [[ ! -f "$RUNNER_TEMP/ollama-pull.status" ]] || [[ "$(cat "$RUNNER_TEMP/ollama-pull.status")" != 0 ]]; then
+            cat "$RUNNER_TEMP/ollama-pull.log"
+            exit 1
+          fi
           mkdir -p ollama-data
           docker run -d --name ollama \
             -p 11434:11434 \
