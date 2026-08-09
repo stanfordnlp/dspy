@@ -504,8 +504,7 @@ class PythonInterpreter:
     def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
         """Consume a message that is not a response to any request (a notification
         or an unsolicited id-less error), returning True so the caller keeps
-        reading for the real response. Id-less protocol errors are terminal:
-        the sandbox could not read the request, so no response will follow.
+        reading for the real response. Protocol errors with no id are terminal.
         """
         if "method" in msg and "id" not in msg:
             payload, level = msg.get("params"), logging.DEBUG
