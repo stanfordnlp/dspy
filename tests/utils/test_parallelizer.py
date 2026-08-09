@@ -130,6 +130,43 @@ def test_parallel_executor_records_harness_level_exceptions(monkeypatch):
     assert all(isinstance(e, RuntimeError) for e in executor.exceptions_map.values())
 
 
+def test_straggler_retry_does_not_double_count_harness_exception(monkeypatch):
+    """A straggler's original future and its resubmitted retry can both fail during harness
+    setup for the SAME logical input. results[idx] stays None for an exception outcome (see
+    _process_outcome), so that check alone can't distinguish "not yet recorded" from "already
+    recorded by the other future" -- the retry's failure must not be counted a second time."""
+    import dspy.utils.parallelizer as parallelizer_module
+
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+
+    def broken_deepcopy(*_args, **_kwargs):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            # Stall past the straggler timeout so a retry gets submitted while this one
+            # is still in flight. The retry (second call) fails immediately, so it can't
+            # become a straggler itself and trigger a further resubmission.
+            time.sleep(1.5)
+        raise RuntimeError("cannot deepcopy usage_tracker")
+
+    monkeypatch.setattr(parallelizer_module.copy, "deepcopy", broken_deepcopy)
+
+    def task(item):
+        return item
+
+    executor = ParallelExecutor(num_threads=2, max_errors=10, timeout=0.3, straggler_limit=3)
+
+    with dspy.context(usage_tracker=object()):
+        results = executor.execute(task, [1])
+
+    assert results == [None]
+    assert executor.failed_indices == [0]
+    assert len(executor.exceptions_map) == 1
+    assert executor.error_count == 1
+
+
 def test_sequential_execution_runs_on_main_thread():
     """With num_threads=1, all work should run on the main thread (not in a ThreadPoolExecutor)."""
     execution_threads = []

@@ -194,7 +194,10 @@ class ParallelExecutor:
                             # A harness-internal failure (e.g. copying thread-local overrides), not a
                             # user-function exception — record it the same way so it isn't silently dropped.
                             _, idx, item = futures_map[f]
-                            if results[idx] is None:
+                            # results[idx] stays None for an exception outcome (see _process_outcome), so
+                            # on its own that check can't tell a fresh failure from a straggler's retry
+                            # failing too — also check exceptions_map to avoid double-counting one input.
+                            if results[idx] is None and idx not in self.exceptions_map:
                                 self._process_outcome(results, idx, e)
                                 self._record_error(item, e)
                             self._report_progress(pbar, results, len(data))
