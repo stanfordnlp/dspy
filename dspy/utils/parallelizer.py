@@ -1,5 +1,4 @@
 import contextlib
-import copy
 import logging
 import signal
 import sys
@@ -12,6 +11,7 @@ import tqdm
 
 from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.utils.callback_context import _bind_active_call_id
+from dspy.utils.usage_tracker import UsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -125,15 +125,19 @@ class ParallelExecutor:
             # Apply parent's thread-local overrides
             original = thread_local_overrides.get()
             new_overrides = {**original, **parent_overrides.copy()}
-            if new_overrides.get("usage_tracker"):
-                # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
-                new_overrides["usage_tracker"] = copy.deepcopy(new_overrides["usage_tracker"])
+            parent_tracker = new_overrides.get("usage_tracker")
+            if parent_tracker is not None:
+                # Each worker records into its own tracker so per-task usage stays isolated,
+                # then folds its entries back into the parent tracker when the task finishes.
+                new_overrides["usage_tracker"] = UsageTracker()
             token = thread_local_overrides.set(new_overrides)
 
             try:
                 return index, function(item)
             finally:
                 thread_local_overrides.reset(token)
+                if parent_tracker is not None:
+                    parent_tracker.merge_from(new_overrides["usage_tracker"])
 
         # Handle Ctrl-C in the main thread
         @contextlib.contextmanager

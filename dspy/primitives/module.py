@@ -99,11 +99,17 @@ class Module(BaseModule, metaclass=ProgramMeta):
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
+            if settings.track_usage:
+                # Record this call's usage in its own tracker so it can be attached to the
+                # output, then fold it into any enclosing tracker (e.g., one installed by
+                # dspy.track_usage() or a threaded Evaluate) so aggregate accounting still works.
+                enclosing_tracker = thread_local_overrides.get().get("usage_tracker")
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
                 self._set_lm_usage(tokens, output)
+                if enclosing_tracker is not None:
+                    enclosing_tracker.merge_from(usage_tracker)
 
                 return output
 
@@ -118,11 +124,14 @@ class Module(BaseModule, metaclass=ProgramMeta):
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
+            if settings.track_usage:
+                enclosing_tracker = thread_local_overrides.get().get("usage_tracker")
                 with track_usage() as usage_tracker:
                     output = await self.aforward(*args, **kwargs)
                     tokens = usage_tracker.get_total_tokens()
                     self._set_lm_usage(tokens, output)
+                    if enclosing_tracker is not None:
+                        enclosing_tracker.merge_from(usage_tracker)
 
                     return output
 

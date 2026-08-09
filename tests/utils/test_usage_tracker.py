@@ -390,5 +390,21 @@ def test_parallel_executor_with_usage_tracker():
     assert usage2["openai/gpt-4o-mini"]["prompt_tokens"] == 80
     assert usage2["openai/gpt-4o-mini"]["completion_tokens"] == 15
 
-    # Parent tracker should remain unchanged (workers have independent copies)
-    assert len(parent_tracker.usage_data) == 0
+    # Worker usage folds back into the parent tracker when each task finishes.
+    parent_usage = parent_tracker.get_total_tokens()
+    assert parent_usage["openai/gpt-4o-mini"]["prompt_tokens"] == 130
+    assert parent_usage["openai/gpt-4o-mini"]["completion_tokens"] == 25
+    assert parent_tracker.get_call_counts() == {"openai/gpt-4o-mini": 2}
+
+
+def test_usage_tracker_is_picklable():
+    """Trackers can sit in dspy.settings, and settings snapshots are pickled."""
+    import pickle
+
+    tracker = UsageTracker()
+    tracker.add_usage("openai/gpt-4o-mini", {"prompt_tokens": 50, "completion_tokens": 10})
+    restored = pickle.loads(pickle.dumps(tracker))
+    assert restored.get_call_counts() == {"openai/gpt-4o-mini": 1}
+    # The restored tracker has a working lock.
+    restored.add_usage("openai/gpt-4o-mini", {"prompt_tokens": 5, "completion_tokens": 1})
+    assert restored.get_call_counts() == {"openai/gpt-4o-mini": 2}

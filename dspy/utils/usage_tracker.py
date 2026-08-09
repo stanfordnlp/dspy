@@ -1,5 +1,7 @@
 """Usage tracking utilities for DSPy."""
 
+import copy
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -21,6 +23,25 @@ class UsageTracker:
         #     ],
         # }
         self.usage_data = defaultdict(list)
+        # Trackers can be shared across threads (e.g., worker trackers merging into a
+        # parent tracker at the end of a parallel task), so guard mutations.
+        self._lock = threading.Lock()
+
+    def __deepcopy__(self, memo):
+        new_tracker = UsageTracker()
+        with self._lock:
+            new_tracker.usage_data = copy.deepcopy(self.usage_data, memo)
+        return new_tracker
+
+    def __getstate__(self):
+        # Locks aren't picklable; trackers can end up in pickled settings snapshots.
+        state = self.__dict__.copy()
+        del state["_lock"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
         result = {}
@@ -52,17 +73,39 @@ class UsageTracker:
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
         """Add a usage entry to the tracker."""
         if len(usage_entry) > 0:
-            self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
+            with self._lock:
+                self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
+
+    def merge_from(self, other: "UsageTracker") -> None:
+        """Fold another tracker's entries into this one.
+
+        Used to propagate usage recorded under a nested or per-thread tracker
+        (e.g., ``ParallelExecutor`` workers) back to the enclosing tracker.
+        """
+        if other is self:
+            return
+        with other._lock:
+            entries_by_lm = {lm: list(entries) for lm, entries in other.usage_data.items()}
+        with self._lock:
+            for lm, entries in entries_by_lm.items():
+                self.usage_data[lm].extend(entries)
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""
+        with self._lock:
+            entries_by_lm = {lm: list(entries) for lm, entries in self.usage_data.items()}
         total_usage_by_lm = {}
-        for lm, usage_entries in self.usage_data.items():
+        for lm, usage_entries in entries_by_lm.items():
             total_usage = {}
             for usage_entry in usage_entries:
                 total_usage = self._merge_usage_entries(total_usage, usage_entry)
             total_usage_by_lm[lm] = total_usage
         return total_usage_by_lm
+
+    def get_call_counts(self) -> dict[str, int]:
+        """Number of tracked LM calls per LM (cache hits are never tracked)."""
+        with self._lock:
+            return {lm: len(entries) for lm, entries in self.usage_data.items()}
 
 
 @contextmanager
