@@ -194,15 +194,17 @@ class ParallelExecutor:
                             # A harness-internal failure (e.g. copying thread-local overrides), not a
                             # user-function exception — record it the same way so it isn't silently dropped.
                             _, idx, item = futures_map[f]
-                            # results[idx] stays None for an exception outcome (see _process_outcome), so
-                            # on its own that check can't tell a fresh failure from a straggler's retry
-                            # failing too — also check exceptions_map to avoid double-counting one input.
-                            if results[idx] is None and idx not in self.exceptions_map:
+                            if self._should_finalize(idx, e, results):
                                 self._process_outcome(results, idx, e)
                                 self._record_error(item, e)
                             self._report_progress(pbar, results, len(data))
                         else:
-                            if outcome != job_cancelled and results[index] is _UNSET:
+                            if outcome != job_cancelled and self._should_finalize(index, outcome, results):
+                                if not isinstance(outcome, Exception):
+                                    # The retry (or the original, if this is the retry) recovered after
+                                    # the other future for this index failed -- a success always wins,
+                                    # so drop the stale failure record instead of reporting both.
+                                    self._clear_stale_failure(index)
                                 self._process_outcome(results, index, outcome)
 
                             self._report_progress(pbar, results, len(data))
@@ -251,6 +253,32 @@ class ParallelExecutor:
                 self.exceptions_map[idx] = outcome
         else:
             results[idx] = outcome
+
+    def _should_finalize(self, idx, outcome, results):
+        """Whether this future's outcome should be recorded for idx, given what the other
+        future for the same straggler-retried index may have already recorded.
+
+        results[idx] stays _UNSET for an exception outcome (see _process_outcome), so
+        checking against _UNSET -- not None, which a task can legitimately return -- is
+        what lets this tell "not yet recorded" apart from "already recorded by the other
+        future" once both completions are failures. A later success always overrides an
+        earlier failure (the retry recovered); a later failure is dropped once idx already
+        has an outcome either way, so one logical input can't be double-counted or have its
+        result silently overwritten by a duplicate completion.
+        """
+        if results[idx] is not _UNSET:
+            return False
+        if isinstance(outcome, Exception):
+            return idx not in self.exceptions_map
+        return True
+
+    def _clear_stale_failure(self, idx):
+        """Drop a previously-recorded failure for idx because the other future for the same
+        straggler-retried index went on to succeed."""
+        with self.error_lock:
+            self.exceptions_map.pop(idx, None)
+            if idx in self.failed_indices:
+                self.failed_indices.remove(idx)
 
     def _report_progress(self, pbar, results, total):
         """Compute metrics and update the progress bar."""

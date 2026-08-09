@@ -167,6 +167,106 @@ def test_straggler_retry_does_not_double_count_harness_exception(monkeypatch):
     assert executor.error_count == 1
 
 
+def test_straggler_retry_success_clears_stale_harness_failure(monkeypatch):
+    """A straggler's original future can fail during harness setup while its resubmitted
+    retry goes on to succeed. The success must win: results[idx] should hold the real value
+    and the stale failure must not remain in failed_indices/exceptions_map alongside it.
+
+    Ordering (harness failure recorded first, success second -- the ordering that actually
+    exercises the reconciliation logic) is enforced with an Event rather than tuned sleep
+    durations, so the retry's own runtime stays short and it can't become a straggler
+    itself and trigger a further resubmission."""
+    import dspy.utils.parallelizer as parallelizer_module
+
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    real_deepcopy = parallelizer_module.copy.deepcopy
+    original_failed = threading.Event()
+
+    def flaky_deepcopy(*args, **kwargs):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            # Stall past the straggler timeout so a retry gets submitted while this one is
+            # still in flight, then fail -- simulating the original attempt going bad.
+            time.sleep(1.5)
+            original_failed.set()
+            raise RuntimeError("cannot deepcopy usage_tracker")
+        # The retry: setup succeeds immediately so the task itself gets to run.
+        return real_deepcopy(*args, **kwargs)
+
+    monkeypatch.setattr(parallelizer_module.copy, "deepcopy", flaky_deepcopy)
+
+    def task(item):
+        # Don't finish until the original has failed (plus a small buffer for the main
+        # thread to process it), so this success is recorded second.
+        original_failed.wait(timeout=5)
+        time.sleep(0.3)
+        return item * 10
+
+    executor = ParallelExecutor(num_threads=2, max_errors=10, timeout=1.0, straggler_limit=3)
+
+    with dspy.context(usage_tracker=object()):
+        results = executor.execute(task, [1])
+
+    assert results == [10]
+    assert executor.failed_indices == []
+    assert executor.exceptions_map == {}
+
+
+def test_straggler_retry_user_exception_does_not_duplicate_harness_failure(monkeypatch):
+    """A straggler's original future can fail during harness setup while its resubmitted
+    retry runs the task itself, which then raises. The two failures are for the same
+    logical input and must not produce two failed_indices entries.
+
+    Same Event-based ordering as the success case above, so the harness failure is
+    guaranteed to be recorded before the user-function exception arrives."""
+    import dspy.utils.parallelizer as parallelizer_module
+
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    real_deepcopy = parallelizer_module.copy.deepcopy
+    original_failed = threading.Event()
+
+    def flaky_deepcopy(*args, **kwargs):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            time.sleep(1.5)
+            original_failed.set()
+            raise RuntimeError("cannot deepcopy usage_tracker")
+        return real_deepcopy(*args, **kwargs)
+
+    monkeypatch.setattr(parallelizer_module.copy, "deepcopy", flaky_deepcopy)
+
+    def task(item):
+        original_failed.wait(timeout=5)
+        time.sleep(0.3)
+        raise ValueError("task itself failed on the retry")
+
+    executor = ParallelExecutor(num_threads=2, max_errors=10, timeout=1.0, straggler_limit=3)
+
+    with dspy.context(usage_tracker=object()):
+        results = executor.execute(task, [1])
+
+    assert results == [None]
+    assert executor.failed_indices == [0]
+    assert len(executor.exceptions_map) == 1
+
+
+def test_should_finalize_treats_recorded_none_result_as_already_finalized():
+    """A slot can legitimately hold a real None result (not an error, not "unfinished").
+    _should_finalize must tell that apart from a not-yet-recorded slot by checking against
+    the _UNSET sentinel, not None -- checking against None would treat every already-None
+    result as still unfinished and let a stale retry overwrite it."""
+    executor = ParallelExecutor(num_threads=2)
+    results = [None]
+
+    assert executor._should_finalize(0, 99, results) is False
+
+
 def test_sequential_execution_runs_on_main_thread():
     """With num_threads=1, all work should run on the main thread (not in a ThreadPoolExecutor)."""
     execution_threads = []
