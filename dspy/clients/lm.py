@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import re
@@ -6,7 +5,7 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
-import anyio.from_thread
+import anyio
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 
@@ -421,9 +420,9 @@ def _get_stream_completion_fn(
         return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        # Use anyio (already a runtime dependency) instead of asyncer so a clean
-        # locked install can import dspy without undeclared packages.
-        return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
+        # Drive a temporary event loop on the calling thread. anyio.from_thread.run
+        # requires an AnyIO worker thread and raises NoEventLoopError from MainThread.
+        return anyio.run(stream_completion, request, cache_kwargs)
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
