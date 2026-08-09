@@ -1231,3 +1231,16 @@ def test_unsolicited_error_line_is_not_consumed_as_the_response():
         json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": 1}),
     ])
     assert interpreter.execute("print('ok')") == "ok\n"
+
+
+def test_base_exceptions_do_not_desync_interpreter():
+    with PythonInterpreter() as interpreter:
+        for code, error_type in [
+            ("import sys\nsys.exit(0)", "SystemExit"),
+            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+        ]:
+            with pytest.raises(CodeExecutionError, match=error_type):
+                interpreter.execute(code)
+            assert interpreter.execute("print('still alive')") == "still alive\n"
