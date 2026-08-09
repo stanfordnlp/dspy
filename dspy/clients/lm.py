@@ -45,6 +45,17 @@ def _get_litellm():
     return get_litellm(feature="dspy.LM")
 
 
+def _is_openai_reasoning_model(model: str) -> bool:
+    model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+    return (
+        re.match(
+            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+            model_family,
+        )
+        is not None
+    )
+
+
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
@@ -324,6 +335,27 @@ class LM(BaseLM):
             return self.model.split("/", 1)[0]
         return "openai"
 
+    @property
+    def supports_function_calling(self) -> bool:
+        return _get_litellm().supports_function_calling(model=self.model)
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return _get_litellm().supports_reasoning(self.model)
+
+    @property
+    def supports_response_schema(self) -> bool:
+        return _get_litellm().supports_response_schema(
+            model=self.model, custom_llm_provider=self._provider_name
+        )
+
+    @property
+    def supported_params(self) -> set[str]:
+        params = _get_litellm().get_supported_openai_params(
+            model=self.model, custom_llm_provider=self._provider_name
+        )
+        return set(params) if params else set()
+
     def _wrap_litellm_exception(self, exc: Exception) -> LMError:
         """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions.
 
@@ -371,7 +403,27 @@ class LM(BaseLM):
         # Persist developer-role flag; omit callbacks (not serializable).
         if self.use_developer_role:
             state["use_developer_role"] = self.use_developer_role
+        # Reasoning models store max_tokens as max_completion_tokens internally;
+        # serialize under the public max_tokens name so load_state can reconstruct.
+        if _is_openai_reasoning_model(self.model) and "max_completion_tokens" in state:
+            state["max_tokens"] = state.pop("max_completion_tokens")
         return state
+
+    @classmethod
+    def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False):
+        state = dict(state)
+
+        model = state.get("model")
+        if (
+            isinstance(model, str)
+            and _is_openai_reasoning_model(model)
+            and "max_completion_tokens" in state
+        ):
+            if "max_tokens" not in state:
+                state["max_tokens"] = state["max_completion_tokens"]
+            state.pop("max_completion_tokens")
+
+        return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
