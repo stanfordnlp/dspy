@@ -266,6 +266,7 @@ jobs:
 
   build_package:
     name: Build Package
+    needs: [test, remaining_test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
