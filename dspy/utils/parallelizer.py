@@ -72,7 +72,8 @@ class ParallelExecutor:
             try:
                 return user_function(item)
             except Exception as e:
-                self._record_error(item, e)
+                # recorded by the main thread once the outcome is accepted, so a
+                # straggler's duplicate failure can't consume the error budget twice
                 return e
 
         return safe_func
@@ -95,6 +96,8 @@ class ParallelExecutor:
 
                 outcome = function(item)
                 self._process_outcome(results, idx, outcome)
+                if isinstance(outcome, Exception):
+                    self._record_error(item, outcome)
                 self._report_progress(pbar, results, len(data))
         except KeyboardInterrupt:
             self.interrupted.set()
@@ -217,7 +220,9 @@ class ParallelExecutor:
                             self._report_progress(pbar, results, len(data))
                         else:
                             if outcome != job_cancelled and self._should_finalize(index, outcome, results):
-                                if not isinstance(outcome, Exception):
+                                if isinstance(outcome, Exception):
+                                    self._record_error(futures_map[f][2], outcome)
+                                else:
                                     # The retry (or the original, if this is the retry) recovered after
                                     # the other future for this index failed -- a success always wins,
                                     # so drop the stale failure record instead of reporting both.
