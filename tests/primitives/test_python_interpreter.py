@@ -495,10 +495,19 @@ def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_pat
     assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
 
 
-def test_rejects_unsupported_system_deno(monkeypatch):
-    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: (1, 46, 3))
+@pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
+def test_accepts_supported_deno_2_versions(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
 
-    with pytest.raises(CodeInterpreterError, match=r"Unsupported Deno version 1\.46\.3"):
+    _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize("version", [(1, 46, 3), (3, 0, 0)])
+def test_rejects_unsupported_system_deno(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
+    version_text = "\\.".join(map(str, version))
+
+    with pytest.raises(CodeInterpreterError, match=rf"Unsupported Deno version {version_text}"):
         _validate_deno_version("/system/bin/deno")
 
 

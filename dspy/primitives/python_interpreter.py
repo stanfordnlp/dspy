@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
-MIN_DENO_VERSION = (2, 7, 7)
+MIN_DENO_VERSION = (2, 0, 0)
 MAX_DENO_VERSION = (3, 0, 0)
 DENO_PROBE_TIMEOUT_SECONDS = 10
 
@@ -113,14 +113,14 @@ def _validate_deno_version(deno_executable: str) -> None:
     if version is None:
         raise CodeInterpreterError(
             f"Unable to determine the Deno version from {deno_executable!r}. "
-            "PythonInterpreter requires Deno >=2.7.7,<3.0.0. "
+            "PythonInterpreter requires Deno >=2.0.0,<3.0.0. "
             'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
         )
 
     if not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
         version_text = ".".join(map(str, version))
         raise CodeInterpreterError(
-            f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.7.7,<3.0.0. "
+            f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.0.0,<3.0.0. "
             'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
         )
 
@@ -210,7 +210,7 @@ class PythonInterpreter:
 
     Prerequisites:
         Install the managed Deno runtime with ``pip install "dspy[deno]"``, or
-        install a compatible Deno 2.x release (2.7.7 or newer) system-wide.
+        install a compatible Deno 2.x release system-wide.
 
     Examples:
         ```python

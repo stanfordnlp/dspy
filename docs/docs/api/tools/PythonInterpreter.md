@@ -9,12 +9,12 @@ keeps Deno in the same Python environment as DSPy:
 pip install "dspy[deno]"
 ```
 
-The `deno` extra installs the official Deno Python distribution (`>=2.7.7,<3.0.0`). DSPy prefers that managed
+The `deno` extra installs the official Deno Python distribution (`>=2.4.5,<3.0.0`). DSPy prefers that managed
 binary when it is installed, so Python dependency locking also locks the Deno runtime. The extra provides binaries
 for macOS x86-64/arm64, glibc Linux x86-64/arm64, and Windows x86-64 and adds approximately 40–50 MiB to the
 environment.
 
-On other platforms, install a compatible Deno 2.x release (`>=2.7.7`) using the
+On other platforms, install a compatible Deno 2.x release (`>=2.0.0,<3.0.0`) using the
 [Deno installation instructions](https://docs.deno.com/runtime/getting_started/installation/). DSPy falls back to
 the `deno` executable on `PATH`. An explicit `deno_command` passed to `PythonInterpreter` takes precedence over
 both options.
