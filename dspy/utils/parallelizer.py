@@ -44,6 +44,7 @@ class ParallelExecutor:
         self.error_count = 0
         self.error_lock = threading.Lock()
         self.cancel_jobs = threading.Event()
+        self.interrupted = threading.Event()
         self.failed_indices = []
         self.exceptions_map = {}
 
@@ -96,6 +97,7 @@ class ParallelExecutor:
                 self._process_outcome(results, idx, outcome)
                 self._report_progress(pbar, results, len(data))
         except KeyboardInterrupt:
+            self.interrupted.set()
             self.cancel_jobs.set()
             logger.warning("SIGINT received. Cancelling.")
             raise
@@ -120,7 +122,8 @@ class ParallelExecutor:
         # This is the worker function each thread will run.
         def worker(parent_overrides, submission_id, index, item):
             if self.cancel_jobs.is_set():
-                return index, job_cancelled
+                if self.interrupted.is_set() or index not in self.exceptions_map:
+                    return index, job_cancelled
             # Record actual start time
             with start_time_lock:
                 start_time_map[submission_id] = time.time()
@@ -145,6 +148,7 @@ class ParallelExecutor:
                 orig_handler = signal.getsignal(signal.SIGINT)
 
                 def handler(sig, frame):
+                    self.interrupted.set()
                     self.cancel_jobs.set()
                     logger.warning("SIGINT received. Cancelling.")
                     orig_handler(sig, frame)
@@ -182,7 +186,20 @@ class ParallelExecutor:
                 def all_done():
                     return all(result is not _UNSET for result in results)
 
-                while futures_set and not self.cancel_jobs.is_set():
+                recovery_deadline = None
+
+                def keep_running():
+                    nonlocal recovery_deadline
+                    if not self.cancel_jobs.is_set():
+                        return True
+                    if self.interrupted.is_set():
+                        return False
+                    if not any(futures_map[f][1] in self.exceptions_map for f in futures_set):
+                        return False
+                    recovery_deadline = recovery_deadline or time.time() + max(self.timeout, 1.0)
+                    return time.time() < recovery_deadline
+
+                while futures_set and keep_running():
                     if all_done():
                         break
                     done, not_done = wait(futures_set, timeout=1, return_when=FIRST_COMPLETED)
@@ -273,17 +290,14 @@ class ParallelExecutor:
         return True
 
     def _clear_stale_failure(self, idx):
-        """Drop a previously-recorded failure for idx because the other future for the same
-        straggler-retried index went on to succeed.
-
-        _record_error already incremented error_count for the stale failure, so clearing
-        it here must give that budget back too -- otherwise a resolved failure keeps
-        counting toward max_errors and can combine with one later unrelated failure to
-        cancel the whole run even though only one input is actually still failing.
-        """
+        """A retry recovered idx after its original attempt failed. Undo what _record_error
+        did for that stale failure: give back error_count, and cancel_jobs too if it was the
+        error budget (not a real interrupt) that set it."""
         with self.error_lock:
             if self.exceptions_map.pop(idx, None) is not None:
                 self.error_count -= 1
+                if not self.interrupted.is_set() and self.error_count < self.max_errors:
+                    self.cancel_jobs.clear()
             if idx in self.failed_indices:
                 self.failed_indices.remove(idx)
 

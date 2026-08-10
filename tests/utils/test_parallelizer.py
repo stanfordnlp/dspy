@@ -215,6 +215,50 @@ def test_straggler_retry_success_clears_stale_harness_failure(monkeypatch):
     assert executor.exceptions_map == {}
 
 
+def test_straggler_retry_success_clears_cancellation_from_a_stale_failure(monkeypatch):
+    """At max_errors=1, a straggler's original harness failure crosses the threshold and
+    sets cancel_jobs by itself. If the resubmitted retry then succeeds, the run's only
+    logical failure has been resolved -- cancel_jobs must be cleared along with error_count,
+    or the caller gets a spurious cancellation for a call that actually completed cleanly.
+
+    Same Event-based ordering as the sibling test above, just with max_errors tight enough
+    that the original failure alone triggers cancellation before the retry recovers."""
+    import dspy.utils.parallelizer as parallelizer_module
+
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    real_deepcopy = parallelizer_module.copy.deepcopy
+    original_failed = threading.Event()
+
+    def flaky_deepcopy(*args, **kwargs):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            time.sleep(1.5)
+            original_failed.set()
+            raise RuntimeError("cannot deepcopy usage_tracker")
+        return real_deepcopy(*args, **kwargs)
+
+    monkeypatch.setattr(parallelizer_module.copy, "deepcopy", flaky_deepcopy)
+
+    def task(item):
+        original_failed.wait(timeout=5)
+        time.sleep(0.3)
+        return item * 10
+
+    executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
+
+    with dspy.context(usage_tracker=object()):
+        results = executor.execute(task, [1])
+
+    assert results == [10]
+    assert executor.failed_indices == []
+    assert executor.exceptions_map == {}
+    assert executor.error_count == 0
+    assert not executor.cancel_jobs.is_set()
+
+
 def test_straggler_retry_user_exception_does_not_duplicate_harness_failure(monkeypatch):
     """A straggler's original future can fail during harness setup while its resubmitted
     retry runs the task itself, which then raises. The two failures are for the same
@@ -284,6 +328,35 @@ def test_clear_stale_failure_frees_the_error_budget():
     assert executor.exceptions_map == {}
     assert executor.failed_indices == []
     assert not executor.cancel_jobs.is_set()
+
+
+def test_clear_stale_failure_uncancels_a_run_the_stale_failure_alone_cancelled():
+    """At max_errors=1, a single stale failure sets cancel_jobs by itself. Clearing that
+    failure must also clear cancel_jobs -- error_count alone dropping back under the
+    threshold isn't enough if the stale cancellation is never undone."""
+    executor = ParallelExecutor(num_threads=2, max_errors=1)
+    executor._record_error("item-a", RuntimeError("stale"))
+    assert executor.cancel_jobs.is_set()
+
+    executor.exceptions_map[0] = RuntimeError("stale")
+    executor._clear_stale_failure(0)
+
+    assert not executor.cancel_jobs.is_set()
+
+
+def test_clear_stale_failure_never_uncancels_a_real_interrupt():
+    """cancel_jobs set by a genuine Ctrl-C (self.interrupted) must never be cleared by
+    resolving an unrelated stale failure -- only error-budget-triggered cancellation is
+    ever safe to undo."""
+    executor = ParallelExecutor(num_threads=2, max_errors=1)
+    executor._record_error("item-a", RuntimeError("stale"))
+    executor.interrupted.set()
+    assert executor.cancel_jobs.is_set()
+
+    executor.exceptions_map[0] = RuntimeError("stale")
+    executor._clear_stale_failure(0)
+
+    assert executor.cancel_jobs.is_set()
 
 
 def test_sequential_execution_runs_on_main_thread():
