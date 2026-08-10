@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from dspy_vibe import offline
-from dspy_vibe.emitters import write_bundle
+from dspy_vibe.emitters import render_bundle, write_bundle
 from dspy_vibe.metrics import agent_validity, bundle_quality, skill_validity
 from dspy_vibe.types import AgentArtifact, SkillArtifact, VibeBundle
 
@@ -51,7 +51,12 @@ def cmd_convert(args: argparse.Namespace) -> int:
     bundle = _build_bundle(args, instruction)
 
     if args.stdout:
-        print(json.dumps(bundle.model_dump(), indent=2, ensure_ascii=False))
+        # The rendered text travels with the structured data, so an embedding
+        # caller (the VS Code extension) gets both from a single run. Asking
+        # twice would cost a second LM call and could return different content.
+        payload = bundle.model_dump()
+        payload["rendered"] = render_bundle(bundle, args.format)
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
 
     try:

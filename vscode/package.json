@@ -1,0 +1,110 @@
+{
+  "name": "dspy-vibe",
+  "displayName": "DSPy Vibe",
+  "description": "Turn vibe-coding instructions into a structured brief, an .agent, and a .skill.",
+  "version": "0.1.0",
+  "publisher": "pocomotoxx",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pocomotoxx/promptdspyk"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["AI", "Other"],
+  "keywords": ["dspy", "agent", "skill", "prompt", "vibe coding"],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "dspyVibe.convertSelection",
+        "title": "Vibe: Convert selection to brief",
+        "category": "DSPy Vibe"
+      },
+      {
+        "command": "dspyVibe.convertPrompt",
+        "title": "Vibe: Convert a typed instruction",
+        "category": "DSPy Vibe"
+      },
+      {
+        "command": "dspyVibe.writeArtifacts",
+        "title": "Vibe: Generate .agent and .skill from the last brief",
+        "category": "DSPy Vibe"
+      },
+      {
+        "command": "dspyVibe.checkEnvironment",
+        "title": "Vibe: Check the Python environment",
+        "category": "DSPy Vibe"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "dspyVibe.convertSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@100"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DSPy Vibe",
+      "properties": {
+        "dspyVibe.pythonPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Python interpreter used to run `dspy_vibe`. Empty means: use the interpreter selected by the Python extension, then fall back to `python3`/`python` on PATH."
+        },
+        "dspyVibe.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "LM id passed to `--model`, for example `openai/gpt-4o-mini`. Empty runs the deterministic offline converter, which needs no API key."
+        },
+        "dspyVibe.tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Read", "Edit", "Bash"],
+          "description": "Tool names your agent host offers. Generated agents are restricted to these."
+        },
+        "dspyVibe.agentDirectory": {
+          "type": "string",
+          "default": ".claude/agents",
+          "description": "Workspace-relative directory for generated .agent files."
+        },
+        "dspyVibe.skillDirectory": {
+          "type": "string",
+          "default": ".claude/skills",
+          "description": "Workspace-relative directory for generated .skill files."
+        },
+        "dspyVibe.specDirectory": {
+          "type": "string",
+          "default": "docs/briefs",
+          "description": "Workspace-relative directory for generated brief documents."
+        },
+        "dspyVibe.autoContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Detect the stack from workspace manifests and pass it as --context."
+        },
+        "dspyVibe.timeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "description": "How long to wait for the converter before giving up."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node --test out/test/*.test.js",
+    "pretest": "npm run compile",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.9.3"
+  }
+}

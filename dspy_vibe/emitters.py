@@ -160,6 +160,21 @@ def _render(artifact: BaseModel, fmt: Format) -> str:
     raise TypeError(f"no markdown emitter for {type(artifact).__name__}")
 
 
+def render_bundle(bundle: VibeBundle, fmt: Format = "markdown") -> dict[str, str]:
+    """Render every artifact to text without touching the filesystem.
+
+    Callers that embed the pipeline — an editor extension, a web service — need
+    the rendered text and the structured data from a *single* run. Re-running
+    the pipeline to get the other half would cost a second LM call and could
+    return different content.
+    """
+    return {
+        "spec": _render(bundle.spec, fmt),
+        "agent": _render(bundle.agent, fmt),
+        "skill": _render(bundle.skill, fmt),
+    }
+
+
 def write_bundle(
     bundle: VibeBundle,
     out_dir: str | Path,
@@ -180,12 +195,11 @@ def write_bundle(
         "agent": out / f"{slug}.agent",
         "skill": out / f"{slug}.skill",
     }
-    artifacts = {"spec": bundle.spec, "agent": bundle.agent, "skill": bundle.skill}
-
     existing = [str(path) for path in targets.values() if path.exists()]
     if existing and not overwrite:
         raise FileExistsError("refusing to overwrite: " + ", ".join(existing) + " (pass overwrite=True)")
 
+    rendered = render_bundle(bundle, fmt)
     for key, path in targets.items():
-        path.write_text(_render(artifacts[key], fmt), encoding="utf-8", newline="\n")
+        path.write_text(rendered[key], encoding="utf-8", newline="\n")
     return targets

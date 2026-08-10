@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from dspy_vibe.emitters import (
     agent_to_markdown,
+    render_bundle,
     skill_to_markdown,
     spec_to_markdown,
     write_bundle,
@@ -95,6 +96,7 @@ __all__ = [
     "agent_validity",
     "bundle_from_instruction",
     "bundle_quality",
+    "render_bundle",
     "skill_from_spec",
     "skill_to_markdown",
     "skill_validity",

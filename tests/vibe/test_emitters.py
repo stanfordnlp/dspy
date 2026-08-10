@@ -72,3 +72,14 @@ def test_blocking_question_is_marked_in_the_spec_document():
     bundle = bundle_from_instruction(INSTRUCTION)
     bundle.spec.open_questions[0].assumption_used = ""
     assert "blocking" in spec_to_markdown(bundle.spec)
+
+
+def test_render_bundle_matches_written_files(tmp_path):
+    from dspy_vibe import render_bundle
+
+    bundle = bundle_from_instruction(INSTRUCTION)
+    rendered = render_bundle(bundle)
+    written = write_bundle(bundle, tmp_path)
+    assert written["agent"].read_text(encoding="utf-8") == rendered["agent"]
+    assert written["skill"].read_text(encoding="utf-8") == rendered["skill"]
+    assert written["spec"].read_text(encoding="utf-8") == rendered["spec"]
