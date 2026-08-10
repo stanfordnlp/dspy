@@ -68,7 +68,7 @@ jobs:
           )
 
   test:
-    name: Run Tests
+    name: "Primary Tests: Clients, Adapters, and Utils"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -97,11 +97,11 @@ jobs:
         run: |
           uv sync --dev -p .venv --extra dev
           uv pip list
-      - name: Run tests with pytest
+      - name: Run clients, adapters, and utils shard
         run: uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/clients tests/adapters tests/utils
 
   remaining_test:
-    name: Run Remaining Tests
+    name: "Primary Tests: All Other Directories"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -130,7 +130,7 @@ jobs:
         run: |
           uv sync --dev -p .venv --extra dev
           uv pip list
-      - name: Run remaining tests with pytest
+      - name: Run all other primary tests shard
         run: >-
           uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
           --ignore=tests/clients --ignore=tests/adapters --ignore=tests/utils
