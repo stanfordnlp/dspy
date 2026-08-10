@@ -135,7 +135,9 @@ const jsonrpcError = (code, message, id, data = null) => {
 // These can occur during async Python <-> JS interop
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
-  console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
+  console.log(jsonrpcNotification("unhandled_error", {
+    message: `Unhandled async error: ${event.reason?.message || event.reason}`,
+  }));
 });
 
 const pyodide = await pyodideModule.loadPyodide();

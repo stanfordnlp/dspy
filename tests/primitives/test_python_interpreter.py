@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import io
 import json
 import os
 import random
@@ -1150,3 +1151,96 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+def test_system_exit_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Regression test for #10165: the unhandled Deno rejection accompanying
+    SystemExit must not be consumed as the response, desyncing later requests."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="SystemExit"):
+        interpreter.execute("import sys\nsys.exit(0)")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_keyboard_interrupt_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """KeyboardInterrupt takes the same asyncio re-raise path as SystemExit (#10165)."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="KeyboardInterrupt"):
+        interpreter.execute("raise KeyboardInterrupt('stop')")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_base_exception_subclasses_are_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Subclasses of SystemExit/KeyboardInterrupt take the same re-raise path (#10165)."""
+    interpreter = pooled_interpreter
+    for code, error_type in [
+        ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+        ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+    ]:
+        with pytest.raises(CodeExecutionError, match=error_type):
+            interpreter.execute(code)
+        assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_out_of_band_messages_are_skipped_not_consumed_as_responses():
+    """Notifications and unsolicited id-less errors are diagnostics, not responses (#10165)."""
+    interpreter = PythonInterpreter()
+
+    notification = {"jsonrpc": "2.0", "method": "unhandled_error", "params": {"message": "boom"}}
+    assert interpreter._handle_out_of_band_message(notification, "during test")
+    assert interpreter._last_diagnostic == "boom"
+
+    unsolicited_error = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "crash"}, "id": None}
+    assert interpreter._handle_out_of_band_message(unsolicited_error, "during test")
+    assert interpreter._last_diagnostic == "crash"
+
+    # Real responses (success or error, with an id) must not be consumed.
+    result = {"jsonrpc": "2.0", "result": {"output": "2\n"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(result, "during test")
+    error_response = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "boom"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(error_response, "during test")
+
+
+def test_id_less_protocol_errors_are_terminal():
+    """ParseError/InvalidRequest mean the sandbox never read the request, so no
+    response will follow; waiting for one would block forever (#10165)."""
+    interpreter = PythonInterpreter()
+    parse_error = {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Invalid JSON input"}, "id": None}
+    with pytest.raises(CodeInterpreterError, match="Protocol error"):
+        interpreter._handle_out_of_band_message(parse_error, "during test")
+
+
+def test_unsolicited_error_line_is_not_consumed_as_the_response():
+    """#10165: an id-less async error arriving ahead of the real response (the
+    wire trace an unhandled rejection produces) must not be mistaken for it."""
+
+    class FakeDeno:
+        def __init__(self, lines):
+            self.stdin = io.StringIO()
+            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
+            self.stderr = io.StringIO()
+
+        def poll(self):
+            return None
+
+    interpreter = PythonInterpreter()
+    interpreter.deno_process = FakeDeno([
+        json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
+        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": 1}),
+    ])
+    assert interpreter.execute("print('ok')") == "ok\n"
+
+
+def test_base_exceptions_do_not_desync_interpreter():
+    with PythonInterpreter() as interpreter:
+        for code, error_type in [
+            ("import sys\nsys.exit(0)", "SystemExit"),
+            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+        ]:
+            with pytest.raises(CodeExecutionError, match=error_type):
+                interpreter.execute(code)
+            assert interpreter.execute("print('still alive')") == "still alive\n"

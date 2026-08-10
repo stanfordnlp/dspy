@@ -38,6 +38,13 @@ LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
 # JSON-RPC 2.0 Helpers
 # =============================================================================
 
+# JSON-RPC 2.0 protocol errors
+JSONRPC_PROTOCOL_ERRORS = {
+    "ParseError": -32700,
+    "InvalidRequest": -32600,
+    "MethodNotFound": -32601,
+}
+
 # Application errors (range: -32000 to -32099)
 JSONRPC_APP_ERRORS = {
     "SyntaxError": -32000,
@@ -242,6 +249,7 @@ class PythonInterpreter:
         self.deno_process = None
         self._mounted_files = False
         self._request_id = 0
+        self._last_diagnostic: str | None = None
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
         self._session_ended = False
@@ -469,11 +477,12 @@ class PythonInterpreter:
         if response_line:
             return response_line
 
+        diagnostic = f" (last sandbox diagnostic: {self._last_diagnostic})" if self._last_diagnostic else ""
         exit_code = self.deno_process.poll()
         if exit_code is not None:
             stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}")
-        self._raise_terminal_error(f"No response {context}")
+            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}{diagnostic}")
+        self._raise_terminal_error(f"No response {context}{diagnostic}")
 
     def _parse_response_line(self, response_line: str, context: str) -> dict | None:
         """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
@@ -487,14 +496,36 @@ class PythonInterpreter:
             logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
             return None
 
+    def _next_request_id(self) -> int:
+        self._request_id += 1
+        self._last_diagnostic = None
+        return self._request_id
+
+    def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
+        """Consume a message that is not a response to any request (a notification
+        or an unsolicited id-less error), returning True so the caller keeps
+        reading for the real response. Protocol errors with no id are terminal.
+        """
+        if "method" in msg and "id" not in msg:
+            payload, level = msg.get("params"), logging.DEBUG
+        elif "error" in msg and msg.get("id") is None:
+            payload, level = msg["error"], logging.WARNING
+            if isinstance(payload, dict) and payload.get("code") in JSONRPC_PROTOCOL_ERRORS.values():
+                self._raise_terminal_error(f"Protocol error {context}: {payload.get('message', msg)}")
+        else:
+            return False
+
+        self._last_diagnostic = (payload.get("message") if isinstance(payload, dict) else None) or str(msg)
+        logger.log(level, "Skipping out-of-band sandbox message %s: %s", context, self._last_diagnostic)
+        return True
+
     def _send_request(self, method: str, params: dict, context: str) -> dict:
         """Send a JSON-RPC request and return the parsed response.
 
         Non-JSON lines (e.g. Pyodide package loading messages) are skipped,
         up to ``_MAX_SKIP_LINES`` to prevent unbounded blocking.
         """
-        self._request_id += 1
-        request_id = self._request_id
+        request_id = self._next_request_id()
         msg = _jsonrpc_request(method, params, request_id)
         self._write_message(msg, context)
 
@@ -502,7 +533,7 @@ class PythonInterpreter:
         while skipped <= self._MAX_SKIP_LINES:
             response_line = self._read_response_line(context)
             response = self._parse_response_line(response_line, context)
-            if response is None:
+            if response is None or self._handle_out_of_band_message(response, context):
                 skipped += 1
                 continue
 
@@ -519,7 +550,7 @@ class PythonInterpreter:
                 self._raise_terminal_error(f"Unexpected response {context}: {response}")
             return response
 
-        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) {context}")
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) {context}")
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
@@ -643,8 +674,7 @@ class PythonInterpreter:
             self._inject_large_var(name, value)
 
         # Send the code as JSON-RPC request
-        self._request_id += 1
-        execute_request_id = self._request_id
+        execute_request_id = self._next_request_id()
         input_data = _jsonrpc_request("execute", {"code": code}, execute_request_id)
         self._write_message(input_data, "during execution")
 
@@ -664,6 +694,10 @@ class PythonInterpreter:
                     self._handle_tool_call(msg)
                     continue
 
+            if self._handle_out_of_band_message(msg, "during execution"):
+                skipped += 1
+                continue
+
             # Handle success response
             if "result" in msg:
                 if msg.get("id") != execute_request_id:
@@ -681,9 +715,7 @@ class PythonInterpreter:
 
             # Handle error response
             if "error" in msg:
-                # Errors with id=null are unsolicited errors (e.g., unhandled async rejections)
-                # Treat them as errors for the current request
-                if msg.get("id") is not None and msg.get("id") != execute_request_id:
+                if msg.get("id") != execute_request_id:
                     self._raise_terminal_error(
                         f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
                     )
@@ -706,7 +738,7 @@ class PythonInterpreter:
             # Unexpected message format - neither a recognized method nor a response
             self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")
 
-        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) during execution")
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) during execution")
 
     @with_callbacks
     def start(self) -> None:
