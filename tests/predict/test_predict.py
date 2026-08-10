@@ -880,6 +880,7 @@ def test_positional_arguments():
         "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
     )
 
+
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
     with pytest.raises(ValueError, match="No LM is loaded"):
@@ -1061,6 +1062,7 @@ def test_per_module_history_disabled():
         program(question="What is the capital of France?")
     assert len(program.history) == 0
 
+
 def test_input_field_default_value():
     class SpyLM(dspy.LM):
         def __init__(self):
@@ -1084,11 +1086,13 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
     dspy_logger = logging.getLogger("dspy")
     dspy_logger.propagate = True
+
 
 def test_extra_fields_warning(caplog):
     """Test that extra fields not in signature generate a warning."""
@@ -1154,6 +1158,7 @@ def test_warning_images(caplog):
         predict_instance(question="dog_image")
 
     assert "Type mismatch for field 'question': expected Image" in caplog.text
+
 
 def test_type_mismatch_warning(caplog):
     """Test that type mismatches in input fields generate a warning."""
@@ -1661,6 +1666,7 @@ def test_union_type_validation_string_signature(caplog):
 
     assert "Type mismatch for field 'mode'" in caplog.text
 
+
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_basic_types_string_signature(caplog, enable_type_warnings):
     """Test type validation with basic types using string signatures."""
@@ -1690,6 +1696,7 @@ def test_basic_types_string_signature(caplog, enable_type_warnings):
     else:
         assert "Type mismatch" not in caplog.text
 
+
 def test_untyped_string_signature(caplog):
     """Test type validation with basic types using string signatures without type."""
     log_test_helper()
@@ -1716,6 +1723,7 @@ def test_untyped_class_signature(caplog):
         count = dspy.InputField()
         name = dspy.InputField()
         result = dspy.OutputField()
+
     predict_instance = Predict(TestSignature)
 
     # Test with correct types
@@ -1728,6 +1736,7 @@ def test_untyped_class_signature(caplog):
 
     assert "Type mismatch" not in caplog.text
 
+
 def test_string_to_list_signature(caplog):
     """Test type validation with string input field type where the module gets called with a list."""
     log_test_helper()
@@ -1737,6 +1746,7 @@ def test_string_to_list_signature(caplog):
         name: str = dspy.InputField()
         count = dspy.InputField()
         result = dspy.OutputField()
+
     predict_instance = Predict(TestSignature)
 
     caplog.clear()
@@ -1747,6 +1757,7 @@ def test_string_to_list_signature(caplog):
         predict_instance(name=["abc", "def", "geh"], count=123)
 
     assert "Type mismatch" not in caplog.text
+
 
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_custom_signature_types(caplog, enable_type_warnings):
@@ -1780,3 +1791,41 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+@pytest.mark.parametrize("reserved_kwarg", ["lm", "demos", "config", "new_signature"])
+def test_predict_rejects_signature_input_field_colliding_with_reserved_kwarg(reserved_kwarg):
+    with pytest.raises(ValueError, match=f"Signature input field\\(s\\) `{reserved_kwarg}` collide with reserved"):
+        Predict(f"question, {reserved_kwarg} -> answer")
+
+
+@pytest.mark.parametrize("reserved_kwarg", ["lm", "demos", "config", "new_signature"])
+def test_predict_rejects_reserved_kwarg_in_per_call_signature_override(reserved_kwarg):
+    predict = Predict("question -> answer")
+    # Bypass the constructor check the way an optimizer would, by assigning the signature directly.
+    predict.signature = Signature(f"question, {reserved_kwarg} -> answer")
+
+    dspy.settings.configure(lm=DummyLM([{"answer": "blue"}]))
+    with pytest.raises(ValueError, match=f"Signature input field\\(s\\) `{reserved_kwarg}` collide with reserved"):
+        predict(question="What color is the sky?")
+
+
+def test_predict_allows_reserved_names_as_output_fields():
+    # Only input fields are consumed as keyword arguments, so outputs are unaffected.
+    predict = Predict("question -> lm, demos")
+    dspy.settings.configure(lm=DummyLM([{"lm": "a", "demos": "b"}]))
+
+    prediction = predict(question="What color is the sky?")
+    assert prediction.lm == "a"
+    assert prediction.demos == "b"
+
+
+def test_predict_passes_through_non_reserved_field_names():
+    lm = DummyLM([{"answer": "blue"}])
+    dspy.settings.configure(lm=lm)
+
+    predict = Predict("question, language_model -> answer")
+    prediction = predict(question="What color is the sky?", language_model="gpt-4")
+
+    assert prediction.answer == "blue"
+    assert "gpt-4" in str(lm.history[-1]["messages"])

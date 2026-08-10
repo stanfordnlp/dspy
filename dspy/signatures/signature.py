@@ -13,6 +13,12 @@ If you are not sure if your input is a string representation, (like "input1, inp
 or a signature, you can use the ensure_signature function.
 
 For compatibility with the legacy dsp format, you can use the signature_to_template function.
+
+Reserved names: a signature field cannot be named `instructions`, `fields`, `input_fields`, `output_fields` or
+`signature`. DSPy exposes those names as properties on the signature class itself, so a field of the same name would
+be hidden by the property and silently ignored. Constructing such a signature raises a `TypeError`; rename the field
+(e.g. `instructions_text`) to fix it. Additionally, `dspy.Predict` reserves the keyword arguments `lm`, `demos`,
+`config`, `signature` and `new_signature`, so an *input* field may not use those names either.
 """
 
 import ast
@@ -36,6 +42,54 @@ def _default_instructions(cls) -> str:
     inputs_ = ", ".join([f"`{field}`" for field in cls.input_fields])
     outputs_ = ", ".join([f"`{field}`" for field in cls.output_fields])
     return f"Given the fields {inputs_}, produce the fields {outputs_}."
+
+
+_RESERVED_SIGNATURE_NAMES_CACHE: dict[type, frozenset[str]] = {}
+
+
+def _reserved_signature_names(metaclass: type) -> frozenset[str]:
+    """Return the field names that a signature cannot use, derived from the metaclass.
+
+    `SignatureMeta` exposes `instructions`, `fields`, `input_fields`, `output_fields` and `signature` as properties.
+    A property is a data descriptor, so it takes precedence over the class `__dict__` during attribute lookup: a
+    Pydantic field with one of these names can never be read back from the signature class. Deriving the set from the
+    metaclass at runtime keeps it correct if a property is added to `SignatureMeta` later.
+    """
+    reserved = _RESERVED_SIGNATURE_NAMES_CACHE.get(metaclass)
+    if reserved is None:
+        reserved = frozenset(
+            name
+            for name in dir(metaclass)
+            if not name.startswith("__") and hasattr(inspect.getattr_static(metaclass, name, None), "__set__")
+        )
+        _RESERVED_SIGNATURE_NAMES_CACHE[metaclass] = reserved
+    return reserved
+
+
+def _validate_reserved_names(
+    metaclass: type,
+    signature_name: str,
+    annotations: dict[str, Any],
+    namespace: dict[str, Any],
+) -> None:
+    """Raise if a signature declares a field whose name is reserved by DSPy.
+
+    Called for every signature, whether it is built from a class body or from the string form
+    (`dspy.Signature("question -> instructions")`), since both go through `SignatureMeta.__new__`.
+    """
+    reserved = _reserved_signature_names(metaclass)
+    declared = set(annotations) | {name for name, value in namespace.items() if isinstance(value, FieldInfo)}
+    colliding = sorted(declared & reserved)
+    if not colliding:
+        return
+
+    fields_ = ", ".join(f"`{name}`" for name in colliding)
+    raise TypeError(
+        f"Field(s) {fields_} in `{signature_name}` collide with reserved DSPy signature attribute(s) of the same "
+        f"name. DSPy exposes {fields_} as a property on every signature class, so the property would hide your "
+        f"InputField/OutputField and the field could never be read back. Please rename the field(s), e.g. "
+        f"`{colliding[0]}` -> `{colliding[0]}_text`. Reserved names: {', '.join(sorted(reserved))}."
+    )
 
 
 class SignatureMeta(type(BaseModel)):
@@ -142,6 +196,7 @@ class SignatureMeta(type(BaseModel)):
         if sys.version_info >= (3, 14):
             try:
                 import annotationlib
+
                 # Try to get from explicit __annotations__ first (e.g., from __future__ import annotations)
                 raw_annotations = namespace.get("__annotations__")
 
@@ -150,8 +205,7 @@ class SignatureMeta(type(BaseModel)):
                     annotate_func = annotationlib.get_annotate_from_class_namespace(namespace)
                     if annotate_func:
                         raw_annotations = annotationlib.call_annotate_function(
-                            annotate_func,
-                            format=annotationlib.Format.FORWARDREF
+                            annotate_func, format=annotationlib.Format.FORWARDREF
                         )
                     else:
                         raw_annotations = {}
@@ -166,12 +220,18 @@ class SignatureMeta(type(BaseModel)):
                 continue  # Don't add types to non-field attributes
             if not name.startswith("__") and name not in raw_annotations:
                 raw_annotations[name] = str
-                field.json_schema_extra[IS_TYPE_UNDEFINED] = True  # Mark that the type was originally undefined in the signature
+                field.json_schema_extra[IS_TYPE_UNDEFINED] = (
+                    True  # Mark that the type was originally undefined in the signature
+                )
         # Create ordered annotations dictionary that preserves field order
         ordered_annotations = {name: raw_annotations[name] for name in field_order if name in raw_annotations}
         # Add any remaining annotations that weren't in field_order
         ordered_annotations.update({k: v for k, v in raw_annotations.items() if k not in ordered_annotations})
         namespace["__annotations__"] = ordered_annotations
+
+        # Reject fields whose name is shadowed by a property on the metaclass. Pydantic would happily create the
+        # field, but it could never be read back from the signature class, which surfaces later as a confusing error.
+        _validate_reserved_names(mcs, signature_name, ordered_annotations, namespace)
 
         # On Python 3.14+, prevent Pydantic from capturing this frame's locals via
         # parent_frame_namespace(). Those locals include references to the __annotate__
@@ -307,9 +367,9 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def append_instructions(cls, instructions: str) -> type["Signature"]:
         """Return a new Signature class with identical fields and `instructions` appended to the existing instructions.
 
-        This method does not mutate `cls`. It constructs a fresh Signature 
-        using the existing instructions from `cls.instructions` followed 
-        by `instructions`, joined by a blank line. 
+        This method does not mutate `cls`. It constructs a fresh Signature
+        using the existing instructions from `cls.instructions` followed
+        by `instructions`, joined by a blank line.
         Unlike `with_instructions`, the existing instructions are preserved rather than replaced.
 
         Args:
@@ -576,6 +636,11 @@ def make_signature(
     Returns:
         A new signature class with the specified fields and instructions.
 
+    Raises:
+        TypeError: If a field is named after one of the properties DSPy exposes on every signature class
+            (`instructions`, `fields`, `input_fields`, `output_fields`, `signature`). The property would hide
+            the field, so it could never be read back; rename it, e.g. `instructions` -> `instructions_text`.
+
     Examples:
 
     ```
@@ -649,9 +714,9 @@ def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Any]]:
 
     input_fields = list(_parse_field_string(inputs_str, names))
     output_fields = list(_parse_field_string(outputs_str, names))
-    duplicate_field_names = sorted({field_name for field_name, *_ in input_fields}.intersection(
-        field_name for field_name, *_ in output_fields
-    ))
+    duplicate_field_names = sorted(
+        {field_name for field_name, *_ in input_fields}.intersection(field_name for field_name, *_ in output_fields)
+    )
     if duplicate_field_names:
         raise ValueError(
             "Input and output fields must have distinct names, but found duplicates: "
@@ -660,7 +725,7 @@ def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Any]]:
 
     fields = {}
     for field_name, field_type, is_type_undefined in input_fields:
-        fields[field_name] = (field_type, InputField(IS_TYPE_UNDEFINED= is_type_undefined))
+        fields[field_name] = (field_type, InputField(IS_TYPE_UNDEFINED=is_type_undefined))
     for field_name, field_type, _ in output_fields:
         fields[field_name] = (field_type, OutputField())
 
@@ -677,7 +742,9 @@ def _parse_field_string(field_string: str, names=None) -> Iterator[tuple[str, ty
 
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
     field_names: list[str] = [arg.arg for arg in args]
-    types_list: list[type] = [str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args]
+    types_list: list[type] = [
+        str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args
+    ]
     is_type_undefined: list[bool] = [True if arg.annotation is None else False for arg in args]
     return zip(field_names, types_list, is_type_undefined, strict=False)
 

@@ -62,6 +62,14 @@ GEPA and the other instruction optimizers rewrite the Signature’s docstring. T
 
 Field names are part of the program’s public interface: caller code reads `result.haiku`, downstream modules look up `"haiku"` by name. An optimizer that renamed them would break the program around it. So name your fields carefully — the optimizer can’t fix `result` into `haiku` later. The same goes for field descriptions when you write them.
 
+### 10. A few field names are reserved
+
+`instructions`, `fields`, `input_fields`, `output_fields` and `signature` are properties on `SignatureMeta`, and a property is a data descriptor: it wins over the class `__dict__` during attribute lookup. So a field with one of those names could be declared but never read back — `MySignature.instructions` would return the docstring, not your field. Rather than let that fail confusingly downstream, `SignatureMeta.__new__` raises a `TypeError` naming the colliding field, for both the class form and the string form (`dspy.Signature("question -> instructions")`).
+
+`dspy.Predict` reserves a second, overlapping set: `lm`, `demos`, `config`, `signature` and `new_signature` are the privileged keyword arguments it pops off in `_forward_preprocess`, so an *input* field with one of those names would have its value swallowed instead of reaching the LM. `Predict` raises a `ValueError` when it is constructed with such a signature, and again if the signature is swapped out later (by an optimizer, or via a per-call `signature=` override). Output fields are unaffected — nothing pops them.
+
+The reserved set is derived from the metaclass at runtime rather than hardcoded, so it stays correct if a property is added to `SignatureMeta` later. Plain methods (`append`, `delete`, `with_instructions`, …) are *not* data descriptors, so fields may still be named after them. The fix in every case is to rename the field: `instructions` → `instructions_text`.
+
 ## API walkthrough
 
 Grouped by what you’re trying to do.
@@ -82,7 +90,7 @@ The actual constructor. Two input shapes: a string (parsed by `_parse_signature`
 A no-op on already-built Signature classes; runs `make_signature` on strings. Use it when writing a module that should accept either form. It doesn’t memoize, so don’t call it in a hot loop on the same string — every call constructs a new class.
 
 **`SignatureMeta`**  
-The metaclass behind `Signature`. You won’t subclass or instantiate it. What it does: parses docstrings into instructions, validates that every field is tagged `input` or `output`, infers missing `prefix=` values, and runs the custom-type frame walk during string parsing. Most “weird signature” errors originate here.
+The metaclass behind `Signature`. You won’t subclass or instantiate it. What it does: parses docstrings into instructions, validates that every field is tagged `input` or `output`, rejects field names reserved by DSPy (design decision 10), infers missing `prefix=` values, and runs the custom-type frame walk during string parsing. Most “weird signature” errors originate here.
 
 ### Introspecting a signature
 
