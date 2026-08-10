@@ -2866,3 +2866,83 @@ def test_provider_tool_calls_preserve_id_and_repair_arguments():
             dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
         ]
     )
+
+
+class OptionalOutputSignature(dspy.Signature):
+    question: str = dspy.InputField()
+    answer: str = dspy.OutputField()
+    note: str | None = dspy.OutputField(default="No note")
+    tags: list[str] = dspy.OutputField(default_factory=list)
+    maybe: str | None = dspy.OutputField()
+
+
+def test_missing_optional_output_fields_fall_back_to_defaults():
+    from dspy.utils.dummies import DummyLM
+
+    with dspy.context(lm=DummyLM([{"answer": "42"}]), adapter=dspy.ChatAdapter()):
+        pred = dspy.Predict(OptionalOutputSignature)(question="anything")
+
+    assert pred.answer == "42"
+    assert pred.note == "No note"
+    assert pred.tags == []
+    assert pred.maybe is None
+
+
+def test_output_field_default_is_overridden_by_lm_response():
+    from dspy.utils.dummies import DummyLM
+
+    with dspy.context(lm=DummyLM([{"answer": "42", "note": "hello", "tags": '["a"]', "maybe": "yes"}]),
+                      adapter=dspy.ChatAdapter()):
+        pred = dspy.Predict(OptionalOutputSignature)(question="anything")
+
+    assert pred.note == "hello"
+    assert pred.tags == ["a"]
+    assert pred.maybe == "yes"
+
+
+def test_missing_required_output_field_still_raises():
+    from dspy.utils.dummies import DummyLM
+    from dspy.utils.exceptions import AdapterParseError
+
+    # Two identical responses: ChatAdapter retries via the JSONAdapter fallback before raising.
+    responses = [{"note": "present"}, {"note": "present"}]
+    with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
+        with pytest.raises(AdapterParseError):
+            dspy.Predict(OptionalOutputSignature)(question="anything")
+
+
+def test_optional_type_syntax_output_fields_fall_back_to_defaults():
+    from typing import Optional
+
+    from dspy.utils.dummies import DummyLM
+
+    class OptionalSyntaxSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: Optional[str] = dspy.OutputField(default="No note")  # noqa: UP045
+        maybe: Optional[str] = dspy.OutputField()  # noqa: UP045
+
+    with dspy.context(lm=DummyLM([{"answer": "42"}]), adapter=dspy.ChatAdapter()):
+        pred = dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+    assert pred.answer == "42"
+    assert pred.note == "No note"
+    assert pred.maybe is None
+
+
+def test_optional_type_syntax_missing_required_output_field_still_raises():
+    from typing import Optional
+
+    from dspy.utils.dummies import DummyLM
+    from dspy.utils.exceptions import AdapterParseError
+
+    class OptionalSyntaxSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: Optional[str] = dspy.OutputField(default="No note")  # noqa: UP045
+        maybe: Optional[str] = dspy.OutputField()  # noqa: UP045
+
+    responses = [{"note": "present"}, {"maybe": "present"}]
+    with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
+        with pytest.raises(AdapterParseError):
+            dspy.Predict(OptionalSyntaxSignature)(question="anything")

@@ -10,6 +10,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
     parse_value,
@@ -189,6 +190,7 @@ class JSONAdapter(ChatAdapter):
             if k in signature.output_fields:
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
+        fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="JSONAdapter",
