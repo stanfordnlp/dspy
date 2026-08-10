@@ -267,6 +267,25 @@ def test_should_finalize_treats_recorded_none_result_as_already_finalized():
     assert executor._should_finalize(0, 99, results) is False
 
 
+def test_clear_stale_failure_frees_the_error_budget():
+    """A stale failure superseded by a recovered retry must give back the error-count
+    budget it consumed, not just the visible failed_indices/exceptions_map entries --
+    otherwise it can combine with one later unrelated failure to trigger cancellation
+    even though only one input is actually still failing."""
+    executor = ParallelExecutor(num_threads=2, max_errors=2)
+    executor._record_error("item-a", RuntimeError("stale"))
+    assert executor.error_count == 1
+
+    executor.exceptions_map[0] = RuntimeError("stale")
+    executor.failed_indices.append(0)
+    executor._clear_stale_failure(0)
+
+    assert executor.error_count == 0
+    assert executor.exceptions_map == {}
+    assert executor.failed_indices == []
+    assert not executor.cancel_jobs.is_set()
+
+
 def test_sequential_execution_runs_on_main_thread():
     """With num_threads=1, all work should run on the main thread (not in a ThreadPoolExecutor)."""
     execution_threads = []

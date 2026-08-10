@@ -274,9 +274,16 @@ class ParallelExecutor:
 
     def _clear_stale_failure(self, idx):
         """Drop a previously-recorded failure for idx because the other future for the same
-        straggler-retried index went on to succeed."""
+        straggler-retried index went on to succeed.
+
+        _record_error already incremented error_count for the stale failure, so clearing
+        it here must give that budget back too -- otherwise a resolved failure keeps
+        counting toward max_errors and can combine with one later unrelated failure to
+        cancel the whole run even though only one input is actually still failing.
+        """
         with self.error_lock:
-            self.exceptions_map.pop(idx, None)
+            if self.exceptions_map.pop(idx, None) is not None:
+                self.error_count -= 1
             if idx in self.failed_indices:
                 self.failed_indices.remove(idx)
 
