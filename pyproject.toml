@@ -72,11 +72,14 @@ test_extras = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dspy", "dspy.*"]
+include = ["dspy", "dspy.*", "dspy_vibe", "dspy_vibe.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+
+[project.scripts]
+dspy-vibe = "dspy_vibe.cli:main"
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -121,7 +124,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-include = ["dspy/**/*.py", "tests/**/*.py"]
+include = ["dspy/**/*.py", "dspy_vibe/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
   "tests/reliability/*.py",
@@ -172,7 +175,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.ruff.lint.isort]
-known-first-party = ["dspy"]
+known-first-party = ["dspy", "dspy_vibe"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
