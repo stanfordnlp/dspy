@@ -1699,3 +1699,16 @@ Outputs will be a JSON object with the following fields.
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_json_adapter_enforces_output_field_constraints():
+    class ConstrainedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(max_length=3)
+
+    adapter = dspy.JSONAdapter()
+
+    assert adapter.parse(ConstrainedSignature, '{"answer": "ok"}') == {"answer": "ok"}
+
+    with pytest.raises(pydantic.ValidationError, match="at most 3 characters"):
+        adapter.parse(ConstrainedSignature, '{"answer": "toolong"}')

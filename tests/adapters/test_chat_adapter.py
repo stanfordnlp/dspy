@@ -2866,3 +2866,18 @@ def test_provider_tool_calls_preserve_id_and_repair_arguments():
             dspy.ToolCalls.ToolCall(id="call_from_responses", name="search", args={"query": "cats"})
         ]
     )
+
+
+def test_chat_adapter_enforces_output_field_constraints():
+    # The adapter has to hand the whole FieldInfo to `parse_value`; passing the annotation alone
+    # drops `max_length`, and an over-long response parses as valid output.
+    class ConstrainedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(max_length=3)
+
+    adapter = dspy.ChatAdapter()
+
+    assert adapter.parse(ConstrainedSignature, "[[ ## answer ## ]]\nok") == {"answer": "ok"}
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="at most 3 characters"):
+        adapter.parse(ConstrainedSignature, "[[ ## answer ## ]]\ntoolong")

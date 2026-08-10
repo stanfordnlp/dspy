@@ -1,10 +1,13 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
+import pydantic
 import pytest
 from pydantic import BaseModel
 
+import dspy
 from dspy.adapters.utils import parse_value
 
 
@@ -105,3 +108,127 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_parse_value_enforces_str_constraints_from_field_info():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) == "ok"
+    with pytest.raises(pydantic.ValidationError, match="at most 3 characters"):
+        parse_value("toolong", field.annotation, field)
+
+
+def test_parse_value_enforces_numeric_constraints_from_field_info():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        score: int = dspy.OutputField(ge=1, le=5)
+
+    field = Sig.output_fields["score"]
+
+    assert parse_value("3", field.annotation, field) == 3
+    with pytest.raises(pydantic.ValidationError, match="less than or equal to 5"):
+        parse_value("99", field.annotation, field)
+    with pytest.raises(pydantic.ValidationError, match="greater than or equal to 1"):
+        parse_value("0", field.annotation, field)
+
+
+def test_parse_value_enforces_constraints_on_optional_annotation():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) == "ok"
+    with pytest.raises(pydantic.ValidationError, match="at most 3 characters"):
+        parse_value("toolong", field.annotation, field)
+
+
+def test_parse_value_enforces_constraints_on_container_annotation():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        tags: list[str] = dspy.OutputField(max_length=2)
+
+    field = Sig.output_fields["tags"]
+
+    assert parse_value('["a", "b"]', field.annotation, field) == ["a", "b"]
+    with pytest.raises(pydantic.ValidationError, match="at most 2 items"):
+        parse_value('["a", "b", "c"]', field.annotation, field)
+
+
+def test_parse_value_unconstrained_field_is_unchanged():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        count: int = dspy.OutputField()
+
+    answer = Sig.output_fields["answer"]
+    count = Sig.output_fields["count"]
+
+    assert parse_value("anything at all", answer.annotation, answer) == "anything at all"
+    # A digit-only string must stay a string rather than being reinterpreted as an int.
+    assert parse_value("1234", answer.annotation, answer) == "1234"
+    assert parse_value("7", count.annotation, count) == 7
+
+
+def test_parse_value_without_field_info_keeps_previous_behavior():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("toolong", field.annotation) == "toolong"
+    assert parse_value(123, str) == "123"
+
+
+def test_parse_value_enforces_constraints_on_literal_annotation():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Literal["ok", "okay"] = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) == "ok"
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("okay", field.annotation, field)
+    # The quoted / bracketed forms resolve to the same value and must be checked too.
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("'okay'", field.annotation, field)
+
+
+def test_parse_value_enforces_constraints_on_enum_annotation():
+    class Choice(str, enum.Enum):
+        OK = "ok"
+        OKAY = "okay"
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: Choice = dspy.OutputField(max_length=3)
+
+    field = Sig.output_fields["answer"]
+
+    assert parse_value("ok", field.annotation, field) is Choice.OK
+    with pytest.raises(pydantic.ValidationError, match="at most 3 items"):
+        parse_value("okay", field.annotation, field)
+
+
+def test_parse_value_unconstrained_literal_and_enum_are_unchanged():
+    class Choice(str, enum.Enum):
+        OKAY = "okay"
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        lit: Literal["okay"] = dspy.OutputField()
+        choice: Choice = dspy.OutputField()
+
+    lit = Sig.output_fields["lit"]
+    choice = Sig.output_fields["choice"]
+
+    assert parse_value("okay", lit.annotation, lit) == "okay"
+    assert parse_value("'okay'", lit.annotation, lit) == "okay"
+    assert parse_value("okay", choice.annotation, choice) is Choice.OKAY
