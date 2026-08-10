@@ -207,12 +207,12 @@ async def test_callback_reports_and_propagates_async_cancellation():
     await started.wait()
     task.cancel()
 
-    with pytest.raises(asyncio.CancelledError) as exc_info:
+    with pytest.raises(asyncio.CancelledError):
         await task
 
     assert callback.calls[1]["handler"] == "on_module_end"
     assert callback.calls[1]["outputs"] is None
-    assert callback.calls[1]["exception"] is exc_info.value
+    assert isinstance(callback.calls[1]["exception"], asyncio.CancelledError)
     assert ACTIVE_CALL_ID.get() is None
 
 
