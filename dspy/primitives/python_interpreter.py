@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
 MIN_DENO_VERSION = (2, 7, 7)
 MAX_DENO_VERSION = (3, 0, 0)
+DENO_PROBE_TIMEOUT_SECONDS = 10
 
 # =============================================================================
 # JSON-RPC 2.0 Helpers
@@ -87,7 +88,6 @@ def _deno_subprocess_env() -> dict[str, str]:
     return env
 
 
-@functools.cache
 def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
     try:
         result = subprocess.run(
@@ -96,8 +96,9 @@ def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
             text=True,
             check=False,
             env=_deno_subprocess_env(),
+            timeout=DENO_PROBE_TIMEOUT_SECONDS,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
 
     if result.returncode != 0:
@@ -376,6 +377,7 @@ class PythonInterpreter:
                 text=True,
                 check=False,
                 env=_deno_subprocess_env(),
+                timeout=DENO_PROBE_TIMEOUT_SECONDS,
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)

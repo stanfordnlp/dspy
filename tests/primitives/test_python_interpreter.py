@@ -4,6 +4,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import threading
 import types
@@ -512,10 +513,53 @@ def test_rejects_unsupported_system_deno(monkeypatch):
 def test_rejects_invalid_deno_version_probe(monkeypatch, returncode, stdout, stderr):
     result = types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
     monkeypatch.setattr(python_interpreter.subprocess, "run", lambda *args, **kwargs: result)
-    python_interpreter._get_deno_version.cache_clear()
 
     with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
         _validate_deno_version("/fake/bin/deno")
+
+
+def test_deno_version_probe_is_bounded_and_not_cached(monkeypatch):
+    results = iter(
+        [
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.5", stderr=""),
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.4", stderr=""),
+        ]
+    )
+    seen_timeouts = []
+
+    def fake_run(*args, **kwargs):
+        seen_timeouts.append(kwargs["timeout"])
+        return next(results)
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 5)
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 4)
+    assert seen_timeouts == [python_interpreter.DENO_PROBE_TIMEOUT_SECONDS] * 2
+
+
+def test_deno_version_probe_timeout_is_reported_as_indeterminate(monkeypatch):
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", timeout)
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/hanging/bin/deno")
+
+
+def test_deno_info_probe_is_bounded(monkeypatch):
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"denoDir": "/cache"}))
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+    PythonInterpreter._query_deno_dir.cache_clear()
+
+    assert PythonInterpreter._query_deno_dir("/bounded/bin/deno") == "/cache"
+    assert captured["timeout"] == python_interpreter.DENO_PROBE_TIMEOUT_SECONDS
 
 
 def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
