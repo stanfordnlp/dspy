@@ -300,6 +300,36 @@ def test_straggler_retry_user_exception_does_not_duplicate_harness_failure(monke
     assert len(executor.exceptions_map) == 1
 
 
+def test_straggler_retry_duplicate_user_exceptions_count_once_toward_max_errors():
+    """When a straggler's original attempt and its retry both raise user exceptions, the
+    duplicate must not consume the error budget twice -- at max_errors=2 one logical
+    failing input must not cancel the run."""
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    original_failed = threading.Event()
+
+    def task(item):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            time.sleep(1.5)
+            original_failed.set()
+            raise ValueError("original failed")
+        original_failed.wait(timeout=5)
+        time.sleep(0.3)
+        raise ValueError("retry failed too")
+
+    executor = ParallelExecutor(num_threads=2, max_errors=2, timeout=1.0, straggler_limit=3)
+
+    results = executor.execute(task, [1])
+
+    assert results == [None]
+    assert executor.failed_indices == [0]
+    assert executor.error_count == 1
+    assert not executor.cancel_jobs.is_set()
+
+
 def test_should_finalize_treats_recorded_none_result_as_already_finalized():
     """A slot can legitimately hold a real None result (not an error, not "unfinished").
     _should_finalize must tell that apart from a not-yet-recorded slot by checking against
