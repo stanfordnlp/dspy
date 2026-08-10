@@ -330,6 +330,35 @@ def test_straggler_retry_duplicate_user_exceptions_count_once_toward_max_errors(
     assert not executor.cancel_jobs.is_set()
 
 
+def test_straggler_retry_recovery_is_not_abandoned_by_a_deadline():
+    """Once its original attempt's failure triggers cancellation, an in-flight retry must
+    be waited on until it completes -- not abandoned after a fixed window -- so a success
+    that lands late still becomes the result instead of a spurious cancellation."""
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    original_failed = threading.Event()
+
+    def task(item):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            time.sleep(2.5)
+            original_failed.set()
+            raise ValueError("original failed")
+        original_failed.wait(timeout=5)
+        time.sleep(1.5)
+        return item * 10
+
+    executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
+
+    results = executor.execute(task, [1])
+
+    assert results == [10]
+    assert executor.failed_indices == []
+    assert not executor.cancel_jobs.is_set()
+
+
 def test_should_finalize_treats_recorded_none_result_as_already_finalized():
     """A slot can legitimately hold a real None result (not an error, not "unfinished").
     _should_finalize must tell that apart from a not-yet-recorded slot by checking against

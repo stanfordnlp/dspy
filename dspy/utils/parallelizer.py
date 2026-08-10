@@ -67,8 +67,6 @@ class ParallelExecutor:
 
     def _wrap_function(self, user_function):
         def safe_func(item):
-            if self.cancel_jobs.is_set():
-                return None
             try:
                 return user_function(item)
             except Exception as e:
@@ -189,18 +187,12 @@ class ParallelExecutor:
                 def all_done():
                     return all(result is not _UNSET for result in results)
 
-                recovery_deadline = None
-
                 def keep_running():
-                    nonlocal recovery_deadline
                     if not self.cancel_jobs.is_set():
                         return True
                     if self.interrupted.is_set():
                         return False
-                    if not any(futures_map[f][1] in self.exceptions_map for f in futures_set):
-                        return False
-                    recovery_deadline = recovery_deadline or time.time() + max(self.timeout, 1.0)
-                    return time.time() < recovery_deadline
+                    return any(futures_map[f][1] in self.exceptions_map for f in futures_set)
 
                 while futures_set and keep_running():
                     if all_done():
