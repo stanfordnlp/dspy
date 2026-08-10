@@ -115,10 +115,11 @@ class ParallelExecutor:
         results = [_UNSET] * len(data)
         job_cancelled = "cancelled"
 
-        # We resubmit at most once per item.
+        # We resubmit at most once per logical index.
         start_time_map = {}
         start_time_lock = threading.Lock()
         resubmitted = set()
+        skipped = []
 
         # This is the worker function each thread will run.
         def worker(parent_overrides, submission_id, index, item):
@@ -187,12 +188,38 @@ class ParallelExecutor:
                 def all_done():
                     return all(result is not _UNSET for result in results)
 
+                def submit(idx, item):
+                    nonlocal submission_counter
+                    nf = executor.submit(worker, parent_overrides, submission_counter, idx, item)
+                    futures_map[nf] = (submission_counter, idx, item)
+                    futures_set.add(nf)
+                    submission_counter += 1
+
+                recovery_grace = None
+
                 def keep_running():
+                    # After budget cancellation, in-flight retries for failed indices get one
+                    # straggler-timeout grace period to recover; then they are abandoned
+                    # explicitly and the cancellation stands. A real interrupt exits at once.
+                    nonlocal recovery_grace
                     if not self.cancel_jobs.is_set():
+                        recovery_grace = None
                         return True
                     if self.interrupted.is_set():
                         return False
-                    return any(futures_map[f][1] in self.exceptions_map for f in futures_set)
+                    recoverable = [f for f in futures_set if futures_map[f][1] in self.exceptions_map]
+                    if not recoverable:
+                        return False
+                    recovery_grace = recovery_grace or time.time() + max(self.timeout, 1.0)
+                    if time.time() < recovery_grace:
+                        return True
+                    for f in recoverable:
+                        futures_set.discard(f)
+                        logger.warning(
+                            f"Abandoning in-flight retry for {futures_map[f][2]} after the "
+                            "cancellation grace period; its recorded failure stands."
+                        )
+                    return False
 
                 while futures_set and keep_running():
                     if all_done():
@@ -211,7 +238,9 @@ class ParallelExecutor:
                                 self._record_error(item, e)
                             self._report_progress(pbar, results, len(data))
                         else:
-                            if outcome != job_cancelled and self._should_finalize(index, outcome, results):
+                            if outcome == job_cancelled:
+                                skipped.append((index, futures_map[f][2]))
+                            elif self._should_finalize(index, outcome, results):
                                 if isinstance(outcome, Exception):
                                     self._record_error(futures_map[f][2], outcome)
                                 else:
@@ -230,22 +259,21 @@ class ParallelExecutor:
                     if 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
-                            if f not in resubmitted:
-                                sid, idx, item = futures_map[f]
+                            sid, idx, item = futures_map[f]
+                            if idx not in resubmitted:
                                 with start_time_lock:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
-                                    resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
-                                    futures_map[nf] = (submission_counter, idx, item)
-                                    futures_set.add(nf)
-                                    submission_counter += 1
+                                    resubmitted.add(idx)
+                                    submit(idx, item)
+
+                    # Items skipped by the worker gate during a since-revoked cancellation
+                    # would otherwise end as silent Nones -- resubmit them.
+                    if skipped and not self.cancel_jobs.is_set():
+                        for idx, item in skipped:
+                            if results[idx] is _UNSET and idx not in self.exceptions_map:
+                                submit(idx, item)
+                        skipped.clear()
 
                 pbar.close()
 

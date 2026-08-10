@@ -330,10 +330,11 @@ def test_straggler_retry_duplicate_user_exceptions_count_once_toward_max_errors(
     assert not executor.cancel_jobs.is_set()
 
 
-def test_straggler_retry_recovery_is_not_abandoned_by_a_deadline():
-    """Once its original attempt's failure triggers cancellation, an in-flight retry must
-    be waited on until it completes -- not abandoned after a fixed window -- so a success
-    that lands late still becomes the result instead of a spurious cancellation."""
+def test_straggler_retry_recovering_within_grace_becomes_the_result():
+    """Once its original attempt's failure triggers cancellation, an in-flight retry that
+    completes within the recovery grace period must become the result instead of a
+    spurious cancellation. The retry runs exactly once: resubmission is per logical
+    index, so the retry itself is never straggler-retried again."""
     call_count = {"n": 0}
     call_lock = threading.Lock()
     original_failed = threading.Event()
@@ -347,7 +348,7 @@ def test_straggler_retry_recovery_is_not_abandoned_by_a_deadline():
             original_failed.set()
             raise ValueError("original failed")
         original_failed.wait(timeout=5)
-        time.sleep(1.5)
+        time.sleep(0.3)
         return item * 10
 
     executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
@@ -355,6 +356,70 @@ def test_straggler_retry_recovery_is_not_abandoned_by_a_deadline():
     results = executor.execute(task, [1])
 
     assert results == [10]
+    assert executor.failed_indices == []
+    assert not executor.cancel_jobs.is_set()
+    assert call_count["n"] == 2
+
+
+def test_blocked_retry_does_not_hang_cancelled_execution():
+    """A retry that blocks indefinitely must not keep a cancelled execution alive forever:
+    after the recovery grace period it is abandoned and the cancellation is raised."""
+    release = threading.Event()
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+
+    def task(item):
+        with call_lock:
+            call_count["n"] += 1
+            is_original = call_count["n"] == 1
+        if is_original:
+            time.sleep(2.5)
+            raise ValueError("original failed")
+        release.wait(timeout=30)
+        return item * 10
+
+    executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
+
+    start = time.time()
+    try:
+        with pytest.raises(Exception, match="Execution cancelled"):
+            executor.execute(task, [1])
+        assert time.time() - start < 15
+        assert executor.failed_indices == [0]
+    finally:
+        release.set()
+
+
+def test_input_skipped_during_revoked_cancellation_is_not_dropped():
+    """An input the worker gate skipped while cancellation was in force must be resubmitted
+    once a recovery revokes that cancellation -- not silently returned as None."""
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    original_failed = threading.Event()
+    executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
+
+    def task(item):
+        if item == 1:
+            with call_lock:
+                call_count["n"] += 1
+                is_original = call_count["n"] == 1
+            if is_original:
+                time.sleep(2.5)
+                original_failed.set()
+                raise ValueError("original failed")
+            original_failed.wait(timeout=5)
+            time.sleep(0.3)
+            return 10
+        if item == 2:
+            # hold this thread until cancellation lands, so item 3 starts under it
+            executor.cancel_jobs.wait(timeout=10)
+            time.sleep(0.2)
+            return 20
+        return 30
+
+    results = executor.execute(task, [1, 2, 3])
+
+    assert results == [10, 20, 30]
     assert executor.failed_indices == []
     assert not executor.cancel_jobs.is_set()
 
