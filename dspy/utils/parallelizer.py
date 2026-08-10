@@ -32,6 +32,10 @@ class ParallelExecutor:
         """
         Propagates DSPy settings and callback ancestry into each task while isolating task-local changes,
         irrespective of whether num_threads == 1 or > 1. Handles also straggler timeouts.
+
+        Cancellation is cooperative: execute() stops waiting and returns/raises, but a task
+        already running on a pool thread cannot be killed -- it keeps running in the background
+        until it finishes, and may delay interpreter exit if it blocks indefinitely.
         """
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
@@ -217,7 +221,9 @@ class ParallelExecutor:
                         futures_set.discard(f)
                         logger.warning(
                             f"Abandoning in-flight retry for {futures_map[f][2]} after the "
-                            "cancellation grace period; its recorded failure stands."
+                            "cancellation grace period; its recorded failure stands. The retry "
+                            "cannot be killed and keeps running on its pool thread until it "
+                            "finishes; if it blocks indefinitely it may delay interpreter exit."
                         )
                     return False
 
@@ -278,8 +284,9 @@ class ParallelExecutor:
                 pbar.close()
 
         finally:
-            # Avoid waiting on leftover tasks that no longer matter
-            executor.shutdown(wait=False)
+            # Avoid waiting on leftover tasks that no longer matter; queued-but-unstarted
+            # ones are cancelled outright so they never run after execute() returns.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         if self.cancel_jobs.is_set():
             logger.warning("Execution cancelled due to errors or interruption.")
