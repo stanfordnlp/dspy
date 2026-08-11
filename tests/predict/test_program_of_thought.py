@@ -39,6 +39,14 @@ class RecordingPythonInterpreterFactory:
         return interpreter
 
 
+def test_pot_warns_that_rlm_is_preferred():
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"ProgramOfThought is deprecated and will be removed in 3\.5\. RLM is the preferred replacement\.",
+    ):
+        ProgramOfThought(BasicQA)
+
+
 @pytest.mark.deno
 def test_pot_code_generation(pooled_interpreter):
     lm = DummyLM(
@@ -123,8 +131,7 @@ def test_pot_evaluate_creates_one_interpreter_per_example():
     pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
     pot.generate_output = StaticPredictor(answer="2")
     devset = [
-        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question")
-        for index in range(4)
+        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question") for index in range(4)
     ]
 
     result = dspy.Evaluate(
