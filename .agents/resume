@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+for executable in uv deno .venv/bin/python; do
+    if ! command -v "$executable" >/dev/null 2>&1; then
+        printf 'Missing required executable after orb resume: %s\n' "$executable" >&2
+        printf 'Re-run .agents/setup to repair the development environment.\n' >&2
+        exit 1
+    fi
+done
+
+printf 'DSPy development environment is ready.\n'
