@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class ProgramOfThought(Module):
     """
-    .. deprecated:: 3.5
+    .. deprecated:: 3.4
         ProgramOfThought is deprecated. RLM is the preferred replacement.
 
     A DSPy module that runs Python programs to solve a problem.

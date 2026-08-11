@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class CodeAct(ReAct, ProgramOfThought):
     """
-    .. deprecated:: 3.5
+    .. deprecated:: 3.4
         CodeAct is deprecated. RLM is the preferred replacement.
 
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
