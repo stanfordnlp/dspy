@@ -11,7 +11,7 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
-from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError, format_error_for_lm
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class ReActV2(Module):
                 )
                 tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
             except (AdapterParseError, ValueError) as err:
-                logger.warning("Ending ReActV2 loop after parse failure: %s", _fmt_exc(err))
+                logger.warning("Ending ReActV2 loop after parse failure: %s", format_error_for_lm(err, traceback_frames=5))
                 break_reason = "parse_error"
                 break
             except ContextWindowExceededError:
@@ -143,7 +143,7 @@ class ReActV2(Module):
                 if tool_call.name == "submit" and isinstance(value, dict):
                     final_outputs = value
             except Exception as err:
-                values.append(f"Execution error in {tool_call.name}: {_fmt_exc(err)}")
+                values.append(f"Execution error in {tool_call.name}: {format_error_for_lm(err, traceback_frames=5)}")
                 is_errors.append(True)
 
         return ToolCallResults.from_tool_calls_and_values(tool_calls, values, is_errors), final_outputs
@@ -183,7 +183,7 @@ class ReActV2(Module):
             )
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
-            logger.warning("Forced submit failed: %s", _fmt_exc(err))
+            logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
             return Prediction(history=history, termination_reason=break_reason or "failed")
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
@@ -244,9 +244,3 @@ def _ensure_tool_call_ids(tool_calls: ToolCalls, turn_index: int) -> ToolCalls:
 def _append_history_event(history: dspy.History, event: dict[str, Any]) -> None:
     if event:
         history.messages.append(event)
-
-
-def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
-    import traceback
-
-    return "\n" + "".join(traceback.format_exception(type(err), err, err.__traceback__, limit=limit)).strip()

@@ -35,7 +35,7 @@ def add(a: float, b: float) -> float:
     "add two numbers"
     return a + b
 
-def test_codeact_code_generation():
+def test_codeact_code_generation(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -48,7 +48,7 @@ def test_codeact_code_generation():
     )
     dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
-    res = program(question="What is 1+1?")
+    res = program(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
         "code_output_0": '"2\\n"',
@@ -65,7 +65,7 @@ def extract_maximum_minimum(input_list: str) -> dict[str, float]:
     numbers = list(map(float, input_list.split(",")))
     return {"maximum": max(numbers), "minimum": min(numbers)}
 
-def test_codeact_support_multiple_fields():
+def test_codeact_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -78,7 +78,7 @@ def test_codeact_support_multiple_fields():
     )
     dspy.configure(lm=lm)
     program = CodeAct(ExtremumFinder, tools=[extract_maximum_minimum])
-    res = program(input_list="2, 3, 5, 6")
+    res = program(pooled_interpreter, input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
     assert res.trajectory == {
@@ -87,7 +87,7 @@ def test_codeact_support_multiple_fields():
     }
 
 
-def test_codeact_code_parse_failure():
+def test_codeact_code_parse_failure(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -105,7 +105,7 @@ def test_codeact_code_parse_failure():
     )
     dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
-    res = program(question="What is 1+1?")
+    res = program(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
         "generated_code_0": "parse(error",
@@ -115,7 +115,7 @@ def test_codeact_code_parse_failure():
     }
 
 
-def test_codeact_code_execution_failure():
+def test_codeact_code_execution_failure(pooled_interpreter):
     lm = DummyLM(
         [
             {
@@ -133,7 +133,7 @@ def test_codeact_code_execution_failure():
     )
     dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
-    res = program(question="What is 1+1?")
+    res = program(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
         "generated_code_0": "unknown+1",

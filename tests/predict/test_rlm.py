@@ -952,64 +952,64 @@ class TestPythonInterpreter:
         finally:
             interp.shutdown()
 
-    def test_basic_execution(self):
+    def test_basic_execution(self, pooled_interpreter):
         """Test basic code execution."""
-        with PythonInterpreter() as interp:
-            result = interp.execute("print(1 + 1)")
-            assert "2" in result
+        interp = pooled_interpreter
+        result = interp.execute("print(1 + 1)")
+        assert "2" in result
 
-    def test_variable_injection(self):
+    def test_variable_injection(self, pooled_interpreter):
         """Test variable injection."""
-        with PythonInterpreter(tools={}) as interp:
-            result = interp.execute(
-                "print(x + y)",
-                variables={"x": 10, "y": 5}
-            )
-            assert "15" in result
+        interp = pooled_interpreter
+        result = interp.execute(
+            "print(x + y)",
+            variables={"x": 10, "y": 5}
+        )
+        assert "15" in result
 
-    def test_variable_injection_with_none_values(self):
+    def test_variable_injection_with_none_values(self, pooled_interpreter):
         """Test variable injection with None values in dicts/lists (JSON null -> Python None)."""
-        with PythonInterpreter(tools={}) as interp:
-            # Test None in dict
-            result = interp.execute(
-                "print(data['key'] is None)",
-                variables={"data": {"key": None, "other": "value"}}
-            )
-            assert "True" in result
+        interp = pooled_interpreter
+        # Test None in dict
+        result = interp.execute(
+            "print(data['key'] is None)",
+            variables={"data": {"key": None, "other": "value"}}
+        )
+        assert "True" in result
 
-            # Test None in list
-            result = interp.execute(
-                "print(items[1] is None)",
-                variables={"items": [1, None, 3]}
-            )
-            assert "True" in result
+        # Test None in list
+        result = interp.execute(
+            "print(items[1] is None)",
+            variables={"items": [1, None, 3]}
+        )
+        assert "True" in result
 
-            # Test nested None
-            result = interp.execute(
-                "print(nested['inner']['value'] is None)",
-                variables={"nested": {"inner": {"value": None}}}
-            )
-            assert "True" in result
+        # Test nested None
+        result = interp.execute(
+            "print(nested['inner']['value'] is None)",
+            variables={"nested": {"inner": {"value": None}}}
+        )
+        assert "True" in result
 
-    def test_tool_call_kwargs(self):
+    def test_tool_call_kwargs(self, configure_pooled_interpreter):
         """Test tool call with keyword arguments."""
         def echo(message: str = "") -> str:
             return f"Echo: {message}"
 
-        with PythonInterpreter(tools={"echo": echo}) as interp:
-            result = interp.execute('print(echo(message="hello"))')
-            assert "Echo: hello" in result
+        interp = configure_pooled_interpreter(tools={"echo": echo})
+        result = interp.execute('print(echo(message="hello"))')
+        assert "Echo: hello" in result
 
-    def test_tool_call_positional(self):
+    def test_tool_call_positional(self, configure_pooled_interpreter):
         """Test tool call with positional arguments."""
         def greet(name: str) -> str:
             return f"Hello: {name}"
 
-        with PythonInterpreter(tools={"greet": greet}) as interp:
-            result = interp.execute('print(greet("world"))')
-            assert "Hello: world" in result
+        interp = configure_pooled_interpreter(tools={"greet": greet})
+        result = interp.execute('print(greet("world"))')
+        assert "Hello: world" in result
 
-    def test_multiple_tools(self):
+    def test_multiple_tools(self, configure_pooled_interpreter):
         """Test multiple tools."""
         def add(a: int = 0, b: int = 0) -> str:
             return str(a + b)
@@ -1017,95 +1017,95 @@ class TestPythonInterpreter:
         def multiply(a: int = 0, b: int = 0) -> str:
             return str(a * b)
 
-        with PythonInterpreter(tools={"add": add, "multiply": multiply}) as interp:
-            result = interp.execute("""
+        interp = configure_pooled_interpreter(tools={"add": add, "multiply": multiply})
+        result = interp.execute("""
 sum_result = add(a=3, b=4)
 prod_result = multiply(a=3, b=4)
 print(f"Sum: {sum_result}, Product: {prod_result}")
 """)
-            assert "Sum: 7" in result
-            assert "Product: 12" in result
+        assert "Sum: 7" in result
+        assert "Product: 12" in result
 
-    def test_tool_returns_list(self):
+    def test_tool_returns_list(self, configure_pooled_interpreter):
         """Test tool that returns a list (like llm_query_batched)."""
         def batch_process(items: list | None = None) -> list:
             items = items or []
             return [f"processed_{item}" for item in items]
 
-        with PythonInterpreter(tools={"batch_process": batch_process}) as interp:
-            result = interp.execute("""
+        interp = configure_pooled_interpreter(tools={"batch_process": batch_process})
+        result = interp.execute("""
 results = batch_process(items=["a", "b", "c"])
 print(f"Type: {type(results).__name__}")
 print(f"Length: {len(results)}")
 print(f"First: {results[0]}")
 print(f"All: {results}")
 """)
-            assert "Type: list" in result
-            assert "Length: 3" in result
-            assert "First: processed_a" in result
+        assert "Type: list" in result
+        assert "Length: 3" in result
+        assert "First: processed_a" in result
 
-    def test_tool_returns_dict(self):
+    def test_tool_returns_dict(self, configure_pooled_interpreter):
         """Test tool that returns a dict."""
         def get_info() -> dict:
             return {"name": "test", "count": 42}
 
-        with PythonInterpreter(tools={"get_info": get_info}) as interp:
-            result = interp.execute("""
+        interp = configure_pooled_interpreter(tools={"get_info": get_info})
+        result = interp.execute("""
 info = get_info()
 print(f"Type: {type(info).__name__}")
 print(f"Name: {info['name']}")
 print(f"Count: {info['count']}")
 """)
-            assert "Type: dict" in result
-            assert "Name: test" in result
-            assert "Count: 42" in result
+        assert "Type: dict" in result
+        assert "Name: test" in result
+        assert "Count: 42" in result
 
-    def test_state_persists(self):
+    def test_state_persists(self, pooled_interpreter):
         """Test that state persists across executions."""
-        with PythonInterpreter(tools={}) as interp:
-            interp.execute("x = 10")
-            result = interp.execute("print(x + 5)")
-            assert "15" in result
+        interp = pooled_interpreter
+        interp.execute("x = 10")
+        result = interp.execute("print(x + 5)")
+        assert "15" in result
 
-    def test_syntax_error(self):
+    def test_syntax_error(self, pooled_interpreter):
         """Test syntax error handling."""
-        with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(SyntaxError):
-                interp.execute("def incomplete(")
+        interp = pooled_interpreter
+        with pytest.raises(SyntaxError):
+            interp.execute("def incomplete(")
 
-    def test_runtime_error(self):
+    def test_runtime_error(self, pooled_interpreter):
         """Test runtime error handling."""
-        with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(CodeExecutionError):
-                interp.execute("undefined_variable")
+        interp = pooled_interpreter
+        with pytest.raises(CodeExecutionError):
+            interp.execute("undefined_variable")
 
 
 @pytest.mark.deno
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
 
-    def test_no_network_access(self):
+    def test_no_network_access(self, pooled_interpreter):
         """Test that network access is blocked."""
-        with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(CodeInterpreterError) as exc_info:
-                interp.execute("""
+        interp = pooled_interpreter
+        with pytest.raises(CodeInterpreterError) as exc_info:
+            interp.execute("""
 from pyodide.http import pyfetch
 import asyncio
 asyncio.get_event_loop().run_until_complete(pyfetch("https://example.com"))
 """)
-            assert "net access" in str(exc_info.value).lower() or "allow-net" in str(exc_info.value).lower()
+        assert "net access" in str(exc_info.value).lower() or "allow-net" in str(exc_info.value).lower()
 
-    def test_imports_work(self):
+    def test_imports_work(self, pooled_interpreter):
         """Test that standard library imports work."""
-        with PythonInterpreter(tools={}) as interp:
-            result = interp.execute("""
+        interp = pooled_interpreter
+        result = interp.execute("""
 import json
 import re
 from collections import Counter
 data = {"key": "value"}
 print(json.dumps(data))
 """)
-            assert "key" in result
+        assert "key" in result
 
 
 # ============================================================================
@@ -1229,25 +1229,25 @@ class TestRLMTypeCoercion:
         ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
         ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
     ])
-    def test_type_coercion(self, output_field, output_type, code, expected, expected_type):
+    def test_type_coercion(self, output_field, output_type, code, expected, expected_type, pooled_interpreter):
         """Test RLM type coercion for various types with PythonInterpreter."""
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert getattr(result, output_field) == expected
         assert isinstance(getattr(result, output_field), expected_type)
 
-    def test_submit_extracts_typed_value(self):
+    def test_submit_extracts_typed_value(self, pooled_interpreter):
         """Test RLM SUBMIT correctly extracts typed value."""
         rlm = RLM("query -> count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
         ])
 
-        result = rlm.forward(query="count items")
+        result = rlm.forward(pooled_interpreter, query="count items")
         assert result.count == 42
         assert isinstance(result.count, int)
 
@@ -1264,42 +1264,42 @@ class TestRLMMultipleOutputs:
     Tests SUBMIT() calling patterns with multi-output signatures.
     """
 
-    def test_multi_output_final_kwargs(self):
+    def test_multi_output_final_kwargs(self, pooled_interpreter):
         """SUBMIT(field1=val1, field2=val2) with keyword args."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.name == "alice"
         assert result.count == 5
         assert isinstance(result.count, int)
 
-    def test_multi_output_final_positional(self):
+    def test_multi_output_final_positional(self, pooled_interpreter):
         """SUBMIT(val1, val2) with positional args mapped to field order."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.name == "bob"
         assert result.count == 10
 
-    def test_multi_output_three_fields(self):
+    def test_multi_output_three_fields(self, pooled_interpreter):
         """Signature with 3+ output fields of different types."""
         rlm = RLM("query -> name: str, age: int, active: bool", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.name == "carol"
         assert result.age == 30
         assert result.active is True
 
-    def test_multi_output_final_missing_field_errors(self):
+    def test_multi_output_final_missing_field_errors(self, pooled_interpreter):
         """SUBMIT() with missing field should return error in output."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
@@ -1308,29 +1308,29 @@ class TestRLMMultipleOutputs:
         ])
 
         # RLM should retry after getting error for missing field
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.name == "alice"
         assert result.count == 5
 
-    def test_multi_output_submit_vars(self):
+    def test_multi_output_submit_vars(self, pooled_interpreter):
         """SUBMIT can pass variables directly for multiple outputs."""
         rlm = RLM("query -> name: str, count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.name == "dave"
         assert result.count == 15
 
-    def test_multi_output_type_coercion(self):
+    def test_multi_output_type_coercion(self, pooled_interpreter):
         """Each output field is coerced to its declared type."""
         rlm = RLM("query -> count: int, ratio: float, flag: bool", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
         ])
 
-        result = rlm.forward(query="test")
+        result = rlm.forward(pooled_interpreter, query="test")
         assert result.count == 42
         assert isinstance(result.count, int)
         assert result.ratio == 3.14
@@ -1352,40 +1352,40 @@ class TestRLMWithDummyLM:
     typed output_fields for SUBMIT based on the signature.
     """
 
-    def test_simple_computation_e2e(self):
+    def test_simple_computation_e2e(self, pooled_interpreter):
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         with dummy_lm_context([
             {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
-            result = rlm.forward(query="What is 2 + 3?")
+            result = rlm.forward(pooled_interpreter, query="What is 2 + 3?")
 
             assert result.answer == 5
             assert isinstance(result.answer, int)
 
-    def test_multi_turn_computation_e2e(self):
+    def test_multi_turn_computation_e2e(self, pooled_interpreter):
         """Test RLM with multiple turns before SUBMIT."""
         with dummy_lm_context([
             {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
             {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
-            result = rlm.forward(query="Double ten")
+            result = rlm.forward(pooled_interpreter, query="Double ten")
 
             assert result.answer == 20
             assert len(result.trajectory) == 2
 
-    def test_with_input_variables_e2e(self):
+    def test_with_input_variables_e2e(self, pooled_interpreter):
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context([
             {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
-            result = rlm.forward(numbers=[1, 2, 3, 4, 5])
+            result = rlm.forward(pooled_interpreter, numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
 
-    def test_with_tool_e2e(self):
+    def test_with_tool_e2e(self, pooled_interpreter):
         """Test RLM calling a host-side tool through the sandbox."""
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
@@ -1394,11 +1394,11 @@ class TestRLMWithDummyLM:
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
-            result = rlm.forward(fruit="apple")
+            result = rlm.forward(pooled_interpreter, fruit="apple")
 
             assert result.color == "red"
 
-    def test_dspy_tool_execution_semantics_e2e(self):
+    def test_dspy_tool_execution_semantics_e2e(self, pooled_interpreter):
         import inspect
 
         from pydantic import BaseModel
@@ -1437,7 +1437,7 @@ class TestRLMWithDummyLM:
             },
         ]):
             with dspy.context(callbacks=[Recorder()]):
-                result = rlm.forward(query="test")
+                result = rlm.forward(pooled_interpreter, query="test")
 
         assert result.answer == 6
         assert len(received) == 1
@@ -1692,7 +1692,7 @@ class TestPrepareSerializableVars:
 class TestLargeSerializableRoundTrip:
     """End-to-end test that large SandboxSerializable payloads survive the sandbox."""
 
-    def test_large_payload_round_trips_through_real_sandbox(self):
+    def test_large_payload_round_trips_through_real_sandbox(self, pooled_interpreter):
         """A multi-MB payload should be reconstructable inside the real interpreter."""
         large_text = "abc123" * (200 * 1024)  # ~1.2 MB UTF-8
 
@@ -1709,11 +1709,11 @@ class TestLargeSerializableRoundTrip:
             def rlm_preview(self, max_chars: int = 500) -> str:
                 return f"LargeText({len(large_text)} chars)"
 
-        with PythonInterpreter(tools={}) as interp:
-            rlm = RLM("data -> answer")
-            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-            rlm._prepare_serializable_vars({"data": _LargeText()}, interp)
-            result = interp.execute("print(len(data)); print(data[:6])")
+        interp = pooled_interpreter
+        rlm = RLM("data -> answer")
+        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+        rlm._prepare_serializable_vars({"data": _LargeText()}, interp)
+        result = interp.execute("print(len(data)); print(data[:6])")
 
         assert str(len(large_text)) in result
         assert "abc123" in result

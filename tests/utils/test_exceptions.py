@@ -5,6 +5,7 @@ from dspy.utils.exceptions import (
     DSPyError,
     LMError,
     LMInvalidRequestError,
+    format_error_for_lm,
 )
 
 
@@ -132,3 +133,42 @@ def test_adapter_parse_error_with_parsed_result():
         "Expected to find output fields in the LM response: [answer1, answer2] \n\n"
         "Actual output fields parsed from the LM response: [answer1] \n\n"
     )
+
+
+def test_format_error_for_lm_without_traceback():
+    error = ValueError("bad value")
+    assert format_error_for_lm(error) == "bad value"
+    assert format_error_for_lm(error, traceback_frames=0) == str(error)
+
+
+def test_format_error_for_lm_with_traceback():
+    try:
+        raise ValueError("boom")
+    except ValueError as error:
+        formatted = format_error_for_lm(error, traceback_frames=5)
+
+    assert formatted.startswith("\nTraceback (most recent call last):")
+    assert formatted.endswith("ValueError: boom")
+    assert "test_exceptions.py" in formatted
+
+
+def test_format_error_for_lm_limits_traceback_frames():
+    def level_one():
+        raise RuntimeError("deep failure")
+
+    def level_two():
+        level_one()
+
+    def level_three():
+        level_two()
+
+    try:
+        level_three()
+    except RuntimeError as error:
+        limited = format_error_for_lm(error, traceback_frames=1)
+        full = format_error_for_lm(error, traceback_frames=5)
+
+    assert limited.count('File "') == 1
+    assert full.count('File "') == 4
+    assert limited.endswith("RuntimeError: deep failure")
+    assert full.endswith("RuntimeError: deep failure")

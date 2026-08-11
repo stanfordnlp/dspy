@@ -91,7 +91,9 @@ def append_a_demo(demo_input_field_maxlen):
                     _inputs[k] = f"{str(v)[:demo_input_field_maxlen]}\n\t\t... <TRUNCATED FOR BREVITY>"
 
             demo = dspy.Example(augmented=True, **_inputs, **_outputs)
-            name = predictor2name[id(predictor)]
+            name = predictor2name.get(id(predictor))
+            if name is None:
+                continue
             name2demo[name] = demo  # keep the last demo for each predictor
         for name, demo in name2demo.items():
             predictor = name2predictor[name]
@@ -130,10 +132,12 @@ def append_a_rule(bucket, system, **kwargs):
     better_trajectory = [
         {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in good["trace"]
+        if id(p) in predictor2name
     ]
     worse_trajectory = [
         {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in bad["trace"]
+        if id(p) in predictor2name
     ]
 
     kwargs = {

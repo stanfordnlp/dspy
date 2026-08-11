@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.3.0b1"
+version="3.3.0"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -49,12 +49,15 @@ dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
     "pytest-asyncio>=0.26.0",
+    "pytest-xdist>=3.5.0",
     "ruff>=0.3.0",
     "pre-commit>=3.7.0",
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
     "numpy>=1.26.0",
+    # LiteLLM proxy imports an internal FastAPI helper removed in 0.140.7.
+    "fastapi<0.140.7; sys_platform != 'win32' and python_version < '3.14'",
     "litellm>=1.65.8; sys_platform == 'win32' or python_version == '3.14'",
     "litellm[proxy]>=1.65.8; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
 ]

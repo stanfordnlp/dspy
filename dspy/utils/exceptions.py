@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from typing import Any
 
 from dspy.signatures.signature import Signature
@@ -219,6 +220,27 @@ def is_retryable_lm_error(error: Exception) -> bool:
         error: The exception to classify.
     """
     return isinstance(error, _RETRYABLE_LM_ERRORS)
+
+
+def format_error_for_lm(error: BaseException, *, traceback_frames: int = 0) -> str:
+    """Format an exception as a string to be fed back to an LM.
+
+    Modules that surface execution failures to the LM (`ReAct`, `ProgramOfThought`,
+    `RLM`) share this formatter, keeping only their surrounding wrapper text
+    (e.g. `"[Error] "` prefixes) at the call site.
+
+    Args:
+        error: The exception to format.
+        traceback_frames: Maximum number of stack frames to include. When 0
+            (the default), only `str(error)` is returned; when positive, a
+            newline-prefixed traceback summary limited to that many frames is
+            returned.
+    """
+    if traceback_frames <= 0:
+        return str(error)
+    return "\n" + "".join(
+        traceback.format_exception(type(error), error, error.__traceback__, limit=traceback_frames)
+    ).strip()
 
 
 class AdapterParseError(DSPyError):

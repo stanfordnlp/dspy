@@ -55,6 +55,7 @@ __all__ = [
     "to_openai_chat_request",
     "to_openai_responses_request",
     "to_openai_text_request",
+    "tool_to_openai_responses",
     "completion_to_lm_response",
     "responses_to_lm_response",
     "provider_tool_call_to_part",
@@ -120,18 +121,20 @@ def message_to_openai_chat(message: LMMessage) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def to_openai_responses_request(request: LMRequest) -> dict[str, Any]:
+def to_openai_responses_request(request: LMRequest, *, enforce_reasoning_temperature: bool = True) -> dict[str, Any]:
     """Convert a normalized DSPy request into Responses API kwargs."""
     config = request.config
     data: dict[str, Any] = {
         "model": request.model,
         "input": [item for message in request.messages for item in message_to_responses_input_items(message)],
     }
-    data.update(responses_config_kwargs(config, model=request.model))
+    data.update(
+        responses_config_kwargs(config, model=request.model, enforce_reasoning_temperature=enforce_reasoning_temperature)
+    )
     if config.tool_choice is not None:
-        data.update(tool_choice_to_openai(config.tool_choice))
+        data.update(tool_choice_to_openai_responses(config.tool_choice))
     if request.tools:
-        data["tools"] = [tool_to_openai(tool) for tool in request.tools]
+        data["tools"] = [tool_to_openai_responses(tool) for tool in request.tools]
     return data
 
 
@@ -146,7 +149,7 @@ def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]
 
     tool_calls = [part for part in message.parts if isinstance(part, LMToolCallPart)]
     content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
-    content = parts_to_responses_content(content_parts)
+    content = parts_to_responses_content(content_parts, role=message.role)
     items: list[dict[str, Any]] = []
 
     if content or message.role != "assistant" or not tool_calls:
@@ -160,11 +163,18 @@ def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]
     return items
 
 
-def parts_to_responses_content(parts: list[Any]) -> list[dict[str, Any]]:
+def parts_to_responses_content(parts: list[Any], role: str = "user") -> list[dict[str, Any]]:
     blocks = parts_to_openai_content(parts)
     if isinstance(blocks, str):
-        return [{"type": "input_text", "text": blocks}]
-    return [content_block_to_responses(block) for block in blocks]
+        return [{"type": _responses_text_type(role), "text": blocks}]
+    return [content_block_to_responses(block, role) for block in blocks]
+
+
+def _responses_text_type(role: str) -> str:
+    # The Responses API types text by direction, not just by role slot: assistant
+    # input items replay *model output*, so their text must be "output_text";
+    # "input_text" on an assistant item is rejected with a 400.
+    return "output_text" if role == "assistant" else "input_text"
 
 
 def tool_call_to_responses_input(tool_call_part: LMToolCallPart) -> dict[str, Any]:
@@ -177,10 +187,10 @@ def tool_call_to_responses_input(tool_call_part: LMToolCallPart) -> dict[str, An
     return item
 
 
-def content_block_to_responses(block: dict[str, Any]) -> dict[str, Any]:
+def content_block_to_responses(block: dict[str, Any], role: str = "user") -> dict[str, Any]:
     block_type = block.get("type")
     if block_type == "text":
-        return {"type": "input_text", "text": block.get("text", "")}
+        return {"type": _responses_text_type(role), "text": block.get("text", "")}
     if block_type == "image_url":
         image_url = block.get("image_url", {})
         out = {"type": "input_image", "image_url": image_url.get("url", "")}
@@ -343,11 +353,34 @@ def binary_to_openai(binary: LMBinaryPart) -> dict[str, Any]:
     return {"type": "file", "file": file_data}
 
 
+_TOOL_SPEC_WIRE_KEYS = {"type", "name", "description", "parameters", "strict"}
+
+
+def _tool_provider_extras(tool: LMToolSpec) -> dict[str, Any]:
+    return {key: value for key, value in tool.provider_data.items() if key not in _TOOL_SPEC_WIRE_KEYS}
+
+
 def tool_to_openai(tool: LMToolSpec) -> dict[str, Any]:
+    # provider_data holds function-scoped extras; each dialect emits them where
+    # it puts function fields — nested under "function" here, flattened to the
+    # top level in the Responses shape.
     data = {"type": "function", "function": {"name": tool.name, "parameters": tool.parameters}}
     if tool.description is not None:
         data["function"]["description"] = tool.description
-    data.update(tool.provider_data)
+    if tool.strict is not None:
+        data["function"]["strict"] = tool.strict
+    data["function"].update(_tool_provider_extras(tool))
+    return data
+
+
+def tool_to_openai_responses(tool: LMToolSpec) -> dict[str, Any]:
+    """Convert a normalized tool spec into Responses API function-tool shape."""
+    data = {"type": "function", "name": tool.name, "parameters": tool.parameters}
+    if tool.description is not None:
+        data["description"] = tool.description
+    if tool.strict is not None:
+        data["strict"] = tool.strict
+    data.update(_tool_provider_extras(tool))
     return data
 
 
@@ -366,11 +399,33 @@ def tool_choice_to_openai(choice: LMToolChoice) -> dict[str, Any]:
     return data
 
 
+def tool_choice_to_openai_responses(choice: LMToolChoice) -> dict[str, Any]:
+    if choice.allowed:
+        if len(choice.allowed) != 1 or choice.mode not in {"required", "auto"}:
+            raise ValueError(
+                "OpenAI Responses tool_choice only supports constraining to a single allowed tool "
+                "with mode 'required' or 'auto'."
+            )
+        data: dict[str, Any] = {"tool_choice": {"type": "function", "name": choice.allowed[0]}}
+    else:
+        data = {"tool_choice": choice.mode}
+    if choice.parallel is not None:
+        data["parallel_tool_calls"] = choice.parallel
+    return data
+
+
+# provider_data on parsed tool calls echoes raw provider fields (the fc_* item
+# id, status) and parser diagnostics; none of these may override the canonical
+# wire fields or leak into requests.
+_TOOL_CALL_INTERNAL_KEYS = {"id", "call_id", "status", "raw_arguments", "arguments_parse_error"}
+
+
 def assistant_tool_call_to_openai(call: LMToolCallPart) -> dict[str, Any]:
-    data = {"type": "function", "function": {"name": call.name, "arguments": json.dumps(call.args)}}
+    data = {key: value for key, value in call.provider_data.items() if key not in _TOOL_CALL_INTERNAL_KEYS}
+    data["type"] = "function"
+    data["function"] = {"name": call.name, "arguments": json.dumps(call.args)}
     if call.id is not None:
         data["id"] = call.id
-    data.update(call.provider_data)
     return data
 
 
@@ -404,10 +459,13 @@ def common_config_kwargs(config: LMConfig, *, model: str | None = None, endpoint
     return data
 
 
-def responses_config_kwargs(config: LMConfig, *, model: str | None = None) -> dict[str, Any]:
+def responses_config_kwargs(
+    config: LMConfig, *, model: str | None = None, enforce_reasoning_temperature: bool = True
+) -> dict[str, Any]:
     """Convert shared DSPy config fields into Responses API kwargs."""
     data = dict(config.extensions) if config.extensions else {}
-    _validate_openai_reasoning_temperature(config, model=model, endpoint="responses")
+    if enforce_reasoning_temperature:
+        _validate_openai_reasoning_temperature(config, model=model, endpoint="responses")
     for key in ("temperature", "top_p"):
         value = getattr(config, key)
         if value is not None:
@@ -509,8 +567,39 @@ def prompt_cache_to_kwargs(cache: Any) -> dict[str, Any]:
 
 def response_format_to_responses(value: Any) -> Any:
     if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-        return {"name": value.__name__, "type": "json_schema", "schema": value.model_json_schema()}
+        return {
+            "name": value.__name__,
+            "type": "json_schema",
+            "schema": _close_object_schemas(value.model_json_schema()),
+        }
     return value
+
+
+def _close_object_schemas(schema: Any) -> Any:
+    """Recursively supply ``additionalProperties: false`` on object schemas.
+
+    The Responses API rejects ``json_schema`` formats whose object schemas leave
+    ``additionalProperties`` unspecified; pydantic's ``model_json_schema()``
+    omits it. Schemas that already set it (e.g. ``dict[str, T]`` fields) are
+    left untouched. Recursion follows JSON Schema keyword positions only, so
+    schema-shaped values inside ``default``/``examples``/``const`` are never
+    rewritten.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    closed = dict(schema)
+    for key in ("items", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames"):
+        if isinstance(closed.get(key), dict):
+            closed[key] = _close_object_schemas(closed[key])
+    for key in ("items", "prefixItems", "anyOf", "oneOf", "allOf"):
+        if isinstance(closed.get(key), list):
+            closed[key] = [_close_object_schemas(item) for item in closed[key]]
+    for key in ("properties", "patternProperties", "$defs", "definitions"):
+        if isinstance(closed.get(key), dict):
+            closed[key] = {name: _close_object_schemas(sub) for name, sub in closed[key].items()}
+    if closed.get("type") == "object" and "additionalProperties" not in closed:
+        closed["additionalProperties"] = False
+    return closed
 
 
 def responses_tool_output_text(content: Any) -> str:

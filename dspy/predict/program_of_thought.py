@@ -16,6 +16,7 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.exceptions import format_error_for_lm
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ class ProgramOfThought(Module):
             output = json.dumps(result)
             return output, None
         except (CodeExecutionError, SyntaxError) as e:
-            return None, str(e)
+            return None, format_error_for_lm(e)
 
     def forward(self, interpreter: CodeInterpreter | None = None, /, **kwargs):
         """Run the program with a fresh interpreter or a caller-owned override.

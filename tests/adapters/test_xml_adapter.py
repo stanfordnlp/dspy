@@ -841,3 +841,15 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_xml_adapter_missing_optional_output_fields_fall_back_to_defaults():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: str | None = dspy.OutputField(default="No note")
+        maybe: str | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    parsed = adapter.parse(TestSignature, "<answer>Paris</answer>")
+    assert parsed == {"answer": "Paris", "note": "No note", "maybe": None}
