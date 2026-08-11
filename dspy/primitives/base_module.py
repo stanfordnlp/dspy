@@ -48,7 +48,7 @@ class BaseModule:
                     add_parameter(f"{param_name}[{idx}]", item)
             elif isinstance(param_value, dict):
                 for key, item in param_value.items():
-                    add_parameter(f"{param_name}['{key}']", item)
+                    add_parameter(f"{param_name}[{key!r}]", item)
 
         if isinstance(self, Parameter):
             named_parameters.append(("self", self))
