@@ -104,7 +104,15 @@ jobs:
           uv sync --dev -p .venv --extra dev
           uv pip list
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
+        run: |
+          uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal \
+            --cov=dspy --cov-report=term-missing --cov-report=xml tests/
+      - name: Upload coverage report
+        if: matrix.python-version == '3.14'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: coverage.xml
 
   extra_test:
     name: Run Extra and Deno Tests

@@ -58,6 +58,12 @@ assertion.log
 
 .mypy_cache
 CLAUDE.local.md
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 dummy.csv
 docs/docs/**/*.json*
 *.index
