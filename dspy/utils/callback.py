@@ -89,7 +89,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: Any | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after forward() method of a module (subclass of dspy.Module) is executed.
 
@@ -121,7 +121,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after __call__ method of dspy.LM instance is executed.
 
@@ -153,7 +153,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after format() method of an adapter (subclass of dspy.Adapter) is called..
 
@@ -185,7 +185,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after parse() method of an adapter (subclass of dspy.Adapter) is called.
 
@@ -217,7 +217,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after a tool is executed.
 
@@ -249,7 +249,7 @@ class BaseCallback:
         self,
         call_id: str,
         outputs: Any | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         """A handler triggered after evaluation is executed.
 
@@ -264,25 +264,25 @@ class BaseCallback:
     def on_interpreter_execute_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_execute_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_execute_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_tool_call_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_tool_call_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_tool_call_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_startup_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_startup_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_startup_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_interpreter_shutdown_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
         pass
 
-    def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: Exception | None = None):
+    def on_interpreter_shutdown_end(self, call_id: str, outputs: Any | None, exception: BaseException | None = None):
         pass
 
     def on_compile_start(self, call_id: str, instance: Any, inputs: dict[str, Any]):
@@ -359,9 +359,9 @@ def with_callbacks(fn):
             try:
                 results = await fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
+            except BaseException as e:
                 exception = e
-                raise exception
+                raise
             finally:
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
@@ -389,9 +389,9 @@ def with_callbacks(fn):
             try:
                 results = fn(instance, *args, **kwargs)
                 return results
-            except Exception as e:
+            except BaseException as e:
                 exception = e
-                raise exception
+                raise
             finally:
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
