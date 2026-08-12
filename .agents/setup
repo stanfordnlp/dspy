@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+UV_VERSION="0.11.2"
+DENO_VERSION="2.7.7"
+
+run_step() {
+    local label="$1"
+    shift
+    local started_at=$SECONDS
+
+    printf '\n==> %s\n' "$label"
+    "$@"
+    printf '<== %s (%ss)\n' "$label" "$((SECONDS - started_at))"
+}
+
+install_system_packages() {
+    local packages=()
+
+    command -v curl >/dev/null 2>&1 || packages+=(ca-certificates curl)
+    command -v unzip >/dev/null 2>&1 || packages+=(unzip)
+    ((${#packages[@]} == 0)) && return
+
+    if ((EUID == 0)); then
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+    else
+        sudo apt-get update
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+    fi
+}
+
+install_uv() {
+    mkdir -p "$HOME/.local/bin"
+    export PATH="$HOME/.local/bin:$PATH"
+
+    if command -v uv >/dev/null 2>&1 && [[ "$(uv --version)" == "uv $UV_VERSION"* ]]; then
+        return
+    fi
+
+    curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" |
+        env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+}
+
+install_deno() {
+    mkdir -p "$HOME/.local/bin"
+    export PATH="$HOME/.local/bin:$PATH"
+
+    if ! command -v deno >/dev/null 2>&1 || [[ "$(deno --version | sed -n '1p')" != "deno $DENO_VERSION"* ]]; then
+        curl -fsSL https://deno.land/install.sh |
+            env DENO_INSTALL="$HOME/.deno" sh -s "v$DENO_VERSION"
+    fi
+
+    if [[ -x "$HOME/.deno/bin/deno" ]]; then
+        ln -sfn "$HOME/.deno/bin/deno" "$HOME/.local/bin/deno"
+    fi
+}
+
+sync_dependencies() {
+    uv sync --frozen --python 3.11 --extra dev
+}
+
+run_step "Check system packages" install_system_packages
+run_step "Install uv $UV_VERSION" install_uv
+run_step "Install Deno $DENO_VERSION" install_deno
+run_step "Sync Python development dependencies" sync_dependencies
+
+printf '\nDSPy orb setup complete. Use `uv run <command>` inside the repository.\n'
