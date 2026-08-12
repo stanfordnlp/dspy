@@ -800,6 +800,19 @@ wheels = [
 ]
 
 [[package]]
+name = "deno"
+version = "2.9.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/27/06ad530f3be68dafdfae57457c534d5bb014cd6da58c2bd0f5b28f9ab8fa/deno-2.9.5.tar.gz", hash = "sha256:2f9681d7d2118a5e92e18915d1d88a6966fd6173ba4a8fb772f04080057e5a6a", size = 8166, upload-time = "2026-08-06T15:08:32.319Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/99/1a1ff9e40e82d857b426a86d2159e3560000c2f98edb0f63170256582067/deno-2.9.5-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:d321f54f82cb535904a108afd970c1c3e1db23716db1ab0cda5e0ca993dbf824", size = 42353187, upload-time = "2026-08-06T15:08:10.431Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/3a/d60dac70124d045dfc6f01bbd181e2865904ecca5710b2d319869ff59727/deno-2.9.5-py3-none-macosx_11_0_arm64.whl", hash = "sha256:696dffb666d6336a3527857b2f9b665db33b07883bb6adc3595dbb3b78748cf1", size = 38520058, upload-time = "2026-08-06T15:08:14.978Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/b4/5d462bc738b2172043a470ab97d7b6f3e7a287fa1916065e777e034ef1b1/deno-2.9.5-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:bccec0965917b6daa323f9ce6ad8e884e0854506b0cdaec9de41bdac7620109a", size = 39908447, upload-time = "2026-08-06T15:08:19.751Z" },
+    { url = "https://files.pythonhosted.org/packages/60/54/c6e0fb4b5e96dd7611bc75c8137046d7436666bd2e278f686e36d6a805af/deno-2.9.5-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:e5aec0419739fd0359663a78765d4feda19d1d0b60a682d25add9b78e19f95b4", size = 41642333, upload-time = "2026-08-06T15:08:24.965Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/0b/3ca6468ec928d817ce6ef062ddfa11e71a3c68035c3401057d7cb33845f6/deno-2.9.5-py3-none-win_amd64.whl", hash = "sha256:570d4ee6f1ddb16d14848d36dac6cd2f586d8a0c94cf9c3e6b5da130da2597d5", size = 41615800, upload-time = "2026-08-06T15:08:30.015Z" },
+]
+
+[[package]]
 name = "dill"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -878,6 +891,9 @@ dependencies = [
 anthropic = [
     { name = "anthropic" },
 ]
+deno = [
+    { name = "deno" },
+]
 dev = [
     { name = "build" },
     { name = "datamodel-code-generator" },
@@ -936,6 +952,7 @@ requires-dist = [
     { name = "cloudpickle", specifier = ">=3.1.2" },
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
+    { name = "deno", marker = "extra == 'deno'", specifier = ">=2.4.5,<3.0.0" },
     { name = "diskcache", specifier = ">=5.6.0" },
     { name = "fastapi", marker = "python_full_version < '3.14' and sys_platform != 'win32' and extra == 'dev'", specifier = "<0.140.7" },
     { name = "gepa", extras = ["dspy"], specifier = "==0.1.1" },
@@ -970,7 +987,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.66.1" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = ">=4.5.4,<4.22.0" },
 ]
-provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "numpy", "litellm", "dev", "test-extras"]
+provides-extras = ["anthropic", "weaviate", "mcp", "deno", "langchain", "optuna", "numpy", "litellm", "dev", "test-extras"]
 
 [[package]]
 name = "email-validator"

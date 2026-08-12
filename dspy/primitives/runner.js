@@ -1,6 +1,6 @@
 // Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
-import pyodideModule from "npm:pyodide/pyodide.js";
+import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
 // =============================================================================

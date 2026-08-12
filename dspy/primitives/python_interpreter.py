@@ -15,6 +15,8 @@ import keyword
 import logging
 import math
 import os
+import re
+import shutil
 import subprocess
 import threading
 from os import PathLike
@@ -33,6 +35,9 @@ logger = logging.getLogger(__name__)
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+MIN_DENO_VERSION = (2, 0, 0)
+MAX_DENO_VERSION = (3, 0, 0)
+DENO_PROBE_TIMEOUT_SECONDS = 10
 
 # =============================================================================
 # JSON-RPC 2.0 Helpers
@@ -68,6 +73,63 @@ def _canonicalize_path(path: PathLike | str) -> str:
     realpath'd or reads through a symlink (including DENO_DIR) are denied.
     """
     return os.path.realpath(os.path.expanduser(os.fspath(path)))
+
+
+def _find_deno_executable() -> str:
+    """Prefer the Deno binary managed by the optional Python package."""
+    try:
+        from deno import find_deno_bin
+    except ImportError:
+        return shutil.which("deno") or "deno"
+
+    try:
+        return find_deno_bin()
+    except FileNotFoundError:
+        return shutil.which("deno") or "deno"
+
+
+def _deno_subprocess_env() -> dict[str, str]:
+    """Build an environment that prevents ambient package.json discovery."""
+    env = os.environ.copy()
+    env["DENO_NO_PACKAGE_JSON"] = "1"
+    return env
+
+
+def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
+    try:
+        result = subprocess.run(
+            [deno_executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_deno_subprocess_env(),
+            timeout=DENO_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    match = re.match(r"deno (\d+)\.(\d+)\.(\d+)", result.stdout)
+    return tuple(map(int, match.groups())) if match else None
+
+
+def _validate_deno_version(deno_executable: str) -> None:
+    version = _get_deno_version(deno_executable)
+    if version is None:
+        raise CodeInterpreterError(
+            f"Unable to determine the Deno version from {deno_executable!r}. "
+            "PythonInterpreter requires Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
+
+    if not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
+        version_text = ".".join(map(str, version))
+        raise CodeInterpreterError(
+            f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
 
 
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
@@ -154,7 +216,8 @@ class PythonInterpreter:
     no access to the host filesystem, network, or environment by default.
 
     Prerequisites:
-        Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
+        Install the managed Deno runtime with ``pip install "dspy[deno]"``, or
+        install a compatible Deno 2.x release system-wide.
 
     Examples:
         ```python
@@ -213,13 +276,21 @@ class PythonInterpreter:
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
+        self._uses_default_deno_command = not deno_command
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ["deno", "run"]
+            deno_executable = _find_deno_executable()
+            args = [
+                deno_executable,
+                "run",
+                "--no-config",
+                "--no-lock",
+                "--node-modules-dir=false",
+            ]
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
-            deno_dir = self._get_deno_dir()
+            deno_dir = self._get_deno_dir(deno_executable)
             raw_read_paths = [
                 self._get_runner_path(),
                 *([deno_dir] if deno_dir else []),
@@ -298,17 +369,23 @@ class PythonInterpreter:
             )
 
     @staticmethod
-    @functools.lru_cache(maxsize=1)
-    def _get_deno_dir() -> str | None:
+    def _get_deno_dir(deno_executable: str = "deno") -> str | None:
         if "DENO_DIR" in os.environ:
             return os.environ["DENO_DIR"]
 
+        return PythonInterpreter._query_deno_dir(deno_executable)
+
+    @staticmethod
+    @functools.cache
+    def _query_deno_dir(deno_executable: str) -> str | None:
         try:
             result = subprocess.run(
-                ["deno", "info", "--json"],
+                [deno_executable, "info", "--json"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                env=_deno_subprocess_env(),
+                timeout=DENO_PROBE_TIMEOUT_SECONDS,
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
@@ -447,6 +524,9 @@ class PythonInterpreter:
         self.start()
 
     def _spawn_process(self) -> None:
+        if self._uses_default_deno_command:
+            _validate_deno_version(self.deno_command[0])
+
         try:
             self.deno_process = subprocess.Popen(
                 self.deno_command,
@@ -455,12 +535,13 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=os.environ.copy()
+                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
             )
         except FileNotFoundError as e:
             install_instructions = (
-                "Deno executable not found. Please install Deno to proceed.\n"
-                "Installation instructions:\n"
+                "Deno executable not found. Install DSPy's managed Deno runtime with:\n"
+                '> pip install "dspy[deno]"\n'
+                "Alternatively, install Deno system-wide:\n"
                 "> curl -fsSL https://deno.land/install.sh | sh\n"
                 "*or*, on macOS with Homebrew:\n"
                 "> brew install deno\n"
