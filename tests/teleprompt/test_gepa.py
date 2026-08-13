@@ -4,12 +4,13 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from gepa import EvaluationBatch
 
 import dspy
 import dspy.clients
 from dspy import Example
 from dspy.predict import Predict
-from dspy.teleprompt.gepa import instruction_proposal
+from dspy.teleprompt.gepa import gepa_utils, instruction_proposal
 from dspy.utils.dummies import DummyLM
 
 
@@ -632,3 +633,49 @@ def test_track_best_outputs_result_structure():
         assert isinstance(entries, list)
         for cand_idx, output in entries:
             assert isinstance(cand_idx, int)
+
+
+def _make_reflective_example(module_score):
+    student = SimpleModule("input -> output")
+    predictor_output = dspy.Prediction(output="blue")
+
+    def predictor_feedback(**kwargs):
+        return dspy.Prediction(score=0.3, feedback="predictor-level feedback")
+
+    adapter = gepa_utils.DspyAdapter(
+        student_module=student,
+        metric_fn=simple_metric,
+        feedback_map={"predictor": predictor_feedback},
+        warn_on_score_mismatch=False,
+    )
+    eval_batch = EvaluationBatch(
+        outputs=[predictor_output],
+        scores=[0.9],
+        trajectories=[
+            {
+                "trace": [(student.predictor, {"input": "sky"}, predictor_output)],
+                "example": Example(input="sky", output="blue").with_inputs("input"),
+                "prediction": predictor_output,
+                "score": module_score,
+            }
+        ],
+    )
+
+    dataset = adapter.make_reflective_dataset(
+        candidate={},
+        eval_batch=eval_batch,
+        components_to_update=["predictor"],
+    )
+    return dataset["predictor"][0]
+
+
+def test_gepa_feedback_uses_module_feedback_on_score_mismatch():
+    example = _make_reflective_example(dspy.Prediction(score=0.9, feedback="module-level feedback"))
+
+    assert example["Feedback"] == "module-level feedback"
+
+
+def test_gepa_feedback_uses_score_fallback_without_module_feedback():
+    example = _make_reflective_example(0.9)
+
+    assert example["Feedback"] == "This trajectory got a score of 0.9."
