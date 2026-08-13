@@ -77,6 +77,31 @@ def test_parse_value_literal():
         parse_value("invalid", Literal["option1", "option2"])
 
 
+def test_parse_value_literal_numeric_and_bool():
+    # Test Literal with int values from string input
+    assert parse_value("1", Literal[1, 2, 3]) == 1
+    assert parse_value("2", Literal[1, 2, 3]) == 2
+    assert parse_value('"3"', Literal[1, 2, 3]) == 3
+    assert parse_value("int[1]", Literal[1, 2, 3]) == 1
+
+    # Test Literal with float values from string input
+    assert parse_value("3.14", Literal[3.14, 2.718]) == 3.14
+    assert parse_value("float[2.718]", Literal[3.14, 2.718]) == 2.718
+
+    # Test Literal with bool values from string input
+    assert parse_value("True", Literal[True, False]) is True
+    assert parse_value("False", Literal[True, False]) is False
+    assert parse_value("true", Literal[True, False]) is True
+    assert parse_value("false", Literal[True, False]) is False
+    assert parse_value("bool[True]", Literal[True, False]) is True
+
+    # Test that invalid values still raise
+    with pytest.raises(ValueError):
+        parse_value("4", Literal[1, 2, 3])
+    with pytest.raises(ValueError):
+        parse_value("invalid", Literal[True, False])
+
+
 def test_parse_value_union():
     # Test Union with None (Optional)
     assert parse_value("test", Optional[str]) == "test"

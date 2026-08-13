@@ -200,13 +200,37 @@ def parse_value(value, annotation):
 
         if isinstance(value, str):
             v = value.strip()
-            if v.startswith(("Literal[", "str[")) and v.endswith("]"):
-                v = v[v.find("[") + 1 : -1]
+            if v.endswith("]") and "[" in v:
+                bracket_idx = v.find("[")
+                prefix = v[:bracket_idx]
+                if prefix in ("Literal", "str", "int", "float", "bool", "list", "dict"):
+                    v = v[bracket_idx + 1 : -1]
             if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
                 v = v[1:-1]
 
             if v in allowed:
                 return v
+
+            for allowed_val in allowed:
+                if isinstance(allowed_val, bool):
+                    if v.lower() == "true":
+                        return True
+                    if v.lower() == "false":
+                        return False
+                elif isinstance(allowed_val, int):
+                    try:
+                        parsed = int(v)
+                        if parsed == allowed_val:
+                            return parsed
+                    except ValueError:
+                        pass
+                elif isinstance(allowed_val, float):
+                    try:
+                        parsed = float(v)
+                        if parsed == allowed_val:
+                            return parsed
+                    except ValueError:
+                        pass
 
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
