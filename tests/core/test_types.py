@@ -438,6 +438,22 @@ def test_usage_from_response_promotes_anthropic_cache_token_details():
     assert usage.cache_write_tokens == 12
 
 
+def test_usage_from_response_promotes_top_level_cache_creation_tokens():
+    from dspy.clients.openai_format import usage_from_response
+
+    usage = usage_from_response(
+        {
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 1,
+                "cache_creation_tokens": 7,
+            }
+        }
+    )
+
+    assert usage.cache_write_tokens == 7
+
+
 def test_default_config_does_not_serialize_empty_stop_sequences():
     request = LMRequest.from_call(model="model", prompt="hi")
     entry = LMHistoryEntry(

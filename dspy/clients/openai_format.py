@@ -926,6 +926,7 @@ def _add_cache_usage_aliases(usage: dict[str, Any]) -> None:
         "cache_write_tokens",
         "cache_write_input_tokens",
         "cache_creation_input_tokens",
+        "cache_creation_tokens",
     )
     if cache_write_tokens is None:
         cache_write_tokens = _numeric_usage_value(
