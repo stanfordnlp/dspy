@@ -881,7 +881,61 @@ def usage_from_response(response: Any) -> LMUsage | None:
             if value is not None and not callable(value):
                 data[key] = value
         usage = data
-    return LMUsage(**dict(usage))
+    usage = dict(usage)
+    _add_cache_usage_aliases(usage)
+    return LMUsage(**usage)
+
+
+def _usage_mapping(data: Any) -> dict[str, Any] | None:
+    if isinstance(data, dict):
+        return data
+    if hasattr(data, "model_dump"):
+        return model_dump(data)
+    return None
+
+
+def _numeric_usage_value(data: Any, *keys: str) -> int | None:
+    usage_data = _usage_mapping(data)
+    if usage_data is None:
+        return None
+    for key in keys:
+        value = usage_data.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _add_cache_usage_aliases(usage: dict[str, Any]) -> None:
+    """Populate DSPy's normalized cache token fields from provider-specific usage details."""
+    input_details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details")
+    cache_read_tokens = _numeric_usage_value(
+        usage,
+        "cache_read_tokens",
+        "cache_read_input_tokens",
+        "cached_tokens",
+    )
+    if cache_read_tokens is None:
+        cache_read_tokens = _numeric_usage_value(input_details, "cached_tokens", "cache_read_input_tokens")
+    if cache_read_tokens is not None and usage.get("cache_read_tokens") is None:
+        usage["cache_read_tokens"] = cache_read_tokens
+
+    cache_write_tokens = _numeric_usage_value(
+        usage,
+        "cache_write_tokens",
+        "cache_write_input_tokens",
+        "cache_creation_input_tokens",
+    )
+    if cache_write_tokens is None:
+        cache_write_tokens = _numeric_usage_value(
+            input_details,
+            "cache_write_tokens",
+            "cache_creation_tokens",
+            "cache_creation_input_tokens",
+        )
+    if cache_write_tokens is not None and usage.get("cache_write_tokens") is None:
+        usage["cache_write_tokens"] = cache_write_tokens
 
 
 # ---------------------------------------------------------------------------
