@@ -269,6 +269,28 @@ except Exception as e:
         assert secret_content in output
 
 
+def test_default_runner_cannot_read_shared_deno_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    shared_cache.mkdir()
+    canary = shared_cache / "secret.txt"
+    canary.write_text("shared cache secret")
+    monkeypatch.setenv("DENO_DIR", str(shared_cache))
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            f"""import js
+try:
+    js.Deno.readTextFileSync({str(canary)!r})
+    result = "disclosed"
+except Exception as error:
+    result = str(error)
+result"""
+        )
+
+    assert "disclosed" not in result
+    assert "read access" in result.lower()
+
+
 def test_tools_dict_is_copied():
     """Test that tools dict is defensively copied, not stored by reference."""
     tools = {"my_tool": lambda: "result"}
@@ -494,6 +516,23 @@ def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_pat
     interpreter._spawn_process()
 
     assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
+
+
+def test_default_command_uses_dedicated_dspy_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(shared_cache)))
+    interpreter = PythonInterpreter()
+
+    assert interpreter._deno_dir == str(shared_cache / "dspy")
+    assert str(shared_cache / "dspy") in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+
+
+def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
+    cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(cache)))
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[cache])
 
 
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
