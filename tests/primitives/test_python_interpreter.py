@@ -413,6 +413,85 @@ def test_custom_deno_command_is_unchanged():
     assert interpreter.deno_command is not command
 
 
+def test_rejects_distinct_mounts_with_same_basename(tmp_path):
+    first = tmp_path / "first" / "shared.txt"
+    second = tmp_path / "second" / "shared.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("first")
+    second.write_text("second")
+
+    with pytest.raises(CodeInterpreterError, match=r"Ambiguous sandbox mount.*shared.txt"):
+        PythonInterpreter(
+            deno_command=["custom-deno"],
+            enable_read_paths=[first],
+            enable_write_paths=[second],
+        )
+
+
+def test_deduplicates_same_canonical_read_and_write_mount(tmp_path):
+    mounted = tmp_path / "shared.txt"
+    mounted.write_text("content")
+    interpreter = PythonInterpreter(
+        deno_command=["custom-deno"],
+        enable_read_paths=[mounted],
+        enable_write_paths=[mounted],
+    )
+    requests = []
+    interpreter._send_request = lambda method, params, context: requests.append((method, params))
+
+    interpreter._mount_files()
+
+    assert requests == [
+        (
+            "mount_file",
+            {"host_path": str(mounted.resolve()), "virtual_path": "/sandbox/shared.txt"},
+        )
+    ]
+
+
+@pytest.mark.parametrize("protected_path", ["runner", "runner_parent", "cache", "cache_parent", "cache_child"])
+def test_default_command_rejects_write_access_to_runtime_resources(monkeypatch, tmp_path, protected_path):
+    runtime = tmp_path / "runtime"
+    runner = runtime / "lib" / "runner.js"
+    cache = runtime / "cache"
+    runner.parent.mkdir(parents=True)
+    runner.write_text("runner")
+    cache.mkdir()
+    paths = {
+        "runner": runner,
+        "runner_parent": runner.parent,
+        "cache": cache,
+        "cache_parent": runtime,
+        "cache_child": cache / "packages" / "module",
+    }
+    monkeypatch.setattr(PythonInterpreter, "_get_runner_path", lambda self: str(runner))
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(cache)))
+
+    with pytest.raises(CodeInterpreterError, match="overlaps protected PythonInterpreter runtime files"):
+        PythonInterpreter(enable_write_paths=[paths[protected_path]])
+
+
+def test_runtime_write_validation_resolves_symlinks(monkeypatch, tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    cache_link = tmp_path / "cache-link"
+    cache_link.symlink_to(cache, target_is_directory=True)
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(cache)))
+
+    with pytest.raises(CodeInterpreterError, match="overlaps protected PythonInterpreter runtime files"):
+        PythonInterpreter(enable_write_paths=[cache_link / "package"])
+
+
+def test_custom_command_does_not_infer_protected_runtime_files(tmp_path):
+    interpreter = PythonInterpreter(
+        deno_command=["custom-deno", "custom-runner.js"],
+        enable_write_paths=[tmp_path],
+    )
+
+    assert interpreter.deno_command == ["custom-deno", "custom-runner.js"]
+
+
 def test_custom_deno_command_preserves_environment(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     captured = {}

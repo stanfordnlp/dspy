@@ -75,6 +75,14 @@ def _canonicalize_path(path: PathLike | str) -> str:
     return os.path.realpath(os.path.expanduser(os.fspath(path)))
 
 
+def _is_same_or_descendant(path: str, directory: str) -> bool:
+    """Return whether path is directory or lies beneath it."""
+    try:
+        return os.path.commonpath([path, directory]) == directory
+    except ValueError:
+        return False
+
+
 def _find_deno_executable() -> str:
     """Prefer the Deno binary managed by the optional Python package."""
     try:
@@ -274,6 +282,7 @@ class PythonInterpreter:
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
         self._tools_registered = False
+        self._mounts = self._canonical_mounts()
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         self._uses_default_deno_command = not deno_command
@@ -291,6 +300,7 @@ class PythonInterpreter:
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir(deno_executable)
+            self._validate_write_paths(deno_dir)
             raw_read_paths = [
                 self._get_runner_path(),
                 *([deno_dir] if deno_dir else []),
@@ -399,38 +409,71 @@ class PythonInterpreter:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(current_dir, "runner.js")
 
+    def _canonical_mounts(self) -> list[tuple[str, str, str]]:
+        """Build unique host-to-guest mounts and reject guest-name aliases."""
+        mounts = []
+        canonical_to_virtual = {}
+        virtual_to_canonical = {}
+        for path in [*self.enable_read_paths, *self.enable_write_paths]:
+            if not path:
+                continue
+            canonical = _canonicalize_path(path)
+            if canonical in canonical_to_virtual:
+                continue
+            virtual = f"/sandbox/{os.path.basename(str(path))}"
+            other = virtual_to_canonical.get(virtual)
+            if other is not None and other != canonical:
+                raise CodeInterpreterError(
+                    f"Ambiguous sandbox mount {virtual!r}: {other!r} and {canonical!r} have the same basename."
+                )
+            canonical_to_virtual[canonical] = virtual
+            virtual_to_canonical[virtual] = canonical
+            mounts.append((os.fspath(path), canonical, virtual))
+        self._mount_virtual_paths = canonical_to_virtual
+        return mounts
+
+    def _validate_write_paths(self, deno_dir: str | None) -> None:
+        """Keep the default runner and Deno cache outside user write grants."""
+        runner = _canonicalize_path(self._get_runner_path())
+        cache = _canonicalize_path(deno_dir) if deno_dir else None
+        for path in self.enable_write_paths:
+            if not path:
+                continue
+            canonical = _canonicalize_path(path)
+            protects_runner = _is_same_or_descendant(runner, canonical)
+            intersects_cache = cache and (
+                _is_same_or_descendant(cache, canonical) or _is_same_or_descendant(canonical, cache)
+            )
+            if protects_runner or intersects_cache:
+                raise CodeInterpreterError(
+                    f"Write path {canonical!r} overlaps protected PythonInterpreter runtime files."
+                )
+
     def _mount_files(self):
         if self._mounted_files:
             return
-        paths_to_mount = []
-        if self.enable_read_paths:
-            paths_to_mount.extend(self.enable_read_paths)
-        if self.enable_write_paths:
-            paths_to_mount.extend(self.enable_write_paths)
-        if not paths_to_mount:
+        if not self._mounts:
             return
-        for path in paths_to_mount:
-            if not path:
-                continue
+        write_paths = {_canonicalize_path(path) for path in self.enable_write_paths if path}
+        for path, host_path, virtual_path in self._mounts:
             if not os.path.exists(path):
-                if self.enable_write_paths and path in self.enable_write_paths:
+                if host_path in write_paths:
                     open(path, "a").close()
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
-            # Virtual path keeps the user's basename so sandbox code refers to the
-            # file by the name passed in; host_path is realpath'd so Deno's
-            # permission check matches the canonical entries in --allow-read.
-            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
-            host_path = _canonicalize_path(path)
             self._send_request("mount_file", {"host_path": host_path, "virtual_path": virtual_path}, f"mounting {path}")
         self._mounted_files = True
 
     def _sync_files(self):
         if not self.enable_write_paths or not self.sync_files:
             return
+        synced = set()
         for path in self.enable_write_paths:
-            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
             host_path = _canonicalize_path(path)
+            if host_path in synced:
+                continue
+            synced.add(host_path)
+            virtual_path = self._mount_virtual_paths[host_path]
             sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": host_path})
             self._write_message(sync_msg, "while syncing files")
 
