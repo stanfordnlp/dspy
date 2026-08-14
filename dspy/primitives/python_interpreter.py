@@ -75,6 +75,11 @@ def _canonicalize_path(path: PathLike | str) -> str:
     return os.path.realpath(os.path.expanduser(os.fspath(path)))
 
 
+def _paths_overlap(first: str, second: str) -> bool:
+    first, second = (os.path.normcase(path).rstrip(os.sep) for path in (first, second))
+    return first == second or first.startswith(second + os.sep) or second.startswith(first + os.sep)
+
+
 def _find_deno_executable() -> str:
     """Prefer the Deno binary managed by the optional Python package."""
     try:
@@ -299,6 +304,9 @@ class PythonInterpreter:
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir(deno_executable)
+            protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
+            if any(_paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected):
+                raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
             raw_read_paths = [
                 self._get_runner_path(),
                 *([deno_dir] if deno_dir else []),
@@ -320,9 +328,10 @@ class PythonInterpreter:
 
             args.append(_canonicalize_path(self._get_runner_path()))
 
-            # For runner.js to load in env vars
-            if self._env_arg:
-                args.append(self._env_arg)
+            # For runner.js to load in env vars and revoke cache access after startup
+            args.append(self._env_arg)
+            if deno_dir:
+                args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
             self.deno_command = args
 
         self.deno_process = None
