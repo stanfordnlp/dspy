@@ -3,6 +3,11 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+Object.freeze(JSON);
+Object.freeze(console);
+const encodeProtocolMessage = ((stringify, assign, create) =>
+  (message) => stringify(assign(create(null), message)))(JSON.stringify, Object.assign, Object.create);
+
 // =============================================================================
 // Python Code Templates
 // =============================================================================
@@ -114,21 +119,21 @@ const JSONRPC_APP_ERRORS = {
 };
 
 const jsonrpcRequest = (method, params, id) =>
-  JSON.stringify({ jsonrpc: "2.0", method, params, id });
+  encodeProtocolMessage({ jsonrpc: "2.0", method, params, id });
 
 const jsonrpcNotification = (method, params = null) => {
   const msg = { jsonrpc: "2.0", method };
   if (params) msg.params = params;
-  return JSON.stringify(msg);
+  return encodeProtocolMessage(msg);
 };
 
 const jsonrpcResult = (result, id) =>
-  JSON.stringify({ jsonrpc: "2.0", result, id });
+  encodeProtocolMessage({ jsonrpc: "2.0", result, id });
 
 const jsonrpcError = (code, message, id, data = null) => {
   const err = { code, message };
   if (data) err.data = data;
-  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
+  return encodeProtocolMessage({ jsonrpc: "2.0", error: err, id });
 };
 
 // Global handler to prevent uncaught promise rejections from crashing Deno

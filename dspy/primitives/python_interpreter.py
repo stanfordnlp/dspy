@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -577,10 +578,10 @@ class PythonInterpreter:
             logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
             return None
 
-    def _next_request_id(self) -> int:
+    def _next_request_id(self) -> str:
         self._request_id += 1
         self._last_diagnostic = None
-        return self._request_id
+        return f"{self._request_id}-{secrets.token_hex(16)}"
 
     def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
         """Consume a message that is not a response to any request (a notification
