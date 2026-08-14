@@ -15,6 +15,8 @@ import keyword
 import logging
 import math
 import os
+import re
+import shutil
 import subprocess
 import threading
 from os import PathLike
@@ -33,10 +35,20 @@ logger = logging.getLogger(__name__)
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+MIN_DENO_VERSION = (2, 0, 0)
+MAX_DENO_VERSION = (3, 0, 0)
+DENO_PROBE_TIMEOUT_SECONDS = 10
 
 # =============================================================================
 # JSON-RPC 2.0 Helpers
 # =============================================================================
+
+# JSON-RPC 2.0 protocol errors
+JSONRPC_PROTOCOL_ERRORS = {
+    "ParseError": -32700,
+    "InvalidRequest": -32600,
+    "MethodNotFound": -32601,
+}
 
 # Application errors (range: -32000 to -32099)
 JSONRPC_APP_ERRORS = {
@@ -61,6 +73,63 @@ def _canonicalize_path(path: PathLike | str) -> str:
     realpath'd or reads through a symlink (including DENO_DIR) are denied.
     """
     return os.path.realpath(os.path.expanduser(os.fspath(path)))
+
+
+def _find_deno_executable() -> str:
+    """Prefer the Deno binary managed by the optional Python package."""
+    try:
+        from deno import find_deno_bin
+    except ImportError:
+        return shutil.which("deno") or "deno"
+
+    try:
+        return find_deno_bin()
+    except FileNotFoundError:
+        return shutil.which("deno") or "deno"
+
+
+def _deno_subprocess_env() -> dict[str, str]:
+    """Build an environment that prevents ambient package.json discovery."""
+    env = os.environ.copy()
+    env["DENO_NO_PACKAGE_JSON"] = "1"
+    return env
+
+
+def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
+    try:
+        result = subprocess.run(
+            [deno_executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_deno_subprocess_env(),
+            timeout=DENO_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    match = re.match(r"deno (\d+)\.(\d+)\.(\d+)", result.stdout)
+    return tuple(map(int, match.groups())) if match else None
+
+
+def _validate_deno_version(deno_executable: str) -> None:
+    version = _get_deno_version(deno_executable)
+    if version is None:
+        raise CodeInterpreterError(
+            f"Unable to determine the Deno version from {deno_executable!r}. "
+            "PythonInterpreter requires Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
+
+    if not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
+        version_text = ".".join(map(str, version))
+        raise CodeInterpreterError(
+            f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
 
 
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
@@ -147,7 +216,8 @@ class PythonInterpreter:
     no access to the host filesystem, network, or environment by default.
 
     Prerequisites:
-        Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
+        Install the managed Deno runtime with ``pip install "dspy[deno]"``, or
+        install a compatible Deno 2.x release system-wide.
 
     Examples:
         ```python
@@ -206,13 +276,21 @@ class PythonInterpreter:
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
+        self._uses_default_deno_command = not deno_command
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ["deno", "run"]
+            deno_executable = _find_deno_executable()
+            args = [
+                deno_executable,
+                "run",
+                "--no-config",
+                "--no-lock",
+                "--node-modules-dir=false",
+            ]
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
-            deno_dir = self._get_deno_dir()
+            deno_dir = self._get_deno_dir(deno_executable)
             raw_read_paths = [
                 self._get_runner_path(),
                 *([deno_dir] if deno_dir else []),
@@ -242,6 +320,7 @@ class PythonInterpreter:
         self.deno_process = None
         self._mounted_files = False
         self._request_id = 0
+        self._last_diagnostic: str | None = None
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
         self._session_ended = False
@@ -290,17 +369,23 @@ class PythonInterpreter:
             )
 
     @staticmethod
-    @functools.lru_cache(maxsize=1)
-    def _get_deno_dir() -> str | None:
+    def _get_deno_dir(deno_executable: str = "deno") -> str | None:
         if "DENO_DIR" in os.environ:
             return os.environ["DENO_DIR"]
 
+        return PythonInterpreter._query_deno_dir(deno_executable)
+
+    @staticmethod
+    @functools.cache
+    def _query_deno_dir(deno_executable: str) -> str | None:
         try:
             result = subprocess.run(
-                ["deno", "info", "--json"],
+                [deno_executable, "info", "--json"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                env=_deno_subprocess_env(),
+                timeout=DENO_PROBE_TIMEOUT_SECONDS,
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
@@ -439,6 +524,9 @@ class PythonInterpreter:
         self.start()
 
     def _spawn_process(self) -> None:
+        if self._uses_default_deno_command:
+            _validate_deno_version(self.deno_command[0])
+
         try:
             self.deno_process = subprocess.Popen(
                 self.deno_command,
@@ -447,12 +535,13 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=os.environ.copy()
+                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
             )
         except FileNotFoundError as e:
             install_instructions = (
-                "Deno executable not found. Please install Deno to proceed.\n"
-                "Installation instructions:\n"
+                "Deno executable not found. Install DSPy's managed Deno runtime with:\n"
+                '> pip install "dspy[deno]"\n'
+                "Alternatively, install Deno system-wide:\n"
                 "> curl -fsSL https://deno.land/install.sh | sh\n"
                 "*or*, on macOS with Homebrew:\n"
                 "> brew install deno\n"
@@ -469,11 +558,12 @@ class PythonInterpreter:
         if response_line:
             return response_line
 
+        diagnostic = f" (last sandbox diagnostic: {self._last_diagnostic})" if self._last_diagnostic else ""
         exit_code = self.deno_process.poll()
         if exit_code is not None:
             stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}")
-        self._raise_terminal_error(f"No response {context}")
+            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}{diagnostic}")
+        self._raise_terminal_error(f"No response {context}{diagnostic}")
 
     def _parse_response_line(self, response_line: str, context: str) -> dict | None:
         """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
@@ -487,14 +577,36 @@ class PythonInterpreter:
             logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
             return None
 
+    def _next_request_id(self) -> int:
+        self._request_id += 1
+        self._last_diagnostic = None
+        return self._request_id
+
+    def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
+        """Consume a message that is not a response to any request (a notification
+        or an unsolicited id-less error), returning True so the caller keeps
+        reading for the real response. Protocol errors with no id are terminal.
+        """
+        if "method" in msg and "id" not in msg:
+            payload, level = msg.get("params"), logging.DEBUG
+        elif "error" in msg and msg.get("id") is None:
+            payload, level = msg["error"], logging.WARNING
+            if isinstance(payload, dict) and payload.get("code") in JSONRPC_PROTOCOL_ERRORS.values():
+                self._raise_terminal_error(f"Protocol error {context}: {payload.get('message', msg)}")
+        else:
+            return False
+
+        self._last_diagnostic = (payload.get("message") if isinstance(payload, dict) else None) or str(msg)
+        logger.log(level, "Skipping out-of-band sandbox message %s: %s", context, self._last_diagnostic)
+        return True
+
     def _send_request(self, method: str, params: dict, context: str) -> dict:
         """Send a JSON-RPC request and return the parsed response.
 
         Non-JSON lines (e.g. Pyodide package loading messages) are skipped,
         up to ``_MAX_SKIP_LINES`` to prevent unbounded blocking.
         """
-        self._request_id += 1
-        request_id = self._request_id
+        request_id = self._next_request_id()
         msg = _jsonrpc_request(method, params, request_id)
         self._write_message(msg, context)
 
@@ -502,7 +614,7 @@ class PythonInterpreter:
         while skipped <= self._MAX_SKIP_LINES:
             response_line = self._read_response_line(context)
             response = self._parse_response_line(response_line, context)
-            if response is None:
+            if response is None or self._handle_out_of_band_message(response, context):
                 skipped += 1
                 continue
 
@@ -519,7 +631,7 @@ class PythonInterpreter:
                 self._raise_terminal_error(f"Unexpected response {context}: {response}")
             return response
 
-        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) {context}")
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) {context}")
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
@@ -643,8 +755,7 @@ class PythonInterpreter:
             self._inject_large_var(name, value)
 
         # Send the code as JSON-RPC request
-        self._request_id += 1
-        execute_request_id = self._request_id
+        execute_request_id = self._next_request_id()
         input_data = _jsonrpc_request("execute", {"code": code}, execute_request_id)
         self._write_message(input_data, "during execution")
 
@@ -664,6 +775,10 @@ class PythonInterpreter:
                     self._handle_tool_call(msg)
                     continue
 
+            if self._handle_out_of_band_message(msg, "during execution"):
+                skipped += 1
+                continue
+
             # Handle success response
             if "result" in msg:
                 if msg.get("id") != execute_request_id:
@@ -681,9 +796,7 @@ class PythonInterpreter:
 
             # Handle error response
             if "error" in msg:
-                # Errors with id=null are unsolicited errors (e.g., unhandled async rejections)
-                # Treat them as errors for the current request
-                if msg.get("id") is not None and msg.get("id") != execute_request_id:
+                if msg.get("id") != execute_request_id:
                     self._raise_terminal_error(
                         f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
                     )
@@ -706,7 +819,7 @@ class PythonInterpreter:
             # Unexpected message format - neither a recognized method nor a response
             self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")
 
-        self._raise_terminal_error(f"Too many non-JSON lines ({skipped}) during execution")
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) during execution")
 
     @with_callbacks
     def start(self) -> None:

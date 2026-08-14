@@ -1,12 +1,15 @@
 import copy
 import os
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs  # noqa: F401
+from tests.test_utils.server import (  # noqa: F401
+    _litellm_test_server,
+    litellm_test_server,
+    read_litellm_test_server_request_logs,
+)
 
 SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]
 
@@ -18,12 +21,12 @@ def _close_cache(cache: Any) -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_settings(tmp_path: Path) -> Iterator[None]:
+def clear_settings() -> Iterator[None]:
     """Ensure each test gets fresh DSPy settings and an isolated cache."""
     import dspy
 
     original_cache = dspy.cache
-    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache")
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=True, disk_cache_dir=None)
     try:
         yield
     finally:

@@ -32,9 +32,8 @@ import functools
 import inspect
 import json
 import logging
-import types
 from pathlib import Path
-from typing import Any, Callable, Union, get_args, get_origin
+from typing import Any, Callable
 
 from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -42,7 +41,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 import dspy
 from dspy import CodeInterpreterError
 from dspy.adapters.types.base_type import Type as _CustomType
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import annotation_allows_none, parse_value
 from dspy.primitives.code_interpreter import _create_interpreter
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
@@ -178,13 +177,6 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
-def _is_field_optional(annotation: Any) -> bool:
-    """True if the field annotation is optional, a union admitting None."""
-    return annotation is type(None) or (
-        get_origin(annotation) in (Union, types.UnionType) and type(None) in get_args(annotation)
-    )
-
-
 class _Invocation:
     """Per-forward bridge state: the predictors this forward constructed (keyed by the sandbox
     attribute name), its predictor-call budget, and the original custom-type objects to restore
@@ -307,7 +299,7 @@ class BridgeRuntime:
             if not field.is_required():
                 out[name] = field.get_default(call_default_factory=True)
                 filled.add(name)
-            elif _is_field_optional(field.annotation):
+            elif annotation_allows_none(field.annotation):
                 out[name] = None
                 filled.add(name)
             else:

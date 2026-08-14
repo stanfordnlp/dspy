@@ -4,7 +4,7 @@ from typing import Any
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
-from dspy.adapters.utils import format_field_value, translate_field_type
+from dspy.adapters.utils import apply_output_field_defaults, format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
 
 
@@ -92,6 +92,7 @@ class XMLAdapter(ChatAdapter):
         # Cast values using base class parse_value helper
         for k, v in fields.items():
             fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
+        fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             from dspy.utils.exceptions import AdapterParseError
 
