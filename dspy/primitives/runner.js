@@ -20,7 +20,7 @@ sys.stdout, sys.stderr = buf_stdout, buf_stderr
 def last_exception_args():
     return json.dumps(sys.last_exc.args) if sys.last_exc else None
 
-class FinalOutput(BaseException):
+class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
 
@@ -28,24 +28,24 @@ class FinalOutput(BaseException):
 # Only define if not already registered with typed signatures.
 if 'SUBMIT' not in dir():
     def SUBMIT(output):
-        raise FinalOutput({"output": output})
+        raise _DSPyFinalOutput({"output": output})
 `;
 
 // Generate a tool wrapper function with typed signature.
 // Parameters is an array of {name, type?, default?} objects.
 // Convert a JavaScript/JSON value to Python literal syntax
 const toPythonLiteral = (value) => {
-  if (value === null) return 'None';
-  if (value === true) return 'True';
-  if (value === false) return 'False';
-  return JSON.stringify(value);  // Works for strings, numbers, arrays, objects
+  const serialized = JSON.stringify(value);
+  return `__import__("json").loads(${JSON.stringify(serialized)})`;
 };
+
+const toPythonType = (type) => type === "NoneType" ? "type(None)" : type;
 
 const makeToolWrapper = (toolName, parameters = []) => {
   // Build signature parts: "query: str, limit: int = 10"
   const sigParts = parameters.map(p => {
     let part = p.name;
-    if (p.type) part += `: ${p.type}`;
+    if (p.type) part += `: ${toPythonType(p.type)}`;
     if (p.default !== undefined) part += ` = ${toPythonLiteral(p.default)}`;
     return part;
   });
@@ -72,20 +72,20 @@ const makeSubmitWrapper = (outputs) => {
     // Fallback to single-arg SUBMIT if no outputs defined
     return `
 def SUBMIT(output):
-    raise FinalOutput({"output": output})
+    raise _DSPyFinalOutput({"output": output})
 `;
   }
 
   const sigParts = outputs.map(o => {
     let part = o.name;
-    if (o.type) part += `: ${o.type}`;
+    if (o.type) part += `: ${toPythonType(o.type)}`;
     return part;
   });
   const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
 
   return `
 def SUBMIT(${sigParts.join(', ')}):
-    raise FinalOutput({${dictParts.join(', ')}})
+    raise _DSPyFinalOutput({${dictParts.join(', ')}})
 `;
 };
 
@@ -352,8 +352,8 @@ while (true) {
       // error.message is mostly blank.
       const errorMessage = (error.message || "").trim();
 
-      // Handle FinalOutput as a success result, not an error
-      if (errorType === "FinalOutput") {
+      // Handle SUBMIT's control-flow exception as a success result, not an error
+      if (errorType === "_DSPyFinalOutput") {
         const last_exception_args = pyodide.globals.get("last_exception_args");
         const errorArgs = JSON.parse(last_exception_args()) || [];
         const answer = errorArgs[0] || null;

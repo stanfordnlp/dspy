@@ -720,6 +720,26 @@ def test_tool_with_typed_signature(configure_pooled_interpreter):
     assert result == "searched 'test' with limit 5"
 
 
+def test_tool_none_type_and_nested_json_default():
+    def tool(value: type(None) = None, items: list = [None]):  # noqa: B006
+        return [value, items]
+
+    with PythonInterpreter(tools={"tool": tool}) as interpreter:
+        assert interpreter.execute("tool()") == [None, [None]]
+
+
+@pytest.mark.parametrize(
+    ("field", "code", "expected"),
+    [
+        ({"name": "nothing", "type": "NoneType"}, "SUBMIT(nothing=None)", {"nothing": None}),
+        ({"name": "FinalOutput", "type": "str"}, "SUBMIT(FinalOutput='ok')", {"FinalOutput": "ok"}),
+    ],
+)
+def test_submit_valid_runtime_edge_cases(field, code, expected):
+    with PythonInterpreter(output_fields=[field]) as interpreter:
+        assert interpreter.execute(code) == FinalOutput(expected)
+
+
 def test_tool_positional_args(configure_pooled_interpreter):
     """Test that tools work with positional arguments."""
 
