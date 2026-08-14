@@ -597,17 +597,6 @@ def test_runner_dependency_preflight_timeout_is_useful(monkeypatch):
         _get_runner_dependency_paths("deno", "/runner.js")
 
 
-def test_runner_dependency_preflight_defers_missing_deno_error(monkeypatch, tmp_path):
-    runner = tmp_path / "runner.js"
-
-    def missing_deno(*args, **kwargs):
-        raise FileNotFoundError("deno")
-
-    monkeypatch.setattr(python_interpreter.subprocess, "run", missing_deno)
-
-    assert _get_runner_dependency_paths("deno", str(runner)) == [str(runner.resolve())]
-
-
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
 def test_accepts_supported_deno_2_versions(monkeypatch, version):
     monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)

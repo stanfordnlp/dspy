@@ -152,10 +152,6 @@ def _get_runner_dependency_paths(deno_executable: str, runner_path: str) -> list
             env=_deno_subprocess_env(),
             timeout=DENO_PROBE_TIMEOUT_SECONDS,
         )
-    except FileNotFoundError:
-        # Preserve PythonInterpreter's lazy missing-runtime behavior. start()
-        # performs the existing version check and reports the installation error.
-        return [_canonicalize_path(runner_path)]
     except subprocess.TimeoutExpired as e:
         raise CodeInterpreterError(
             f"Deno dependency preflight timed out after {DENO_PROBE_TIMEOUT_SECONDS} seconds."
