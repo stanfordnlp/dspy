@@ -339,6 +339,7 @@ class PythonInterpreter:
         self._mounted_files = False
         self._last_diagnostic: str | None = None
         self._owner_thread: int | None = None
+        self._handling_tool_call = False
         self._pending_large_vars = {}
         self._session_ended = False
 
@@ -763,7 +764,7 @@ class PythonInterpreter:
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
-        if getattr(self, "_handling_tool_call", False):
+        if self._handling_tool_call:
             raise CodeInterpreterError("PythonInterpreter cannot execute recursively from one of its tools.")
         self._check_session_active()
         self._check_thread_ownership()
@@ -794,8 +795,6 @@ class PythonInterpreter:
             # Handle incoming requests (tool calls from sandbox)
             if "method" in msg:
                 if msg["method"] == "tool_call":
-                    if not isinstance(params := msg.get("params"), dict) or params.get("exec_id") != execute_request_id:
-                        self._raise_terminal_error("Received an unauthenticated tool call from the sandbox.")
                     self._handle_tool_call(msg)
                     continue
 

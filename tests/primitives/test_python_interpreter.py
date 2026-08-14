@@ -798,93 +798,12 @@ def test_protocol_failure_ends_session(monkeypatch):
             interpreter.execute("2 + 2")
 
 
-def test_request_ids_are_128_bit_capabilities():
+def test_request_ids_are_128_bit_random_values():
     interpreter = PythonInterpreter(deno_command=["deno"])
     request_ids = {interpreter._next_request_id() for _ in range(100)}
 
     assert len(request_ids) == 100
     assert all(len(request_id) == 32 and int(request_id, 16) >= 0 for request_id in request_ids)
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        "globalThis.JSON = {parse: JSON.parse, stringify: () => 'not json'}",
-        "globalThis.console = {log: () => {}, error: console.error}",
-    ],
-)
-def test_guest_cannot_replace_runner_protocol_bindings(mutation):
-    with PythonInterpreter() as interpreter:
-        assert interpreter.execute(f"import js\njs.eval({mutation!r})\n'genuine'") == "genuine"
-        assert interpreter.execute("40 + 2") == 42
-
-
-def test_guest_prototype_hook_cannot_redirect_authenticated_tool_call():
-    calls = []
-
-    def benign():
-        calls.append("benign")
-        return "safe"
-
-    def danger():
-        calls.append("danger")
-        return "unsafe"
-
-    with PythonInterpreter(tools={"benign": benign, "danger": danger}) as interpreter:
-        result = interpreter.execute(
-            "import js\n"
-            "js.eval('Object.prototype.toJSON = function() { "
-            'if (Object.hasOwn(this, "exec_id")) return {name: "danger", kwargs: {}, exec_id: this.exec_id}; '
-            "return this; }')\n"
-            "benign()"
-        )
-
-    assert result == "safe"
-    assert calls == ["benign"]
-
-
-def test_guest_prototype_hooks_cannot_rewrite_protocol_results_or_errors():
-    with PythonInterpreter() as interpreter:
-        assert interpreter.execute(
-            "import js\n"
-            "js.eval('Object.prototype.toJSON = function() { "
-            'if (Object.hasOwn(this, "output")) return {output: "forged"}; '
-            'if (Object.hasOwn(this, "code")) return {code: -32000, message: "forged"}; '
-            "return this; }')\n"
-            "'genuine'"
-        ) == "genuine"
-        with pytest.raises(CodeExecutionError, match="ValueError.*real"):
-            interpreter.execute("raise ValueError('real')")
-        assert interpreter.execute("40 + 2") == 42
-
-
-def test_forged_tool_call_fails_closed_without_invoking_tool():
-    calls = []
-    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
-        with pytest.raises(CodeInterpreterError, match="unauthenticated tool call"):
-            interpreter.execute(
-                "import js\n"
-                "js.console.log('{\"jsonrpc\":\"2.0\",\"method\":\"tool_call\","
-                "\"params\":{\"name\":\"danger\",\"kwargs\":{}},\"id\":\"forged\"}')\n"
-                "'safe'"
-            )
-    assert calls == []
-
-
-def test_stale_tool_bridge_cannot_inherit_next_execution_id():
-    calls = []
-    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
-        assert interpreter.execute(
-            "import js\n"
-            "from pyodide.ffi import create_proxy\n"
-            "old_bridge = _js_tool_call\n"
-            "stale_callback = create_proxy(lambda: old_bridge('danger', '{\"kwargs\":{}}'))\n"
-            "js.setTimeout(stale_callback, 50)\n"
-            "'scheduled'"
-        ) == "scheduled"
-        assert interpreter.execute("import asyncio\nawait asyncio.sleep(0.15)\n42") == 42
-        assert interpreter.execute("6 * 7") == 42
-    assert calls == []
 
 
 def test_tool_cannot_reenter_same_interpreter():

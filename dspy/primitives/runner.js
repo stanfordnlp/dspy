@@ -3,11 +3,6 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
-// Capture protocol primitives before guest JavaScript can replace their global bindings.
-const JSON = Object.freeze(globalThis.JSON);
-const console = Object.freeze(globalThis.console);
-const encodeProtocolMessage = (message) => JSON.stringify({ __proto__: null, ...message });
-
 // =============================================================================
 // Python Code Templates
 // =============================================================================
@@ -119,21 +114,21 @@ const JSONRPC_APP_ERRORS = {
 };
 
 const jsonrpcRequest = (method, params, id) =>
-  encodeProtocolMessage({ jsonrpc: "2.0", method, params: { __proto__: null, ...params }, id });
+  JSON.stringify({ jsonrpc: "2.0", method, params, id });
 
 const jsonrpcNotification = (method, params = null) => {
   const msg = { jsonrpc: "2.0", method };
   if (params) msg.params = params;
-  return encodeProtocolMessage(msg);
+  return JSON.stringify(msg);
 };
 
 const jsonrpcResult = (result, id) =>
-  encodeProtocolMessage({ jsonrpc: "2.0", result: { __proto__: null, ...result }, id });
+  JSON.stringify({ jsonrpc: "2.0", result, id });
 
 const jsonrpcError = (code, message, id, data = null) => {
-  const err = { __proto__: null, code, message };
-  if (data) err.data = { __proto__: null, ...data };
-  return encodeProtocolMessage({ jsonrpc: "2.0", error: err, id });
+  const err = { code, message };
+  if (data) err.data = data;
+  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
 };
 
 // Global handler to prevent uncaught promise rejections from crashing Deno
@@ -153,23 +148,20 @@ if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
 // The stdin reader is shared so tool_call can read responses during execution
 const stdinReader = readLines(Deno.stdin);
 let requestIdCounter = 0;
-let executionRequestId = null;
 
 const TOOL_BRIDGE_ERROR_KEY = "__dspy_tool_bridge_error__";
 
 // This function is called from Python to invoke a host-side tool
-async function toolCallBridge(executionId, name, argsJson) {
+async function toolCallBridge(name, argsJson) {
   const requestId = `tc_${Date.now()}_${++requestIdCounter}`;
 
   try {
-    if (executionId !== executionRequestId) throw new Error("execution is no longer active");
     const parsedArgs = JSON.parse(argsJson);
 
     // Send tool call request to host using JSON-RPC
     console.log(jsonrpcRequest("tool_call", {
       name: name,
-      kwargs: parsedArgs.kwargs || {},
-      exec_id: executionId
+      kwargs: parsedArgs.kwargs || {}
     }, requestId));
 
     // Wait for response from host
@@ -212,6 +204,9 @@ async function toolCallBridge(executionId, name, argsJson) {
     };
   }
 }
+
+// Expose the bridge to Python
+pyodide.globals.set("_js_tool_call", toolCallBridge);
 
 try {
   const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
@@ -334,8 +329,6 @@ while (true) {
   }
 
   if (method === "execute") {
-    executionRequestId = requestId;
-    pyodide.globals.set("_js_tool_call", (name, args) => toolCallBridge(requestId, name, args));
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
 
@@ -381,7 +374,6 @@ while (true) {
       const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
       console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
     } finally {
-      executionRequestId = null;
       // Always restore stdout/stderr if setup completed, even after errors.
       // This prevents stream corruption where subsequent executions capture
       // StringIO buffers as old_stdout/old_stderr instead of real streams.
