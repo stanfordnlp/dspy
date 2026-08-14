@@ -636,6 +636,13 @@ def test_track_best_outputs_result_structure():
 
 
 def test_gepa_rejects_unsupported_reflection_cost_budget():
+    dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=1,
+        reflection_lm=DummyLM([]),
+        gepa_kwargs={"max_reflection_cost": None},
+    )
+
     with pytest.raises(ValueError, match="max_reflection_cost"):
         dspy.GEPA(
             metric=simple_metric,

@@ -457,7 +457,7 @@ class GEPA(Teleprompter):
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
 
-        if "max_reflection_cost" in self.gepa_kwargs:
+        if self.gepa_kwargs.get("max_reflection_cost") is not None:
             raise ValueError("max_reflection_cost is not supported by dspy.GEPA yet.")
 
         if "reflection_prompt_template" in self.gepa_kwargs:
