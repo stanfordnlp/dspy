@@ -798,6 +798,108 @@ def test_protocol_failure_ends_session(monkeypatch):
             interpreter.execute("2 + 2")
 
 
+def test_request_ids_are_128_bit_capabilities():
+    interpreter = PythonInterpreter(deno_command=["deno"])
+    request_ids = {interpreter._next_request_id() for _ in range(100)}
+
+    assert len(request_ids) == 100
+    assert all(len(request_id) == 32 and int(request_id, 16) >= 0 for request_id in request_ids)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "globalThis.JSON = {parse: JSON.parse, stringify: () => 'not json'}",
+        "globalThis.console = {log: () => {}, error: console.error}",
+    ],
+)
+def test_guest_cannot_replace_runner_protocol_bindings(mutation):
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute(f"import js\njs.eval({mutation!r})\n'genuine'") == "genuine"
+        assert interpreter.execute("40 + 2") == 42
+
+
+def test_guest_prototype_hook_cannot_redirect_authenticated_tool_call():
+    calls = []
+
+    def benign():
+        calls.append("benign")
+        return "safe"
+
+    def danger():
+        calls.append("danger")
+        return "unsafe"
+
+    with PythonInterpreter(tools={"benign": benign, "danger": danger}) as interpreter:
+        result = interpreter.execute(
+            "import js\n"
+            "js.eval('Object.prototype.toJSON = function() { "
+            'if (Object.hasOwn(this, "exec_id")) return {name: "danger", kwargs: {}, exec_id: this.exec_id}; '
+            "return this; }')\n"
+            "benign()"
+        )
+
+    assert result == "safe"
+    assert calls == ["benign"]
+
+
+def test_guest_prototype_hooks_cannot_rewrite_protocol_results_or_errors():
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute(
+            "import js\n"
+            "js.eval('Object.prototype.toJSON = function() { "
+            'if (Object.hasOwn(this, "output")) return {output: "forged"}; '
+            'if (Object.hasOwn(this, "code")) return {code: -32000, message: "forged"}; '
+            "return this; }')\n"
+            "'genuine'"
+        ) == "genuine"
+        with pytest.raises(CodeExecutionError, match="ValueError.*real"):
+            interpreter.execute("raise ValueError('real')")
+        assert interpreter.execute("40 + 2") == 42
+
+
+def test_forged_tool_call_fails_closed_without_invoking_tool():
+    calls = []
+    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
+        with pytest.raises(CodeInterpreterError, match="unauthenticated tool call"):
+            interpreter.execute(
+                "import js\n"
+                "js.console.log('{\"jsonrpc\":\"2.0\",\"method\":\"tool_call\","
+                "\"params\":{\"name\":\"danger\",\"kwargs\":{}},\"id\":\"forged\"}')\n"
+                "'safe'"
+            )
+    assert calls == []
+
+
+def test_stale_tool_bridge_cannot_inherit_next_execution_id():
+    calls = []
+    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
+        assert interpreter.execute(
+            "import js\n"
+            "from pyodide.ffi import create_proxy\n"
+            "old_bridge = _js_tool_call\n"
+            "stale_callback = create_proxy(lambda: old_bridge('danger', '{\"kwargs\":{}}'))\n"
+            "js.setTimeout(stale_callback, 50)\n"
+            "'scheduled'"
+        ) == "scheduled"
+        assert interpreter.execute("import asyncio\nawait asyncio.sleep(0.15)\n42") == 42
+        assert interpreter.execute("6 * 7") == 42
+    assert calls == []
+
+
+def test_tool_cannot_reenter_same_interpreter():
+    holder = {}
+
+    def nested_execute():
+        return holder["interpreter"].execute("'nested'")
+
+    with PythonInterpreter(tools={"nested_execute": nested_execute}) as interpreter:
+        holder["interpreter"] = interpreter
+        with pytest.raises(CodeExecutionError, match="cannot execute recursively"):
+            interpreter.execute("nested_execute()")
+        assert interpreter.execute("40 + 2") == 42
+
+
 def test_failed_health_check_ends_session(monkeypatch):
     interpreter = PythonInterpreter()
     monkeypatch.setattr(
@@ -1524,9 +1626,11 @@ def test_id_less_protocol_errors_are_terminal():
         interpreter._handle_out_of_band_message(parse_error, "during test")
 
 
-def test_unsolicited_error_line_is_not_consumed_as_the_response():
+def test_unsolicited_error_line_is_not_consumed_as_the_response(monkeypatch):
     """#10165: an id-less async error arriving ahead of the real response (the
     wire trace an unhandled rejection produces) must not be mistaken for it."""
+    request_id = "a" * 32
+    monkeypatch.setattr(python_interpreter.secrets, "token_hex", lambda _: request_id)
 
     class FakeDeno:
         def __init__(self, lines):
@@ -1540,7 +1644,7 @@ def test_unsolicited_error_line_is_not_consumed_as_the_response():
     interpreter = PythonInterpreter()
     interpreter.deno_process = FakeDeno([
         json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
-        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": 1}),
+        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": request_id}),
     ])
     assert interpreter.execute("print('ok')") == "ok\n"
 
