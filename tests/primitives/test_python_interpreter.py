@@ -739,6 +739,18 @@ def test_guest_cannot_replace_runner_protocol_primitives():
         assert interpreter.execute("40 + 2") == 42
 
 
+def test_guest_cannot_forge_host_tool_call():
+    calls = []
+    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
+        assert interpreter.execute(
+            "import js\n"
+            "js.console.log('{\"jsonrpc\":\"2.0\",\"method\":\"tool_call\","
+            "\"params\":{\"name\":\"danger\",\"kwargs\":{}},\"id\":\"forged\"}')\n"
+            "'safe'"
+        ) == "safe"
+    assert calls == []
+
+
 def test_failed_health_check_ends_session(monkeypatch):
     interpreter = PythonInterpreter()
     monkeypatch.setattr(

@@ -3,10 +3,8 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
-Object.freeze(JSON);
-Object.freeze(console);
-const encodeProtocolMessage = ((stringify, assign, create) =>
-  (message) => stringify(assign(create(null), message)))(JSON.stringify, Object.assign, Object.create);
+Object.freeze(JSON); Object.freeze(console);
+const encodeProtocolMessage = (message) => JSON.stringify({ __proto__: null, ...message });
 
 // =============================================================================
 // Python Code Templates
@@ -124,7 +122,7 @@ const jsonrpcRequest = (method, params, id) =>
 const jsonrpcNotification = (method, params = null) => {
   const msg = { jsonrpc: "2.0", method };
   if (params) msg.params = params;
-  return encodeProtocolMessage(msg);
+  return JSON.stringify(msg);
 };
 
 const jsonrpcResult = (result, id) =>
@@ -151,6 +149,7 @@ const pyodide = await pyodideModule.loadPyodide();
 // The stdin reader is shared so tool_call can read responses during execution
 const stdinReader = readLines(Deno.stdin);
 let requestIdCounter = 0;
+let executionRequestId = null;
 
 const TOOL_BRIDGE_ERROR_KEY = "__dspy_tool_bridge_error__";
 
@@ -164,7 +163,8 @@ async function toolCallBridge(name, argsJson) {
     // Send tool call request to host using JSON-RPC
     console.log(jsonrpcRequest("tool_call", {
       name: name,
-      kwargs: parsedArgs.kwargs || {}
+      kwargs: parsedArgs.kwargs || {},
+      exec_id: executionRequestId
     }, requestId));
 
     // Wait for response from host
@@ -332,6 +332,7 @@ while (true) {
   }
 
   if (method === "execute") {
+    executionRequestId = requestId;
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
 
