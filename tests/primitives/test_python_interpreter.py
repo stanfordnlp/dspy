@@ -413,6 +413,34 @@ def test_custom_deno_command_is_unchanged():
     assert interpreter.deno_command is not command
 
 
+def test_rejects_mounts_with_the_same_guest_basename(tmp_path):
+    first = tmp_path / "first" / "shared.txt"
+    second = tmp_path / "second" / "shared.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first], enable_write_paths=[second])
+
+
+def test_allows_same_canonical_file_as_read_and_write_mount(tmp_path):
+    path = tmp_path / "shared.txt"
+
+    PythonInterpreter(deno_command=["deno"], enable_read_paths=[path], enable_write_paths=[path])
+
+
+def test_rejects_alias_basename_colliding_with_another_file(tmp_path):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second" / "shared.txt"
+    alias = tmp_path / "alias" / "shared.txt"
+    second.parent.mkdir()
+    alias.parent.mkdir()
+    alias.symlink_to(first)
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first, alias, second])
+
+
 def test_custom_deno_command_preserves_environment(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     captured = {}

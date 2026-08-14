@@ -267,6 +267,14 @@ class PythonInterpreter:
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
+        mounts = {}
+        for path in [*self.enable_read_paths, *self.enable_write_paths]:
+            if path:
+                virtual_path = os.path.basename(os.fspath(path))
+                host_path = _canonicalize_path(path)
+                if virtual_path in mounts and mounts[virtual_path] != host_path:
+                    raise CodeInterpreterError("Mounted files must have unique basenames inside the sandbox.")
+                mounts[virtual_path] = host_path
         self.enable_env_vars = enable_env_vars or []
         self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
