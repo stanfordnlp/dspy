@@ -141,6 +141,8 @@ globalThis.addEventListener("unhandledrejection", (event) => {
 });
 
 const pyodide = await pyodideModule.loadPyodide();
+const denoDir = Deno.args.find((arg) => arg.startsWith("--dspy-deno-dir="))?.slice(16);
+if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
 
 // Tool call support: allows Python code to call host-side functions
 // The stdin reader is shared so tool_call can read responses during execution

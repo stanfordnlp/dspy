@@ -282,7 +282,6 @@ class PythonInterpreter:
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         self._uses_default_deno_command = not deno_command
-        self._deno_dir = None
         if deno_command:
             self.deno_command = list(deno_command)
         else:
@@ -296,9 +295,7 @@ class PythonInterpreter:
             ]
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
-            shared_deno_dir = self._get_deno_dir(deno_executable)
-            deno_dir = os.path.join(shared_deno_dir, "dspy") if shared_deno_dir else None
-            self._deno_dir = deno_dir
+            deno_dir = self._get_deno_dir(deno_executable)
             protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
             if any(_paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected):
                 raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
@@ -323,9 +320,10 @@ class PythonInterpreter:
 
             args.append(_canonicalize_path(self._get_runner_path()))
 
-            # For runner.js to load in env vars
-            if self._env_arg:
-                args.append(self._env_arg)
+            # For runner.js to load in env vars and revoke cache access after startup
+            args.append(self._env_arg)
+            if deno_dir:
+                args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
             self.deno_command = args
 
         self.deno_process = None
@@ -537,9 +535,6 @@ class PythonInterpreter:
     def _spawn_process(self) -> None:
         if self._uses_default_deno_command:
             _validate_deno_version(self.deno_command[0])
-        env = _deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy()
-        if self._deno_dir:
-            env["DENO_DIR"] = self._deno_dir
 
         try:
             self.deno_process = subprocess.Popen(
@@ -549,7 +544,7 @@ class PythonInterpreter:
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="UTF-8",
-                env=env,
+                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
             )
         except FileNotFoundError as e:
             install_instructions = (
