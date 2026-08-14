@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from typing import Any
 from unittest import mock
@@ -632,3 +633,24 @@ def test_track_best_outputs_result_structure():
         assert isinstance(entries, list)
         for cand_idx, output in entries:
             assert isinstance(cand_idx, int)
+
+
+def test_gepa_rejects_unsupported_reflection_cost_budget():
+    with pytest.raises(ValueError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=1,
+            reflection_lm=DummyLM([]),
+            gepa_kwargs={"max_reflection_cost": 1.0},
+        )
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, rng=random.Random(42))
+    state = adapter.get_adapter_state()
+    expected = adapter.rng.random()
+    adapter.rng.random()
+    adapter.set_adapter_state(state)
+    assert adapter.rng.random() == expected

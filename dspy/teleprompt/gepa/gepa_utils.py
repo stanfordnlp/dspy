@@ -268,6 +268,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
+    def get_adapter_state(self) -> dict[str, Any]:
+        return {"rng_state": self.rng.getstate()}
+
+    def set_adapter_state(self, state: dict[str, Any]) -> None:
+        if "rng_state" in state:
+            self.rng.setstate(state["rng_state"])
+
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
     ) -> dict[str, list[ReflectiveExample]]:
@@ -415,4 +422,3 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 raise TypeError("Unexpected output type from the base LM! Expected str or dict")
 
         return outputs
-
