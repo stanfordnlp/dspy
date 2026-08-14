@@ -65,6 +65,28 @@ def test_signature_optimizer_optimization_process():
     # such as checking the instructions of the optimized student's predictors.
 
 
+def test_compile_without_eval_kwargs():
+    # `eval_kwargs` is documented as optional, so compile() must run when it is omitted.
+    # Regression test for #9080 (previously raised TypeError: missing keyword-only argument).
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "proposed_instruction": "Optimized instruction 1",
+                    "proposed_prefix_for_output_field": "Optimized instruction 2",
+                },
+            ]
+        )
+    )
+
+    student = SimpleModule("input -> output")
+
+    optimized_student = optimizer.compile(student, trainset=trainset)
+
+    assert optimized_student is not student, "Optimization did not modify the student"
+
+
 def test_signature_optimizer_statistics_tracking():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
