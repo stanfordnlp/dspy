@@ -9,7 +9,6 @@ protocol defined in interpreter.py.
 import asyncio
 import dataclasses
 import functools
-import hmac
 import inspect
 import json
 import keyword
@@ -17,7 +16,6 @@ import logging
 import math
 import os
 import re
-import secrets
 import shutil
 import subprocess
 import threading
@@ -326,7 +324,6 @@ class PythonInterpreter:
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
         self._session_ended = False
-        self._protocol_key: bytes | None = None
 
     def _check_session_active(self) -> None:
         if self._session_ended:
@@ -529,9 +526,6 @@ class PythonInterpreter:
     def _spawn_process(self) -> None:
         if self._uses_default_deno_command:
             _validate_deno_version(self.deno_command[0])
-            # This key is intentionally delivered only in the first stdin
-            # request. It must never become process metadata or a Pyodide global.
-            self._protocol_key = secrets.token_bytes(32)
 
         try:
             self.deno_process = subprocess.Popen(
@@ -573,24 +567,6 @@ class PythonInterpreter:
 
     def _parse_response_line(self, response_line: str, context: str) -> dict | None:
         """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
-        if self._protocol_key is not None:
-            try:
-                supplied_mac, payload = response_line.split("\t", 1)
-            except ValueError:
-                logger.debug("Skipping unauthenticated output during %s: %s", context, response_line[:100])
-                return None
-            expected_mac = hmac.digest(self._protocol_key, payload.encode("utf-8"), "sha256").hex()
-            if not hmac.compare_digest(supplied_mac, expected_mac):
-                logger.debug("Skipping output with invalid authentication during %s: %s", context, payload[:100])
-                return None
-            try:
-                response = json.loads(payload)
-            except json.JSONDecodeError as e:
-                self._raise_terminal_error(f"Authenticated malformed JSON {context}", e)
-            if not isinstance(response, dict):
-                self._raise_terminal_error(f"Authenticated malformed frame {context}: expected a JSON object")
-            return response
-
         if not response_line.startswith("{"):
             logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
             return None
@@ -659,10 +635,7 @@ class PythonInterpreter:
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
-        params = {"code": "print(1+1)"}
-        if self._protocol_key is not None:
-            params["protocol_key"] = self._protocol_key.hex()
-        response = self._send_request("execute", params, "during health check")
+        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
         result = response["result"]
         if not isinstance(result, dict) or result.get("output", "").strip() != "2":
             self._raise_terminal_error(f"Unexpected ping response: {response}")

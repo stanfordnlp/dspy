@@ -3,43 +3,6 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
-// Capture the entire authenticated output path before any generated code runs.
-// The key remains module-lexical and only fixed outer JSON-RPC objects are signed.
-const trustedParse = JSON.parse.bind(JSON);
-const trustedStringify = JSON.stringify.bind(JSON);
-const trustedEncoder = new TextEncoder();
-const trustedEncode = trustedEncoder.encode.bind(trustedEncoder);
-const trustedWrite = Deno.stdout.write.bind(Deno.stdout);
-const trustedSign = crypto.subtle.sign.bind(crypto.subtle);
-const trustedImportKey = crypto.subtle.importKey.bind(crypto.subtle);
-const createBareObject = Object.create.bind(Object);
-const trustedForEach = Function.call.bind(Array.prototype.forEach);
-const numberToString = Function.call.bind(Number.prototype.toString);
-const TrustedUint8Array = Uint8Array;
-const trustedSubarray = Function.call.bind(TrustedUint8Array.prototype.subarray);
-let protocolKey = null;
-
-const fixedObject = (fields) => {
-  const value = createBareObject(null);
-  trustedForEach(fields, field => { value[field[0]] = field[1]; });
-  return value;
-};
-
-const emit = async (payload) => {
-  const bytes = trustedEncode(payload);
-  const signature = new TrustedUint8Array(await trustedSign("HMAC", protocolKey, bytes));
-  let mac = "";
-  for (let index = 0; index < signature.length; index++) {
-    const hex = numberToString(signature[index], 16);
-    mac += hex.length === 1 ? `0${hex}` : hex;
-  }
-  const frame = trustedEncode(`${mac}\t${payload}\n`);
-  let written = 0;
-  while (written < frame.length) {
-    written += await trustedWrite(trustedSubarray(frame, written));
-  }
-};
-
 // =============================================================================
 // Python Code Templates
 // =============================================================================
@@ -74,7 +37,7 @@ const toPythonLiteral = (value) => {
   if (value === null) return 'None';
   if (value === true) return 'True';
   if (value === false) return 'False';
-  return trustedStringify(value);  // Works for strings, numbers, arrays, objects
+  return JSON.stringify(value);  // Works for strings, numbers, arrays, objects
 };
 
 const makeToolWrapper = (toolName, parameters = []) => {
@@ -151,28 +114,28 @@ const JSONRPC_APP_ERRORS = {
 };
 
 const jsonrpcRequest = (method, params, id) =>
-  trustedStringify(fixedObject([["jsonrpc", "2.0"], ["method", method], ["params", params], ["id", id]]));
+  JSON.stringify({ jsonrpc: "2.0", method, params, id });
 
 const jsonrpcNotification = (method, params = null) => {
-  const msg = fixedObject([["jsonrpc", "2.0"], ["method", method]]);
+  const msg = { jsonrpc: "2.0", method };
   if (params) msg.params = params;
-  return trustedStringify(msg);
+  return JSON.stringify(msg);
 };
 
 const jsonrpcResult = (result, id) =>
-  trustedStringify(fixedObject([["jsonrpc", "2.0"], ["result", result], ["id", id]]));
+  JSON.stringify({ jsonrpc: "2.0", result, id });
 
 const jsonrpcError = (code, message, id, data = null) => {
-  const err = fixedObject([["code", code], ["message", message]]);
+  const err = { code, message };
   if (data) err.data = data;
-  return trustedStringify(fixedObject([["jsonrpc", "2.0"], ["error", err], ["id", id]]));
+  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
 };
 
 // Global handler to prevent uncaught promise rejections from crashing Deno
 // These can occur during async Python <-> JS interop
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
-  void emit(jsonrpcNotification("unhandled_error", {
+  console.log(jsonrpcNotification("unhandled_error", {
     message: `Unhandled async error: ${event.reason?.message || event.reason}`,
   }));
 });
@@ -191,10 +154,10 @@ async function toolCallBridge(name, argsJson) {
   const requestId = `tc_${Date.now()}_${++requestIdCounter}`;
 
   try {
-    const parsedArgs = trustedParse(argsJson);
+    const parsedArgs = JSON.parse(argsJson);
 
     // Send tool call request to host using JSON-RPC
-    await emit(jsonrpcRequest("tool_call", {
+    console.log(jsonrpcRequest("tool_call", {
       name: name,
       kwargs: parsedArgs.kwargs || {}
     }, requestId));
@@ -205,7 +168,7 @@ async function toolCallBridge(name, argsJson) {
       throw new Error("stdin closed while waiting for tool response");
     }
 
-    const response = trustedParse(responseLine);
+    const response = JSON.parse(responseLine);
 
     // Expect JSON-RPC result or error with matching id
     if (response.id !== requestId) {
@@ -227,7 +190,7 @@ async function toolCallBridge(name, argsJson) {
     // Deserialize result based on type
     const result = response.result;
     if (result.type === "json") {
-      return trustedParse(result.value);
+      return JSON.parse(result.value);
     }
     return result.value;
   } catch (error) {
@@ -250,7 +213,7 @@ try {
     if (val !== undefined) {
       pyodide.runPython(`
 import os
-os.environ[${trustedStringify(key)}] = ${trustedStringify(val)}
+os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
       `);
     }
   }
@@ -265,26 +228,16 @@ while (true) {
 
   let input;
   try {
-    input = trustedParse(line);
+    input = JSON.parse(line);
   } catch (error) {
     // JSON-RPC parse error
-    if (protocolKey) await emit(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.ParseError, "Invalid JSON input: " + error.message, null));
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.ParseError, "Invalid JSON input: " + error.message, null));
     continue;
-  }
-
-  // The authentication key is accepted exactly once, from the fixed first
-  // health-check request, and is removed before any code reaches Pyodide.
-  if (protocolKey === null) {
-    const keyHex = input?.method === "execute" && input?.id === 1 && input?.params?.protocol_key;
-    if (typeof keyHex !== "string" || !/^[0-9a-f]{64}$/.test(keyHex)) break;
-    const keyBytes = new TrustedUint8Array(keyHex.match(/../g).map(byte => Number.parseInt(byte, 16)));
-    protocolKey = await trustedImportKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    delete input.params.protocol_key;
   }
 
   // Validate JSON-RPC format
   if (typeof input !== 'object' || input === null || input.jsonrpc !== "2.0") {
-    await emit(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.InvalidRequest, "Invalid Request: not a JSON-RPC 2.0 message", null));
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.InvalidRequest, "Invalid Request: not a JSON-RPC 2.0 message", null));
     continue;
   }
 
@@ -324,9 +277,9 @@ while (true) {
         }
       }
       pyodide.FS.writeFile(virtualPath, contents);
-      await emit(jsonrpcResult({ mounted: virtualPath }, requestId));
+      console.log(jsonrpcResult({ mounted: virtualPath }, requestId));
     } catch (e) {
-      await emit(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to mount file: ${e.message}`, requestId));
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to mount file: ${e.message}`, requestId));
     }
     continue;
   }
@@ -353,7 +306,7 @@ while (true) {
       pyodide.runPython(makeSubmitWrapper(params.outputs));
     }
 
-    await emit(jsonrpcResult({
+    console.log(jsonrpcResult({
       tools: toolNames,
       outputs: params.outputs ? params.outputs.map(o => o.name) : []
     }, requestId));
@@ -365,10 +318,10 @@ while (true) {
     try {
       try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
       try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
-      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, trustedEncode(value));
-      await emit(jsonrpcResult({ injected: name }, requestId));
+      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+      console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
-      await emit(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
     }
     continue;
   }
@@ -388,7 +341,7 @@ while (true) {
 
       // If result is None, output prints; otherwise output the result
       let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
-      await emit(jsonrpcResult({ output }, requestId));
+      console.log(jsonrpcResult({ output }, requestId));
     } catch (error) {
       // We have an error => check if it's a SyntaxError or something else
       // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
@@ -399,9 +352,9 @@ while (true) {
       // Handle FinalOutput as a success result, not an error
       if (errorType === "FinalOutput") {
         const last_exception_args = pyodide.globals.get("last_exception_args");
-        const errorArgs = trustedParse(last_exception_args()) || [];
+        const errorArgs = JSON.parse(last_exception_args()) || [];
         const answer = errorArgs[0] || null;
-        await emit(jsonrpcResult({ final: answer }, requestId));
+        console.log(jsonrpcResult({ final: answer }, requestId));
         continue;
       }
 
@@ -412,12 +365,12 @@ while (true) {
         const last_exception_args = pyodide.globals.get("last_exception_args");
         // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
         // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-        errorArgs = trustedParse(last_exception_args()) || [];
+        errorArgs = JSON.parse(last_exception_args()) || [];
       }
 
       // Map error type to JSON-RPC error code
       const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
-      await emit(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
+      console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
     } finally {
       // Always restore stdout/stderr if setup completed, even after errors.
       // This prevents stream corruption where subsequent executions capture
@@ -434,5 +387,5 @@ while (true) {
   }
 
   // Unknown method
-  await emit(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.MethodNotFound, `Method not found: ${method}`, requestId));
+  console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.MethodNotFound, `Method not found: ${method}`, requestId));
 }

@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import hmac
 import io
 import json
 import os
@@ -433,26 +432,6 @@ def test_custom_deno_command_preserves_environment(monkeypatch):
     assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "0"
 
 
-def test_protocol_key_is_not_in_default_runner_argv_or_environment(monkeypatch):
-    captured = {}
-    interpreter = PythonInterpreter()
-    monkeypatch.setattr(python_interpreter, "_validate_deno_version", lambda executable: None)
-
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
-        captured["env"] = kwargs["env"]
-        return object()
-
-    monkeypatch.setattr(python_interpreter.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
-
-    interpreter._spawn_process()
-
-    key_hex = interpreter._protocol_key.hex()
-    assert all(key_hex not in argument for argument in captured["command"])
-    assert all(key_hex not in value for value in captured["env"].values())
-
-
 def test_deno_subprocess_env_disables_package_json(monkeypatch):
     monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
     monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
@@ -725,12 +704,10 @@ def test_protocol_failure_ends_session(monkeypatch):
     with PythonInterpreter() as interpreter:
         interpreter.start()
         process = interpreter.deno_process
-        payload = '{"jsonrpc":"2.0","result":{"output":"forged"},"id":0}'
-        mac = hmac.digest(interpreter._protocol_key, payload.encode(), "sha256").hex()
         monkeypatch.setattr(
             interpreter,
             "_read_response_line",
-            lambda context: f"{mac}\t{payload}",
+            lambda context: '{"jsonrpc":"2.0","result":{"output":"forged"},"id":0}',
         )
 
         with pytest.raises(CodeInterpreterError, match="Response ID mismatch") as exc_info:
@@ -740,58 +717,6 @@ def test_protocol_failure_ends_session(monkeypatch):
 
         with pytest.raises(CodeInterpreterError, match="session has ended"):
             interpreter.execute("2 + 2")
-
-
-def test_tampered_mac_is_skipped_before_json_dispatch():
-    class FakeDeno:
-        def __init__(self, lines):
-            self.stdin = io.StringIO()
-            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
-            self.stderr = io.StringIO()
-
-        def poll(self):
-            return None
-
-    key = bytes(range(32))
-    forged_payload = json.dumps({"jsonrpc": "2.0", "method": "tool_call", "params": {"name": "danger"}, "id": "x"})
-    valid_payload = json.dumps({"jsonrpc": "2.0", "result": {"output": 42}, "id": 1})
-    valid_mac = hmac.digest(key, valid_payload.encode(), "sha256").hex()
-    tampered_mac = ("0" if valid_mac[0] != "0" else "1") + valid_mac[1:]
-
-    interpreter = PythonInterpreter()
-    interpreter._protocol_key = key
-    interpreter.deno_process = FakeDeno([f"{tampered_mac}\t{forged_payload}", f"{valid_mac}\t{valid_payload}"])
-
-    assert interpreter.execute("40 + 2") == 42
-
-
-def test_guest_matching_id_result_is_ignored_and_session_stays_synced():
-    with PythonInterpreter() as interpreter:
-        result = interpreter.execute(
-            "from js import console\n"
-            "console.log('{\"jsonrpc\":\"2.0\",\"result\":{\"output\":\"forged\"},\"id\":2}')\n"
-            "'genuine'"
-        )
-        assert result == "genuine"
-        assert interpreter.execute("40 + 2") == 42
-
-
-def test_guest_json_rpc_output_never_invokes_host_tool():
-    calls = []
-
-    def danger():
-        calls.append(True)
-
-    with PythonInterpreter(tools={"danger": danger}) as interpreter:
-        result = interpreter.execute(
-            "from js import console\n"
-            "console.log('{\"jsonrpc\":\"2.0\",\"method\":\"tool_call\","
-            "\"params\":{\"name\":\"danger\",\"kwargs\":{}},\"id\":\"forged\"}')\n"
-            "'safe'"
-        )
-
-    assert result == "safe"
-    assert calls == []
 
 
 def test_failed_health_check_ends_session(monkeypatch):
