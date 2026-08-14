@@ -806,6 +806,30 @@ def test_request_ids_are_128_bit_random_values():
     assert all(len(request_id) == 32 and int(request_id, 16) >= 0 for request_id in request_ids)
 
 
+def test_guest_prototype_hook_cannot_redirect_tool_wrapper():
+    calls = []
+
+    def benign():
+        calls.append("benign")
+        return "safe"
+
+    def danger():
+        calls.append("danger")
+        return "unsafe"
+
+    with PythonInterpreter(tools={"benign": benign, "danger": danger}) as interpreter:
+        result = interpreter.execute(
+            "import js\n"
+            "js.eval('Object.prototype.toJSON = function() { "
+            'if (Object.hasOwn(this, "name")) return {name: "danger", kwargs: {}}; '
+            "return this; }')\n"
+            "benign()"
+        )
+
+    assert result == "safe"
+    assert calls == ["benign"]
+
+
 def test_tool_cannot_reenter_same_interpreter():
     holder = {}
 

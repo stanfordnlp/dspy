@@ -3,6 +3,7 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+const JSON = Object.freeze(globalThis.JSON), console = Object.freeze(globalThis.console);
 // =============================================================================
 // Python Code Templates
 // =============================================================================
@@ -114,7 +115,7 @@ const JSONRPC_APP_ERRORS = {
 };
 
 const jsonrpcRequest = (method, params, id) =>
-  JSON.stringify({ jsonrpc: "2.0", method, params, id });
+  JSON.stringify({ __proto__: null, jsonrpc: "2.0", method, params: { __proto__: null, ...params }, id });
 
 const jsonrpcNotification = (method, params = null) => {
   const msg = { jsonrpc: "2.0", method };
