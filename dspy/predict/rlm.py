@@ -31,6 +31,7 @@ from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
+    _bind_interpreter,
     _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
@@ -510,12 +511,7 @@ class RLM(Module):
         even for user-provided interpreters. Each forward() call gets fresh tools with a
         fresh call counter, so we must inject on every execution.
         """
-        interpreter.tools.update(execution_tools)
-        if hasattr(interpreter, "output_fields"):
-            interpreter.output_fields = self._get_output_fields_info()
-        # Reset registration flag to force re-registration with fresh tools
-        if hasattr(interpreter, "_tools_registered"):
-            interpreter._tools_registered = False
+        _bind_interpreter(interpreter, {**interpreter.tools, **execution_tools}, self._get_output_fields_info())
 
     @contextmanager
     def _interpreter_context(
@@ -526,8 +522,12 @@ class RLM(Module):
         """Yield a caller-owned interpreter or manage a factory-created one."""
         if interpreter is not None:
             _validate_interpreter(interpreter)
-            self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
+            original = (dict(interpreter.tools), getattr(interpreter, "output_fields", None))
+            try:
+                self._inject_execution_context(interpreter, execution_tools)
+                yield interpreter
+            finally:
+                _bind_interpreter(interpreter, *original)
             return
 
         interpreter = _create_interpreter(self._interpreter_factory)

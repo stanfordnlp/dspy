@@ -19,7 +19,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 import dspy.primitives.python_interpreter as python_interpreter
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput, _bind_interpreter
 from dspy.primitives.python_interpreter import (
     LARGE_VAR_THRESHOLD,
     PythonInterpreter,
@@ -738,6 +738,35 @@ def test_tool_none_type_and_nested_json_default():
 def test_submit_valid_runtime_edge_cases(field, code, expected):
     with PythonInterpreter(output_fields=[field]) as interpreter:
         assert interpreter.execute(code) == FinalOutput(expected)
+
+
+def test_bind_replaces_tools_and_submit_shape_without_resetting_state(pooled_interpreter):
+    tools = {"tool": lambda: "ok"}
+    fields = [{"name": "answer", "type": "str"}]
+    pooled_interpreter.execute("state = 41")
+    pooled_interpreter.bind(tools=tools, output_fields=fields)
+    tools.clear()
+    fields[0]["name"] = "changed"
+
+    assert pooled_interpreter.execute("tool()") == "ok"
+    assert pooled_interpreter.execute("state + 1") == 42
+    assert pooled_interpreter.execute("SUBMIT(answer='done')") == FinalOutput({"answer": "done"})
+    with pytest.raises(TypeError):
+        pooled_interpreter.bind(tools={}, output_fields=[None])
+    assert pooled_interpreter.execute("tool()") == "ok"
+
+    pooled_interpreter.bind(tools={})
+    assert pooled_interpreter.execute("SUBMIT('default')") == FinalOutput({"output": "default"})
+
+
+def test_bind_fallback_invalidates_legacy_registration():
+    class LegacyPythonInterpreter(PythonInterpreter):
+        bind = None
+
+    with LegacyPythonInterpreter(tools={"old": lambda: "old"}) as interpreter:
+        assert interpreter.execute("old()") == "old"
+        _bind_interpreter(interpreter, {"new": lambda: "new"})
+        assert interpreter.execute("new()") == "new"
 
 
 def test_tool_positional_args(configure_pooled_interpreter):

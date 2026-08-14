@@ -177,3 +177,14 @@ def _validate_interpreter(interpreter: Any) -> None:
     """Validate a caller-owned interpreter."""
     if not isinstance(interpreter, CodeInterpreter):
         raise TypeError(f"interpreter must implement CodeInterpreter, not {type(interpreter).__name__}.")
+
+
+def _bind_interpreter(interpreter, tools, output_fields=None) -> None:
+    if callable(bind := getattr(interpreter, "bind", None)):
+        bind(tools=tools, output_fields=output_fields)
+    else:
+        interpreter.tools.clear()
+        interpreter.tools.update(tools)
+        for name, value in (("output_fields", output_fields), ("_tools_registered", False)):
+            if hasattr(interpreter, name):
+                setattr(interpreter, name, value)

@@ -287,7 +287,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self.callbacks = list(callbacks or [])
-        self._tools_registered = False
+        self._tools_registered = not bool(self.tools or self.output_fields)
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         self._uses_default_deno_command = not deno_command
@@ -347,6 +347,11 @@ class PythonInterpreter:
         "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
         "extensions are unavailable. Host filesystem, environment, and network access require explicit permission."
     )
+
+    def bind(self, *, tools: dict[str, Callable], output_fields: list[dict] | None = None) -> None:
+        fields = None if output_fields is None else [dict(field) for field in output_fields]
+        self.tools, self.output_fields = dict(tools), fields
+        self._tools_registered = False
 
     def _check_session_active(self) -> None:
         if self._session_ended:
@@ -479,7 +484,7 @@ class PythonInterpreter:
             return
 
         # Build registration params with typed tool signatures
-        params = {}
+        params = {"outputs": self.output_fields or []}
 
         if self.tools:
             tools_info = []
@@ -489,14 +494,6 @@ class PythonInterpreter:
                     "parameters": self._extract_parameters(fn)
                 })
             params["tools"] = tools_info
-
-        if self.output_fields:
-            params["outputs"] = self.output_fields
-
-        # Skip if nothing to register
-        if not params:
-            self._tools_registered = True
-            return
 
         self._send_request("register", params, "registering tools/outputs")
         self._tools_registered = True
