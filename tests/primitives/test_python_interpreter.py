@@ -25,6 +25,7 @@ from dspy.primitives.python_interpreter import (
     PythonInterpreter,
     _deno_subprocess_env,
     _find_deno_executable,
+    _get_runner_dependency_paths,
     _make_jsonable,
     _validate_deno_version,
 )
@@ -269,6 +270,31 @@ except Exception as e:
         assert secret_content in output
 
 
+def test_default_command_does_not_expose_unrelated_deno_cache_file():
+    deno_executable = _find_deno_executable()
+    deno_dir = PythonInterpreter._get_deno_dir(deno_executable)
+    if not deno_dir:
+        pytest.skip("Deno cache directory could not be determined")
+    canary = Path(deno_dir) / f"dspy-canary-{random.randint(1, 10**9)}.txt"
+    canary.write_text("unrelated DENO_DIR secret")
+    try:
+        with PythonInterpreter() as interpreter:
+            result = interpreter.execute(
+                f"""import js
+try:
+    js.Deno.readTextFileSync({str(canary)!r})
+    result = "disclosed"
+except Exception as e:
+    result = str(e)
+result"""
+            )
+            assert "disclosed" not in result
+            assert "read access" in result.lower()
+            assert interpreter.execute("import math\nmath.factorial(5)") == 120
+    finally:
+        canary.unlink(missing_ok=True)
+
+
 def test_tools_dict_is_copied():
     """Test that tools dict is defensively copied, not stored by reference."""
     tools = {"my_tool": lambda: "result"}
@@ -463,6 +489,7 @@ def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
 
 def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
     deno_executable = str(tmp_path / "managed-deno")
+    dependency = tmp_path / "cache" / "dependency.ts"
     seen_operations = []
     monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
     monkeypatch.setattr(
@@ -471,29 +498,103 @@ def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_pat
         lambda executable: seen_operations.append(("version", executable)),
     )
     monkeypatch.setattr(
-        PythonInterpreter,
-        "_get_deno_dir",
-        staticmethod(lambda executable: seen_operations.append(("info", executable)) or str(tmp_path / "cache")),
+        python_interpreter,
+        "_get_runner_dependency_paths",
+        lambda executable, runner: seen_operations.append(("info", executable, runner)) or [str(dependency)],
     )
 
     interpreter = PythonInterpreter()
 
-    assert seen_operations == [("info", deno_executable)]
-    assert interpreter.deno_command[:5] == [
+    assert seen_operations == [("info", deno_executable, os.path.realpath(interpreter._get_runner_path()))]
+    assert interpreter.deno_command[:6] == [
         deno_executable,
         "run",
         "--no-config",
         "--no-lock",
         "--node-modules-dir=false",
+        "--cached-only",
     ]
     runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
-    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
+    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:6])
+    allow_read = next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+    assert os.path.realpath(dependency) in allow_read
 
     monkeypatch.setattr(python_interpreter.subprocess, "Popen", lambda *args, **kwargs: object())
     monkeypatch.setattr(interpreter, "_health_check", lambda: None)
     interpreter._spawn_process()
 
-    assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
+    assert seen_operations == [
+        ("info", deno_executable, os.path.realpath(interpreter._get_runner_path())),
+        ("version", deno_executable),
+    ]
+
+
+def test_runner_dependency_preflight_collects_exact_paths(monkeypatch, tmp_path):
+    runner = tmp_path / "runner.js"
+    module = tmp_path / "cache" / "module.ts"
+    package = tmp_path / "cache" / "npm" / "package"
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "modules": [{"local": str(module)}, {"specifier": "node:fs"}],
+                    "npmPackages": {"package@1.0.0": {"localPath": str(package)}},
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+
+    assert _get_runner_dependency_paths("/managed/deno", str(runner)) == sorted(
+        map(os.path.realpath, [runner, module, package])
+    )
+    assert captured["command"] == [
+        "/managed/deno",
+        "info",
+        "--json",
+        "--no-config",
+        "--no-lock",
+        "--node-modules-dir=false",
+        str(runner),
+    ]
+    assert captured["timeout"] == python_interpreter.DENO_PROBE_TIMEOUT_SECONDS
+    assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "1"
+
+
+@pytest.mark.parametrize(
+    "info",
+    [
+        {},
+        {"modules": {}, "npmPackages": {}},
+        {"modules": [None], "npmPackages": {}},
+        {"modules": [], "npmPackages": {"bad": {}}},
+    ],
+)
+def test_runner_dependency_preflight_rejects_malformed_info(monkeypatch, info):
+    monkeypatch.setattr(
+        python_interpreter.subprocess,
+        "run",
+        lambda *args, **kwargs: types.SimpleNamespace(returncode=0, stdout=json.dumps(info), stderr=""),
+    )
+
+    with pytest.raises(CodeInterpreterError, match="malformed"):
+        _get_runner_dependency_paths("deno", "/runner.js")
+
+
+def test_runner_dependency_preflight_timeout_is_useful(monkeypatch):
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", timeout)
+
+    with pytest.raises(CodeInterpreterError, match="dependency preflight timed out"):
+        _get_runner_dependency_paths("deno", "/runner.js")
 
 
 @pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
