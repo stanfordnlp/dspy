@@ -8,9 +8,11 @@ Test organization:
 
 import base64
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
+import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
@@ -426,6 +428,46 @@ class TestRLMInitialization:
 
 
 class TestRLMInterpreterLifecycle:
+    def test_execution_instructions_are_part_of_action_prompt(self):
+        class Factory(MockInterpreterFactory):
+            execution_instructions = "Use this runtime."
+
+        signature = RLM("query -> answer", interpreter_factory=Factory()).generate_action.signature
+        optimized = signature.with_instructions("Optimized instructions")
+
+        assert "Use this runtime." in signature.instructions
+        assert optimized.instructions == "Optimized instructions"
+
+    def test_python_interpreter_lm_request_bytes(self):
+        class StopLMCall(BaseException):
+            pass
+
+        class CapturingLM(dspy.BaseLM):
+            forward_contract = "typed_lm"
+
+            def __init__(self):
+                super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
+                self.request = None
+
+            def forward(self, request):
+                self.request = request
+                raise StopLMCall
+
+        lm = CapturingLM()
+        rlm = RLM("query -> answer", interpreter_factory=PythonInterpreter)
+
+        with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+            rlm.generate_action(
+                variables_info=["query: str"],
+                repl_history=REPLHistory(),
+                iteration="1/20",
+            )
+
+        request = lm.request.model_dump_json(indent=2).encode()
+        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+
+        assert request == snapshot.read_bytes().removesuffix(b"\n")
+
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)

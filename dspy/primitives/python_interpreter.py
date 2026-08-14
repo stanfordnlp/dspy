@@ -343,6 +343,11 @@ class PythonInterpreter:
         self._pending_large_vars = {}
         self._session_ended = False
 
+    execution_instructions = (
+        "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
+        "extensions are unavailable. Host filesystem, environment, and network access require explicit permission."
+    )
+
     def _check_session_active(self) -> None:
         if self._session_ended:
             raise CodeInterpreterError(

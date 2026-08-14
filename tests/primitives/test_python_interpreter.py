@@ -1623,3 +1623,10 @@ def test_base_exceptions_do_not_desync_interpreter():
             with pytest.raises(CodeExecutionError, match=error_type):
                 interpreter.execute(code)
             assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_execution_instructions_are_class_metadata():
+    interpreter = PythonInterpreter(deno_command=["deno", "run"])
+
+    assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
+    assert "Pyodide" in interpreter.execution_instructions

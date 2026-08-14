@@ -1,0 +1,48 @@
+{
+  "model": "snapshot-model",
+  "messages": [
+    {
+      "role": "system",
+      "parts": [
+        {
+          "type": "text",
+          "metadata": {},
+          "text": "Your input fields are:\n1. `variables_info` (str): Metadata about the variables available in the REPL\n2. `repl_history` (REPLHistory): Previous REPL code executions and their outputs\n3. `iteration` (str): Current iteration number (1-indexed) out of max_iters\nYour output fields are:\n1. `reasoning` (str): Think step-by-step: what do you know? What remains? Plan your next action.\n2. `code` (str): Python code to execute. Use markdown code block format: ```python\\n<code>\\n```\nAll interactions will be structured in the following way, with the appropriate values filled in.\n\n[[ ## variables_info ## ]]\n{variables_info}\n\n[[ ## repl_history ## ]]\n{repl_history}\n\n[[ ## iteration ## ]]\n{iteration}\n\n[[ ## reasoning ## ]]\n{reasoning}\n\n[[ ## code ## ]]\n{code}\n\n[[ ## completed ## ]]\nIn adhering to this structure, your objective is: \n        Given the fields `query`, produce the fields `answer`.\n        \n        You are tasked with producing the following outputs given the inputs `query`:\n        - {answer}\n        \n        You have access to a Python REPL environment. Write Python code and it will be executed. You will see the output, then write more code based on what you learned. This is an iterative process.\n        \n        Execution environment:\n        Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native extensions are unavailable. Host filesystem, environment, and network access require explicit permission.\n        \n        Available:\n        - Variables: `query` (your input data)\n        - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis\n        - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)\n        - `print()` - ALWAYS print to see results\n        - `SUBMIT(answer)` - submit final output when done\n        - Standard libraries: re, json, collections, math, etc.\n        \n        IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.\n        \n        1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.\n        2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.\n        3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.\n        4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.\n        5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.\n        6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.\n        \n        You have max 50 sub-LLM calls. When done, call SUBMIT() with your output."
+        }
+      ],
+      "name": null,
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "metadata": {},
+          "text": "[[ ## variables_info ## ]]\n«query: str»\n\n[[ ## repl_history ## ]]\nYou have not interacted with the REPL environment yet.\n\n[[ ## iteration ## ]]\n1/20\n\nRespond with the corresponding output fields, starting with the field `[[ ## reasoning ## ]]`, then `[[ ## code ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."
+        }
+      ],
+      "name": null,
+      "metadata": {}
+    }
+  ],
+  "tools": [],
+  "config": {
+    "temperature": 0.0,
+    "max_tokens": 1000,
+    "top_p": null,
+    "stop": null,
+    "n": null,
+    "logprobs": null,
+    "response_format": null,
+    "reasoning": null,
+    "tool_choice": null,
+    "cache": {
+      "enabled": false,
+      "rollout_id": null
+    },
+    "prompt_cache": null,
+    "extensions": {}
+  },
+  "metadata": {}
+}
