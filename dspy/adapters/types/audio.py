@@ -80,7 +80,7 @@ class Audio(Type):
         return encode_audio(values)
 
     @classmethod
-    def from_url(cls, url: str, verify: bool = True) -> "Audio":
+    def from_url(cls, url: str, verify: bool = True, timeout: float | None = 30.0) -> "Audio":
         """
         Download an audio file from URL and encode it as base64.
 
@@ -93,11 +93,14 @@ class Audio(Type):
         Args:
             url: The URL of the audio to download.
             verify: Whether to verify SSL certificates. Set to False for self-signed certs.
+            timeout: Seconds to wait for the server before raising
+                ``requests.exceptions.Timeout``. ``None`` disables the timeout and can
+                hang indefinitely on an unresponsive host.
         """
         parsed_url = urlparse(url)
         if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
             raise ValueError(f"Audio.from_url requires an HTTP(S) URL, received: {url}")
-        response = requests.get(url, verify=verify)
+        response = requests.get(url, verify=verify, timeout=timeout)
         response.raise_for_status()
         mime_type = response.headers.get("Content-Type", "audio/wav")
         if not mime_type.startswith("audio/"):
