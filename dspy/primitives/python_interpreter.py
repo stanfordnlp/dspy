@@ -132,64 +132,6 @@ def _validate_deno_version(deno_executable: str) -> None:
         )
 
 
-def _get_runner_dependency_paths(deno_executable: str, runner_path: str) -> list[str]:
-    """Resolve the exact cached files runner.js needs without exposing DENO_DIR."""
-    command = [
-        deno_executable,
-        "info",
-        "--json",
-        "--no-config",
-        "--no-lock",
-        "--node-modules-dir=false",
-        runner_path,
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_deno_subprocess_env(),
-            timeout=DENO_PROBE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as e:
-        raise CodeInterpreterError(
-            f"Deno dependency preflight timed out after {DENO_PROBE_TIMEOUT_SECONDS} seconds."
-        ) from e
-    except OSError as e:
-        raise CodeInterpreterError(f"Unable to run Deno dependency preflight: {e}") from e
-
-    if result.returncode != 0:
-        diagnostic = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
-        raise CodeInterpreterError(f"Deno dependency preflight failed (code {result.returncode}): {diagnostic}")
-
-    try:
-        info = json.loads(result.stdout)
-    except (json.JSONDecodeError, TypeError) as e:
-        raise CodeInterpreterError("Deno dependency preflight returned invalid JSON.") from e
-
-    modules = info.get("modules") if isinstance(info, dict) else None
-    npm_packages = info.get("npmPackages") if isinstance(info, dict) else None
-    if not isinstance(modules, list) or not isinstance(npm_packages, dict):
-        raise CodeInterpreterError("Deno dependency preflight returned malformed dependency information.")
-
-    paths = {_canonicalize_path(runner_path)}
-    for module in modules:
-        if not isinstance(module, dict):
-            raise CodeInterpreterError("Deno dependency preflight returned malformed module information.")
-        local = module.get("local")
-        if local is not None:
-            if not isinstance(local, str) or not local:
-                raise CodeInterpreterError("Deno dependency preflight returned a malformed module path.")
-            paths.add(_canonicalize_path(local))
-    for package in npm_packages.values():
-        local_path = package.get("localPath") if isinstance(package, dict) else None
-        if not isinstance(local_path, str) or not local_path:
-            raise CodeInterpreterError("Deno dependency preflight returned a malformed npm package path.")
-        paths.add(_canonicalize_path(local_path))
-    return sorted(paths)
-
-
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
     """Create a JSON-RPC 2.0 request (expects response)."""
     return json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": id})
@@ -339,18 +281,19 @@ class PythonInterpreter:
             self.deno_command = list(deno_command)
         else:
             deno_executable = _find_deno_executable()
-            runner_path = _canonicalize_path(self._get_runner_path())
             args = [
                 deno_executable,
                 "run",
                 "--no-config",
                 "--no-lock",
                 "--node-modules-dir=false",
-                "--cached-only",
             ]
 
+            # Also allow reading Deno's cache directory so Pyodide can load its files
+            deno_dir = self._get_deno_dir(deno_executable)
             raw_read_paths = [
-                *_get_runner_dependency_paths(deno_executable, runner_path),
+                self._get_runner_path(),
+                *([deno_dir] if deno_dir else []),
                 *self.enable_read_paths,
                 *self.enable_write_paths,
             ]
@@ -367,7 +310,7 @@ class PythonInterpreter:
             if self.enable_write_paths:
                 args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
 
-            args.append(runner_path)
+            args.append(_canonicalize_path(self._get_runner_path()))
 
             # For runner.js to load in env vars
             if self._env_arg:
