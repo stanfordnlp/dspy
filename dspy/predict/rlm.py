@@ -42,7 +42,6 @@ from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
-from dspy.utils.exceptions import format_error_for_lm
 
 if TYPE_CHECKING:
 
@@ -319,7 +318,7 @@ class RLM(Module):
                     try:
                         results[idx] = future.result()
                     except dspy.LMError as e:
-                        results[idx] = f"[ERROR] {format_error_for_lm(e)}"
+                        results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
@@ -656,7 +655,7 @@ class RLM(Module):
         try:
             return repl.execute(code, variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
-            return f"[Error] {format_error_for_lm(e)}"
+            return f"[Error] {e}"
 
     def _execute_iteration(
         self,
@@ -684,7 +683,7 @@ class RLM(Module):
             code = _strip_code_fences(action.code)
         except SyntaxError as e:
             code = action.code
-            result = f"[Error] {format_error_for_lm(e)}"
+            result = f"[Error] {e}"
             return self._process_execution_result(action, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(action, code, result, history, output_field_names)
@@ -777,7 +776,7 @@ class RLM(Module):
             code = _strip_code_fences(pred.code)
         except SyntaxError as e:
             code = pred.code
-            result = f"[Error] {format_error_for_lm(e)}"
+            result = f"[Error] {e}"
             return self._process_execution_result(pred, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)

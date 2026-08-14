@@ -39,16 +39,8 @@ class RecordingPythonInterpreterFactory:
         return interpreter
 
 
-def test_pot_warns_that_rlm_is_preferred():
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"ProgramOfThought is deprecated and will be removed in 3\.5\. RLM is the preferred replacement\.",
-    ):
-        ProgramOfThought(BasicQA)
-
-
 @pytest.mark.deno
-def test_pot_code_generation(pooled_interpreter):
+def test_pot_code_generation():
     lm = DummyLM(
         [
             {
@@ -60,13 +52,13 @@ def test_pot_code_generation(pooled_interpreter):
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(pooled_interpreter, question="What is 1+1?")
+    res = pot(question="What is 1+1?")
     assert res.answer == "2"
 
 
 # This test ensures the old finetuned saved models still work
 @pytest.mark.deno
-def test_old_style_pot(pooled_interpreter):
+def test_old_style_pot():
     lm = DummyLM(
         [
             {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
@@ -75,7 +67,7 @@ def test_old_style_pot(pooled_interpreter):
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(pooled_interpreter, question="What is 1+1?")
+    res = pot(question="What is 1+1?")
     assert res.answer == "2"
 
 
@@ -86,7 +78,7 @@ class ExtremumFinder(Signature):
 
 
 @pytest.mark.deno
-def test_pot_support_multiple_fields(pooled_interpreter):
+def test_pot_support_multiple_fields():
     lm = DummyLM(
         [
             {
@@ -98,13 +90,13 @@ def test_pot_support_multiple_fields(pooled_interpreter):
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(ExtremumFinder)
-    res = pot(pooled_interpreter, input_list="2, 3, 5, 6")
+    res = pot(input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
 
 
 @pytest.mark.deno
-def test_pot_code_generation_with_one_error(pooled_interpreter):
+def test_pot_code_generation_with_one_error():
     lm = DummyLM(
         [
             {
@@ -120,7 +112,7 @@ def test_pot_code_generation_with_one_error(pooled_interpreter):
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
-    res = pot(pooled_interpreter, question="What is 1+1?")
+    res = pot(question="What is 1+1?")
     assert res.answer == "2"
 
 
@@ -131,7 +123,8 @@ def test_pot_evaluate_creates_one_interpreter_per_example():
     pot.code_generate = StaticPredictor(generated_code="SUBMIT({'answer': 2})")
     pot.generate_output = StaticPredictor(answer="2")
     devset = [
-        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question") for index in range(4)
+        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question")
+        for index in range(4)
     ]
 
     result = dspy.Evaluate(

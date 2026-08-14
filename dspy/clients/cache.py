@@ -151,10 +151,7 @@ class Cache:
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
-            # Strict provider models (e.g. litellm's ResponsesAPIResponse) reject
-            # undeclared attributes in pydantic __setattr__, so stamp the marker
-            # directly on the instance dict.
-            object.__setattr__(response, "cache_hit", True)
+            response.cache_hit = True
         return response
 
     def put(

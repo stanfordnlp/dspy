@@ -1,6 +1,6 @@
 // Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
-import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
+import pyodideModule from "npm:pyodide/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
 // =============================================================================
@@ -135,9 +135,7 @@ const jsonrpcError = (code, message, id, data = null) => {
 // These can occur during async Python <-> JS interop
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
-  console.log(jsonrpcNotification("unhandled_error", {
-    message: `Unhandled async error: ${event.reason?.message || event.reason}`,
-  }));
+  console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
 });
 
 const pyodide = await pyodideModule.loadPyodide();

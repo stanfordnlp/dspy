@@ -1,33 +1,16 @@
 import asyncio
 import dataclasses
-import io
 import json
 import os
 import random
-import shutil
-import subprocess
-import sys
-import threading
-import types
-from collections import namedtuple
 from datetime import datetime
-from enum import Enum
-from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import (
-    LARGE_VAR_THRESHOLD,
-    PythonInterpreter,
-    _deno_subprocess_env,
-    _find_deno_executable,
-    _make_jsonable,
-    _validate_deno_version,
-)
+from dspy.primitives.python_interpreter import PythonInterpreter
 
 
 class _Hit(BaseModel):
@@ -52,98 +35,98 @@ class _UnserializableModel(BaseModel):
 pytestmark = pytest.mark.deno
 
 
-def test_execute_simple_code(pooled_interpreter):
-    interpreter = pooled_interpreter
-    code = "print('Hello, World!')"
-    result = interpreter.execute(code)
-    assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
+def test_execute_simple_code():
+    with PythonInterpreter() as interpreter:
+        code = "print('Hello, World!')"
+        result = interpreter.execute(code)
+        assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
 
 
-def test_import(pooled_interpreter):
-    interpreter = pooled_interpreter
-    code = "import math\nresult = math.sqrt(4)\nresult"
-    result = interpreter.execute(code)
-    assert result == 2, "Should be able to import and use math.sqrt"
+def test_import():
+    with PythonInterpreter() as interpreter:
+        code = "import math\nresult = math.sqrt(4)\nresult"
+        result = interpreter.execute(code)
+        assert result == 2, "Should be able to import and use math.sqrt"
 
 
-def test_user_variable_definitions(pooled_interpreter):
-    interpreter = pooled_interpreter
-    code = "result = number + 1\nresult"
-    result = interpreter.execute(code, variables={"number": 4})
-    assert result == 5, "User variable assignment should work"
+def test_user_variable_definitions():
+    with PythonInterpreter() as interpreter:
+        code = "result = number + 1\nresult"
+        result = interpreter.execute(code, variables={"number": 4})
+        assert result == 5, "User variable assignment should work"
 
 
-def test_non_finite_float_variables(pooled_interpreter):
+def test_non_finite_float_variables():
     """Regression test: inf/-inf/nan variables must be injected as valid Python literals.
 
     str(float("inf")) is the bare word "inf", which is not a valid Python name, so
     injecting it as `x = inf` previously raised NameError in the sandbox.
     """
-    interpreter = pooled_interpreter
-    inf_code = "result = 1 if x == float('inf') else 0\nresult"
-    assert interpreter.execute(inf_code, variables={"x": float("inf")}) == 1
+    with PythonInterpreter() as interpreter:
+        inf_code = "result = 1 if x == float('inf') else 0\nresult"
+        assert interpreter.execute(inf_code, variables={"x": float("inf")}) == 1
 
-    neg_inf_code = "result = 1 if x == float('-inf') else 0\nresult"
-    assert interpreter.execute(neg_inf_code, variables={"x": float("-inf")}) == 1
+        neg_inf_code = "result = 1 if x == float('-inf') else 0\nresult"
+        assert interpreter.execute(neg_inf_code, variables={"x": float("-inf")}) == 1
 
-    nan_code = "import math\nresult = 1 if math.isnan(x) else 0\nresult"
-    assert interpreter.execute(nan_code, variables={"x": float("nan")}) == 1
+        nan_code = "import math\nresult = 1 if math.isnan(x) else 0\nresult"
+        assert interpreter.execute(nan_code, variables={"x": float("nan")}) == 1
 
 
-def test_rejects_python_keywords_as_variable_names(pooled_interpreter):
+def test_rejects_python_keywords_as_variable_names():
     """Test that Python keywords are rejected as variable names."""
-    interpreter = pooled_interpreter
-    # These are valid Python identifiers but reserved keywords
-    # Using them as variable names would cause syntax errors
-    keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
+    with PythonInterpreter() as interpreter:
+        # These are valid Python identifiers but reserved keywords
+        # Using them as variable names would cause syntax errors
+        keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
 
-    for keyword in keywords_to_test:
-        with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
-            interpreter.execute("print(x)", variables={keyword: 42})
-
-
-def test_failure_syntax_error(pooled_interpreter):
-    interpreter = pooled_interpreter
-    code = "+++"
-    with pytest.raises(SyntaxError, match="Invalid Python syntax"):
-        interpreter.execute(code)
+        for keyword in keywords_to_test:
+            with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
+                interpreter.execute("print(x)", variables={keyword: 42})
 
 
-def test_failure_zero_division(pooled_interpreter):
-    interpreter = pooled_interpreter
-    code = "1+0/0"
-    with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
-        interpreter.execute(code)
+def test_failure_syntax_error():
+    with PythonInterpreter() as interpreter:
+        code = "+++"
+        with pytest.raises(SyntaxError, match="Invalid Python syntax"):
+            interpreter.execute(code)
 
 
-def test_exception_args(pooled_interpreter):
-    interpreter = pooled_interpreter
-    token = random.randint(1, 10**9)
-    code = f"raise ValueError({token})"
-    with pytest.raises(CodeExecutionError, match=rf"ValueError: \[{token}\]"):
-        interpreter.execute(code)
+def test_failure_zero_division():
+    with PythonInterpreter() as interpreter:
+        code = "1+0/0"
+        with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
+            interpreter.execute(code)
 
 
-def test_generated_exception_name_cannot_spoof_interpreter_failure(pooled_interpreter):
-    interpreter = pooled_interpreter
-    with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):
-        interpreter.execute(
-            "class CodeInterpreterError(Exception):\n    pass\nraise CodeInterpreterError('generated failure')"
-        )
-    assert interpreter.execute("2 + 2") == 4
+def test_exception_args():
+    with PythonInterpreter() as interpreter:
+        token = random.randint(1, 10**9)
+        code = f"raise ValueError({token})"
+        with pytest.raises(CodeExecutionError, match=rf"ValueError: \[{token}\]"):
+            interpreter.execute(code)
 
 
-def test_submit_with_list(pooled_interpreter):
+def test_generated_exception_name_cannot_spoof_interpreter_failure():
+    with PythonInterpreter() as interpreter:
+        with pytest.raises(CodeExecutionError, match="CodeInterpreterError"):
+            interpreter.execute(
+                "class CodeInterpreterError(Exception):\n    pass\nraise CodeInterpreterError('generated failure')"
+            )
+        assert interpreter.execute("2 + 2") == 4
+
+
+def test_submit_with_list():
     """Test SUBMIT() with a list argument returns FinalOutput with dict format."""
 
-    interpreter = pooled_interpreter
-    token = random.randint(1, 10**9)
-    code = f"SUBMIT(['The result is', {token}])"
-    result = interpreter(code)
+    with PythonInterpreter() as interpreter:
+        token = random.randint(1, 10**9)
+        code = f"SUBMIT(['The result is', {token}])"
+        result = interpreter(code)
 
-    assert isinstance(result, FinalOutput)
-    # SUBMIT now always returns a dict with "output" key for single-output default
-    assert result.output == {"output": ["The result is", token]}
+        assert isinstance(result, FinalOutput)
+        # SUBMIT now always returns a dict with "output" key for single-output default
+        assert result.output == {"output": ["The result is", token]}
 
 
 def test_enable_env_vars_flag():
@@ -281,58 +264,58 @@ def test_tools_dict_is_copied():
     assert "new_tool" not in sandbox.tools
 
 
-def test_serialize_tuple(pooled_interpreter):
+def test_serialize_tuple():
     """Test that tuples can be serialized as variables."""
-    interpreter = pooled_interpreter
-    result = interpreter.execute("x", variables={"x": (1, 2, 3)})
-    assert result == [1, 2, 3]  # Tuples become lists in JSON
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("x", variables={"x": (1, 2, 3)})
+        assert result == [1, 2, 3]  # Tuples become lists in JSON
 
 
-def test_serialize_set(pooled_interpreter):
+def test_serialize_set():
     """Test that sets can be serialized as variables."""
-    interpreter = pooled_interpreter
-    result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
-    assert result == [1, 2, 3]
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
+        assert result == [1, 2, 3]
 
 
-def test_serialize_set_mixed_types(pooled_interpreter):
+def test_serialize_set_mixed_types():
     """Test that sets with mixed types can be serialized (fallback to list)."""
-    interpreter = pooled_interpreter
-    # Mixed types can't be sorted, so they serialize as a list in arbitrary order
-    # We verify the list contains the expected elements
-    result = interpreter.execute("x", variables={"x": {1, "a"}})
-    assert isinstance(result, list)
-    assert set(result) == {1, "a"}
+    with PythonInterpreter() as interpreter:
+        # Mixed types can't be sorted, so they serialize as a list in arbitrary order
+        # We verify the list contains the expected elements
+        result = interpreter.execute("x", variables={"x": {1, "a"}})
+        assert isinstance(result, list)
+        assert set(result) == {1, "a"}
 
 
-def test_serialize_pydantic_variable(pooled_interpreter):
+def test_serialize_pydantic_variable():
     """Pydantic instances passed via variables= should arrive in the sandbox as dicts."""
-    interpreter = pooled_interpreter
-    result = interpreter.execute(
-        "hit['document_id']",
-        variables={"hit": _Hit(document_id=7, title="abc")},
-    )
-    assert result == 7
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "hit['document_id']",
+            variables={"hit": _Hit(document_id=7, title="abc")},
+        )
+        assert result == 7
 
 
-def test_serialize_pydantic_nested_in_dict(pooled_interpreter):
+def test_serialize_pydantic_nested_in_dict():
     """Pydantic instances nested inside list/dict variables should be coerced too."""
-    interpreter = pooled_interpreter
-    result = interpreter.execute(
-        "(data['hit']['document_id'], data['hit']['title'])",
-        variables={"data": {"hit": _Hit(document_id=11, title="nested")}},
-    )
-    assert result == [11, "nested"]
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "(data['hit']['document_id'], data['hit']['title'])",
+            variables={"data": {"hit": _Hit(document_id=11, title="nested")}},
+        )
+        assert result == [11, "nested"]
 
 
-def test_serialize_pydantic_in_list_variable(pooled_interpreter):
+def test_serialize_pydantic_in_list_variable():
     """A list variable whose elements are Pydantic instances should be coerced too."""
-    interpreter = pooled_interpreter
-    result = interpreter.execute(
-        "sum(h['document_id'] for h in hits)",
-        variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
-    )
-    assert result == 3
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "sum(h['document_id'] for h in hits)",
+            variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
+        )
+        assert result == 3
 
 
 def test_pydantic_json_values_are_compatible_with_large_variable_injection(monkeypatch):
@@ -357,35 +340,6 @@ def test_pydantic_json_values_are_compatible_with_large_variable_injection(monke
     assert json.loads(interpreter._pending_large_vars["hit"]) == expected
 
 
-def test_json_mode_values_cross_every_host_to_sandbox_path():
-    """Bare datetimes/enums/sets (not wrapped in a model) serialize the way they would into a
-    JSON body on all three host->sandbox paths: variable injection, large-var injection, and
-    tool results — instead of raising "Unsupported value type" or str()-flattening the result."""
-
-    class Color(Enum):
-        RED = "red"
-
-    value = {"t": datetime(2026, 1, 1), "c": Color.RED}
-    interpreter = PythonInterpreter()
-    assert interpreter._serialize_value(value) == "{'t': '2026-01-01T00:00:00', 'c': 'red'}"
-    assert interpreter._to_json_compatible(value) == {"t": "2026-01-01T00:00:00", "c": "red"}
-    jsonable = _make_jsonable({**value, "s": {3, 1}})
-    assert jsonable["t"] == "2026-01-01T00:00:00" and jsonable["c"] == "red"
-    assert sorted(jsonable["s"]) == [1, 3]
-
-
-def test_json_mode_coercion_preserves_existing_fallbacks():
-    class P(NamedTuple):
-        x: int
-        y: int
-
-    assert _make_jsonable(P(1, 2)) == {"x": 1, "y": 2}  # namedtuples keep field names, not [1, 2]
-    obj = object()
-    assert _make_jsonable(obj) is obj  # unknown values still take the json.dumps/str fallback
-    with pytest.raises(CodeInterpreterError, match="Unsupported value type"):
-        PythonInterpreter()._serialize_value(object())  # injection still rejects them loudly
-
-
 def test_unserializable_pydantic_variable_raises_code_interpreter_error():
     """Invalid host variables should fail before the interpreter process starts."""
     interpreter = PythonInterpreter()
@@ -404,279 +358,59 @@ def test_deno_command_dict_raises_type_error():
         PythonInterpreter(deno_command={"invalid": "dict"})
 
 
-def test_custom_deno_command_is_unchanged():
-    command = ["custom-deno", "run", "custom-runner.js", "argument"]
-
-    interpreter = PythonInterpreter(deno_command=command)
-
-    assert interpreter.deno_command == command
-    assert interpreter.deno_command is not command
-
-
-def test_custom_deno_command_preserves_environment(monkeypatch):
-    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
-    captured = {}
-    interpreter = PythonInterpreter(deno_command=["custom-deno", "run"])
-
-    def fake_popen(command, **kwargs):
-        captured["command"] = command
-        captured["env"] = kwargs["env"]
-        return object()
-
-    monkeypatch.setattr(python_interpreter.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
-
-    interpreter._spawn_process()
-
-    assert captured["command"] == ["custom-deno", "run"]
-    assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "0"
-
-
-def test_deno_subprocess_env_disables_package_json(monkeypatch):
-    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
-    monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
-
-    env = _deno_subprocess_env()
-
-    assert env["DENO_NO_PACKAGE_JSON"] == "1"
-    assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
-    assert os.environ["DENO_NO_PACKAGE_JSON"] == "0"
-
-
-def test_managed_deno_package_is_preferred(monkeypatch):
-    managed_deno = types.SimpleNamespace(find_deno_bin=lambda: "/managed/bin/deno")
-    monkeypatch.setitem(sys.modules, "deno", managed_deno)
-
-    assert _find_deno_executable() == "/managed/bin/deno"
-
-
-def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
-    def missing_binary():
-        raise FileNotFoundError
-
-    managed_deno = types.SimpleNamespace(find_deno_bin=missing_binary)
-    monkeypatch.setitem(sys.modules, "deno", managed_deno)
-    monkeypatch.setattr(shutil, "which", lambda executable: "/system/bin/deno" if executable == "deno" else None)
-
-    assert _find_deno_executable() == "/system/bin/deno"
-
-
-def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
-    deno_executable = str(tmp_path / "managed-deno")
-    seen_operations = []
-    monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
-    monkeypatch.setattr(
-        python_interpreter,
-        "_validate_deno_version",
-        lambda executable: seen_operations.append(("version", executable)),
-    )
-    monkeypatch.setattr(
-        PythonInterpreter,
-        "_get_deno_dir",
-        staticmethod(lambda executable: seen_operations.append(("info", executable)) or str(tmp_path / "cache")),
-    )
-
-    interpreter = PythonInterpreter()
-
-    assert seen_operations == [("info", deno_executable)]
-    assert interpreter.deno_command[:5] == [
-        deno_executable,
-        "run",
-        "--no-config",
-        "--no-lock",
-        "--node-modules-dir=false",
-    ]
-    runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
-    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
-
-    monkeypatch.setattr(python_interpreter.subprocess, "Popen", lambda *args, **kwargs: object())
-    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
-    interpreter._spawn_process()
-
-    assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
-
-
-@pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
-def test_accepts_supported_deno_2_versions(monkeypatch, version):
-    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
-
-    _validate_deno_version("/system/bin/deno")
-
-
-@pytest.mark.parametrize("version", [(1, 46, 3), (3, 0, 0)])
-def test_rejects_unsupported_system_deno(monkeypatch, version):
-    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
-    version_text = "\\.".join(map(str, version))
-
-    with pytest.raises(CodeInterpreterError, match=rf"Unsupported Deno version {version_text}"):
-        _validate_deno_version("/system/bin/deno")
-
-
-@pytest.mark.parametrize(
-    ("returncode", "stdout", "stderr"),
-    [
-        (0, "not a Deno version", ""),
-        (0, "", "deno 2.9.5"),
-        (1, "deno 2.9.5", "version probe failed"),
-    ],
-)
-def test_rejects_invalid_deno_version_probe(monkeypatch, returncode, stdout, stderr):
-    result = types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
-    monkeypatch.setattr(python_interpreter.subprocess, "run", lambda *args, **kwargs: result)
-
-    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
-        _validate_deno_version("/fake/bin/deno")
-
-
-def test_deno_version_probe_is_bounded_and_not_cached(monkeypatch):
-    results = iter(
-        [
-            types.SimpleNamespace(returncode=0, stdout="deno 2.9.5", stderr=""),
-            types.SimpleNamespace(returncode=0, stdout="deno 2.9.4", stderr=""),
-        ]
-    )
-    seen_timeouts = []
-
-    def fake_run(*args, **kwargs):
-        seen_timeouts.append(kwargs["timeout"])
-        return next(results)
-
-    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
-
-    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 5)
-    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 4)
-    assert seen_timeouts == [python_interpreter.DENO_PROBE_TIMEOUT_SECONDS] * 2
-
-
-def test_deno_version_probe_timeout_is_reported_as_indeterminate(monkeypatch):
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
-
-    monkeypatch.setattr(python_interpreter.subprocess, "run", timeout)
-
-    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
-        _validate_deno_version("/hanging/bin/deno")
-
-
-def test_deno_info_probe_is_bounded(monkeypatch):
-    captured = {}
-
-    def fake_run(*args, **kwargs):
-        captured.update(kwargs)
-        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"denoDir": "/cache"}))
-
-    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
-    PythonInterpreter._query_deno_dir.cache_clear()
-
-    assert PythonInterpreter._query_deno_dir("/bounded/bin/deno") == "/cache"
-    assert captured["timeout"] == python_interpreter.DENO_PROBE_TIMEOUT_SECONDS
-
-
-def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
-    deno_dir = str(tmp_path / "deno-cache")
-    monkeypatch.setenv("DENO_DIR", deno_dir)
-    monkeypatch.setattr(
-        PythonInterpreter,
-        "_query_deno_dir",
-        staticmethod(lambda executable: pytest.fail(f"unexpected Deno info query for {executable}")),
-    )
-
-    assert PythonInterpreter._get_deno_dir("/managed/bin/deno") == deno_dir
-
-
-def test_ignores_parent_package_json_and_node_modules(monkeypatch, tmp_path):
-    """A parent Node project must not redirect runner.js's Pyodide import."""
-    project_dir = tmp_path / "node-project"
-    runner_dir = project_dir / "runtime"
-    fake_pyodide_dir = project_dir / "node_modules" / "pyodide"
-    runner_dir.mkdir(parents=True)
-    fake_pyodide_dir.mkdir(parents=True)
-
-    runner_path = runner_dir / "runner.js"
-    shutil.copyfile(Path(python_interpreter.__file__).with_name("runner.js"), runner_path)
-    (project_dir / "package.json").write_text(json.dumps({"dependencies": {"pyodide": "0.29.4"}}))
-    (fake_pyodide_dir / "package.json").write_text(
-        json.dumps(
-            {
-                "name": "pyodide",
-                "version": "0.29.4",
-                "type": "module",
-                "exports": {"./pyodide.js": "./pyodide.js"},
-            }
-        )
-    )
-    (fake_pyodide_dir / "blocked.txt").write_text("ambient package was selected")
-    (fake_pyodide_dir / "pyodide.js").write_text(
-        'Deno.readTextFileSync(new URL("./blocked.txt", import.meta.url));\n'
-        'export default { loadPyodide() { throw new Error("DSPy loaded Pyodide from parent node_modules"); } };\n'
-    )
-
-    class ParentProjectInterpreter(PythonInterpreter):
-        def _get_runner_path(self):
-            return str(runner_path)
-
-    monkeypatch.chdir(runner_dir)
-    monkeypatch.delenv("DENO_NO_PACKAGE_JSON", raising=False)
-
-    with ParentProjectInterpreter() as interpreter:
-        assert interpreter.execute("6 * 7") == 42
-
-    assert not (project_dir / "deno.lock").exists()
-
-
 # =============================================================================
 # Typed Tool Signature Tests
 # =============================================================================
 
 
-def test_tool_with_typed_signature(configure_pooled_interpreter):
+def test_tool_with_typed_signature():
     """Test that tools get proper typed signatures from inspect."""
 
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
-    sandbox = configure_pooled_interpreter(tools={"my_tool": my_tool})
-    # Tool should be callable with typed signature
-    result = sandbox.execute('my_tool(query="test", limit=5)')
-    assert result == "searched 'test' with limit 5"
+    with PythonInterpreter(tools={"my_tool": my_tool}) as sandbox:
+        # Tool should be callable with typed signature
+        result = sandbox.execute('my_tool(query="test", limit=5)')
+        assert result == "searched 'test' with limit 5"
 
 
-def test_tool_positional_args(configure_pooled_interpreter):
+def test_tool_positional_args():
     """Test that tools work with positional arguments."""
 
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    sandbox = configure_pooled_interpreter(tools={"search": search})
-    result = sandbox.execute('search("hello")')
-    assert result == "query=hello, limit=10"
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search("hello")')
+        assert result == "query=hello, limit=10"
 
 
-def test_tool_keyword_args(configure_pooled_interpreter):
+def test_tool_keyword_args():
     """Test that tools work with keyword arguments."""
 
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    sandbox = configure_pooled_interpreter(tools={"search": search})
-    result = sandbox.execute('search(query="hello", limit=5)')
-    assert result == "query=hello, limit=5"
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search(query="hello", limit=5)')
+        assert result == "query=hello, limit=5"
 
 
-def test_tool_default_args(configure_pooled_interpreter):
+def test_tool_default_args():
     """Test that tool default arguments work correctly."""
 
     def greet(name: str, greeting: str = "Hello") -> str:
         return f"{greeting}, {name}!"
 
-    sandbox = configure_pooled_interpreter(tools={"greet": greet})
-    # Without default
-    result = sandbox.execute('greet("World")')
-    assert result == "Hello, World!"
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
+        # Without default
+        result = sandbox.execute('greet("World")')
+        assert result == "Hello, World!"
 
-    # Overriding default
-    result = sandbox.execute('greet("World", "Hi")')
-    assert result == "Hi, World!"
+        # Overriding default
+        result = sandbox.execute('greet("World", "Hi")')
+        assert result == "Hi, World!"
 
 
 def test_process_death_ends_stateful_session():
@@ -750,70 +484,70 @@ def test_shutdown_ends_session():
         interpreter.execute("1 + 1")
 
 
-def test_tool_all_positional_args(configure_pooled_interpreter):
+def test_tool_all_positional_args():
     """Test that tools work when all arguments are passed positionally."""
 
     def add(a: int, b: int, c: int) -> str:
         return f"{a + b + c}"
 
-    sandbox = configure_pooled_interpreter(tools={"add": add})
-    result = sandbox.execute("add(1, 2, 3)")
-    assert result == "6"
+    with PythonInterpreter(tools={"add": add}) as sandbox:
+        result = sandbox.execute("add(1, 2, 3)")
+        assert result == "6"
 
-    # Mixed: some positional, some keyword
-    result = sandbox.execute("add(10, 20, c=30)")
-    assert result == "60"
+        # Mixed: some positional, some keyword
+        result = sandbox.execute("add(10, 20, c=30)")
+        assert result == "60"
 
 
-def test_tool_error_surfaces_as_runtime_error(configure_pooled_interpreter):
+def test_tool_error_surfaces_as_runtime_error():
     """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
 
     def failing_tool(x: int) -> str:
         raise ValueError(f"bad value: {x}")
 
-    sandbox = configure_pooled_interpreter(tools={"failing_tool": failing_tool})
-    result = sandbox.execute(
-        "try:\n"
-        "    failing_tool(42)\n"
-        "    output = 'no error'\n"
-        "except RuntimeError as e:\n"
-        "    output = str(e)\n"
-        "output"
-    )
-    assert "ValueError" in result
-    assert "bad value: 42" in result
+    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_tool(42)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "bad value: 42" in result
 
 
-def test_tool_async_def_function(configure_pooled_interpreter):
+def test_tool_async_def_function():
     """async def tools should be awaited so the sandbox sees the resolved value."""
 
     async def slow_search(query: str) -> str:
         await asyncio.sleep(0)
         return f"answer:{query}"
 
-    sandbox = configure_pooled_interpreter(tools={"slow_search": slow_search})
-    result = sandbox.execute("slow_search(query='hello')")
-    assert result == "answer:hello"
+    with PythonInterpreter(tools={"slow_search": slow_search}) as sandbox:
+        result = sandbox.execute("slow_search(query='hello')")
+        assert result == "answer:hello"
 
 
-def test_tool_async_def_raises_propagates(configure_pooled_interpreter):
+def test_tool_async_def_raises_propagates():
     """Exceptions raised inside an async tool should surface as RuntimeError in the sandbox."""
 
     async def failing_async(x: int) -> str:
         await asyncio.sleep(0)
         raise ValueError(f"boom:{x}")
 
-    sandbox = configure_pooled_interpreter(tools={"failing_async": failing_async})
-    result = sandbox.execute(
-        "try:\n"
-        "    failing_async(7)\n"
-        "    output = 'no error'\n"
-        "except RuntimeError as e:\n"
-        "    output = str(e)\n"
-        "output"
-    )
-    assert "ValueError" in result
-    assert "boom:7" in result
+    with PythonInterpreter(tools={"failing_async": failing_async}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_async(7)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "boom:7" in result
 
 
 # =============================================================================
@@ -821,55 +555,55 @@ def test_tool_async_def_raises_propagates(configure_pooled_interpreter):
 # =============================================================================
 
 
-def test_tool_returning_int(configure_pooled_interpreter):
+def test_tool_returning_int():
     """Test that tools returning int preserve the type in the sandbox."""
 
     def count_items(label: str) -> int:
         return 4
 
-    sandbox = configure_pooled_interpreter(tools={"count_items": count_items})
-    result = sandbox.execute(
-        'n = count_items(label="pages")\n'
-        'print(type(n).__name__)\n'
-        'print(n + 1)'
-    )
-    assert "int" in result
-    assert "5" in result
+    with PythonInterpreter(tools={"count_items": count_items}) as sandbox:
+        result = sandbox.execute(
+            'n = count_items(label="pages")\n'
+            'print(type(n).__name__)\n'
+            'print(n + 1)'
+        )
+        assert "int" in result
+        assert "5" in result
 
 
-def test_tool_returning_float(configure_pooled_interpreter):
+def test_tool_returning_float():
     """Test that tools returning float preserve the type in the sandbox."""
 
     def get_score() -> float:
         return 0.95
 
-    sandbox = configure_pooled_interpreter(tools={"get_score": get_score})
-    result = sandbox.execute(
-        "x = get_score()\n"
-        "print(type(x).__name__)\n"
-        "print(x * 2)"
-    )
-    assert "float" in result
-    assert "1.9" in result
+    with PythonInterpreter(tools={"get_score": get_score}) as sandbox:
+        result = sandbox.execute(
+            "x = get_score()\n"
+            "print(type(x).__name__)\n"
+            "print(x * 2)"
+        )
+        assert "float" in result
+        assert "1.9" in result
 
 
-def test_tool_returning_bool(configure_pooled_interpreter):
+def test_tool_returning_bool():
     """Test that tools returning bool preserve the type in the sandbox."""
 
     def is_valid() -> bool:
         return True
 
-    sandbox = configure_pooled_interpreter(tools={"is_valid": is_valid})
-    result = sandbox.execute(
-        'v = is_valid()\n'
-        'print(type(v).__name__)\n'
-        'print(v and "yes")'
-    )
-    assert "bool" in result
-    assert "yes" in result
+    with PythonInterpreter(tools={"is_valid": is_valid}) as sandbox:
+        result = sandbox.execute(
+            'v = is_valid()\n'
+            'print(type(v).__name__)\n'
+            'print(v and "yes")'
+        )
+        assert "bool" in result
+        assert "yes" in result
 
 
-def test_tool_returning_none(configure_pooled_interpreter):
+def test_tool_returning_none():
     """Test that tools returning None yield an empty string in the sandbox.
 
     Pyodide does not map JS null to Python None (it becomes JsNull), so
@@ -879,49 +613,49 @@ def test_tool_returning_none(configure_pooled_interpreter):
     def do_nothing() -> None:
         return None
 
-    sandbox = configure_pooled_interpreter(tools={"do_nothing": do_nothing})
-    result = sandbox.execute(
-        "v = do_nothing()\n"
-        "print(type(v).__name__)\n"
-        "print(repr(v))"
-    )
-    assert "str" in result
-    assert "''" in result
+    with PythonInterpreter(tools={"do_nothing": do_nothing}) as sandbox:
+        result = sandbox.execute(
+            "v = do_nothing()\n"
+            "print(type(v).__name__)\n"
+            "print(repr(v))"
+        )
+        assert "str" in result
+        assert "''" in result
 
 
-def test_tool_returning_list(configure_pooled_interpreter):
+def test_tool_returning_list():
     """Test that tools returning list preserve the type in the sandbox."""
 
     def get_pages() -> list:
         return [1, 2, 3]
 
-    sandbox = configure_pooled_interpreter(tools={"get_pages": get_pages})
-    result = sandbox.execute(
-        "pages = get_pages()\n"
-        "print(type(pages).__name__)\n"
-        "print(pages[0] + 10)"
-    )
-    assert "list" in result
-    assert "11" in result
+    with PythonInterpreter(tools={"get_pages": get_pages}) as sandbox:
+        result = sandbox.execute(
+            "pages = get_pages()\n"
+            "print(type(pages).__name__)\n"
+            "print(pages[0] + 10)"
+        )
+        assert "list" in result
+        assert "11" in result
 
 
-def test_tool_returning_dict(configure_pooled_interpreter):
+def test_tool_returning_dict():
     """Test that tools returning dict preserve the type in the sandbox."""
 
     def get_info() -> dict:
         return {"count": 4, "label": "pages"}
 
-    sandbox = configure_pooled_interpreter(tools={"get_info": get_info})
-    result = sandbox.execute(
-        'info = get_info()\n'
-        'print(type(info).__name__)\n'
-        'print(info["count"] + 1)'
-    )
-    assert "dict" in result
-    assert "5" in result
+    with PythonInterpreter(tools={"get_info": get_info}) as sandbox:
+        result = sandbox.execute(
+            'info = get_info()\n'
+            'print(type(info).__name__)\n'
+            'print(info["count"] + 1)'
+        )
+        assert "dict" in result
+        assert "5" in result
 
 
-def test_tool_returning_non_json_serializable(configure_pooled_interpreter):
+def test_tool_returning_non_json_serializable():
     """Test that tools returning non-JSON-serializable objects fall back to string."""
 
     class Custom:
@@ -931,15 +665,15 @@ def test_tool_returning_non_json_serializable(configure_pooled_interpreter):
     def get_custom() -> object:
         return Custom()
 
-    sandbox = configure_pooled_interpreter(tools={"get_custom": get_custom})
-    result = sandbox.execute(
-        "v = get_custom()\n"
-        "print(v)"
-    )
-    assert "custom-object" in result
+    with PythonInterpreter(tools={"get_custom": get_custom}) as sandbox:
+        result = sandbox.execute(
+            "v = get_custom()\n"
+            "print(v)"
+        )
+        assert "custom-object" in result
 
 
-def test_tool_returning_nan_falls_back_to_string(configure_pooled_interpreter):
+def test_tool_returning_nan_falls_back_to_string():
     """Test that tools returning float('nan') or float('inf') fall back to string.
 
     These values are not valid JSON, so they should go through the str()
@@ -952,25 +686,25 @@ def test_tool_returning_nan_falls_back_to_string(configure_pooled_interpreter):
     def get_inf() -> float:
         return float("inf")
 
-    sandbox = configure_pooled_interpreter(tools={"get_nan": get_nan, "get_inf": get_inf})
-    result = sandbox.execute(
-        "n = get_nan()\n"
-        "print(type(n).__name__)\n"
-        "print(n)"
-    )
-    assert "str" in result
-    assert "nan" in result
+    with PythonInterpreter(tools={"get_nan": get_nan, "get_inf": get_inf}) as sandbox:
+        result = sandbox.execute(
+            "n = get_nan()\n"
+            "print(type(n).__name__)\n"
+            "print(n)"
+        )
+        assert "str" in result
+        assert "nan" in result
 
-    result = sandbox.execute(
-        "i = get_inf()\n"
-        "print(type(i).__name__)\n"
-        "print(i)"
-    )
-    assert "str" in result
-    assert "inf" in result
+        result = sandbox.execute(
+            "i = get_inf()\n"
+            "print(type(i).__name__)\n"
+            "print(i)"
+        )
+        assert "str" in result
+        assert "inf" in result
 
 
-def test_tool_returns_pydantic_model(configure_pooled_interpreter):
+def test_tool_returns_pydantic_model():
     """Pydantic models returned from a tool should arrive in the sandbox as dicts."""
 
     def search() -> _TimestampedHit:
@@ -980,36 +714,36 @@ def test_tool_returns_pydantic_model(configure_pooled_interpreter):
             created_at=datetime(2026, 5, 14, 8, 7, 27),
         )
 
-    sandbox = configure_pooled_interpreter(tools={"search": search})
-    result = sandbox.execute("r = search()\n(r['document_id'], r['title'], r['created_at'])")
-    assert result == [42, "example", "2026-05-14T08:07:27"]
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute("r = search()\n(r['document_id'], r['title'], r['created_at'])")
+        assert result == [42, "example", "2026-05-14T08:07:27"]
 
 
-def test_tool_returns_list_of_pydantic_models(configure_pooled_interpreter):
+def test_tool_returns_list_of_pydantic_models():
     """Lists of Pydantic models from a tool should round-trip as lists of dicts."""
 
     def search_many() -> list[_Hit]:
         return [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]
 
-    sandbox = configure_pooled_interpreter(tools={"search_many": search_many})
-    result = sandbox.execute(
-        "hits = search_many()\nsum(h['document_id'] for h in hits)"
-    )
-    assert result == 3
+    with PythonInterpreter(tools={"search_many": search_many}) as sandbox:
+        result = sandbox.execute(
+            "hits = search_many()\nsum(h['document_id'] for h in hits)"
+        )
+        assert result == 3
 
 
-def test_tool_returning_unserializable_pydantic_model_raises_execution_error(configure_pooled_interpreter):
+def test_tool_returning_unserializable_pydantic_model_raises_execution_error():
     """A BaseModel that cannot honor JSON transport should remain a visible tool error."""
 
     def get_value() -> _UnserializableModel:
         return _UnserializableModel(value=_UnserializableValue())
 
-    sandbox = configure_pooled_interpreter(tools={"get_value": get_value})
-    with pytest.raises(
-        CodeExecutionError,
-        match="CodeInterpreterError.*Unable to serialize _UnserializableModel as JSON",
-    ):
-        sandbox.execute("get_value()")
+    with PythonInterpreter(tools={"get_value": get_value}) as sandbox:
+        with pytest.raises(
+            CodeExecutionError,
+            match="CodeInterpreterError.*Unable to serialize _UnserializableModel as JSON",
+        ):
+            sandbox.execute("get_value()")
 
 
 # -- dataclass tool returns --------------------------------------------------
@@ -1030,29 +764,29 @@ class _PageTable:
     strategy: str
 
 
-def test_tool_returns_dataclass(configure_pooled_interpreter):
+def test_tool_returns_dataclass():
     """Dataclass instances returned from a tool should arrive as dicts."""
 
     def get_bbox() -> _BBox:
         return _BBox(x0=18.2, top=108.0, x1=554.4, bottom=748.8)
 
-    sandbox = configure_pooled_interpreter(tools={"get_bbox": get_bbox})
-    result = sandbox.execute("b = get_bbox()\n(b['x0'], b['bottom'])")
-    assert result == [18.2, 748.8]
+    with PythonInterpreter(tools={"get_bbox": get_bbox}) as sandbox:
+        result = sandbox.execute("b = get_bbox()\n(b['x0'], b['bottom'])")
+        assert result == [18.2, 748.8]
 
 
-def test_tool_returns_nested_dataclass(configure_pooled_interpreter):
+def test_tool_returns_nested_dataclass():
     """Nested dataclass instances should be recursively converted to dicts."""
 
     def get_table() -> _PageTable:
         return _PageTable(index=0, bbox=_BBox(x0=1.0, top=2.0, x1=3.0, bottom=4.0), strategy="lines")
 
-    sandbox = configure_pooled_interpreter(tools={"get_table": get_table})
-    result = sandbox.execute("t = get_table()\n(t['bbox']['x0'], t['strategy'])")
-    assert result == [1.0, "lines"]
+    with PythonInterpreter(tools={"get_table": get_table}) as sandbox:
+        result = sandbox.execute("t = get_table()\n(t['bbox']['x0'], t['strategy'])")
+        assert result == [1.0, "lines"]
 
 
-def test_tool_returns_list_of_dataclasses(configure_pooled_interpreter):
+def test_tool_returns_list_of_dataclasses():
     """Lists of dataclass instances should round-trip as lists of dicts."""
 
     def get_tables() -> list[_PageTable]:
@@ -1061,9 +795,9 @@ def test_tool_returns_list_of_dataclasses(configure_pooled_interpreter):
             _PageTable(index=1, bbox=_BBox(x0=5.0, top=6.0, x1=7.0, bottom=8.0), strategy="text"),
         ]
 
-    sandbox = configure_pooled_interpreter(tools={"get_tables": get_tables})
-    result = sandbox.execute("ts = get_tables()\n[t['index'] for t in ts]")
-    assert result == [0, 1]
+    with PythonInterpreter(tools={"get_tables": get_tables}) as sandbox:
+        result = sandbox.execute("ts = get_tables()\n[t['index'] for t in ts]")
+        assert result == [0, 1]
 
 
 # -- namedtuple tool returns -------------------------------------------------
@@ -1075,33 +809,36 @@ class _TypedPoint(NamedTuple):
     label: str
 
 
+from collections import namedtuple
+
 _Point = namedtuple("_Point", ["x", "y"])
 
 
-def test_tool_returns_typing_namedtuple(configure_pooled_interpreter):
+def test_tool_returns_typing_namedtuple():
     """typing.NamedTuple instances should arrive as dicts."""
 
     def get_point() -> _TypedPoint:
         return _TypedPoint(x=10.5, y=20.3, label="origin")
 
-    sandbox = configure_pooled_interpreter(tools={"get_point": get_point})
-    result = sandbox.execute("p = get_point()\n(p['x'], p['label'])")
-    assert result == [10.5, "origin"]
+    with PythonInterpreter(tools={"get_point": get_point}) as sandbox:
+        result = sandbox.execute("p = get_point()\n(p['x'], p['label'])")
+        assert result == [10.5, "origin"]
 
 
-def test_tool_returns_collections_namedtuple(configure_pooled_interpreter):
+def test_tool_returns_collections_namedtuple():
     """collections.namedtuple instances should arrive as dicts."""
 
     def get_point() -> _Point:
         return _Point(x=3.0, y=4.0)
 
-    sandbox = configure_pooled_interpreter(tools={"get_point": get_point})
-    result = sandbox.execute("p = get_point()\np['x'] + p['y']")
-    assert result == 7.0
+    with PythonInterpreter(tools={"get_point": get_point}) as sandbox:
+        result = sandbox.execute("p = get_point()\np['x'] + p['y']")
+        assert result == 7.0
 
 
-def test_tool_returns_dataclass_with_unserializable_field_falls_back(configure_pooled_interpreter):
+def test_tool_returns_dataclass_with_unserializable_field_falls_back():
     """Dataclass with non-serializable fields should fall back to str() gracefully."""
+    import threading
 
     @dataclasses.dataclass
     class _Holder:
@@ -1111,9 +848,9 @@ def test_tool_returns_dataclass_with_unserializable_field_falls_back(configure_p
     def get_holder() -> _Holder:
         return _Holder(name="test", lock=threading.Lock())
 
-    sandbox = configure_pooled_interpreter(tools={"get_holder": get_holder})
-    result = sandbox.execute("h = get_holder()\ntype(h).__name__")
-    assert result == "str"
+    with PythonInterpreter(tools={"get_holder": get_holder}) as sandbox:
+        result = sandbox.execute("h = get_holder()\ntype(h).__name__")
+        assert result == "str"
 
 
 # =============================================================================
@@ -1121,7 +858,7 @@ def test_tool_returns_dataclass_with_unserializable_field_falls_back(configure_p
 # =============================================================================
 
 
-def test_submit_with_typed_signature(configure_pooled_interpreter):
+def test_submit_with_typed_signature():
     """Test SUBMIT with typed output signature."""
 
     output_fields = [
@@ -1129,14 +866,14 @@ def test_submit_with_typed_signature(configure_pooled_interpreter):
         {"name": "confidence", "type": "float"},
     ]
 
-    sandbox = configure_pooled_interpreter(output_fields=output_fields)
-    result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
 
-    assert isinstance(result, FinalOutput)
-    assert result.output == {"answer": "the answer", "confidence": 0.95}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_submit_positional_args(configure_pooled_interpreter):
+def test_submit_positional_args():
     """Test SUBMIT with positional arguments."""
 
     output_fields = [
@@ -1144,14 +881,14 @@ def test_submit_positional_args(configure_pooled_interpreter):
         {"name": "confidence", "type": "float"},
     ]
 
-    sandbox = configure_pooled_interpreter(output_fields=output_fields)
-    result = sandbox.execute('SUBMIT("the answer", 0.95)')
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('SUBMIT("the answer", 0.95)')
 
-    assert isinstance(result, FinalOutput)
-    assert result.output == {"answer": "the answer", "confidence": 0.95}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_submit_multi_output(configure_pooled_interpreter):
+def test_submit_multi_output():
     """Test SUBMIT with multiple output fields using positional args."""
 
     output_fields = [
@@ -1159,20 +896,20 @@ def test_submit_multi_output(configure_pooled_interpreter):
         {"name": "score", "type": "int"},
     ]
 
-    sandbox = configure_pooled_interpreter(output_fields=output_fields)
-    # Positional args: values mapped to output fields in order
-    code = """
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        # Positional args: values mapped to output fields in order
+        code = """
 a = "my answer"
 s = 42
 SUBMIT(a, s)
 """
-    result = sandbox.execute(code)
+        result = sandbox.execute(code)
 
-    assert isinstance(result, FinalOutput)
-    assert result.output == {"answer": "my answer", "score": 42}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "my answer", "score": 42}
 
 
-def test_submit_wrong_arg_count(configure_pooled_interpreter):
+def test_submit_wrong_arg_count():
     """Test SUBMIT with wrong number of args gives clear error."""
 
     output_fields = [
@@ -1180,10 +917,10 @@ def test_submit_wrong_arg_count(configure_pooled_interpreter):
         {"name": "score", "type": "int"},
     ]
 
-    sandbox = configure_pooled_interpreter(output_fields=output_fields)
-    with pytest.raises(CodeInterpreterError) as exc_info:
-        sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
-    assert "missing 1 required positional argument" in str(exc_info.value)
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        with pytest.raises(CodeInterpreterError) as exc_info:
+            sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
+        assert "missing 1 required positional argument" in str(exc_info.value)
 
 
 def test_extract_parameters():
@@ -1221,79 +958,89 @@ def test_extract_parameters_complex_types():
 # =============================================================================
 
 
-def test_large_variable_injection(pooled_interpreter):
+def test_large_variable_injection():
     """Test that large strings are injected via filesystem to avoid Pyodide's FFI size limit."""
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     # Create a string just over the threshold
     large_data = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
-    interpreter = pooled_interpreter
-    result = interpreter.execute("len(data)", variables={"data": large_data})
-    assert result == len(large_data), "Large variable should be correctly injected and accessible"
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("len(data)", variables={"data": large_data})
+        assert result == len(large_data), "Large variable should be correctly injected and accessible"
 
 
-def test_large_variable_content_integrity(pooled_interpreter):
+def test_large_variable_content_integrity():
     """Test that large variable content is preserved exactly through filesystem injection."""
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     # Create a string with recognizable pattern just over threshold
     pattern = "ABCDEFGHIJ" * 100
     large_data = pattern * ((LARGE_VAR_THRESHOLD // len(pattern)) + 1)
 
-    interpreter = pooled_interpreter
-    # Check first and last parts to verify content integrity
-    code = """
+    with PythonInterpreter() as interpreter:
+        # Check first and last parts to verify content integrity
+        code = """
 first_100 = data[:100]
 last_100 = data[-100:]
 (first_100, last_100)
 """
-    result = interpreter.execute(code, variables={"data": large_data})
-    assert result[0] == large_data[:100], "First 100 chars should match"
-    assert result[1] == large_data[-100:], "Last 100 chars should match"
+        result = interpreter.execute(code, variables={"data": large_data})
+        assert result[0] == large_data[:100], "First 100 chars should match"
+        assert result[1] == large_data[-100:], "Last 100 chars should match"
 
 
-def test_mixed_small_and_large_variables(pooled_interpreter):
+def test_mixed_small_and_large_variables():
     """Test that small and large variables can be used together."""
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     small_var = "hello"
     large_var = "x" * (LARGE_VAR_THRESHOLD + 1024)
 
-    interpreter = pooled_interpreter
-    code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
-    result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
-    expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
-    assert result == expected, "Both small and large variables should work together"
+    with PythonInterpreter() as interpreter:
+        code = "f'{small} has {len(small)} chars, large has {len(large)} chars'"
+        result = interpreter.execute(code, variables={"small": small_var, "large": large_var})
+        expected = f"{small_var} has {len(small_var)} chars, large has {len(large_var)} chars"
+        assert result == expected, "Both small and large variables should work together"
 
 
-def test_multiple_large_variables(pooled_interpreter):
+def test_multiple_large_variables():
     """Test that multiple large variables can be injected."""
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     large_a = "a" * (LARGE_VAR_THRESHOLD + 100)
     large_b = "b" * (LARGE_VAR_THRESHOLD + 200)
 
-    interpreter = pooled_interpreter
-    code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
-    result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
-    assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
+    with PythonInterpreter() as interpreter:
+        code = "(len(var_a), len(var_b), var_a[0], var_b[0])"
+        result = interpreter.execute(code, variables={"var_a": large_a, "var_b": large_b})
+        assert result == [len(large_a), len(large_b), "a", "b"], "Multiple large variables should work"
 
 
-def test_large_list_variable(pooled_interpreter):
+def test_large_list_variable():
     """Test that large list variables are injected via filesystem and JSON parsed."""
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     # Each element "x" serializes to ~3 chars, so divide threshold by 3
     num_elements = LARGE_VAR_THRESHOLD // 3
     large_list = ["x"] * num_elements
 
-    interpreter = pooled_interpreter
-    code = "(len(data), data[0], data[-1], type(data).__name__)"
-    result = interpreter.execute(code, variables={"data": large_list})
-    assert result == [num_elements, "x", "x", "list"]
+    with PythonInterpreter() as interpreter:
+        code = "(len(data), data[0], data[-1], type(data).__name__)"
+        result = interpreter.execute(code, variables={"data": large_list})
+        assert result == [num_elements, "x", "x", "list"]
 
 
-def test_nested_sets_and_tuples(pooled_interpreter):
+def test_nested_sets_and_tuples():
     """Test that nested structures with sets and tuples are converted to JSON-compatible types."""
     complex_data = {"tags": {1, 2, 3}, "coords": (10, 20), "nested": [{"inner_set": {"a", "b"}}]}
 
-    interpreter = pooled_interpreter
-    result = interpreter.execute("data", variables={"data": complex_data})
-    # Sets become sorted lists, tuples become lists
-    assert result["tags"] == [1, 2, 3]
-    assert result["coords"] == [10, 20]
-    assert result["nested"][0]["inner_set"] == ["a", "b"]
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("data", variables={"data": complex_data})
+        # Sets become sorted lists, tuples become lists
+        assert result["tags"] == [1, 2, 3]
+        assert result["coords"] == [10, 20]
+        assert result["nested"][0]["inner_set"] == ["a", "b"]
 
 
 def test_small_variable_not_using_filesystem():
@@ -1313,6 +1060,8 @@ def test_large_variable_threshold_boundary():
     The threshold applies to the serialized size, not the original value.
     For strings, serialization adds 2 bytes (quotes).
     """
+    from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD
+
     # Serialized size at threshold - should use embedded (not filesystem)
     # Account for 2 bytes of quotes added by repr()
     at_threshold = "x" * (LARGE_VAR_THRESHOLD - 2)
@@ -1384,96 +1133,3 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
-
-
-def test_system_exit_is_recoverable_and_session_stays_synced(pooled_interpreter):
-    """Regression test for #10165: the unhandled Deno rejection accompanying
-    SystemExit must not be consumed as the response, desyncing later requests."""
-    interpreter = pooled_interpreter
-    with pytest.raises(CodeExecutionError, match="SystemExit"):
-        interpreter.execute("import sys\nsys.exit(0)")
-
-    assert interpreter.execute("print('still alive')") == "still alive\n"
-
-
-def test_keyboard_interrupt_is_recoverable_and_session_stays_synced(pooled_interpreter):
-    """KeyboardInterrupt takes the same asyncio re-raise path as SystemExit (#10165)."""
-    interpreter = pooled_interpreter
-    with pytest.raises(CodeExecutionError, match="KeyboardInterrupt"):
-        interpreter.execute("raise KeyboardInterrupt('stop')")
-
-    assert interpreter.execute("print('still alive')") == "still alive\n"
-
-
-def test_base_exception_subclasses_are_recoverable_and_session_stays_synced(pooled_interpreter):
-    """Subclasses of SystemExit/KeyboardInterrupt take the same re-raise path (#10165)."""
-    interpreter = pooled_interpreter
-    for code, error_type in [
-        ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
-        ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
-    ]:
-        with pytest.raises(CodeExecutionError, match=error_type):
-            interpreter.execute(code)
-        assert interpreter.execute("print('still alive')") == "still alive\n"
-
-
-def test_out_of_band_messages_are_skipped_not_consumed_as_responses():
-    """Notifications and unsolicited id-less errors are diagnostics, not responses (#10165)."""
-    interpreter = PythonInterpreter()
-
-    notification = {"jsonrpc": "2.0", "method": "unhandled_error", "params": {"message": "boom"}}
-    assert interpreter._handle_out_of_band_message(notification, "during test")
-    assert interpreter._last_diagnostic == "boom"
-
-    unsolicited_error = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "crash"}, "id": None}
-    assert interpreter._handle_out_of_band_message(unsolicited_error, "during test")
-    assert interpreter._last_diagnostic == "crash"
-
-    # Real responses (success or error, with an id) must not be consumed.
-    result = {"jsonrpc": "2.0", "result": {"output": "2\n"}, "id": 1}
-    assert not interpreter._handle_out_of_band_message(result, "during test")
-    error_response = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "boom"}, "id": 1}
-    assert not interpreter._handle_out_of_band_message(error_response, "during test")
-
-
-def test_id_less_protocol_errors_are_terminal():
-    """ParseError/InvalidRequest mean the sandbox never read the request, so no
-    response will follow; waiting for one would block forever (#10165)."""
-    interpreter = PythonInterpreter()
-    parse_error = {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Invalid JSON input"}, "id": None}
-    with pytest.raises(CodeInterpreterError, match="Protocol error"):
-        interpreter._handle_out_of_band_message(parse_error, "during test")
-
-
-def test_unsolicited_error_line_is_not_consumed_as_the_response():
-    """#10165: an id-less async error arriving ahead of the real response (the
-    wire trace an unhandled rejection produces) must not be mistaken for it."""
-
-    class FakeDeno:
-        def __init__(self, lines):
-            self.stdin = io.StringIO()
-            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
-            self.stderr = io.StringIO()
-
-        def poll(self):
-            return None
-
-    interpreter = PythonInterpreter()
-    interpreter.deno_process = FakeDeno([
-        json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
-        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": 1}),
-    ])
-    assert interpreter.execute("print('ok')") == "ok\n"
-
-
-def test_base_exceptions_do_not_desync_interpreter():
-    with PythonInterpreter() as interpreter:
-        for code, error_type in [
-            ("import sys\nsys.exit(0)", "SystemExit"),
-            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
-            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
-            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
-        ]:
-            with pytest.raises(CodeExecutionError, match=error_type):
-                interpreter.execute(code)
-            assert interpreter.execute("print('still alive')") == "still alive\n"

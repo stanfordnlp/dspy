@@ -13,10 +13,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   dependency-range:
     name: Dependencies (${{ matrix.profile }})
@@ -41,6 +37,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Deno
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: v2.7.7
+
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
@@ -57,7 +58,6 @@ jobs:
           RESOLUTION: ${{ matrix.resolution }}
         run: |
           uv pip compile pyproject.toml \
-            --extra deno \
             --extra dev \
             --extra test_extras \
             --resolution "$RESOLUTION" \
@@ -78,15 +78,13 @@ jobs:
 
           uv pip check --python .venv/bin/python
           uv pip list --python .venv/bin/python
-          uv run --frozen --no-sync --python .venv/bin/python python -c \
-            'import deno, subprocess; subprocess.run([deno.find_deno_bin(), "--version"], check=True)'
 
       - name: Run non-live tests
         env:
           PROFILE: ${{ matrix.profile }}
         run: |
           set +e
-          uv run --frozen --no-sync pytest -q -n auto --dist worksteal tests/ --extra --deno 2>&1 \
+          uv run --frozen --no-sync pytest -q tests/ --extra --deno 2>&1 \
             | tee "$RUNNER_TEMP/pytest-$PROFILE.log"
           TEST_STATUS=${PIPESTATUS[0]}
           set -e
