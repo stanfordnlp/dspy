@@ -842,7 +842,7 @@ def test_gepa_forwards_v014_args_to_gepa_optimize(monkeypatch):
 
 
 def test_gepa_max_reflection_cost_requires_reflection_lm():
-    with pytest.raises(AssertionError, match="max_reflection_cost"):
+    with pytest.raises(ValueError, match="max_reflection_cost"):
         dspy.GEPA(
             metric=simple_metric,
             max_metric_calls=5,

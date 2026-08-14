@@ -457,10 +457,8 @@ class GEPA(Teleprompter):
             "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
         )
 
-        if max_reflection_cost is not None:
-            assert reflection_lm is not None, (
-                "max_reflection_cost requires reflection_lm to be set, so GEPA can track reflection spend."
-            )
+        if max_reflection_cost is not None and reflection_lm is None:
+            raise ValueError("max_reflection_cost requires reflection_lm to be set, so GEPA can track reflection spend.")
         self.sampling_strategy = sampling_strategy
         self.selection_strategy = selection_strategy
         self.acceptance_criterion = acceptance_criterion
