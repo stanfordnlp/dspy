@@ -132,11 +132,11 @@ class Evaluate:
         num_threads: int | None = None,
         display_progress: bool | None = None,
         display_table: bool | int | None = None,
-        timeout: int | None = None,
-        straggler_limit: int | None = None,
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -150,6 +150,8 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            save_as_csv (Optional[str]): The file name where the csv will be saved.
+            save_as_json (Optional[str]): The file name where the json will be saved.
             timeout (Optional[int]): Seconds a task may run before it is considered a straggler and
                 resubmitted (default ``120`` in ``ParallelExecutor``). Set to ``0`` to disable
                 straggler resubmission entirely, recommended for long evals where individual items
