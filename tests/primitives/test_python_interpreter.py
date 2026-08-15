@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import io
 import json
+import math
 import os
 import random
 import shutil
@@ -144,6 +145,61 @@ def test_submit_with_list(pooled_interpreter):
     assert isinstance(result, FinalOutput)
     # SUBMIT now always returns a dict with "output" key for single-output default
     assert result.output == {"output": ["The result is", token]}
+
+
+def test_submit_big_int_round_trip(pooled_interpreter):
+    """Regression test: SUBMIT payloads with ints beyond 2**53 must not be rounded.
+
+    The payload previously crossed the boundary through JS JSON.parse, which
+    represents all numbers as float64, silently corrupting larger ints.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT(2**60 + 1)")
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"output": 2**60 + 1}
+
+
+def test_submit_non_finite_floats(pooled_interpreter):
+    """Regression test: SUBMIT with nan/inf must not crash execution.
+
+    Python json serializes the payload with bare NaN/Infinity literals, which
+    JS JSON.parse rejects, so SUBMIT(float("nan")) previously raised
+    CodeExecutionError instead of returning the value.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT(float('nan'))")
+    assert isinstance(result, FinalOutput)
+    assert math.isnan(result.output["output"])
+
+    result = interpreter.execute("SUBMIT({'value': float('inf')})")
+    assert isinstance(result, FinalOutput)
+    assert result.output["output"] == {"value": float("inf")}
+
+
+def test_submit_set_round_trip(pooled_interpreter):
+    """Regression test: SUBMIT with a set must not crash, and must follow the
+    same set-to-sorted-list convention as variable injection.
+
+    The payload was previously serialized with a plain json.dumps, which raises
+    TypeError on sets, crashing the execution.
+    """
+    interpreter = pooled_interpreter
+    result = interpreter.execute("SUBMIT({3, 1, 2})")
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"output": [1, 2, 3]}
+
+
+def test_submit_circular_payload_raises_cleanly(pooled_interpreter):
+    """Regression test: a circular SUBMIT payload must raise a structured error.
+
+    json.dumps raises ValueError on circular references, which previously
+    escaped as an unhandled async rejection and terminated the Deno session.
+    """
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="not JSON-serializable"):
+        interpreter.execute("x = []\nx.append(x)\nSUBMIT(x)")
+    # The session must survive the failed SUBMIT.
+    assert interpreter.execute("1 + 1") == 2
 
 
 def test_enable_env_vars_flag():
