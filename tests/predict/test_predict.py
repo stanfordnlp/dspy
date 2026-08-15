@@ -1780,3 +1780,40 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_typeddict_type_validation(caplog):
+    """TypedDict-annotated inputs must validate instead of crashing (#10214)."""
+    log_test_helper()
+
+    from typing import TypedDict
+
+    class EmailRecord(TypedDict):
+        subject: str
+        sender_email: str
+
+    class TypedDictSignature(dspy.Signature):
+        email: EmailRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(TypedDictSignature)
+    lm = DummyLM([{"result": "test output 1"}, {"result": "test output 2"}, {"result": "test output 3"}])
+    dspy.configure(lm=lm)
+
+    # Valid dict: no crash, no warning
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": "hi", "sender_email": "a@b.c"})
+    assert "Type mismatch" not in caplog.text
+
+    # Missing required key warns rather than passing silently
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": "hi"})
+    assert "Type mismatch for field 'email'" in caplog.text
+
+    # Non-dict value warns
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email="not a dict")
+    assert "Type mismatch for field 'email'" in caplog.text
