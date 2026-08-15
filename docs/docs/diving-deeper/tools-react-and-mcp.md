@@ -40,6 +40,8 @@ ReAct registers an extra `finish` tool — a no-arg callable — and the loop ex
 
 A raised exception from a tool is caught inside `forward` and recorded as `observation_i = "Execution error in <tool>: <traceback>"`. The LM sees the error text on the next iteration and can react to it. Surfacing failures into the LM’s reasoning loop, rather than terminating the program, is the default an agent expects — the model is supposed to recover.
 
+The same principle covers malformed LM responses: when the reasoning step cannot be parsed (an `AdapterParseError`, e.g. the model emits a `tool_args` header instead of `next_tool_args`), ReAct records the step with the fields that did parse (placeholders for the rest) plus an `observation_i` describing the expected vs. found fields, and continues — so a parse-failure step still contributes the usual four trajectory keys. If the final extraction step itself fails to parse, it is retried once with that feedback appended to the prompt before the error is surfaced.
+
 ### 9. A separate extractor module produces the declared outputs
 
 After the loop ends, ReAct hands the trajectory to a `dspy.ChainOfThought` over a fallback signature that includes the original output fields plus a `trajectory` input. The extractor’s job is to read the trajectory and produce the signature’s declared outputs in their correct types. Decoupling navigation (the loop) from extraction (the typed answer) makes both halves easier to optimize and easier to debug.
