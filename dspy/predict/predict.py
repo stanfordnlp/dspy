@@ -1,5 +1,6 @@
 import logging
 import random
+import sys
 import types
 from typing import Any, Literal, Union, get_args, get_origin, get_type_hints, is_typeddict
 
@@ -321,6 +322,25 @@ def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     return _check_type(value, expected)
 
 
+def _resolvable_member_hints(typed_dict: type) -> dict[str, Any]:
+    """Resolve the members of a TypedDict that can be resolved, and skip the rest.
+
+    get_type_hints is all or nothing: a single member naming a type that is not
+    importable from the definition site raises, and the annotations of every other
+    member are lost with it. Each member is resolved on its own here so an
+    unresolvable one costs only its own check.
+    """
+    namespace = getattr(sys.modules.get(typed_dict.__module__), "__dict__", {})
+    hints: dict[str, Any] = {}
+    for key, annotation in getattr(typed_dict, "__annotations__", {}).items():
+        holder = type("_Member", (), {"__annotations__": {key: annotation}})
+        try:
+            hints[key] = get_type_hints(holder, namespace)[key]
+        except Exception:
+            continue
+    return hints
+
+
 def _check_type(value: Any, expected: type) -> bool:
     """Stdlib replacement for typeguard.check_type."""
     if expected is Any:
@@ -342,12 +362,11 @@ def _check_type(value: Any, expected: type) -> bool:
         try:
             hints = get_type_hints(expected)
         except (NameError, TypeError):
-            # A forward reference that does not resolve from here, or a member
-            # annotated with something that is not a type. The keys have already
-            # been checked above without needing resolution, so report on the
-            # shape rather than raising out of a type check and ending the
-            # prediction, which is the crash this function exists to avoid.
-            return True
+            # One member with an unresolvable forward reference makes get_type_hints
+            # raise for the whole TypedDict. Resolving member by member keeps the
+            # rest checkable, so a sibling with the wrong value type is still
+            # reported instead of the unresolvable member excusing the payload.
+            hints = _resolvable_member_hints(expected)
         return all(_check_type(item, hints[key]) for key, item in value.items() if key in hints)
 
     # Union / Optional (X | None)

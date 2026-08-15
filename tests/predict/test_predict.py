@@ -1886,3 +1886,35 @@ def test_typeddict_unresolvable_forward_reference(caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(payload={"unknown_key": 1})
     assert "Type mismatch for field 'payload'" in caplog.text
+
+
+def test_typeddict_unresolvable_member_does_not_excuse_its_siblings(caplog):
+    """One unresolvable member must not suppress a mismatch on a resolvable one."""
+    log_test_helper()
+
+    from typing import TypedDict
+
+    class Mixed(TypedDict):
+        # get_type_hints raises for the whole class because of this member alone.
+        opaque: "StillNoSuchType"
+        # This one resolves perfectly well and must still be checked.
+        count: int
+
+    class MixedSignature(dspy.Signature):
+        payload: Mixed = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(MixedSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"opaque": object(), "count": 3})
+    assert "Type mismatch" not in caplog.text
+
+    # count is a str where the annotation says int. The unresolvable sibling must not
+    # turn this into a whole-payload pass.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"opaque": object(), "count": "three"})
+    assert "Type mismatch for field 'payload'" in caplog.text
