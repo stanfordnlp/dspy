@@ -2,6 +2,7 @@ import asyncio
 import copy
 import enum
 import logging
+import sys
 import time
 import types
 from datetime import datetime
@@ -1786,7 +1787,7 @@ def test_typeddict_type_validation(caplog):
     """TypedDict-annotated inputs must validate instead of crashing (#10214)."""
     log_test_helper()
 
-    from typing import TypedDict
+    from typing_extensions import TypedDict
 
     class EmailRecord(TypedDict):
         subject: str
@@ -1829,7 +1830,7 @@ def test_typeddict_optional_members(caplog):
     """NotRequired members may be absent, but must type-check when present."""
     log_test_helper()
 
-    from typing import NotRequired, TypedDict
+    from typing_extensions import NotRequired, TypedDict
 
     class Profile(TypedDict):
         name: str
@@ -1862,7 +1863,7 @@ def test_typeddict_unresolvable_forward_reference(caplog):
     """An annotation that cannot be resolved must not end the prediction (#10215 review)."""
     log_test_helper()
 
-    from typing import TypedDict
+    from typing_extensions import TypedDict
 
     class Unresolvable(TypedDict):
         # A forward reference to a name that does not exist anywhere. get_type_hints
@@ -1892,7 +1893,7 @@ def test_typeddict_unresolvable_member_does_not_excuse_its_siblings(caplog):
     """One unresolvable member must not suppress a mismatch on a resolvable one."""
     log_test_helper()
 
-    from typing import TypedDict
+    from typing_extensions import TypedDict
 
     class Mixed(TypedDict):
         # get_type_hints raises for the whole class because of this member alone.
@@ -1947,6 +1948,39 @@ def test_typing_extensions_typeddict_is_recognised(caplog):
     assert "Type mismatch" not in caplog.text
 
     # And it must actually be validated, not merely survive.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(record={"sender": "arthi", "count": "two"})
+    assert "Type mismatch for field 'record'" in caplog.text
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="pydantic rejects typing.TypedDict below 3.12 and asks for typing_extensions instead",
+)
+def test_stdlib_typeddict_is_recognised(caplog):
+    """The typing.TypedDict path still needs cover on the versions that allow it."""
+    log_test_helper()
+
+    from typing import TypedDict as StdTypedDict
+
+    class StdRecord(StdTypedDict):
+        sender: str
+        count: int
+
+    class StdSignature(dspy.Signature):
+        record: StdRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(StdSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(record={"sender": "arthi", "count": 2})
+    assert prediction.result == "ok"
+    assert "Type mismatch" not in caplog.text
+
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(record={"sender": "arthi", "count": "two"})
