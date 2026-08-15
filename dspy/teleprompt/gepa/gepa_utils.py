@@ -299,6 +299,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 example = data["example"]
                 prediction = data["prediction"]
                 module_score = data["score"]
+                module_feedback = module_score.get("feedback") if hasattr(module_score, "feedback") else None
                 if hasattr(module_score, "score"):
                     module_score = module_score["score"]
 
@@ -385,6 +386,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             )
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
+                        d["Feedback"] = (
+                            module_feedback
+                            if module_feedback is not None
+                            else f"This trajectory got a score of {module_score}."
+                        )
 
                 items.append(d)
 
@@ -415,4 +421,3 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 raise TypeError("Unexpected output type from the base LM! Expected str or dict")
 
         return outputs
-
