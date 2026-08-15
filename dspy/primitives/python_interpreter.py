@@ -809,6 +809,10 @@ class PythonInterpreter:
                 # Check for SUBMIT (encoded as success with "final" field)
                 if "final" in result:
                     return FinalOutput(result["final"])
+                if "output_json" in result:
+                    # Results serialized with Python json inside the sandbox, so
+                    # big ints, nan/inf, and sets survive the JS boundary.
+                    return json.loads(result["output_json"])
                 return result.get("output", None)
 
             # Handle error response

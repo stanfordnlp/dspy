@@ -28,6 +28,20 @@ class FinalOutput(BaseException):
 if 'SUBMIT' not in dir():
     def SUBMIT(output):
         raise FinalOutput({"output": output})
+
+def _dspy_serialize_result(value):
+    # Serialize the result with Python json so values that are valid Python but
+    # not JS-JSON-safe (ints beyond 2**53, nan/inf, sets) survive the trip back
+    # to the host, which parses with Python json.loads.
+    def _default(o):
+        if isinstance(o, (set, frozenset)):
+            # Match the host-side injection convention: sets become sorted lists.
+            try:
+                return sorted(o)
+            except TypeError:
+                return list(o)
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+    return json.dumps(value, default=_default)
 `;
 
 // Generate a tool wrapper function with typed signature.
@@ -342,8 +356,30 @@ while (true) {
       const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
 
       // If result is None, output prints; otherwise output the result
-      let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
-      console.log(jsonrpcResult({ output }, requestId));
+      if (result === null || result === undefined) {
+        console.log(jsonrpcResult({ output: capturedStdout }, requestId));
+      } else {
+        // Serialize the result on the Python side so values that are valid
+        // Python but not JS-JSON-safe (ints beyond 2**53 become BigInt and make
+        // JSON.stringify throw; sets stringify as {}; nan/inf become null)
+        // survive the trip back to the host intact.
+        let serialized = null;
+        try {
+          pyodide.globals.set("_dspy_last_result", result);
+          serialized = pyodide.runPython("_dspy_serialize_result(_dspy_last_result)");
+        } catch (e) {
+          serialized = null;  // not Python-JSON-serializable; use legacy path below
+        } finally {
+          pyodide.globals.delete("_dspy_last_result");
+        }
+        if (serialized !== null) {
+          console.log(jsonrpcResult({ output_json: serialized }, requestId));
+        } else {
+          const output = result.toJs?.() ?? result;
+          console.log(jsonrpcResult({ output }, requestId));
+        }
+        if (result?.destroy) result.destroy();
+      }
     } catch (error) {
       // We have an error => check if it's a SyntaxError or something else
       // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
