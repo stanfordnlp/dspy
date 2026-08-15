@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -336,9 +337,9 @@ class PythonInterpreter:
 
         self.deno_process = None
         self._mounted_files = False
-        self._request_id = 0
         self._last_diagnostic: str | None = None
         self._owner_thread: int | None = None
+        self._handling_tool_call = False
         self._pending_large_vars = {}
         self._session_ended = False
 
@@ -503,7 +504,11 @@ class PythonInterpreter:
         kwargs = params.get("kwargs", {})
 
         try:
-            result = self.invoke_tool(tool_name, kwargs)
+            self._handling_tool_call = True
+            try:
+                result = self.invoke_tool(tool_name, kwargs)
+            finally:
+                self._handling_tool_call = False
             result = _make_jsonable(result)
             if result is None or isinstance(result, str):
                 response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
@@ -594,10 +599,9 @@ class PythonInterpreter:
             logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
             return None
 
-    def _next_request_id(self) -> int:
-        self._request_id += 1
+    def _next_request_id(self) -> str:
         self._last_diagnostic = None
-        return self._request_id
+        return secrets.token_hex(16)
 
     def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
         """Consume a message that is not a response to any request (a notification
@@ -760,6 +764,8 @@ class PythonInterpreter:
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
+        if self._handling_tool_call:
+            raise CodeInterpreterError("PythonInterpreter cannot execute recursively from one of its tools.")
         self._check_session_active()
         self._check_thread_ownership()
         variables = variables or {}
