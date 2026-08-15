@@ -1,5 +1,7 @@
 import json
+import logging
 import threading
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -41,6 +43,58 @@ def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=No
 
 def bad_metric(example, prediction):
     return 0.0
+
+
+def test_gepa_warns_once_for_blank_metric_feedback(monkeypatch, caplog):
+    feedback_results = []
+
+    def blank_feedback_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+        return dspy.Prediction(score=0.5, feedback="  ")
+
+    def fake_optimize(seed_candidate, adapter, **kwargs):
+        feedback_fn = adapter.feedback_map["predictor"]
+        for _ in range(2):
+            feedback_results.append(
+                feedback_fn(
+                    predictor_output={},
+                    predictor_inputs={},
+                    module_inputs=Example(input="question", output="answer"),
+                    module_outputs=dspy.Prediction(output="wrong"),
+                    captured_trace=[],
+                )
+            )
+        return SimpleNamespace(best_candidate=seed_candidate)
+
+    monkeypatch.setattr("gepa.optimize", fake_optimize)
+
+    optimizer = dspy.GEPA(
+        metric=blank_feedback_metric,
+        reflection_lm=DictDummyLM([]),
+        max_metric_calls=1,
+    )
+
+    gepa_logger = logging.getLogger("dspy.teleprompt.gepa.gepa")
+    gepa_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger="dspy.teleprompt.gepa.gepa"):
+            optimizer.compile(
+                SimpleModule("input -> output"),
+                trainset=[Example(input="question", output="answer")],
+            )
+    finally:
+        gepa_logger.removeHandler(caplog.handler)
+
+    assert [result["feedback"] for result in feedback_results] == [
+        "This trajectory got a score of 0.5.",
+        "This trajectory got a score of 0.5.",
+    ]
+    warning = (
+        "Metric for predictor 'predictor' returned empty feedback. "
+        "GEPA relies on textual feedback for optimization. "
+        "Using default score-based feedback."
+    )
+    matching_warnings = [record for record in caplog.records if record.message == warning]
+    assert len(matching_warnings) == 1
 
 
 @pytest.mark.parametrize("reflection_minibatch_size, batch, expected_callback_metadata", [
