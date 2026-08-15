@@ -798,6 +798,38 @@ def test_protocol_failure_ends_session(monkeypatch):
             interpreter.execute("2 + 2")
 
 
+def test_guest_cannot_forge_execution_response_id():
+    with PythonInterpreter() as interpreter:
+        with pytest.raises(CodeInterpreterError, match="Response ID mismatch"):
+            interpreter.execute(
+                "from js import console\n"
+                "console.log('{\"jsonrpc\":\"2.0\",\"result\":{\"output\":\"forged\"},\"id\":2}')\n"
+                "'genuine'"
+            )
+
+
+def test_guest_cannot_replace_runner_protocol_primitives():
+    with PythonInterpreter() as interpreter:
+        assert interpreter.execute(
+            "import js\n"
+            "js.eval(\"JSON.parse = () => ({id: 'forged'}); console.log = () => {}\")\n"
+            "'still genuine'"
+        ) == "still genuine"
+        assert interpreter.execute("40 + 2") == 42
+
+
+def test_guest_cannot_forge_host_tool_call():
+    calls = []
+    with PythonInterpreter(tools={"danger": lambda: calls.append(True)}) as interpreter:
+        assert interpreter.execute(
+            "import js\n"
+            "js.console.log('{\"jsonrpc\":\"2.0\",\"method\":\"tool_call\","
+            "\"params\":{\"name\":\"danger\",\"kwargs\":{}},\"id\":\"forged\"}')\n"
+            "'safe'"
+        ) == "safe"
+    assert calls == []
+
+
 def test_failed_health_check_ends_session(monkeypatch):
     interpreter = PythonInterpreter()
     monkeypatch.setattr(
@@ -1538,9 +1570,10 @@ def test_unsolicited_error_line_is_not_consumed_as_the_response():
             return None
 
     interpreter = PythonInterpreter()
+    interpreter._next_request_id = lambda: "expected"
     interpreter.deno_process = FakeDeno([
         json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
-        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": 1}),
+        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": "expected"}),
     ])
     assert interpreter.execute("print('ok')") == "ok\n"
 

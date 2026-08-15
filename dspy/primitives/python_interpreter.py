@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -597,7 +598,7 @@ class PythonInterpreter:
     def _next_request_id(self) -> int:
         self._request_id += 1
         self._last_diagnostic = None
-        return self._request_id
+        return secrets.randbits(53)
 
     def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
         """Consume a message that is not a response to any request (a notification
@@ -789,6 +790,8 @@ class PythonInterpreter:
             # Handle incoming requests (tool calls from sandbox)
             if "method" in msg:
                 if msg["method"] == "tool_call":
+                    if not isinstance(params := msg.get("params"), dict) or params.get("exec_id") != execute_request_id:
+                        continue
                     self._handle_tool_call(msg)
                     continue
 

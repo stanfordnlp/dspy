@@ -3,6 +3,9 @@
 import pyodideModule from "npm:pyodide@0.29.4/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+Object.freeze(JSON); Object.freeze(console);
+const encodeProtocolMessage = (message) => JSON.stringify({ __proto__: null, ...message });
+
 // =============================================================================
 // Python Code Templates
 // =============================================================================
@@ -114,7 +117,7 @@ const JSONRPC_APP_ERRORS = {
 };
 
 const jsonrpcRequest = (method, params, id) =>
-  JSON.stringify({ jsonrpc: "2.0", method, params, id });
+  encodeProtocolMessage({ jsonrpc: "2.0", method, params, id });
 
 const jsonrpcNotification = (method, params = null) => {
   const msg = { jsonrpc: "2.0", method };
@@ -123,12 +126,12 @@ const jsonrpcNotification = (method, params = null) => {
 };
 
 const jsonrpcResult = (result, id) =>
-  JSON.stringify({ jsonrpc: "2.0", result, id });
+  encodeProtocolMessage({ jsonrpc: "2.0", result, id });
 
 const jsonrpcError = (code, message, id, data = null) => {
   const err = { code, message };
   if (data) err.data = data;
-  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
+  return encodeProtocolMessage({ jsonrpc: "2.0", error: err, id });
 };
 
 // Global handler to prevent uncaught promise rejections from crashing Deno
@@ -148,6 +151,7 @@ if (denoDir) await Deno.permissions.revoke({ name: "read", path: denoDir });
 // The stdin reader is shared so tool_call can read responses during execution
 const stdinReader = readLines(Deno.stdin);
 let requestIdCounter = 0;
+let executionRequestId = null;
 
 const TOOL_BRIDGE_ERROR_KEY = "__dspy_tool_bridge_error__";
 
@@ -161,7 +165,8 @@ async function toolCallBridge(name, argsJson) {
     // Send tool call request to host using JSON-RPC
     console.log(jsonrpcRequest("tool_call", {
       name: name,
-      kwargs: parsedArgs.kwargs || {}
+      kwargs: parsedArgs.kwargs || {},
+      exec_id: executionRequestId
     }, requestId));
 
     // Wait for response from host
@@ -329,6 +334,7 @@ while (true) {
   }
 
   if (method === "execute") {
+    executionRequestId = requestId;
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
 
