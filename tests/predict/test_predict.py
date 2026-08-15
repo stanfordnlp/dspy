@@ -1856,3 +1856,33 @@ def test_typeddict_optional_members(caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(profile={"name": "arthi", "age": "thirty"})
     assert "Type mismatch for field 'profile'" in caplog.text
+
+
+def test_typeddict_unresolvable_forward_reference(caplog):
+    """An annotation that cannot be resolved must not end the prediction (#10215 review)."""
+    log_test_helper()
+
+    from typing import TypedDict
+
+    class Unresolvable(TypedDict):
+        # A forward reference to a name that does not exist anywhere. get_type_hints
+        # raises NameError on this, and that used to propagate out of _check_type.
+        item: "NoSuchTypeAnywhere"
+
+    class UnresolvableSignature(dspy.Signature):
+        payload: Unresolvable = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(UnresolvableSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(payload={"item": 1})
+    assert prediction.result == "ok"
+
+    # The key checks still apply, because they do not need the annotation resolved.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(payload={"unknown_key": 1})
+    assert "Type mismatch for field 'payload'" in caplog.text

@@ -335,12 +335,20 @@ def _check_type(value: Any, expected: type) -> bool:
     if is_typeddict(expected):
         if not isinstance(value, dict):
             return False
-        hints = get_type_hints(expected)
         if not expected.__required_keys__ <= value.keys():
             return False
-        if not value.keys() <= hints.keys():
+        if not value.keys() <= expected.__annotations__.keys():
             return False
-        return all(_check_type(item, hints[key]) for key, item in value.items())
+        try:
+            hints = get_type_hints(expected)
+        except (NameError, TypeError):
+            # A forward reference that does not resolve from here, or a member
+            # annotated with something that is not a type. The keys have already
+            # been checked above without needing resolution, so report on the
+            # shape rather than raising out of a type check and ending the
+            # prediction, which is the crash this function exists to avoid.
+            return True
+        return all(_check_type(item, hints[key]) for key, item in value.items() if key in hints)
 
     # Union / Optional (X | None)
     if origin is Union or origin is types.UnionType:
