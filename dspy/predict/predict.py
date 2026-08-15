@@ -1,7 +1,7 @@
 import logging
 import random
 import types
-from typing import Any, Literal, Union, get_args, get_origin, is_typeddict
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints, is_typeddict
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
@@ -330,11 +330,17 @@ def _check_type(value: Any, expected: type) -> bool:
     args = get_args(expected)
 
     # TypedDict: typing forbids isinstance checks against it, so validate the
-    # shape directly. Downstream pydantic serialization handles the values.
+    # shape directly: required keys must be present, no unknown keys, and each
+    # declared member checked against its own annotation.
     if is_typeddict(expected):
         if not isinstance(value, dict):
             return False
-        return expected.__required_keys__ <= value.keys()
+        hints = get_type_hints(expected)
+        if not expected.__required_keys__ <= value.keys():
+            return False
+        if not value.keys() <= hints.keys():
+            return False
+        return all(_check_type(item, hints[key]) for key, item in value.items())
 
     # Union / Optional (X | None)
     if origin is Union or origin is types.UnionType:

@@ -1797,7 +1797,7 @@ def test_typeddict_type_validation(caplog):
         result: str = dspy.OutputField()
 
     predict_instance = Predict(TypedDictSignature)
-    lm = DummyLM([{"result": "test output 1"}, {"result": "test output 2"}, {"result": "test output 3"}])
+    lm = DummyLM([{"result": f"test output {i}"} for i in range(6)])
     dspy.configure(lm=lm)
 
     # Valid dict: no crash, no warning
@@ -1817,3 +1817,42 @@ def test_typeddict_type_validation(caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(email="not a dict")
     assert "Type mismatch for field 'email'" in caplog.text
+
+    # A member value that contradicts its declared annotation warns
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(email={"subject": 123, "sender_email": "a@b.c"})
+    assert "Type mismatch for field 'email'" in caplog.text
+
+
+def test_typeddict_optional_members(caplog):
+    """NotRequired members may be absent, but must type-check when present."""
+    log_test_helper()
+
+    from typing import NotRequired, TypedDict
+
+    class Profile(TypedDict):
+        name: str
+        age: NotRequired[int]
+
+    class ProfileSignature(dspy.Signature):
+        profile: Profile = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(ProfileSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}, {"result": "ok"}]))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi"})
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi", "age": 30})
+    assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(profile={"name": "arthi", "age": "thirty"})
+    assert "Type mismatch for field 'profile'" in caplog.text
