@@ -57,6 +57,7 @@ def test_reset_seeds_keeps_existing_values_when_omitted():
     assert dataset.train_size == 10
     assert dataset.dev_seed == 7
     assert dataset.dev_size == 20
+    assert dataset.test_seed == 7
     assert dataset.test_size == 30
 
 
