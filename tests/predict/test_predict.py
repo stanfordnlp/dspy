@@ -1918,3 +1918,36 @@ def test_typeddict_unresolvable_member_does_not_excuse_its_siblings(caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(payload={"opaque": object(), "count": "three"})
     assert "Type mismatch for field 'payload'" in caplog.text
+
+
+def test_typing_extensions_typeddict_is_recognised(caplog):
+    """typing_extensions.TypedDict must take the TypedDict path, not the isinstance one."""
+    log_test_helper()
+
+    from typing_extensions import TypedDict as ExtTypedDict
+
+    class ExtRecord(ExtTypedDict):
+        sender: str
+        count: int
+
+    class ExtSignature(dspy.Signature):
+        record: ExtRecord = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(ExtSignature)
+    dspy.configure(lm=DummyLM([{"result": "ok"}, {"result": "ok"}, {"result": "ok"}]))
+
+    # typing.is_typeddict returns False for this class, so before the fix it reached
+    # isinstance(value, expected) and raised TypedDict does not support instance and
+    # class checks, ending the prediction.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        prediction = predict_instance(record={"sender": "arthi", "count": 2})
+    assert prediction.result == "ok"
+    assert "Type mismatch" not in caplog.text
+
+    # And it must actually be validated, not merely survive.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(record={"sender": "arthi", "count": "two"})
+    assert "Type mismatch for field 'record'" in caplog.text

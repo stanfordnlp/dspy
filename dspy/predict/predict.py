@@ -2,7 +2,18 @@ import logging
 import random
 import sys
 import types
-from typing import Any, Literal, Union, get_args, get_origin, get_type_hints, is_typeddict
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+
+try:
+    # typing.is_typeddict does not recognise classes built with
+    # typing_extensions.TypedDict, and an unrecognised one falls through to the
+    # isinstance check, which raises "TypedDict does not support instance and
+    # class checks". typing_extensions.is_typeddict recognises both flavours. It
+    # ships with pydantic, which is a hard dependency, but the import is guarded
+    # so a missing typing_extensions degrades instead of breaking imports.
+    from typing_extensions import is_typeddict
+except ImportError:
+    from typing import is_typeddict
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
