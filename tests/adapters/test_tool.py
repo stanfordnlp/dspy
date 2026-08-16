@@ -1,6 +1,7 @@
 import asyncio
-from typing import Any
+from typing import Any, ClassVar
 
+import pydantic
 import pytest
 from pydantic import BaseModel, TypeAdapter
 
@@ -766,3 +767,118 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+class TestToolCallRenderingIsKeyOrderStable:
+    """Rendered tool calls must be byte-identical for the same semantic call.
+
+    Anthropic and OpenAI key their prompt caches on an exact byte match of the rendered
+    prefix, so any path that changes key order between requests turns every subsequent
+    call into a cache miss. Python dicts are insertion-ordered and ``json.dumps``
+    preserves that, so a history built and replayed in one process is stable; the break
+    happens when it crosses a store that normalizes key order. Postgres ``jsonb`` orders
+    keys by length and then bytewise, which is what ``_jsonb_like`` imitates.
+    """
+
+    @staticmethod
+    def _jsonb_like(value):
+        if isinstance(value, dict):
+            return {
+                k: TestToolCallRenderingIsKeyOrderStable._jsonb_like(value[k])
+                for k in sorted(value, key=lambda k: (len(str(k)), str(k)))
+            }
+        if isinstance(value, list):
+            return [TestToolCallRenderingIsKeyOrderStable._jsonb_like(v) for v in value]
+        return value
+
+    ARGS: ClassVar[dict] = {"zeta": 1, "alpha": 2, "mid": 3}
+    NESTED: ClassVar[dict] = {"filter": {"zeta": 1, "alpha": 2, "mid": 3}, "q": "x"}
+
+    def _round_tripped(self, args):
+        """The same call after a store that normalizes key order has handed it back."""
+        call = ToolCalls.ToolCall(id="c1", name="search", args=args)
+        stored = ToolCalls.ToolCall.model_validate({**call.model_dump(), "args": self._jsonb_like(args)})
+        # The control: the store really did change the order, otherwise the assertions
+        # below pass for the wrong reason.
+        assert list(stored.args) != list(call.args)
+        return call, stored
+
+    def test_jsonb_like_reorders_the_fixture(self):
+        assert list(self._jsonb_like(self.ARGS)) == ["mid", "zeta", "alpha"]
+
+    def test_native_function_call_arguments_are_byte_stable(self):
+        from dspy.adapters.base import _tool_call_as_openai_message_tool_call
+
+        call, stored = self._round_tripped(self.ARGS)
+        assert (
+            _tool_call_as_openai_message_tool_call(call)["function"]["arguments"]
+            == _tool_call_as_openai_message_tool_call(stored)["function"]["arguments"]
+        )
+
+    def test_native_function_call_arguments_are_byte_stable_when_nested(self):
+        from dspy.adapters.base import _tool_call_as_openai_message_tool_call
+
+        call, stored = self._round_tripped(self.NESTED)
+        assert (
+            _tool_call_as_openai_message_tool_call(call)["function"]["arguments"]
+            == _tool_call_as_openai_message_tool_call(stored)["function"]["arguments"]
+        )
+
+    def test_dict_tool_result_is_byte_stable(self):
+        from dspy.adapters.base import _tool_result_content
+
+        result = {"zeta": 1, "alpha": 2, "mid": {"inner_b": 1, "a": 2}}
+        assert _tool_result_content(result) == _tool_result_content(self._jsonb_like(result))
+
+    def test_non_native_rendering_is_byte_stable(self):
+        """``ToolCalls`` rendered into a text field, i.e. the non-native path."""
+        from dspy.adapters.utils import format_field_value
+        from dspy.signatures.signature import make_signature
+
+        signature = make_signature("q: str -> tool_calls: ToolCalls", custom_types={"ToolCalls": ToolCalls})
+        field = signature.output_fields["tool_calls"]
+        call, stored = self._round_tripped(self.ARGS)
+        assert format_field_value(field, ToolCalls(tool_calls=[call])) == format_field_value(
+            field, ToolCalls(tool_calls=[stored])
+        )
+
+    def test_non_native_rendering_is_byte_stable_when_nested(self):
+        """A top-level-only sort passes the test above and still fails this one: the
+        non-native renderer calls ``json.dumps`` without ``sort_keys``."""
+        from dspy.adapters.utils import format_field_value
+        from dspy.signatures.signature import make_signature
+
+        signature = make_signature("q: str -> tool_calls: ToolCalls", custom_types={"ToolCalls": ToolCalls})
+        field = signature.output_fields["tool_calls"]
+        call, stored = self._round_tripped(self.NESTED)
+        assert format_field_value(field, ToolCalls(tool_calls=[call])) == format_field_value(
+            field, ToolCalls(tool_calls=[stored])
+        )
+
+    def test_format_does_not_mutate_or_drop_the_call(self):
+        """Sorting is a rendering concern. Dispatch reads ``self.args``, which is
+        untouched, and no key or value may be lost on the way through."""
+        args = {"zeta": 1, "alpha": {"b": [1, {"y": 1, "x": 2}]}, "mid": None}
+        call = ToolCalls.ToolCall(id="c1", name="search", args=args)
+        formatted = call.format()
+        assert list(call.args) == ["zeta", "alpha", "mid"]
+        assert formatted["args"] == args
+        assert formatted["name"] == "search"
+
+    def test_list_order_inside_args_is_preserved(self):
+        """Lists are data, not key order. Reordering one would change meaning."""
+        call = ToolCalls.ToolCall(id="c1", name="search", args={"xs": [3, 1, 2]})
+        assert call.format()["args"]["xs"] == [3, 1, 2]
+
+    def test_top_level_non_string_keys_are_refused_by_the_boundary(self):
+        """Not a sorting concern: ``args`` is typed ``dict[str, Any]``, so pydantic
+        refuses a non-string key before any renderer sees it."""
+        with pytest.raises(pydantic.ValidationError):
+            ToolCalls.ToolCall(id="c1", name="search", args={"a": 1, 2: "b"})
+
+    def test_nested_non_string_keys_do_not_raise(self):
+        """``Any`` values are not constrained, so a nested mapping CAN carry mixed key
+        types. Bare ``sorted`` raises TypeError on those, which is why the sort key is
+        ``str`` — this fails with ``TypeError`` if that guard is removed."""
+        call = ToolCalls.ToolCall(id="c1", name="search", args={"outer": {"a": 1, 2: "b"}})
+        assert set(call.format()["args"]["outer"]) == {"a", 2}

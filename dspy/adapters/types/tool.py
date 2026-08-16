@@ -260,6 +260,19 @@ class Tool(Type):
         return f"{self.name}{desc} {arg_desc}"
 
 
+def _sorted_json_keys(value: Any) -> Any:
+    """Recursively re-key JSON-like containers in sorted order.
+
+    Only mappings are reordered; list order is data, not key order, and is preserved.
+    Values are returned as-is, so this never coerces or drops anything.
+    """
+    if isinstance(value, dict):
+        return {key: _sorted_json_keys(value[key]) for key in sorted(value, key=str)}
+    if isinstance(value, list):
+        return [_sorted_json_keys(item) for item in value]
+    return value
+
+
 class ToolCalls(Type):
     class ToolCall(Type):
         id: str | None = None
@@ -279,7 +292,17 @@ class ToolCalls(Type):
             return schema
 
         def format(self):
-            return {"name": self.name, "args": self.args}
+            # ``args`` keys are sorted here rather than at each renderer: the order comes
+            # from the data, so it does not survive a history that round-trips through a
+            # store that normalizes key order, and every path that renders a tool call
+            # for the LM goes through this method. JSON objects are unordered by
+            # specification and tool dispatch reads ``self.args``, not this copy.
+            #
+            # The sort is RECURSIVE. The renderer on the non-native path calls
+            # ``json.dumps`` without ``sort_keys``, so a top-level-only sort still leaves
+            # a nested object inside an argument value in whatever order the store
+            # returned it.
+            return {"name": self.name, "args": _sorted_json_keys(self.args)}
 
         def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
             """Execute this individual tool call and return its result.

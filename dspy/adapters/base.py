@@ -764,7 +764,10 @@ def _tool_result_content(value: Any) -> str:
     if isinstance(value, str):
         return value
 
-    return json.dumps(serialize_for_json(value), ensure_ascii=False)
+    # sort_keys: a tool result's key order comes from the data, not from a schema, so it
+    # is not stable across a history that round-trips through a store. Both Anthropic and
+    # OpenAI key their prompt caches on an exact byte match of the rendered prefix.
+    return json.dumps(serialize_for_json(value), ensure_ascii=False, sort_keys=True)
 
 
 def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dict[str, Any]:
@@ -773,6 +776,7 @@ def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dic
         "type": "function",
         "function": {
             "name": tool_call.name,
-            "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False),
+            # sort_keys: see _tool_result_content above.
+            "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False, sort_keys=True),
         },
     }
