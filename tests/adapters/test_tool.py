@@ -882,3 +882,50 @@ class TestToolCallRenderingIsKeyOrderStable:
         ``str`` — this fails with ``TypeError`` if that guard is removed."""
         call = ToolCalls.ToolCall(id="c1", name="search", args={"outer": {"a": 1, 2: "b"}})
         assert set(call.format()["args"]["outer"]) == {"a", 2}
+
+    # ---------------------------------------------------------------- tuples
+    # A tuple is a container ``json.dumps`` renders as an array and pydantic keeps as a
+    # tuple under ``Any``, so a call can hold one on the way in and a list on the way
+    # back. Descending into lists but not tuples makes the sort itself the thing that
+    # splits the two -- these three tests fail if the tuple branch is removed, and they
+    # pass on a version of ``format`` that sorts nothing at all.
+
+    TUPLE_ARGS: ClassVar[dict] = {"payload": ({"zeta": 1, "alpha": 2},), "q": "x"}
+    TUPLE_NESTED: ClassVar[dict] = {"payload": ({"zeta": 1, "alpha": 2}, [{"q": 0, "b": 1}])}
+
+    @staticmethod
+    def _json_round_tripped(args):
+        """The same call after it has been serialized to JSON and read back.
+
+        This is the round trip a stored history really takes, and it is the one that
+        turns the tuple into a list -- the control below fails if it ever stops doing so.
+        """
+        call = ToolCalls.ToolCall(id="c1", name="search", args=args)
+        stored = ToolCalls.ToolCall.model_validate_json(call.model_dump_json())
+        assert isinstance(call.args["payload"], tuple)
+        assert isinstance(stored.args["payload"], list)
+        return call, stored
+
+    def _render(self, call):
+        from dspy.adapters.utils import format_field_value
+        from dspy.signatures.signature import make_signature
+
+        signature = make_signature("q: str -> tool_calls: ToolCalls", custom_types={"ToolCalls": ToolCalls})
+        return format_field_value(signature.output_fields["tool_calls"], ToolCalls(tool_calls=[call]))
+
+    def test_non_native_rendering_is_byte_stable_across_a_tuple_to_list_round_trip(self):
+        call, stored = self._json_round_tripped(self.TUPLE_ARGS)
+        assert self._render(call) == self._render(stored)
+
+    def test_non_native_rendering_is_byte_stable_when_a_tuple_holds_a_list(self):
+        """The recursion has to continue *through* the tuple, not merely enter it."""
+        call, stored = self._json_round_tripped(self.TUPLE_NESTED)
+        assert self._render(call) == self._render(stored)
+
+    def test_tuple_stays_a_tuple_and_keeps_its_order(self):
+        """Rendering normalizes key order only. It is not a place to change types, and
+        tuple order is data in the same way list order is."""
+        call = ToolCalls.ToolCall(id="c1", name="search", args={"xs": (3, 1, 2)})
+        formatted = call.format()["args"]["xs"]
+        assert formatted == (3, 1, 2)
+        assert isinstance(formatted, tuple)

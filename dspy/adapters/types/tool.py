@@ -263,13 +263,21 @@ class Tool(Type):
 def _sorted_json_keys(value: Any) -> Any:
     """Recursively re-key JSON-like containers in sorted order.
 
-    Only mappings are reordered; list order is data, not key order, and is preserved.
-    Values are returned as-is, so this never coerces or drops anything.
+    Only mappings are reordered; sequence order is data, not key order, and is preserved.
+    Values are returned as-is, so this never coerces or drops anything -- a tuple stays a
+    tuple even though the round trip that motivates this function turns it into a list.
+
+    ``dict``, ``list`` and ``tuple`` are exactly the containers ``json.dumps`` can emit;
+    a set raises ``TypeError`` there, so it has no rendering to stabilize. Descending into
+    a strict subset of them is worse than not descending at all: it makes the rendering
+    of two equal calls depend on which container type they happen to be carrying.
     """
     if isinstance(value, dict):
         return {key: _sorted_json_keys(value[key]) for key in sorted(value, key=str)}
     if isinstance(value, list):
         return [_sorted_json_keys(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sorted_json_keys(item) for item in value)
     return value
 
 
