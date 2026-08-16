@@ -7,6 +7,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.base import Adapter
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    apply_output_field_defaults,
     format_field_value,
     get_annotation_name,
     get_field_description_string,
@@ -242,6 +243,7 @@ class ChatAdapter(Adapter):
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
                     )
+        fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="ChatAdapter",

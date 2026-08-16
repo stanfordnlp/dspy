@@ -69,6 +69,35 @@ def test_with_signature():
     assert signature1 is not signature2, "The type should be immutable"
 
 
+def test_append_instructions():
+    class MySig(Signature):
+        """Translate to French."""
+
+        input_text: str = InputField()
+        output_text: str = OutputField()
+
+    new_sig = MySig.append_instructions("Use a formal register.")
+    assert new_sig.instructions == "Translate to French.\n\nUse a formal register."
+    assert MySig.instructions == "Translate to French.", "The original should be unchanged"
+    assert MySig is not new_sig, "The type should be immutable"
+    assert list(new_sig.input_fields.keys()) == ["input_text"]
+    assert list(new_sig.output_fields.keys()) == ["output_text"]
+
+
+def test_append_instructions_chains():
+    sig = Signature("input1 -> output1", "Base instructions.")
+    chained = sig.append_instructions("Step one.").append_instructions("Step two.")
+    assert chained.instructions == "Base instructions.\n\nStep one.\n\nStep two."
+
+
+def test_append_instructions_preserves_default_instructions():
+    sig = Signature("input1 -> output1")
+    base_instructions = sig.instructions
+    appended = sig.append_instructions("Extra detail.")
+    assert appended.instructions == f"{base_instructions}\n\nExtra detail."
+    assert sig.instructions == base_instructions, "The original should be unchanged"
+
+
 def test_with_updated_field():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_updated_fields("input1", prefix="Modified:")

@@ -9,7 +9,7 @@ sidebar_position: 998
 
 ## Is DSPy right for me? DSPy vs. other frameworks
 
-The **DSPy** philosophy and abstraction differ significantly from other libraries and frameworks, so it's usually straightforward to decide when **DSPy** is (or isn't) the right framework for your usecase. If you're a NLP/AI researcher (or a practitioner exploring new pipelines or new tasks), the answer is generally an invariable **yes**. If you're a practitioner doing other things, please read on.
+The **DSPy** philosophy and abstraction differ significantly from other libraries and frameworks, so it's usually straightforward to decide when **DSPy** is (or isn't) the right framework for your usecase. If you're an NLP/AI researcher (or a practitioner exploring new pipelines or new tasks), the answer is generally an invariable **yes**. If you're a practitioner doing other things, please read on.
 
 **DSPy vs. thin wrappers for prompts (OpenAI API, MiniChain, basic templating)** In other words: _Why can't I just write my prompts directly as string templates?_ Well, for extremely simple settings, this _might_ work just fine. (If you're familiar with neural networks, this is like expressing a tiny two-layer NN as a Python for-loop. It kinda works.) However, when you need higher quality (or manageable cost), then you need to iteratively explore multi-stage decomposition, improved prompting, data bootstrapping, careful finetuning, retrieval augmentation, and/or using smaller (or cheaper, or local) models. The true expressive power of building with foundation models lies in the interactions between these pieces. But every time you change one piece, you likely break (or weaken) multiple other components. **DSPy** cleanly abstracts away (_and_ powerfully optimizes) the parts of these interactions that are external to your actual system design. It lets you focus on designing the module-level interactions: the _same program_ expressed in 10 or 20 lines of **DSPy** can easily be compiled into multi-stage instructions for `GPT-4`, detailed prompts for `Llama2-13b`, or finetunes for `T5-base`. Oh, and you wouldn't need to maintain long, brittle, model-specific strings at the core of your project anymore.
 
@@ -66,7 +66,7 @@ Exporting DSPy programs is simply saving them as highlighted above!
 
 - **How do I search my own data?**
 
-Open source libraries such as [RAGautouille](https://github.com/bclavie/ragatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
+Open source libraries such as [RAGatouille](https://github.com/bclavie/RAGatouille) enable you to search for your own data through advanced retrieval models like ColBERT with tools to embed and index documents. Feel free to integrate such libraries to create searchable datasets while developing your DSPy programs!
 
 - **How do I turn off the cache? How do I export the cache?**
 
@@ -82,7 +82,7 @@ os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
 
 !!! warning "Important"
-    `DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
+    `DSP_CACHEDIR` is responsible for legacy clients (including the deprecated dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the current `dspy.LM` client.
 
     In the AWS lambda deployment, you should disable both DSP_\* and DSPY_\*.
 
@@ -117,7 +117,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 
 If you're dealing with "context too long" errors in DSPy, you're likely using DSPy optimizers to include demonstrations within your prompt, and this is exceeding your current context window. DSPy raises this as `dspy.ContextWindowExceededError`, a subclass of `dspy.LMInvalidRequestError`. Try reducing these parameters (e.g. `max_bootstrapped_demos` and `max_labeled_demos`). Additionally, you can also reduce the number of retrieved passages/docs/embeddings to ensure your prompt is fitting within your model context length.
 
-A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.OpenAI(model = ..., max_tokens = ...`). For other provider failures, catch `dspy.LMError` or a concrete subclass such as `dspy.LMRateLimitError`, `dspy.LMAuthError`, or `dspy.LMServerError`. See the [Errors API reference](api/utils/Errors.md) for details.
+A more general fix is simply increasing the number of `max_tokens` specified to the LM request (e.g. `lm = dspy.LM('openai/gpt-4o-mini', max_tokens=...)`). For other provider failures, catch `dspy.LMError` or a concrete subclass such as `dspy.LMRateLimitError`, `dspy.LMAuthError`, or `dspy.LMServerError`. See the [Errors API reference](api/utils/Errors.md) for details.
 
 ## Set Verbose Level
 DSPy utilizes the [logging library](https://docs.python.org/3/library/logging.html) to print logs. If you want to debug your DSPy code, set the logging level to DEBUG with the example code below.

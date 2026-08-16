@@ -4,7 +4,7 @@ import inspect
 import json
 import types
 from collections.abc import Mapping
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -15,6 +15,44 @@ from dspy.adapters.types.base_type import Type as DspyType
 from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
+
+if TYPE_CHECKING:
+    from dspy.signatures.signature import Signature
+
+
+def annotation_allows_none(annotation: Any) -> bool:
+    """Whether the annotation admits None (e.g. `str | None`, `Optional[str]`, `None`)."""
+    if annotation is None or annotation is type(None):
+        return True
+
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    if origin is Annotated:
+        return bool(args) and annotation_allows_none(args[0])
+
+    if origin is Union or origin is types.UnionType:
+        return any(annotation_allows_none(arg) for arg in args)
+
+    return False
+
+
+def apply_output_field_defaults(signature: "type[Signature]", fields: dict[str, Any]) -> dict[str, Any]:
+    """
+    Fill output fields that are missing from a parsed LM response, in signature order.
+
+    An output field is optional when it declares a default, a default factory, or an annotation
+    that allows None; a missing optional field takes that fallback (in that order of precedence).
+    """
+    completed = {}
+    for name, field_info in signature.output_fields.items():
+        if name in fields:
+            completed[name] = fields[name]
+        elif not field_info.is_required():
+            completed[name] = field_info.get_default(call_default_factory=True)
+        elif annotation_allows_none(field_info.annotation):
+            completed[name] = None
+    return completed
 
 
 def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:

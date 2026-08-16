@@ -104,15 +104,17 @@ response.provider_data
 The typed path also makes direct `lm(...)` calls more expressive. Strings, typed messages, media parts, previous responses, and explicit `LMRequest` objects all flow through one call API.
 
 !!! warning "Experimental 3.3 API"
-    The typed LM symbols are importable without `experimental=True`. During the 3.3 release-candidate period, the direct typed `lm(...)` call path will land incrementally behind `dspy.context(experimental=True)` as the API settles. These helpers are expected to be available in DSPy 3.3. Key helpers such as `dspy.LMRequest`, `dspy.LMResponse`, `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolCall`, and `dspy.ToolResult` are available at the top level. The complete typed LM vocabulary is available under `dspy.core.types`, e.g. `dspy.core.types.LMTextPart`.
+    The typed LM symbols are importable without `experimental=True`. In DSPy 3.3, direct typed `lm(...)` calls are available behind `dspy.context(experimental=True)` while the API settles. Key helpers such as `dspy.LMRequest`, `dspy.LMResponse`, `dspy.System`, `dspy.User`, `dspy.Assistant`, `dspy.ToolCall`, and `dspy.ToolResult` are available at the top level. The complete typed LM vocabulary is available under `dspy.core.types`, e.g. `dspy.core.types.LMTextPart` and `dspy.core.types.LMImagePart`.
 
 Multimodal request with instructions:
 
 ```python
+from dspy.core.types import LMImagePart
+
 with dspy.context(experimental=True):
     response = lm(
         dspy.System("Be concise."),
-        dspy.User("Describe this image.", dspy.Image("https://example.com/dog.png")),
+        dspy.User("Describe this image.", dspy.Image("https://example.com/dog.png")), #Coming soon!
         temperature=0.2,
     )
 ```

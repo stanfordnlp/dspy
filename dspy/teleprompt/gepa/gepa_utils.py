@@ -12,7 +12,16 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
+from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
+from dspy.teleprompt.gepa.gepa_flex_utils import (
+    code_reflective_records,
+    enumerate_flex_submodules,
+    evaluate_with_trace,
+    flex_task_context,
+    propose_code,
+    rebind_flex_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +109,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        self._warned_custom_proposer_skips_code = False
+
+        # dspy.Flex code components are keyed by the submodule's parameter path.
+        self._flex_paths = set(enumerate_flex_submodules(student_module))
+        # Task description + available context shown to the dspy.Flex code proposer, per submodule.
+        self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
 
     def propose_new_texts(
         self,
@@ -108,16 +123,40 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         components_to_update: list[str],
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
-        # If custom proposer provided, override everything with custom proposer
-        if self.custom_instruction_proposer:
-            with dspy.context(lm=reflection_lm):
-                return self.custom_instruction_proposer(
-                    candidate=candidate,
-                    reflective_dataset=reflective_dataset,
-                    components_to_update=components_to_update,
-                )
 
+        # dspy.Flex code components are rewritten by the code proposer.
         results: dict[str, str] = {}
+        code_keys = [c for c in components_to_update if c in self._flex_paths]
+        if code_keys:
+            results.update(
+                propose_code(
+                    code_keys, candidate, reflective_dataset,
+                    self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
+                )
+            )
+        components_to_update = [c for c in components_to_update if c not in self._flex_paths]
+        if not components_to_update:
+            return results
+
+        # A custom proposer overrides the default *instruction* proposer only.
+        if self.custom_instruction_proposer:
+            if code_keys and not self._warned_custom_proposer_skips_code:
+                logger.warning(
+                    "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
+                    "being optimized. The custom proposer handles instruction components only; the "
+                    "built-in code proposer rewrites the flex source.",
+                    len(code_keys),
+                )
+                self._warned_custom_proposer_skips_code = True
+            with dspy.context(lm=reflection_lm):
+                results.update(
+                    self.custom_instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update,
+                    )
+                )
+                return results
 
         with dspy.context(lm=reflection_lm):
             for name in components_to_update:
@@ -136,6 +175,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
+        # Rebind code for any dspy.Flex submodules in the candidate (see gepa_flex_utils). A
+        # candidate that doesn't parse raises here (evaluate() catches it and scores the batch as
+        # a failure); runtime breakage surfaces per example when the code first runs at forward.
+        rebind_flex_code(new_prog, candidate)
+
+        # Apply instruction updates. Code components are keyed by a Flex's parameter path, which
+        # never names a predictor, and predictors inside a Flex were excluded from the candidate,
+        # so both are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
@@ -143,12 +190,38 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         return new_prog
 
     def evaluate(self, batch, candidate, capture_traces=False):
-        program = self.build_program(candidate)
+        try:
+            program = self.build_program(candidate)
+        except (SyntaxError, CodeInterpreterError) as e:
+            # A code candidate that fails to bind scores as a failure rather than
+            # crashing the run. Only source-level failures are caught. Anything else
+            # (e.g., an LM provider or rate-limit error) is not the candidate's fault and must
+            # propagate.
+            logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
+            return EvaluationBatch(
+                outputs=[None] * len(batch),
+                scores=[self.failure_score] * len(batch),
+                trajectories=[] if capture_traces else None,
+            )
         callback_metadata = (
             {"metric_key": "eval_full"}
             if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size
             else {"disable_logging": True}
         )
+
+        # When a dspy.Flex submodule is present, capture the execution trace at scoring time so a
+        # metric that declares a `program_trace` parameter can score against it (e.g. an LM-call
+        # penalty).
+        if self._flex_paths:
+            return evaluate_with_trace(
+                program,
+                batch,
+                metric_fn=self.metric_fn,
+                num_threads=self.num_threads,
+                failure_score=self.failure_score,
+                callback_metadata=callback_metadata,
+                capture_traces=capture_traces,
+            )
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
@@ -203,6 +276,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
+            # Code components (dspy.Flex submodules) reflect on whole-program I/O, not per-predictor
+            # traces.
+            if pred_name in self._flex_paths:
+                recs = code_reflective_records(eval_batch)
+                if recs:
+                    ret_d[pred_name] = recs
+                continue
+
             # Find the predictor object
             module = None
             for name, m in program.named_predictors():

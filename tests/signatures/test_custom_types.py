@@ -117,3 +117,30 @@ def test_basic_custom_type_resolution():
 
     sig = Signature("input: CustomType -> output: str")
     assert sig.input_fields["input"].annotation == CustomType
+
+
+def test_explicit_custom_types_do_not_depend_on_the_caller_frame():
+    """`custom_types` is documented as the reliable alternative to frame introspection, so it has
+    to resolve a type whose *name* is nowhere on the call stack.
+
+    `make_signature` re-parses the signature string a second time to build the default
+    instructions, and used to drop `custom_types` on that pass, falling back to the caller-frame
+    lookup. The same call then succeeded or raised `Unknown name` depending only on how the caller
+    happened to import the type — `from myapp.models import Item` worked, `import myapp.models as
+    models` did not.
+    """
+    # Named only as a string and a dict key: no frame anywhere binds `OffStackItem`.
+    item = pydantic.create_model("OffStackItem", value=(str, ...))
+    types = {"OffStackItem": item}
+
+    sig = Signature("query: str -> found: OffStackItem", custom_types=types)
+    assert sig.output_fields["found"].annotation is item
+    assert sig.instructions == "Given the fields `query`, produce the fields `found`."
+
+    nested = Signature("query: str -> found: list[OffStackItem]", custom_types=types)
+    assert nested.output_fields["found"].annotation == list[item]
+
+    # Supplying instructions skipped the re-parse entirely; both paths must agree.
+    with_instructions = Signature("query: str -> found: OffStackItem", "Find it.", custom_types=types)
+    assert with_instructions.output_fields["found"].annotation is item
+    assert with_instructions.instructions == "Find it."

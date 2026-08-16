@@ -10,7 +10,7 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
-from dspy.utils.callback import BaseCallback
+from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback
 from dspy.utils.dummies import DummyLM
 
 
@@ -286,6 +286,44 @@ def test_evaluate_callback():
     assert callback.start_call_count == 1
     assert callback.end_call_outputs.score == 100.0
     assert callback.end_call_count == 1
+
+
+def test_parallel_program_callbacks_are_children_of_evaluate_callback():
+    class LineageCallback(BaseCallback):
+        def __init__(self):
+            self.evaluate_call_id = None
+            self.module_parent_call_ids = []
+            self.lock = threading.Lock()
+
+        def on_evaluate_start(self, call_id, instance, inputs):
+            self.evaluate_call_id = call_id
+
+        def on_module_start(self, call_id, instance, inputs):
+            with self.lock:
+                self.module_parent_call_ids.append(ACTIVE_CALL_ID.get())
+
+    callback = LineageCallback()
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        ),
+        callbacks=[callback],
+    )
+    evaluator = Evaluate(
+        devset=[new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")],
+        metric=answer_exact_match,
+        num_threads=2,
+        display_progress=False,
+    )
+
+    evaluator(Predict("question -> answer"))
+
+    assert callback.evaluate_call_id is not None
+    assert callback.module_parent_call_ids == [callback.evaluate_call_id, callback.evaluate_call_id]
+
 
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])

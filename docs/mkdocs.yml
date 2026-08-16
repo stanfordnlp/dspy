@@ -27,6 +27,8 @@ nav:
         - Signatures in depth: diving-deeper/signatures-in-depth.md
         - "Modules: composing your own": diving-deeper/modules.md
         - Built-in module variants: diving-deeper/built-in-module-variants.md
+        - "RLM: exploring large contexts with code": diving-deeper/rlm.md
+        - "Flex: optimizable module code": diving-deeper/flex.md
         - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
         - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
         - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
@@ -99,12 +101,14 @@ nav:
     - API Reference:
         - API Reference: api/index.md
         - Adapters:
+            - api/adapters/index.md
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
             - XMLAdapter: api/adapters/XMLAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
             - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:
+            - api/evaluation/index.md
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
             - EvaluationResult: api/evaluation/EvaluationResult.md
@@ -112,16 +116,20 @@ nav:
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
         - Experimental:
+            - api/experimental/index.md
             - Citations: api/experimental/Citations.md
             - Document: api/experimental/Document.md
         - Models:
+            - api/models/index.md
             - BaseLM: api/models/BaseLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
+            - api/modules/index.md
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - CodeAct: api/modules/CodeAct.md
+            - Flex: api/modules/Flex.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
@@ -131,6 +139,7 @@ nav:
             - Refine: api/modules/Refine.md
             - RLM: api/modules/RLM.md
         - Optimizers:
+            - api/optimizers/index.md
             - GEPA:
                 - 1. GEPA Overview: api/optimizers/GEPA/overview.md
                 - 2. GEPA Advanced: api/optimizers/GEPA/GEPA_Advanced.md
@@ -148,6 +157,7 @@ nav:
             - MIPROv2: api/optimizers/MIPROv2.md
             - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
+            - api/primitives/index.md
             - Audio: api/primitives/Audio.md
             - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
@@ -157,14 +167,17 @@ nav:
             - Tool: api/primitives/Tool.md
             - ToolCalls: api/primitives/ToolCalls.md
         - Signatures:
+            - api/signatures/index.md
             - InputField: api/signatures/InputField.md
             - OutputField: api/signatures/OutputField.md
             - Signature: api/signatures/Signature.md
         - Tools:
+            - api/tools/index.md
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - api/utils/index.md
             - Errors: api/utils/Errors.md
             - configure: api/utils/configure.md
             - context: api/utils/context.md
@@ -232,6 +245,7 @@ plugins:
     - mkdocstrings:
         handlers:
             python:
+                paths: [".."]
                 options:
                     docstring_style: google
                     show_source: true
