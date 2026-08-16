@@ -21,10 +21,27 @@ if TYPE_CHECKING:
 
 @experimental
 class ReActV2(Module):
-    def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
+    def __init__(
+        self,
+        signature: type[Signature],
+        tools: list[Callable | Tool],
+        max_iters: int = 20,
+        history_processor: Callable[[dspy.History], dspy.History] | None = None,
+    ):
+        """
+        Args:
+            signature: The signature of the module, which defines the input and output of the react module.
+            tools: A list of functions, callable objects, or `dspy.Tool` instances available to the agent.
+            max_iters: The maximum number of iterations to run. Can be overridden per call via
+                `forward(..., max_iters=...)`.
+            history_processor: Optional `dspy.History -> dspy.History` callable applied before each LM
+                call, e.g. for context compaction. Its result is adopted as the module's history and
+                returned in `Prediction.history`.
+        """
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.history_processor = history_processor
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
         self.tools = {tool.name: tool for tool in user_tools}
@@ -87,11 +104,13 @@ class ReActV2(Module):
 
     def forward(self, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
+        history_processor = input_args.pop("history_processor", self.history_processor)
         history = _coerce_history(input_args.pop("history", None))
         pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
         break_reason = "max_iters"
         for turn_index in range(max_iters):
+            history = _apply_history_processor(history_processor, history)
             try:
                 pred = self.react(
                     history=history,
@@ -123,7 +142,7 @@ class ReActV2(Module):
             if final_outputs is not None:
                 return Prediction(**final_outputs, history=history, termination_reason="submit")
 
-        return self._forced_submit(history, pending_inputs, break_reason, max_iters)
+        return self._forced_submit(history, pending_inputs, break_reason, max_iters, history_processor)
 
     def _execute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
         values = []
@@ -170,7 +189,9 @@ class ReActV2(Module):
         pending_inputs: dict[str, Any],
         break_reason: str,
         turn_index: int,
+        history_processor: Callable[[dspy.History], dspy.History] | None = None,
     ) -> Prediction:
+        history = _apply_history_processor(history_processor, history)
         try:
             pred = self.react(
                 history=history,
@@ -216,6 +237,25 @@ def _optional_annotation(annotation: Any) -> Any:
         return annotation | None
     except TypeError:
         return annotation
+
+
+def _apply_history_processor(
+    processor: Callable[[dspy.History], dspy.History] | None, history: dspy.History
+) -> dspy.History:
+    if processor is None:
+        return history
+    try:
+        processed = processor(history)
+        if processed is None:
+            logger.warning("history_processor returned None; continuing with unprocessed history.")
+            return history
+        return _coerce_history(processed)
+    except Exception as err:
+        logger.warning(
+            "history_processor raised; continuing with unprocessed history: %s",
+            format_error_for_lm(err, traceback_frames=5),
+        )
+        return history
 
 
 def _coerce_history(history: Any) -> dspy.History:
