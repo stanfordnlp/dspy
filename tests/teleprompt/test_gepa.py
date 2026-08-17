@@ -661,3 +661,37 @@ def test_adapter_state_round_trips_rng():
     adapter.rng.random()
     adapter.set_adapter_state(state)
     assert adapter.rng.random() == expected
+
+
+def test_batch_evaluate_is_parallel_and_preserves_context():
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, num_threads=4)
+    barrier = threading.Barrier(2)
+    trace_modes = []
+    thread_budgets = []
+
+    def evaluate(batch, candidate, capture_traces=False, num_threads=None):
+        if capture_traces:
+            barrier.wait(timeout=1)
+        trace_modes.append(capture_traces)
+        thread_budgets.append(num_threads)
+        return EvaluationBatch(outputs=[(candidate, dspy.settings.lm, ACTIVE_CALL_ID.get())], scores=[1.0])
+
+    adapter.evaluate = evaluate
+    lm = DummyLM([])
+    token = ACTIVE_CALL_ID.set("parent")
+    try:
+        with dspy.context(lm=lm):
+            results = adapter.batch_evaluate([("first", []), ("second", [])])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert [result.outputs[0] for result in results] == [("first", lm, "parent"), ("second", lm, "parent")]
+
+    adapter.batch_evaluate([("first", [])], capture_traces=False)
+    assert trace_modes == [True, True, False]
+    assert thread_budgets == [2, 2, 4]
