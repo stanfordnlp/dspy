@@ -41,7 +41,7 @@ class Prediction(Example):
     def __repr__(self):
         store_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._store.items())
 
-        if self._completions is None or len(self._completions) == 1:
+        if self._completions is None or len(self._completions) <= 1:
             return f"Prediction(\n    {store_repr}\n)"
 
         num_completions = len(self._completions)
@@ -159,6 +159,8 @@ class Completions:
     def __len__(self):
         # Return the length of the list for one of the keys
         # It assumes all lists have the same length
+        if not self._completions:
+            return 0
         return len(next(iter(self._completions.values())))
 
     def __contains__(self, key):
