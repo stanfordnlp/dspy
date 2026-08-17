@@ -281,7 +281,6 @@ h2.doc-heading {
 
 .dspy-logo-wall {
     display: grid;
-    /* Two rows of three so each logo gets ~2x the width and can be larger. */
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: center;
     justify-items: center;
@@ -291,9 +290,15 @@ h2.doc-heading {
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
     margin: 1rem 0 1.5rem;
 }
+.dspy-logo-wall a:last-child:nth-child(3n + 1) {
+    grid-column: 2;
+}
 @media (max-width: 480px) {
     .dspy-logo-wall {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .dspy-logo-wall a:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
     }
 }
 .dspy-logo-wall a {
@@ -321,6 +326,7 @@ h2.doc-heading {
 .dspy-logo-wall img.logo-microsoft-ai { height: 34px; max-width: min(100%, 210px); }
 .dspy-logo-wall img.logo-replit     { height: 38px; max-width: min(100%, 44px); }
 .dspy-logo-wall img.logo-aws        { height: 34px; max-width: min(100%, 80px); }
+.dspy-logo-wall img.logo-nubank     { height: 38px; max-width: min(100%, 68px); }
 [data-md-color-scheme="slate"] .dspy-logo-wall img {
     filter: brightness(0) invert(1);
 }
@@ -521,4 +527,3 @@ h2.doc-heading {
 [data-md-color-scheme="default"] .highlight .p       { color: #24292f; }              /* punctuation */
 [data-md-color-scheme="default"] .highlight .bp      { color: #6639ba; }              /* self */
 [data-md-color-scheme="default"] .highlight .n       { color: #1f2328; }              /* default identifier */
-
