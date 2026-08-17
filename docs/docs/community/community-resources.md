@@ -13,7 +13,6 @@ This is the list of tutorials and blog posts on DSPy. If you would like to add y
 |---|---|
 | **Why I bet on DSPy** | [Blog](https://blog.isaacbmiller.com/posts/dspy) |
 | **Not Your Average Prompt Engineering** | [Blog](https://jina.ai/news/dspy-not-your-average-prompt-engineering/) |
-| **Why I'm excited about DSPy** | [Blog](https://stephenso.substack.com/p/why-im-excited-about-dspy) |
 | **Achieving GPT-4 Performance at Lower Cost** | [Link](https://gradient.ai/blog/achieving-gpt-4-level-performance-at-lower-cost-using-dspy) |
 | **Prompt engineering is a task best left to AI models** | [Link](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/) |
 | **What makes DSPy a valuable framework for developing complex language model pipelines?** | [Link](https://medium.com/@sujathamudadla1213/what-makes-dspy-a-valuable-framework-for-developing-complex-language-model-pipelines-edfa5b4bcf9b) |
