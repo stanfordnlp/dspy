@@ -77,6 +77,23 @@ def test_parse_value_literal():
         parse_value("invalid", Literal["option1", "option2"])
 
 
+def test_parse_value_literal_non_string_members():
+    # Adapters that surface fields as text (e.g. ChatAdapter) emit the value of
+    # an int-valued Literal as a string, which must still resolve to the member.
+    assert parse_value("1", Literal[1, 2, 3]) == 1
+    assert parse_value("2", Literal[1, 2, 3]) == 2
+    assert parse_value("'1'", Literal[1, 2, 3]) == 1
+
+    # Mixed int/str literal: an exact string match wins, otherwise fall back to
+    # the stringified non-string member.
+    assert parse_value("bar", Literal[1, "bar"]) == "bar"
+    assert parse_value("1", Literal[1, "bar"]) == 1
+
+    # Values outside the allowed set still raise.
+    with pytest.raises(ValueError):
+        parse_value("4", Literal[1, 2, 3])
+
+
 def test_parse_value_union():
     # Test Union with None (Optional)
     assert parse_value("test", Optional[str]) == "test"
