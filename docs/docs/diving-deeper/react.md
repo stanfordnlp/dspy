@@ -162,6 +162,23 @@ Unlike ReAct, ReActV2 does not currently truncate old history events on context 
 
 Structured history makes each completed turn an append-only message group. On the next request, the system instructions and all earlier user/assistant/tool messages remain a stable prefix; only the newest result and request are appended. Providers with prompt caching can therefore reuse more of the prior request instead of reprocessing one ever-growing, newly formatted trajectory value.
 
+For Anthropic models, enable provider-side prompt caching on the LM with LiteLLM's cache-control injection points:
+
+```python
+lm = dspy.LM(
+    "anthropic/claude-sonnet-4-5-20250929",
+    cache_control_injection_points=[
+        {"location": "message", "role": "system"},
+        {"location": "message", "index": -1},
+    ],
+)
+
+with dspy.context(lm=lm):
+    result = agent(question="What is DSPy?")
+```
+
+The first injection point caches the stable system instructions. The second places a checkpoint on the trailing turn, allowing Anthropic to reuse the preceding conversation prefix as ReActV2 appends history. Anthropic only caches prefixes that meet the model's minimum token count, and its default ephemeral cache has a limited lifetime. See [Using Provider-Side Prompt Caching](../tutorials/cache/index.md#using-provider-side-prompt-caching) for the general DSPy setup and the [LiteLLM prompt-caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration) for provider details.
+
 Native tool replay gives the cleanest provider-visible structure, but non-native mode still benefits from stable multi-turn history. Internal testing has seen cost reductions of up to 50% on some tasks. Actual savings depend on the provider's cache policy, model, request shape, and the size of tool results; they are not guaranteed for every workload.
 
 ## Replacement and migration plan
