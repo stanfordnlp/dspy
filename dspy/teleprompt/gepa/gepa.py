@@ -324,6 +324,12 @@ class GEPA(Teleprompter):
               MLflow can be used alongside Weights & Biases (WandB).
             - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
             - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+            - sampling_strategy, selection_strategy, acceptance_criterion: GEPA 0.1.4 proposal controls.
+              DSPy supports these using GEPA's sequential candidate-evaluation fallback.
+            - wandb_attach_existing, mlflow_attach_existing, tracking_key_prefix: GEPA 0.1.4 tracking controls.
+
+            `max_reflection_cost` is not supported yet because DSPy LMs do not expose the cumulative cost
+            interface GEPA requires. Passing it raises an error instead of silently ignoring the budget.
 
             Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters
             and should not be passed through gepa_kwargs.
@@ -450,6 +456,9 @@ class GEPA(Teleprompter):
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
+
+        if self.gepa_kwargs.get("max_reflection_cost") is not None:
+            raise ValueError("max_reflection_cost is not supported by dspy.GEPA yet.")
 
         if "reflection_prompt_template" in self.gepa_kwargs:
             raise ValueError(
