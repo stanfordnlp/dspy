@@ -1197,6 +1197,34 @@ def test_correct_types_no_warning(caplog):
     assert "Type mismatch" not in caplog.text
 
 
+def test_numeric_tower_no_warning(caplog):
+    """Test that ints are accepted where floats are expected, per the PEP 484 numeric tower."""
+    log_test_helper()
+
+    class NumericSignature(dspy.Signature):
+        temperature: float = dspy.InputField()
+        readings: list[float] = dspy.InputField()
+        count: int = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    predict_instance = Predict(NumericSignature)
+    lm = DummyLM([{"result": "test output 1"}, {"result": "test output 2"}])
+    dspy.configure(lm=lm)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(temperature=20, readings=[1, 2.5], count=3)
+
+    assert "Type mismatch" not in caplog.text
+
+    # The numeric tower only goes one way: floats are not acceptable where an int is expected.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(temperature=20.5, readings=[1.0], count=1.5)
+
+    assert "Type mismatch for field 'count': expected int" in caplog.text
+
+
 def test_list_type_validation(caplog):
     """Test type validation with list[str] types."""
     log_test_helper()

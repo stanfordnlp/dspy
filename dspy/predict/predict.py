@@ -376,6 +376,12 @@ def _check_type(value: Any, expected: type) -> bool:
 
     # Plain type (int, str, BaseModel subclass, etc.)
     if isinstance(expected, type):
+        # PEP 484 numeric tower: `int` is acceptable where `float` is expected, and both are
+        # acceptable where `complex` is expected.
+        if expected is float and isinstance(value, int):
+            return True
+        if expected is complex and isinstance(value, (int, float)):
+            return True
         return isinstance(value, expected)
 
     return False
