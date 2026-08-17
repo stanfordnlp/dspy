@@ -26,6 +26,42 @@ from dspy.utils.exceptions import AdapterParseError, LMError
 logger = logging.getLogger(__name__)
 
 
+# Keywords whose values map user-controlled names to subschemas, so their own keys must never be treated as
+# schema keywords (a field may legitimately be named `ge`).
+_SUBSCHEMA_MAP_KEYWORDS = ("properties", "patternProperties", "$defs", "definitions")
+# Keywords whose values are literal data rather than subschemas.
+_LITERAL_KEYWORDS = ("const", "default", "enum", "examples")
+
+
+def _strip_unsupported_constraint_kwargs(node: Any) -> None:
+    """
+    Recursively drop raw Pydantic constraint kwargs from a JSON schema.
+
+    Pydantic emits a constraint kwarg verbatim when it cannot express it for the annotated type (e.g. `ge` on a
+    string field). Those keys are not valid JSON Schema, and they can appear anywhere the annotation is expanded,
+    including inside `anyOf` branches and `$defs`, so every subschema has to be visited.
+    """
+    if isinstance(node, list):
+        for item in node:
+            _strip_unsupported_constraint_kwargs(item)
+        return
+    if not isinstance(node, dict):
+        return
+
+    for constraint in PYDANTIC_CONSTRAINT_MAP:
+        node.pop(constraint, None)
+
+    for keyword, value in node.items():
+        if keyword in _LITERAL_KEYWORDS:
+            continue
+        if keyword in _SUBSCHEMA_MAP_KEYWORDS:
+            if isinstance(value, dict):
+                for subschema in value.values():
+                    _strip_unsupported_constraint_kwargs(subschema)
+        else:
+            _strip_unsupported_constraint_kwargs(value)
+
+
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
     Check whether any output field in the signature has an open-ended mapping type,
@@ -279,10 +315,8 @@ def _get_structured_outputs_response_format(
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
         prop.pop("json_schema_extra", None)
-        # Pydantic emits a constraint kwarg verbatim when it cannot express it for the field's type (e.g. `ge` on a
-        # string field). Those keys are not valid JSON Schema, so drop them rather than sending them to a provider.
-        for constraint in PYDANTIC_CONSTRAINT_MAP:
-            prop.pop(constraint, None)
+
+    _strip_unsupported_constraint_kwargs(schema)
 
     def enforce_required(schema_part: dict):
         """

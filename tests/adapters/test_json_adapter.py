@@ -797,6 +797,27 @@ def test_json_adapter_structured_outputs_drops_constraints_that_do_not_apply_to_
     assert properties["output1"] == {"title": "Output1", "type": "string"}
 
 
+def test_json_adapter_structured_outputs_drops_inapplicable_constraints_from_nested_schemas():
+    class Detail(pydantic.BaseModel):
+        note: str = pydantic.Field(ge=0)
+        # A field may legitimately be named like a constraint kwarg.
+        ge: int
+
+    class TestSignature(dspy.Signature):
+        input1: str = dspy.InputField()
+        maybe_text: str | None = dspy.OutputField(ge=0)
+        detail: Detail | None = dspy.OutputField(min_length=2)
+
+    schema = _get_structured_outputs_response_format(TestSignature).model_json_schema()
+
+    for branch in schema["properties"]["maybe_text"]["anyOf"]:
+        assert "ge" not in branch
+    for branch in schema["properties"]["detail"]["anyOf"]:
+        assert "min_length" not in branch
+    assert schema["$defs"]["Detail"]["properties"]["note"] == {"title": "Note", "type": "string"}
+    assert schema["$defs"]["Detail"]["properties"]["ge"] == {"title": "Ge", "type": "integer"}
+
+
 def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model():
     class TestSignature(dspy.Signature):
         input1: str = dspy.InputField()
