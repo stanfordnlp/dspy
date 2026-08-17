@@ -1,7 +1,7 @@
 import base64
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 import dspy
 
@@ -54,6 +54,52 @@ def test_validation_performs_no_host_io(monkeypatch, annotation, value):
         TypeAdapter(annotation).validate_python(value)
     except (ValueError, TypeError, ValidationError):
         pass
+
+
+_DATA_URI_INPUTS = [
+    (dspy.Image, "data:image/png;base64,aVZCT1J3MEtHZ28="),
+    (dspy.Audio, "data:audio/wav;base64,AA=="),
+    (dspy.File, "data:text/plain;base64,aGk="),
+]
+
+
+@pytest.mark.parametrize(("annotation", "data_uri"), _DATA_URI_INPUTS)
+def test_bare_data_uri_validates_for_all_resource_types(monkeypatch, annotation, data_uri):
+    # All three types accept a bare data URI through the pydantic validation path (TypeAdapter,
+    # nested models, output-parse fallback), not just through direct construction.
+    _forbid_host_io(monkeypatch)
+
+    class Wrapper(BaseModel):
+        resource: annotation
+
+    assert isinstance(TypeAdapter(annotation).validate_python(data_uri), annotation)
+    assert isinstance(Wrapper.model_validate({"resource": data_uri}).resource, annotation)
+
+
+@pytest.mark.parametrize(("annotation", "data_uri"), _DATA_URI_INPUTS)
+def test_validation_and_construction_agree_on_data_uris(monkeypatch, annotation, data_uri):
+    _forbid_host_io(monkeypatch)
+
+    validated = TypeAdapter(annotation).validate_python(data_uri)
+
+    assert validated.format() == annotation(data_uri).format()
+
+
+def test_image_validation_rejects_non_data_uri_string_with_actionable_error(monkeypatch):
+    # The validation path must reject a local path the same way the constructor does, pointing at
+    # the explicit I/O factory rather than failing with a generic pydantic type error.
+    _forbid_host_io(monkeypatch)
+
+    with pytest.raises(ValidationError, match=r"Image\.from_path"):
+        TypeAdapter(dspy.Image).validate_python("/etc/passwd")
+
+
+def test_image_validation_retains_remote_url_without_download(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    image = TypeAdapter(dspy.Image).validate_python("https://example.com/image.png")
+
+    assert image.url == "https://example.com/image.png"
 
 
 def test_image_url_constructor_does_not_download(monkeypatch):

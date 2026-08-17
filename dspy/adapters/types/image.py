@@ -104,6 +104,23 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, values: Any) -> Any:
+        """Normalize non-dict inputs so validation accepts the same sources as construction.
+
+        Dicts are left untouched: pydantic routes them through ``__init__``, which owns the
+        positional-source and deprecated-``download`` marshaling. Everything else is normalized
+        here, which makes the "no filesystem or network access during validation" boundary an
+        explicit guarantee of :func:`encode_image` rather than a side effect of pydantic routing
+        dict validation through a custom ``__init__``.
+        """
+        if isinstance(values, cls):
+            return {"url": values.url}
+        if isinstance(values, dict):
+            return values
+        return {"url": encode_image(values)}
+
     @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
         try:
