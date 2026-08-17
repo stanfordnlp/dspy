@@ -764,7 +764,7 @@ def _tool_result_content(value: Any) -> str:
     if isinstance(value, str):
         return value
 
-    return json.dumps(serialize_for_json(value), ensure_ascii=False)
+    return json.dumps(serialize_for_json(value), ensure_ascii=False, sort_keys=True)
 
 
 def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dict[str, Any]:
@@ -773,6 +773,6 @@ def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dic
         "type": "function",
         "function": {
             "name": tool_call.name,
-            "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False),
+            "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False, sort_keys=True),
         },
     }
