@@ -21,15 +21,16 @@ def wikipedia_search(query: str) -> list[str]:
 The `dspy.ReAct` module presents it like so:
 
 ```
+When you have all information needed, call the `finish` tool with the final value for each of `haiku` passed as next_tool_args.
 When selecting the next_tool_name and its next_tool_args, the tool must be one of:
         
 (1) wikipedia_search, whose description is <desc>Search Wikipedia for the given query and return a list of page titles.</desc>. It takes arguments {'query': {'type': 'string'}}.
-(2) finish, whose description is <desc>Marks the task as complete. That is, signals that all information for producing the outputs, i.e. `haiku`, are now available to be extracted.</desc>. It takes arguments {}.
+(2) finish, whose description is <desc>Marks the task as complete and provides the final outputs. Call this with the final value for each of `haiku` passed as arguments, once all information for producing them is available.</desc>. It takes arguments {'haiku': {'type': 'string'}}.
 ```
 
 Note how DSPy presents the function name, docstring, and parameters to the model. Writing tools, like signatures, requires being mindful about naming. `wikipedia_search` and the parameter `query` are helpful names, that clearly describe their function and role.
 
-Note that there’s a tool in the mix that we didn’t define. `finish` is a special tool used by `dspy.ReAct` that the model calls when it’s done. `dspy.ReAct` populates that one for us.
+Note that there’s a tool in the mix that we didn’t define. `finish` is a special tool used by `dspy.ReAct` that the model calls when it’s done, passing the final value for each output field — here, `haiku` — as its arguments. `dspy.ReAct` populates that one for us.
 
 ## Defining our Wikipedia-wielding haiku bot
 
@@ -53,7 +54,7 @@ When we called `haiku_bot` it:
 
 1. Searched Wikipedia for “Camp Meeker”, which yielded nine relevant results, including “Camp Meeker, California”.  
 2. Fetched the page content for “Camp Meeker, California”.  
-3. Called `finish`, then synthesized its outputs.
+3. Called `finish`, passing its finished verse as the `haiku` argument.
 
 The code above yields:
 
@@ -63,7 +64,7 @@ Summer creek whispers old tales
 Quiet mind lingers
 ```
 
-Printing `result.reasoning` produces:
+Printing `result.reasoning` — the thought the model recorded in that final `finish` turn — produces:
 
 ```
 I gathered context about Camp Meeker, California—its redwood forest, Dutch Bill Creek, and the quiet summer atmosphere—from the Wikipedia page. I focused on a pensive mood and the summer season, weaving in imagery of towering trees and a gently flowing creek. The haiku follows the traditional 5‑7‑5 syllable structure, evoking the stillness and reflection of a summer day among the redwoods.
@@ -71,7 +72,7 @@ I gathered context about Camp Meeker, California—its redwood forest, Dutch Bil
 
 ## ReAct manages an agentic loop
 
-ReAct is a test-time (or inference time) loop strategy. We hand the model a set of tools and a task. The `dspy.ReAct` module instructs the model to reason then act using its tools. When the model calls `finish`, DSPy stops the loop and runs one last synthesis pass to produce the declared output fields.
+ReAct is a test-time (or inference time) loop strategy. We hand the model a set of tools and a task. The `dspy.ReAct` module instructs the model to reason then act using its tools. When the model calls `finish`, DSPy stops the loop and reads the declared output fields from the arguments of that final call; if any of them are missing or invalid, DSPy runs one last synthesis pass over the trajectory to produce them instead.
 
 The model decides how many loops to run, but we can cap the number with the `max_iters` parameter, like so:
 
