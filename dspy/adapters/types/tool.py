@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Protocol, get_origin, get_type_hints
 
 import json_repair
 import pydantic
@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from langchain.tools import BaseTool
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+class _MCPToolClient(Protocol):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
 class Tool(Type):
@@ -200,12 +204,12 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(cls, session: _MCPToolClient, tool: "mcp.types.Tool") -> "Tool":
         """
-        Build a DSPy tool from an MCP tool and a ClientSession.
+        Build a DSPy tool from an MCP tool and a compatible MCP client.
 
         Args:
-            session: The MCP session to use.
+            session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
 
         Returns:
