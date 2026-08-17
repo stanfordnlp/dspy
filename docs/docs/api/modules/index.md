@@ -13,6 +13,7 @@ API reference for DSPy modules. Select a page below.
 - [Predict](Predict.md)
 - [ProgramOfThought](ProgramOfThought.md)
 - [ReAct](ReAct.md)
+- [ReActV2](ReActV2.md)
 - [Refine](Refine.md)
 - [RLM](RLM.md)
 <!-- END_API_INDEX -->
