@@ -133,6 +133,34 @@ jobs:
       - name: Run extra and deno tests
         run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
 
+  mcp_v2_test:
+    name: Run MCP v2 Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create environment
+        run: uv venv .venv
+      - name: Install dependencies with MCP v2
+        run: |
+          uv sync -p .venv --extra dev
+          uv pip install -p .venv "mcp==2.0.0"
+      - name: Run MCP tests
+        run: uv run --frozen --no-sync -p .venv pytest tests/utils/test_mcp.py -m extra --extra
+
   llm_call_test:
     name: Run Tests with Real LM
     runs-on: ubuntu-latest

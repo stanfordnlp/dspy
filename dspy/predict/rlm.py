@@ -56,7 +56,7 @@ ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the following ou
 {output_fields}
 
 You have access to a Python REPL environment. Write Python code and it will be executed. You will see the output, then write more code based on what you learned. This is an iterative process.
-
+{interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
@@ -162,7 +162,8 @@ class RLM(Module):
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
-                the returned interpreter's mutable ``tools`` dictionary before execution.
+                the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
+                an ``execution_instructions`` string describing its runtime for the action prompt.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -351,10 +352,15 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
+        execution_instructions = getattr(self._interpreter_factory, "execution_instructions", "")
+        if not isinstance(execution_instructions, str):
+            raise TypeError("interpreter_factory.execution_instructions must be a string")
+        interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
-                max_llm_calls=self.max_llm_calls,
+                max_llm_calls=self.max_llm_calls, interpreter_rules=interpreter_rules,
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)

@@ -99,6 +99,8 @@ The bridge:
 3. Unpacks MCP text content into a string or list and preserves non-text content.
 4. Raises an execution error when the MCP response has `isError=True`.
 
+The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2 without changing text or non-text result behavior.
+
 MCP tools are asynchronous because `mcp.ClientSession` is asynchronous. Use a module's async entry point, such as `acall`, or explicitly enable async-to-sync conversion when appropriate.
 
 `Tool.from_langchain(tool)` provides the equivalent bridge for LangChain `BaseTool` objects.
