@@ -182,4 +182,5 @@ Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and st
 
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
-- Tools, ReAct, and MCP DD page — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [Tools and MCP](tools.md) — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [ReAct and ReActV2](react.md) — how the two agent loops present history and tool calls to adapters.

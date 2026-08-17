@@ -98,12 +98,13 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 
 **`dspy.KNN`** is a retrieval helper, not a generation module — see the Retrievers reference page.
 
-**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [Tools, ReAct, and MCP](tools-react-and-mcp.md). The wrapping machinery there is what `CodeAct` and `RLM` reuse.
+**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [ReAct and ReActV2](react.md). The shared [tool-wrapping machinery](tools.md) is also used by `CodeAct` and `RLM`.
 
 ## Cross-links
 
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
-- [Tools, ReAct, and MCP](tools-react-and-mcp.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery as `ReAct`.
+- [Tools and MCP](tools.md) — `CodeAct`, `RLM`, and ReAct use the same tool-wrapping machinery.
+- [ReAct and ReActV2](react.md) — the dedicated agent-loop comparison and migration plan.
 - [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
 - [Flex: Optimizable module code](flex.md) — the deep dive on the code-optimizable Flex module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.

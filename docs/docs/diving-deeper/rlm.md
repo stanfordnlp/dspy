@@ -109,5 +109,5 @@ A property returning the user-provided tools as a name-to-`Tool` dict, excluding
 ## Cross-links
 
 - [Built-in module variants](built-in-module-variants.md) — where RLM sits among the other non-`Predict` modules.
-- [Tools, ReAct, and MCP](tools-react-and-mcp.md) — the tool-wrapping machinery RLM reuses.
+- [Tools and MCP](tools.md) — the tool-wrapping machinery RLM reuses.
 - [`dspy.RLM` API reference](../api/modules/RLM.md) — full parameter table, built-in tool list, and worked examples.

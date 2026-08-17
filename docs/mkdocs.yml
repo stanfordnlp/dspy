@@ -29,7 +29,8 @@ nav:
         - Built-in module variants: diving-deeper/built-in-module-variants.md
         - "RLM: exploring large contexts with code": diving-deeper/rlm.md
         - "Flex: optimizable module code": diving-deeper/flex.md
-        - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
+        - Tools and MCP: diving-deeper/tools.md
+        - ReAct and ReActV2: diving-deeper/react.md
         - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
         - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
         - GEPA in depth: diving-deeper/gepa-in-depth.md
@@ -136,6 +137,7 @@ nav:
             - Predict: api/modules/Predict.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
+            - ReActV2: api/modules/ReActV2.md
             - Refine: api/modules/Refine.md
             - RLM: api/modules/RLM.md
         - Optimizers:
@@ -282,6 +284,8 @@ plugins:
             "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
             "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
             "api/optimizers/GEPA/index.md": "api/optimizers/GEPA/overview.md"
+
+            "diving-deeper/tools-react-and-mcp.md": "diving-deeper/react.md"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
