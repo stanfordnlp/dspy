@@ -102,6 +102,8 @@ class Refine(Module):
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        # Local copy so that repeated forward() calls start with the same budget.
+        remaining_failures = self.fail_count
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -169,9 +171,9 @@ class Refine(Module):
 
             except Exception as e:
                 print(f"Refine: Attempt failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                remaining_failures -= 1
+                if remaining_failures < 0:
                     raise e
-                self.fail_count -= 1
         if best_trace:
             dspy.settings.trace.extend(best_trace)
         return best_pred
