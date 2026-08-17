@@ -9,6 +9,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 from openai.types.responses import ResponseOutputMessage
 
 import dspy
+from dspy.adapters.json_adapter import _get_structured_outputs_response_format
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
@@ -757,6 +758,43 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format is not None
     assert issubclass(response_format, pydantic.BaseModel)
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
+
+
+def test_json_adapter_structured_outputs_preserve_output_field_constraints():
+    class TestSignature(dspy.Signature):
+        input1: str = dspy.InputField()
+        score: float = dspy.OutputField(ge=0.0, le=1.0, multiple_of=0.25)
+        tag: str = dspy.OutputField(pattern="^[a-z]+$")
+        labels: list[str] = dspy.OutputField(min_length=1, max_length=3)
+        unconstrained: str = dspy.OutputField()
+
+    response_format = _get_structured_outputs_response_format(TestSignature)
+    properties = response_format.model_json_schema()["properties"]
+
+    assert properties["score"]["minimum"] == 0.0
+    assert properties["score"]["maximum"] == 1.0
+    assert properties["score"]["multipleOf"] == 0.25
+    assert properties["tag"]["pattern"] == "^[a-z]+$"
+    assert properties["labels"]["minItems"] == 1
+    assert properties["labels"]["maxItems"] == 3
+    assert properties["unconstrained"] == {"title": "Unconstrained", "type": "string"}
+
+    # DSPy-specific field metadata must not leak into the schema sent to the provider.
+    for prop in properties.values():
+        assert "desc" not in prop
+        assert "prefix" not in prop
+        assert "constraints" not in prop
+        assert "__dspy_field_type" not in prop
+
+
+def test_json_adapter_structured_outputs_drops_constraints_that_do_not_apply_to_the_field_type():
+    class TestSignature(dspy.Signature):
+        input1: str = dspy.InputField()
+        output1: str = dspy.OutputField(ge=0)
+
+    properties = _get_structured_outputs_response_format(TestSignature).model_json_schema()["properties"]
+
+    assert properties["output1"] == {"title": "Output1", "type": "string"}
 
 
 def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model():

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, get_origin
+from typing import Annotated, Any, get_origin
 
 import json_repair
 import pydantic
@@ -18,6 +18,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.signatures.field import PYDANTIC_CONSTRAINT_MAP
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError, LMError
@@ -258,6 +259,11 @@ def _get_structured_outputs_response_format(
             # Skip ToolCalls field if native function calling is enabled.
             continue
         default = field.default if hasattr(field, "default") else ...
+        if field.metadata:
+            # Constraints declared as `dspy.OutputField(ge=..., pattern=..., ...)` live in `FieldInfo.metadata`,
+            # so re-attach them to the annotation to keep them in the schema. Only the constraint metadata is
+            # carried over; DSPy's `json_schema_extra` stays out so no DSPy-specific keys reach the provider.
+            annotation = Annotated[(annotation, *field.metadata)]
         fields[name] = (annotation, default)
 
     # Build the model with extra fields forbidden.
@@ -273,6 +279,10 @@ def _get_structured_outputs_response_format(
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
         prop.pop("json_schema_extra", None)
+        # Pydantic emits a constraint kwarg verbatim when it cannot express it for the field's type (e.g. `ge` on a
+        # string field). Those keys are not valid JSON Schema, so drop them rather than sending them to a provider.
+        for constraint in PYDANTIC_CONSTRAINT_MAP:
+            prop.pop(constraint, None)
 
     def enforce_required(schema_part: dict):
         """
