@@ -1,5 +1,9 @@
 import logging
 import random
+import threading
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -10,6 +14,7 @@ import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.dsp.utils.settings import thread_local_overrides
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.primitives.code_interpreter import CodeInterpreterError
@@ -22,6 +27,7 @@ from dspy.teleprompt.gepa.gepa_flex_utils import (
     propose_code,
     rebind_flex_code,
 )
+from dspy.utils.callback_context import _bind_active_call_id
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +89,106 @@ class PredictorFeedbackFn(Protocol):
         ...
 
 
+def _stripped_lm_outputs(lm, x: str) -> list[str]:
+    raw_outputs = lm(x)
+    outputs = []
+    for raw_output in raw_outputs:
+        if type(raw_output) == str:
+            outputs.append(raw_output)
+        elif type(raw_output) == dict:
+            if "text" not in raw_output:
+                raise KeyError("Missing 'text' field in the output from the base LM!")
+            outputs.append(raw_output["text"])
+        else:
+            raise TypeError("Unexpected output type from the base LM! Expected str or dict")
+    return outputs
+
+
+class TrackedReflectionLM:
+    """Reflection callable handed to `gepa.optimize` that exposes real cost totals.
+
+    gepa's `max_reflection_cost` stopper reads `total_cost` from the reflection LM;
+    plain callables get wrapped in a gepa `TrackingLM` that always reports 0.0, so
+    the stopper would never fire. Totals accumulate from the underlying
+    `dspy.LM.history` — entries are tallied once (keyed by their `uuid`) on every
+    call through this wrapper or `DspyAdapter.stripped_lm_call`, and on every
+    property read — so spend survives history eviction at
+    `settings.max_history_size`, and reflection calls made by the instruction and
+    code proposers that never go through this callable are still counted. Requires
+    LM history to be enabled (it is unless `dspy.settings.disable_history` is set);
+    entries without a `uuid` (real dspy history entries always have one) are
+    ignored, as they cannot be safely de-duplicated.
+
+    Totals are scoped to this instance's lifetime: entries already in `lm.history`
+    at construction are marked as counted without contributing, so reusing a
+    `reflection_lm` across multiple `compile()` calls doesn't carry over spend from
+    a previous run (`DspyAdapter.__init__` constructs a fresh `TrackedReflectionLM`
+    per compile). Two residual caveats: sharing the reflection LM instance as both
+    the task LM and the reflection LM counts task spend toward the reflection
+    budget, and a custom proposer that makes more direct LM calls than
+    `settings.max_history_size` between two syncs can have the excess evicted
+    before it is tallied.
+    """
+
+    def __init__(self, lm):
+        self.lm = lm
+        self._counted_uuids: set[str] = set()
+        self._total_cost = 0.0
+        self._total_tokens_in = 0
+        self._total_tokens_out = 0
+        self._lock = threading.Lock()
+        with self._lock:
+            for entry in self._entries():
+                uid = entry.get("uuid")
+                if uid is not None:
+                    self._counted_uuids.add(uid)
+
+    def __call__(self, x: str) -> str:
+        outputs = _stripped_lm_outputs(self.lm, x)
+        self._sync()
+        return outputs[0]
+
+    def _entries(self) -> list:
+        return [entry for entry in self.lm.history if isinstance(entry, Mapping)]
+
+    def _sync(self) -> None:
+        """Tally history entries not yet counted, then prune uuids evicted from the window.
+
+        Evicted uuids can never reappear (uuid4), so the set stays bounded by
+        `settings.max_history_size` without ever double-counting.
+        """
+        with self._lock:
+            window_uuids = set()
+            for entry in self._entries():
+                uid = entry.get("uuid")
+                if uid is None:
+                    continue
+                window_uuids.add(uid)
+                if uid in self._counted_uuids:
+                    continue
+                self._counted_uuids.add(uid)
+                self._total_cost += entry.get("cost") or 0.0
+                usage = entry.get("usage") or {}
+                self._total_tokens_in += usage.get("prompt_tokens") or 0
+                self._total_tokens_out += usage.get("completion_tokens") or 0
+            self._counted_uuids &= window_uuids
+
+    @property
+    def total_cost(self) -> float:
+        self._sync()
+        return self._total_cost
+
+    @property
+    def total_tokens_in(self) -> int:
+        self._sync()
+        return self._total_tokens_in
+
+    @property
+    def total_tokens_out(self) -> int:
+        self._sync()
+        return self._total_tokens_out
+
+
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
         self,
@@ -106,6 +212,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
+        self.tracked_reflection_lm = TrackedReflectionLM(reflection_lm) if reflection_lm is not None else None
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
@@ -268,6 +375,47 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
+    def batch_evaluate(self, items):
+        """Evaluate multiple (candidate, batch) pairs concurrently.
+
+        gepa's multi-proposal iterations (`sampling_strategy`) evaluate several
+        candidates per step; its fallback runs them one at a time, and each
+        `evaluate` call only parallelizes across the (small) minibatch. Candidates
+        are independent, so run them on worker threads. dspy settings overrides and
+        the active callback call ID are thread-local and must be copied into each
+        worker, or callbacks emitted there would start new root traces.
+        """
+        if len(items) <= 1:
+            return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
+
+        parent_overrides = thread_local_overrides.get().copy()
+
+        def _evaluate_pair(pair):
+            candidate, batch = pair
+            new_overrides = {**thread_local_overrides.get(), **parent_overrides}
+            if new_overrides.get("usage_tracker"):
+                # Mirror dspy's ParallelExecutor: deep-copy the usage tracker per worker so each
+                # thread tracks its own usage instead of contending over one shared tracker.
+                new_overrides["usage_tracker"] = deepcopy(new_overrides["usage_tracker"])
+            token = thread_local_overrides.set(new_overrides)
+            try:
+                return self.evaluate(batch, candidate, capture_traces=True)
+            finally:
+                thread_local_overrides.reset(token)
+
+        with ThreadPoolExecutor(max_workers=min(len(items), 8)) as executor:
+            return list(executor.map(_bind_active_call_id(_evaluate_pair), items))
+
+    def get_adapter_state(self) -> dict[str, Any]:
+        """Snapshot adapter state into gepa's checkpoint (gepa persists it via pickle)."""
+        return {"rng_state": self.rng.getstate()}
+
+    def set_adapter_state(self, state: dict[str, Any]) -> None:
+        """Restore adapter state on checkpoint resume."""
+        rng_state = state.get("rng_state")
+        if rng_state is not None:
+            self.rng.setstate(rng_state)
+
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
     ) -> dict[str, list[ReflectiveExample]]:
@@ -402,17 +550,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # Always return strings from the LM outputs
     # Even when it returns a dict with e.g., "text" and "reasoning" fields
     def stripped_lm_call(self, x: str) -> list[str]:
-        raw_outputs = self.reflection_lm(x)
-        outputs = []
-        for raw_output in raw_outputs:
-            if type(raw_output) == str:
-                outputs.append(raw_output)
-            elif type(raw_output) == dict:
-                if "text" not in raw_output:
-                    raise KeyError("Missing 'text' field in the output from the base LM!")
-                outputs.append(raw_output["text"])
-            else:
-                raise TypeError("Unexpected output type from the base LM! Expected str or dict")
-
+        outputs = _stripped_lm_outputs(self.reflection_lm, x)
+        # Tally the call into the reflection budget while its history entry is
+        # guaranteed to still be inside the (possibly small) retention window.
+        if self.tracked_reflection_lm is not None:
+            self.tracked_reflection_lm._sync()
         return outputs
 

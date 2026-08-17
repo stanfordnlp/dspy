@@ -3,12 +3,18 @@ import logging
 import math
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
+if TYPE_CHECKING:
+    from gepa.strategies.acceptance import AcceptanceCriterion
+    from gepa.strategies.proposal_sampling import SamplingStrategy
+    from gepa.strategies.proposal_selection import SelectionStrategy
+
+import dspy
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
@@ -276,6 +282,30 @@ class GEPA(Teleprompter):
             using LLM-driven selection logic based on optimization state and trajectories.
             See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py)
             for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
+        sampling_strategy: Controls how many (parent, minibatch) proposal tasks GEPA samples per iteration.
+            Accepts a gepa `SamplingStrategy` such as `SameParentSampling(n)`, `IndependentSampling(n)`, or
+            `PxNSampling(p, n)`. Defaults to classic single-mutation GEPA. Multi-proposal iterations
+            evaluate up to 8 candidates concurrently (see `DspyAdapter.batch_evaluate`), each using up to
+            `num_threads` threads, so effective LM concurrency is multiplied accordingly — size
+            `num_threads` and provider rate limits with this in mind.
+        selection_strategy: Decides which of an iteration's improving proposals enter the candidate pool.
+            Accepts a gepa `SelectionStrategy` such as `BestImprovement` or `TopKImprovements(k)`. Defaults
+            to accepting all improvements.
+        acceptance_criterion: 'strict_improvement' (default), 'improvement_or_equal', or a custom gepa
+            `AcceptanceCriterion` instance controlling when a mutated candidate is considered an improvement.
+        max_reflection_cost: Maximum cumulative reflection-LM spend in USD before GEPA stops. Requires
+            `reflection_lm`. Cost is read from the reflection LM's call history, so it reflects actual
+            litellm-reported costs. Requires LM history to be enabled (`dspy.settings.disable_history`
+            must be False and `dspy.settings.max_history_size` must be nonzero); `compile()` raises if
+            history is disabled. Spend is tallied cumulatively as calls happen, so a small
+            `max_history_size` is fine — except that a custom `instruction_proposer` making more direct
+            LM calls than the history window holds within a single proposal step can have the excess
+            evicted before it is tallied. This complements, but does not replace, the metric-call budget:
+            one of `auto`, `max_full_evals`, or `max_metric_calls` is still required.
+        wandb_attach_existing: Log into the already-active wandb run instead of creating one. Use when GEPA
+            is embedded in a training loop that owns the run.
+        mlflow_attach_existing: Log into the already-active MLflow run instead of creating one.
+        tracking_key_prefix: Prefix applied to metric keys logged to wandb/MLflow, useful when sharing a run.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
@@ -366,6 +396,12 @@ class GEPA(Teleprompter):
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
+        # Proposal strategy configuration (gepa >= 0.1.4)
+        sampling_strategy: "SamplingStrategy | None" = None,
+        selection_strategy: "SelectionStrategy | None" = None,
+        acceptance_criterion: "AcceptanceCriterion | Literal['strict_improvement', 'improvement_or_equal']" = "strict_improvement",
+        # Budget
+        max_reflection_cost: float | None = None,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -382,6 +418,9 @@ class GEPA(Teleprompter):
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
         use_mlflow: bool = False,
+        wandb_attach_existing: bool = False,
+        mlflow_attach_existing: bool = False,
+        tracking_key_prefix: str = "",
         # Reproducibility
         seed: int | None = 0,
         # GEPA passthrough kwargs
@@ -417,6 +456,16 @@ class GEPA(Teleprompter):
             "Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. "
             "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
         )
+
+        if max_reflection_cost is not None and reflection_lm is None:
+            raise ValueError("max_reflection_cost requires reflection_lm to be set, so GEPA can track reflection spend.")
+        self.sampling_strategy = sampling_strategy
+        self.selection_strategy = selection_strategy
+        self.acceptance_criterion = acceptance_criterion
+        self.max_reflection_cost = max_reflection_cost
+        self.wandb_attach_existing = wandb_attach_existing
+        self.mlflow_attach_existing = mlflow_attach_existing
+        self.tracking_key_prefix = tracking_key_prefix
 
         self.reflection_lm = reflection_lm
         self.skip_perfect_score = skip_perfect_score
@@ -600,23 +649,42 @@ class GEPA(Teleprompter):
         for path, flex in flex_submodules.items():
             seed_candidate[path] = flex.module_src
 
+        # TrackedReflectionLM derives max_reflection_cost's spend totals from the reflection LM's
+        # call history. If history is disabled (or capped at 0 entries), those totals stay 0.0
+        # forever and the stopper never fires, silently allowing unbounded spend. Checked here
+        # (not __init__) because settings can change between construction and compile.
+        if self.max_reflection_cost is not None and (
+            dspy.settings.disable_history or not dspy.settings.max_history_size
+        ):
+            raise ValueError(
+                "max_reflection_cost requires LM call history to be enabled, since reflection spend is "
+                "computed from the reflection LM's history. Currently "
+                f"dspy.settings.disable_history={dspy.settings.disable_history} and "
+                f"dspy.settings.max_history_size={dspy.settings.max_history_size}. Either unset "
+                "max_reflection_cost, or ensure disable_history is False and max_history_size is nonzero."
+            )
+
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
             trainset=trainset,
             valset=valset,
             adapter=adapter,
             # Reflection-based configuration
-            reflection_lm=(lambda x: adapter.stripped_lm_call(x)[0]) if self.reflection_lm is not None else None,
+            reflection_lm=adapter.tracked_reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
             module_selector=self.component_selector,
             perfect_score=self.perfect_score,
+            sampling_strategy=self.sampling_strategy,
+            selection_strategy=self.selection_strategy,
+            acceptance_criterion=self.acceptance_criterion,
             # Merge-based configuration
             use_merge=self.use_merge,
             max_merge_invocations=self.max_merge_invocations,
             # Budget
             max_metric_calls=self.max_metric_calls,
+            max_reflection_cost=self.max_reflection_cost,
             # Logging
             logger=LoggerAdapter(logger),
             run_dir=self.log_dir,
@@ -625,6 +693,9 @@ class GEPA(Teleprompter):
             wandb_init_kwargs=self.wandb_init_kwargs,
             use_mlflow=self.use_mlflow,
             track_best_outputs=self.track_best_outputs,
+            wandb_attach_existing=self.wandb_attach_existing,
+            mlflow_attach_existing=self.mlflow_attach_existing,
+            tracking_key_prefix=self.tracking_key_prefix,
             display_progress_bar=True,
             raise_on_exception=True,
             # Reproducibility
