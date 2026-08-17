@@ -378,38 +378,94 @@ def find_predictor_for_stream_listeners(
     This is a utility function to automatically find the predictor for each stream listener. It is used when some
     listeners don't specify the predictor they want to listen to. If a listener's `signature_field_name` is not
     unique in the program, this function will raise an error.
+
+    A listener that was given a `predict` which is not part of `program` is re-bound to the matching predictor
+    inside `program`, by `predict_name` when one was provided and by unique signature field name otherwise. Without
+    this, `Predict.forward` compares the listener's predictor against itself by identity and silently falls back to
+    a non-streaming call, so the listener never emits anything.
     """
     predictors = program.named_predictors()
+    name_to_predictor = dict(predictors)
+    live_predictor_ids = {id(predictor) for _, predictor in predictors}
+
+    def needs_resolution(listener: StreamListener) -> bool:
+        return listener.predict is None or id(listener.predict) not in live_predictor_ids
 
     field_name_to_named_predictor = {}
     for listener in stream_listeners:
-        if listener.predict:
+        if not needs_resolution(listener):
             continue
         field_name_to_named_predictor[listener.signature_field_name] = None
 
+    ambiguous_field_names = set()
     for name, predictor in predictors:
         for field_name in predictor.signature.output_fields:
             if field_name not in field_name_to_named_predictor:
                 continue
 
             if field_name_to_named_predictor[field_name] is not None:
-                raise ValueError(
-                    f"Signature field {field_name} is not unique in the program, cannot automatically determine which "
-                    "predictor to use for streaming. Please specify the predictor to listen to."
-                )
+                # Raised per listener below, so that a listener which did pass a predictor gets advice it can act
+                # on rather than being told to do what it already did.
+                ambiguous_field_names.add(field_name)
+                continue
             field_name_to_named_predictor[field_name] = (name, predictor)
 
     predict_id_to_listener = defaultdict(list)
     for listener in stream_listeners:
-        if listener.predict:
+        if not needs_resolution(listener):
             predict_id_to_listener[id(listener.predict)].append(listener)
             continue
-        if listener.signature_field_name not in field_name_to_named_predictor:
+
+        stale_predict = listener.predict is not None
+
+        if stale_predict and listener.predict_name in name_to_predictor:
+            # The listener holds a predictor that is not the one the program will execute, which happens whenever
+            # the program was copied (every optimizer's `compile()` returns a copy) or the inner predictor of a
+            # module like `dspy.ChainOfThought` was replaced after the listener was built. Re-bind by name.
+            candidate = name_to_predictor[listener.predict_name]
+            if listener.signature_field_name not in candidate.signature.output_fields:
+                # Binding anyway would reproduce the bug this function fixes: the predictor streams, the listener
+                # never sees its field marker, and nothing is emitted.
+                raise ValueError(
+                    f"The predictor passed to the stream listener for signature field "
+                    f"{listener.signature_field_name} is not part of the program being streamed, and the predictor "
+                    f"named {listener.predict_name} in the program does not produce that field, so the listener "
+                    "cannot be re-bound by name. Pass a `predict_name` whose predictor produces the field, or pass "
+                    "a predictor that belongs to the program."
+                )
+            listener.predict = candidate
+            predict_id_to_listener[id(listener.predict)].append(listener)
+            continue
+
+        if listener.signature_field_name in ambiguous_field_names:
+            if stale_predict:
+                raise ValueError(
+                    f"The predictor passed to the stream listener for signature field "
+                    f"{listener.signature_field_name} is not part of the program being streamed, and that field is "
+                    "produced by more than one predictor, so the listener cannot be re-bound automatically. Pass "
+                    "`predict_name` to identify the predictor, or pass a predictor that belongs to the program."
+                )
+            raise ValueError(
+                f"Signature field {listener.signature_field_name} is not unique in the program, cannot automatically "
+                "determine which predictor to use for streaming. Please specify the predictor to listen to."
+            )
+
+        # Check the resolved value rather than key membership: the key is inserted for every listener that needs
+        # resolution, so a missing-field lookup lands here with a `None` value, not a missing key.
+        named_predictor = field_name_to_named_predictor.get(listener.signature_field_name)
+        if named_predictor is None:
+            if stale_predict:
+                raise ValueError(
+                    f"The predictor passed to the stream listener for signature field "
+                    f"{listener.signature_field_name} is not part of the program being streamed, and no predictor in "
+                    "the program produces that field. Pass a predictor that belongs to the program, or omit `predict` "
+                    "to resolve it automatically."
+                )
             raise ValueError(
                 f"Signature field {listener.signature_field_name} is not a field of any predictor in the program, "
                 "cannot automatically determine which predictor to use for streaming. Please verify your field name or "
                 "specify the predictor to listen to."
             )
-        listener.predict_name, listener.predict = field_name_to_named_predictor[listener.signature_field_name]
+        listener.predict_name, listener.predict = named_predictor
         predict_id_to_listener[id(listener.predict)].append(listener)
     return predict_id_to_listener
