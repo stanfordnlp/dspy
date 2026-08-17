@@ -10,6 +10,12 @@ from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import ContextWindowExceededError
 
 
+@pytest.mark.parametrize("signature", ["trajectory -> answer", "question -> trajectory"])
+def test_react_rejects_reserved_trajectory_field(signature):
+    with pytest.raises(ValueError, match="trajectory"):
+        dspy.ReAct(signature, tools=[])
+
+
 @pytest.mark.extra
 def test_tool_observation_preserves_custom_type():
     pytest.importorskip("PIL.Image")
