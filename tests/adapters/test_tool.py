@@ -284,6 +284,35 @@ def test_tool_call_kwarg():
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
 
 
+def test_tool_excludes_var_keyword_from_args():
+    def fn(x: int, **kwargs):
+        """A function with keyword varargs."""
+        return kwargs
+
+    tool = Tool(fn)
+
+    assert tool.args == {"x": {"type": "integer"}}
+    assert tool.arg_types == {"x": int}
+    assert tool.has_kwargs
+    assert tool.format_as_litellm_function_call()["function"]["parameters"] == {
+        "type": "object",
+        "properties": {"x": {"type": "integer"}},
+        "required": ["x"],
+    }
+
+
+def test_tool_excludes_var_positional_from_args():
+    def fn(x: int, *args):
+        """A function with positional varargs."""
+        return x
+
+    tool = Tool(fn)
+
+    assert tool.args == {"x": {"type": "integer"}}
+    assert tool.arg_types == {"x": int}
+    assert not tool.has_kwargs
+
+
 def test_tool_str():
     def add(x: int, y: int = 0) -> int:
         """Add two integers."""

@@ -85,13 +85,19 @@ class Tool(Type):
         args = {}
         arg_types = {}
 
-        # Use inspect.signature to get all arg names
+        # Use inspect.signature to get all arg names. `*args` and `**kwargs` are not addressable by
+        # name in a tool call, so they must not be advertised as parameters of the tool.
         sig = inspect.signature(annotations_func)
+        named_params = {
+            param_name: param
+            for param_name, param in sig.parameters.items()
+            if param.kind not in (param.VAR_POSITIONAL, param.VAR_KEYWORD)
+        }
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
         # Build a dictionary of arg name -> type (defaulting to Any when missing)
-        hints = {param_name: available_hints.get(param_name, Any) for param_name in sig.parameters.keys()}
-        default_values = {param_name: sig.parameters[param_name].default for param_name in sig.parameters.keys()}
+        hints = {param_name: available_hints.get(param_name, Any) for param_name in named_params}
+        default_values = {param_name: named_params[param_name].default for param_name in named_params}
 
         # Process each argument's type to generate its JSON schema.
         for k, v in hints.items():
