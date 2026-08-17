@@ -1,6 +1,6 @@
 # DSPy in Production
 
-<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, Microsoft AI, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
+<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, Nubank, Microsoft AI, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
 
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production. To add yours, please [open a PR](https://github.com/stanfordnlp/dspy/edit/main/docs/docs/community/use-cases.md).
 
@@ -31,6 +31,13 @@ This list represents companies that have publicly shared their use cases or have
   <div class="dspy-spotlight-link"><a href="https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy">Engineering blog →</a> · <a href="https://www.youtube.com/watch?v=gGGCJWbqHqc">Talk →</a></div>
 </div>
 
+<div class="dspy-spotlight">
+  <div class="dspy-spotlight-logo"><img class="logo-nubank" src="../../static/img/logos/nubank.svg" alt="Nubank"></div>
+  <div class="dspy-spotlight-metric">131 million customers</div>
+  <div class="dspy-spotlight-desc">Uses DSPy with GEPA to optimize modular, versioned prompts for production financial agents.</div>
+  <div class="dspy-spotlight-link"><a href="https://building.nubank.com/building-ai-agents-for-131-million-customers/">Engineering blog →</a></div>
+</div>
+
 </div>
 
 ---
@@ -41,6 +48,7 @@ This list represents companies that have publicly shared their use cases or have
 |---|---|
 | **[Shopify](https://www.shopify.com/)** | Structured metadata extraction across all Shopify shops with DSPy + GEPA; reduced yearly costs ~550×. [Talk](https://www.youtube.com/watch?v=bxToahwOVpY) |
 | **[Dropbox](https://www.dropbox.com/)** | Optimized Dash's relevance judge using DSPy across ranking, training data generation, and offline evaluation. [Engineering blog](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy), [Talk](https://www.youtube.com/watch?v=gGGCJWbqHqc) |
+| **[Nubank](https://nubank.com.br/)** | Uses DSPy with GEPA to optimize modular, semantically versioned prompts for production-grade financial-service agents. [Engineering blog](https://building.nubank.com/building-ai-agents-for-131-million-customers/) |
 | **[Microsoft AI](https://microsoft.ai/)** | Curated pretraining data for MAI-Thinking-1 with DSPy + GEPA, optimizing LLM judge prompts that score web-page quality from ~2,000 human labels. [Paper](https://microsoft.ai/pdf/mai-thinking-1.pdf), [Blog](https://haroldbenoit.com/blog/ode_to_gepa/) |
 | **[AWS](https://aws.amazon.com/)** | Migrates prompts from larger to smaller models on Amazon Nova while maintaining performance. [Blog](https://aws.amazon.com/blogs/machine-learning/improve-amazon-nova-migration-performance-with-data-aware-prompt-optimization/) |
 | **[JetBlue](https://www.jetblue.com/)** | Multiple chatbot use cases. [Blog](https://www.databricks.com/blog/optimizing-databricks-llm-pipelines-dspy) |
