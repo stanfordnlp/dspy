@@ -154,7 +154,7 @@ ReActV2 reserves `submit` as an internal tool. Its argument schema is generated 
 
 After executing all calls in a turn, ReActV2 attaches their results to `ToolCalls`, appends the event to history, and invokes the model again with no duplicate copy of the original inputs. If one of the calls successfully invokes `submit`, ReActV2 returns its typed fields immediately with `termination_reason="submit"`; there is no separate extraction module.
 
-If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds the context window, ReActV2 makes one final LM call that forces `tool_choice` to `submit`. A successful fallback returns `termination_reason="forced_submit"`. If that attempt fails, the prediction still returns its history and a termination reason describing why the normal loop stopped, but it may not contain the declared output fields.
+If the loop reaches `max_iters`, returns no calls, fails to parse, or exceeds the context window, ReActV2 makes one final LM call requesting `submit`. With native function calling enabled, it sets `tool_choice` to `submit`, so the provider enforces that choice. In non-native mode, the adapter removes `tool_choice` and requests `submit` through the formatted prompt instead, so structured submission is not guaranteed. A successful fallback returns `termination_reason="forced_submit"`. If that attempt fails, the prediction still returns its history and a termination reason describing why the normal loop stopped, but it may not contain the declared output fields.
 
 Unlike ReAct, ReActV2 does not currently truncate old history events on context overflow.
 
