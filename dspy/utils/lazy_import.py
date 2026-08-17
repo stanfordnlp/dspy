@@ -82,7 +82,8 @@ class _MissingModule(types.ModuleType):
 class _LazyModule(types.ModuleType):
     """Module proxy that imports the real module on first attribute access.
 
-    Attribute assignment also materializes the real module so configuration writes apply to the real dependency.
+    Attribute assignment also materializes the real module so configuration writes apply to the real dependency,
+    except for the submodule bindings the import system writes while a submodule is still initializing.
     """
 
     def __init__(self, module: str, spec: importlib.machinery.ModuleSpec, lock: threading.RLock):
@@ -120,6 +121,10 @@ class _LazyModule(types.ModuleType):
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
+            super().__setattr__(attr, value)
+        elif isinstance(value, types.ModuleType) and getattr(value, "__name__", None) == f"{self.__name__}.{attr}":
+            # `import pkg.sub` binds the submodule on the parent package. Materializing the real module here would
+            # execute it while `pkg.sub` is still initializing, so record the binding on the proxy instead.
             super().__setattr__(attr, value)
         else:
             setattr(self._load(), attr, value)

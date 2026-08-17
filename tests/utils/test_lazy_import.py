@@ -1,3 +1,4 @@
+import importlib
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -76,6 +77,28 @@ def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
     mod.value = 2
 
     assert sys.modules[module_name].value == 2
+
+
+def test_require_keeps_parent_lazy_while_submodule_imports(tmp_path, monkeypatch):
+    package_name = "dspy_lazy_submodule_package"
+    monkeypatch.syspath_prepend(tmp_path)
+    for name in (package_name, f"{package_name}.sub", f"{package_name}.version"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    package = tmp_path / package_name
+    package.mkdir()
+    (package / "__init__.py").write_text(f"from {package_name}.sub import LATE\n\nvalue = 42\n")
+    # Importing a submodule makes the import system bind it on the parent package, which must not
+    # materialize the lazy parent while the submodule is still initializing.
+    (package / "sub.py").write_text(f"from {package_name}.version import VERSION\n\nLATE = VERSION\n")
+    (package / "version.py").write_text("VERSION = '1.0'\n")
+
+    require(package_name)
+    submodule = importlib.import_module(f"{package_name}.sub")
+
+    assert submodule.LATE == "1.0"
+    assert sys.modules[package_name].sub is submodule
+    assert require(package_name).value == 42
 
 
 def test_require_returns_stub_when_missing():
