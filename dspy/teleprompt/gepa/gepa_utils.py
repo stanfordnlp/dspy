@@ -273,21 +273,25 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def batch_evaluate(self, items, *, capture_traces=True):
         total_threads = self.num_threads or dspy.settings.num_threads
-        candidate_threads = min(len(items), total_threads) or 1
-        threads_per_candidate = max(1, total_threads // candidate_threads)
+        candidate_workers = min(len(items), total_threads) or 1
+        threads_per_candidate, extra_threads = divmod(total_threads, candidate_workers)
 
         def evaluate(item):
-            context, (candidate, batch) = item
+            context, (candidate, batch), num_threads = item
             return context.run(
                 self.evaluate,
                 batch,
                 candidate,
                 capture_traces=capture_traces,
-                num_threads=threads_per_candidate,
+                num_threads=num_threads,
             )
 
-        with ThreadPoolExecutor(max_workers=candidate_threads) as executor:
-            return list(executor.map(evaluate, [(copy_context(), item) for item in items]))
+        work = [
+            (copy_context(), item, threads_per_candidate + (index < extra_threads))
+            for index, item in enumerate(items)
+        ]
+        with ThreadPoolExecutor(max_workers=candidate_workers) as executor:
+            return list(executor.map(evaluate, work))
 
     def get_adapter_state(self) -> dict[str, Any]:
         return {"rng_state": self.rng.getstate()}

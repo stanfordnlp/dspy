@@ -695,3 +695,9 @@ def test_batch_evaluate_is_parallel_and_preserves_context():
     adapter.batch_evaluate([("first", [])], capture_traces=False)
     assert trace_modes == [True, True, False]
     assert thread_budgets == [2, 2, 4]
+
+    adapter.num_threads = 8
+    adapter.batch_evaluate([("first", []), ("second", []), ("third", [])], capture_traces=False)
+    assert trace_modes == [True, True, False, False, False, False]
+    assert sorted(thread_budgets[-3:]) == [2, 3, 3]
+    assert sum(thread_budgets[-3:]) == 8
