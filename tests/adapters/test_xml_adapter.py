@@ -85,47 +85,13 @@ def test_xml_adapter_parse_raises_on_type_error():
     assert "Failed to parse field" in str(e.value)
 
 
-def test_xml_adapter_nested_xml_round_trip_and_legacy_json():
-    class Address(pydantic.BaseModel):
-        city: str
-
-    class Person(pydantic.BaseModel):
-        name: str
-        address: Address
-
+def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     class TestSignature(dspy.Signature):
-        person: Person = dspy.OutputField()
-
-    adapter = XMLAdapter()
-    person = Person(name="Ada", address=Address(city="London"))
-    field = FieldInfoWithName(name="person", info=TestSignature.output_fields["person"])
-    xml = adapter.format_field_with_value({field: person})
-
-    assert xml == "<person><name>Ada</name><address><city>London</city></address></person>"
-    assert adapter.parse(TestSignature, xml) == {"person": person}
-    assert adapter.user_message_output_requirements(TestSignature).endswith(
-        "Use this nested XML structure: <person><name>...</name><address><city>...</city></address></person>"
-    )
-    assert adapter.parse(TestSignature, '<person>{"name":"Ada","address":{"city":"London"}}</person>') == {
-        "person": person
-    }
-
-
-def test_xml_adapter_repeated_elements_empty_lists_and_nested_typed_dicts():
-    class Item(pydantic.BaseModel):
-        value: int
-
-    class TestSignature(dspy.Signature):
-        items: list[Item] = dspy.OutputField()
         counts: dict[str, list[int]] = dspy.OutputField()
 
     adapter = XMLAdapter()
-    completion = (
-        "<items><value>1</value></items><items><value>2</value></items>"
-        "<counts><first>3</first><first>4</first><second>5</second></counts>"
-    )
+    completion = "<counts><first>3</first><first>4</first><second>5</second></counts>"
     assert adapter.parse(TestSignature, completion) == {
-        "items": [Item(value=1), Item(value=2)],
         "counts": {"first": [3, 4], "second": [5]},
     }
 
@@ -162,9 +128,6 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
     system_instructions = adapter.format_field_structure(TestSignature)
     assert f"{order_schema}\n\n{orders_schema} {orders_schema}" in system_instructions
 
-    requirements = adapter.user_message_output_requirements(TestSignature)
-    assert f"Use this nested XML structure: {order_schema} {orders_schema} {orders_schema}" in requirements
-
     completion = (
         "<order><order_id>1</order_id><address><city>London</city></address><labels>new</labels></order>"
         "<orders><order_id>2</order_id><address><city>Paris</city></address><labels>paid</labels></orders>"
@@ -183,9 +146,8 @@ def test_xml_adapter_recursive_model_schema_terminates():
     class TestSignature(dspy.Signature):
         root: Node = dspy.OutputField()
 
-    assert XMLAdapter().user_message_output_requirements(TestSignature).endswith(
-        "Use this nested XML structure: "
-        "<root><value>...</value><children>...</children> <children>...</children></root>"
+    assert "<root><value>...</value><children>...</children> <children>...</children></root>" in (
+        XMLAdapter().format_field_structure(TestSignature)
     )
 
 
@@ -204,9 +166,13 @@ def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
 
 
 def test_xml_adapter_format_and_parse_nested_model():
+    class Address(pydantic.BaseModel):
+        city: str
+
     class InnerModel(pydantic.BaseModel):
         value: int
         label: str
+        address: Address
 
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -214,19 +180,16 @@ def test_xml_adapter_format_and_parse_nested_model():
 
     adapter = XMLAdapter()
     # Format output fields as XML
-    fields_with_values = {
-        FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
-    }
+    result = InnerModel(value=5, label="foo", address=Address(city="London"))
+    fields_with_values = {FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): result}
     xml = adapter.format_field_with_value(fields_with_values)
-    assert xml == "<result><value>5</value><label>foo</label></result>"
+    assert xml == "<result><value>5</value><label>foo</label><address><city>London</city></address></result>"
+    assert adapter.parse(TestSignature, xml) == {"result": result}
 
-    # Parse XML output (should parse as string, not as model)
-    completion = '<result>{"value": 5, "label": "foo"}</result>'
+    # Legacy JSON values inside the outer XML field remain supported.
+    completion = '<result>{"value": 5, "label": "foo", "address": {"city": "London"}}</result>'
     parsed = adapter.parse(TestSignature, completion)
-    # The parse_value helper will try to cast to InnerModel
-    assert isinstance(parsed["result"], InnerModel)
-    assert parsed["result"].value == 5
-    assert parsed["result"].label == "foo"
+    assert parsed == {"result": result}
 
 
 def test_xml_adapter_format_and_parse_list_of_models():
@@ -242,16 +205,13 @@ def test_xml_adapter_format_and_parse_list_of_models():
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml == ("<items><name>a</name><score>1.1</score></items><items><name>b</name><score>2.2</score></items>")
+    assert adapter.parse(TestSignature, xml) == {"items": items}
 
-    # Parse XML output
+    # Legacy JSON lists inside the outer XML field remain supported.
     import json
 
     completion = f"<items>{json.dumps([i.model_dump() for i in items])}</items>"
-    parsed = adapter.parse(TestSignature, completion)
-    assert isinstance(parsed["items"], list)
-    assert all(isinstance(i, Item) for i in parsed["items"])
-    assert parsed["items"][0].name == "a"
-    assert parsed["items"][1].score == 2.2
+    assert adapter.parse(TestSignature, completion) == {"items": items}
 
 
 def test_xml_adapter_with_tool_like_output():
@@ -792,9 +752,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '</question>\n'
                            '\n'
                            'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`. Use this nested XML structure: '
-                               '<answer><answer>...</answer><sources>...</sources> '
-                               '<sources>...</sources></answer>'}]}]
+                           '`<answer>`.'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -835,10 +793,7 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "Summarize\n"
                  "</question>\n"
                  "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
-                    "Use this nested XML structure: "
-                    "<summary><title>...</title><address><city>...</city><country>...</country>"
-                    "</address></summary>"}]
+                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`."}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs

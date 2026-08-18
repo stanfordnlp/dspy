@@ -115,13 +115,6 @@ class XMLAdapter(ChatAdapter):
         message = "Respond with the corresponding output fields wrapped in XML tags "
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
         message += "."
-        nested_fields = [
-            self._xml_schema(name, field.annotation)
-            for name, field in signature.output_fields.items()
-            if self._uses_nested_xml(field.annotation)
-        ]
-        if nested_fields:
-            message += f" Use this nested XML structure: {' '.join(nested_fields)}"
         return message
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
@@ -135,10 +128,7 @@ class XMLAdapter(ChatAdapter):
                 message=f"Failed to parse XML: {e}",
             ) from e
 
-        elements_by_name: dict[str, list[ET.Element]] = defaultdict(list)
-        for element in root:
-            if element.tag in signature.output_fields:
-                elements_by_name[element.tag].append(element)
+        elements_by_name = self._group_children(root)
 
         fields = {}
         for name, field_info in signature.output_fields.items():
@@ -242,13 +232,12 @@ class XMLAdapter(ChatAdapter):
                 return (element.text or "").strip()
             return cls._inner_xml(element).strip()
 
+        children_by_name = cls._group_children(element)
+        if not children_by_name:
+            return (element.text or "").strip()
+
         field_annotations = cls._structured_field_annotations(annotation)
         if field_annotations is not None:
-            if not list(element):
-                return (element.text or "").strip()
-            children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
-            for child in element:
-                children_by_name[child.tag].append(child)
             return {
                 name: cls._elements_to_value(children_by_name[name], field_annotation)
                 for name, field_annotation in field_annotations.items()
@@ -258,29 +247,20 @@ class XMLAdapter(ChatAdapter):
         origin = get_origin(annotation)
         if origin is list:
             return cls._elements_to_value([element], annotation)
-        if origin is dict:
-            args = get_args(annotation)
-            value_annotation = args[1] if len(args) == 2 else Any
-            children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
-            for child in element:
-                children_by_name[child.tag].append(child)
-            return {
-                name: cls._elements_to_value(children, value_annotation) for name, children in children_by_name.items()
-            }
+        args = get_args(annotation)
+        child_annotation = args[1] if origin is dict and len(args) == 2 else Any
+        return {name: cls._elements_to_value(children, child_annotation) for name, children in children_by_name.items()}
 
+    @staticmethod
+    def _group_children(element: ET.Element) -> dict[str, list[ET.Element]]:
         children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
         for child in element:
             children_by_name[child.tag].append(child)
-        if children_by_name:
-            return {name: cls._elements_to_value(children, Any) for name, children in children_by_name.items()}
-        return (element.text or "").strip()
+        return children_by_name
 
     @staticmethod
     def _inner_xml(element: ET.Element) -> str:
-        content = element.text or ""
-        for child in element:
-            content += ET.tostring(child, encoding="unicode")
-        return content
+        return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
 
     @staticmethod
     def _unwrap_optional(annotation: Any) -> Any:
