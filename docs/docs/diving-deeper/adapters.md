@@ -122,7 +122,7 @@ In adhering to this structure, your objective is:
 Ada, 36, lives in London, UK and likes math and machines.
 </text>
 
-Respond with the corresponding output fields wrapped in XML tags `<person>`.
+Respond with the corresponding output fields wrapped in XML tags `<person>`. Use this nested XML structure: <person><name>...</name><age>...</age><address><city>...</city><country>...</country></address><interests>...</interests> <interests>...</interests></person>
 ```
 
 A matching LM response looks like this:

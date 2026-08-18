@@ -109,7 +109,7 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
 
     class Order(TypedDict):
         order_id: int
-        address: Address
+        address: Address | None
         labels: list[str]
 
     class TestSignature(dspy.Signature):
@@ -127,6 +127,9 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
     )
     system_instructions = adapter.format_field_structure(TestSignature)
     assert f"{order_schema}\n\n{orders_schema} {orders_schema}" in system_instructions
+    assert f"Use this nested XML structure: {order_schema} {orders_schema} {orders_schema}" in (
+        adapter.user_message_output_requirements(TestSignature)
+    )
 
     completion = (
         "<order><order_id>1</order_id><address><city>London</city></address><labels>new</labels></order>"
@@ -146,9 +149,14 @@ def test_xml_adapter_recursive_model_schema_terminates():
     class TestSignature(dspy.Signature):
         root: Node = dspy.OutputField()
 
+    adapter = XMLAdapter()
     assert "<root><value>...</value><children>...</children> <children>...</children></root>" in (
-        XMLAdapter().format_field_structure(TestSignature)
+        adapter.format_field_structure(TestSignature)
     )
+    completion = "<root><value>parent</value><children><value>child</value><children /></children></root>"
+    assert adapter.parse(TestSignature, completion) == {
+        "root": Node(value="parent", children=[Node(value="child", children=[])])
+    }
 
 
 def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
@@ -752,7 +760,9 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '</question>\n'
                            '\n'
                            'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`.'}]}]
+                           '`<answer>`. Use this nested XML structure: '
+                               '<answer><answer>...</answer><sources>...</sources> '
+                               '<sources>...</sources></answer>'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -793,7 +803,10 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "Summarize\n"
                  "</question>\n"
                  "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`."}]
+                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
+                    "Use this nested XML structure: "
+                    "<summary><title>...</title><address><city>...</city><country>...</country>"
+                    "</address></summary>"}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
