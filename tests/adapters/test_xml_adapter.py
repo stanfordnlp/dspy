@@ -674,12 +674,8 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  '{question}\n'
                  '</question>\n'
                  '\n'
-                 '<answer>\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
-                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
-                 '</answer>\n'
+                 '<answer><answer>...</answer><sources>...</sources> '
+                 '<sources>...</sources></answer>\n'
                  'In adhering to this structure, your objective is: \n'
                  '        Answer using all supplied context.'},
      {"role": "user",
@@ -777,14 +773,8 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  '{question}\n'
                  '</question>\n'
                  '\n'
-                 '<summary>\n'
-                 '{summary}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "$defs": {"XmlAddress": {"type": "object", "properties": {"city": '
-                 '{"type": "string", "title": "City"}, "country": {"type": "string", "title": '
-                 '"Country"}}, "required": ["city", "country"], "title": "XmlAddress"}}, "properties": '
-                 '{"address": {"$ref": "#/$defs/XmlAddress"}, "title": {"type": "string", "title": '
-                 '"Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
-                 '</summary>\n'
+                 '<summary><title>...</title><address><city>...</city><country>...</country>'
+                 '</address></summary>\n'
                  'In adhering to this structure, your objective is: \n'
                  '        Given the fields `question`, produce the fields `summary`.'},
      {"role": "user",
@@ -895,13 +885,9 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 </question>
 
-<answers>
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
-</answers>
+<answers>...</answers> <answers>...</answers>
 
-<scores>
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
-</scores>
+<scores>...</scores> <scores>...</scores>
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message

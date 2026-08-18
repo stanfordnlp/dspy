@@ -48,12 +48,22 @@ class XMLAdapter(ChatAdapter):
         parts = ["All interactions will be structured in the following way, with the appropriate values filled in."]
 
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
-            return self.format_field_with_value(
-                {
-                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
-                    for field_name, field_info in fields.items()
-                }
-            )
+            formatted_fields = []
+            for field_name, field_info in fields.items():
+                is_output = (field_info.json_schema_extra or {}).get("__dspy_field_type") == "output"
+                if is_output and self._uses_nested_xml(field_info.annotation):
+                    formatted_fields.append(self._xml_schema(field_name, field_info.annotation))
+                else:
+                    formatted_fields.append(
+                        self.format_field_with_value(
+                            {
+                                FieldInfoWithName(name=field_name, info=field_info): translate_field_type(
+                                    field_name, field_info
+                                )
+                            }
+                        )
+                    )
+            return "\n\n".join(formatted_fields)
 
         parts.append(format_signature_fields_for_instructions(signature.input_fields))
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
