@@ -178,6 +178,81 @@ Structured mode returns `structuredContent` exactly as the server sent it. Objec
 
 Use the default mode for tools primarily observed by a ReAct agent or another language model, since MCP `content` is the server's model-facing representation. Use structured mode when application code needs native JSON values for validation, indexing, or explicit tool chaining. In both modes, treat tool results as untrusted server data and validate them before passing them to sensitive operations.
 
+### Running against maintained MCP servers
+
+The following complete example uses two maintained [MCP reference servers](https://github.com/modelcontextprotocol/servers): Everything, which returns a domain-shaped weather object, and Filesystem, which returns file content in an object. Neither requires API credentials. The package versions are pinned to the versions used to verify these outputs; Node.js and `npx` must be installed.
+
+```python
+import asyncio
+import tempfile
+from pathlib import Path
+
+import dspy
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+
+async def call_in_both_modes(server, tool_name, arguments):
+    async with stdio_client(server) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = (await session.list_tools()).tools
+            mcp_tool = next(tool for tool in tools if tool.name == tool_name)
+
+            text_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
+            structured_tool = dspy.Tool.from_mcp_tool(
+                session,
+                mcp_tool,
+                result_mode="structured",
+            )
+            return (
+                await text_tool.acall(**arguments),
+                await structured_tool.acall(**arguments),
+            )
+
+
+async def main():
+    everything = StdioServerParameters(
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-everything@2026.7.4"],
+    )
+    text, structured = await call_in_both_modes(
+        everything,
+        "get-structured-content",
+        {"location": "New York"},
+    )
+    print(repr(text))
+    # '{"temperature":33,"conditions":"Cloudy","humidity":82}'
+    print(structured)
+    # {'temperature': 33, 'conditions': 'Cloudy', 'humidity': 82}
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory, "example.txt")
+        path.write_text("alpha\nbeta\ngamma\n")
+        filesystem = StdioServerParameters(
+            command="npx",
+            args=[
+                "-y",
+                "@modelcontextprotocol/server-filesystem@2026.7.10",
+                directory,
+            ],
+        )
+        text, structured = await call_in_both_modes(
+            filesystem,
+            "read_text_file",
+            {"path": str(path), "head": 2},
+        )
+        print(repr(text))
+        # 'alpha\nbeta'
+        print(structured)
+        # {'content': 'alpha\nbeta'}
+
+
+asyncio.run(main())
+```
+
+These results illustrate why DSPy keeps the representations separate: model-facing `content` is already useful text, while `structuredContent` preserves the native object for indexing and validation. The Filesystem server limits access to the directory passed on its command line. Review and pin any server package before using it with sensitive data.
+
 ## Learn More
 
 - [MCP Official Documentation](https://modelcontextprotocol.io/)
