@@ -158,6 +158,26 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
 
+### Choosing the result representation
+
+By default, DSPy uses the MCP result's model-facing `content` field. This preserves the existing behavior: one text block becomes a string, multiple text blocks become a list, and results without text fall back to their non-text content.
+
+For programmatic workflows that need the MCP result's machine-readable JSON value, opt into structured content when converting the tool:
+
+```python
+structured_tool = dspy.Tool.from_mcp_tool(
+    session,
+    mcp_tool,
+    result_mode="structured",
+)
+
+result = await structured_tool.acall(param1="value", param2=123)
+```
+
+Structured mode returns `structuredContent` exactly as the server sent it. Objects, arrays, strings, numbers, booleans, JSON `null`, and empty values are preserved without parsing or unwrapping. For example, the official MCP Python SDK may represent a tool annotated `-> int` as `{"result": 3}`; DSPy returns that entire object rather than guessing that the `result` field is an SDK-generated envelope. If a result has no structured content, DSPy falls back to the default content conversion.
+
+Use the default mode for tools primarily observed by a ReAct agent or another language model, since MCP `content` is the server's model-facing representation. Use structured mode when application code needs native JSON values for validation, indexing, or explicit tool chaining. In both modes, treat tool results as untrusted server data and validate them before passing them to sensitive operations.
+
 ## Learn More
 
 - [MCP Official Documentation](https://modelcontextprotocol.io/)

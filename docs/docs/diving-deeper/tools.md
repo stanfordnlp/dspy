@@ -90,16 +90,23 @@ MCP servers publish tools with JSON schemas. `dspy.Tool.from_mcp_tool(session, t
 
 ```python
 dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
+
+structured_tool = dspy.Tool.from_mcp_tool(
+    session,
+    mcp_tool,
+    result_mode="structured",
+)
 ```
 
 The bridge:
 
 1. Converts the MCP input schema into DSPy's `args`, `arg_types`, and `arg_desc`.
 2. Creates an async callable that invokes `session.call_tool(...)`.
-3. Unpacks MCP text content into a string or list and preserves non-text content.
-4. Raises an execution error when the MCP response has `isError=True`.
+3. By default, unpacks MCP text content into a string or list and preserves the existing non-text fallback.
+4. With `result_mode="structured"`, returns `structuredContent` exactly when present and otherwise uses the default conversion.
+5. Raises an execution error when the MCP response has `isError=True`.
 
-The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2 without changing text or non-text result behavior.
+The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2. Structured mode does not parse values or unwrap a single `result` field, because MCP structured content can be any JSON value and a `result` field may belong to the application.
 
 MCP tools are asynchronous because `mcp.ClientSession` is asynchronous. Use a module's async entry point, such as `acall`, or explicitly enable async-to-sync conversion when appropriate.
 
@@ -116,8 +123,8 @@ Validates, coerces, and executes tool arguments through synchronous or asynchron
 **`Tool.format_as_litellm_function_call()`** → `dict`
 Returns the OpenAI/LiteLLM-style function descriptor used by adapters for native calling.
 
-**`Tool.from_mcp_tool(session, tool)`** → `Tool`
-Wraps a remote MCP tool as an asynchronous DSPy tool.
+**`Tool.from_mcp_tool(session, tool, *, result_mode="text")`** → `Tool`
+Wraps a remote MCP tool as an asynchronous DSPy tool. Set `result_mode="structured"` for exact machine-readable MCP results; the default keeps the model-facing content behavior.
 
 **`Tool.from_langchain(tool)`** → `Tool`
 Wraps a LangChain tool in the same DSPy interface.

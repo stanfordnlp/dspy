@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Protocol, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
 import pydantic
@@ -204,20 +204,29 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: _MCPToolClient, tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(
+        cls,
+        session: _MCPToolClient,
+        tool: "mcp.types.Tool",
+        *,
+        result_mode: Literal["text", "structured"] = "text",
+    ) -> "Tool":
         """
         Build a DSPy tool from an MCP tool and a compatible MCP client.
 
         Args:
             session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
+            result_mode: ``"text"`` preserves DSPy's existing text/non-text
+                conversion. ``"structured"`` returns MCP structured content
+                exactly when present, with the existing conversion as fallback.
 
         Returns:
             A Tool object.
         """
         from dspy.utils.mcp import convert_mcp_tool
 
-        return convert_mcp_tool(session, tool)
+        return convert_mcp_tool(session, tool, result_mode=result_mode)
 
     @classmethod
     def from_langchain(cls, tool: "BaseTool") -> "Tool":
