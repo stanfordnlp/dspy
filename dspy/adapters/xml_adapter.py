@@ -2,10 +2,11 @@ import re
 import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import pydantic
 from pydantic.fields import FieldInfo
+from typing_extensions import is_typeddict
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
@@ -182,14 +183,29 @@ class XMLAdapter(ChatAdapter):
         return f"<{tag}>{cls._escape_text(str(value))}</{tag}>"
 
     @classmethod
-    def _xml_schema(cls, tag: str, annotation: Any) -> str:
+    def _xml_schema(cls, tag: str, annotation: Any, expanded_types: frozenset[type] = frozenset()) -> str:
         annotation = cls._unwrap_optional(annotation)
         if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
-            inner = "".join(cls._xml_schema(name, field.annotation) for name, field in annotation.model_fields.items())
+            if annotation in expanded_types:
+                return f"<{tag}>...</{tag}>"
+            expanded_types |= {annotation}
+            inner = "".join(
+                cls._xml_schema(name, field.annotation, expanded_types)
+                for name, field in annotation.model_fields.items()
+            )
+            return f"<{tag}>{inner}</{tag}>"
+        if is_typeddict(annotation):
+            if annotation in expanded_types:
+                return f"<{tag}>...</{tag}>"
+            expanded_types |= {annotation}
+            inner = "".join(
+                cls._xml_schema(name, field_annotation, expanded_types)
+                for name, field_annotation in get_type_hints(annotation).items()
+            )
             return f"<{tag}>{inner}</{tag}>"
         if get_origin(annotation) is list:
             item_annotation = get_args(annotation)[0] if get_args(annotation) else Any
-            item = cls._xml_schema(tag, item_annotation)
+            item = cls._xml_schema(tag, item_annotation, expanded_types)
             return f"{item} {item}"
         return f"<{tag}>...</{tag}>"
 
@@ -243,6 +259,16 @@ class XMLAdapter(ChatAdapter):
             return {
                 name: cls._elements_to_value(children_by_name[name], field.annotation)
                 for name, field in annotation.model_fields.items()
+                if name in children_by_name
+            }
+
+        if is_typeddict(annotation):
+            children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
+            for child in element:
+                children_by_name[child.tag].append(child)
+            return {
+                name: cls._elements_to_value(children_by_name[name], field_annotation)
+                for name, field_annotation in get_type_hints(annotation).items()
                 if name in children_by_name
             }
 
@@ -308,6 +334,8 @@ class XMLAdapter(ChatAdapter):
                 and item_annotation.__module__.startswith("dspy.")
             )
         if origin is dict:
+            return True
+        if is_typeddict(annotation):
             return True
         return (
             isinstance(annotation, type)

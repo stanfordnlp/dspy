@@ -4,6 +4,7 @@ from unittest import mock
 import pydantic
 import pytest
 from litellm import Choices, Message, ModelResponse
+from typing_extensions import TypedDict
 
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
@@ -134,6 +135,58 @@ def test_xml_adapter_repeated_elements_empty_lists_and_nested_typed_dicts():
     field = FieldInfoWithName(name="items", info=EmptySignature.output_fields["items"])
     assert adapter.format_field_with_value({field: []}) == "<items />"
     assert adapter.parse(EmptySignature, "<items />") == {"items": []}
+
+
+def test_xml_adapter_typed_dict_schema_and_parsing():
+    class Address(TypedDict):
+        city: str
+
+    class Order(TypedDict):
+        order_id: int
+        address: Address
+        labels: list[str]
+
+    class TestSignature(dspy.Signature):
+        order: Order = dspy.OutputField()
+        orders: list[Order] = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    order_schema = (
+        "<order><order_id>...</order_id><address><city>...</city></address>"
+        "<labels>...</labels> <labels>...</labels></order>"
+    )
+    orders_schema = (
+        "<orders><order_id>...</order_id><address><city>...</city></address>"
+        "<labels>...</labels> <labels>...</labels></orders>"
+    )
+    system_instructions = adapter.format_field_structure(TestSignature)
+    assert f"{order_schema}\n\n{orders_schema} {orders_schema}" in system_instructions
+
+    requirements = adapter.user_message_output_requirements(TestSignature)
+    assert f"Use this nested XML structure: {order_schema} {orders_schema} {orders_schema}" in requirements
+
+    completion = (
+        "<order><order_id>1</order_id><address><city>London</city></address><labels>new</labels></order>"
+        "<orders><order_id>2</order_id><address><city>Paris</city></address><labels>paid</labels></orders>"
+    )
+    assert adapter.parse(TestSignature, completion) == {
+        "order": {"order_id": 1, "address": {"city": "London"}, "labels": ["new"]},
+        "orders": [{"order_id": 2, "address": {"city": "Paris"}, "labels": ["paid"]}],
+    }
+
+
+def test_xml_adapter_recursive_model_schema_terminates():
+    class Node(pydantic.BaseModel):
+        value: str
+        children: list["Node"]
+
+    class TestSignature(dspy.Signature):
+        root: Node = dspy.OutputField()
+
+    assert XMLAdapter().user_message_output_requirements(TestSignature).endswith(
+        "Use this nested XML structure: "
+        "<root><value>...</value><children>...</children> <children>...</children></root>"
+    )
 
 
 def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
@@ -643,41 +696,41 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `answer` (AnswerCard):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<history>\n'
-                 '{history}\n'
-                 '</history>\n'
-                 '\n'
-                 '<image>\n'
-                 '{image}\n'
-                 '</image>\n'
-                 '\n'
-                 '<tools>\n'
-                 '{tools}\n'
-                 '</tools>\n'
-                 '\n'
-                 '<profile>\n'
-                 '{profile}\n'
-                 '</profile>\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<answer><answer>...</answer><sources>...</sources> '
-                 '<sources>...</sources></answer>\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Answer using all supplied context.'},
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `image` (Image): \n"
+                 "3. `tools` (list[Tool]): \n"
+                 "4. `profile` (Profile): \n"
+                 "5. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (AnswerCard):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "<history>\n"
+                 "{history}\n"
+                 "</history>\n"
+                 "\n"
+                 "<image>\n"
+                 "{image}\n"
+                 "</image>\n"
+                 "\n"
+                 "<tools>\n"
+                 "{tools}\n"
+                 "</tools>\n"
+                 "\n"
+                 "<profile>\n"
+                 "{profile}\n"
+                 "</profile>\n"
+                 "\n"
+                 "<question>\n"
+                 "{question}\n"
+                 "</question>\n"
+                 "\n"
+                 "<answer><answer>...</answer><sources>...</sources> "
+                 "<sources>...</sources></answer>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Answer using all supplied context."},
      {"role": "user",
       "content": [{"type": "text",
                    "text": "This is an example of the task, though some input or output fields are not "
@@ -762,21 +815,21 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
     messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"})
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `summary` (XmlSummary):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<summary><title>...</title><address><city>...</city><country>...</country>'
-                 '</address></summary>\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Given the fields `question`, produce the fields `summary`.'},
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `summary` (XmlSummary):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "<question>\n"
+                 "{question}\n"
+                 "</question>\n"
+                 "\n"
+                 "<summary><title>...</title><address><city>...</city><country>...</country>"
+                 "</address></summary>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `summary`."},
      {"role": "user",
       "content": "<question>\n"
                  "Summarize\n"
