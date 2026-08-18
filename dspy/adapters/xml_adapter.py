@@ -185,22 +185,14 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _xml_schema(cls, tag: str, annotation: Any, expanded_types: frozenset[type] = frozenset()) -> str:
         annotation = cls._unwrap_optional(annotation)
-        if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
-            if annotation in expanded_types:
-                return f"<{tag}>...</{tag}>"
-            expanded_types |= {annotation}
-            inner = "".join(
-                cls._xml_schema(name, field.annotation, expanded_types)
-                for name, field in annotation.model_fields.items()
-            )
-            return f"<{tag}>{inner}</{tag}>"
-        if is_typeddict(annotation):
+        field_annotations = cls._structured_field_annotations(annotation)
+        if field_annotations is not None:
             if annotation in expanded_types:
                 return f"<{tag}>...</{tag}>"
             expanded_types |= {annotation}
             inner = "".join(
                 cls._xml_schema(name, field_annotation, expanded_types)
-                for name, field_annotation in get_type_hints(annotation).items()
+                for name, field_annotation in field_annotations.items()
             )
             return f"<{tag}>{inner}</{tag}>"
         if get_origin(annotation) is list:
@@ -250,25 +242,16 @@ class XMLAdapter(ChatAdapter):
                 return (element.text or "").strip()
             return cls._inner_xml(element).strip()
 
-        if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
+        field_annotations = cls._structured_field_annotations(annotation)
+        if field_annotations is not None:
             if not list(element):
                 return (element.text or "").strip()
             children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
             for child in element:
                 children_by_name[child.tag].append(child)
             return {
-                name: cls._elements_to_value(children_by_name[name], field.annotation)
-                for name, field in annotation.model_fields.items()
-                if name in children_by_name
-            }
-
-        if is_typeddict(annotation):
-            children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
-            for child in element:
-                children_by_name[child.tag].append(child)
-            return {
                 name: cls._elements_to_value(children_by_name[name], field_annotation)
-                for name, field_annotation in get_type_hints(annotation).items()
+                for name, field_annotation in field_annotations.items()
                 if name in children_by_name
             }
 
@@ -285,22 +268,12 @@ class XMLAdapter(ChatAdapter):
                 name: cls._elements_to_value(children, value_annotation) for name, children in children_by_name.items()
             }
 
-        if list(element):
-            return cls._element_to_dict(element)
-        return (element.text or "").strip()
-
-    @classmethod
-    def _element_to_dict(cls, element: ET.Element) -> dict[str, Any]:
-        values: dict[str, Any] = {}
+        children_by_name: dict[str, list[ET.Element]] = defaultdict(list)
         for child in element:
-            value = cls._element_to_dict(child) if list(child) else (child.text or "").strip()
-            if child.tag in values:
-                if not isinstance(values[child.tag], list):
-                    values[child.tag] = [values[child.tag]]
-                values[child.tag].append(value)
-            else:
-                values[child.tag] = value
-        return values
+            children_by_name[child.tag].append(child)
+        if children_by_name:
+            return {name: cls._elements_to_value(children, Any) for name, children in children_by_name.items()}
+        return (element.text or "").strip()
 
     @staticmethod
     def _inner_xml(element: ET.Element) -> str:
@@ -317,6 +290,14 @@ class XMLAdapter(ChatAdapter):
             if len(args) == 1:
                 return args[0]
         return annotation
+
+    @staticmethod
+    def _structured_field_annotations(annotation: Any) -> dict[str, Any] | None:
+        if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
+            return {name: field.annotation for name, field in annotation.model_fields.items()}
+        if is_typeddict(annotation):
+            return get_type_hints(annotation)
+        return None
 
     @classmethod
     def _uses_nested_xml(cls, annotation: Any) -> bool:
