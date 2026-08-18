@@ -123,6 +123,15 @@ def test_require_module_valued_assignment_after_materialization_forwards(tmp_pat
     assert mod.late_binding is other
     assert real.late_binding is other
 
+    # Replacing an existing binding through the retained proxy must also reach
+    # the canonical module: post-materialization assignments can only come from
+    # caller code, so they replace like any configuration write.
+    replacement = types.ModuleType("a_replacement_module")
+    mod.late_binding = replacement
+
+    assert mod.late_binding is replacement
+    assert real.late_binding is replacement
+
 
 def test_require_submodule_import_does_not_reenter_parent_init(tmp_path, monkeypatch):
     """Importing a submodule while the parent slot still holds the lazy proxy must not

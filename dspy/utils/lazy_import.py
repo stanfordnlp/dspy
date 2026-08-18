@@ -145,12 +145,14 @@ class _LazyModule(types.ModuleType):
             # submodule's init and corrupting it. Bind locally instead; _load()
             # replays these bindings onto the real module once it materializes.
             super().__setattr__(attr, value)
-            # A caller can retain the proxy past first use; once the real module has
-            # materialized, sys.modules no longer routes through this object, so a
-            # module-valued assignment must also be forwarded to the canonical module
-            # or the two views of the package diverge.
+            # A caller can retain the proxy past first use. Once the real module has
+            # materialized, sys.modules no longer routes through this object, so the
+            # import system binds submodules onto the real module directly — any
+            # module-valued assignment reaching the retained proxy from here on can
+            # only be caller code and must replace the canonical module's binding,
+            # exactly like a non-module configuration write.
             loaded = sys.modules.get(self.__name__)
-            if loaded is not None and loaded is not self and not hasattr(loaded, attr):
+            if loaded is not None and loaded is not self:
                 setattr(loaded, attr, value)
         else:
             setattr(self._load(), attr, value)
