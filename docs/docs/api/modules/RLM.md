@@ -270,6 +270,8 @@ RLM returns a `Prediction` with:
 
 !!! note "Interpreter Requirements"
     The default `PythonInterpreter` requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
+    `LocalInterpreter` requires no additional runtime, but executes model-generated code with the DSPy host process's
+    full authority and should only be used when that code is trusted.
 
 ## API Reference
 

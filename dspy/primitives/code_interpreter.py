@@ -3,7 +3,8 @@ Abstract interpreter interface for code execution environments.
 
 This module defines the CodeInterpreter protocol that allows RLM and other
 code-executing modules to work with different interpreter implementations:
-- PythonInterpreter: Local Deno/Pyodide WASM interpreter
+- LocalInterpreter: Trusted execution in the host Python process
+- PythonInterpreter: Sandboxed Deno/Pyodide WASM interpreter
 - MockInterpreter: Scriptable responses for testing
 """
 
@@ -67,7 +68,8 @@ class CodeInterpreter(Protocol):
         4. shutdown() - Release resources
 
     Example implementations:
-        - LocalInterpreter: Deno/Pyodide WASM interpreter (local)
+        - LocalInterpreter: Trusted in-process Python interpreter
+        - PythonInterpreter: Deno/Pyodide WASM interpreter
         - MockInterpreter: Scriptable responses for testing
 
     Pooling:
