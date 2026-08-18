@@ -100,6 +100,30 @@ def test_require_module_valued_assignment_does_not_materialize(tmp_path, monkeyp
     assert sys.modules[module_name].plugged_in is other
 
 
+def test_require_module_valued_assignment_after_materialization_forwards(tmp_path, monkeypatch):
+    """A retained proxy must forward module-valued assignments to the canonical module.
+
+    Callers keep the object returned by require() past first use; after
+    materialization sys.modules holds the real module, so a module-valued
+    assignment through the retained proxy has to reach both views.
+    """
+    module_name = "dspy_lazy_module_assignment_after_load_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+
+    mod = require(module_name)
+    assert mod.value == 1  # materialize
+    real = sys.modules[module_name]
+    assert real is not mod
+
+    other = types.ModuleType("a_late_external_module")
+    mod.late_binding = other
+
+    assert mod.late_binding is other
+    assert real.late_binding is other
+
+
 def test_require_submodule_import_does_not_reenter_parent_init(tmp_path, monkeypatch):
     """Importing a submodule while the parent slot still holds the lazy proxy must not
     nest a full exec of the parent inside the submodule's initialization.
