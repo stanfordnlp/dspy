@@ -40,7 +40,7 @@ def _await_in_sync(awaitable: Any) -> Any:
     raise value
 
 
-class SubprocessInterpreter:
+class LocalInterpreter:
     """Execute Python in a persistent local subprocess.
 
     This separates generated code from DSPy's memory, stdout, and lifecycle,
@@ -55,8 +55,6 @@ class SubprocessInterpreter:
             tool calls. A timeout terminates the worker and its session state.
             Python cannot forcibly stop a running host callable, so a timed-out
             callable may finish in a detached daemon thread; its result is discarded.
-        python: Python executable used to start the worker. Defaults to the
-            current interpreter.
         callbacks: Optional instance-level callback handlers.
     """
 
@@ -71,7 +69,6 @@ class SubprocessInterpreter:
         output_fields: list[dict[str, Any]] | None = None,
         *,
         execution_timeout: float | None = None,
-        python: str | None = None,
         callbacks: list[BaseCallback] | None = None,
     ) -> None:
         if execution_timeout is not None and execution_timeout <= 0:
@@ -79,7 +76,6 @@ class SubprocessInterpreter:
         self.tools = dict(tools or {})
         self.output_fields = None if output_fields is None else [dict(field) for field in output_fields]
         self.execution_timeout = execution_timeout
-        self.python = python or sys.executable
         self.callbacks = list(callbacks or [])
         self._process: subprocess.Popen[str] | None = None
         self._responses: queue.Queue[str | None] = queue.Queue()
@@ -90,13 +86,13 @@ class SubprocessInterpreter:
     def start(self) -> None:
         """Start the worker, or return immediately if it is already running."""
         if self._ended:
-            raise CodeInterpreterError("SubprocessInterpreter session has been shut down.")
+            raise CodeInterpreterError("LocalInterpreter session has been shut down.")
         if self._process is not None:
             return
         try:
-            worker = Path(__file__).with_name("subprocess_interpreter_worker.py")
+            worker = Path(__file__).with_name("local_interpreter_worker.py")
             process = subprocess.Popen(
-                [self.python, "-I", "-u", str(worker)],
+                [sys.executable, "-I", "-u", str(worker)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -204,7 +200,7 @@ class SubprocessInterpreter:
     def execute(self, code: str, variables: dict[str, Any] | None = None) -> Any:
         """Execute code in the worker's persistent namespace."""
         if not self._lock.acquire(blocking=False):
-            raise CodeInterpreterError("SubprocessInterpreter already has an active execution.")
+            raise CodeInterpreterError("LocalInterpreter already has an active execution.")
         try:
             variables = {} if variables is None else variables
             if not isinstance(code, str):
@@ -261,7 +257,7 @@ class SubprocessInterpreter:
         finally:
             self._lock.release()
 
-    def __enter__(self) -> SubprocessInterpreter:
+    def __enter__(self) -> LocalInterpreter:
         self.start()
         return self
 

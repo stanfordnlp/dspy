@@ -11,7 +11,7 @@ from dspy.utils.dummies import DummyLM
 
 
 def test_persistent_worker_is_separate_and_captures_stdout(capsys):
-    with dspy.SubprocessInterpreter() as interpreter:
+    with dspy.LocalInterpreter() as interpreter:
         assert interpreter.execute("import os\nos.getpid()") != os.getpid()
         interpreter.execute("remembered = 41")
         assert interpreter.execute("remembered + 1") == 42
@@ -21,7 +21,7 @@ def test_persistent_worker_is_separate_and_captures_stdout(capsys):
 
 def test_tools_and_typed_submit():
     fields = [{"name": "answer", "type": "str"}, {"name": "score", "type": "int"}]
-    with dspy.SubprocessInterpreter(
+    with dspy.LocalInterpreter(
         tools={"add": lambda *, left, right: left + right}, output_fields=fields
     ) as interpreter:
         assert interpreter.execute("add(left=19, right=23)") == 42
@@ -31,7 +31,7 @@ def test_tools_and_typed_submit():
 
 
 def test_errors_are_recoverable_but_timeout_is_terminal():
-    interpreter = dspy.SubprocessInterpreter(execution_timeout=0.1)
+    interpreter = dspy.LocalInterpreter(execution_timeout=0.1)
     with pytest.raises(SyntaxError):
         interpreter.execute("if")
     with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
@@ -48,7 +48,7 @@ def test_async_host_tool():
     async def add(*, left, right):
         return left + right
 
-    with dspy.SubprocessInterpreter(tools={"add": add}) as interpreter:
+    with dspy.LocalInterpreter(tools={"add": add}) as interpreter:
         assert interpreter.execute("add(left=19, right=23)") == 42
 
 
@@ -57,7 +57,7 @@ def test_host_tool_within_execution_timeout():
         time.sleep(0.08)
         return 42
 
-    with dspy.SubprocessInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
+    with dspy.LocalInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
         assert interpreter.execute("slow()") == 42
 
 
@@ -69,7 +69,7 @@ def test_execution_timeout_does_not_wait_for_blocked_host_tool():
         time.sleep(1)
         return 42
 
-    interpreter = dspy.SubprocessInterpreter(tools={"blocked": blocked}, execution_timeout=0.1)
+    interpreter = dspy.LocalInterpreter(tools={"blocked": blocked}, execution_timeout=0.1)
     started = time.monotonic()
     with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
         interpreter.execute("blocked()")
@@ -97,7 +97,7 @@ def test_interpreter_callbacks():
         def on_interpreter_tool_call_end(self, call_id, outputs, exception=None):
             events.append(("tool_end", outputs))
 
-    with dspy.SubprocessInterpreter(tools={"answer": lambda: 42}, callbacks=[RecordingCallback()]) as interpreter:
+    with dspy.LocalInterpreter(tools={"answer": lambda: 42}, callbacks=[RecordingCallback()]) as interpreter:
         assert interpreter.execute("answer()") == 42
 
     assert ("execute_start", "answer()") in events
@@ -106,7 +106,7 @@ def test_interpreter_callbacks():
     assert ("execute_end", 42) in events
 
 
-def test_rlm_uses_subprocess_interpreter():
+def test_rlm_uses_local_interpreter():
     calls = []
 
     def add(*, left: int, right: int) -> int:
@@ -130,17 +130,17 @@ def test_rlm_uses_subprocess_interpreter():
         "question: str -> answer: str",
         max_iters=2,
         tools=[add],
-        interpreter_factory=dspy.SubprocessInterpreter,
+        interpreter_factory=dspy.LocalInterpreter,
     )
     rlm.generate_action = Actions(rlm.generate_action.signature)
 
     assert rlm(question="What is 19 + 23?").answer == "42"
     assert calls == [(19, 23)]
-    assert dspy.SubprocessInterpreter.execution_instructions in rlm.generate_action.signature.instructions
+    assert dspy.LocalInterpreter.execution_instructions in rlm.generate_action.signature.instructions
 
 
 @pytest.mark.asyncio
-async def test_async_rlm_uses_subprocess_interpreter_with_async_tool():
+async def test_async_rlm_uses_local_interpreter_with_async_tool():
     async def add(*, left: int, right: int) -> int:
         return left + right
 
@@ -161,14 +161,14 @@ async def test_async_rlm_uses_subprocess_interpreter_with_async_tool():
         "question: str -> answer: str",
         max_iters=2,
         tools=[add],
-        interpreter_factory=dspy.SubprocessInterpreter,
+        interpreter_factory=dspy.LocalInterpreter,
     )
     rlm.generate_action = Actions(rlm.generate_action.signature)
 
     assert (await rlm.acall(question="What is 19 + 23?")).answer == "42"
 
 
-def test_flex_uses_subprocess_interpreter():
+def test_flex_uses_local_interpreter():
     class Signature(dspy.Signature):
         value: int = dspy.InputField()
         result: int = dspy.OutputField()
@@ -184,7 +184,7 @@ class AddModule(dspy.Module):
         return dspy.Prediction(result=predicted.result)
 """.strip()
 
-    program = dspy.Flex(Signature, interpreter_factory=dspy.SubprocessInterpreter)
+    program = dspy.Flex(Signature, interpreter_factory=dspy.LocalInterpreter)
     program._bind_code(module_src)
     with dspy.context(lm=DummyLM([{"result": 42}])):
         assert program(value=20).result == 42

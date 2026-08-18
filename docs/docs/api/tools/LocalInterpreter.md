@@ -1,6 +1,6 @@
-# dspy.SubprocessInterpreter
+# dspy.LocalInterpreter
 
-`SubprocessInterpreter` runs Python in one persistent local CPython worker. It is useful when generated code needs
+`LocalInterpreter` runs Python in one persistent local CPython worker. It is useful when generated code needs
 ordinary Python compatibility plus separation from the DSPy process's memory, stdout, and lifecycle. State and
 imports persist until `shutdown()`, host tools cross a JSON protocol, and `execution_timeout` can terminate a stuck
 worker.
@@ -10,7 +10,7 @@ import dspy
 
 rlm = dspy.RLM(
     "question: str -> answer: int",
-    interpreter_factory=dspy.SubprocessInterpreter,
+    interpreter_factory=dspy.LocalInterpreter,
 )
 ```
 
@@ -20,16 +20,16 @@ rlm = dspy.RLM(
     boundary protects ordinary host memory and stdout from accidental mutation; it does not contain hostile code.
 
 Inputs, host-tool arguments/results, and structured outputs must be JSON-compatible. The worker uses the current
-Python executable by default; pass `python=` to select another executable with a compatible Python version.
+Python executable.
 `execution_timeout` includes time spent in host tools and terminates the worker promptly when the deadline expires.
 Python cannot forcibly stop a running host callable, so that callable may finish in a detached daemon thread; its
 result is discarded and the interpreter session remains terminal.
 
-`SubprocessInterpreter.execution_instructions` is stable class metadata. `RLM` adds it to the action prompt without
+`LocalInterpreter.execution_instructions` is stable class metadata. `RLM` adds it to the action prompt without
 starting a worker.
 
 <!-- START_API_REF -->
-::: dspy.SubprocessInterpreter
+::: dspy.LocalInterpreter
     handler: python
     options:
         members:

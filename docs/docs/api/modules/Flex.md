@@ -84,7 +84,7 @@ The `program_trace` parameter is opt-in *by declaration*: only metrics that name
 
 ## Interpreter Execution
 
-`Flex` always runs its generated code through a `CodeInterpreter`. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh interpreter; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per interpreter session, including separate sessions requested by nested code-executing modules. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls. Custom factories define their own trust boundary: `dspy.SubprocessInterpreter`, for example, separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority.
+`Flex` always runs its generated code through a `CodeInterpreter`. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh interpreter; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per interpreter session, including separate sessions requested by nested code-executing modules. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls. Custom factories define their own trust boundary: `dspy.LocalInterpreter`, for example, separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority.
 
 Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed; without it, the call raises.
 
@@ -139,7 +139,7 @@ The interpreter is a **runtime dependency and is not serialized**. Reconstructin
     `Flex` is marked experimental. The API and the optimization behavior may change between releases; pin a version if you depend on it.
 
 !!! note "Interpreter Requirements"
-    `Flex` defaults to `dspy.PythonInterpreter`, which requires [Deno](https://deno.land/) for its Pyodide WASM sandbox — see the [RLM page](RLM.md#deno-installation) for installation notes. `dspy.SubprocessInterpreter` requires no additional runtime but is not a security sandbox.
+    `Flex` defaults to `dspy.PythonInterpreter`, which requires [Deno](https://deno.land/) for its Pyodide WASM sandbox — see the [RLM page](RLM.md#deno-installation) for installation notes. `dspy.LocalInterpreter` requires no additional runtime but is not a security sandbox.
 
 ## API Reference
 
