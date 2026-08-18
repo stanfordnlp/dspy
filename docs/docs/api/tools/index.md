@@ -6,4 +6,5 @@ API reference for DSPy tools. Select a page below.
 - [ColBERTv2](ColBERTv2.md)
 - [Embeddings](Embeddings.md)
 - [PythonInterpreter](PythonInterpreter.md)
+- [SubprocessInterpreter](SubprocessInterpreter.md)
 <!-- END_API_INDEX -->

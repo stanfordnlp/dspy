@@ -5,6 +5,7 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Completions, Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.sandbox_serializable import SandboxSerializable
+from dspy.primitives.subprocess_interpreter import SubprocessInterpreter
 
 __all__ = [
     "BaseModule",
@@ -18,4 +19,5 @@ __all__ = [
     "Prediction",
     "PythonInterpreter",
     "SandboxSerializable",
+    "SubprocessInterpreter",
 ]

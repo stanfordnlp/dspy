@@ -178,6 +178,7 @@ nav:
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
+            - SubprocessInterpreter: api/tools/SubprocessInterpreter.md
         - Utils:
             - api/utils/index.md
             - Errors: api/utils/Errors.md

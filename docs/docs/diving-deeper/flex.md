@@ -32,9 +32,9 @@ When you mix a `Flex` with ordinary modules in one program, GEPA optimizes the `
 
 The reflection model authors code, and code can be wrong. A candidate that doesn't parse raises when GEPA binds it to build the program for evaluation; `Flex` optimization catches that, logs it, and scores the whole batch at the failure score, letting the search continue and simply not select the broken candidate. Code that parses but breaks when it runs — an import that doesn't resolve, an edge case that throws on some inputs — fails per example at `forward` instead: each crashed example is scored at the failure score in its own slot, by example index, so the surviving scores stay aligned to the batch and GEPA's per-instance bookkeeping stays intact. Either way, the optimization is robust to the reflection model's mistakes by construction.
 
-### 7. Generated code always runs in an interpreter, never in-process
+### 7. Generated code always runs through an interpreter
 
-`Flex` runs `module_src` in a sandbox: `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a *zero-argument factory* — a bare instance or `None` is rejected. Since the code is authored by the reflection model, it never gets the host's full permissions: everything it does stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. The factory creates a fresh interpreter for each sandbox session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
+`interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a *zero-argument factory* — a bare instance or `None` is rejected. With the default, everything stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. Custom factories define their own trust boundary: `SubprocessInterpreter` separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority. The factory creates a fresh interpreter for each session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
 
 ### 8. The declared output types are enforced at the sandbox boundary
 
@@ -78,7 +78,7 @@ Add `program_trace=None` as a sixth parameter to your metric and GEPA passes the
 Plain functions or `dspy.Tool` instances, referenced by name in the generated code, so each name must be a valid Python identifier. Providing tools makes the baseline a `dspy.RLM` and tells the code proposer they are in scope — it can wire them into `dspy.RLM`/`dspy.ReAct`, call them directly, or supplement them with its own inline helpers.
 
 **`interpreter_factory=...`**
-Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). Must be a zero-argument callable returning a fresh `CodeInterpreter` for each sandbox session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source or standard-library portability between different interpreters.
+Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). Must be a zero-argument callable returning a fresh `CodeInterpreter` for each interpreter session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source, standard-library portability, or a particular security boundary between different interpreters.
 
 **`max_predictor_calls`**
 The maximum number of predictor calls the generated code can make in one `forward`. It guards against runaway loops. `None` removes the limit.

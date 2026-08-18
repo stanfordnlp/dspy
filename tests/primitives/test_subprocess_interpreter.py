@@ -1,0 +1,169 @@
+import os
+import time
+
+import pytest
+
+import dspy
+from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.utils.callback import BaseCallback
+from dspy.utils.dummies import DummyLM
+
+
+def test_persistent_worker_is_separate_and_captures_stdout(capsys):
+    with dspy.SubprocessInterpreter() as interpreter:
+        assert interpreter.execute("import os\nos.getpid()") != os.getpid()
+        interpreter.execute("remembered = 41")
+        assert interpreter.execute("remembered + 1") == 42
+        assert interpreter.execute("print('guest only')") == "guest only"
+        assert capsys.readouterr().out == ""
+
+
+def test_tools_and_typed_submit():
+    fields = [{"name": "answer", "type": "str"}, {"name": "score", "type": "int"}]
+    with dspy.SubprocessInterpreter(
+        tools={"add": lambda *, left, right: left + right}, output_fields=fields
+    ) as interpreter:
+        assert interpreter.execute("add(left=19, right=23)") == 42
+        result = interpreter.execute("SUBMIT(answer='yes', score=42)")
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "yes", "score": 42}
+
+
+def test_errors_are_recoverable_but_timeout_is_terminal():
+    interpreter = dspy.SubprocessInterpreter(execution_timeout=0.1)
+    with pytest.raises(SyntaxError):
+        interpreter.execute("if")
+    with pytest.raises(CodeExecutionError, match="ZeroDivisionError"):
+        interpreter.execute("1 / 0")
+    assert interpreter.execute("6 * 7") == 42
+    with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
+        interpreter.execute("import time\ntime.sleep(10)")
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
+    interpreter.shutdown()
+
+
+def test_async_host_tool():
+    async def add(*, left, right):
+        return left + right
+
+    with dspy.SubprocessInterpreter(tools={"add": add}) as interpreter:
+        assert interpreter.execute("add(left=19, right=23)") == 42
+
+
+def test_host_tool_within_execution_timeout():
+    def slow():
+        time.sleep(0.08)
+        return 42
+
+    with dspy.SubprocessInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
+        assert interpreter.execute("slow()") == 42
+
+
+def test_interpreter_callbacks():
+    events = []
+
+    class RecordingCallback(BaseCallback):
+        def on_interpreter_execute_start(self, call_id, instance, inputs):
+            events.append(("execute_start", inputs["code"]))
+
+        def on_interpreter_execute_end(self, call_id, outputs, exception=None):
+            events.append(("execute_end", outputs))
+
+        def on_interpreter_tool_call_start(self, call_id, instance, inputs):
+            events.append(("tool_start", inputs["tool_name"]))
+
+        def on_interpreter_tool_call_end(self, call_id, outputs, exception=None):
+            events.append(("tool_end", outputs))
+
+    with dspy.SubprocessInterpreter(tools={"answer": lambda: 42}, callbacks=[RecordingCallback()]) as interpreter:
+        assert interpreter.execute("answer()") == 42
+
+    assert ("execute_start", "answer()") in events
+    assert ("tool_start", "answer") in events
+    assert ("tool_end", 42) in events
+    assert ("execute_end", 42) in events
+
+
+def test_rlm_uses_subprocess_interpreter():
+    calls = []
+
+    def add(*, left: int, right: int) -> int:
+        calls.append((left, right))
+        return left + right
+
+    class Actions(dspy.Predict):
+        def __init__(self, signature):
+            super().__init__(signature)
+            self.actions = iter(
+                [
+                    dspy.Prediction(reasoning="calculate", code="total = add(left=19, right=23)"),
+                    dspy.Prediction(reasoning="submit", code="SUBMIT(answer=str(total))"),
+                ]
+            )
+
+        def forward(self, **kwargs):
+            return next(self.actions)
+
+    rlm = dspy.RLM(
+        "question: str -> answer: str",
+        max_iters=2,
+        tools=[add],
+        interpreter_factory=dspy.SubprocessInterpreter,
+    )
+    rlm.generate_action = Actions(rlm.generate_action.signature)
+
+    assert rlm(question="What is 19 + 23?").answer == "42"
+    assert calls == [(19, 23)]
+    assert dspy.SubprocessInterpreter.execution_instructions in rlm.generate_action.signature.instructions
+
+
+@pytest.mark.asyncio
+async def test_async_rlm_uses_subprocess_interpreter_with_async_tool():
+    async def add(*, left: int, right: int) -> int:
+        return left + right
+
+    class Actions(dspy.Predict):
+        def __init__(self, signature):
+            super().__init__(signature)
+            self.actions = iter(
+                [
+                    dspy.Prediction(reasoning="calculate", code="total = add(left=19, right=23)"),
+                    dspy.Prediction(reasoning="submit", code="SUBMIT(answer=str(total))"),
+                ]
+            )
+
+        async def aforward(self, **kwargs):
+            return next(self.actions)
+
+    rlm = dspy.RLM(
+        "question: str -> answer: str",
+        max_iters=2,
+        tools=[add],
+        interpreter_factory=dspy.SubprocessInterpreter,
+    )
+    rlm.generate_action = Actions(rlm.generate_action.signature)
+
+    assert (await rlm.acall(question="What is 19 + 23?")).answer == "42"
+
+
+def test_flex_uses_subprocess_interpreter():
+    class Signature(dspy.Signature):
+        value: int = dspy.InputField()
+        result: int = dspy.OutputField()
+
+    module_src = """
+class AddModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.solve = dspy.Predict("value: int -> result: int")
+
+    def forward(self, **inputs):
+        predicted = self.solve(value=inputs["value"])
+        return dspy.Prediction(result=predicted.result)
+""".strip()
+
+    program = dspy.Flex(Signature, interpreter_factory=dspy.SubprocessInterpreter)
+    program._bind_code(module_src)
+    with dspy.context(lm=DummyLM([{"result": 42}])):
+        assert program(value=20).result == 42
