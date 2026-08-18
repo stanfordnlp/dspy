@@ -70,21 +70,23 @@ class XMLAdapter(ChatAdapter):
             raise AdapterParseError(adapter_name="XMLAdapter", signature=signature, lm_response=completion, message=f"Failed to parse XML: {e}") from e
         elements = self._group_children(root)
         fields = {}
-        for name, field in signature.output_fields.items():
-            if name not in elements:
-                continue
-            value = None
-            try:
-                schema = TypeAdapter(field.annotation).json_schema()
-                value = self._elements_to_value(elements[name], schema, schema.get("$defs", {}))
-                fields[name] = parse_value(value, field.annotation)
-            except Exception as e:
+        for name in filter(elements.__contains__, signature.output_fields):
+            field = signature.output_fields[name]
+            schema, value = TypeAdapter(field.annotation).json_schema(), None
+            for candidate in [schema, *schema.get("anyOf", [])]:
+                try:
+                    value = self._elements_to_value(elements[name], candidate, schema.get("$defs", {}))
+                    fields[name] = parse_value(value, field.annotation)
+                    break
+                except Exception as e:
+                    error = e
+            else:
                 raise AdapterParseError(
                     adapter_name="XMLAdapter",
                     signature=signature,
                     lm_response=completion,
-                    message=f"Failed to parse field {field} with value {value}: {e}",
-                ) from e
+                    message=f"Failed to parse field {field} with value {value}: {error}",
+                ) from error
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(adapter_name="XMLAdapter", signature=signature, lm_response=completion, parsed_result=fields)
@@ -126,8 +128,7 @@ class XMLAdapter(ChatAdapter):
         if choices := schema.get("anyOf"):
             if all(({"type": "null"} in choices, not list(elements[0]), not (elements[0].text or "").strip())):
                 return None
-            choices = [definitions.get(choice.get("$ref", "").rsplit("/", 1)[-1], choice) for choice in choices if choice.get("type") != "null"]
-            schema = max(choices, key=lambda choice: len({child.tag for child in elements[0]} & choice.get("properties", {}).keys()))
+            schema = next(choice for choice in choices if choice.get("type") != "null")
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()

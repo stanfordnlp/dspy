@@ -160,17 +160,25 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
     class SecondDict(TypedDict):
         labels: list[str]
 
+    class NumberList(pydantic.BaseModel):
+        value: list[int]
+
+    class TextValue(pydantic.BaseModel):
+        value: str
+
     class TestSignature(dspy.Signature):
         text: str | None = dspy.OutputField()
         profile: Profile | None = dspy.OutputField()
         details: Details | None = dspy.OutputField()
         model: First | Second = dspy.OutputField()
         mapping: FirstDict | SecondDict = dspy.OutputField()
+        tied: NumberList | TextValue = dspy.OutputField()
 
     completion = (
         "<text /><profile /><details />"
         "<model><labels>one</labels><labels>two</labels></model>"
         "<mapping><labels>three</labels></mapping>"
+        "<tied><value>later-branch-text</value></tied>"
     )
     assert XMLAdapter().parse(TestSignature, completion) == {
         "text": None,
@@ -178,6 +186,7 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
         "details": None,
         "model": Second(labels=["one", "two"]),
         "mapping": {"labels": ["three"]},
+        "tied": TextValue(value="later-branch-text"),
     }
 
 
