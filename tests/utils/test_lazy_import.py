@@ -1,5 +1,7 @@
 import sys
 import threading
+import importlib
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -76,6 +78,74 @@ def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
     mod.value = 2
 
     assert sys.modules[module_name].value == 2
+
+
+def test_require_module_valued_assignment_does_not_materialize(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_module_assignment_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 1\n")
+
+    mod = require(module_name)
+    other = types.ModuleType("an_external_module")
+    mod.plugged_in = other
+
+    # Module-valued assignment is treated as the import system binding a submodule
+    # onto its parent package: it must not trigger materialization.
+    assert sys.modules[module_name] is mod
+    assert mod.plugged_in is other
+
+    # Materializing later replays the binding onto the real module.
+    assert mod.value == 1
+    assert sys.modules[module_name].plugged_in is other
+
+
+def test_require_submodule_import_does_not_reenter_parent_init(tmp_path, monkeypatch):
+    """Importing a submodule while the parent slot still holds the lazy proxy must not
+    nest a full exec of the parent inside the submodule's initialization.
+
+    The import system binds submodules onto their parent with ``setattr``; the proxy
+    used to treat that as an attribute assignment, materialized the parent from inside
+    the import machinery, and the parent's own imports then found the submodule
+    mid-initialization. With numpy this surfaces as ``TypeError: data type 'bool' not
+    understood`` when ``import numpy._core`` races the lazy parent (e.g. a C extension
+    importing ``numpy._core`` directly after ``import dspy``).
+    """
+    pkg = "dspy_lazy_reentrant_pkg"
+    pkg_dir = tmp_path / pkg
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text(
+        "from .sub import marker\n"
+        "parent_value = 1\n"
+    )
+    (pkg_dir / "sub.py").write_text(
+        f"from {pkg}.version import version as __version__\n"
+        "marker = 'ok'\n"
+    )
+    (pkg_dir / "version.py").write_text("version = '1.0'\n")
+    monkeypatch.syspath_prepend(tmp_path)
+    for suffix in ("", ".sub", ".version"):
+        monkeypatch.delitem(sys.modules, pkg + suffix, raising=False)
+
+    proxy = require(pkg)
+    assert sys.modules[pkg] is proxy
+
+    # Used to raise ImportError: cannot import name 'marker' from partially
+    # initialized module (nested parent exec inside the submodule's init).
+    sub = importlib.import_module(f"{pkg}.sub")
+    assert sub.marker == "ok"
+
+    # The import system's submodule bindings are visible through the proxy
+    # without materializing the parent.
+    assert proxy.version.version == "1.0"
+    assert sys.modules[pkg] is proxy
+
+    # Materializing the parent afterwards keeps every binding consistent.
+    assert proxy.parent_value == 1
+    real = sys.modules[pkg]
+    assert real is not proxy
+    assert real.sub.marker == "ok"
+    assert real.version.version == "1.0"
 
 
 def test_require_returns_stub_when_missing():
