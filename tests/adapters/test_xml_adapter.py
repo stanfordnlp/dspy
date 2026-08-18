@@ -141,6 +141,46 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
     }
 
 
+def test_xml_adapter_parses_nullable_and_structured_union_fields():
+    class Profile(pydantic.BaseModel):
+        name: str
+
+    class Details(TypedDict):
+        label: str
+
+    class First(pydantic.BaseModel):
+        count: int
+
+    class Second(pydantic.BaseModel):
+        labels: list[str]
+
+    class FirstDict(TypedDict):
+        count: int
+
+    class SecondDict(TypedDict):
+        labels: list[str]
+
+    class TestSignature(dspy.Signature):
+        text: str | None = dspy.OutputField()
+        profile: Profile | None = dspy.OutputField()
+        details: Details | None = dspy.OutputField()
+        model: First | Second = dspy.OutputField()
+        mapping: FirstDict | SecondDict = dspy.OutputField()
+
+    completion = (
+        "<text /><profile /><details />"
+        "<model><labels>one</labels><labels>two</labels></model>"
+        "<mapping><labels>three</labels></mapping>"
+    )
+    assert XMLAdapter().parse(TestSignature, completion) == {
+        "text": None,
+        "profile": None,
+        "details": None,
+        "model": Second(labels=["one", "two"]),
+        "mapping": {"labels": ["three"]},
+    }
+
+
 def test_xml_adapter_recursive_model_schema_terminates():
     class Node(pydantic.BaseModel):
         value: str

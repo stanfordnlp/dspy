@@ -122,10 +122,12 @@ class XMLAdapter(ChatAdapter):
 
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
-        if ref := schema.get("$ref"):
-            schema = definitions[ref.rsplit("/", 1)[-1]]
+        schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
         if choices := schema.get("anyOf"):
-            return cls._elements_to_value(elements, next((s for s in choices if s.get("type") != "null"), choices[0]), definitions)
+            if all(({"type": "null"} in choices, not list(elements[0]), not (elements[0].text or "").strip())):
+                return None
+            choices = [definitions.get(choice.get("$ref", "").rsplit("/", 1)[-1], choice) for choice in choices if choice.get("type") != "null"]
+            schema = max(choices, key=lambda choice: len({child.tag for child in elements[0]} & choice.get("properties", {}).keys()))
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()
@@ -143,7 +145,6 @@ class XMLAdapter(ChatAdapter):
         return {
             name: cls._elements_to_value(items, properties.get(name, child_schema), definitions)
             for name, items in children.items()
-            if not properties or name in properties
         }
 
     @staticmethod
@@ -159,9 +160,7 @@ class XMLAdapter(ChatAdapter):
         annotation = args[0] if len(args) == 1 and get_origin(annotation) in (Union, types.UnionType) else annotation
         origin = get_origin(annotation)
         item = get_args(annotation)[0] if origin is list and get_args(annotation) else annotation
-        is_dspy_model = (
-            isinstance(item, type) and issubclass(item, pydantic.BaseModel) and item.__module__.startswith("dspy.")
-        )
+        is_dspy_model = isinstance(item, type) and issubclass(item, pydantic.BaseModel) and item.__module__.startswith("dspy.")
         return not is_dspy_model and (
             origin in (list, dict)
             or is_typeddict(annotation)
