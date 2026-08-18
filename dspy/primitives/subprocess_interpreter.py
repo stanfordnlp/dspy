@@ -53,6 +53,8 @@ class SubprocessInterpreter:
         output_fields: Optional field definitions for typed ``SUBMIT`` calls.
         execution_timeout: Maximum seconds for one execution, including host
             tool calls. A timeout terminates the worker and its session state.
+            Python cannot forcibly stop a running host callable, so a timed-out
+            callable may finish in a detached daemon thread; its result is discarded.
         python: Python executable used to start the worker. Defaults to the
             current interpreter.
         callbacks: Optional instance-level callback handlers.
@@ -171,18 +173,31 @@ class SubprocessInterpreter:
         result = self.tools[tool_name](*args, **kwargs)
         return _await_in_sync(result) if inspect.isawaitable(result) else result
 
-    def _handle_tool(self, request: dict[str, Any]) -> None:
+    def _make_tool_response(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
             value = self.invoke_tool(request["name"], request.get("args", []), request.get("kwargs", {}))
             json.dumps(value, allow_nan=False)
-            response = {"type": "tool_response", "id": request["id"], "ok": True, "value": value}
+            return {"type": "tool_response", "id": request["id"], "ok": True, "value": value}
         except Exception as exc:
-            response = {
+            return {
                 "type": "tool_response",
                 "id": request.get("id"),
                 "ok": False,
                 "error": f"{type(exc).__name__}: {exc}",
             }
+
+    def _handle_tool(self, request: dict[str, Any], *, timeout: float | None, timeout_message: str) -> None:
+        if timeout is None:
+            self._send(self._make_tool_response(request))
+            return
+
+        responses: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
+        thread = threading.Thread(target=lambda: responses.put(self._make_tool_response(request)), daemon=True)
+        thread.start()
+        try:
+            response = responses.get(timeout=timeout)
+        except queue.Empty:
+            self._raise_terminal_error(timeout_message)
         self._send(response)
 
     @with_callbacks
@@ -225,7 +240,8 @@ class SubprocessInterpreter:
                 message = self._receive(timeout_message, timeout=timeout)
                 kind = message.get("type")
                 if kind == "tool_request":
-                    self._handle_tool(message)
+                    timeout = None if deadline is None else max(0, deadline - time.monotonic())
+                    self._handle_tool(message, timeout=timeout, timeout_message=timeout_message)
                     continue
                 if kind == "terminal_error":
                     self._raise_terminal_error(f"Python worker failed: {message.get('error')}")

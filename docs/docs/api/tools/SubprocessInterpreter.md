@@ -21,6 +21,9 @@ rlm = dspy.RLM(
 
 Inputs, host-tool arguments/results, and structured outputs must be JSON-compatible. The worker uses the current
 Python executable by default; pass `python=` to select another executable with a compatible Python version.
+`execution_timeout` includes time spent in host tools and terminates the worker promptly when the deadline expires.
+Python cannot forcibly stop a running host callable, so that callable may finish in a detached daemon thread; its
+result is discarded and the interpreter session remains terminal.
 
 `SubprocessInterpreter.execution_instructions` is stable class metadata. `RLM` adds it to the action prompt without
 starting a worker.

@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 
 import pytest
@@ -58,6 +59,26 @@ def test_host_tool_within_execution_timeout():
 
     with dspy.SubprocessInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
         assert interpreter.execute("slow()") == 42
+
+
+def test_execution_timeout_does_not_wait_for_blocked_host_tool():
+    tool_started = threading.Event()
+
+    def blocked():
+        tool_started.set()
+        time.sleep(1)
+        return 42
+
+    interpreter = dspy.SubprocessInterpreter(tools={"blocked": blocked}, execution_timeout=0.1)
+    started = time.monotonic()
+    with pytest.raises(CodeInterpreterError, match="exceeded execution timeout"):
+        interpreter.execute("blocked()")
+    elapsed = time.monotonic() - started
+
+    assert tool_started.is_set()
+    assert elapsed < 0.5
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
 
 
 def test_interpreter_callbacks():
