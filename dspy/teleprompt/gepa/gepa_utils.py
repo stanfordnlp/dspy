@@ -1,5 +1,7 @@
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -189,7 +191,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return new_prog
 
-    def evaluate(self, batch, candidate, capture_traces=False):
+    def evaluate(self, batch, candidate, capture_traces=False, num_threads=None):
+        num_threads = self.num_threads if num_threads is None else num_threads
         try:
             program = self.build_program(candidate)
         except (SyntaxError, CodeInterpreterError) as e:
@@ -217,7 +220,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 program,
                 batch,
                 metric_fn=self.metric_fn,
-                num_threads=self.num_threads,
+                num_threads=num_threads,
                 failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
                 capture_traces=capture_traces,
@@ -231,7 +234,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 program=program,
                 dataset=batch,
                 metric=self.metric_fn,
-                num_threads=self.num_threads,
+                num_threads=num_threads,
                 raise_on_error=False,
                 capture_failed_parses=True,
                 failure_score=self.failure_score,
@@ -255,7 +258,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             evaluator = Evaluate(
                 devset=batch,
                 metric=self.metric_fn,
-                num_threads=self.num_threads,
+                num_threads=num_threads,
                 return_all_scores=True,
                 failure_score=self.failure_score,
                 provide_traceback=True,
@@ -267,6 +270,28 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [r[2] for r in res.results]
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+
+    def batch_evaluate(self, items, *, capture_traces=True):
+        total_threads = self.num_threads or dspy.settings.num_threads
+        candidate_workers = min(len(items), total_threads) or 1
+        threads_per_candidate, extra_threads = divmod(total_threads, candidate_workers)
+
+        def evaluate(item):
+            context, (candidate, batch), num_threads = item
+            return context.run(
+                self.evaluate,
+                batch,
+                candidate,
+                capture_traces=capture_traces,
+                num_threads=num_threads,
+            )
+
+        work = [
+            (copy_context(), item, threads_per_candidate + (index < extra_threads))
+            for index, item in enumerate(items)
+        ]
+        with ThreadPoolExecutor(max_workers=candidate_workers) as executor:
+            return list(executor.map(evaluate, work))
 
     def get_adapter_state(self) -> dict[str, Any]:
         return {"rng_state": self.rng.getstate()}
