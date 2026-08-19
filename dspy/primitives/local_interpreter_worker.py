@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import contextlib
 import io
 import json
@@ -16,7 +17,8 @@ class Submission(BaseException):
 
 class Session:
     def __init__(self) -> None:
-        self.namespace: dict[str, Any] = {"__builtins__": __builtins__}
+        self._builtins = vars(builtins).copy()
+        self.namespace: dict[str, Any] = {"__builtins__": self._builtins.copy()}
         self.tool_names: set[str] = set()
         self.output_fields: list[dict[str, Any]] | None = None
 
@@ -47,6 +49,7 @@ class Session:
         self.output_fields = output_fields
         for name in tool_names:
             self.namespace[name] = lambda *args, __name=name, **kwargs: self.call_tool(__name, *args, **kwargs)
+        self.namespace["__builtins__"] = self._builtins.copy()
         self.namespace["SUBMIT"] = self.submit
 
     def submit(self, *args: Any, **kwargs: Any) -> None:

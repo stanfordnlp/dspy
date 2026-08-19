@@ -60,6 +60,14 @@ def test_reserved_variable_names_fail_without_starting_or_consuming_session():
     interpreter.shutdown()
 
 
+def test_guest_cannot_corrupt_interpreter_owned_globals_across_executions():
+    with dspy.LocalInterpreter(tools={"add": lambda left, right: left + right}) as interpreter:
+        interpreter.execute("__builtins__['len'] = None\nSUBMIT = None\nadd = None")
+        assert interpreter.execute("len([1])") == 1
+        assert interpreter.execute("add(19, 23)") == 42
+        assert interpreter.execute("SUBMIT(42)").output == {"output": 42}
+
+
 def test_errors_are_recoverable_but_timeout_is_terminal():
     interpreter = dspy.LocalInterpreter(execution_timeout=0.1)
     with pytest.raises(SyntaxError):
