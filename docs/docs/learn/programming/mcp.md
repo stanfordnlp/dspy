@@ -160,98 +160,33 @@ result = await dspy_tool.acall(param1="value", param2=123)
 
 ### Choosing the result representation
 
-By default, DSPy uses the MCP result's model-facing `content` field. This preserves the existing behavior: one text block becomes a string, multiple text blocks become a list, and results without text fall back to their non-text content.
-
-For programmatic workflows that need the MCP result's machine-readable JSON value, opt into structured content when converting the tool:
+DSPy uses the model-facing `content` field by default. Opt into the machine-readable `structuredContent` field for programmatic use:
 
 ```python
 structured_tool = dspy.Tool.from_mcp_tool(
-    session,
-    mcp_tool,
-    result_mode="structured",
+    session, mcp_tool, result_mode="structured"
 )
-
-result = await structured_tool.acall(param1="value", param2=123)
 ```
 
-Structured mode returns `structuredContent` exactly as the server sent it. Objects, arrays, strings, numbers, booleans, JSON `null`, and empty values are preserved without parsing or unwrapping. For example, the official MCP Python SDK may represent a tool annotated `-> int` as `{"result": 3}`; DSPy returns that entire object rather than guessing that the `result` field is an SDK-generated envelope. If a result has no structured content, DSPy falls back to the default content conversion.
+Structured mode returns the value exactly, including scalars, `null`, and empty values. It does not parse text or unwrap `{"result": ...}`; if structured content is absent, it falls back to the default conversion. Use the default for model observations and structured mode for validation, indexing, or tool chaining.
 
-Use the default mode for tools primarily observed by a ReAct agent or another language model, since MCP `content` is the server's model-facing representation. Use structured mode when application code needs native JSON values for validation, indexing, or explicit tool chaining. In both modes, treat tool results as untrusted server data and validate them before passing them to sensitive operations.
+### Example with a reference MCP server
 
-### Running against maintained MCP servers
-
-The following complete example uses two maintained [MCP reference servers](https://github.com/modelcontextprotocol/servers): Everything, which returns a domain-shaped weather object, and Filesystem, which returns file content in an object. Neither requires API credentials. The package versions are pinned to the versions used to verify these outputs; Node.js and `npx` must be installed.
+Use the maintained [Everything server](https://github.com/modelcontextprotocol/servers/tree/main/src/everything) in the stdio example above:
 
 ```python
-import asyncio
-import tempfile
-from pathlib import Path
-
-import dspy
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-
-async def call_in_both_modes(server, tool_name, arguments):
-    async with stdio_client(server) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = (await session.list_tools()).tools
-            mcp_tool = next(tool for tool in tools if tool.name == tool_name)
-
-            text_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
-            structured_tool = dspy.Tool.from_mcp_tool(
-                session,
-                mcp_tool,
-                result_mode="structured",
-            )
-            return (
-                await text_tool.acall(**arguments),
-                await structured_tool.acall(**arguments),
-            )
-
-
-async def main():
-    everything = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-everything@2026.7.4"],
-    )
-    text, structured = await call_in_both_modes(
-        everything,
-        "get-structured-content",
-        {"location": "New York"},
-    )
-    print(repr(text))
-    # '{"temperature":33,"conditions":"Cloudy","humidity":82}'
-    print(structured)
-    # {'temperature': 33, 'conditions': 'Cloudy', 'humidity': 82}
-
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory, "example.txt")
-        path.write_text("alpha\nbeta\ngamma\n")
-        filesystem = StdioServerParameters(
-            command="npx",
-            args=[
-                "-y",
-                "@modelcontextprotocol/server-filesystem@2026.7.10",
-                directory,
-            ],
-        )
-        text, structured = await call_in_both_modes(
-            filesystem,
-            "read_text_file",
-            {"path": str(path), "head": 2},
-        )
-        print(repr(text))
-        # 'alpha\nbeta'
-        print(structured)
-        # {'content': 'alpha\nbeta'}
-
-
-asyncio.run(main())
+server_params = StdioServerParameters(
+    command="npx",
+    args=["-y", "@modelcontextprotocol/server-everything@2026.7.4"],
+)
+# After initializing the session:
+mcp_tool = next(t for t in response.tools if t.name == "get-structured-content")
+weather = dspy.Tool.from_mcp_tool(session, mcp_tool, result_mode="structured")
+print(await weather.acall(location="New York"))
+# {'temperature': 33, 'conditions': 'Cloudy', 'humidity': 82}
 ```
 
-These results illustrate why DSPy keeps the representations separate: model-facing `content` is already useful text, while `structuredContent` preserves the native object for indexing and validation. The Filesystem server limits access to the directory passed on its command line. Review and pin any server package before using it with sensitive data.
+The same code was verified against the maintained [Filesystem server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem): `read_text_file(..., head=2)` returned `{"content": "alpha\nbeta"}`. Review and pin MCP server packages before giving them access to sensitive data.
 
 ## Learn More
 
