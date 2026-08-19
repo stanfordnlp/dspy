@@ -93,12 +93,13 @@ class XMLAdapter(ChatAdapter):
         return fields
 
     @classmethod
-    def _value_to_xml(cls, value: Any, tag: str) -> str:
+    def _value_to_xml(cls, value: Any, tag: str, key: str | None = None) -> str:
+        attrs = f' key="{key.replace("&", "&amp;").replace(chr(34), "&quot;").replace("<", "&lt;").replace(chr(9), "&#9;").replace(chr(10), "&#10;").replace(chr(13), "&#13;")}"' if key is not None else ""
         if isinstance(value, list):
-            return "".join(cls._value_to_xml(item, tag) for item in value) if value else f"<{tag} />"
+            return "".join(cls._value_to_xml(item, tag, key) for item in value) if value else f"<{tag}{attrs} />"
         if isinstance(value, dict):
-            return f"<{tag}>{''.join(cls._value_to_xml(child, str(name)) for name, child in value.items())}</{tag}>"
-        return f"<{tag}>{str(value).replace('&', '&amp;').replace('<', '&lt;')}</{tag}>" if value is not None else f"<{tag} />"
+            return f"<{tag}{attrs}>{''.join(cls._value_to_xml(child, str(name)) if str(name).replace('-', '_').replace('.', '_').isidentifier() else cls._value_to_xml(child, 'entry', str(name)) for name, child in value.items())}</{tag}>"
+        return f"<{tag}{attrs}>{str(value).replace('&', '&amp;').replace('<', '&lt;')}</{tag}>" if value is not None else f"<{tag}{attrs} />"
 
     @classmethod
     def _xml_schema(cls, tag: str, annotation: Any) -> str:
@@ -140,8 +141,7 @@ class XMLAdapter(ChatAdapter):
             return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
         children = cls._group_children(element)
         if not children:
-            values = [(element.text or "").strip() for element in elements]
-            return values[0] if len(values) == 1 else values
+            return values[0] if len(values := [(element.text or "").strip() for element in elements]) == 1 else values
         properties, child_schema = schema.get("properties", {}), (additional if isinstance(additional := schema.get("additionalProperties", {}), dict) else {})
         return {
             name: cls._elements_to_value(items, properties.get(name, child_schema), definitions)
@@ -152,7 +152,7 @@ class XMLAdapter(ChatAdapter):
     def _group_children(element: ET.Element) -> dict[str, list[ET.Element]]:
         children = defaultdict(list)
         for child in element:
-            children[child.tag].append(child)
+            children[child.attrib.get("key", child.tag) if child.tag == "entry" else child.tag].append(child)
         return children
 
     @staticmethod

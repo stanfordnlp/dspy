@@ -95,6 +95,12 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
         "counts": {"first": [3, 4], "second": [5]},
     }
 
+    counts = {"postal code": [3, 4], 'quoted "key" & more': [5], "line\nbreak": [6]}
+    field = FieldInfoWithName(name="counts", info=TestSignature.output_fields["counts"])
+    formatted = adapter.format_field_with_value({field: counts})
+    assert '<entry key="postal code">3</entry>' in formatted
+    assert adapter.parse(TestSignature, formatted) == {"counts": counts}
+
     class EmptySignature(dspy.Signature):
         items: list[str] = dspy.OutputField()
 
