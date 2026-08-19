@@ -172,13 +172,17 @@ def get_dspy_source_code(module):
             except TypeError:
                 continue
             if isinstance(item, Parameter):
-                if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:
+                if hasattr(item, "signature") and item.signature is not None:
+                    # Which branch runs is determined by the signature's origin (source availability),
+                    # not by call order, so a given signature always yields the same sig_source here
+                    # and can't be emitted twice under two different representations.
                     try:
-                        header.append(inspect.getsource(item.signature))
-                        print(inspect.getsource(item.signature))
+                        sig_source = inspect.getsource(item.signature)
                     except (TypeError, OSError):
-                        header.append(str(item.signature))
-                    completed_set.add(item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig")
+                        sig_source = str(item.signature)
+                    if sig_source not in completed_set:
+                        header.append(sig_source)
+                        completed_set.add(sig_source)
             if isinstance(item, dspy.Module):
                 code = get_dspy_source_code(item).strip()
                 if code not in completed_set:
