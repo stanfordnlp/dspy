@@ -94,6 +94,9 @@ def test_guest_cannot_corrupt_interpreter_owned_globals_across_executions():
         assert interpreter.execute("len([1])") == 1
         assert interpreter.execute("add(19, 23)") == 42
         assert interpreter.execute("SUBMIT(42)").output == {"output": 42}
+        with pytest.raises(CodeExecutionError, match="_builtins"):
+            interpreter.execute("SUBMIT.__self__._builtins['len'] = None")
+        assert interpreter.execute("len([1])") == 1
 
 
 def test_errors_are_recoverable_but_timeout_is_terminal():
