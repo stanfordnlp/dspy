@@ -1,4 +1,7 @@
 import asyncio
+import contextvars
+import queue
+import threading
 from types import MethodType
 from typing import TYPE_CHECKING
 
@@ -9,18 +12,24 @@ if TYPE_CHECKING:
 def run_async(coro):
     """Run an async coroutine from a synchronous context."""
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        # If we're in a running event loop (e.g., Jupyter), use asyncio.create_task and run until done
-        import nest_asyncio
-
-        nest_asyncio.apply()
-        return asyncio.get_event_loop().run_until_complete(coro)
-    else:
         return asyncio.run(coro)
+
+    outcome = queue.Queue(maxsize=1)
+
+    def run():
+        try:
+            outcome.put((True, asyncio.run(coro)))
+        except BaseException as exc:
+            outcome.put((False, exc))
+
+    context = contextvars.copy_context()
+    threading.Thread(target=context.run, args=(run,), daemon=True).start()
+    succeeded, value = outcome.get()
+    if succeeded:
+        return value
+    raise value
 
 
 def syncify(program: "Module", in_place: bool = True) -> "Module":

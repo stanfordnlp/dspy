@@ -6,27 +6,24 @@ import io
 import json
 import keyword
 import sys
-import uuid
 from typing import Any
 
 
 class Submission(BaseException):
-    def __init__(self, value: Any) -> None:
-        self.value = value
+    pass
 
 
 class Session:
     def __init__(self) -> None:
         self.namespace: dict[str, Any] = {"__builtins__": __builtins__}
-        self.capabilities: set[str] = set()
+        self.tool_names: set[str] = set()
         self.output_fields: list[dict[str, Any]] | None = None
 
     def call_tool(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        request_id = uuid.uuid4().hex
-        send({"type": "tool_request", "id": request_id, "name": name, "args": args, "kwargs": kwargs})
+        send({"type": "tool_request", "name": name, "args": args, "kwargs": kwargs})
         response = receive()
-        if response.get("type") != "tool_response" or response.get("id") != request_id:
-            raise RuntimeError("mismatched host-tool response")
+        if response.get("type") != "tool_response":
+            raise RuntimeError("invalid host-tool response")
         if not response.get("ok"):
             raise RuntimeError(response.get("error"))
         return response.get("value")
@@ -40,9 +37,9 @@ class Session:
                 raise ValueError("output field names must be Python identifiers")
             if len(names) != len(set(names)):
                 raise ValueError("output field names must be unique")
-        for name in self.capabilities:
+        for name in self.tool_names:
             self.namespace.pop(name, None)
-        self.capabilities = set(tool_names) | {"SUBMIT"}
+        self.tool_names = set(tool_names)
         self.output_fields = output_fields
         for name in tool_names:
             self.namespace[name] = lambda *args, __name=name, **kwargs: self.call_tool(__name, *args, **kwargs)
@@ -74,14 +71,13 @@ class Session:
         try:
             tree = ast.parse(code, mode="exec")
             with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                value = None
-                if tree.body and isinstance(tree.body[-1], ast.Expr):
-                    exec(compile(ast.Module(tree.body[:-1], type_ignores=[]), "<interpreter>", "exec"), self.namespace)
-                    value = eval(compile(ast.Expression(tree.body[-1].value), "<interpreter>", "eval"), self.namespace)
-                else:
-                    exec(compile(tree, "<interpreter>", "exec"), self.namespace)
+                last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+                exec(compile(tree, "<interpreter>", "exec"), self.namespace)
+                value = (
+                    eval(compile(ast.Expression(last.value), "<interpreter>", "eval"), self.namespace) if last else None
+                )
         except Submission as submission:
-            return {"type": "execution_result", "kind": "final", "value": jsonable(submission.value)}
+            return {"type": "execution_result", "kind": "final", "value": jsonable(submission.args[0])}
         except SyntaxError as exc:
             return {"type": "execution_result", "kind": "syntax", "error": str(exc)}
         except BaseException as exc:

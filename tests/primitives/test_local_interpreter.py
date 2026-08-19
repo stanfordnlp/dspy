@@ -1,3 +1,4 @@
+import contextvars
 import os
 import threading
 import time
@@ -50,6 +51,17 @@ def test_async_host_tool():
 
     with dspy.LocalInterpreter(tools={"add": add}) as interpreter:
         assert interpreter.execute("add(left=19, right=23)") == 42
+
+
+def test_timed_async_host_tool_preserves_context():
+    marker = contextvars.ContextVar("marker", default="missing")
+    marker.set("visible")
+
+    async def read_marker():
+        return marker.get()
+
+    with dspy.LocalInterpreter(tools={"read_marker": read_marker}, execution_timeout=1) as interpreter:
+        assert interpreter.execute("read_marker()") == "visible"
 
 
 def test_host_tool_within_execution_timeout():

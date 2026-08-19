@@ -1,6 +1,21 @@
 import asyncio
+import contextvars
 
 import dspy
+from dspy.utils.syncify import run_async
+
+
+def test_run_async_from_running_loop_preserves_context():
+    marker = contextvars.ContextVar("marker", default="missing")
+
+    async def read_marker():
+        return marker.get()
+
+    async def call_synchronously():
+        marker.set("visible")
+        return run_async(read_marker())
+
+    assert asyncio.run(call_synchronously()) == "visible"
 
 
 def test_syncify_in_place():

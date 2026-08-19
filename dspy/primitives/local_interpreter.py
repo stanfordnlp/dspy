@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import asyncio
+import contextlib
+import contextvars
 import inspect
 import json
 import queue
@@ -14,30 +15,7 @@ from typing import Any, NoReturn
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.utils.callback import BaseCallback, with_callbacks
-
-
-def _await_in_sync(awaitable: Any) -> Any:
-    """Resolve an awaitable even when execute() is called from an event loop."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(awaitable)
-
-    outcome: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
-
-    def run() -> None:
-        try:
-            outcome.put((True, asyncio.run(awaitable)))
-        except BaseException as exc:
-            outcome.put((False, exc))
-
-    thread = threading.Thread(target=run)
-    thread.start()
-    thread.join()
-    succeeded, value = outcome.get()
-    if succeeded:
-        return value
-    raise value
+from dspy.utils.syncify import run_async
 
 
 class LocalInterpreter:
@@ -103,7 +81,7 @@ class LocalInterpreter:
             raise CodeInterpreterError(f"Unable to start Python worker: {exc}") from exc
         self._process = process
         threading.Thread(target=self._read_responses, args=(process,), daemon=True).start()
-        message = self._receive("Python worker did not start within 10 seconds.", timeout=10)
+        message = self._receive(time.monotonic() + 10, "Python worker did not start within 10 seconds.")
         if message.get("type") != "ready":
             self._raise_terminal_error(f"Python worker returned an invalid startup message: {message!r}")
 
@@ -123,11 +101,15 @@ class LocalInterpreter:
         except (OSError, TypeError, ValueError) as exc:
             self._raise_terminal_error(f"Unable to send request to Python worker: {exc}", exc)
 
-    def _receive(self, timeout_message: str, *, timeout: float | None) -> dict[str, Any]:
+    def _wait(self, responses: queue.Queue[Any], deadline: float | None, timeout_message: str) -> Any:
+        timeout = None if deadline is None else max(0, deadline - time.monotonic())
         try:
-            line = self._responses.get(timeout=timeout)
+            return responses.get(timeout=timeout)
         except queue.Empty:
             self._raise_terminal_error(timeout_message)
+
+    def _receive(self, deadline: float | None, timeout_message: str) -> dict[str, Any]:
+        line = self._wait(self._responses, deadline, timeout_message)
         if line is None:
             self._raise_terminal_error("Python worker exited unexpectedly.")
         try:
@@ -151,12 +133,9 @@ class LocalInterpreter:
         self._process = None
         if process is None:
             return
-        if process.poll() is None:
-            process.kill()
-        try:
+        process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            pass
         for stream in (process.stdin, process.stdout):
             if stream is not None:
                 stream.close()
@@ -167,34 +146,30 @@ class LocalInterpreter:
         if tool_name not in self.tools:
             raise CodeInterpreterError(f"Unknown tool: {tool_name}")
         result = self.tools[tool_name](*args, **kwargs)
-        return _await_in_sync(result) if inspect.isawaitable(result) else result
+        return run_async(result) if inspect.isawaitable(result) else result
 
-    def _make_tool_response(self, request: dict[str, Any]) -> dict[str, Any]:
-        try:
-            value = self.invoke_tool(request["name"], request.get("args", []), request.get("kwargs", {}))
-            json.dumps(value, allow_nan=False)
-            return {"type": "tool_response", "id": request["id"], "ok": True, "value": value}
-        except Exception as exc:
-            return {
-                "type": "tool_response",
-                "id": request.get("id"),
-                "ok": False,
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-
-    def _handle_tool(self, request: dict[str, Any], *, timeout: float | None, timeout_message: str) -> None:
-        if timeout is None:
-            self._send(self._make_tool_response(request))
-            return
-
+    def _handle_tool(self, request: dict[str, Any], deadline: float | None, timeout_message: str) -> None:
         responses: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
-        thread = threading.Thread(target=lambda: responses.put(self._make_tool_response(request)), daemon=True)
-        thread.start()
-        try:
-            response = responses.get(timeout=timeout)
-        except queue.Empty:
-            self._raise_terminal_error(timeout_message)
-        self._send(response)
+
+        def invoke() -> None:
+            try:
+                value = self.invoke_tool(request["name"], request.get("args", []), request.get("kwargs", {}))
+                json.dumps(value, allow_nan=False)
+                response = {"type": "tool_response", "ok": True, "value": value}
+            except Exception as exc:
+                response = {
+                    "type": "tool_response",
+                    "ok": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            responses.put(response)
+
+        if deadline is None:
+            invoke()
+        else:
+            context = contextvars.copy_context()
+            threading.Thread(target=context.run, args=(invoke,), daemon=True).start()
+        self._send(self._wait(responses, deadline, timeout_message))
 
     @with_callbacks
     def execute(self, code: str, variables: dict[str, Any] | None = None) -> Any:
@@ -226,18 +201,16 @@ class LocalInterpreter:
                     "output_fields": self.output_fields,
                 }
             )
+            timeout_message = (
+                "Python worker did not respond."
+                if self.execution_timeout is None
+                else f"Python worker exceeded execution timeout of {self.execution_timeout:g} seconds."
+            )
             while True:
-                timeout = None if deadline is None else max(0, deadline - time.monotonic())
-                timeout_message = (
-                    "Python worker did not respond."
-                    if self.execution_timeout is None
-                    else f"Python worker exceeded execution timeout of {self.execution_timeout:g} seconds."
-                )
-                message = self._receive(timeout_message, timeout=timeout)
+                message = self._receive(deadline, timeout_message)
                 kind = message.get("type")
                 if kind == "tool_request":
-                    timeout = None if deadline is None else max(0, deadline - time.monotonic())
-                    self._handle_tool(message, timeout=timeout, timeout_message=timeout_message)
+                    self._handle_tool(message, deadline, timeout_message)
                     continue
                 if kind == "terminal_error":
                     self._raise_terminal_error(f"Python worker failed: {message.get('error')}")
@@ -274,9 +247,7 @@ class LocalInterpreter:
             return
         self._ended = True
         if self._process is not None:
-            try:
+            with contextlib.suppress(CodeInterpreterError, subprocess.TimeoutExpired):
                 self._send({"type": "shutdown"})
                 self._process.wait(timeout=1)
-            except (CodeInterpreterError, subprocess.TimeoutExpired):
-                pass
         self._kill()
