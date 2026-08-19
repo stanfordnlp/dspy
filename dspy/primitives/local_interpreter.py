@@ -77,7 +77,9 @@ class LocalInterpreter:
             raise ValueError("execution_timeout must be positive or None")
         self._validate_tool_names(tools or {})
         self.tools = dict(tools or {})
-        self.output_fields = None if output_fields is None else [dict(field) for field in output_fields]
+        fields = None if output_fields is None else [dict(field) for field in output_fields]
+        self._validate_output_fields(fields)
+        self.output_fields = fields
         self.execution_timeout = execution_timeout
         self.callbacks = list(callbacks or [])
         self._process: subprocess.Popen[str] | None = None
@@ -97,6 +99,20 @@ class LocalInterpreter:
         ]
         if invalid:
             raise ValueError(f"tool names must be non-reserved Python identifiers; invalid names: {invalid!r}")
+
+    @staticmethod
+    def _validate_output_fields(output_fields: list[dict[str, Any]] | None) -> None:
+        if output_fields is None:
+            return
+        names = [field.get("name") if isinstance(field, dict) else None for field in output_fields]
+        if any(not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name) for name in names):
+            raise ValueError("output field names must be non-keyword Python identifiers")
+        if len(names) != len(set(names)):
+            raise ValueError("output field names must be unique")
+        try:
+            json.dumps(output_fields, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"output fields must be JSON-compatible: {exc}") from exc
 
     @with_callbacks
     def start(self) -> None:
@@ -203,6 +219,7 @@ class LocalInterpreter:
         try:
             variables = {} if variables is None else variables
             self._validate_tool_names(self.tools)
+            self._validate_output_fields(self.output_fields)
             if not isinstance(code, str):
                 raise CodeInterpreterError("code must be a string")
             if not isinstance(variables, dict):

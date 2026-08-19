@@ -47,6 +47,34 @@ def test_invalid_tool_names_fail_without_starting_or_consuming_session(name):
     interpreter.shutdown()
 
 
+@pytest.mark.parametrize(
+    "output_fields",
+    [
+        [{"name": "class"}],
+        [{"name": "not-valid"}],
+        [{"name": "answer"}, {"name": "answer"}],
+        [{"type": "str"}],
+        [{"name": "answer", "default": object()}],
+    ],
+)
+def test_invalid_output_fields_fail_without_consuming_session(output_fields):
+    with pytest.raises(ValueError):
+        dspy.LocalInterpreter(output_fields=output_fields)
+
+    interpreter = dspy.LocalInterpreter()
+    assert interpreter.execute("remembered = 41") is None
+    process = interpreter._process
+    interpreter.output_fields = output_fields
+    with pytest.raises(ValueError):
+        interpreter.execute("1")
+    assert interpreter._process is process
+
+    interpreter.output_fields = [{"name": "answer"}]
+    assert interpreter.execute("remembered + 1") == 42
+    assert interpreter.execute("SUBMIT(answer=42)").output == {"answer": 42}
+    interpreter.shutdown()
+
+
 def test_reserved_variable_names_fail_without_starting_or_consuming_session():
     interpreter = dspy.LocalInterpreter(tools={"add": lambda left, right: left + right})
     for variables in ({"class": 1}, {"SUBMIT": "shadowed"}, {"__builtins__": {}}, {"add": "shadowed"}):
