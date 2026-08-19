@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -164,7 +165,7 @@ class LocalInterpreter:
             timeout = max(0, deadline - time.monotonic())
             try:
                 response = _run_in_thread(invoke).result(timeout)
-            except TimeoutError:
+            except FutureTimeoutError:
                 self._raise_terminal_error(timeout_message)
         self._send(response)
 
