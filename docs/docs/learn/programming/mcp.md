@@ -186,8 +186,6 @@ print(await weather.acall(location="New York"))
 # {'temperature': 33, 'conditions': 'Cloudy', 'humidity': 82}
 ```
 
-The same code was verified against the maintained [Filesystem server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem): `read_text_file(..., head=2)` returned `{"content": "alpha\nbeta"}`. Review and pin MCP server packages before giving them access to sensitive data.
-
 ## Learn More
 
 - [MCP Official Documentation](https://modelcontextprotocol.io/)
