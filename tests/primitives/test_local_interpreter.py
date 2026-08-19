@@ -31,6 +31,34 @@ def test_tools_and_typed_submit():
         assert result.output == {"answer": "yes", "score": 42}
 
 
+@pytest.mark.parametrize("name", ["not-valid", "class", "SUBMIT"])
+def test_invalid_tool_names_fail_without_starting_or_consuming_session(name):
+    with pytest.raises(ValueError, match="invalid names"):
+        dspy.LocalInterpreter(tools={name: lambda: 1})
+
+    interpreter = dspy.LocalInterpreter()
+    interpreter.tools[name] = lambda: 1
+    with pytest.raises(ValueError, match="invalid names"):
+        interpreter.execute("1")
+    assert interpreter._process is None
+
+    interpreter.tools = {}
+    assert interpreter.execute("6 * 7") == 42
+    interpreter.shutdown()
+
+
+def test_reserved_variable_names_fail_without_starting_or_consuming_session():
+    interpreter = dspy.LocalInterpreter(tools={"add": lambda left, right: left + right})
+    for variables in ({"class": 1}, {"SUBMIT": "shadowed"}, {"add": "shadowed"}):
+        with pytest.raises(CodeInterpreterError, match="invalid names"):
+            interpreter.execute("1", variables=variables)
+        assert interpreter._process is None
+
+    assert interpreter.execute("add(19, 23)") == 42
+    assert interpreter.execute("SUBMIT(42)").output == {"output": 42}
+    interpreter.shutdown()
+
+
 def test_errors_are_recoverable_but_timeout_is_terminal():
     interpreter = dspy.LocalInterpreter(execution_timeout=0.1)
     with pytest.raises(SyntaxError):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import json
+import keyword
 import queue
 import subprocess
 import sys
@@ -50,6 +51,7 @@ class LocalInterpreter:
     ) -> None:
         if execution_timeout is not None and execution_timeout <= 0:
             raise ValueError("execution_timeout must be positive or None")
+        self._validate_tool_names(tools or {})
         self.tools = dict(tools or {})
         self.output_fields = None if output_fields is None else [dict(field) for field in output_fields]
         self.execution_timeout = execution_timeout
@@ -58,6 +60,16 @@ class LocalInterpreter:
         self._responses: queue.Queue[str | None] = queue.Queue()
         self._lock = threading.Lock()
         self._ended = False
+
+    @staticmethod
+    def _validate_tool_names(tools: dict[str, Callable[..., Any]]) -> None:
+        invalid = [
+            name
+            for name in tools
+            if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name) or name == "SUBMIT"
+        ]
+        if invalid:
+            raise ValueError(f"tool names must be Python identifiers other than SUBMIT; invalid names: {invalid!r}")
 
     @with_callbacks
     def start(self) -> None:
@@ -163,12 +175,25 @@ class LocalInterpreter:
             raise CodeInterpreterError("LocalInterpreter already has an active execution.")
         try:
             variables = {} if variables is None else variables
+            self._validate_tool_names(self.tools)
             if not isinstance(code, str):
                 raise CodeInterpreterError("code must be a string")
-            if not isinstance(variables, dict) or any(
-                not isinstance(name, str) or not name.isidentifier() for name in variables
-            ):
+            if not isinstance(variables, dict):
                 raise CodeInterpreterError("variables must map Python identifiers to JSON-compatible values")
+            invalid_variables = [
+                name
+                for name in variables
+                if not isinstance(name, str)
+                or not name.isidentifier()
+                or keyword.iskeyword(name)
+                or name == "SUBMIT"
+                or name in self.tools
+            ]
+            if invalid_variables:
+                raise CodeInterpreterError(
+                    "variable names must be non-keyword Python identifiers distinct from SUBMIT and tool names; "
+                    f"invalid names: {invalid_variables!r}"
+                )
             try:
                 json.dumps(variables, allow_nan=False)
             except (TypeError, ValueError) as exc:
