@@ -1,7 +1,4 @@
 import asyncio
-import contextvars
-import threading
-from concurrent.futures import Future
 from types import MethodType
 from typing import TYPE_CHECKING
 
@@ -9,27 +6,21 @@ if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
 
-def _run_in_thread(function):
-    outcome = Future()
-
-    def run():
-        try:
-            outcome.set_result(function())
-        except BaseException as exc:
-            outcome.set_exception(exc)
-
-    context = contextvars.copy_context()
-    threading.Thread(target=context.run, args=(run,), daemon=True).start()
-    return outcome
-
-
 def run_async(coro):
     """Run an async coroutine from a synchronous context."""
     try:
-        asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # If we're in a running event loop (e.g., Jupyter), use asyncio.create_task and run until done
+        import nest_asyncio
+
+        nest_asyncio.apply()
+        return asyncio.get_event_loop().run_until_complete(coro)
+    else:
         return asyncio.run(coro)
-    return _run_in_thread(lambda: asyncio.run(coro)).result()
 
 
 def syncify(program: "Module", in_place: bool = True) -> "Module":

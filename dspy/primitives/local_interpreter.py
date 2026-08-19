@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import contextvars
 import inspect
 import json
 import keyword
@@ -10,13 +12,34 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, NoReturn
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.utils.callback import BaseCallback, with_callbacks
-from dspy.utils.syncify import _run_in_thread, run_async
+
+
+def _run_in_thread(function: Callable[[], Any]) -> Future[Any]:
+    outcome = Future()
+
+    def run() -> None:
+        try:
+            outcome.set_result(function())
+        except BaseException as exc:
+            outcome.set_exception(exc)
+
+    threading.Thread(target=contextvars.copy_context().run, args=(run,), daemon=True).start()
+    return outcome
+
+
+def _await_in_sync(awaitable: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    return _run_in_thread(lambda: asyncio.run(awaitable)).result()
 
 
 class LocalInterpreter:
@@ -151,7 +174,7 @@ class LocalInterpreter:
         if tool_name not in self.tools:
             raise CodeInterpreterError(f"Unknown tool: {tool_name}")
         result = self.tools[tool_name](*args, **kwargs)
-        return run_async(result) if inspect.isawaitable(result) else result
+        return _await_in_sync(result) if inspect.isawaitable(result) else result
 
     def _handle_tool(self, request: dict[str, Any], deadline: float | None, timeout_message: str) -> None:
         def invoke() -> dict[str, Any]:
