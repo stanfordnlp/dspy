@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ast
 import contextlib
 import io
@@ -8,7 +10,8 @@ from typing import Any
 
 
 class Submission(BaseException):
-    pass
+    def __init__(self, value: Any) -> None:
+        self.value = value
 
 
 class Session:
@@ -18,14 +21,13 @@ class Session:
         self.output_fields: list[dict[str, Any]] | None = None
 
     def call_tool(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        send(["tool", name, args, kwargs])
+        send({"type": "tool_request", "name": name, "args": args, "kwargs": kwargs})
         response = receive()
-        kind, *payload = response
-        if kind == "tool_error":
-            raise RuntimeError(payload[0])
-        if kind != "tool_result":
+        if response.get("type") == "tool_error":
+            raise RuntimeError(response.get("error"))
+        if response.get("type") != "tool_result":
             raise RuntimeError("invalid host-tool response")
-        return payload[0]
+        return response.get("value")
 
     def configure(self, tool_names: list[str], output_fields: list[dict[str, Any]] | None) -> None:
         if any(not name.isidentifier() or keyword.iskeyword(name) or name == "SUBMIT" for name in tool_names):
@@ -57,14 +59,10 @@ class Session:
             raise TypeError("SUBMIT fields do not match the configured output fields")
         raise Submission(values)
 
-    def execute(
-        self,
-        code: str,
-        variables: dict[str, Any],
-        tool_names: list[str],
-        output_fields: list[dict[str, Any]] | None,
-    ) -> list[Any]:
-        self.configure(tool_names, output_fields)
+    def execute(self, request: dict[str, Any]) -> dict[str, Any]:
+        self.configure(request["tools"], request.get("output_fields"))
+        variables = request["variables"]
+        code = request["code"]
         self.namespace.update(variables)
         captured = io.StringIO()
         try:
@@ -76,12 +74,12 @@ class Session:
                     eval(compile(ast.Expression(last.value), "<interpreter>", "eval"), self.namespace) if last else None
                 )
         except Submission as submission:
-            return ["final", jsonable(submission.args[0])]
+            return {"type": "final", "value": jsonable(submission.value)}
         except SyntaxError as exc:
-            return ["syntax", str(exc)]
+            return {"type": "syntax", "error": str(exc)}
         except BaseException as exc:
-            return ["execution_error", f"{type(exc).__name__}: {exc}"]
-        return ["result", jsonable(value), captured.getvalue().rstrip("\n")]
+            return {"type": "execution_error", "error": describe(exc)}
+        return {"type": "result", "value": jsonable(value), "stdout": captured.getvalue().rstrip("\n")}
 
 
 def jsonable(value: Any) -> Any:
@@ -92,35 +90,39 @@ def jsonable(value: Any) -> Any:
         return repr(value)
 
 
-def send(message: list[Any]) -> None:
+def describe(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def send(message: dict[str, Any]) -> None:
     print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=sys.__stdout__, flush=True)
 
 
-def receive() -> list[Any]:
+def receive() -> dict[str, Any]:
     line = sys.__stdin__.readline()
     if not line:
         raise EOFError
     message = json.loads(line)
-    if not isinstance(message, list) or not message or not isinstance(message[0], str):
-        raise ValueError("protocol messages must be tagged lists")
+    if not isinstance(message, dict) or not isinstance(message.get("type"), str):
+        raise ValueError("protocol messages must be tagged objects")
     return message
 
 
 def main() -> None:
     session = Session()
-    send(["ready"])
+    send({"type": "ready"})
     try:
         while True:
             request = receive()
-            if request[0] == "shutdown":
+            if request.get("type") == "shutdown":
                 return
-            if request[0] != "execute":
+            if request.get("type") != "execute":
                 raise ValueError("unknown request")
-            send(session.execute(*request[1:]))
+            send(session.execute(request))
     except EOFError:
         return
     except BaseException as exc:
-        send(["terminal_error", f"{type(exc).__name__}: {exc}"])
+        send({"type": "terminal_error", "error": describe(exc)})
 
 
 if __name__ == "__main__":
