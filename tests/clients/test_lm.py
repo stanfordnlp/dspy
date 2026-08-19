@@ -16,6 +16,7 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
+from dspy.core.types import LMCompactionPart, LMOutput, LMResponse
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -2212,8 +2213,9 @@ def test_typed_lm_replays_openai_native_compaction_state():
             first = lm(dspy.User("Start the task."))
             second = lm(dspy.User("Start the task."), first, dspy.User("Continue."))
 
-    assert first.compactions[0].content == "opaque"
-    assert first.compactions[0].encrypted is True
+    assert first.compactions[0].content is None
+    assert first.compactions[0].provider_name == "openai"
+    assert first.compactions[0].provider_data["encrypted_content"] == "opaque"
     assert second.text == "Second answer."
     assert responses.call_args_list[1].kwargs["input"] == [
         {"role": "user", "content": [{"type": "input_text", "text": "Start the task."}]},
@@ -2260,7 +2262,7 @@ def test_typed_lm_replays_anthropic_native_compaction_block():
             second = lm(dspy.User("Start the task."), first, dspy.User("Continue."))
 
     assert first.compactions[0].content == "Conversation summary."
-    assert first.compactions[0].encrypted is False
+    assert first.compactions[0].provider_name == "anthropic"
     assert second.text == "Second answer."
     assert completion.call_args_list[1].kwargs["messages"] == [
         {"role": "user", "content": "Start the task."},
@@ -2276,3 +2278,38 @@ def test_typed_lm_replays_anthropic_native_compaction_block():
     assert completion.call_args_list[1].kwargs["context_management"] == [
         {"type": "compaction", "compact_threshold": 150_000}
     ]
+
+
+@pytest.mark.parametrize(
+    ("model", "model_type", "transport", "compaction"),
+    [
+        (
+            "openai/gpt-5.3-codex",
+            "responses",
+            "litellm.responses",
+            LMCompactionPart(
+                provider_name="anthropic",
+                content="Conversation summary.",
+                provider_data={"type": "compaction", "content": "Conversation summary."},
+            ),
+        ),
+        (
+            "anthropic/claude-opus-4-6",
+            "chat",
+            "litellm.completion",
+            LMCompactionPart(
+                provider_name="openai",
+                provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+            ),
+        ),
+    ],
+)
+def test_typed_lm_rejects_compaction_from_another_provider(model, model_type, transport, compaction):
+    response = LMResponse(outputs=[LMOutput(parts=[compaction])])
+    lm = dspy.LM(model, model_type=model_type, cache=False)
+
+    with mock.patch(transport, autospec=True) as completion:
+        with dspy.context(experimental=True), pytest.raises(ValueError, match="cannot be sent"):
+            lm(dspy.User("Start the task."), response, dspy.User("Continue."))
+
+    completion.assert_not_called()

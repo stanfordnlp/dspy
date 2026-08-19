@@ -238,15 +238,16 @@ class LMCompactionPart(LMBasePart):
     native wire shape when the response is used in a subsequent request.
 
     Args:
-        content: The provider-returned compaction state. This is opaque when
-            `encrypted=True` and must not be interpreted as text.
-        encrypted: Whether `content` is opaque encrypted provider state.
+        provider_name: The provider that generated the compaction. Compaction
+            state can only be replayed to the same provider.
+        content: A readable summary when the provider exposes one. OpenAI's
+            encrypted state is retained in ``provider_data`` instead.
         provider_data: Raw provider fields retained for lossless replay.
     """
 
     type: Literal["compaction"] = "compaction"
-    content: str
-    encrypted: bool = False
+    provider_name: str
+    content: str | None = None
     provider_data: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1667,6 +1668,16 @@ def _history_message_parts_as_openai_content(parts: list[LMPart]) -> str | list[
 def _history_part_as_openai_content(part: LMPart) -> dict[str, Any]:
     if isinstance(part, LMTextPart):
         return {"type": "text", "text": part.text}
+    if isinstance(part, LMCompactionPart):
+        block = dict(part.provider_data)
+        block["type"] = "compaction"
+        block["provider_name"] = part.provider_name
+        if part.content is None:
+            block.pop("content", None)
+        else:
+            block.pop("encrypted_content", None)
+            block["content"] = part.content
+        return block
     if isinstance(part, LMImagePart):
         return {"type": "image_url", "image_url": {"url": _history_part_source(part)}}
     if isinstance(part, LMAudioPart):
@@ -1853,12 +1864,14 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
             video = item.get("video", {})
             parts.append(_media_dict_to_video_part(video))
         elif item_type == "compaction":
-            encrypted = "encrypted_content" in item
-            field = "encrypted_content" if encrypted else "content"
-            content = item.get(field)
-            if not isinstance(content, str):
-                raise ValueError(f"Compaction content block requires a string {field!r} field.")
-            parts.append(LMCompactionPart(content=content, encrypted=encrypted, provider_data=dict(item)))
+            provider_name = item.get("provider_name")
+            if not isinstance(provider_name, str):
+                raise ValueError("Compaction content block requires a string 'provider_name' field.")
+            content = item.get("content")
+            if content is not None and not isinstance(content, str):
+                raise ValueError("Compaction content block requires a string or null 'content' field.")
+            provider_data = {key: value for key, value in item.items() if key != "provider_name"}
+            parts.append(LMCompactionPart(content=content, provider_name=provider_name, provider_data=provider_data))
         else:
             parts.append(_coerce_part(item))
     return parts
@@ -2058,6 +2071,8 @@ def _part_to_value(part: LMPart) -> Any:
         return part
     if isinstance(part, LMRefusalPart):
         return part.text
+    if isinstance(part, LMCompactionPart):
+        return None
     return part
 
 

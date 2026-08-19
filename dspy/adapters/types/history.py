@@ -6,8 +6,10 @@ import pydantic
 class History(pydantic.BaseModel):
     """Class representing the conversation history.
 
-    The conversation history is a list of messages, each message entity should have keys from the associated signature.
-    For example, if you have the following signature:
+    The conversation history contains an optional summary of compacted earlier
+    messages followed by a list of recent messages. Each message entity should
+    have keys from the associated signature. For example, if you have the
+    following signature:
 
     ```
     class MySignature(dspy.Signature):
@@ -16,7 +18,10 @@ class History(pydantic.BaseModel):
         answer: str = dspy.OutputField()
     ```
 
-    Then the history should be a list of dictionaries with keys "question" and "answer".
+    Then the history messages should be dictionaries with keys "question" and
+    "answer". When ``summary`` is set, adapters place it before the recent
+    messages as ordinary user context. The summary is not filtered against the
+    signature fields.
 
     Examples:
         ```
@@ -30,6 +35,7 @@ class History(pydantic.BaseModel):
             answer: str = dspy.OutputField()
 
         history = dspy.History(
+            summary="The user is comparing European capitals.",
             messages=[
                 {"question": "What is the capital of France?", "answer": "Paris"},
                 {"question": "What is the capital of Germany?", "answer": "Berlin"},
@@ -59,6 +65,7 @@ class History(pydantic.BaseModel):
     """
 
     messages: list[dict[str, Any]]
+    summary: str | None = pydantic.Field(default=None, exclude_if=lambda value: value is None)
 
     model_config = pydantic.ConfigDict(
         frozen=True,

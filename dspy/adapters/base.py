@@ -641,12 +641,20 @@ class Adapter:
         Returns:
             A list of multiturn messages as expected by the LM.
         """
-        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+        history = inputs.get(history_field_name)
+        conversation_history = history.messages if history is not None else None
 
         if conversation_history is None:
             return []
 
         messages = []
+        if history.summary is not None:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Here is a summary of the conversation to date:\n\n{history.summary}",
+                }
+            )
         for message in conversation_history:
             tool_call_field_name, tool_calls = _tool_calls_from_message(message)
             tool_call_results = (
