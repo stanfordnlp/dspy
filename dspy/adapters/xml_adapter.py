@@ -98,7 +98,7 @@ class XMLAdapter(ChatAdapter):
         if isinstance(value, list):
             return "".join(cls._value_to_xml(item, tag, key) for item in value) if value else f"<{tag}{attrs} />"
         if isinstance(value, dict):
-            return f"<{tag}{attrs}>{''.join(cls._value_to_xml(child, str(name)) if str(name).replace('-', '_').replace('.', '_').isidentifier() else cls._value_to_xml(child, 'entry', str(name)) for name, child in value.items())}</{tag}>"
+            return f"<{tag}{attrs}>{''.join(cls._value_to_xml(child, str(name)) if (str(name)[:1] + str(name)[1:].replace('-', '_').replace('.', '_')).isidentifier() else cls._value_to_xml(child, 'entry', str(name)) for name, child in value.items())}</{tag}>"
         return f"<{tag}{attrs}>{str(value).replace('&', '&amp;').replace('<', '&lt;')}</{tag}>" if value is not None else f"<{tag}{attrs} />"
 
     @classmethod
