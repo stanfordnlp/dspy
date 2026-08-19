@@ -1,7 +1,7 @@
 import asyncio
 import contextvars
-import queue
 import threading
+from concurrent.futures import Future
 from types import MethodType
 from typing import TYPE_CHECKING
 
@@ -16,20 +16,17 @@ def run_async(coro):
     except RuntimeError:
         return asyncio.run(coro)
 
-    outcome = queue.Queue(maxsize=1)
+    outcome = Future()
 
     def run():
         try:
-            outcome.put((True, asyncio.run(coro)))
+            outcome.set_result(asyncio.run(coro))
         except BaseException as exc:
-            outcome.put((False, exc))
+            outcome.set_exception(exc)
 
     context = contextvars.copy_context()
     threading.Thread(target=context.run, args=(run,), daemon=True).start()
-    succeeded, value = outcome.get()
-    if succeeded:
-        return value
-    raise value
+    return outcome.result()
 
 
 def syncify(program: "Module", in_place: bool = True) -> "Module":
