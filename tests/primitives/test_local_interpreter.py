@@ -31,7 +31,7 @@ def test_tools_and_typed_submit():
         assert result.output == {"answer": "yes", "score": 42}
 
 
-@pytest.mark.parametrize("name", ["not-valid", "class", "SUBMIT"])
+@pytest.mark.parametrize("name", ["not-valid", "class", "SUBMIT", "__builtins__"])
 def test_invalid_tool_names_fail_without_starting_or_consuming_session(name):
     with pytest.raises(ValueError, match="invalid names"):
         dspy.LocalInterpreter(tools={name: lambda: 1})
@@ -49,11 +49,12 @@ def test_invalid_tool_names_fail_without_starting_or_consuming_session(name):
 
 def test_reserved_variable_names_fail_without_starting_or_consuming_session():
     interpreter = dspy.LocalInterpreter(tools={"add": lambda left, right: left + right})
-    for variables in ({"class": 1}, {"SUBMIT": "shadowed"}, {"add": "shadowed"}):
+    for variables in ({"class": 1}, {"SUBMIT": "shadowed"}, {"__builtins__": {}}, {"add": "shadowed"}):
         with pytest.raises(CodeInterpreterError, match="invalid names"):
             interpreter.execute("1", variables=variables)
         assert interpreter._process is None
 
+    assert interpreter.execute("len([1])") == 1
     assert interpreter.execute("add(19, 23)") == 42
     assert interpreter.execute("SUBMIT(42)").output == {"output": 42}
     interpreter.shutdown()

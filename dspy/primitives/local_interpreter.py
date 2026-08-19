@@ -67,10 +67,13 @@ class LocalInterpreter:
         invalid = [
             name
             for name in tools
-            if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name) or name == "SUBMIT"
+            if not isinstance(name, str)
+            or not name.isidentifier()
+            or keyword.iskeyword(name)
+            or name in {"SUBMIT", "__builtins__"}
         ]
         if invalid:
-            raise ValueError(f"tool names must be Python identifiers other than SUBMIT; invalid names: {invalid!r}")
+            raise ValueError(f"tool names must be non-reserved Python identifiers; invalid names: {invalid!r}")
 
     @with_callbacks
     def start(self) -> None:
@@ -187,12 +190,12 @@ class LocalInterpreter:
                 if not isinstance(name, str)
                 or not name.isidentifier()
                 or keyword.iskeyword(name)
-                or name == "SUBMIT"
+                or name in {"SUBMIT", "__builtins__"}
                 or name in self.tools
             ]
             if invalid_variables:
                 raise CodeInterpreterError(
-                    "variable names must be non-keyword Python identifiers distinct from SUBMIT and tool names; "
+                    "variable names must be non-reserved Python identifiers distinct from tool names; "
                     f"invalid names: {invalid_variables!r}"
                 )
             try:

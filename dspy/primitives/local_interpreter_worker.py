@@ -30,8 +30,11 @@ class Session:
         return response.get("value")
 
     def configure(self, tool_names: list[str], output_fields: list[dict[str, Any]] | None) -> None:
-        if any(not name.isidentifier() or keyword.iskeyword(name) or name == "SUBMIT" for name in tool_names):
-            raise ValueError("tool names must be Python identifiers other than SUBMIT")
+        if any(
+            not name.isidentifier() or keyword.iskeyword(name) or name in {"SUBMIT", "__builtins__"}
+            for name in tool_names
+        ):
+            raise ValueError("tool names must be non-reserved Python identifiers")
         if output_fields is not None:
             names = [field.get("name") for field in output_fields]
             if any(not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name) for name in names):
@@ -62,6 +65,8 @@ class Session:
     def execute(self, request: dict[str, Any]) -> dict[str, Any]:
         self.configure(request["tools"], request.get("output_fields"))
         variables = request["variables"]
+        if {"SUBMIT", "__builtins__", *self.tool_names} & variables.keys():
+            raise ValueError("variables cannot replace interpreter-owned globals")
         code = request["code"]
         self.namespace.update(variables)
         captured = io.StringIO()
