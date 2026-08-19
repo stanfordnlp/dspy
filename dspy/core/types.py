@@ -21,6 +21,7 @@ __all__ = [
     "LMBinaryPart",
     "LMCacheConfig",
     "LMCitationPart",
+    "LMCompactionPart",
     "LMConfig",
     "LMDocumentPart",
     "LMImagePart",
@@ -228,6 +229,27 @@ class LMRefusalPart(LMBasePart):
     text: str
 
 
+class LMCompactionPart(LMBasePart):
+    """Provider-generated state that replaces earlier conversation context.
+
+    OpenAI returns opaque encrypted state as a standalone Responses item, while
+    Anthropic returns a textual compaction block inside an assistant message.
+    DSPy keeps both as assistant-originated parts and restores each provider's
+    native wire shape when the response is used in a subsequent request.
+
+    Args:
+        content: The provider-returned compaction state. This is opaque when
+            `encrypted=True` and must not be interpreted as text.
+        encrypted: Whether `content` is opaque encrypted provider state.
+        provider_data: Raw provider fields retained for lossless replay.
+    """
+
+    type: Literal["compaction"] = "compaction"
+    content: str
+    encrypted: bool = False
+    provider_data: dict[str, Any] = Field(default_factory=dict)
+
+
 LMPart = Annotated[
     LMTextPart
     | LMImagePart
@@ -239,7 +261,8 @@ LMPart = Annotated[
     | LMToolResultPart
     | LMThinkingPart
     | LMCitationPart
-    | LMRefusalPart,
+    | LMRefusalPart
+    | LMCompactionPart,
     Field(discriminator="type"),
 ]
 
@@ -782,6 +805,10 @@ class LMOutput(BaseModel):
         return [part for part in self.parts if isinstance(part, LMBinaryPart)]
 
     @property
+    def compactions(self) -> list[LMCompactionPart]:
+        return [part for part in self.parts if isinstance(part, LMCompactionPart)]
+
+    @property
     def refusal(self) -> str | None:
         refusals = [part.text for part in self.parts if isinstance(part, LMRefusalPart)]
         return "".join(refusals) if refusals else None
@@ -901,6 +928,10 @@ class LMResponse(BaseModel):
     @property
     def binaries(self) -> list[LMBinaryPart]:
         return self.output.binaries
+
+    @property
+    def compactions(self) -> list[LMCompactionPart]:
+        return self.output.compactions
 
     def to_values(self) -> list[Any]:
         return [output.to_value() for output in self.outputs]
@@ -1779,6 +1810,7 @@ def _coerce_part(value: Any) -> LMPart:
             LMThinkingPart,
             LMCitationPart,
             LMRefusalPart,
+            LMCompactionPart,
         ),
     ):
         return value
@@ -1820,6 +1852,13 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
         elif item_type == "video":
             video = item.get("video", {})
             parts.append(_media_dict_to_video_part(video))
+        elif item_type == "compaction":
+            encrypted = "encrypted_content" in item
+            field = "encrypted_content" if encrypted else "content"
+            content = item.get(field)
+            if not isinstance(content, str):
+                raise ValueError(f"Compaction content block requires a string {field!r} field.")
+            parts.append(LMCompactionPart(content=content, encrypted=encrypted, provider_data=dict(item)))
         else:
             parts.append(_coerce_part(item))
     return parts

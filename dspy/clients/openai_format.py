@@ -33,6 +33,7 @@ from dspy.core.types import (
     LMAudioPart,
     LMBinaryPart,
     LMCitationPart,
+    LMCompactionPart,
     LMConfig,
     LMDocumentPart,
     LMImagePart,
@@ -74,9 +75,15 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def to_openai_chat_request(request: LMRequest) -> dict[str, Any]:
+def to_openai_chat_request(request: LMRequest, *, _allow_responses_compaction: bool = False) -> dict[str, Any]:
     """Convert a normalized DSPy request into Chat Completions kwargs."""
-    data = {"model": request.model, "messages": [message_to_openai_chat(message) for message in request.messages]}
+    data = {
+        "model": request.model,
+        "messages": [
+            message_to_openai_chat(message, _allow_responses_compaction=_allow_responses_compaction)
+            for message in request.messages
+        ],
+    }
     data.update(common_config_kwargs(request.config, model=request.model, endpoint="chat"))
     if request.config.tool_choice is not None:
         data.update(tool_choice_to_openai(request.config.tool_choice))
@@ -85,18 +92,35 @@ def to_openai_chat_request(request: LMRequest) -> dict[str, Any]:
     return data
 
 
-def message_to_openai_chat(message: LMMessage) -> dict[str, Any]:
+def message_to_openai_chat(message: LMMessage, *, _allow_responses_compaction: bool = False) -> dict[str, Any]:
     """Convert one DSPy message into one Chat Completions message."""
     output: dict[str, Any] = {"role": message.role}
     if message.name is not None:
         output["name"] = message.name
 
+    compactions = [part for part in message.parts if isinstance(part, LMCompactionPart)]
+    if compactions and message.role != "assistant":
+        raise ValueError("Compaction parts can only appear in assistant messages.")
+
     if message.role == "assistant":
         tool_calls = [part for part in message.parts if isinstance(part, LMToolCallPart)]
-        content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
-        output["content"] = None if tool_calls and not content_parts else parts_to_openai_content(content_parts)
+        if _allow_responses_compaction:
+            if any(not part.encrypted for part in compactions):
+                raise ValueError("Textual compaction blocks cannot be sent to the OpenAI Responses API.")
+            content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
+        else:
+            if any(part.encrypted for part in compactions):
+                raise ValueError("Encrypted compaction items can only be sent to the OpenAI Responses API.")
+            content_parts = [part for part in message.parts if not isinstance(part, (LMToolCallPart, LMCompactionPart))]
+        output["content"] = (
+            None if (tool_calls or compactions) and not content_parts else parts_to_openai_content(content_parts)
+        )
         if tool_calls:
             output["tool_calls"] = [assistant_tool_call_to_openai(part) for part in tool_calls]
+        if compactions and not _allow_responses_compaction:
+            output["provider_specific_fields"] = {
+                "compaction_blocks": [compaction_to_anthropic_block(part) for part in compactions]
+            }
         return output
 
     if message.role == "tool" and len(message.parts) == 1 and isinstance(message.parts[0], LMToolResultPart):
@@ -140,6 +164,9 @@ def to_openai_responses_request(request: LMRequest, *, enforce_reasoning_tempera
 
 def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]:
     """Convert one DSPy message into one or more Responses input items."""
+    if message.role != "assistant" and any(isinstance(part, LMCompactionPart) for part in message.parts):
+        raise ValueError("Compaction parts can only appear in assistant messages.")
+
     if message.role == "tool" and len(message.parts) == 1 and isinstance(message.parts[0], LMToolResultPart):
         result = message.parts[0]
         item = {"type": "function_call_output", "output": responses_tool_output_text(tool_result_to_openai(result)["content"])}
@@ -147,19 +174,31 @@ def message_to_responses_input_items(message: LMMessage) -> list[dict[str, Any]]
             item["call_id"] = result.call_id
         return [item]
 
-    tool_calls = [part for part in message.parts if isinstance(part, LMToolCallPart)]
-    content_parts = [part for part in message.parts if not isinstance(part, LMToolCallPart)]
-    content = parts_to_responses_content(content_parts, role=message.role)
     items: list[dict[str, Any]] = []
+    content_parts = []
+    for part in message.parts:
+        if message.role == "assistant" and isinstance(part, (LMToolCallPart, LMCompactionPart)):
+            if content_parts:
+                item: dict[str, Any] = {
+                    "role": message.role,
+                    "content": parts_to_responses_content(content_parts, role=message.role),
+                }
+                if message.name is not None:
+                    item["name"] = message.name
+                items.append(item)
+                content_parts = []
+            if isinstance(part, LMToolCallPart):
+                items.append(tool_call_to_responses_input(part))
+            else:
+                items.append(compaction_to_responses_input(part))
+        else:
+            content_parts.append(part)
 
-    if content or message.role != "assistant" or not tool_calls:
-        item: dict[str, Any] = {"role": message.role, "content": content}
+    if content_parts or message.role != "assistant" or not items:
+        item = {"role": message.role, "content": parts_to_responses_content(content_parts, role=message.role)}
         if message.name is not None:
             item["name"] = message.name
         items.append(item)
-
-    if message.role == "assistant":
-        items.extend(tool_call_to_responses_input(tool_call) for tool_call in tool_calls)
     return items
 
 
@@ -185,6 +224,28 @@ def tool_call_to_responses_input(tool_call_part: LMToolCallPart) -> dict[str, An
     if call_id is not None:
         item["call_id"] = call_id
     return item
+
+
+def compaction_to_responses_input(compaction: LMCompactionPart) -> dict[str, Any]:
+    """Restore an opaque compaction part to its standalone Responses item."""
+    if not compaction.encrypted:
+        raise ValueError("Textual compaction blocks cannot be sent to the OpenAI Responses API.")
+    item = dict(compaction.provider_data)
+    item.pop("content", None)
+    item["type"] = "compaction"
+    item["encrypted_content"] = compaction.content
+    return item
+
+
+def compaction_to_anthropic_block(compaction: LMCompactionPart) -> dict[str, Any]:
+    """Restore textual compaction for LiteLLM to replay as an Anthropic block."""
+    if compaction.encrypted:
+        raise ValueError("Encrypted compaction items can only be sent to the OpenAI Responses API.")
+    block = dict(compaction.provider_data)
+    block.pop("encrypted_content", None)
+    block["type"] = "compaction"
+    block["content"] = compaction.content
+    return block
 
 
 def content_block_to_responses(block: dict[str, Any], role: str = "user") -> dict[str, Any]:
@@ -280,6 +341,13 @@ def part_to_openai_blocks(part: Any) -> list[dict[str, Any]]:
         return [binary_to_openai(part)]
     if isinstance(part, LMThinkingPart):
         return [{"type": "text", "text": part.text}]
+    if isinstance(part, LMCompactionPart):
+        block = dict(part.provider_data)
+        field = "encrypted_content" if part.encrypted else "content"
+        block.pop("content" if part.encrypted else "encrypted_content", None)
+        block["type"] = "compaction"
+        block[field] = part.content
+        return [block]
     if isinstance(part, LMCitationPart):
         citation = " ".join(value for value in (part.title, part.text, part.url) if value)
         return [{"type": "text", "text": citation}]
@@ -640,6 +708,7 @@ def choice_to_lm_output(choice: Any) -> LMOutput:
     message = get_value(choice, "message")
     parts = []
     if message is not None:
+        parts.extend(extract_compactions_from_choice(choice))
         reasoning = get_value(message, "reasoning_content")
         if reasoning:
             parts.append(LMThinkingPart(text=str(reasoning)))
@@ -692,6 +761,8 @@ def responses_to_lm_response(response: Any, request: LMRequest) -> LMResponse:
                 text = get_value(item, "text")
                 if text:
                     parts.append(LMThinkingPart(text=text))
+        elif output_type == "compaction":
+            parts.append(compaction_to_part(output_item, encrypted=True))
     return LMResponse(
         model=get_value(response, "model") or request.model,
         outputs=[LMOutput(parts=parts, provider_output=response)],
@@ -788,6 +859,24 @@ def extract_citations_from_choice(choice: Any) -> list[LMCitationPart]:
     except Exception:
         return []
     return []
+
+
+def extract_compactions_from_choice(choice: Any) -> list[LMCompactionPart]:
+    """Extract Anthropic compaction blocks retained by LiteLLM."""
+    message = get_value(choice, "message")
+    provider_specific_fields = get_value(message, "provider_specific_fields", {}) or {}
+    blocks = provider_specific_fields.get("compaction_blocks") or []
+    return [compaction_to_part(block, encrypted=False) for block in blocks]
+
+
+def compaction_to_part(value: Any, *, encrypted: bool) -> LMCompactionPart:
+    """Normalize an OpenAI or Anthropic provider compaction item."""
+    provider_data = model_dump(value)
+    field = "encrypted_content" if encrypted else "content"
+    content = provider_data.get(field)
+    if not isinstance(content, str):
+        raise ValueError(f"Provider compaction item requires a string {field!r} field.")
+    return LMCompactionPart(content=content, encrypted=encrypted, provider_data=provider_data)
 
 
 def responses_annotations_to_citations(content_item: Any) -> list[LMCitationPart]:
@@ -967,7 +1056,24 @@ def model_dump(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     data = {}
-    for key in ("id", "call_id", "type", "name", "arguments", "status", "text", "refusal", "url", "data", "file_id", "filename", "media_type", "mime_type"):
+    for key in (
+        "id",
+        "call_id",
+        "type",
+        "name",
+        "arguments",
+        "status",
+        "text",
+        "content",
+        "encrypted_content",
+        "refusal",
+        "url",
+        "data",
+        "file_id",
+        "filename",
+        "media_type",
+        "mime_type",
+    ):
         item = getattr(value, key, None)
         if item is not None:
             data[key] = item

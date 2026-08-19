@@ -6,6 +6,7 @@ import pytest
 from dspy.core.types import (
     LMAudioPart,
     LMBinaryPart,
+    LMCompactionPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -448,6 +449,19 @@ def test_output_to_value_preserves_redacted_thinking_part():
     output = LMOutput(parts=[thinking])
 
     assert output.to_value() == [thinking]
+
+
+def test_response_serialization_preserves_native_compaction_state():
+    compaction = LMCompactionPart(
+        content="opaque",
+        encrypted=True,
+        provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+    )
+    response = LMResponse(model="model", outputs=[LMOutput(parts=[compaction])])
+
+    restored = LMResponse.model_validate(response.model_dump())
+
+    assert restored.compactions == [compaction]
 
 
 def test_stream_event_indices_must_be_non_negative():
