@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import ast
 import contextlib
 import io
@@ -82,7 +80,7 @@ class Session:
         except SyntaxError as exc:
             return ["syntax", str(exc)]
         except BaseException as exc:
-            return ["execution_error", describe(exc)]
+            return ["execution_error", f"{type(exc).__name__}: {exc}"]
         return ["result", jsonable(value), captured.getvalue().rstrip("\n")]
 
 
@@ -94,13 +92,8 @@ def jsonable(value: Any) -> Any:
         return repr(value)
 
 
-def describe(exc: BaseException) -> str:
-    return f"{type(exc).__name__}: {exc}"
-
-
 def send(message: list[Any]) -> None:
-    sys.__stdout__.write(json.dumps(message, separators=(",", ":"), allow_nan=False) + "\n")
-    sys.__stdout__.flush()
+    print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=sys.__stdout__, flush=True)
 
 
 def receive() -> list[Any]:
@@ -116,19 +109,18 @@ def receive() -> list[Any]:
 def main() -> None:
     session = Session()
     send(["ready"])
-    while True:
-        try:
+    try:
+        while True:
             request = receive()
             if request[0] == "shutdown":
                 return
             if request[0] != "execute":
                 raise ValueError("unknown request")
             send(session.execute(*request[1:]))
-        except EOFError:
-            return
-        except BaseException as exc:
-            send(["terminal_error", describe(exc)])
-            return
+    except EOFError:
+        return
+    except BaseException as exc:
+        send(["terminal_error", f"{type(exc).__name__}: {exc}"])
 
 
 if __name__ == "__main__":

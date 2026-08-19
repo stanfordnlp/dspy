@@ -9,24 +9,27 @@ if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
 
+def _run_in_thread(function):
+    outcome = Future()
+
+    def run():
+        try:
+            outcome.set_result(function())
+        except BaseException as exc:
+            outcome.set_exception(exc)
+
+    context = contextvars.copy_context()
+    threading.Thread(target=context.run, args=(run,), daemon=True).start()
+    return outcome
+
+
 def run_async(coro):
     """Run an async coroutine from a synchronous context."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-
-    outcome = Future()
-
-    def run():
-        try:
-            outcome.set_result(asyncio.run(coro))
-        except BaseException as exc:
-            outcome.set_exception(exc)
-
-    context = contextvars.copy_context()
-    threading.Thread(target=context.run, args=(run,), daemon=True).start()
-    return outcome.result()
+    return _run_in_thread(lambda: asyncio.run(coro)).result()
 
 
 def syncify(program: "Module", in_place: bool = True) -> "Module":
