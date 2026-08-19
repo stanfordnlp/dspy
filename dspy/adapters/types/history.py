@@ -2,14 +2,17 @@ from typing import Any
 
 import pydantic
 
+from dspy.core.types import LMCompactionPart
+
 
 class History(pydantic.BaseModel):
     """Class representing the conversation history.
 
-    The conversation history contains an optional summary of compacted earlier
-    messages followed by a list of recent messages. Each message entity should
-    have keys from the associated signature. For example, if you have the
-    following signature:
+    The conversation history contains optional compacted context followed by a
+    list of recent messages. Compacted context can be a portable text summary
+    or provider-native state in an ``LMCompactionPart``. Each message entity
+    should have keys from the associated signature. For example, if you have
+    the following signature:
 
     ```
     class MySignature(dspy.Signature):
@@ -19,9 +22,9 @@ class History(pydantic.BaseModel):
     ```
 
     Then the history messages should be dictionaries with keys "question" and
-    "answer". When ``summary`` is set, adapters place it before the recent
-    messages as ordinary user context. The summary is not filtered against the
-    signature fields.
+    "answer". A string ``compaction`` is placed before the recent messages as
+    ordinary user context. An ``LMCompactionPart`` is replayed in its provider's
+    native format. Compacted context is not filtered against signature fields.
 
     Examples:
         ```
@@ -35,7 +38,7 @@ class History(pydantic.BaseModel):
             answer: str = dspy.OutputField()
 
         history = dspy.History(
-            summary="The user is comparing European capitals.",
+            compaction="The user is comparing European capitals.",
             messages=[
                 {"question": "What is the capital of France?", "answer": "Paris"},
                 {"question": "What is the capital of Germany?", "answer": "Berlin"},
@@ -65,7 +68,7 @@ class History(pydantic.BaseModel):
     """
 
     messages: list[dict[str, Any]]
-    summary: str | None = pydantic.Field(default=None, exclude_if=lambda value: value is None)
+    compaction: str | LMCompactionPart | None = pydantic.Field(default=None, exclude_if=lambda value: value is None)
 
     model_config = pydantic.ConfigDict(
         frozen=True,

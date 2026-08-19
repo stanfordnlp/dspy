@@ -69,6 +69,7 @@ def test_two_step_adapter_call():
     mock_main_lm.return_value = ["text from main LM"]
     mock_main_lm.kwargs = {"temperature": 1.0}
     mock_main_lm.model = "openai/gpt-4o-mini"
+    mock_main_lm.model_type = "chat"
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
     mock_extraction_lm.return_value = [
@@ -80,6 +81,7 @@ def test_two_step_adapter_call():
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
+    mock_extraction_lm.model_type = "chat"
 
     dspy.configure(lm=mock_main_lm, adapter=dspy.TwoStepAdapter(extraction_model=mock_extraction_lm))
 
@@ -136,6 +138,7 @@ async def test_two_step_adapter_async_call():
     mock_main_lm.acall.return_value = ["text from main LM"]
     mock_main_lm.kwargs = {"temperature": 1.0}
     mock_main_lm.model = "openai/gpt-4o-mini"
+    mock_main_lm.model_type = "chat"
 
     mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
     mock_extraction_lm.acall.return_value = [
@@ -147,6 +150,7 @@ async def test_two_step_adapter_async_call():
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
+    mock_extraction_lm.model_type = "chat"
 
     with dspy.context(lm=mock_main_lm, adapter=dspy.TwoStepAdapter(extraction_model=mock_extraction_lm)):
         result = await program.acall(question="What is 5 + 7?")
@@ -208,6 +212,7 @@ def test_two_step_adapter_parse():
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
+    mock_extraction_lm.model_type = "chat"
     adapter = dspy.TwoStepAdapter(mock_extraction_lm)
     dspy.configure(adapter=adapter, lm=mock_extraction_lm)
 
