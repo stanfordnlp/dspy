@@ -132,17 +132,17 @@ class XMLAdapter(ChatAdapter):
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()
-                if not text or text.startswith("["):
+                if any((not text, text.startswith("["))):
                     return [] if not text else text
             return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
         element = elements[0]
-        if schema.get("type") == "string" and list(element):
+        if all((schema.get("type") == "string", list(element))):
             return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
         children = cls._group_children(element)
         if not children:
-            return (element.text or "").strip()
-        properties, child_schema = schema.get("properties", {}), schema.get("additionalProperties", {})
-        child_schema = child_schema if isinstance(child_schema, dict) else {}
+            values = [(element.text or "").strip() for element in elements]
+            return values[0] if len(values) == 1 else values
+        properties, child_schema = schema.get("properties", {}), (additional if isinstance(additional := schema.get("additionalProperties", {}), dict) else {})
         return {
             name: cls._elements_to_value(items, properties.get(name, child_schema), definitions)
             for name, items in children.items()
