@@ -182,7 +182,10 @@ class XMLAdapter(ChatAdapter):
         if choices := schema.get("anyOf"):
             if {"type": "null"} in choices and not list(elements[0]) and not (elements[0].text or "").strip():
                 return None
-            schema = next(choice for choice in choices if choice.get("type") != "null")
+            choices = [choice for choice in choices if choice.get("type") != "null"]
+            schema = choices[0]
+            if list(elements[0]):
+                schema = next((choice for choice in choices if choice.get("type") != "string"), schema)
         if schema.get("type") == "array":
             if len(elements) == 1 and not list(elements[0]):
                 text = (elements[0].text or "").strip()

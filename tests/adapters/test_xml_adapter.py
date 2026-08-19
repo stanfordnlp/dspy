@@ -181,6 +181,9 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
     class Envelope(pydantic.BaseModel):
         choice: ScalarLabels | ListLabels
 
+    class StringFirstEnvelope(pydantic.BaseModel):
+        child: str | ListLabels
+
     class TestSignature(dspy.Signature):
         text: str | None = dspy.OutputField()
         profile: Profile | None = dspy.OutputField()
@@ -189,6 +192,7 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
         mapping: FirstDict | SecondDict = dspy.OutputField()
         tied: NumberList | TextValue = dspy.OutputField()
         nested: Envelope = dspy.OutputField()
+        string_first: StringFirstEnvelope = dspy.OutputField()
 
     completion = (
         "<text /><profile /><details />"
@@ -196,6 +200,7 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
         "<mapping><labels>three</labels></mapping>"
         "<tied><value>later-branch-text</value></tied>"
         "<nested><choice><labels>first</labels><labels>second</labels></choice></nested>"
+        "<string_first><child><labels>one</labels><labels>two</labels></child></string_first>"
     )
     assert XMLAdapter().parse(TestSignature, completion) == {
         "text": None,
@@ -205,6 +210,7 @@ def test_xml_adapter_parses_nullable_and_structured_union_fields():
         "mapping": {"labels": ["three"]},
         "tied": TextValue(value="later-branch-text"),
         "nested": Envelope(choice=ListLabels(labels=["first", "second"])),
+        "string_first": StringFirstEnvelope(child=ListLabels(labels=["one", "two"])),
     }
 
 
