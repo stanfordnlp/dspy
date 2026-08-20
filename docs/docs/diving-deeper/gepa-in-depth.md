@@ -54,7 +54,7 @@ When `track_stats=True`, the compiled program’s `detailed_results` carries eve
 
 ### 12. Reflection LM cost dominates if you’re not careful
 
-A `medium` budget on a 2-predictor / 100-example task means ~12 mutations, each spawning 1–3 reflection calls depending on minibatch size and number of components — so ~12–36 calls to `reflection_lm`. With `gpt-4o` reflecting and `gpt-4o-mini` running the program, reflection often costs more than evaluation. Budget accordingly.
+A `medium` budget reserves full-validation capacity for 12 accepted candidates, but the actual number of mutations depends on how often proposals pass the minibatch acceptance check. Each mutation invokes the reflection model for the selected components. With `gpt-4o` reflecting and `gpt-4o-mini` running the program, reflection often costs more than evaluation. Budget accordingly.
 
 ## API walkthrough
 
@@ -74,7 +74,7 @@ Runs the search. `valset` defaults to `trainset` when not provided. Returns a fr
 How a budget number turns into LM calls.
 
 **`auto`** — light / medium / heavy preset
-Maps to `num_candidates = 6 / 12 / 18` and derives the metric-call budget from your valset size. The conversion accounts for the initial full eval, bootstrapping (`5 × num_candidates`), per-candidate minibatch evals, and periodic full evals every 5 steps. On a 2-predictor / 100-example task: light ≈ 1330 calls, medium ≈ 1740, heavy ≈ 2045.
+Maps to `num_candidates = 6 / 12 / 18` and derives the metric-call budget from the validation-set size, `reflection_minibatch_size`, number of program components, and enabled merge attempts. The conversion accounts for the initial full validation, both parent and child minibatch evaluations in each reflective trial, full validation of accepted candidates, and merge screening plus validation. It is an allocation rather than an exact prediction: rejected proposals are cheaper because they skip full validation. With the defaults on a 2-predictor / 100-example task: light ≈ 1345 calls, medium ≈ 1993, heavy ≈ 2623.
 
 **`max_full_evals`** — pass-count budget
 Each “full eval” is one walk through the union of trainset and valset. GEPA computes `max_metric_calls = max_full_evals × (len(trainset) + len(valset))` internally.
