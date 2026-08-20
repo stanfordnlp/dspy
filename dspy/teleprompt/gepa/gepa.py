@@ -23,6 +23,9 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+DEFAULT_REFLECTION_MINIBATCH_SIZE = 3
+LEGACY_AUTO_BUDGET_MINIBATCH_SIZE = 35
+
 # GEPA evaluates a merge candidate on up to five validation examples before
 # deciding whether to run its full validation evaluation.
 MERGE_MINIBATCH_SIZE = 5
@@ -310,6 +313,8 @@ class GEPA(Teleprompter):
             Available parameters:
             - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string
               ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
+              In auto mode, DSPy uses the sampler's `minibatch_size` attribute for budget estimation when
+              available. Otherwise, it uses the legacy estimate of 35 and logs a warning.
             - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before
               attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'.
               Default is 5.
@@ -371,7 +376,7 @@ class GEPA(Teleprompter):
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
         # Reflection configuration
-        reflection_minibatch_size: int = 3,
+        reflection_minibatch_size: int = DEFAULT_REFLECTION_MINIBATCH_SIZE,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
@@ -473,6 +478,30 @@ class GEPA(Teleprompter):
                 "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
             )
 
+    def _resolve_auto_budget_minibatch_size(self) -> int:
+        """Resolve the minibatch-size estimate used by the automatic budget."""
+        if self.reflection_minibatch_size is not None:
+            return self.reflection_minibatch_size
+
+        batch_sampler = self.gepa_kwargs.get("batch_sampler", "epoch_shuffled")
+        if isinstance(batch_sampler, str) and batch_sampler == "epoch_shuffled":
+            return DEFAULT_REFLECTION_MINIBATCH_SIZE
+
+        sampler_minibatch_size = getattr(batch_sampler, "minibatch_size", None)
+        if (
+            isinstance(sampler_minibatch_size, int)
+            and not isinstance(sampler_minibatch_size, bool)
+            and sampler_minibatch_size > 0
+        ):
+            return sampler_minibatch_size
+
+        logger.warning(
+            "Could not infer the minibatch size from the custom GEPA batch sampler. "
+            f"Using the legacy auto-budget estimate of {LEGACY_AUTO_BUDGET_MINIBATCH_SIZE}. "
+            "Set max_metric_calls explicitly for precise budget control."
+        )
+        return LEGACY_AUTO_BUDGET_MINIBATCH_SIZE
+
     def auto_budget(
         self,
         num_preds: int,
@@ -553,21 +582,17 @@ class GEPA(Teleprompter):
 
         num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
-            if self.reflection_minibatch_size is None:
-                raise ValueError(
-                    "auto budget requires a concrete reflection_minibatch_size. "
-                    "When using a custom batch_sampler, set max_metric_calls instead."
-                )
             if self.use_merge and self.max_merge_invocations is None:
                 raise ValueError(
                     "auto budget requires a concrete max_merge_invocations when merge is enabled. "
                     "Set max_merge_invocations, disable merge, or set max_metric_calls instead."
                 )
+            auto_budget_minibatch_size = self._resolve_auto_budget_minibatch_size()
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
-                reflection_minibatch_size=self.reflection_minibatch_size,
+                reflection_minibatch_size=auto_budget_minibatch_size,
                 max_merge_invocations=self.max_merge_invocations if self.use_merge else 0,
             )
         elif self.max_full_evals is not None:

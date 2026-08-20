@@ -74,7 +74,7 @@ Runs the search. `valset` defaults to `trainset` when not provided. Returns a fr
 How a budget number turns into LM calls.
 
 **`auto`** — light / medium / heavy preset
-Maps to `num_candidates = 6 / 12 / 18` and derives the metric-call budget from the validation-set size, `reflection_minibatch_size`, number of program components, and enabled merge attempts. The conversion accounts for the initial full validation, both parent and child minibatch evaluations in each reflective trial, full validation of accepted candidates, and merge screening plus validation. It is an allocation rather than an exact prediction: rejected proposals are cheaper because they skip full validation. With the defaults on a 2-predictor / 100-example task: light ≈ 1345 calls, medium ≈ 1993, heavy ≈ 2623.
+Maps to `num_candidates = 6 / 12 / 18` and derives the metric-call budget from the validation-set size, `reflection_minibatch_size`, number of program components, and enabled merge attempts. The conversion accounts for the initial full validation, both parent and child minibatch evaluations in each reflective trial, full validation of accepted candidates, and merge screening plus validation. It is an allocation rather than an exact prediction: rejected proposals are cheaper because they skip full validation. With a custom batch sampler, auto mode uses its `minibatch_size` attribute when available; otherwise it falls back to the legacy estimate of 35 and logs a warning. With the defaults on a 2-predictor / 100-example task: light ≈ 1345 calls, medium ≈ 1993, heavy ≈ 2623.
 
 **`max_full_evals`** — pass-count budget
 Each “full eval” is one walk through the union of trainset and valset. GEPA computes `max_metric_calls = max_full_evals × (len(trainset) + len(valset))` internally.

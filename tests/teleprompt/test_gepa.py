@@ -44,6 +44,19 @@ def bad_metric(example, prediction):
     return 0.0
 
 
+class SizedBatchSampler:
+    def __init__(self, minibatch_size):
+        self.minibatch_size = minibatch_size
+
+    def next_minibatch_ids(self, loader, state):
+        return list(loader.all_ids())[: self.minibatch_size]
+
+
+class OpaqueBatchSampler:
+    def next_minibatch_ids(self, loader, state):
+        return list(loader.all_ids())[:1]
+
+
 @pytest.mark.parametrize(
     "reflection_minibatch_size, max_merge_invocations, expected_budget",
     [
@@ -103,6 +116,60 @@ def test_gepa_compile_passes_runtime_settings_to_auto_budget():
         max_merge_invocations=0,
     )
     assert optimize.call_args.kwargs["max_metric_calls"] == 123
+
+
+@pytest.mark.parametrize(
+    "gepa_kwargs, expected_minibatch_size",
+    [
+        ({}, 3),
+        ({"batch_sampler": SizedBatchSampler(7)}, 7),
+    ],
+)
+def test_gepa_auto_budget_resolves_minibatch_size_when_reflection_size_is_none(
+    gepa_kwargs, expected_minibatch_size
+):
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([]),
+        auto="light",
+        reflection_minibatch_size=None,
+        gepa_kwargs=gepa_kwargs,
+    )
+
+    assert optimizer._resolve_auto_budget_minibatch_size() == expected_minibatch_size
+
+
+def test_gepa_compile_auto_budget_falls_back_for_opaque_custom_sampler(caplog):
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="question", output="answer").with_inputs("input")]
+    batch_sampler = OpaqueBatchSampler()
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([]),
+        auto="light",
+        reflection_minibatch_size=None,
+        use_merge=False,
+        gepa_kwargs={"batch_sampler": batch_sampler},
+    )
+    result = mock.Mock(best_candidate={"predictor": student.predictor.signature.instructions})
+
+    with (
+        mock.patch.object(optimizer, "auto_budget", return_value=123) as auto_budget,
+        mock.patch("gepa.optimize", return_value=result) as optimize,
+    ):
+        optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    auto_budget.assert_called_once_with(
+        num_preds=1,
+        num_candidates=6,
+        valset_size=1,
+        reflection_minibatch_size=35,
+        max_merge_invocations=0,
+    )
+    assert optimize.call_args.kwargs["max_metric_calls"] == 123
+    assert optimize.call_args.kwargs["batch_sampler"] is batch_sampler
+    assert optimize.call_args.kwargs["reflection_minibatch_size"] is None
+    assert "Using the legacy auto-budget estimate of 35" in caplog.text
 
 
 @pytest.mark.parametrize(
