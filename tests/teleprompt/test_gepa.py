@@ -1,4 +1,5 @@
 import json
+import math
 import random
 import threading
 from typing import Any
@@ -701,3 +702,105 @@ def test_batch_evaluate_is_parallel_and_preserves_context():
     assert trace_modes == [True, True, False, False, False, False]
     assert sorted(thread_budgets[-3:]) == [2, 3, 3]
     assert sum(thread_budgets[-3:]) == 8
+
+
+class _GEPAAutoBudgetProbe(dspy.GEPA):
+    """Capture the budget GEPA computes for `auto=` without running."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.auto_budget_calls: list[dict] = []
+
+    def auto_budget(self, num_preds, num_candidates, valset_size, minibatch_size=35, full_eval_steps=5, **kw):
+        self.auto_budget_calls.append(
+            {
+                "num_preds": num_preds,
+                "num_candidates": num_candidates,
+                "valset_size": valset_size,
+                "minibatch_size": minibatch_size,
+                **kw,
+            }
+        )
+        return super().auto_budget(
+            num_preds,
+            num_candidates,
+            valset_size,
+            minibatch_size=minibatch_size,
+            full_eval_steps=full_eval_steps,
+            **kw,
+        )
+
+
+def test_auto_budget_tracks_reflection_minibatch_size():
+    """The configured minibatch size changes the auto budget (#10245).
+
+    Every reflective proposal costs 2 * reflection_minibatch_size metric
+    calls (parent + child), so the budget must move with the knob —
+    pre-fix a fixed 35 left the budget identical for any configuration.
+    """
+    opt = dspy.GEPA(metric=any_metric, reflection_lm=lambda _: [], auto="light")
+    budgets = {
+        m: opt.auto_budget(num_preds=1, num_candidates=6, valset_size=8, minibatch_size=m, use_merge=False)
+        for m in (3, 10)
+    }
+    assert budgets[10] > budgets[3], "a larger minibatch must cost a larger budget"
+
+
+def test_compile_passes_the_configured_minibatch_size_to_auto_budget(monkeypatch):
+    """`compile` feeds the configured reflection_minibatch_size through (#10245)."""
+    opt = dspy.GEPA(
+        metric=any_metric,
+        reflection_lm=lambda _: [],
+        auto="light",
+        reflection_minibatch_size=7,
+        use_merge=False,
+    )
+    captured: list[dict] = []
+    original = dspy.teleprompt.gepa.gepa.GEPA.auto_budget
+
+    def spy(self, num_preds, num_candidates, valset_size, minibatch_size=35, full_eval_steps=5, **kw):
+        captured.append({"minibatch_size": minibatch_size, **kw})
+        return original(
+            self, num_preds, num_candidates, valset_size, minibatch_size=minibatch_size, full_eval_steps=full_eval_steps, **kw
+        )
+
+    monkeypatch.setattr(dspy.teleprompt.gepa.gepa.GEPA, "auto_budget", spy)
+    # optimize() is imported lazily inside compile; patch the gepa package
+    # attribute it resolves from. Its return value is consumed only after the
+    # budget decision, so a minimal stub suffices.
+    import gepa
+
+    fake_result = mock.MagicMock(
+        best_candidate={"predictor": "Keep it simple."},
+        best_score=0.0,
+        candidates={"predictor": mock.MagicMock(metric_val_score=0.0)},
+        logs=[],
+    )
+    monkeypatch.setattr(gepa, "optimize", lambda **kw: fake_result)
+    opt.compile(
+        SimpleModule("question -> answer"),
+        trainset=[dspy.Example(question="q", answer="a").with_inputs("question")] * 8,
+    )
+    assert captured, "compile must consult auto_budget"
+    assert captured[-1]["minibatch_size"] == 7
+    assert captured[-1].get("use_merge") is False
+
+
+def test_auto_budget_models_the_current_loop():
+    """Budget terms match the documented cost model (#10245).
+
+    seed validation (V) + N proposals at 2*M each + worst-case accepted
+    full validations (N*V) + merge screening when enabled.
+    """
+    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+        return 0.0
+
+    opt = dspy.GEPA(metric=metric, reflection_lm=lambda _: [], auto="light")
+    V, M = 8, 3
+    base = opt.auto_budget(num_preds=1, num_candidates=6, valset_size=V, minibatch_size=M, use_merge=False)
+    num_trials = int(max(2 * (1 * 2) * math.log2(6), 1.5 * 6))
+    assert base == V + num_trials * 2 * M + num_trials * V
+
+    with_merge = opt.auto_budget(num_preds=1, num_candidates=6, valset_size=V, minibatch_size=M, use_merge=True)
+    merges = max(6 - 1, 0)
+    assert with_merge == base + merges * (2 * M + V)
