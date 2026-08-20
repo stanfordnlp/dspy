@@ -62,7 +62,7 @@ class BaseModule:
 
             elif isinstance(value, dict):
                 for key, item in value.items():
-                    add_parameter(f"{name}['{key}']", item)
+                    add_parameter(f"{name}[{key!r}]", item)
 
         return named_parameters
 
@@ -102,7 +102,7 @@ class BaseModule:
 
             elif isinstance(item, dict):
                 for key, sub_item in item.items():
-                    add_to_queue(f"{name}[{key}]", sub_item)
+                    add_to_queue(f"{name}[{key!r}]", sub_item)
 
     def parameters(self):
         return [param for _, param in self.named_parameters()]
