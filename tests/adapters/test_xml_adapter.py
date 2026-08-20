@@ -98,7 +98,7 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     counts = {"postal code": [3, 4], 'quoted "key" & more': [5], "line\nbreak": [6], "-status": [7], ".status": [8]}
     field = FieldInfoWithName(name="counts", info=TestSignature.output_fields["counts"])
     formatted = adapter.format_field_with_value({field: counts})
-    assert '<entry key="postal code">3</entry>' in formatted
+    assert '<entry key="postal code"><item>3</item><item>4</item></entry>' in formatted
     assert adapter.parse(TestSignature, formatted) == {"counts": counts}
 
     class EmptySignature(dspy.Signature):
@@ -125,15 +125,15 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
     adapter = XMLAdapter()
     order_schema = (
         "<order><order_id>...</order_id><address><city>...</city></address>"
-        "<labels>...</labels> <labels>...</labels></order>"
+        "<labels><item>...</item></labels></order>"
     )
     orders_schema = (
-        "<orders><order_id>...</order_id><address><city>...</city></address>"
-        "<labels>...</labels> <labels>...</labels></orders>"
+        "<orders><item><order_id>...</order_id><address><city>...</city></address>"
+        "<labels><item>...</item></labels></item></orders>"
     )
     system_instructions = adapter.format_field_structure(TestSignature)
-    assert f"{order_schema}\n\n{orders_schema} {orders_schema}" in system_instructions
-    assert f"Use this nested XML structure: {order_schema} {orders_schema} {orders_schema}" in (
+    assert f"{order_schema}\n\n{orders_schema}" in system_instructions
+    assert f"Use this nested XML structure: {order_schema} {orders_schema}" in (
         adapter.user_message_output_requirements(TestSignature)
     )
 
@@ -223,7 +223,7 @@ def test_xml_adapter_recursive_model_schema_terminates():
         root: Node = dspy.OutputField()
 
     adapter = XMLAdapter()
-    assert "<root><value>...</value><children>...</children> <children>...</children></root>" in (
+    assert "<root><value>...</value><children><item>...</item></children></root>" in (
         adapter.format_field_structure(TestSignature)
     )
     completion = "<root><value>parent</value><children><value>child</value><children /></children></root>"
@@ -285,7 +285,10 @@ def test_xml_adapter_format_and_parse_list_of_models():
     items = [Item(name="a", score=1.1), Item(name="b", score=2.2)]
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
-    assert xml == ("<items><name>a</name><score>1.1</score></items><items><name>b</name><score>2.2</score></items>")
+    assert xml == (
+        "<items><item><name>a</name><score>1.1</score></item>"
+        "<item><name>b</name><score>2.2</score></item></items>"
+    )
     assert adapter.parse(TestSignature, xml) == {"items": items}
 
     # Legacy JSON lists inside the outer XML field remain supported.
@@ -768,8 +771,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  "{question}\n"
                  "</question>\n"
                  "\n"
-                 "<answer><answer>...</answer><sources>...</sources> "
-                 "<sources>...</sources></answer>\n"
+                 "<answer><answer>...</answer><sources><item>...</item></sources></answer>\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Answer using all supplied context."},
      {"role": "user",
@@ -798,7 +800,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            'What should we mention?\n'
                            '</question>'}]},
      {"role": "assistant",
-      "content": "<answer><answer>Mention analytical engines.</answer><sources>demo</sources></answer>"},
+      "content": "<answer><answer>Mention analytical engines.</answer><sources><item>demo</item></sources></answer>"},
      {"role": "user",
       "content": '<profile>\n'
                  '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
@@ -809,7 +811,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  'Who is Ada?\n'
                  '</question>'},
      {"role": "assistant",
-      "content": "<answer><answer>Ada is a mathematician.</answer><sources>memory</sources></answer>"},
+      "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>"},
      {"role": "user",
       "content": [{"type": "text", "text": "<image>\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
@@ -834,8 +836,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '\n'
                            'Respond with the corresponding output fields wrapped in XML tags '
                            '`<answer>`. Use this nested XML structure: '
-                               '<answer><answer>...</answer><sources>...</sources> '
-                               '<sources>...</sources></answer>'}]}]
+                               '<answer><answer>...</answer><sources><item>...</item></sources></answer>'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -979,9 +980,9 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 </question>
 
-<answers>...</answers> <answers>...</answers>
+<answers><item>...</item></answers>
 
-<scores>...</scores> <scores>...</scores>
+<scores><item>...</item></scores>
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message

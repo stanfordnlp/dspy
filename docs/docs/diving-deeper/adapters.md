@@ -65,7 +65,7 @@ The default. Builds a chat-style prompt with field markers, parses the response 
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
 **`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. The parser supports nested structured values and repeated tags for list items.
+`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.

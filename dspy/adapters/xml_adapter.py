@@ -134,7 +134,8 @@ class XMLAdapter(ChatAdapter):
     def _value_to_xml(cls, value: Any, tag: str, key: str | None = None) -> str:
         attrs = f" key={quoteattr(key)}" if key is not None else ""
         if isinstance(value, list):
-            return "".join(cls._value_to_xml(item, tag, key) for item in value) if value else f"<{tag}{attrs} />"
+            children = "".join(cls._value_to_xml(item, "item") for item in value)
+            return f"<{tag}{attrs}>{children}</{tag}>" if children else f"<{tag}{attrs} />"
         if isinstance(value, dict):
             children = []
             for name, child in value.items():
@@ -169,8 +170,8 @@ class XMLAdapter(ChatAdapter):
                 tag, next((s for s in choices if s.get("type") != "null"), choices[0]), definitions, seen
             )
         if schema.get("type") == "array":
-            item = cls._schema_to_xml(tag, schema.get("items", {}), definitions, seen)
-            return f"{item} {item}"
+            item = cls._schema_to_xml("item", schema.get("items", {}), definitions, seen)
+            return f"<{tag}>{item}</{tag}>"
         children = "".join(
             cls._schema_to_xml(name, child, definitions, seen) for name, child in schema.get("properties", {}).items()
         )
@@ -191,6 +192,8 @@ class XMLAdapter(ChatAdapter):
                 text = (elements[0].text or "").strip()
                 if not text or text.startswith("["):
                     return [] if not text else text
+            if len(elements) == 1 and (items := cls._group_children(elements[0]).get("item")):
+                elements = items
             return [cls._elements_to_value([element], schema.get("items", {}), definitions) for element in elements]
         element = elements[0]
         if schema.get("type") == "string" and list(element):
