@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from typing import Any
 from unittest import mock
@@ -188,7 +189,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg/500px-Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg",
-                download=False,
             ),
             hour=8,
             minute=18,
@@ -196,7 +196,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Telechron_clock_2H07-Br_Administrator.JPG/960px-Telechron_clock_2H07-Br_Administrator.JPG",
-                download=False,
             ),
             hour=4,
             minute=16,
@@ -212,6 +211,18 @@ def test_metric_requires_feedback_signature():
     reflection_lm = DictDummyLM([])
     with pytest.raises(TypeError):
         dspy.GEPA(metric=bad_metric, reflection_lm=reflection_lm, max_metric_calls=1)
+
+
+def test_reflection_prompt_template_in_gepa_kwargs_raises():
+    """reflection_prompt_template via gepa_kwargs is unsupported: DspyAdapter owns propose_new_texts."""
+    reflection_lm = DictDummyLM([])
+    with pytest.raises(ValueError, match="reflection_prompt_template"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=1,
+            gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_param>\n\nExamples: <side_info>"},
+        )
 
 
 def any_metric(
@@ -521,3 +532,172 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def test_track_stats_result_structure():
+    """
+    Verify DspyGEPAResult fields have the correct types from GEPA 0.1.1:
+    - val_subscores is list[dict[DataId, float]] (not list[list[float]])
+    - per_val_instance_best_candidates is dict[DataId, set[int]] (not list[set[int]])
+    - best_candidate returns a Module
+    - highest_score_achieved_per_val_task works without errors
+    - to_dict() serializes per_val_instance_best_candidates as a dict
+    """
+    from dspy.teleprompt.gepa.gepa import DspyGEPAResult
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    dr = prog.detailed_results
+    assert isinstance(dr, DspyGEPAResult)
+
+    # val_subscores: list[dict[DataId, float]]
+    assert isinstance(dr.val_subscores, list)
+    for subscores in dr.val_subscores:
+        assert isinstance(subscores, dict), f"Expected dict, got {type(subscores)}"
+        for val, score in subscores.items():
+            assert isinstance(score, (int, float))
+
+    # per_val_instance_best_candidates: dict[DataId, set[int]]
+    assert isinstance(dr.per_val_instance_best_candidates, dict), (
+        f"Expected dict, got {type(dr.per_val_instance_best_candidates)}"
+    )
+    for val_id, best_set in dr.per_val_instance_best_candidates.items():
+        assert isinstance(best_set, set)
+
+    # best_candidate returns a Module
+    assert isinstance(dr.best_candidate, dspy.Module), (
+        f"Expected Module, got {type(dr.best_candidate)}"
+    )
+
+    # highest_score_achieved_per_val_task works and returns one float per val instance
+    scores = dr.highest_score_achieved_per_val_task
+    assert isinstance(scores, dict)
+    assert len(scores) == len(dr.per_val_instance_best_candidates)
+    for val_id, s in scores.items():
+        assert val_id in dr.per_val_instance_best_candidates
+        assert isinstance(s, (int, float))
+
+    # to_dict() serializes per_val_instance_best_candidates as a dict (not a list)
+    d = dr.to_dict()
+    assert isinstance(d["per_val_instance_best_candidates"], dict), (
+        f"Expected dict in to_dict output, got {type(d['per_val_instance_best_candidates'])}"
+    )
+    for val_id, best_list in d["per_val_instance_best_candidates"].items():
+        assert isinstance(best_list, list)
+
+
+def test_track_best_outputs_result_structure():
+    """
+    Verify best_outputs_valset has the correct type from GEPA 0.1.1:
+    dict[DataId, list[tuple[int, Prediction]]] (not list[list[tuple[...]]])
+    """
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        track_best_outputs=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    best_outputs = prog.detailed_results.best_outputs_valset
+    assert best_outputs is not None
+    assert isinstance(best_outputs, dict), f"Expected dict, got {type(best_outputs)}"
+    for val_id, entries in best_outputs.items():
+        assert isinstance(entries, list)
+        for cand_idx, output in entries:
+            assert isinstance(cand_idx, int)
+
+
+def test_gepa_rejects_unsupported_reflection_cost_budget():
+    dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=1,
+        reflection_lm=DummyLM([]),
+        gepa_kwargs={"max_reflection_cost": None},
+    )
+
+    with pytest.raises(ValueError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=1,
+            reflection_lm=DummyLM([]),
+            gepa_kwargs={"max_reflection_cost": 1.0},
+        )
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, rng=random.Random(42))
+    state = adapter.get_adapter_state()
+    expected = adapter.rng.random()
+    adapter.rng.random()
+    adapter.set_adapter_state(state)
+    assert adapter.rng.random() == expected
+
+
+def test_batch_evaluate_is_parallel_and_preserves_context():
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, num_threads=4)
+    barrier = threading.Barrier(2)
+    trace_modes = []
+    thread_budgets = []
+
+    def evaluate(batch, candidate, capture_traces=False, num_threads=None):
+        if capture_traces:
+            barrier.wait(timeout=1)
+        trace_modes.append(capture_traces)
+        thread_budgets.append(num_threads)
+        return EvaluationBatch(outputs=[(candidate, dspy.settings.lm, ACTIVE_CALL_ID.get())], scores=[1.0])
+
+    adapter.evaluate = evaluate
+    lm = DummyLM([])
+    token = ACTIVE_CALL_ID.set("parent")
+    try:
+        with dspy.context(lm=lm):
+            results = adapter.batch_evaluate([("first", []), ("second", [])])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert [result.outputs[0] for result in results] == [("first", lm, "parent"), ("second", lm, "parent")]
+
+    adapter.batch_evaluate([("first", [])], capture_traces=False)
+    assert trace_modes == [True, True, False]
+    assert thread_budgets == [2, 2, 4]
+
+    adapter.num_threads = 8
+    adapter.batch_evaluate([("first", []), ("second", []), ("third", [])], capture_traces=False)
+    assert trace_modes == [True, True, False, False, False, False]
+    assert sorted(thread_budgets[-3:]) == [2, 3, 3]
+    assert sum(thread_budgets[-3:]) == 8

@@ -15,8 +15,31 @@ from pydantic import BaseModel, HttpUrl
 
 import dspy
 from dspy import Predict, Signature
+from dspy.clients.base_lm import LM_CLASS_STATE_KEY
 from dspy.predict.predict import serialize_object
 from dspy.utils.dummies import DummyLM
+
+
+class CustomStateLM(dspy.BaseLM):
+    def __init__(self, model, *, deployment: str, **kwargs):
+        super().__init__(model=model, **kwargs)
+        self.deployment = deployment
+
+    def dump_state(self):
+        state = super().dump_state()
+        state["deployment"] = self.deployment
+        return state
+
+    @classmethod
+    def load_state(cls, state):
+        state = dict(state)
+        state.pop(LM_CLASS_STATE_KEY, None)
+        return cls(**state)
+
+
+class OuterLMContainer:
+    class InnerLM(dspy.BaseLM):
+        pass
 
 
 def test_initialization_with_string_signature():
@@ -51,6 +74,7 @@ def test_lm_after_dump_and_load_state():
     )
     predict_instance.lm = lm
     expected_lm_state = {
+        LM_CLASS_STATE_KEY: "dspy.clients.lm.LM",
         "model": "openai/gpt-4o-mini",
         "model_type": "chat",
         "temperature": 1,
@@ -66,6 +90,51 @@ def test_lm_after_dump_and_load_state():
     new_instance = Predict("input -> output")
     new_instance.load_state(dumped_state)
     assert new_instance.lm.dump_state() == expected_lm_state
+
+
+def test_base_lm_dump_state_ignores_internal_class_marker_kwarg():
+    lm = CustomStateLM(model="custom-model", deployment="prod", **{LM_CLASS_STATE_KEY: "malicious.module.LM"})
+
+    assert lm.dump_state()[LM_CLASS_STATE_KEY] == f"{CustomStateLM.__module__}.{CustomStateLM.__qualname__}"
+
+
+def test_legacy_lm_state_without_class_marker_loads_as_lm():
+    predict_instance = Predict("input -> output")
+    predict_instance.lm = dspy.LM(model="openai/gpt-4o-mini", temperature=1, max_tokens=100)
+    dumped_state = predict_instance.dump_state()
+    dumped_state["lm"].pop(LM_CLASS_STATE_KEY)
+
+    loaded_instance = Predict("input -> output").load_state(dumped_state)
+
+    assert isinstance(loaded_instance.lm, dspy.LM)
+    assert loaded_instance.lm.model == "openai/gpt-4o-mini"
+    assert LM_CLASS_STATE_KEY in loaded_instance.lm.dump_state()
+
+
+def test_custom_lm_load_state_requires_trusted_opt_in():
+    predict_instance = Predict("input -> output")
+    predict_instance.lm = CustomStateLM(model="custom-model", deployment="prod")
+    dumped_state = predict_instance.dump_state()
+
+    with pytest.raises(ValueError, match="Refusing to import custom serialized LM class"):
+        Predict("input -> output").load_state(dumped_state)
+
+    loaded_instance = Predict("input -> output").load_state(dumped_state, allow_unsafe_lm_state=True)
+
+    assert isinstance(loaded_instance.lm, CustomStateLM)
+    assert loaded_instance.lm.model == "custom-model"
+    assert loaded_instance.lm.deployment == "prod"
+
+
+def test_nested_custom_lm_class_path_loads_for_trusted_state():
+    predict_instance = Predict("input -> output")
+    predict_instance.lm = OuterLMContainer.InnerLM(model="nested-model")
+    dumped_state = predict_instance.dump_state()
+
+    loaded_instance = Predict("input -> output").load_state(dumped_state, allow_unsafe_lm_state=True)
+
+    assert isinstance(loaded_instance.lm, OuterLMContainer.InnerLM)
+    assert loaded_instance.lm.model == "nested-model"
 
 
 def test_call_method():
@@ -1033,6 +1102,39 @@ def test_extra_fields_warning(caplog):
     # Check that warning was logged about extra fields
     assert "not in signature" in caplog.text
     assert "extra_field" in caplog.text
+
+
+def test_missing_optional_input_field_no_warning(caplog):
+    log_test_helper()
+
+    class OptionalInputSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str | None = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    predict_instance = Predict(OptionalInputSignature)
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(question="test")
+
+    assert "Not all input fields were provided" not in caplog.text
+
+
+def test_missing_required_input_field_still_warns(caplog):
+    log_test_helper()
+
+    class OptionalInputSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str | None = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    predict_instance = Predict(OptionalInputSignature)
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance()
+
+    assert "Not all input fields were provided" in caplog.text
+    assert "Missing: ['question']" in caplog.text
 
 
 def test_warning_images(caplog):

@@ -176,11 +176,13 @@ class BootstrapFinetune(FinetuneTeleprompter):
         adapter = self.adapter[lm] or settings.adapter or ChatAdapter()
         data_format = infer_data_format(adapter)
         for item in trace_data:
-            for pred_ind, _ in enumerate(item["trace"]):
-                include_data = pred_ind is None or pred_ind == pred_ind
-                if include_data:
+            for trace_pred_ind, _ in enumerate(item["trace"]):
+                if pred_ind is None or trace_pred_ind == pred_ind:
                     call_data = build_call_data_from_trace(
-                        trace=item["trace"], pred_ind=pred_ind, adapter=adapter, exclude_demos=self.exclude_demos
+                        trace=item["trace"],
+                        pred_ind=trace_pred_ind,
+                        adapter=adapter,
+                        exclude_demos=self.exclude_demos,
                     )
                     data.append(call_data)
 
@@ -269,7 +271,7 @@ def prepare_teacher(student: Module, teacher: Module | None = None) -> Module:
     if teacher is None:
         return student
 
-    # Ensuring that the student and teacher are are structurally equivalent
+    # Ensuring that the student and teacher are structurally equivalent
     assert_structural_equivalency(student, teacher)
 
     # Ensuring that the student and teacher programs do not share predictors

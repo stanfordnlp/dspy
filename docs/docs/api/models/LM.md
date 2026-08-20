@@ -16,6 +16,7 @@
             - inspect_history
             - kill
             - launch
+            - load_state
             - reinforce
             - update_history
         show_source: true

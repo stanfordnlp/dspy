@@ -1,5 +1,8 @@
 # dspy.Embedder
 
+!!! note "Requires numpy"
+    `dspy.Embedder` requires numpy. Install it with `pip install dspy[numpy]`.
+
 <!-- START_API_REF -->
 ::: dspy.Embedder
     handler: python

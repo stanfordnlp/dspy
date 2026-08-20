@@ -1,5 +1,8 @@
 # dspy.KNN
 
+!!! note "Requires numpy"
+    `dspy.KNN` requires numpy. Install it with `pip install dspy[numpy]`.
+
 <!-- START_API_REF -->
 ::: dspy.KNN
     handler: python

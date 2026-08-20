@@ -1,5 +1,6 @@
 import inspect
 import logging
+import math
 import random
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Protocol, Union
@@ -32,6 +33,7 @@ class GEPAFeedbackMetric(Protocol):
         trace: Optional["DSPyTrace"],
         pred_name: str | None,
         pred_trace: Optional["DSPyTrace"],
+        program_trace: Optional["DSPyTrace"] = None,
     ) -> Union[float, "ScoreWithFeedback"]:
         """
         This function is called with the following arguments:
@@ -41,6 +43,10 @@ class GEPAFeedbackMetric(Protocol):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The full execution trace of the program, supplied at scoring time when a
+            `dspy.Flex` submodule is being optimized. Declare this parameter to score against how an answer was
+            produced (e.g. `len(program_trace)` as an LM-call count), rather than only whether it was correct.
+            Unlike `trace`, it is populated during candidate *scoring*.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -62,11 +68,11 @@ class DspyGEPAResult:
     Additional data related to the GEPA run.
 
     Fields:
-    - candidates: list of proposed candidates (component_name -> component_text)
+    - candidates: list of proposed candidates (compiled DSPy modules)
     - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
     - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
-    - val_subscores: per-candidate per-instance scores on the validation set (len == num_val_instances)
-    - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the best score on t
+    - val_subscores: per-candidate scores keyed by validation instance id
+    - per_val_instance_best_candidates: for each val instance id, a set of candidate indices achieving the best score
     - discovery_eval_counts: Budget (number of metric calls / rollouts) consumed up to the discovery of each candidate
 
     - total_metric_calls: total number of metric calls made across the run
@@ -75,19 +81,19 @@ class DspyGEPAResult:
     - seed: RNG seed for reproducibility (if known)
 
     - best_idx: candidate index with the highest val_aggregate_scores
-    - best_candidate: the program text mapping for best_idx
+    - best_candidate: the compiled DSPy module for best_idx
     """
 
     # Data about the proposed candidates
     candidates: list[Module]
     parents: list[list[int | None]]
     val_aggregate_scores: list[float]
-    val_subscores: list[list[float]]
-    per_val_instance_best_candidates: list[set[int]]
+    val_subscores: list[dict[Any, float]]
+    per_val_instance_best_candidates: dict[Any, set[int]]
     discovery_eval_counts: list[int]
 
     # Optional data
-    best_outputs_valset: list[list[tuple[int, list[Prediction]]]] | None = None
+    best_outputs_valset: dict[Any, list[tuple[int, Prediction]]] | None = None
 
     # Optimization metadata
     total_metric_calls: int | None = None
@@ -101,18 +107,29 @@ class DspyGEPAResult:
         return max(range(len(scores)), key=lambda i: scores[i])
 
     @property
-    def best_candidate(self) -> dict[str, str]:
+    def best_candidate(self) -> Module:
         return self.candidates[self.best_idx]
 
     @property
-    def highest_score_achieved_per_val_task(self) -> list[float]:
-        return [
-            self.val_subscores[list(self.per_val_instance_best_candidates[val_idx])[0]][val_idx]
-            for val_idx in range(len(self.val_subscores[0]))
-        ]
+    def highest_score_achieved_per_val_task(self) -> dict[Any, float]:
+        return {
+            val_id: self.val_subscores[list(self.per_val_instance_best_candidates[val_id])[0]][val_id]
+            for val_id in self.per_val_instance_best_candidates
+        }
+
+    @staticmethod
+    def _candidate_components(cand: Module) -> dict[str, str]:
+        """The candidate's optimized components. It can be either instruction text per predictor, or
+        the full `module_src` of each `dspy.Flex` submodule under its parameter path."""
+        from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
+
+        components = {name: pred.signature.instructions for name, pred in cand.named_predictors()}
+        for path, flex in enumerate_flex_submodules(cand).items():
+            components[path] = flex.module_src
+        return components
 
     def to_dict(self) -> dict[str, Any]:
-        cands = [{k: v for k, v in cand.items()} for cand in self.candidates]
+        cands = [self._candidate_components(cand) for cand in self.candidates]
 
         return dict(
             candidates=cands,
@@ -120,7 +137,9 @@ class DspyGEPAResult:
             val_aggregate_scores=self.val_aggregate_scores,
             best_outputs_valset=self.best_outputs_valset,
             val_subscores=self.val_subscores,
-            per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
+            per_val_instance_best_candidates={
+                val_id: list(s) for val_id, s in self.per_val_instance_best_candidates.items()
+            },
             discovery_eval_counts=self.discovery_eval_counts,
             total_metric_calls=self.total_metric_calls,
             num_full_val_evals=self.num_full_val_evals,
@@ -168,6 +187,7 @@ class GEPA(Teleprompter):
         trace: Optional[DSPyTrace] = None,
         pred_name: Optional[str] = None,
         pred_trace: Optional[DSPyTrace] = None,
+        program_trace: Optional[DSPyTrace] = None,
     ) -> float | ScoreWithFeedback:
         \"""
         This function is called with the following arguments:
@@ -177,6 +197,9 @@ class GEPA(Teleprompter):
         - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
+        - program_trace: Optional. The program's execution trace, supplied at scoring time when a `dspy.Flex`
+            submodule is being optimized. Declare it to score against how the answer was produced (e.g. an
+            LM-call penalty). Defaults to None.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
@@ -256,7 +279,8 @@ class GEPA(Teleprompter):
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
-        num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
+        num_threads: The total number of threads available for candidate and example evaluation. Multi-proposal
+            candidate evaluations share this budget. Optional.
         failure_score: The score to assign to failed examples. Default is 0.0.
         perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA
             to determine if all examples in a minibatch are perfect.
@@ -301,6 +325,12 @@ class GEPA(Teleprompter):
               MLflow can be used alongside Weights & Biases (WandB).
             - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
             - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+            - sampling_strategy, selection_strategy, acceptance_criterion: GEPA 0.1.4 proposal controls.
+              DSPy evaluates proposal candidates concurrently within the `num_threads` budget.
+            - wandb_attach_existing, mlflow_attach_existing, tracking_key_prefix: GEPA 0.1.4 tracking controls.
+
+            `max_reflection_cost` is not supported yet because DSPy LMs do not expose the cumulative cost
+            interface GEPA requires. Passing it raises an error instead of silently ignoring the budget.
 
             Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters
             and should not be passed through gepa_kwargs.
@@ -317,8 +347,9 @@ class GEPA(Teleprompter):
         Merge Configuration: GEPA can merge successful program variants using `use_merge=True`.
         The `max_merge_invocations` parameter controls how many merge attempts are made during optimization.
 
-        Evaluation Configuration: Use `num_threads` to parallelize evaluation. The `failure_score` and
-        `perfect_score` parameters help GEPA understand your metric's range and optimize accordingly.
+        Evaluation Configuration: `num_threads` controls total evaluation concurrency and is shared across
+        candidates in multi-proposal batches. The `failure_score` and `perfect_score` parameters help GEPA
+        understand your metric's range and optimize accordingly.
 
         Logging Configuration: Set `log_dir` to save detailed logs and enable checkpoint resuming.
         Use `track_stats=True` to access detailed optimization results via the `detailed_results` attribute.
@@ -428,12 +459,20 @@ class GEPA(Teleprompter):
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
 
+        if self.gepa_kwargs.get("max_reflection_cost") is not None:
+            raise ValueError("max_reflection_cost is not supported by dspy.GEPA yet.")
+
+        if "reflection_prompt_template" in self.gepa_kwargs:
+            raise ValueError(
+                "reflection_prompt_template cannot be passed via gepa_kwargs when using dspy.GEPA. "
+                "DspyAdapter implements its own propose_new_texts, so reflection_prompt_template is unused. "
+                "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
+            )
+
     def auto_budget(
         self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
     ) -> int:
-        import numpy as np
-
-        num_trials = int(max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates))
+        num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
         if full_eval_steps < 1:
@@ -481,14 +520,20 @@ class GEPA(Teleprompter):
         """
         from gepa import GEPAResult, optimize
 
+        from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
+        # dspy.Flex submodules get their code optimized, not just their instructions.
+        flex_submodules = enumerate_flex_submodules(student)
+        instruction_predictors = list(student.named_predictors())
+
+        num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
             self.max_metric_calls = self.auto_budget(
-                num_preds=len(student.predictors()),
+                num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
             )
@@ -543,7 +588,7 @@ class GEPA(Teleprompter):
 
             return feedback_fn
 
-        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
+        feedback_map = {k: feedback_fn_creator(k, v) for k, v in instruction_predictors}
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
@@ -560,8 +605,11 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: map each predictor name to its current instruction
-        seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
+        # each dspy.Flex submodule as its code component.
+        seed_candidate = {name: pred.signature.instructions for name, pred in instruction_predictors}
+        for path, flex in flex_submodules.items():
+            seed_candidate[path] = flex.module_src
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,

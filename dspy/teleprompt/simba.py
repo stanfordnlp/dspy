@@ -4,11 +4,12 @@ import logging
 import random
 from typing import Any, Callable
 
-import numpy as np
-
 import dspy
 from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.lazy_import import require
+
+np = require("numpy")
 
 logger = logging.getLogger(__name__)
 

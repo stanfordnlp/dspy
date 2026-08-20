@@ -151,3 +151,49 @@ async def test_async_embedding():
 
         assert len(result) == len(inputs)
         np.testing.assert_allclose(result, mock_embeddings)
+
+
+def test_call_caching_false_overrides_instance_true(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.embedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=True)
+        embedding(inputs)
+        embedding(inputs, caching=False)
+        assert mock_litellm.call_count == 2
+
+
+def test_call_caching_true_overrides_instance_false(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.embedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=False)
+        embedding(inputs, caching=True)
+        embedding(inputs, caching=True)
+        assert mock_litellm.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_acall_caching_false_overrides_instance_true(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.aembedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=True)
+        await embedding.acall(inputs)
+        await embedding.acall(inputs, caching=False)
+        assert mock_litellm.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_acall_caching_true_overrides_instance_false(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.aembedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=False)
+        await embedding.acall(inputs, caching=True)
+        await embedding.acall(inputs, caching=True)
+        assert mock_litellm.call_count == 1

@@ -1,9 +1,57 @@
 import dspy
-from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
+from dspy.utils.exceptions import (
+    AdapterParseError,
+    ContextWindowExceededError,
+    DSPyError,
+    LMError,
+    LMInvalidRequestError,
+    format_error_for_lm,
+)
+
+
+def test_lm_errors_are_exported_from_dspy():
+    assert dspy.DSPyError is not None
+    assert dspy.LMError is LMError
+    assert dspy.LMUnexpectedError is not None
+    assert dspy.AdapterParseError is AdapterParseError
+    assert dspy.is_retryable_lm_error is not None
+
+
+def test_retryable_lm_errors_classification():
+    assert dspy.is_retryable_lm_error(dspy.LMRateLimitError())
+    assert dspy.is_retryable_lm_error(dspy.LMTimeoutError())
+    assert dspy.is_retryable_lm_error(dspy.LMServerError())
+    assert dspy.is_retryable_lm_error(dspy.LMTransportError())
+    assert not dspy.is_retryable_lm_error(dspy.LMAuthError())
+    assert not dspy.is_retryable_lm_error(dspy.LMInvalidRequestError())
+    assert not dspy.is_retryable_lm_error(dspy.LMUnexpectedError())
+    assert not dspy.is_retryable_lm_error(ValueError("not an LM error"))
+
+
+def test_lm_error_metadata():
+    error = dspy.LMRateLimitError(
+        "rate limited",
+        model="openai/gpt-4o",
+        provider="openai",
+        status=429,
+        request_id="req-123",
+        retry_after=2.5,
+    )
+
+    assert error.code == "rate_limit"
+    assert error.model == "openai/gpt-4o"
+    assert error.provider == "openai"
+    assert error.status == 429
+    assert error.request_id == "req-123"
+    assert error.retry_after == 2.5
+    assert str(error) == "[openai/gpt-4o] rate limited"
 
 
 def test_context_window_exceeded_error_defaults():
     error = ContextWindowExceededError()
+    assert isinstance(error, LMInvalidRequestError)
+    assert isinstance(error, LMError)
+    assert error.code == "context_window_exceeded"
     assert error.model is None
     assert str(error) == "Context window exceeded"
 
@@ -33,6 +81,8 @@ def test_adapter_parse_error_basic():
 
     error = AdapterParseError(adapter_name=adapter_name, signature=signature, lm_response=lm_response)
 
+    assert isinstance(error, DSPyError)
+    assert error.code == "adapter_parse_error"
     assert error.adapter_name == adapter_name
     assert error.signature == signature
     assert error.lm_response == lm_response
@@ -83,3 +133,42 @@ def test_adapter_parse_error_with_parsed_result():
         "Expected to find output fields in the LM response: [answer1, answer2] \n\n"
         "Actual output fields parsed from the LM response: [answer1] \n\n"
     )
+
+
+def test_format_error_for_lm_without_traceback():
+    error = ValueError("bad value")
+    assert format_error_for_lm(error) == "bad value"
+    assert format_error_for_lm(error, traceback_frames=0) == str(error)
+
+
+def test_format_error_for_lm_with_traceback():
+    try:
+        raise ValueError("boom")
+    except ValueError as error:
+        formatted = format_error_for_lm(error, traceback_frames=5)
+
+    assert formatted.startswith("\nTraceback (most recent call last):")
+    assert formatted.endswith("ValueError: boom")
+    assert "test_exceptions.py" in formatted
+
+
+def test_format_error_for_lm_limits_traceback_frames():
+    def level_one():
+        raise RuntimeError("deep failure")
+
+    def level_two():
+        level_one()
+
+    def level_three():
+        level_two()
+
+    try:
+        level_three()
+    except RuntimeError as error:
+        limited = format_error_for_lm(error, traceback_frames=1)
+        full = format_error_for_lm(error, traceback_frames=5)
+
+    assert limited.count('File "') == 1
+    assert full.count('File "') == 4
+    assert limited.endswith("RuntimeError: deep failure")
+    assert full.endswith("RuntimeError: deep failure")

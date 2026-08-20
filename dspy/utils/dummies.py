@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import random
 from collections import defaultdict
 from typing import Any
-
-import numpy as np
 
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
+from dspy.utils.lazy_import import require
+
+np = require("numpy")
 
 
 class DummyLM(BaseLM):
@@ -65,6 +68,8 @@ class DummyLM(BaseLM):
     ```
 
     """
+
+    forward_contract = "legacy"
 
     def __init__(
         self,

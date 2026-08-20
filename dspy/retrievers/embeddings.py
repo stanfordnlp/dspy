@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import json
 import os
 from typing import Any
 
-import numpy as np
-
+from dspy.utils.lazy_import import require
 from dspy.utils.unbatchify import Unbatchify
+
+np = require("numpy")
 
 
 class Embeddings:

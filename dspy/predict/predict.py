@@ -1,14 +1,14 @@
 import logging
 import random
-from typing import Any, Literal, get_args, get_origin
+import types
+from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
-from typeguard import TypeCheckError, check_type
 
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.utils import annotation_allows_none
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.module import Module
@@ -95,7 +95,7 @@ class Predict(Module, Parameter):
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
-                serialized LM state. Enable only when loading trusted files.
+                serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
@@ -108,7 +108,11 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
-        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
+        self.lm = (
+            BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
+            if sanitized_lm_state
+            else None
+        )
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -213,9 +217,13 @@ class Predict(Module, Parameter):
                             value,
                         )
 
-        if not all(k in kwargs for k in signature.input_fields):
+        missing = [
+            k
+            for k, field_info in signature.input_fields.items()
+            if k not in kwargs and not annotation_allows_none(field_info.annotation)
+        ]
+        if missing:
             present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
             logger.warning(
                 "Not all input fields were provided to module. Present: %s. Missing: %s.",
                 present,
@@ -302,18 +310,75 @@ def _get_type_name(type_annotation) -> str:
 
     return getattr(origin, "__name__", str(origin))
 
+
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
-    try:
-        # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
-        if expected is str and isinstance(value, list):
-            if all(isinstance(item, str) for item in value):
-                return True
+    # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
+    if expected is str and isinstance(value, list):
+        if all(isinstance(item, str) for item in value):
+            return True
 
-        check_type(value, expected)
+    return _check_type(value, expected)
+
+
+def _check_type(value: Any, expected: type) -> bool:
+    """Stdlib replacement for typeguard.check_type."""
+    if expected is Any:
         return True
-    except TypeCheckError:
-        return False
+
+    origin = get_origin(expected)
+    args = get_args(expected)
+
+    # Union / Optional (X | None)
+    if origin is Union or origin is types.UnionType:
+        return any(_check_type(value, arg) for arg in args)
+
+    # Literal
+    if origin is Literal:
+        return value in args
+
+    # list
+    if origin is list:
+        if not isinstance(value, list):
+            return False
+        if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    # dict
+    if origin is dict:
+        if not isinstance(value, dict):
+            return False
+        if args:
+            key_type, val_type = args
+            return all(_check_type(k, key_type) and _check_type(v, val_type) for k, v in value.items())
+        return True
+
+    # tuple
+    if origin is tuple:
+        if not isinstance(value, tuple):
+            return False
+        if args:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return all(_check_type(item, args[0]) for item in value)
+            if len(value) != len(args):
+                return False
+            return all(_check_type(item, arg) for item, arg in zip(value, args, strict=False))
+        return True
+
+    # set / frozenset
+    if origin is set or origin is frozenset:
+        if not isinstance(value, origin):
+            return False
+        if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    # Plain type (int, str, BaseModel subclass, etc.)
+    if isinstance(expected, type):
+        return isinstance(value, expected)
+
+    return False
 
 def serialize_object(obj):
     """

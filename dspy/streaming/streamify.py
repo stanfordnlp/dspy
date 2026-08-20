@@ -6,11 +6,9 @@ from asyncio import iscoroutinefunction
 from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
-import litellm
 import orjson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
-from litellm import ModelResponseStream
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
@@ -19,6 +17,12 @@ from dspy.streaming.streaming_listener import StreamListener, find_predictor_for
 from dspy.utils.asyncify import asyncify
 
 logger = logging.getLogger(__name__)
+
+
+def _is_litellm_model_response_stream(value: Any) -> bool:
+    cls = type(value)
+    return cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")
+
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
@@ -178,7 +182,7 @@ def streamify(
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                if isinstance(value, ModelResponseStream):
+                if _is_litellm_model_response_stream(value):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
@@ -271,7 +275,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         if isinstance(value, Prediction):
             data = {"prediction": dict(value.items(include_dspy=False))}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
-        elif isinstance(value, litellm.ModelResponseStream):
+        elif _is_litellm_model_response_stream(value):
             data = {"chunk": value.json()}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):

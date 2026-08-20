@@ -1,7 +1,12 @@
+import json
+import tempfile
 from pathlib import Path
 
+import pytest
+
 import dspy
-from dspy.primitives.module import Module, set_attribute_by_name  # Adjust the import based on your file structure
+from dspy.primitives.example import Example
+from dspy.primitives.module import Module, set_attribute_by_name
 from dspy.utils import DummyLM
 
 
@@ -25,7 +30,7 @@ def test_named_predictors():
     module = HopModule()
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
-    names, preds = zip(*named_preds, strict=False)
+    names, _preds = zip(*named_preds, strict=False)
     assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
@@ -197,3 +202,44 @@ def test_load_dspy_program_cross_version():
 
     assert len(loaded_react.react.demos) == 2
     assert len(loaded_react.extract.predict.demos) == 2
+
+def test_load_state_is_transactional():
+    """
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9589
+
+    load_state must be all-or-nothing. If it fails mid-load (missing key
+    or malformed value), the module must be completely unchanged.
+    """
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.a = dspy.ChainOfThought(Sig)
+            self.b = dspy.ChainOfThought(Sig)
+
+    source = Prog()
+    sentinel = Example(question="q1", answer="a1").with_inputs("question")
+    source.a.predict.demos = [sentinel]
+    source.b.predict.demos = [sentinel]
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "state.json"
+        source.save(str(path), save_program=False)
+
+        raw = json.loads(path.read_text())
+        corrupted = {k: v for k, v in raw.items() if "b." not in k}
+        path.write_text(json.dumps(corrupted))
+
+        template = Prog()
+        assert template.a.predict.demos == []
+
+        with pytest.raises(KeyError):
+            template.load(str(path))
+
+        assert template.a.predict.demos == [], (
+            "load_state partially mutated module before failing"
+        )

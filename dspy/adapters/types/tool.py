@@ -1,7 +1,8 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -15,6 +16,10 @@ if TYPE_CHECKING:
     from langchain.tools import BaseTool
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+class _MCPToolClient(Protocol):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
 class Tool(Type):
@@ -157,7 +162,7 @@ class Tool(Type):
                 "parameters": {
                     "type": "object",
                     "properties": self.args,
-                    "required": list(self.args.keys()),
+                    "required": [k for k in self.args if "default" not in self.args[k]],
                 },
             },
         }
@@ -199,20 +204,29 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(
+        cls,
+        session: _MCPToolClient,
+        tool: "mcp.types.Tool",
+        *,
+        result_mode: Literal["text", "structured"] = "text",
+    ) -> "Tool":
         """
-        Build a DSPy tool from an MCP tool and a ClientSession.
+        Build a DSPy tool from an MCP tool and a compatible MCP client.
 
         Args:
-            session: The MCP session to use.
+            session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
+            result_mode: ``"text"`` preserves DSPy's existing text/non-text
+                conversion. ``"structured"`` returns MCP structured content
+                exactly when present, with the existing conversion as fallback.
 
         Returns:
             A Tool object.
         """
         from dspy.utils.mcp import convert_mcp_tool
 
-        return convert_mcp_tool(session, tool)
+        return convert_mcp_tool(session, tool, result_mode=result_mode)
 
     @classmethod
     def from_langchain(cls, tool: "BaseTool") -> "Tool":
@@ -261,17 +275,24 @@ class Tool(Type):
 
 class ToolCalls(Type):
     class ToolCall(Type):
+        id: str | None = None
         name: str
-        args: dict[str, Any]
+        args: dict[str, Any] = pydantic.Field(json_schema_extra={"additionalProperties": True})
+
+        @classmethod
+        def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
+            schema = super().__get_pydantic_json_schema__(core_schema, handler)
+            schema = handler.resolve_ref_schema(schema)
+            properties = schema.get("properties")
+            if isinstance(properties, dict):
+                properties.pop("id", None)
+            required = schema.get("required")
+            if isinstance(required, list):
+                schema["required"] = [field for field in required if field != "id"]
+            return schema
 
         def format(self):
-            return {
-                "type": "function",
-                "function": {
-                    "name": self.name,
-                    "arguments": self.args,
-                },
-            }
+            return {"name": self.name, "args": self.args}
 
         def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
             """Execute this individual tool call and return its result.
@@ -319,6 +340,19 @@ class ToolCalls(Type):
                 raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
     tool_calls: list[ToolCall]
+    tool_call_results: Any | None = None
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> dict[str, Any]:
+        schema = super().__get_pydantic_json_schema__(core_schema, handler)
+        schema = handler.resolve_ref_schema(schema)
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            properties.pop("tool_call_results", None)
+        required = schema.get("required")
+        if isinstance(required, list):
+            schema["required"] = [field for field in required if field != "tool_call_results"]
+        return schema
 
     @classmethod
     def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
@@ -340,21 +374,31 @@ class ToolCalls(Type):
             tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
             ```
         """
-        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
+        tool_calls = [cls.ToolCall(**_normalize_tool_call_dict(item)) for item in tool_calls_dicts]
         return cls(tool_calls=tool_calls)
 
     @classmethod
     def description(cls) -> str:
         return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
-            "Arguments must be provided in JSON format."
+            "Tool calls must be a JSON object with `tool_calls`, a list of calls. "
+            "Each call must include `name` and `args`. "
+            'Example: {"tool_calls": [{"name": "search", "args": {"query": "cats"}}]}'
         )
 
-    def format(self) -> list[dict[str, Any]]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
+    def format(self) -> dict[str, Any]:
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
+
+    @pydantic.model_serializer()
+    def serialize_model(self):
+        data = self.format()
+        if self.tool_call_results is not None:
+            data["tool_call_results"] = TypeAdapter(type(self.tool_call_results)).dump_python(
+                self.tool_call_results,
+                mode="json",
+            )
+        return data
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -362,27 +406,112 @@ class ToolCalls(Type):
         if isinstance(data, cls):
             return data
 
-        # Handle case where data is a list of dicts with "name" and "args" keys
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "name" in item and "args" in item for item in data
-        ):
-            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
+        # Handle case where data is a list of dicts with either DSPy or provider-shaped tool call keys.
+        if isinstance(data, list) and all(isinstance(item, dict) and _is_tool_call_dict(item) for item in data):
+            return {"tool_calls": [cls.ToolCall(**_normalize_tool_call_dict(item)) for item in data]}
         # Handle case where data is a dict
         elif isinstance(data, dict):
             if "tool_calls" in data:
                 # Handle case where data is a dict with "tool_calls" key
                 tool_calls_data = data["tool_calls"]
                 if isinstance(tool_calls_data, list):
-                    return {
+                    normalized = {
                         "tool_calls": [
-                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
+                            cls.ToolCall(**_normalize_tool_call_dict(item)) if isinstance(item, dict) else item
+                            for item in tool_calls_data
                         ]
                     }
-            elif "name" in data and "args" in data:
+                    if "tool_call_results" in data:
+                        normalized["tool_call_results"] = data["tool_call_results"]
+                    return normalized
+            elif _is_tool_call_dict(data):
                 # Handle case where data is a dict with "name" and "args" keys
-                return {"tool_calls": [cls.ToolCall(**data)]}
+                return {"tool_calls": [cls.ToolCall(**_normalize_tool_call_dict(data))]}
 
         raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
+
+
+class ToolCallResults(pydantic.BaseModel):
+    class ToolCallResult(pydantic.BaseModel):
+        call_id: str | None = None
+        name: str
+        value: Any
+        is_error: bool = False
+
+    tool_call_results: list[ToolCallResult]
+
+    @classmethod
+    def from_tool_calls_and_values(
+        cls,
+        tool_calls: list[ToolCalls.ToolCall] | ToolCalls,
+        values: list[Any],
+        is_errors: list[bool] | None = None,
+    ) -> "ToolCallResults":
+        if isinstance(tool_calls, ToolCalls):
+            tool_calls = tool_calls.tool_calls
+
+        if len(tool_calls) != len(values):
+            raise ValueError("`tool_calls` and `values` must have the same length.")
+
+        if is_errors is None:
+            is_errors = [False] * len(tool_calls)
+        elif len(is_errors) != len(tool_calls):
+            raise ValueError("`is_errors` must have the same length as `tool_calls` when provided.")
+
+        return cls(
+            tool_call_results=[
+                cls.ToolCallResult(call_id=tool_call.id, name=tool_call.name, value=value, is_error=is_error)
+                for tool_call, value, is_error in zip(tool_calls, values, is_errors, strict=True)
+            ]
+        )
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        if isinstance(data, cls):
+            return data
+
+        if isinstance(data, list):
+            return {"tool_call_results": data}
+
+        if isinstance(data, dict):
+            if "tool_call_results" in data:
+                return data
+            if {"name", "value"}.issubset(data):
+                return {"tool_call_results": [data]}
+
+        raise ValueError(f"Received invalid value for `dspy.ToolCallResults`: {data}")
+
+
+def _is_tool_call_dict(data: dict[str, Any]) -> bool:
+    return ("name" in data and ("args" in data or "arguments" in data)) or "function" in data
+
+
+def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError(f"Received invalid tool call value for `dspy.ToolCalls`: {data}")
+
+    if "function" in data:
+        function = data.get("function") or {}
+        if not isinstance(function, dict):
+            raise ValueError(f"Received invalid function value for `dspy.ToolCalls`: {function}")
+
+        arguments = function.get("arguments", {})
+        name = function.get("name") or data.get("name")
+    else:
+        arguments = data.get("args", data.get("arguments", {}))
+        name = data.get("name")
+
+    if isinstance(arguments, str):
+        arguments = json_repair.loads(arguments)
+    elif not isinstance(arguments, dict):
+        arguments = {}
+
+    return {
+        "id": data.get("id") or data.get("call_id"),
+        "name": name,
+        "args": arguments,
+    }
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:

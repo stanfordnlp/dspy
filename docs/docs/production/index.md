@@ -1,14 +1,12 @@
-# Using DSPy in Production
+# Deploying DSPy
+
+The tooling we ship for running DSPy programs in production: observability, reproducibility, deployment, and scalability.
+
+!!! info "Looking for who's using DSPy?"
+
+    DSPy is in production at **Shopify, Databricks, Dropbox, JetBlue, Moody's, Replit, AWS, Sephora, VMware**, and dozens more. [:octicons-arrow-right-24: See companies using DSPy](../community/use-cases.md)
 
 <div class="grid cards" style="text-align: left;" markdown>
-
-- :material-earth:{ .lg .middle } __Real-World Use Cases__
-
-    ---
-
-    DSPy is deployed in production by many enterprises and startups. Explore real-world case studies.
-
-    [:octicons-arrow-right-24: Use Cases](../community/use-cases.md)
 
 - :material-magnify-expand:{ .lg .middle } __Monitoring & Observability__
 
@@ -26,13 +24,13 @@
 
     [:octicons-arrow-right-24: MLflow Integration](https://mlflow.org/docs/latest/llms/dspy/index.html)
 
-- :material-rocket-launch: __Deployment__
+- :material-rocket-launch: __Deployment with MLflow__
 
     ---
 
     When it's time to productionize, deploy your application easily with DSPy's integration with MLflow Model Serving.
 
-    [:octicons-arrow-right-24: Deployment Guide](../tutorials/deployment/index.md)
+    [:octicons-arrow-right-24: Deployment with MLflow](../tutorials/deployment/index.md)
 
 - :material-arrow-up-right-bold: __Scalability__
 
@@ -41,13 +39,5 @@
     DSPy is designed with thread-safety in mind and offers native asynchronous execution support for high-throughput environments.
 
     [:octicons-arrow-right-24: Async Program](../api/utils/asyncify.md)
-
-- :material-alert-rhombus: __Guardrails & Controllability__
-
-    ---
-
-    DSPy's **Signatures**, **Modules**, and **Optimizers** help you control and guide LM outputs.
-
-    [:octicons-arrow-right-24: Learn Signature](../learn/programming/signatures.md)
 
 </div>

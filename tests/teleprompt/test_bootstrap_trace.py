@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 from litellm import Choices, Message, ModelResponse
@@ -63,14 +63,13 @@ def test_bootstrap_trace_data():
         call_count = completion_side_effect.call_count
         completion_side_effect.call_count += 1
 
-        if call_count == 5:  # Third call (0-indexed)
-            # Return malformed response that will cause AdapterParseError
+        if call_count in (2, 3):
+            # Return malformed responses for both structured-output mode and JSON-mode fallback.
             return ModelResponse(
                 choices=[Choices(message=Message(content="This is an invalid JSON!"))],
                 model="openai/gpt-4o-mini",
             )
-        else:
-            return successful_responses[call_count]
+        return successful_responses[call_count if call_count < 2 else call_count - 2]
 
     completion_side_effect.call_count = 0
 
@@ -80,6 +79,7 @@ def test_bootstrap_trace_data():
             program=program,
             dataset=dataset,
             metric=exact_match_metric,
+            num_threads=1,
             raise_on_error=False,
             capture_failed_parses=True,
         )
@@ -138,7 +138,7 @@ def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
             captured_metadata["value"] = callback_metadata
 
             class _Result:
-                results: list[Any] = []
+                results: ClassVar[list[Any]] = []
 
             return _Result()
 
@@ -151,3 +151,30 @@ def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
     )
 
     assert captured_metadata["value"] == {"disable_logging": True}
+
+
+def test_capture_crashes_does_not_capture_lm_errors():
+    """``capture_crashes`` converts program bugs into FailedPrediction, but an LMError is
+    infrastructure: repainting it as a code failure would hand the optimizer an invalid
+    evaluation, so it must propagate to the evaluator's error handling instead."""
+    from dspy.utils.exceptions import LMRateLimitError
+
+    example = Example(q="x").with_inputs("q")
+
+    class Bug(dspy.Module):
+        def forward(self, **kwargs):
+            raise RuntimeError("a real code failure")
+
+    data = bootstrap_trace_data(Bug(), dataset=[example], num_threads=1, capture_crashes=True)
+    assert isinstance(data[0]["prediction"], FailedPrediction)
+    assert "RuntimeError" in data[0]["prediction"].completion_text
+
+    class Flaky(dspy.Module):
+        def forward(self, **kwargs):
+            raise LMRateLimitError("429 from the provider")
+
+    # raise_on_error=False mirrors the flex GEPA call site (gepa_flex_utils).
+    data = bootstrap_trace_data(
+        Flaky(), dataset=[example], num_threads=1, capture_crashes=True, raise_on_error=False
+    )
+    assert data == []  # handled by the evaluator as an error, never repainted as a FailedPrediction

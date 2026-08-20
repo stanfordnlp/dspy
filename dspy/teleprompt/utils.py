@@ -6,8 +6,6 @@ import random
 import shutil
 import sys
 
-import numpy as np
-
 try:
     from IPython.core.magics.code import extract_symbols
 except ImportError:
@@ -121,8 +119,8 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     # Calculate the mean for each combination of categorical parameters, based on past trials
     results = []
     for key, values in param_score_dict.items():
-        scores = np.array([v[0] for v in values])
-        mean = np.average(scores)
+        scores = [v[0] for v in values]
+        mean = sum(scores) / len(scores)
         program = values[0][1]
         params = values[0][2]
         results.append((key, mean, program, params))
@@ -139,8 +137,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
 
         return program, mean, key, params
 
-    # If no valid program is found, we return the last valid one that we found
-    return program, mean, key, params
+    raise ValueError("No valid program found in param_score_dict")
 
 
 def calculate_last_n_proposed_quality(
@@ -284,9 +281,8 @@ def get_token_usage(model) -> tuple[int, int]:
         input_tokens.append(_input_tokens)
         output_tokens.append(_output_tokens)
 
-    total_input_tokens = int(np.sum(input_tokens))
-    total_output_tokens = int(np.sum(output_tokens))
-
+    total_input_tokens = sum(input_tokens)
+    total_output_tokens = sum(output_tokens)
     return total_input_tokens, total_output_tokens
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+from contextlib import suppress
 from typing import Any, TextIO
 
 
@@ -35,6 +37,16 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
     out = file or sys.stdout
     use_colors = file is None
 
+    def print_tool_calls(tool_calls):
+        if tool_calls:
+            print(_red("Tool calls:", use_colors=use_colors), file=out)
+        for tool_call in tool_calls or []:
+            function = tool_call.get("function") or {}
+            arguments = function.get("arguments")
+            arguments = tool_call.get("args", tool_call.get("arguments", {})) if arguments is None else arguments
+            with suppress(json.JSONDecodeError):
+                arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+            print(_green(f"{function.get('name') or tool_call.get('name', '<unknown>')}: {json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, (dict, list)) else str(arguments)}", use_colors=use_colors), file=out)
     for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
@@ -75,17 +87,15 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
                             file_data = file_info.get("file_data", "")
                             file_str = f"<file: name:{filename}, id:{file_id}, data_length:{len(file_data)}>"
                             print(_blue(file_str.strip(), use_colors=use_colors), file=out)
+            print_tool_calls(msg.get("tool_calls"))
             print("\n", file=out)
 
         if isinstance(outputs[0], dict):
-            if outputs[0]["text"]:
+            if outputs[0].get("text"):
                 print(_red("Response:", use_colors=use_colors), file=out)
                 print(_green(outputs[0]["text"].strip(), use_colors=use_colors), file=out)
 
-            if outputs[0].get("tool_calls"):
-                print(_red("Tool calls:", use_colors=use_colors), file=out)
-                for tool_call in outputs[0]["tool_calls"]:
-                    print(_green(f"{tool_call['function']['name']}: {tool_call['function']['arguments']}", use_colors=use_colors), file=out)
+            print_tool_calls(outputs[0].get("tool_calls"))
         else:
             print(_red("Response:", use_colors=use_colors), file=out)
             print(_green(outputs[0].strip(), use_colors=use_colors), file=out)

@@ -1,5 +1,8 @@
 # dspy.KNNFewShot
 
+!!! note "Requires numpy"
+    `dspy.KNNFewShot` requires numpy. Install it with `pip install dspy[numpy]`.
+
 <!-- START_API_REF -->
 ::: dspy.KNNFewShot
     handler: python
