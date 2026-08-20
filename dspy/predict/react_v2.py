@@ -24,6 +24,13 @@ class ReActV2(Module):
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
+
+        reserved_output_names = {"history", "termination_reason"}
+        conflicting_outputs = reserved_output_names.intersection(self.signature.output_fields)
+        if conflicting_outputs:
+            names = ", ".join(sorted(conflicting_outputs))
+            raise ValueError(f"The following output field(s) are reserved by ReActV2: {names}")
+
         self.max_iters = max_iters
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
@@ -173,11 +180,11 @@ class ReActV2(Module):
         termination_reason: str,
     ) -> Prediction:
         outputs = self._default_output_fields()
-        outputs.update(
+        return Prediction(
+            **outputs,
             history=history,
             termination_reason=termination_reason,
         )
-        return Prediction(**outputs)
 
     def _forced_submit(
         self,
