@@ -90,12 +90,16 @@ MCP servers publish tools with JSON schemas. `dspy.Tool.from_mcp_tool(session, t
 
 ```python
 dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
-structured_tool = dspy.Tool.from_mcp_tool(
-    session, mcp_tool, result_mode="structured"
-)
 ```
 
-The default preserves DSPy's existing `content` conversion. Structured mode returns `structuredContent` exactly when present, without parsing or unwrapping it, and otherwise falls back to the default. The bridge supports MCP SDK v1 and v2 field names and raises on tool errors.
+The bridge:
+
+1. Converts the MCP input schema into DSPy's `args`, `arg_types`, and `arg_desc`.
+2. Creates an async callable that invokes `session.call_tool(...)`.
+3. Unpacks MCP text content into a string or list and preserves non-text content.
+4. Raises an execution error when the MCP response has `isError=True`.
+
+The bridge supports both the camelCase result fields in MCP SDK v1 and their snake_case replacements in v2 without changing text or non-text result behavior. Pass `result_mode="structured"` to return `structuredContent` when available, falling back to the default conversion when it is absent.
 
 MCP tools are asynchronous because `mcp.ClientSession` is asynchronous. Use a module's async entry point, such as `acall`, or explicitly enable async-to-sync conversion when appropriate.
 
@@ -113,7 +117,7 @@ Validates, coerces, and executes tool arguments through synchronous or asynchron
 Returns the OpenAI/LiteLLM-style function descriptor used by adapters for native calling.
 
 **`Tool.from_mcp_tool(session, tool, *, result_mode="text")`** → `Tool`
-Wraps a remote MCP tool as an asynchronous DSPy tool. Set `result_mode="structured"` for exact machine-readable MCP results; the default keeps the model-facing content behavior.
+Wraps a remote MCP tool as an asynchronous DSPy tool. Set `result_mode="structured"` to return structured MCP results when available.
 
 **`Tool.from_langchain(tool)`** → `Tool`
 Wraps a LangChain tool in the same DSPy interface.

@@ -158,33 +158,7 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
 
-### Choosing the result representation
-
-DSPy uses the model-facing `content` field by default. Opt into the machine-readable `structuredContent` field for programmatic use:
-
-```python
-structured_tool = dspy.Tool.from_mcp_tool(
-    session, mcp_tool, result_mode="structured"
-)
-```
-
-Structured mode returns the value exactly, including scalars, `null`, and empty values. It does not parse text or unwrap `{"result": ...}`; if structured content is absent, it falls back to the default conversion. Use the default for model observations and structured mode for validation, indexing, or tool chaining.
-
-### Example with a reference MCP server
-
-Use the maintained [Everything server](https://github.com/modelcontextprotocol/servers/tree/main/src/everything) in the stdio example above:
-
-```python
-server_params = StdioServerParameters(
-    command="npx",
-    args=["-y", "@modelcontextprotocol/server-everything@2026.7.4"],
-)
-# After initializing the session:
-mcp_tool = next(t for t in response.tools if t.name == "get-structured-content")
-weather = dspy.Tool.from_mcp_tool(session, mcp_tool, result_mode="structured")
-print(await weather.acall(location="New York"))
-# {'temperature': 33, 'conditions': 'Cloudy', 'humidity': 82}
-```
+By default, MCP tools return the `content` field. Pass `result_mode="structured"` to `dspy.Tool.from_mcp_tool` to return `structuredContent` when available; if it is absent, DSPy falls back to the default conversion.
 
 ## Learn More
 
