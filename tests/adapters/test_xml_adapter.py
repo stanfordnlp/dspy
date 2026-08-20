@@ -100,6 +100,7 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     formatted = adapter.format_field_with_value({field: counts})
     assert '<entry key="postal code"><item>3</item><item>4</item></entry>' in formatted
     assert adapter.parse(TestSignature, formatted) == {"counts": counts}
+    assert adapter.parse(TestSignature, "<counts />") == {"counts": {}}
 
     class EmptySignature(dspy.Signature):
         items: list[str] = dspy.OutputField()
@@ -107,6 +108,25 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     field = FieldInfoWithName(name="items", info=EmptySignature.output_fields["items"])
     assert adapter.format_field_with_value({field: []}) == "<items />"
     assert adapter.parse(EmptySignature, "<items />") == {"items": []}
+
+
+def test_xml_adapter_uses_pydantic_field_names_as_xml_tags():
+    class Address(pydantic.BaseModel):
+        postal_code: str = pydantic.Field(alias="postal code")
+        country_code: str = pydantic.Field(alias="country-code")
+
+    class TestSignature(dspy.Signature):
+        address: Address = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    address = Address(**{"postal code": "94305", "country-code": "US"})
+    xml = adapter.format_assistant_message_content(TestSignature, {"address": address})
+
+    assert xml == "<address><postal_code>94305</postal_code><country_code>US</country_code></address>"
+    assert "<address><postal_code>...</postal_code><country_code>...</country_code></address>" in (
+        adapter.format_field_structure(TestSignature)
+    )
+    assert adapter.parse(TestSignature, xml) == {"address": address}
 
 
 def test_xml_adapter_typed_dict_schema_and_parsing():

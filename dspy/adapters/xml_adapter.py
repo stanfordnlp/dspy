@@ -107,12 +107,16 @@ class XMLAdapter(ChatAdapter):
         for name, field in signature.output_fields.items():
             if name not in elements:
                 continue
-            schema = TypeAdapter(field.annotation).json_schema()
+            adapter = TypeAdapter(field.annotation)
+            schema = adapter.json_schema(by_alias=False)
             value = None
             for candidate in [schema, *schema.get("anyOf", [])]:
                 try:
                     value = self._elements_to_value(elements[name], candidate, schema.get("$defs", {}))
-                    fields[name] = parse_value(value, field.annotation)
+                    try:
+                        fields[name] = parse_value(value, field.annotation)
+                    except pydantic.ValidationError:
+                        fields[name] = adapter.validate_python(value, by_name=True)
                     break
                 except Exception as e:
                     error = e
@@ -153,7 +157,7 @@ class XMLAdapter(ChatAdapter):
 
     @classmethod
     def _xml_schema(cls, tag: str, annotation: Any) -> str:
-        schema = TypeAdapter(annotation).json_schema()
+        schema = TypeAdapter(annotation).json_schema(by_alias=False)
         return cls._schema_to_xml(tag, schema, schema.get("$defs", {}), frozenset())
 
     @classmethod
@@ -200,6 +204,8 @@ class XMLAdapter(ChatAdapter):
             return (element.text or "") + "".join(ET.tostring(child, encoding="unicode") for child in element)
         children = cls._group_children(element)
         if not children:
+            if schema.get("type") == "object" and not (element.text or "").strip():
+                return {}
             values = [(element.text or "").strip() for element in elements]
             return values[0] if len(values) == 1 else values
         properties = schema.get("properties", {})
