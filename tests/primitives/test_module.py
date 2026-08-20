@@ -201,6 +201,28 @@ def test_named_parameters_dict_keys_do_not_collide():
     assert "dict_a[0]" in names
 
 
+def test_load_state_raises_clear_error_for_pre_fix_dict_key_names():
+    """
+    Loading a state saved by a DSPy version before the #1302 fix, for a dict-valued attribute with
+    a non-string key, must fail loudly with a clear message rather than a bare KeyError - matching
+    the existing "fail-fast, no partial corruption" design (see test_load_state_is_transactional,
+    regression test for #9589).
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
+    # Simulate a pre-fix save: the old code always quoted dict keys, so an int key 0 was persisted
+    # as "dict_a['0']" instead of the current "dict_a[0]".
+    state = {"dict_a['0']": prog.dict_a[0].dump_state()}
+
+    with pytest.raises(KeyError, match="issues/1302"):
+        prog.load_state(state)
+
+
 def test_named_sub_modules_dict_keys_do_not_collide():
     """Regression test for https://github.com/stanfordnlp/dspy/issues/1302 (named_sub_modules side)."""
     module = Module()
