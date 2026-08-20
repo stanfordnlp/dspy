@@ -164,6 +164,19 @@ class ReActV2(Module):
             event["tool_calls"] = tool_calls
         return event
 
+    def _terminal_prediction(self, history: dspy.History, break_reason: str) -> Prediction:
+        """Build the prediction for a loop that ended without a successful `submit`.
+
+        The declared output fields are always present so that callers and metrics can
+        read them regardless of how the loop terminated; they are `None` because no
+        `submit` produced values. `history` and `termination_reason` are applied last
+        and stay authoritative.
+        """
+        values: dict[str, Any] = dict.fromkeys(self.signature.output_fields)
+        values["history"] = history
+        values["termination_reason"] = break_reason or "failed"
+        return Prediction(**values)
+
     def _forced_submit(
         self,
         history: dspy.History,
@@ -184,11 +197,11 @@ class ReActV2(Module):
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._terminal_prediction(history, break_reason)
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
         if not submit_calls.tool_calls:
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._terminal_prediction(history, break_reason)
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
         event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
@@ -199,7 +212,7 @@ class ReActV2(Module):
         if final_outputs is not None:
             return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
-        return Prediction(history=history, termination_reason=break_reason or "failed")
+        return self._terminal_prediction(history, break_reason)
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
