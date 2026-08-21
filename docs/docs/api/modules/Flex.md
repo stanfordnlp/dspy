@@ -27,7 +27,7 @@ print(result.total_cents)
 
 Out of the box, `solve` is just a `dspy.Predict` over the signature, wrapped in a module (with `tools`, it starts as a `dspy.RLM` instead — see [Tools](#tools)). The point of `Flex` is what happens when you optimize it (see [Optimizing with GEPA](#optimizing-with-gepa)): GEPA can replace that baseline with, say, a predictor that only extracts quantities and unit prices, and a line of Python that multiplies and sums them.
 
-The generated code always runs in a sandbox (`interpreter_factory` defaults to `dspy.PythonInterpreter`), so the example above needs [Deno](https://deno.land/) installed — see [Sandboxed Execution](#sandboxed-execution).
+The generated code always runs through a `CodeInterpreter` (`interpreter_factory` defaults to the sandboxed `dspy.PythonInterpreter`), so the example above needs [Deno](https://deno.land/) installed — see [Interpreter Execution](#interpreter-execution).
 
 ## How Optimization Works
 
@@ -82,9 +82,9 @@ def metric(gold, pred, trace=None, pred_name=None, pred_trace=None, program_trac
 
 The `program_trace` parameter is opt-in *by declaration*: only metrics that name it receive the trace. Keep the penalty small relative to correctness, so a decomposition has to *hold* accuracy to win.
 
-## Sandboxed Execution
+## Interpreter Execution
 
-`Flex` always runs its generated code in a sandbox — never in the host Python process. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh `CodeInterpreter`; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per sandbox session, including separate sessions requested by nested code-executing modules. The code is authored by the reflection model, so isolating it keeps it from running with your host's full permissions. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls.
+`Flex` always runs its generated code through a `CodeInterpreter`. `interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a **zero-argument factory** returning a fresh interpreter; a bare instance is not accepted, so parallel evaluations receive isolated sessions. The factory is called once per interpreter session, including separate sessions requested by nested code-executing modules. With the default interpreter, optimizer-authored control flow, string work, arithmetic, and supported imports run inside the sandbox, and only provided-tool calls, predictor construction, and predictor calls bridge back to the host, which makes the real LM calls. Custom factories define their own trust boundary: `dspy.LocalInterpreter`, for example, separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority.
 
 Because the default builds a `PythonInterpreter`, *running* a `Flex` needs [Deno](https://deno.land/) installed; without it, the call raises.
 
@@ -130,7 +130,7 @@ The interpreter is a **runtime dependency and is not serialized**. Reconstructin
 |-----------|------|---------|-------------|
 | `signature` | `str \| Signature` | required | Declares the module's inputs and outputs (e.g. `"invoice -> total_cents: int"`). |
 | `tools` | `list[Callable \| dspy.Tool]` | `None` | Tools the generated code may call. With tools, the baseline is a `dspy.RLM`; without, a `dspy.Predict`. |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each sandbox session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python and libraries are interpreter-dependent. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Zero-arg factory returning a fresh `CodeInterpreter` for each interpreter session; defaults to `dspy.PythonInterpreter` (needs Deno). A bare interpreter instance is not accepted. Supported Python, libraries, and security boundaries are interpreter-dependent. |
 | `max_predictor_calls` | `int \| None` | `100` | Maximum number of predictor calls the generated code can make in one `forward` — a guard against runaway loops. `None` removes the limit. |
 
 ## Notes
@@ -139,7 +139,7 @@ The interpreter is a **runtime dependency and is not serialized**. Reconstructin
     `Flex` is marked experimental. The API and the optimization behavior may change between releases; pin a version if you depend on it.
 
 !!! note "Interpreter Requirements"
-    `Flex` always runs generated code in a sandbox (`interpreter_factory` defaults to `dspy.PythonInterpreter`), which requires [Deno](https://deno.land/) for its Pyodide WASM sandbox — see the [RLM page](RLM.md#deno-installation) for installation notes.
+    `Flex` defaults to `dspy.PythonInterpreter`, which requires [Deno](https://deno.land/) for its Pyodide WASM sandbox — see the [RLM page](RLM.md#deno-installation) for installation notes. `dspy.LocalInterpreter` requires no additional runtime but is not a security sandbox.
 
 ## API Reference
 
