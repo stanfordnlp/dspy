@@ -4,6 +4,7 @@ import pytest
 
 import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
+from dspy.core.types import LMCompactionPart, LMHistoryEntry, LMOutput, LMRequest, LMResponse
 from dspy.utils.dummies import DummyLM
 from dspy.utils.inspect_history import pretty_print_history
 
@@ -90,6 +91,62 @@ def test_inspect_history_renders_output_tool_calls_without_text():
     assert "Tool calls:" in text
     assert 'lookup: {"query": "cats"}' in text
     assert 'search: {"query": "dogs"}' in text
+
+
+def test_inspect_history_renders_provider_compaction_without_exposing_opaque_state():
+    out = StringIO()
+    entry = LMHistoryEntry(
+        request=LMRequest.from_call(model="openai/gpt-5", prompt="hello"),
+        response=LMResponse(
+            outputs=[
+                LMOutput(
+                    parts=[
+                        LMCompactionPart(
+                            provider_name="openai",
+                            provider_data={"type": "compaction", "encrypted_content": "secret-state"},
+                        )
+                    ]
+                )
+            ]
+        ),
+        timestamp="now",
+        uuid="uuid",
+    )
+
+    pretty_print_history([entry], n=1, file=out)
+
+    text = out.getvalue()
+    assert "Provider compaction (openai):" in text
+    assert "<opaque provider state>" in text
+    assert "secret-state" not in text
+
+
+def test_inspect_history_renders_readable_provider_compaction():
+    out = StringIO()
+    entry = LMHistoryEntry(
+        request=LMRequest.from_call(model="anthropic/claude", prompt="hello"),
+        response=LMResponse(
+            outputs=[
+                LMOutput(
+                    parts=[
+                        LMCompactionPart(
+                            provider_name="anthropic",
+                            content="Conversation summary.",
+                            provider_data={"type": "compaction", "content": "Conversation summary."},
+                        )
+                    ]
+                )
+            ]
+        ),
+        timestamp="now",
+        uuid="uuid",
+    )
+
+    pretty_print_history([entry], n=1, file=out)
+
+    text = out.getvalue()
+    assert "Provider compaction (anthropic):" in text
+    assert "Conversation summary." in text
 
 
 def test_inspect_history_with_n(capsys):

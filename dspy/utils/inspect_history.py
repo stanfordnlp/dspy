@@ -47,6 +47,15 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             with suppress(json.JSONDecodeError):
                 arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
             print(_green(f"{function.get('name') or tool_call.get('name', '<unknown>')}: {json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, (dict, list)) else str(arguments)}", use_colors=use_colors), file=out)
+
+    def print_compaction(provider_name: str, content: str | None, *, opaque: bool) -> None:
+        print(_red(f"Provider compaction ({provider_name}):", use_colors=use_colors), file=out)
+        if content is None:
+            label = "<opaque provider state>" if opaque else "<empty compaction>"
+            print(_blue(label, use_colors=use_colors), file=out)
+        else:
+            print(_green(content.strip(), use_colors=use_colors), file=out)
+
     for item in history[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
@@ -87,18 +96,39 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
                             file_data = file_info.get("file_data", "")
                             file_str = f"<file: name:{filename}, id:{file_id}, data_length:{len(file_data)}>"
                             print(_blue(file_str.strip(), use_colors=use_colors), file=out)
+                        elif c["type"] == "compaction":
+                            print_compaction(
+                                c.get("provider_name", "unknown"),
+                                c.get("content"),
+                                opaque="encrypted_content" in c,
+                            )
             print_tool_calls(msg.get("tool_calls"))
             print("\n", file=out)
 
-        if isinstance(outputs[0], dict):
-            if outputs[0].get("text"):
+        first_output = outputs[0]
+        if isinstance(first_output, dict):
+            if first_output.get("text"):
                 print(_red("Response:", use_colors=use_colors), file=out)
-                print(_green(outputs[0]["text"].strip(), use_colors=use_colors), file=out)
+                print(_green(first_output["text"].strip(), use_colors=use_colors), file=out)
 
-            print_tool_calls(outputs[0].get("tool_calls"))
-        else:
+            print_tool_calls(first_output.get("tool_calls"))
+        elif isinstance(first_output, str):
             print(_red("Response:", use_colors=use_colors), file=out)
-            print(_green(outputs[0].strip(), use_colors=use_colors), file=out)
+            print(_green(first_output.strip(), use_colors=use_colors), file=out)
+        elif isinstance(first_output, list):
+            text = "".join(value for value in first_output if isinstance(value, str))
+            if text:
+                print(_red("Response:", use_colors=use_colors), file=out)
+                print(_green(text.strip(), use_colors=use_colors), file=out)
+
+        response = getattr(item, "response", None)
+        if response is not None:
+            for compaction in response.compactions:
+                print_compaction(
+                    compaction.provider_name,
+                    compaction.content,
+                    opaque="encrypted_content" in compaction.provider_data,
+                )
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs) - 1} other completions)"
