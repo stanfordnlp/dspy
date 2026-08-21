@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
 
@@ -324,3 +326,99 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+
+@pytest.mark.asyncio
+async def test_react_v2_aforward_runs_the_loop():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReActV2("question -> answer", tools=[lookup]).acall(question="cats")
+
+    assert pred.answer == "found cats"
+    assert pred.termination_reason == "submit"
+    assert sum("question" in event for event in pred.history.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_react_v2_aforward_awaits_async_tools():
+    async def async_lookup(query: str) -> str:
+        return f"found {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "async_lookup", "args": {"query": "cats"}}]),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReActV2("question -> answer", tools=[async_lookup]).acall(question="cats")
+
+    assert pred.answer == "done"
+    result = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0]
+    assert result.is_error is False
+    assert result.value == "found cats"
+
+
+@pytest.mark.asyncio
+async def test_react_v2_aforward_forced_submit_on_empty_tool_calls():
+    lm = ReasoningDummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "forced"}}]),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReActV2("question -> answer", tools=[]).acall(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+
+
+@pytest.mark.asyncio
+async def test_react_v2_aforward_unknown_tool_observation_can_continue():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Try a tool that does not exist.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "nope", "args": {}}]),
+            },
+            {
+                "next_thought": "Recovering.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "recovered"}}]),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReActV2("question -> answer", tools=[]).acall(question="cats")
+
+    assert pred.answer == "recovered"
+    result = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0]
+    assert result.is_error is True
+    assert "Unknown tool: nope" in str(result.value)
