@@ -239,6 +239,9 @@ class ParallelExecutor:
                 self.exceptions_map[idx] = outcome
         else:
             results[idx] = outcome
+            with self.error_lock:
+                self.failed_indices = [failed_idx for failed_idx in self.failed_indices if failed_idx != idx]
+                self.exceptions_map.pop(idx, None)
 
     def _report_progress(self, pbar, results, total):
         """Compute metrics and update the progress bar."""
