@@ -125,6 +125,46 @@ class ReActV2(Module):
 
         return self._forced_submit(history, pending_inputs, break_reason, max_iters)
 
+    async def aforward(self, **input_args):
+        max_iters = input_args.pop("max_iters", self.max_iters)
+        history = _coerce_history(input_args.pop("history", None))
+        pending_inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+
+        break_reason = "max_iters"
+        for turn_index in range(max_iters):
+            try:
+                pred = await self.react.acall(
+                    history=history,
+                    tools=list(self.tools.values()),
+                    **pending_inputs,
+                )
+                tool_calls = _coerce_tool_calls(getattr(pred, "tool_calls", None))
+            except (AdapterParseError, ValueError) as err:
+                logger.warning("Ending ReActV2 loop after parse failure: %s", format_error_for_lm(err, traceback_frames=5))
+                break_reason = "parse_error"
+                break
+            except ContextWindowExceededError:
+                logger.warning("Ending ReActV2 loop after context window exceeded.")
+                break_reason = "context_window_exceeded"
+                break
+
+            if not tool_calls.tool_calls:
+                break_reason = "empty_tool_calls"
+                break
+
+            tool_calls = _ensure_tool_call_ids(tool_calls, turn_index)
+            tool_call_results, final_outputs = await self._aexecute_tool_calls(tool_calls)
+            event = self._history_event(pending_inputs, pred, tool_calls, tool_call_results)
+            if final_outputs is not None:
+                event.update(final_outputs)
+            _append_history_event(history, event)
+            pending_inputs = {}
+
+            if final_outputs is not None:
+                return Prediction(**final_outputs, history=history, termination_reason="submit")
+
+        return await self._aforced_submit(history, pending_inputs, break_reason, max_iters)
+
     def _execute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
         values = []
         is_errors = []
@@ -138,6 +178,29 @@ class ReActV2(Module):
 
             try:
                 value = self.tools[tool_call.name](**(tool_call.args or {}))
+                values.append(value)
+                is_errors.append(False)
+                if tool_call.name == "submit" and isinstance(value, dict):
+                    final_outputs = value
+            except Exception as err:
+                values.append(f"Execution error in {tool_call.name}: {format_error_for_lm(err, traceback_frames=5)}")
+                is_errors.append(True)
+
+        return ToolCallResults.from_tool_calls_and_values(tool_calls, values, is_errors), final_outputs
+
+    async def _aexecute_tool_calls(self, tool_calls: ToolCalls) -> tuple[ToolCallResults, dict[str, Any] | None]:
+        values = []
+        is_errors = []
+        final_outputs = None
+
+        for tool_call in tool_calls.tool_calls:
+            if tool_call.name not in self.tools:
+                values.append(f"Unknown tool: {tool_call.name}")
+                is_errors.append(True)
+                continue
+
+            try:
+                value = await self.tools[tool_call.name].acall(**(tool_call.args or {}))
                 values.append(value)
                 is_errors.append(False)
                 if tool_call.name == "submit" and isinstance(value, dict):
@@ -191,6 +254,43 @@ class ReActV2(Module):
             return Prediction(history=history, termination_reason=break_reason or "failed")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
+        event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
+        if final_outputs is not None:
+            event.update(final_outputs)
+        _append_history_event(history, event)
+
+        if final_outputs is not None:
+            return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
+
+        return Prediction(history=history, termination_reason=break_reason or "failed")
+
+    async def _aforced_submit(
+        self,
+        history: dspy.History,
+        pending_inputs: dict[str, Any],
+        break_reason: str,
+        turn_index: int,
+    ) -> Prediction:
+        try:
+            pred = await self.react.acall(
+                history=history,
+                tools=list(self.tools.values()),
+                config={
+                    "tool_choice": {"type": "function", "function": {"name": "submit"}},
+                    "reasoning_effort": None,
+                },
+                **pending_inputs,
+            )
+            tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
+        except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
+            logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
+            return Prediction(history=history, termination_reason=break_reason or "failed")
+
+        submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
+        if not submit_calls.tool_calls:
+            return Prediction(history=history, termination_reason=break_reason or "failed")
+
+        tool_call_results, final_outputs = await self._aexecute_tool_calls(submit_calls)
         event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
         if final_outputs is not None:
             event.update(final_outputs)
