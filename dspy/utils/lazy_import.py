@@ -72,6 +72,7 @@ class _ReuseExecutedLoader:
         self._module = module
         self._original_spec = module.__spec__
         self._original_loader = module.__loader__
+        self._original_path: list[str] | None = list(getattr(module, "__path__", [])) or None
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> types.ModuleType:
         return self._module
@@ -79,6 +80,11 @@ class _ReuseExecutedLoader:
     def exec_module(self, module: types.ModuleType) -> None:
         module.__spec__ = self._original_spec
         module.__loader__ = self._original_loader
+        # spec_from_loader(is_package=True) pins an empty search path, which
+        # module_from_spec would have stamped onto the reused package --
+        # restore the real one so later submodule imports still resolve.
+        if self._original_path is not None:
+            module.__path__ = self._original_path
 
 
 class _MaterializedChildFinder:
