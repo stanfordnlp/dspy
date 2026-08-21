@@ -41,6 +41,21 @@ def test_no_input_output2():
             input1: str = pydantic.Field()
 
 
+def test_field_name_shadowing_signaturemeta_property_raises_clear_error():
+    """
+    Regression test for https://github.com/stanfordnlp/dspy/issues/1710
+
+    A field name that collides with a SignatureMeta property (e.g. `instructions`) must raise
+    the existing `_validate_fields` TypeError, not crash with an opaque internal TypeError from
+    `_get_fields_with_type` deep inside `input_fields`/`output_fields`.
+    """
+    with pytest.raises(TypeError, match="must be declared with InputField or OutputField"):
+
+        class TestSignature(Signature):
+            instructions: str = InputField()
+            answer: str = OutputField()
+
+
 def test_all_fields_have_prefix():
     class TestSignature(Signature):
         input = InputField(prefix="Modified:")
