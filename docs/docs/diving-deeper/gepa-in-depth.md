@@ -62,7 +62,7 @@ Grouped by what you’re trying to do.
 
 ### The optimizer
 
-**`dspy.GEPA(metric, *, auto=None, max_full_evals=None, max_metric_calls=None, reflection_minibatch_size=3, candidate_selection_strategy="pareto", reflection_lm=None, skip_perfect_score=True, add_format_failure_as_feedback=False, instruction_proposer=None, component_selector="round_robin", use_merge=True, max_merge_invocations=5, num_threads=None, failure_score=0.0, perfect_score=1.0, log_dir=None, track_stats=False, use_wandb=False, use_mlflow=False, seed=0, ...)`**
+**`dspy.GEPA(metric, *, auto=None, max_full_evals=None, max_metric_calls=None, reflection_minibatch_size=3, candidate_selection_strategy="pareto", reflection_lm=None, skip_perfect_score=True, add_format_failure_as_feedback=False, instruction_proposer=None, code_proposer=None, component_selector="round_robin", use_merge=True, max_merge_invocations=5, num_threads=None, failure_score=0.0, perfect_score=1.0, log_dir=None, track_stats=False, use_wandb=False, use_mlflow=False, seed=0, ...)`**
 
 Takes a feedback-shaped metric, a budget (exactly one of `auto` / `max_full_evals` / `max_metric_calls`), and a `reflection_lm` (defaults to the globally-configured LM — you’ll often want to pass a stronger one). `candidate_selection_strategy="current_best"` switches off Pareto sampling and turns GEPA into greedy local search. `failure_score` is the score assigned when the metric raises; `perfect_score` is the threshold for `skip_perfect_score`.
 
@@ -95,6 +95,9 @@ Default `3`. Larger minibatches give the proposer more context (better proposals
 
 **`instruction_proposer`** — custom proposer hook
 A callable matching the `gepa.ProposalFn` protocol: takes a `{predictor_name: current_instruction}` dict, a reflective dataset of low-scoring examples, and a list of components to update; returns a new `{predictor_name: new_instruction}` dict. Override when the default proposer doesn’t handle your modality (signatures with `dspy.Image` fields, say) or when you want domain-specific constraints on the instructions.
+
+**`code_proposer`** — custom proposer hook for `dspy.Flex` code components
+The code-side counterpart. Receives the same `candidate` and `reflective_dataset` as `instruction_proposer`, plus two per-component maps: `task_descriptions` (the component's signature — name, objective, and input/output fields) and `context_blurbs` (the tools in scope and the sandbox rules for using them). Returns a full replacement `dspy.Module` source per component. Only `Flex` submodules route to it, so it does nothing on programs without them. See [Custom Code Proposers](../api/optimizers/GEPA/GEPA_Advanced.md#custom-code-proposers).
 
 ### Population dynamics
 

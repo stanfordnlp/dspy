@@ -54,6 +54,25 @@ Each example contains the predictor inputs, generated outputs, and feedback from
 """
 
 
+class CodeProposalFn(Protocol):
+    """Custom proposer for dspy.Flex code components.
+
+    The code-component counterpart of gepa's ProposalFn: called with the code components to
+    update plus the per-component task descriptions (rendered Flex signatures) and context
+    blurbs (available tools and style notes), under the reflection LM's context. Returns a
+    full replacement module source (one dspy.Module subclass) per component.
+    """
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str],
+        task_descriptions: dict[str, str],
+        context_blurbs: dict[str, str],
+    ) -> dict[str, str]: ...
+
+
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
@@ -97,6 +116,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         rng: random.Random | None = None,
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
+        custom_code_proposer: "CodeProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
         reflection_minibatch_size: int | None = None,
     ):
@@ -109,6 +129,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
+        self.custom_code_proposer = custom_code_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
         self._warned_custom_proposer_skips_code = False
@@ -126,23 +147,37 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
 
-        # dspy.Flex code components are rewritten by the code proposer.
+        # dspy.Flex code components are rewritten by the code proposer. A custom code proposer
+        # overrides the built-in one, mirroring how custom_instruction_proposer overrides the
+        # default instruction proposer below.
         results: dict[str, str] = {}
         code_keys = [c for c in components_to_update if c in self._flex_paths]
         if code_keys:
-            results.update(
-                propose_code(
-                    code_keys, candidate, reflective_dataset,
-                    self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
+            if self.custom_code_proposer:
+                with dspy.context(lm=reflection_lm):
+                    results.update(
+                        self.custom_code_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=code_keys,
+                            task_descriptions=self._flex_task_descriptions,
+                            context_blurbs=self._flex_context_blurbs,
+                        )
+                    )
+            else:
+                results.update(
+                    propose_code(
+                        code_keys, candidate, reflective_dataset,
+                        self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
+                    )
                 )
-            )
         components_to_update = [c for c in components_to_update if c not in self._flex_paths]
         if not components_to_update:
             return results
 
         # A custom proposer overrides the default *instruction* proposer only.
         if self.custom_instruction_proposer:
-            if code_keys and not self._warned_custom_proposer_skips_code:
+            if code_keys and not self.custom_code_proposer and not self._warned_custom_proposer_skips_code:
                 logger.warning(
                     "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
                     "being optimized. The custom proposer handles instruction components only; the "

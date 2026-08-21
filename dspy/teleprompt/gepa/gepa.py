@@ -11,7 +11,13 @@ from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    CodeProposalFn,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -268,6 +274,21 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
+        code_proposer: Optional custom proposer for `dspy.Flex` code components, implementing the
+            `CodeProposalFn` protocol from `dspy.teleprompt.gepa.gepa_utils`.
+            **Default: None** - Uses the built-in code proposer, which rewrites each Flex
+            submodule's full `module_src` from the failing examples and feedback.
+
+            A custom code proposer is called once per reflection round with the code components to
+            update, the current candidate, the reflective dataset, and per-component task
+            descriptions (the rendered Flex signature) and context blurbs (available tools and
+            style notes). It must return a complete replacement `dspy.Module` subclass source per
+            component. Like instruction_proposer, it is invoked inside the reflection_lm context
+            when one is set, and may invoke its own LM otherwise.
+
+            Only Flex components are routed to it; regular predictors keep going to
+            instruction_proposer (or the default instruction proposer). This parameter has no
+            effect on programs without `dspy.Flex` submodules.
         component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components
@@ -373,6 +394,7 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
+        code_proposer: "CodeProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
         # Merge-based configuration
         use_merge: bool = True,
@@ -456,6 +478,7 @@ class GEPA(Teleprompter):
         self.seed = seed
 
         self.custom_instruction_proposer = instruction_proposer
+        self.custom_code_proposer = code_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
 
@@ -601,6 +624,7 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
+            custom_code_proposer=self.custom_code_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
