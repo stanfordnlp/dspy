@@ -234,6 +234,7 @@ def evaluate_with_trace(
     )
     outputs: list[Any] = [None] * len(batch)
     scores: list[float] = [failure_score] * len(batch)
+    objective_scores: list[dict[str, float]] = [{} for _ in batch]
     for t in trajs:
         pred = t["prediction"]
         outputs[t["example_ind"]] = pred
@@ -250,6 +251,17 @@ def evaluate_with_trace(
                 )
                 result = failure_score
         t["score"] = result  # make_reflective_dataset reads this for the (trace-aware) feedback
-        score = result["score"] if hasattr(result, "score") else result
+        if isinstance(result, Prediction):
+            score = result.score
+            objectives = dict(result.get("objective_scores") or {})
+        else:
+            score = result
+            objectives = {}
         scores[t["example_ind"]] = failure_score if score is None else score
-    return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs if capture_traces else None)
+        objective_scores[t["example_ind"]] = objectives
+    return EvaluationBatch(
+        outputs=outputs,
+        scores=scores,
+        trajectories=trajs if capture_traces else None,
+        objective_scores=objective_scores if any(objective_scores) else None,
+    )

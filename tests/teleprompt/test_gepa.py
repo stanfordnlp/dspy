@@ -40,6 +40,15 @@ def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=No
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
 
 
+def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    correct = float(example.output == prediction.output)
+    return dspy.Prediction(
+        score=(correct + 1.0) / 2,
+        objective_scores={"correctness": correct, "incorrectness": 1.0 - correct},
+        feedback="Return the expected answer.",
+    )
+
+
 def bad_metric(example, prediction):
     return 0.0
 
@@ -86,6 +95,48 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection
     adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
 
     assert captured_kwargs["callback_metadata"] == expected_callback_metadata
+
+
+def test_gepa_adapter_forwards_sparse_objective_scores():
+    from dspy.teleprompt.gepa import gepa_utils
+
+    adapter = gepa_utils.DspyAdapter(SimpleModule("input -> output"), multi_objective_metric, {})
+    evaluation = adapter._make_evaluation_batch(
+        outputs=[None, None],
+        raw_scores=[
+            dspy.Prediction(score=0.75, objective_scores={"quality": 1.0, "cost": 0.5}),
+            dspy.Prediction(score=0.25),
+        ],
+        trajectories=None,
+    )
+
+    assert evaluation.scores == [0.75, 0.25]
+    assert evaluation.objective_scores == [{"quality": 1.0, "cost": 0.5}, {}]
+
+
+def test_gepa_flex_evaluation_forwards_metric_objective_scores(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_flex_utils
+
+    example = Example(input="question", output="answer")
+    prediction = dspy.Prediction(output="answer")
+    monkeypatch.setattr(
+        gepa_flex_utils.bootstrap_trace_module,
+        "bootstrap_trace_data",
+        lambda **kwargs: [{"example_ind": 0, "example": example, "prediction": prediction, "trace": []}],
+    )
+
+    evaluation = gepa_flex_utils.evaluate_with_trace(
+        program=SimpleModule("input -> output"),
+        batch=[example],
+        metric_fn=multi_objective_metric,
+        num_threads=1,
+        failure_score=0.0,
+        callback_metadata={},
+        capture_traces=True,
+    )
+
+    assert evaluation.scores == [1.0]
+    assert evaluation.objective_scores == [{"correctness": 1.0, "incorrectness": 0.0}]
 
 
 @pytest.fixture
@@ -600,6 +651,49 @@ def test_track_stats_result_structure():
     )
     for val_id, best_list in d["per_val_instance_best_candidates"].items():
         assert isinstance(best_list, list)
+
+
+def test_multi_objective_frontier_results():
+    from gepa.strategies.candidate_selector import select_program_candidate_from_pareto_front
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=multi_objective_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        gepa_kwargs={"frontier_type": "objective"},
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+
+    result = optimizer.compile(student, trainset=trainset, valset=trainset).detailed_results
+
+    assert result.val_aggregate_subscores is not None
+    assert result.per_objective_best_candidates is not None
+    assert result.objective_pareto_front is not None
+    assert result.per_objective_best_candidates == {"correctness": {1}, "incorrectness": {0}}
+    assert result.objective_pareto_front == {"correctness": 0.5, "incorrectness": 1.0}
+    serialized = result.to_dict()
+    assert serialized["val_aggregate_subscores"] == result.val_aggregate_subscores
+    assert serialized["per_objective_best_candidates"] == {"correctness": [1], "incorrectness": [0]}
+    assert serialized["objective_pareto_front"] == result.objective_pareto_front
+    selected_parents = {
+        select_program_candidate_from_pareto_front(
+            result.per_objective_best_candidates,
+            result.val_aggregate_scores,
+            random.Random(seed),
+        )
+        for seed in range(10)
+    }
+    assert selected_parents == {0, 1}
 
 
 def test_track_best_outputs_result_structure():
