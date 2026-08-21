@@ -507,8 +507,8 @@ class GEPA(Teleprompter):
         num_preds: int,
         num_candidates: int,
         valset_size: int,
-        reflection_minibatch_size: int,
-        max_merge_invocations: int = 0,
+        minibatch_size: int | None = None,
+        full_eval_steps: int = 5,
     ) -> int:
         """Estimate a metric-call budget for the current GEPA optimization loop.
 
@@ -524,7 +524,18 @@ class GEPA(Teleprompter):
         proposals do not consume a full validation evaluation, while custom GEPA
         sampling or evaluation policies passed through ``gepa_kwargs`` can have
         different costs.
+
+        ``minibatch_size`` retains the name used by the original public API. If
+        omitted, the effective reflection minibatch size is resolved from this
+        optimizer's configuration. ``full_eval_steps`` is retained and validated
+        for backward compatibility, but no longer affects the budget because GEPA
+        does not perform periodic full evaluations.
         """
+        reflection_minibatch_size = (
+            minibatch_size if minibatch_size is not None else self._resolve_auto_budget_minibatch_size()
+        )
+        max_merge_invocations = self.max_merge_invocations if self.use_merge else 0
+
         if num_preds < 1:
             raise ValueError("num_preds must be >= 1.")
         if num_candidates < 1:
@@ -532,7 +543,14 @@ class GEPA(Teleprompter):
         if valset_size < 0:
             raise ValueError("valset_size must be >= 0.")
         if reflection_minibatch_size < 1:
-            raise ValueError("reflection_minibatch_size must be >= 1.")
+            raise ValueError("minibatch_size must be >= 1.")
+        if full_eval_steps < 1:
+            raise ValueError("full_eval_steps must be >= 1.")
+        if max_merge_invocations is None:
+            raise ValueError(
+                "auto budget requires a concrete max_merge_invocations when merge is enabled. "
+                "Set max_merge_invocations, disable merge, or set max_metric_calls instead."
+            )
         if max_merge_invocations < 0:
             raise ValueError("max_merge_invocations must be >= 0.")
 
@@ -587,13 +605,10 @@ class GEPA(Teleprompter):
                     "auto budget requires a concrete max_merge_invocations when merge is enabled. "
                     "Set max_merge_invocations, disable merge, or set max_metric_calls instead."
                 )
-            auto_budget_minibatch_size = self._resolve_auto_budget_minibatch_size()
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
-                reflection_minibatch_size=auto_budget_minibatch_size,
-                max_merge_invocations=self.max_merge_invocations if self.use_merge else 0,
             )
         elif self.max_full_evals is not None:
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))

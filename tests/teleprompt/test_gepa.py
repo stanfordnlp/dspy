@@ -83,14 +83,34 @@ def test_gepa_auto_budget_matches_reflective_loop(reflection_minibatch_size, max
             num_preds=2,
             num_candidates=6,
             valset_size=100,
-            reflection_minibatch_size=reflection_minibatch_size,
-            max_merge_invocations=max_merge_invocations,
         )
         == expected_budget
     )
 
 
-def test_gepa_compile_passes_runtime_settings_to_auto_budget():
+def test_gepa_auto_budget_accepts_legacy_direct_call_and_keywords():
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([]),
+        auto="light",
+        reflection_minibatch_size=3,
+        use_merge=False,
+    )
+
+    assert optimizer.auto_budget(num_preds=2, num_candidates=6, valset_size=100) == 820
+    assert (
+        optimizer.auto_budget(
+            num_preds=2,
+            num_candidates=6,
+            valset_size=100,
+            minibatch_size=7,
+            full_eval_steps=5,
+        )
+        == 980
+    )
+
+
+def test_gepa_compile_calls_auto_budget_with_legacy_keywords():
     student = SimpleModule("input -> output")
     trainset = [Example(input="question", output="answer").with_inputs("input")]
     optimizer = dspy.GEPA(
@@ -112,9 +132,36 @@ def test_gepa_compile_passes_runtime_settings_to_auto_budget():
         num_preds=1,
         num_candidates=6,
         valset_size=1,
-        reflection_minibatch_size=7,
-        max_merge_invocations=0,
     )
+    assert optimize.call_args.kwargs["max_metric_calls"] == 123
+
+
+def test_gepa_compile_supports_legacy_auto_budget_override():
+    class LegacyAutoBudgetGEPA(dspy.GEPA):
+        def auto_budget(
+            self,
+            num_preds,
+            num_candidates,
+            valset_size,
+            minibatch_size=35,
+            full_eval_steps=5,
+        ):
+            return 123
+
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="question", output="answer").with_inputs("input")]
+    optimizer = LegacyAutoBudgetGEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([]),
+        auto="light",
+        reflection_minibatch_size=7,
+        use_merge=False,
+    )
+    result = mock.Mock(best_candidate={"predictor": student.predictor.signature.instructions})
+
+    with mock.patch("gepa.optimize", return_value=result) as optimize:
+        optimizer.compile(student, trainset=trainset, valset=trainset)
+
     assert optimize.call_args.kwargs["max_metric_calls"] == 123
 
 
@@ -154,7 +201,7 @@ def test_gepa_compile_auto_budget_falls_back_for_opaque_custom_sampler(caplog):
     result = mock.Mock(best_candidate={"predictor": student.predictor.signature.instructions})
 
     with (
-        mock.patch.object(optimizer, "auto_budget", return_value=123) as auto_budget,
+        mock.patch.object(optimizer, "auto_budget", wraps=optimizer.auto_budget) as auto_budget,
         mock.patch("gepa.optimize", return_value=result) as optimize,
     ):
         optimizer.compile(student, trainset=trainset, valset=trainset)
@@ -163,10 +210,9 @@ def test_gepa_compile_auto_budget_falls_back_for_opaque_custom_sampler(caplog):
         num_preds=1,
         num_candidates=6,
         valset_size=1,
-        reflection_minibatch_size=35,
-        max_merge_invocations=0,
     )
-    assert optimize.call_args.kwargs["max_metric_calls"] == 123
+    # V + 2RT + CV = 1 + 2 * 35 * 10 + 6 * 1.
+    assert optimize.call_args.kwargs["max_metric_calls"] == 707
     assert optimize.call_args.kwargs["batch_sampler"] is batch_sampler
     assert optimize.call_args.kwargs["reflection_minibatch_size"] is None
     assert "Using the legacy auto-budget estimate of 35" in caplog.text
@@ -178,8 +224,8 @@ def test_gepa_compile_auto_budget_falls_back_for_opaque_custom_sampler(caplog):
         ({"num_preds": 0}, "num_preds"),
         ({"num_candidates": 0}, "num_candidates"),
         ({"valset_size": -1}, "valset_size"),
-        ({"reflection_minibatch_size": 0}, "reflection_minibatch_size"),
-        ({"max_merge_invocations": -1}, "max_merge_invocations"),
+        ({"minibatch_size": 0}, "minibatch_size"),
+        ({"full_eval_steps": 0}, "full_eval_steps"),
     ],
 )
 def test_gepa_auto_budget_rejects_invalid_inputs(kwargs, error):
@@ -188,13 +234,24 @@ def test_gepa_auto_budget_rejects_invalid_inputs(kwargs, error):
         "num_preds": 1,
         "num_candidates": 6,
         "valset_size": 100,
-        "reflection_minibatch_size": 3,
-        "max_merge_invocations": 0,
     }
     inputs.update(kwargs)
 
     with pytest.raises(ValueError, match=error):
         optimizer.auto_budget(**inputs)
+
+
+def test_gepa_auto_budget_rejects_invalid_merge_cap():
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DummyLM([]),
+        auto="light",
+        use_merge=True,
+        max_merge_invocations=-1,
+    )
+
+    with pytest.raises(ValueError, match="max_merge_invocations"):
+        optimizer.auto_budget(num_preds=1, num_candidates=6, valset_size=100)
 
 
 @pytest.mark.parametrize("reflection_minibatch_size, batch, expected_callback_metadata", [
