@@ -766,3 +766,54 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+class TestSortKeysPromptCache:
+    """Regression tests for sort_keys in tool call/result serialization (issue #10216).
+
+    Without sort_keys, dict key order depends on insertion order, which can vary
+    after a round trip through stores that normalize key order (e.g. Postgres jsonb).
+    This breaks byte-exact prompt caching on Anthropic and OpenAI.
+    """
+
+    def test_tool_call_args_sorted(self):
+        from dspy.adapters.base import _tool_call_as_openai_message_tool_call
+
+        call = ToolCalls.ToolCall(id="c1", name="search", args={"zeta": 1, "alpha": 2, "mid": 3})
+        result = _tool_call_as_openai_message_tool_call(call)
+        assert result["function"]["arguments"] == '{"alpha": 2, "mid": 3, "zeta": 1}'
+
+    def test_tool_call_args_stable_after_key_reorder(self):
+        from dspy.adapters.base import _tool_call_as_openai_message_tool_call
+
+        args = {"zeta": 1, "alpha": 2, "mid": 3}
+        call_a = ToolCalls.ToolCall(id="c1", name="search", args=args)
+        reordered = {k: args[k] for k in sorted(args, key=lambda k: (len(k), k))}
+        call_b = ToolCalls.ToolCall(id="c1", name="search", args=reordered)
+
+        a_out = _tool_call_as_openai_message_tool_call(call_a)["function"]["arguments"]
+        b_out = _tool_call_as_openai_message_tool_call(call_b)["function"]["arguments"]
+        assert a_out == b_out
+
+    def test_tool_result_dict_sorted(self):
+        from dspy.adapters.base import _tool_result_content
+
+        result = _tool_result_content({"zeta": 1, "alpha": 2})
+        assert result == '{"alpha": 2, "zeta": 1}'
+
+    def test_tool_result_nested_dict_sorted(self):
+        from dspy.adapters.base import _tool_result_content
+
+        result = _tool_result_content({"b": {"y": 1, "a": 2}, "a": 3})
+        assert result == '{"a": 3, "b": {"a": 2, "y": 1}}'
+
+    def test_format_field_value_dict_sorted(self):
+        import json
+        from pydantic.fields import FieldInfo
+        from dspy.adapters.utils import format_field_value
+
+        fi = FieldInfo(annotation=dict)
+        value = {"zeta": 1, "alpha": 2, "mid": 3}
+        result = format_field_value(fi, value)
+        parsed = json.loads(result)
+        assert list(parsed.keys()) == ["alpha", "mid", "zeta"]

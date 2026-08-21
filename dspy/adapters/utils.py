@@ -98,7 +98,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
     else:
         jsonable_value = serialize_for_json(value)
         if isinstance(jsonable_value, dict) or isinstance(jsonable_value, list):
-            string_value = json.dumps(jsonable_value, ensure_ascii=False)
+            string_value = json.dumps(jsonable_value, ensure_ascii=False, sort_keys=True)
         else:
             # If the value is not a Python representation of a JSON object or Array
             # (e.g. the value is a JSON string), just use the string representation of the value
