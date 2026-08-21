@@ -164,6 +164,26 @@ class ReActV2(Module):
             event["tool_calls"] = tool_calls
         return event
 
+    def _unsuccessful_outputs(
+        self,
+        history: dspy.History,
+        termination_reason: str,
+    ) -> Prediction:
+        """Build the return value for a loop that ended without a successful submit.
+
+        The declared output fields are included with ``None`` values so the
+        ``Signature`` contract holds on every return path: a module declaring
+        ``-> answer`` always yields a ``Prediction`` with ``answer``, and
+        callers branch on ``termination_reason`` instead of catching an
+        ``AttributeError``. Without this, ``dspy.Evaluate`` scores such runs
+        as zero through its per-example error handling, which reads as a
+        model-quality problem rather than a framework one.
+        """
+        outputs = {name: None for name in self.signature.output_fields}
+        outputs["history"] = history
+        outputs["termination_reason"] = termination_reason
+        return Prediction(**outputs)
+
     def _forced_submit(
         self,
         history: dspy.History,
@@ -184,11 +204,11 @@ class ReActV2(Module):
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._unsuccessful_outputs(history, break_reason or "failed")
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
         if not submit_calls.tool_calls:
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._unsuccessful_outputs(history, break_reason or "failed")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
         event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
@@ -199,7 +219,7 @@ class ReActV2(Module):
         if final_outputs is not None:
             return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
-        return Prediction(history=history, termination_reason=break_reason or "failed")
+        return self._unsuccessful_outputs(history, break_reason or "failed")
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
