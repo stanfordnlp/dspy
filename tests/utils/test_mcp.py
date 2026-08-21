@@ -32,8 +32,8 @@ def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_res
     camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
     snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
 
-    assert _convert_mcp_tool_result(camel_result) == "hi"
-    assert _convert_mcp_tool_result(snake_result) == ["a", "b"]
+    assert _convert_mcp_tool_result(camel_result, result_mode="text") == "hi"
+    assert _convert_mcp_tool_result(snake_result, result_mode="text") == ["a", "b"]
 
 
 @pytest.mark.extra
@@ -126,9 +126,39 @@ async def test_convert_mcp_tool_with_v2_client():
         response = await client.list_tools()
         increment_tool = Tool.from_mcp_tool(client, response.tools[0])
         structured_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="structured")
+        text_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="text")
 
-        assert await increment_tool.acall(value=1) == "2"
+        assert await increment_tool.acall(value=1) == {"result": 2}
         assert await structured_increment_tool.acall(value=1) == {"result": 2}
+        assert await text_increment_tool.acall(value=1) == "2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_convert_mcp_tool_defaults_to_structured_results():
+    async def call_tool(*args, **kwargs):
+        return make_call_tool_result("snake", texts=["fallback"], structured={"result": 2})
+
+    session = SimpleNamespace(call_tool=call_tool)
+    tool = convert_mcp_tool(session, SimpleNamespace(name="test", description="test", input_schema={}))
+
+    assert await tool.acall() == {"result": 2}
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_convert_mcp_tool_text_mode_preserves_legacy_behavior():
+    async def call_tool(*args, **kwargs):
+        return make_call_tool_result("snake", texts=["fallback"], structured={"result": 2})
+
+    session = SimpleNamespace(call_tool=call_tool)
+    tool = convert_mcp_tool(
+        session,
+        SimpleNamespace(name="test", description="test", input_schema={}),
+        result_mode="text",
+    )
+
+    assert await tool.acall() == "fallback"
 
 
 @pytest.mark.asyncio
@@ -148,7 +178,7 @@ async def test_convert_mcp_tool():
             response = await session.list_tools()
 
             # Check add
-            add_tool = convert_mcp_tool(session, response.tools[0])
+            add_tool = convert_mcp_tool(session, response.tools[0], result_mode="text")
             assert add_tool.name == "add"
             assert add_tool.desc == "Add two numbers"
             assert add_tool.args == {
@@ -163,7 +193,7 @@ async def test_convert_mcp_tool():
             assert await add_tool.acall(a=1, b=2) == "3"
 
             # Check hello
-            hello_tool = convert_mcp_tool(session, response.tools[1])
+            hello_tool = convert_mcp_tool(session, response.tools[1], result_mode="text")
             assert hello_tool.name == "hello"
             assert hello_tool.desc == "Greet people"
             assert hello_tool.args == {"names": {"title": "Names", "type": "array", "items": {"type": "string"}}}
@@ -172,14 +202,14 @@ async def test_convert_mcp_tool():
             assert await hello_tool.acall(names=["Bob", "Tom"]) == ["Hello, Bob!", "Hello, Tom!"]
 
             # Check error handling
-            error_tool = convert_mcp_tool(session, response.tools[2])
+            error_tool = convert_mcp_tool(session, response.tools[2], result_mode="text")
             assert error_tool.name == "wrong_tool"
             assert error_tool.desc == "This tool raises an error"
             with pytest.raises(RuntimeError, match="error!"):
                 await error_tool.acall()
 
             # Check nested Pydantic arg
-            nested_pydantic_tool = convert_mcp_tool(session, response.tools[3])
+            nested_pydantic_tool = convert_mcp_tool(session, response.tools[3], result_mode="text")
 
             assert nested_pydantic_tool.name == "get_account_name"
             assert nested_pydantic_tool.desc == "This extracts the name from account"
@@ -213,7 +243,7 @@ async def test_convert_mcp_tool():
             assert result == "Bob"
 
             # Check no input parameter current_datetime tool
-            current_datetime_tool = convert_mcp_tool(session, response.tools[4])
+            current_datetime_tool = convert_mcp_tool(session, response.tools[4], result_mode="text")
             assert current_datetime_tool.name == "current_datetime"
             assert current_datetime_tool.desc == "Get the current datetime"
             assert current_datetime_tool.args == {}
