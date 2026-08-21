@@ -24,6 +24,13 @@ class ReActV2(Module):
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
+
+        reserved_output_names = {"history", "termination_reason"}
+        conflicting_outputs = reserved_output_names.intersection(self.signature.output_fields)
+        if conflicting_outputs:
+            names = ", ".join(sorted(conflicting_outputs))
+            raise ValueError(f"The following output field(s) are reserved by ReActV2: {names}")
+
         self.max_iters = max_iters
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
@@ -164,6 +171,21 @@ class ReActV2(Module):
             event["tool_calls"] = tool_calls
         return event
 
+    def _default_output_fields(self) -> dict[str, None]:
+        return {name: None for name in self.signature.output_fields}
+
+    def _failed_prediction(
+        self,
+        history: dspy.History,
+        termination_reason: str,
+    ) -> Prediction:
+        outputs = self._default_output_fields()
+        return Prediction(
+            **outputs,
+            history=history,
+            termination_reason=termination_reason,
+        )
+
     def _forced_submit(
         self,
         history: dspy.History,
@@ -184,11 +206,11 @@ class ReActV2(Module):
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._failed_prediction(history, break_reason or "failed")
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
         if not submit_calls.tool_calls:
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._failed_prediction(history, break_reason or "failed")
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
         event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
@@ -199,7 +221,7 @@ class ReActV2(Module):
         if final_outputs is not None:
             return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
-        return Prediction(history=history, termination_reason=break_reason or "failed")
+        return self._failed_prediction(history, break_reason or "failed")
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:

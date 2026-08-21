@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
 
@@ -13,6 +15,16 @@ def test_react_v2_submit_tool_returns_original_output_fields():
 
     assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
     assert "tool_call_results" not in react.react.signature.input_fields
+
+
+def test_react_v2_rejects_reserved_history_output():
+    with pytest.raises(ValueError, match="reserved by ReActV2: history"):
+        dspy.ReActV2("question -> answer, history", tools=[])
+
+
+def test_react_v2_rejects_reserved_termination_reason_output():
+    with pytest.raises(ValueError, match="reserved by ReActV2: termination_reason"):
+        dspy.ReActV2("question -> answer, termination_reason", tools=[])
 
 
 def test_react_v2_text_mock_lm_loop_records_inputs_once():
@@ -194,6 +206,34 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
 
 
+def test_react_v2_failed_forced_submit_preserves_output_fields():
+    def noop(x: str) -> str:
+        return "noop"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Stalling.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "noop", "args": {"x": "a"}}]
+                ),
+            }
+        ]
+        * 3
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer",
+            tools=[noop],
+            max_iters=1,
+        )(question="q")
+
+    assert pred.termination_reason == "max_iters"
+    assert "answer" in pred
+    assert pred.answer is None
+
+
 class NativeToolLM(dspy.BaseLM):
     def __init__(self):
         super().__init__("native-tool-lm", "chat", 0.0, 1000, True)
@@ -324,3 +364,30 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+def test_react_v2_failed_forced_submit_preserves_output_fields():
+    def noop(x: str) -> str:
+        return "noop"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Stalling.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "noop", "args": {"x": "a"}}]
+                ),
+            }
+        ]
+        * 3
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer",
+            tools=[noop],
+            max_iters=1,
+        )(question="q")
+
+    assert pred.termination_reason == "max_iters"
+    assert "answer" in pred
+    assert pred.answer is None
