@@ -436,6 +436,7 @@ class TestRLMInterpreterLifecycle:
         optimized = signature.with_instructions("Optimized instructions")
 
         assert "Use this runtime." in signature.instructions
+        assert "standard libraries" not in signature.instructions
         assert optimized.instructions == "Optimized instructions"
 
     def test_python_interpreter_lm_request_bytes(self):
