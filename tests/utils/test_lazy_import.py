@@ -291,6 +291,49 @@ def test_direct_submodule_import_executes_the_child_exactly_once(tmp_path, monke
     assert events.index("package-init") < events.index("child-exec"), (
         "the package initializer runs before the child"
     )
-    # The reused module keeps a real spec/loader, not the reuse shims.
+    # The reused module keeps a real spec/loader, not the reuse shims,
+    # and the reuse marker is consumed by the one pending import it served.
     assert child.__spec__ is not None and child.__spec__.loader is not None
-    assert getattr(child, "_dspy_lazy_reuse", None) is True
+    assert getattr(child, "_dspy_lazy_reuse", None) is None
+
+
+def test_reload_reexecutes_a_reused_child(tmp_path, monkeypatch):
+    """importlib.reload re-executes a child that was served by the reuse path.
+
+    The reuse marker is consumed by the one pending import it serves, so a
+    later reload must fall through to the normal finders and run the
+    module body again instead of silently returning the stale module.
+    """
+    name = "dspy_lazy_reload_pkg"
+    events_path = tmp_path / "events.txt"
+    (tmp_path / name).mkdir()
+    record = (
+        "import pathlib\n"
+        f"path = pathlib.Path({str(events_path)!r})\n"
+        "def log(event):\n"
+        "    with path.open('a') as fh:\n"
+        "        fh.write(event + chr(10))\n"
+    )
+    (tmp_path / f"{name}/__init__.py").write_text(
+        record
+        + "log('package-init')\n"
+        + f"from {name}.child import CHILD_VALUE\n"
+    )
+    (tmp_path / f"{name}/child.py").write_text(
+        record + "log('child-exec')\n" + "CHILD_VALUE = 42\n"
+    )
+
+    monkeypatch.syspath_prepend(tmp_path)
+    for suffix in ("", ".child"):
+        monkeypatch.delitem(sys.modules, f"{name}{suffix}", raising=False)
+
+    require(name)
+    child = importlib.import_module(f"{name}.child")
+    assert events_path.read_text().splitlines().count("child-exec") == 1
+
+    importlib.reload(child)
+
+    assert events_path.read_text().splitlines().count("child-exec") == 2, (
+        "reload must re-execute the module body"
+    )
+    assert child.CHILD_VALUE == 42

@@ -99,9 +99,20 @@ class _MaterializedChildFinder:
     _MARKER = "_dspy_lazy_reuse"
 
     def find_spec(self, fullname: str, path=None, target=None):  # noqa: ANN001, ANN202
+        # A reload passes the module as ``target`` and must re-execute it;
+        # reuse only serves the one pending import that raced the parent's
+        # materialization.
+        if target is not None:
+            return None
         module = sys.modules.get(fullname)
         if module is None or getattr(module, _MaterializedChildFinder._MARKER, False) is not True:
             return None
+        # Consume the marker: the reuse serves exactly the pending import,
+        # and a later reload or re-import must go through the normal path.
+        try:
+            delattr(module, _MaterializedChildFinder._MARKER)
+        except AttributeError:
+            pass
         return importlib.util.spec_from_loader(
             fullname,
             _ReuseExecutedLoader(module),
