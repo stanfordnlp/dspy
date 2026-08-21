@@ -57,6 +57,60 @@ def _get_lazy_module_lock(module: str) -> threading.RLock:
         return _lazy_module_locks.setdefault(module, threading.RLock())
 
 
+class _ReuseExecutedLoader:
+    """Loader that hands back an already-executed module unchanged.
+
+    The import machinery does not re-check ``sys.modules`` once a direct
+    child import has committed to a spec, so a child that completed during
+    parent materialization (the parent ``__init__`` imports it) would be
+    re-executed by the original pending import. This loader makes that
+    pending import resolve to the completed module object instead, and
+    restores its original ``__spec__``/``__loader__`` afterwards.
+    """
+
+    def __init__(self, module: types.ModuleType):
+        self._module = module
+        self._original_spec = module.__spec__
+        self._original_loader = module.__loader__
+
+    def create_module(self, spec: importlib.machinery.ModuleSpec) -> types.ModuleType:
+        return self._module
+
+    def exec_module(self, module: types.ModuleType) -> None:
+        module.__spec__ = self._original_spec
+        module.__loader__ = self._original_loader
+
+
+class _MaterializedChildFinder:
+    """Meta-path finder deduplicating children imported during materialization.
+
+    Returns a reuse spec only for a module that is already in
+    ``sys.modules``, was imported while a lazy parent was materializing,
+    and is therefore the subject of an outer pending import; every other
+    lookup falls through to the normal finders.
+    """
+
+    _MARKER = "_dspy_lazy_reuse"
+
+    def find_spec(self, fullname: str, path=None, target=None):  # noqa: ANN001, ANN202
+        module = sys.modules.get(fullname)
+        if module is None or getattr(module, _MaterializedChildFinder._MARKER, False) is not True:
+            return None
+        return importlib.util.spec_from_loader(
+            fullname,
+            _ReuseExecutedLoader(module),
+            is_package=hasattr(module, "__path__"),
+        )
+
+
+sys.meta_path.insert(0, _MaterializedChildFinder())
+
+# True while a lazy parent's real module executes: modules imported in that
+# window may be the subject of the outer pending import that triggered
+# materialization, so they are marked for reuse by _load().
+_MATERIALIZING = False
+
+
 def _is_submodule_binding(package: str, attr: str, value: Any) -> bool:
     """Return True when *value* is the import machinery binding a submodule.
 
@@ -129,11 +183,27 @@ class _LazyModule(types.ModuleType):
             spec = self._dspy_lazy_spec
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
+            global _MATERIALIZING
+            prior_materializing = _MATERIALIZING
+            imported_before = set(sys.modules)
+            _MATERIALIZING = True
             try:
                 spec.loader.exec_module(module)
             except Exception:
                 sys.modules[module_name] = self
                 raise
+            finally:
+                _MATERIALIZING = prior_materializing
+            # Modules the package __init__ imported may be the subject of the
+            # outer pending import that triggered this materialization; mark
+            # them so the machinery's committed import reuses the completed
+            # module instead of re-executing it.
+            for imported_name, imported_module in sys.modules.items():
+                if imported_name not in imported_before:
+                    try:
+                        setattr(imported_module, _MaterializedChildFinder._MARKER, True)
+                    except (AttributeError, TypeError):
+                        pass
             return sys.modules.get(module_name, module)
 
     def __getattr__(self, attr: str) -> Any:

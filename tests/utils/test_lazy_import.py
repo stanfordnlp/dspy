@@ -242,3 +242,55 @@ def test_submodule_binding_records_without_materializing(tmp_path, monkeypatch):
     mod.setting = "value"
     assert sys.modules[name] is not mod
     assert sys.modules[name].setting == "value"
+
+
+def test_direct_submodule_import_executes_the_child_exactly_once(tmp_path, monkeypatch):
+    """A direct child import runs the child one time, not twice.
+
+    Materializing the parent from ``__path__`` happens after the outer
+    child import has committed to a spec, and the package ``__init__``
+    imports the same child -- so without reuse the pending import
+    re-executes it and non-idempotent children register state twice.
+    """
+    name = "dspy_lazy_exact_once_pkg"
+    events_path = tmp_path / "events.txt"
+    (tmp_path / name).mkdir()
+    record = (
+        "import pathlib\n"
+        f"path = pathlib.Path({str(events_path)!r})\n"
+        "def log(event):\n"
+        "    with path.open('a') as fh:\n"
+        "        fh.write(event + chr(10))\n"
+    )
+    (tmp_path / f"{name}/__init__.py").write_text(
+        record
+        + "log('package-init')\n"
+        + f"from {name}.child import CHILD_VALUE\n"
+    )
+    (tmp_path / f"{name}/child.py").write_text(
+        record
+        + "log('child-exec')\n"
+        + "import sys\n"
+        + f"import {name}.version\n"
+        + "CHILD_VALUE = 42\n"
+    )
+    (tmp_path / f"{name}/version.py").write_text(record + "log('version-exec')\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    for suffix in ("", ".child", ".version"):
+        monkeypatch.delitem(sys.modules, f"{name}{suffix}", raising=False)
+
+    require(name)
+    child = importlib.import_module(f"{name}.child")
+
+    events = events_path.read_text().splitlines()
+    assert child.CHILD_VALUE == 42
+    assert events.count("package-init") == 1
+    assert events.count("child-exec") == 1, f"child must execute exactly once, saw: {events}"
+    assert events.count("version-exec") == 1
+    assert events.index("package-init") < events.index("child-exec"), (
+        "the package initializer runs before the child"
+    )
+    # The reused module keeps a real spec/loader, not the reuse shims.
+    assert child.__spec__ is not None and child.__spec__.loader is not None
+    assert getattr(child, "_dspy_lazy_reuse", None) is True
