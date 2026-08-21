@@ -62,7 +62,7 @@ class BaseModule:
 
             elif isinstance(value, dict):
                 for key, item in value.items():
-                    add_parameter(f"{name}['{key}']", item)
+                    add_parameter(f"{name}[{key!r}]", item)
 
         return named_parameters
 
@@ -102,7 +102,7 @@ class BaseModule:
 
             elif isinstance(item, dict):
                 for key, sub_item in item.items():
-                    add_to_queue(f"{name}[{key}]", sub_item)
+                    add_to_queue(f"{name}[{key!r}]", sub_item)
 
     def parameters(self):
         return [param for _, param in self.named_parameters()]
@@ -161,10 +161,19 @@ class BaseModule:
 
         def _apply(module):
             for name, param in module.named_parameters():
+                try:
+                    param_state = state[name]
+                except KeyError as e:
+                    raise KeyError(
+                        f"{e}. If this state was saved by a DSPy version older than the one that fixed "
+                        "https://github.com/stanfordnlp/dspy/issues/1302, and a dict-valued module "
+                        "attribute uses a non-string key (e.g. an int or tuple), note the persisted "
+                        "parameter name for such keys changed there."
+                    ) from e
                 if isinstance(param, Module):
-                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+                    param.load_state(param_state, allow_unsafe_lm_state=allow_unsafe_lm_state)
                 else:
-                    param.load_state(state[name])
+                    param.load_state(param_state)
 
         _apply(self.deepcopy())  # trial run raises before self is touched
         _apply(self)
