@@ -57,6 +57,13 @@ Each example contains the predictor inputs, generated outputs, and feedback from
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
+    objective_scores: dict[str, float] | None
+
+
+def _extract_score_and_objective_scores(score: Any) -> tuple[float | None, dict[str, float]]:
+    if isinstance(score, Prediction):
+        return score.score, dict(score.get("objective_scores") or {})
+    return score, {}
 
 
 class PredictorFeedbackFn(Protocol):
@@ -201,9 +208,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             # (e.g., an LM provider or rate-limit error) is not the candidate's fault and must
             # propagate.
             logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
-            return EvaluationBatch(
+            return self._make_evaluation_batch(
                 outputs=[None] * len(batch),
-                scores=[self.failure_score] * len(batch),
+                raw_scores=[None] * len(batch),
                 trajectories=[] if capture_traces else None,
             )
         callback_metadata = (
@@ -241,19 +248,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 format_failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
             )
-            scores = []
-            outputs = []
-            for t in trajs:
-                outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
-                    scores.append(self.failure_score)
-                else:
-                    score = t["score"]
-                    if hasattr(score, "score"):
-                        score = score["score"]
-                    scores.append(score)
-
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+            return self._make_evaluation_batch(
+                outputs=[t["prediction"] for t in trajs],
+                raw_scores=[t.get("score") for t in trajs],
+                trajectories=trajs,
+            )
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -266,10 +265,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 callback_metadata=callback_metadata,
             )
             res = evaluator(program)
-            outputs = [r[1] for r in res.results]
-            scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+            return self._make_evaluation_batch(
+                outputs=[result[1] for result in res.results],
+                raw_scores=[result[2] for result in res.results],
+                trajectories=None,
+            )
+
+    def _make_evaluation_batch(self, outputs, raw_scores, trajectories) -> EvaluationBatch:
+        scores_and_objectives = [_extract_score_and_objective_scores(score) for score in raw_scores]
+        scores = [self.failure_score if score is None else score for score, _ in scores_and_objectives]
+        objective_scores = [objectives for _, objectives in scores_and_objectives]
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores if any(objective_scores) else None,
+        )
 
     def batch_evaluate(self, items, *, capture_traces=True):
         total_threads = self.num_threads or dspy.settings.num_threads
