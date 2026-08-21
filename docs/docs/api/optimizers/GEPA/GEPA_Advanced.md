@@ -320,6 +320,82 @@ gepa = dspy.GEPA(
 - **Mind data serialization**: Serializing everything to strings might not be ideal - handle complex input types (like `dspy.Image`) by maintaining their structure for better LM processing
 - **Test thoroughly**: Test your custom proposer with representative failure cases
 
+## Custom Code Proposers
+
+### What is code_proposer?
+
+`code_proposer` is the [`dspy.Flex`](../../../diving-deeper/flex.md) counterpart of `instruction_proposer`. A program's `Flex` submodules are **code components** whose optimizable value is a whole `dspy.Module` source; every other predictor is an **instruction component** whose value is an instruction string. The two hooks override the two sides independently — set one and the other keeps its default. `code_proposer` has no effect on programs without `Flex` submodules.
+
+### The contract
+
+A code proposer is a callable taking five keyword arguments:
+
+| Argument | Meaning |
+|---|---|
+| `candidate` | The full candidate: component name → current value |
+| `reflective_dataset` | The full reflective dataset: component → failing examples |
+| `components_to_update` | The code components to rewrite this round — already filtered to `Flex` submodules |
+| `task_descriptions` | Component → its signature: name, objective, and input/output fields |
+| `context_blurbs` | Component → the tools in scope and the sandbox rules for using them |
+
+Note that `candidate` and `reflective_dataset` carry **every** component, including instruction components you aren't being asked to touch. `components_to_update` is the authoritative list.
+
+Return a dict mapping each requested component to its **complete replacement source** — one `dspy.Module` subclass defining `forward` (an `__init__` is optional, and needed only if the module constructs predictors). Not a patch, and not a partial class.
+
+Four things to know:
+
+- **Records are whole-program, not per-predictor.** A `Flex`'s own predictors are part of what gets rewritten, so its reflective records hold the module's inputs, its final prediction, and the metric feedback, under the keys `Inputs`, `Generated Outputs`, and `Feedback`.
+- **Strip markdown fences.** Whatever you return is bound as source verbatim. The built-in proposer strips fences from the LM's output; a fenced string returned from yours raises `SyntaxError` when GEPA binds it.
+- **You own your failures.** The built-in proposer falls back to the original source when a proposal fails (except LM errors, which propagate). A custom proposer that raises propagates unconditionally — return `candidate[name]` unchanged if you want the same fallback.
+- **A bad proposal is safe, just wasteful.** Source that doesn't parse is scored at the failure score and the search continues; it costs a step, not the run.
+
+Your proposer runs inside the `reflection_lm` context, so a bare `dspy.Predict` inside it uses the reflection LM with no extra wiring. To use a different model, wrap your calls in `dspy.context(lm=...)`. Note that `code_proposer` does not by itself satisfy GEPA's reflection-provider requirement: you still need to pass `reflection_lm` (or an `instruction_proposer`).
+
+### Example
+
+````python
+import dspy
+
+class ProposeCode(dspy.Signature):
+    """Rewrite the module to fix the observed failures."""
+    task_description: str = dspy.InputField()
+    current_source: str = dspy.InputField()
+    failures: str = dspy.InputField()
+    revised_source: str = dspy.OutputField(desc="One complete dspy.Module subclass.")
+
+def _unfence(src):
+    src = src.strip()
+    if src.startswith("```"):          # drop a ```python ... ``` wrapper
+        src = src.split("\n", 1)[-1].rsplit("```", 1)[0]
+    return src.strip()
+
+def my_code_proposer(*, candidate, reflective_dataset, components_to_update,
+                     task_descriptions, context_blurbs):
+    propose = dspy.Predict(ProposeCode)
+    proposals = {}
+    for name in components_to_update:
+        failures = "\n\n".join(
+            f"Inputs: {r['Inputs']}\nOutputs: {r['Generated Outputs']}\nFeedback: {r['Feedback']}"
+            for r in reflective_dataset.get(name, [])
+        )
+        out = propose(
+            task_description=task_descriptions.get(name, name),
+            current_source=candidate[name],
+            failures=failures,
+        )
+        proposals[name] = _unfence(out.revised_source)
+    return proposals
+
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000),
+    code_proposer=my_code_proposer,
+    auto="medium",
+)
+````
+
+The two hooks compose — pass both and each side routes independently in the same round. Setting `instruction_proposer` alone on a program with `Flex` submodules logs a warning that code components are being left to the built-in proposer; supplying `code_proposer` too silences it.
+
 ## Custom Component Selection
 
 ### What is component_selector?
