@@ -1630,3 +1630,4 @@ def test_execution_instructions_are_class_metadata():
 
     assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
     assert "Pyodide" in interpreter.execution_instructions
+    assert "standard libraries" in interpreter.execution_instructions
