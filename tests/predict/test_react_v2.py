@@ -324,3 +324,67 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+def test_react_v2_unsuccessful_loop_still_returns_declared_output_fields():
+    """The Signature contract holds on every return path.
+
+    A loop that ends without a successful submit used to return a
+    Prediction carrying only the framework fields, so reading a declared
+    output raised AttributeError -- silently scored as zero under
+    dspy.Evaluate instead of surfacing as an unsuccessful termination.
+    """
+    stalling = [
+        {
+            "next_thought": "stalling",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "noop", "args": {"x": "a"}}]
+            ),
+        }
+    ] * 30
+
+    def noop(x: str) -> str:
+        return "noop"
+
+    with dspy.context(lm=ReasoningDummyLM(stalling), adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[noop], max_iters=2)(question="q")
+
+    assert pred.termination_reason == "max_iters"
+    assert pred.answer is None
+    assert "answer" in pred.keys()
+
+
+def test_react_v2_empty_tool_calls_still_returns_declared_output_fields():
+    lm = ReasoningDummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {"next_thought": "Still no action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="cats")
+
+    assert pred.termination_reason == "empty_tool_calls"
+    assert pred.answer is None
+    assert "answer" in pred.keys()
+
+
+def test_react_v2_failed_submit_still_returns_declared_output_fields():
+    lm = ReasoningDummyLM(
+        [
+            {
+                "next_thought": "Submitting too early.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {}}]
+                ),
+            },
+        ]
+        * 30
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[], max_iters=2)(question="q")
+
+    assert pred.termination_reason == "max_iters"
+    assert pred.answer is None
+    assert "answer" in pred.keys()
