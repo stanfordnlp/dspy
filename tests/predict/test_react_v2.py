@@ -1,5 +1,31 @@
+import logging
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
+
+
+def _lookup_then_submit_outputs():
+    return [
+        {
+            "next_thought": "I should look this up.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "lookup", "args": {"query": "cats"}}]
+            ),
+        },
+        {
+            "next_thought": "I can answer now.",
+            "tool_calls": dspy.ToolCalls.from_dict_list(
+                [{"name": "submit", "args": {"answer": "found cats"}}]
+            ),
+        },
+    ]
+
+
+def _lookup_tool():
+    def lookup(query: str) -> str:
+        return f"found {query}"
+
+    return lookup
 
 
 class ReasoningDummyLM(dspy.utils.DummyLM):
@@ -324,3 +350,173 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+
+def test_react_v2_history_processor_none_is_byte_identical():
+    lm_baseline = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm_baseline, adapter=dspy.ChatAdapter()):
+        baseline = dspy.ReActV2("question -> answer", tools=[_lookup_tool()])(question="cats")
+
+    lm_hooked = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm_hooked, adapter=dspy.ChatAdapter()):
+        hooked = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], history_processor=None
+        )(question="cats")
+
+    assert baseline.answer == hooked.answer
+    assert [call["messages"] for call in lm_baseline.history] == [
+        call["messages"] for call in lm_hooked.history
+    ]
+
+
+def test_react_v2_identity_history_processor_is_byte_identical():
+    lm_baseline = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm_baseline, adapter=dspy.ChatAdapter()):
+        baseline = dspy.ReActV2("question -> answer", tools=[_lookup_tool()])(question="cats")
+
+    lm_hooked = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm_hooked, adapter=dspy.ChatAdapter()):
+        hooked = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], history_processor=lambda h: h
+        )(question="cats")
+
+    assert baseline.answer == hooked.answer
+    assert [call["messages"] for call in lm_baseline.history] == [
+        call["messages"] for call in lm_hooked.history
+    ]
+
+
+def test_react_v2_history_processor_invoked_per_iteration_with_ratchet_adoption():
+    received = []
+    returned = []
+
+    def processor(history):
+        received.append(history)
+        fresh = dspy.History(messages=list(history.messages))
+        returned.append(fresh)
+        return fresh
+
+    lm = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], history_processor=processor
+        )(question="cats")
+
+    assert pred.answer == "found cats"
+    assert len(received) == 2
+    assert received[0].messages == []
+    # Ratchet: the second call sees the object the first call returned.
+    assert received[1] is returned[0]
+    assert len(received[1].messages) == 1
+    # The adopted history is the one the module appends to and returns.
+    assert pred.history is returned[1]
+
+
+def test_react_v2_history_processor_runs_before_forced_submit():
+    calls = []
+
+    def processor(history):
+        calls.append(len(history.messages))
+        return history
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should look this up.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "lookup", "args": {"query": "cats"}}]
+                ),
+            },
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "forced"}}]
+                ),
+            },
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], max_iters=1, history_processor=processor
+        )(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    # Once for the single loop iteration, once before the forced submit call.
+    assert len(calls) == 2
+
+
+def test_react_v2_raising_history_processor_degrades_to_unprocessed_history(caplog):
+    def processor(history):
+        raise RuntimeError("compaction bug")
+
+    lm = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    # The dspy logger does not propagate to root by default, so caplog cannot see it.
+    dspy_logger = logging.getLogger("dspy")
+    original_propagate = dspy_logger.propagate
+    dspy_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="dspy.predict.react_v2"):
+            with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+                pred = dspy.ReActV2(
+                    "question -> answer", tools=[_lookup_tool()], history_processor=processor
+                )(question="cats")
+    finally:
+        dspy_logger.propagate = original_propagate
+
+    assert pred.answer == "found cats"
+    assert pred.termination_reason == "submit"
+    assert len(pred.history.messages) == 2
+    assert "history_processor raised" in caplog.text
+
+
+def test_react_v2_history_processor_returning_none_keeps_unprocessed_history():
+    def processor(history):
+        return None  # buggy processor: forgot the return value
+
+    lm = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], history_processor=processor
+        )(question="cats")
+
+    assert pred.answer == "found cats"
+    assert len(pred.history.messages) == 2
+
+
+def test_react_v2_module_history_processor_is_discoverable_for_optimization():
+    class Summarizer(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.summarize = dspy.Predict("text -> summary")
+
+        def forward(self, history):
+            return history
+
+    agent = dspy.ReActV2("question -> answer", tools=[], history_processor=Summarizer())
+
+    predictor_names = [name for name, _ in agent.named_predictors()]
+    assert any("history_processor" in name for name in predictor_names)
+
+
+def test_react_v2_per_call_history_processor_overrides_constructor():
+    constructor_calls = []
+    call_calls = []
+
+    def constructor_processor(history):
+        constructor_calls.append(history)
+        return history
+
+    def call_processor(history):
+        call_calls.append(history)
+        return history
+
+    lm = dspy.utils.DummyLM(_lookup_then_submit_outputs())
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2(
+            "question -> answer", tools=[_lookup_tool()], history_processor=constructor_processor
+        )(question="cats", history_processor=call_processor)
+
+    assert pred.answer == "found cats"
+    assert not constructor_calls
+    assert len(call_calls) == 2
