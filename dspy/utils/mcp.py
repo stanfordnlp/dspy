@@ -26,7 +26,7 @@ def _field_is_set(obj: Any, snake_name: str, camel_name: str) -> bool:
 
 def _convert_mcp_tool_result(
     call_tool_result: "mcp.types.CallToolResult",
-    result_mode: Literal["text", "structured"] = "text",
+    result_mode: Literal["text", "structured"] = "structured",
 ) -> Any:
     from mcp.types import TextContent
 
@@ -55,7 +55,7 @@ def convert_mcp_tool(
     session: _MCPToolClient,
     tool: "mcp.types.Tool",
     *,
-    result_mode: Literal["text", "structured"] = "text",
+    result_mode: Literal["text", "structured"] = "structured",
 ) -> Tool:
     """Build a DSPy tool from an MCP tool.
 
@@ -65,9 +65,9 @@ def convert_mcp_tool(
     Args:
         session: An MCP client or session with an async ``call_tool`` method.
         tool: The MCP tool to convert.
-        result_mode: ``"text"`` preserves DSPy's existing text/non-text
-            conversion. ``"structured"`` returns MCP structured content
-            exactly when present, with the existing conversion as fallback.
+        result_mode: ``"structured"`` returns MCP structured content exactly
+            when present, with the existing conversion as fallback. Use
+            ``"text"`` to preserve the legacy text/non-text conversion.
 
     Returns:
         A dspy Tool object.
