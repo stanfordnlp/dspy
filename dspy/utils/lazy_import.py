@@ -214,8 +214,10 @@ class _LazyModule(types.ModuleType):
             # Modules the package __init__ imported may be the subject of the
             # outer pending import that triggered this materialization; mark
             # them so the machinery's committed import reuses the completed
-            # module instead of re-executing it.
-            for imported_name, imported_module in sys.modules.items():
+            # module instead of re-executing it. Iterate a snapshot: another
+            # thread importing or removing a module in the live dict would
+            # otherwise abort materialization after it already succeeded.
+            for imported_name, imported_module in list(sys.modules.items()):
                 if imported_name not in imported_before:
                     try:
                         setattr(imported_module, _MaterializedChildFinder._MARKER, True)
