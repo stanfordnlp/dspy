@@ -802,5 +802,39 @@ def test_auto_budget_models_the_current_loop():
     assert base == V + num_trials * 2 * M + num_trials * V
 
     with_merge = opt.auto_budget(num_preds=1, num_candidates=6, valset_size=V, minibatch_size=M, use_merge=True)
-    merges = max(6 - 1, 0)
-    assert with_merge == base + merges * (2 * M + V)
+    merges = min(max(6 - 1, 0), 5)
+    assert with_merge == base + merges * V
+
+    # A raised cap scales the merge term; the candidate budget still
+    # bounds it from above.
+    with_raise = opt.auto_budget(
+        num_preds=1, num_candidates=6, valset_size=V, minibatch_size=M,
+        use_merge=True, max_merge_invocations=8,
+    )
+    assert with_raise == base + min(6 - 1, 8) * V
+    assert with_raise == with_merge
+
+
+def test_auto_budget_caps_merge_work_at_the_engine_limit():
+    """Merge work follows the engine's invocation cap and screen reuse.
+
+    The runtime attempts at most ``max_merge_invocations`` merges
+    (default 5) and screens each on a fixed five-example subsample that
+    the accepted merge's full validation reuses, so each invocation adds
+    at most one full validation — not a 2*M minibatch pair plus V, which
+    over-allocated for every configuration whose candidate budget
+    exceeded the cap.
+    """
+    def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+        return 0.0
+
+    opt = dspy.GEPA(metric=metric, reflection_lm=lambda _: [], auto="heavy")
+    V, M = 100, 3
+    base = opt.auto_budget(num_preds=2, num_candidates=18, valset_size=V, minibatch_size=M, use_merge=False)
+    with_merge = opt.auto_budget(num_preds=2, num_candidates=18, valset_size=V, minibatch_size=M, use_merge=True)
+
+    num_trials = int(max(2 * (2 * 2) * math.log2(18), 1.5 * 18))
+    assert base == V + num_trials * 2 * M + num_trials * V
+    # 17 candidate-bounded merges collapse to the engine's 5-invocation
+    # cap, one full validation each (screen evaluations are reused).
+    assert with_merge == base + 5 * V

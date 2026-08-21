@@ -478,6 +478,7 @@ class GEPA(Teleprompter):
         full_eval_steps: int = 5,
         *,
         use_merge: bool = True,
+        max_merge_invocations: int = 5,
     ) -> int:
         """Estimate the metric-call budget for an auto run.
 
@@ -488,8 +489,13 @@ class GEPA(Teleprompter):
         (``valset_size`` calls) — rejected proposals skip it, so the
         full-validation term is an upper-bound allocation, not an exact
         prediction. The seed candidate's initial validation, and merge
-        screening/validation when merge is enabled, are included
-        (#10245).
+        validation when merge is enabled, are included (#10245).
+
+        Merges follow the engine's runtime behavior: at most
+        ``max_merge_invocations`` are attempted, each screened on a fixed
+        five-example subsample whose evaluations the accepted merge's full
+        validation reuses (cache-aware), so one invocation costs at most
+        one full validation.
 
         :param num_preds: Number of optimizable components (instruction
             predictors + flex submodules), e.g. ``2``.
@@ -503,7 +509,10 @@ class GEPA(Teleprompter):
             the configuration.
         :param full_eval_steps: Retained for call compatibility; the
             current engine has no fixed full-evaluation period.
-        :param use_merge: Include merge screening/validation terms.
+        :param use_merge: Include merge validation terms.
+        :param max_merge_invocations: The engine's merge-invocation cap
+            (``max_merge_invocations``, 5 by default). Merge work cannot
+            exceed it regardless of the candidate budget.
         :returns: The estimated metric-call budget.
         """
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
@@ -528,12 +537,15 @@ class GEPA(Teleprompter):
         total += N * V
 
         if use_merge:
-            # Merge screening evaluates the merged candidate on a
-            # minibatch, and an accepted merge pays a full validation.
-            # Bound merges by the candidate budget: each merge consumes
-            # two candidates, so at most num_candidates - 1 can occur.
-            merges = max(num_candidates - 1, 0)
-            total += merges * (2 * M + V)
+            # Each merge invocation screens the merged candidate on a
+            # fixed five-example subsample and, when accepted, pays a
+            # full validation that reuses the screen's evaluations
+            # (cache-aware) — at most one full validation per
+            # invocation. The engine caps invocations at
+            # max_merge_invocations, and the candidate budget bounds
+            # them independently (each merge consumes two candidates).
+            merges = min(max(num_candidates - 1, 0), max_merge_invocations)
+            total += merges * V
 
         return total
 
@@ -574,6 +586,7 @@ class GEPA(Teleprompter):
                 valset_size=len(valset) if valset is not None else len(trainset),
                 minibatch_size=self.reflection_minibatch_size,
                 use_merge=self.use_merge,
+                max_merge_invocations=self.gepa_kwargs.get("max_merge_invocations", 5),
             )
         elif self.max_full_evals is not None:
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
