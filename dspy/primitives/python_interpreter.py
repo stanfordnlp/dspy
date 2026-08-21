@@ -345,7 +345,7 @@ class PythonInterpreter:
 
     execution_instructions = (
         "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
-        "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available. "
+        "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available."
     )
 
     def _check_session_active(self) -> None:
