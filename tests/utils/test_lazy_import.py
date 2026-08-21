@@ -1,4 +1,6 @@
 import sys
+import importlib
+import types
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -139,3 +141,104 @@ def test_install_hints_match_pyproject_extras(pytestconfig):
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
             f"pyproject.toml (declared: {sorted(extras)})"
         )
+
+def _write_lazy_package(tmp_path, monkeypatch, name: str) -> None:
+    """Create an importable package whose child, mid-exec, imports a sibling.
+
+    Mirrors the numpy shape that broke with onnxruntime: the package
+    ``__init__`` imports the child, and the child's first act is importing
+    a sibling submodule -- which the import machinery binds onto the parent
+    module found in ``sys.modules``.
+    """
+    (tmp_path / name).mkdir()
+    (tmp_path / f"{name}/__init__.py").write_text(
+        "INIT_RAN = True\n"
+        f"from {name}.child import CHILD_VALUE\n"
+    )
+    (tmp_path / f"{name}/child.py").write_text(
+        "import sys\n"
+        f"import {name}.version\n"
+        "PARENT_INIT_RAN_AT_CHILD_IMPORT = getattr(sys.modules[__package__], 'INIT_RAN', False)\n"
+        "CHILD_VALUE = 42\n"
+    )
+    (tmp_path / f"{name}/version.py").write_text("VERSION = '1.0'\n")
+    monkeypatch.syspath_prepend(tmp_path)
+    for suffix in ("", ".child", ".version"):
+        monkeypatch.delitem(sys.modules, f"{name}{suffix}", raising=False)
+
+
+def test_direct_submodule_import_runs_package_init_first(tmp_path, monkeypatch):
+    """A submodule imported directly still gets the package's __init__ side effects.
+
+    The lazy proxy sits in ``sys.modules`` as the not-yet-loaded parent, and
+    a C extension (onnxruntime after ``import dspy``) imports
+    ``numpy._core`` directly. The machinery reads the parent's ``__path__``
+    to locate the child; answering from the proxy let the child execute
+    while the real ``__init__`` -- which registers numpy's Windows DLL
+    directory before importing ``._core`` -- never ran.
+    """
+    name = "dspy_lazy_parent_first_pkg"
+    _write_lazy_package(tmp_path, monkeypatch, name)
+
+    require(name)
+    assert sys.modules[name] is not None
+
+    child = importlib.import_module(f"{name}.child")
+
+    assert child.CHILD_VALUE == 42
+    assert child.PARENT_INIT_RAN_AT_CHILD_IMPORT is True, (
+        "the package __init__ must run before any of its submodules"
+    )
+    assert sys.modules[f"{name}.version"].VERSION == "1.0"
+
+
+def test_lazy_module_path_access_materializes_the_package(tmp_path, monkeypatch):
+    """Reading a lazy package's ``__path__`` materializes it.
+
+    ``__path__`` is what the import machinery consults to import or find
+    submodules, so it doubles as the materialization trigger for the
+    direct-submodule-import case; any other reader observes the real
+    package's path.
+    """
+    name = "dspy_lazy_path_materialize_pkg"
+    _write_lazy_package(tmp_path, monkeypatch, name)
+
+    mod = require(name)
+    assert sys.modules[name] is mod
+
+    paths = list(mod.__path__)
+
+    assert paths and str(tmp_path) in str(paths[0])
+    assert sys.modules[name] is not mod, "__path__ access must materialize the real package"
+    assert sys.modules[name].INIT_RAN is True
+
+
+def test_submodule_binding_records_without_materializing(tmp_path, monkeypatch):
+    """The machinery binding a submodule onto the proxy must not nest a full load.
+
+    Executing the real package from inside ``__setattr__`` runs the
+    ``__init__`` while that submodule's import is still in flight; the
+    ``__init__`` then re-imports the half-initialized submodule from
+    ``sys.modules`` and the double execution corrupts package state (the
+    onnxruntime failure died inside numpy with "data type 'bool' not
+    understood"). The binding is recorded on the proxy instead.
+    """
+    name = "dspy_lazy_submodule_binding_pkg"
+    (tmp_path / name).mkdir()
+    (tmp_path / f"{name}/__init__.py").write_text("INIT_RAN = True\n")
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, name, raising=False)
+
+    mod = require(name)
+    sibling = types.ModuleType(f"{name}.extra")
+    sys.modules[f"{name}.extra"] = sibling
+
+    setattr(mod, "extra", sibling)
+
+    assert sys.modules[name] is mod, "a submodule binding must not materialize the package"
+    assert mod.extra is sibling
+
+    # A plain value assignment still materializes and applies to the real module.
+    mod.setting = "value"
+    assert sys.modules[name] is not mod
+    assert sys.modules[name].setting == "value"

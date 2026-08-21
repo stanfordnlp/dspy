@@ -57,6 +57,17 @@ def _get_lazy_module_lock(module: str) -> threading.RLock:
         return _lazy_module_locks.setdefault(module, threading.RLock())
 
 
+def _is_submodule_binding(package: str, attr: str, value: Any) -> bool:
+    """Return True when *value* is the import machinery binding a submodule.
+
+    The machinery binds ``sys.modules[parent].<child> = <module>`` after a
+    submodule import; such a value is a module whose ``__name__`` is the
+    child's fully qualified name. Any other assignment (configuration writes
+    from dspy call sites) keeps the materialize-on-assign behaviour.
+    """
+    return isinstance(value, types.ModuleType) and getattr(value, "__name__", None) == f"{package}.{attr}"
+
+
 class _MissingModule(types.ModuleType):
     """Stand-in returned by `require()` when a package is not installed.
 
@@ -90,10 +101,20 @@ class _LazyModule(types.ModuleType):
         self.__spec__ = spec
         self.__loader__ = spec.loader
         self.__package__ = spec.parent
-        if spec.submodule_search_locations is not None:
-            self.__path__ = spec.submodule_search_locations
         self._dspy_lazy_spec = spec
         self._dspy_lazy_lock = lock
+
+    @property
+    def __path__(self) -> Any:
+        # The import machinery reads the parent package's __path__ to locate
+        # and import submodules, before any submodule code runs. Answering
+        # from the proxy would let a direct submodule import (a C extension
+        # doing `import numpy._core` after `import dspy`) execute the child
+        # while the real package __init__ never ran -- its side effects
+        # (numpy registers its Windows DLL directory, then re-exports _core)
+        # are skipped and the child crashes. Materializing here runs the
+        # real package first, exactly where the machinery would have.
+        return getattr(self._load(), "__path__")
 
     def _load(self) -> types.ModuleType:
         # The proxy starts in sys.modules, then the first attribute access swaps in and executes the real module under
@@ -119,7 +140,22 @@ class _LazyModule(types.ModuleType):
         return getattr(self._load(), attr)
 
     def __setattr__(self, attr: str, value: Any) -> None:
-        if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
+        if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__"}:
+            super().__setattr__(attr, value)
+        elif _is_submodule_binding(self.__name__, attr, value):
+            # The import machinery binds a freshly imported submodule onto
+            # its parent by name, and the parent in sys.modules is still
+            # this proxy. Materializing here would execute the real package
+            # while that submodule's import is in flight: the nested package
+            # __init__ then re-imports the half-initialized submodule from
+            # sys.modules and the double execution corrupts package state
+            # (importing dspy before a C extension that imports the
+            # package's submodule directly, e.g. onnxruntime after dspy,
+            # dies inside numpy with "data type 'bool' not understood").
+            # Record the binding on the proxy instead; the real module's
+            # own execution binds its submodules onto itself once it
+            # materializes, and the stored object is the same module the
+            # machinery has cached in sys.modules.
             super().__setattr__(attr, value)
         else:
             setattr(self._load(), attr, value)
