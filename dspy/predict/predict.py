@@ -6,6 +6,7 @@ from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
+from typing_extensions import is_typeddict
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.utils import annotation_allows_none
@@ -193,7 +194,8 @@ class Predict(Module, Parameter):
         extra_fields = [k for k in kwargs if k not in signature.input_fields]
         if extra_fields:
             logger.warning(
-                "Input contains fields not in signature. These fields will be ignored: %s. Expected fields: %s.",
+                "Input contains fields not in signature. These fields will be ignored: %s. "
+                "Expected fields: %s.",
                 extra_fields,
                 list(signature.input_fields.keys()),
             )
@@ -283,7 +285,6 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
-
 
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
@@ -377,7 +378,7 @@ def _check_type(value: Any, expected: type) -> bool:
 
     # TypedDict classes cannot be used with isinstance(), so handle them
     # before the plain type fallthrough.
-    if typing.is_typeddict(expected):
+    if typing.is_typeddict(expected) or is_typeddict(expected):
         return isinstance(value, dict)
 
     # Plain type (int, str, BaseModel subclass, etc.)
@@ -385,7 +386,6 @@ def _check_type(value: Any, expected: type) -> bool:
         return isinstance(value, expected)
 
     return False
-
 
 def serialize_object(obj):
     """
