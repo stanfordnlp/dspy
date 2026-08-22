@@ -212,9 +212,14 @@ class BaseModule:
                 path.mkdir(parents=True)
             logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
                           'this, prefer saving using json format using module.save("module.json").')
+            modules_to_serialize = modules_to_serialize or []
+            # Only unregister the modules we register here, so we restore
+            # cloudpickle's global registry to its prior state without clobbering
+            # any modules the caller had already registered by value themselves.
+            already_registered = cloudpickle.list_registry_pickle_by_value()
+            registered_by_us = [module for module in modules_to_serialize if module.__name__ not in already_registered]
             try:
-                modules_to_serialize = modules_to_serialize or []
-                for module in modules_to_serialize:
+                for module in registered_by_us:
                     cloudpickle.register_pickle_by_value(module)
 
                 with open(path / "program.pkl", "wb") as f:
@@ -224,6 +229,9 @@ class BaseModule:
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
                     "or consider using state-only saving by setting `save_program=False`."
                 )
+            finally:
+                for module in registered_by_us:
+                    cloudpickle.unregister_pickle_by_value(module)
             with open(path / "metadata.json", "wb") as f:
                 f.write(orjson.dumps(metadata, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
 
