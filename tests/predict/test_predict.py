@@ -5,6 +5,7 @@ import logging
 import time
 import types
 from datetime import datetime
+from typing import TypedDict
 from unittest.mock import patch
 
 import orjson
@@ -48,6 +49,21 @@ def test_initialization_with_string_signature():
     expected_instruction = "Given the fields `input1`, `input2`, produce the fields `output`."
     assert predict.signature.instructions == expected_instruction
     assert predict.signature.instructions == Signature(signature_string).instructions
+
+
+def test_predict_accepts_typeddict_input():
+    class EmailRecord(TypedDict):
+        subject: str
+        sender_email: str
+
+    class ShouldReply(dspy.Signature):
+        email: EmailRecord = dspy.InputField()
+        should_reply: bool = dspy.OutputField()
+
+    dspy.configure(lm=DummyLM([{"should_reply": "True"}]))
+    result = dspy.Predict(ShouldReply)(email={"subject": "Re: Infra recs", "sender_email": "mike@example.com"})
+
+    assert result.should_reply is True
 
 
 def test_reset_method():
@@ -880,6 +896,7 @@ def test_positional_arguments():
         "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
     )
 
+
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
     with pytest.raises(ValueError, match="No LM is loaded"):
@@ -1061,6 +1078,7 @@ def test_per_module_history_disabled():
         program(question="What is the capital of France?")
     assert len(program.history) == 0
 
+
 def test_input_field_default_value():
     class SpyLM(dspy.LM):
         def __init__(self):
@@ -1084,11 +1102,13 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
     dspy_logger = logging.getLogger("dspy")
     dspy_logger.propagate = True
+
 
 def test_extra_fields_warning(caplog):
     """Test that extra fields not in signature generate a warning."""
@@ -1154,6 +1174,7 @@ def test_warning_images(caplog):
         predict_instance(question="dog_image")
 
     assert "Type mismatch for field 'question': expected Image" in caplog.text
+
 
 def test_type_mismatch_warning(caplog):
     """Test that type mismatches in input fields generate a warning."""
@@ -1661,6 +1682,7 @@ def test_union_type_validation_string_signature(caplog):
 
     assert "Type mismatch for field 'mode'" in caplog.text
 
+
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_basic_types_string_signature(caplog, enable_type_warnings):
     """Test type validation with basic types using string signatures."""
@@ -1690,6 +1712,7 @@ def test_basic_types_string_signature(caplog, enable_type_warnings):
     else:
         assert "Type mismatch" not in caplog.text
 
+
 def test_untyped_string_signature(caplog):
     """Test type validation with basic types using string signatures without type."""
     log_test_helper()
@@ -1716,6 +1739,7 @@ def test_untyped_class_signature(caplog):
         count = dspy.InputField()
         name = dspy.InputField()
         result = dspy.OutputField()
+
     predict_instance = Predict(TestSignature)
 
     # Test with correct types
@@ -1728,6 +1752,7 @@ def test_untyped_class_signature(caplog):
 
     assert "Type mismatch" not in caplog.text
 
+
 def test_string_to_list_signature(caplog):
     """Test type validation with string input field type where the module gets called with a list."""
     log_test_helper()
@@ -1737,6 +1762,7 @@ def test_string_to_list_signature(caplog):
         name: str = dspy.InputField()
         count = dspy.InputField()
         result = dspy.OutputField()
+
     predict_instance = Predict(TestSignature)
 
     caplog.clear()
@@ -1747,6 +1773,7 @@ def test_string_to_list_signature(caplog):
         predict_instance(name=["abc", "def", "geh"], count=123)
 
     assert "Type mismatch" not in caplog.text
+
 
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_custom_signature_types(caplog, enable_type_warnings):

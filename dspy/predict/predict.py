@@ -1,6 +1,7 @@
 import logging
 import random
 import types
+import typing
 from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
@@ -192,8 +193,7 @@ class Predict(Module, Parameter):
         extra_fields = [k for k in kwargs if k not in signature.input_fields]
         if extra_fields:
             logger.warning(
-                "Input contains fields not in signature. These fields will be ignored: %s. "
-                "Expected fields: %s.",
+                "Input contains fields not in signature. These fields will be ignored: %s. Expected fields: %s.",
                 extra_fields,
                 list(signature.input_fields.keys()),
             )
@@ -283,6 +283,7 @@ class Predict(Module, Parameter):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
@@ -374,11 +375,17 @@ def _check_type(value: Any, expected: type) -> bool:
             return all(_check_type(item, args[0]) for item in value)
         return True
 
+    # TypedDict classes cannot be used with isinstance(), so handle them
+    # before the plain type fallthrough.
+    if typing.is_typeddict(expected):
+        return isinstance(value, dict)
+
     # Plain type (int, str, BaseModel subclass, etc.)
     if isinstance(expected, type):
         return isinstance(value, expected)
 
     return False
+
 
 def serialize_object(obj):
     """
