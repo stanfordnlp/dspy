@@ -1,3 +1,4 @@
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
@@ -118,7 +119,8 @@ class AvatarOptimizer(Teleprompter):
         num_threads = num_threads or dspy.settings.num_threads
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]
+            ctx = contextvars.copy_context()
+            futures = [executor.submit(ctx.run, self.process_example, actor, example, return_outputs) for example in devset]
 
             for future in tqdm(futures, total=total_examples, desc="Processing examples"):
                 result = future.result()
