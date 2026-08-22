@@ -206,19 +206,6 @@ class JSONAdapter(ChatAdapter):
             d = {k.name: v for k, v in d}
             return json.dumps(serialize_for_json(d), indent=2, ensure_ascii=False)
 
-    def format_finetune_data(
-        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
-    ) -> dict[str, list[Any]]:
-        """Format the call data into finetuning data according to the OpenAI API specifications.
-
-        For the JSON adapter, the system/user messages follow the same chat format, but the
-        assistant message content is a JSON object (matching the structured output format).
-        """
-        system_user_messages = self.format(signature=signature, demos=demos, inputs=inputs)
-        assistant_message_content = self.format_assistant_message_content(signature=signature, outputs=outputs)
-        assistant_message = {"role": "assistant", "content": assistant_message_content}
-        messages = system_user_messages + [assistant_message]
-        return {"messages": messages}
 
 
 def _get_structured_outputs_response_format(
