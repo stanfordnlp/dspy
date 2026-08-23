@@ -382,6 +382,46 @@ async def test_react_v2_aforward_awaits_async_tools():
 
 
 @pytest.mark.asyncio
+async def test_react_v2_aforward_runs_mixed_sync_and_async_tools_in_order():
+    call_order = []
+
+    def sync_lookup(query: str) -> str:
+        call_order.append("sync_lookup")
+        return f"sync {query}"
+
+    async def async_lookup(query: str) -> str:
+        call_order.append("async_lookup")
+        return f"async {query}"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I should use both tools.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "sync_lookup", "args": {"query": "cats"}},
+                        {"name": "async_lookup", "args": {"query": "dogs"}},
+                    ]
+                ),
+            },
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = await dspy.ReActV2("question -> answer", tools=[sync_lookup, async_lookup]).acall(question="pets")
+
+    assert pred.answer == "done"
+    assert call_order == ["sync_lookup", "async_lookup"]
+    results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+    assert [result.is_error for result in results] == [False, False]
+    assert [result.value for result in results] == ["sync cats", "async dogs"]
+
+
+@pytest.mark.asyncio
 async def test_react_v2_aforward_forced_submit_on_empty_tool_calls():
     lm = ReasoningDummyLM(
         [
