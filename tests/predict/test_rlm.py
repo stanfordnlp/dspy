@@ -21,7 +21,6 @@ from dspy.predict.rlm import (
     RLM,
     SUB_DSPY_SETUP_CODE,
     SUB_DSPY_SUB_LM_EXEC_CODE,
-    SUB_DSPY_SUB_LM_SETUP_CODE,
     _strip_code_fences,
 )
 from dspy.primitives.code_interpreter import (
@@ -1865,8 +1864,8 @@ class TestRLMSubDspy:
         # Without the capability, the names stay available to users.
         RLM("dspy -> answer", interpreter_factory=MockInterpreterFactory())
 
-    def test_forward_runs_setup_with_reconstructible_lm_state(self):
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+    def test_explicit_sub_lm_ships_state_per_block(self):
+        factory = SubDspyMockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM(
             "query -> answer",
             max_iters=1,
@@ -1878,17 +1877,18 @@ class TestRLMSubDspy:
         result = rlm(query="q")
 
         assert result.answer == "42"
-        code, variables = factory.instances[0].call_history[0]
-        assert code == SUB_DSPY_SUB_LM_SETUP_CODE
+        # An explicit sub_lm needs no setup: every block runs under a scoped override,
+        # with the LM state shipped fresh per block instead of a persistent configure.
+        interpreter = factory.instances[0]
+        assert interpreter.call_count == 1
+        code, variables = interpreter.call_history[0]
+        assert code == SUB_DSPY_SUB_LM_EXEC_CODE
+        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
         state = variables[_SUB_DSPY_LM_STATE_VAR]
         assert state["model"] == "openai/gpt-4o-mini"
         assert "api_key" not in state
-        # The state must round-trip the same way the sandbox-side setup reconstructs it.
+        # The state must round-trip the same way the sandbox-side wrapper reconstructs it.
         assert dspy.BaseLM.load_state(state).model == "openai/gpt-4o-mini"
-        # Generated code runs under a scoped LM override instead of a persistent configure.
-        code, variables = factory.instances[0].call_history[1]
-        assert code == SUB_DSPY_SUB_LM_EXEC_CODE
-        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
 
     def test_setup_sends_no_state_for_non_reconstructible_lm(self):
         # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox
@@ -1903,6 +1903,29 @@ class TestRLMSubDspy:
         code, variables = factory.instances[0].call_history[0]
         assert code == SUB_DSPY_SETUP_CODE
         assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
+
+    def test_explicit_sub_lm_survives_generated_namespace_corruption(self):
+        # Generated code overwriting the shipped LM state cannot affect later blocks:
+        # each block re-injects the state fresh and applies it as a scoped override.
+        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
+        rlm = RLM(
+            "query -> answer",
+            max_iters=2,
+            interpreter_factory=_InProcessSubDspyInterpreter,
+            sub_lm=dspy.LM("openai/sub-explicit", cache=False),
+        )
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Corrupt the wrapper state",
+                "code": f"{_SUB_DSPY_LM_STATE_VAR} = {{'model': 'openai/generated-replacement'}}\nprint('done')",
+            },
+            {"reasoning": "Report the active LM", "code": "import dspy\nSUBMIT(dspy.settings.lm.model)"},
+        ])
+
+        result = rlm(query="q")
+
+        assert result.answer == "openai/sub-explicit"
+        assert dspy.settings.lm.model == "openai/host-original"
 
     def test_explicit_sub_lm_does_not_leak_into_host_settings(self):
         # In-process interpreters share host settings; the sub_lm override must not outlive the call.
