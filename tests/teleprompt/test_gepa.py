@@ -70,9 +70,32 @@ def test_auto_budget_accepts_default_reflection_minibatch_size():
         use_merge=False,
     )
 
-    assert optimizer.auto_budget(num_preds=2, num_candidates=6, valset_size=100, minibatch_size=None) == optimizer.auto_budget(
-        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=3
-    )
+    assert optimizer.auto_budget(
+        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=None
+    ) == optimizer.auto_budget(num_preds=2, num_candidates=6, valset_size=100, minibatch_size=3)
+
+
+def test_compile_auto_budget_matches_runtime_default_reflection_minibatch_size(monkeypatch):
+    budgets = []
+
+    def fake_optimize(**kwargs):
+        budgets.append(kwargs["max_metric_calls"])
+        return mock.Mock(best_candidate=kwargs["seed_candidate"])
+
+    monkeypatch.setattr("gepa.optimize", fake_optimize)
+    trainset = [Example(input="test", output="expected").with_inputs("input")]
+
+    for reflection_minibatch_size in (None, 3):
+        optimizer = dspy.GEPA(
+            metric=simple_metric,
+            auto="light",
+            reflection_lm=DummyLM([]),
+            reflection_minibatch_size=reflection_minibatch_size,
+            use_merge=False,
+        )
+        optimizer.compile(SimpleModule("input -> output"), trainset=trainset)
+
+    assert budgets[0] == budgets[1]
 
 
 def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
