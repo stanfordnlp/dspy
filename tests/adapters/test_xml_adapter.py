@@ -266,6 +266,60 @@ def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
         adapter.parse(TestSignature, "<code>print('</code>')</code>")
 
 
+def test_xml_adapter_round_trips_cdata_end_marker():
+    class TestSignature(dspy.Signature):
+        code: str = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    value = "while (arr[i]]>0): pass"
+    formatted = adapter.format_field_with_value(
+        {FieldInfoWithName(name="code", info=TestSignature.output_fields["code"]): value}
+    )
+    # `]]>` is illegal in XML character data and must be escaped to stay parseable.
+    assert adapter.parse(TestSignature, formatted) == {"code": value}
+
+
+def test_xml_adapter_round_trips_cdata_end_marker_inside_nested_values():
+    class TestSignature(dspy.Signature):
+        payload: dict[str, list[str]] = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    value = {"notes": ["a ]]> b", "plain"]}
+    formatted = adapter.format_field_with_value(
+        {FieldInfoWithName(name="payload", info=TestSignature.output_fields["payload"]): value}
+    )
+    assert adapter.parse(TestSignature, formatted) == {"payload": value}
+
+
+def test_xml_adapter_empty_optional_containers_survive_format_and_parse():
+    class TestSignature(dspy.Signature):
+        items: list[str] | None = dspy.OutputField()
+        mapping: dict[str, int] | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    fields = {
+        FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): [],
+        FieldInfoWithName(name="mapping", info=TestSignature.output_fields["mapping"]): {},
+    }
+    formatted = adapter.format_field_with_value(fields)
+    assert "<items />" in formatted
+    assert adapter.parse(TestSignature, formatted) == {"items": [], "mapping": {}}
+
+    fields[FieldInfoWithName(name="items", info=TestSignature.output_fields["items"])] = ["a"]
+    fields[FieldInfoWithName(name="mapping", info=TestSignature.output_fields["mapping"])] = {"a": 1}
+    formatted = adapter.format_field_with_value(fields)
+    assert adapter.parse(TestSignature, formatted) == {"items": ["a"], "mapping": {"a": 1}}
+
+
+def test_xml_adapter_parse_optional_containers_from_lm_output():
+    class TestSignature(dspy.Signature):
+        items: list[str] | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    # An LM that emits an empty element for "no results" gets an empty list.
+    assert adapter.parse(TestSignature, "<items />") == {"items": []}
+
+
 def test_xml_adapter_format_and_parse_nested_model():
     class Address(pydantic.BaseModel):
         city: str
