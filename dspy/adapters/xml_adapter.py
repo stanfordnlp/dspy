@@ -30,9 +30,10 @@ class XMLAdapter(ChatAdapter):
                 output.append(self._value_to_xml(serialized, field.name))
                 continue
             formatted = format_field_value(field_info=field.info, value=value)
-            if is_output and field.info.annotation is str:
-                # `]]>` is illegal in XML character data (XML 1.0 §2.5), so escape just that
-                # sequence to keep the output parseable by this adapter's own XML parser.
+            if is_output and not isinstance(serialized, (dict, list)):
+                # Textual output values (str, Optional[str], enums, dates, ...) are re-parsed as
+                # XML character data, where `]]>` is illegal (XML 1.0 §2.5), so escape just that
+                # sequence to keep the emission parseable by this adapter's own XML parser.
                 formatted = formatted.replace("&", "&amp;").replace("<", "&lt;").replace("]]>", "]]&gt;")
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()

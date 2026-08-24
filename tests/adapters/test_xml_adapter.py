@@ -279,6 +279,19 @@ def test_xml_adapter_round_trips_cdata_end_marker():
     assert adapter.parse(TestSignature, formatted) == {"code": value}
 
 
+def test_xml_adapter_round_trips_cdata_end_marker_for_nullable_strings():
+    class TestSignature(dspy.Signature):
+        note: str | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    value = "a ]]> b"
+    formatted = adapter.format_field_with_value(
+        {FieldInfoWithName(name="note", info=TestSignature.output_fields["note"]): value}
+    )
+    # Nullable strings bypass the exact-`str` guard but still need CDATA-safe escaping.
+    assert adapter.parse(TestSignature, formatted) == {"note": value}
+
+
 def test_xml_adapter_round_trips_cdata_end_marker_inside_nested_values():
     class TestSignature(dspy.Signature):
         payload: dict[str, list[str]] = dspy.OutputField()
