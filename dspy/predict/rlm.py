@@ -85,9 +85,14 @@ Sub-agents (dspy):
 This environment can run dspy itself. You may `import dspy` and build sub-agents in the REPL for
 subtasks that need structured inputs/outputs; a default LM is preconfigured when available.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
+- `dspy.ReActV2("question -> answer", tools=[my_tool])(question=...)` - a multi-step tool-using
+  sub-agent; pass plain functions you define in the REPL as tools.
 - `dspy.RLM("context, query -> answer", interpreter_factory={SUB_DSPY_FACTORY_NAME})(context=..., query=...)` -
   a recursive sub-agent with its own REPL; always pass the provided `{SUB_DSPY_FACTORY_NAME}`.
-Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured or recursive subtasks.
+  This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
+  structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
+Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
+recursive subtasks.
 """
 
 # Sandbox-side variable carrying the serialized sub-agent LM state for the setup code below.

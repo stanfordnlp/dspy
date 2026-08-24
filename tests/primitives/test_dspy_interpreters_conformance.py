@@ -78,9 +78,10 @@ def test_subprocess_backend_runs_dspy():
 
 def test_rlm_runs_dspy_sub_agents_in_capable_backend():
     # End-to-end on a real backend: REPL code imports dspy, runs a dspy.Predict sub-agent
-    # against the configured LM, and builds a nested dspy.RLM from the environment-provided
-    # factory, so each sub-agent gets its own interpreter.
-    rlm = RLM("query -> answer", max_iters=3, interpreter_factory=SubDspyInProcessInterpreter)
+    # against the configured LM, runs a dspy.ReActV2 sub-agent with a REPL-defined tool,
+    # and builds a nested dspy.RLM from the environment-provided factory, so each
+    # sub-agent gets its own interpreter.
+    rlm = RLM("query -> answer", max_iters=4, interpreter_factory=SubDspyInProcessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
             "reasoning": "Run a sub-agent",
@@ -92,15 +93,37 @@ def test_rlm_runs_dspy_sub_agents_in_capable_backend():
             ),
         },
         {
+            "reasoning": "Run a tool-using ReActV2 sub-agent with a REPL-defined tool",
+            "code": (
+                "def lookup(query: str) -> str:\n"
+                '    """Look things up."""\n'
+                "    return f'found {query}'\n"
+                "agent = dspy.ReActV2('question -> answer', tools=[lookup])\n"
+                "agent_res = agent(question='cats')\n"
+                "print(agent_res.answer)"
+            ),
+        },
+        {
             "reasoning": "Nested RLM gets its own interpreter, then submit",
             "code": (
                 f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
-                "SUBMIT(res.answer)"
+                "SUBMIT(res.answer + ' / ' + agent_res.answer)"
             ),
         },
     ])
 
-    with dspy.context(lm=DummyLM([{"answer": "sub-agent says hi"}])):
+    lm = DummyLM([
+        {"answer": "sub-agent says hi"},
+        {
+            "next_thought": "look it up",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
+        },
+        {
+            "next_thought": "answer now",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
+        },
+    ])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
         result = rlm(query="q")
 
-    assert result.answer == "sub-agent says hi"
+    assert result.answer == "sub-agent says hi / found cats"
