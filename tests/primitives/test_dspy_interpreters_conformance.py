@@ -164,10 +164,12 @@ def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
             {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
         ])
         result = rlm(interpreter, query="q")
+        restored = interpreter.execute("print(dspy.settings.lm.model)")
     finally:
         interpreter.shutdown()
 
     assert result.answer == "openai/sub-override"
+    assert "openai/env-default" in str(restored)
 
 
 def test_fallback_lm_state_does_not_override_preconfigured_environment_lm():

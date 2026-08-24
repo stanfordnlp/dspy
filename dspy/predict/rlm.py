@@ -95,8 +95,9 @@ Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, t
 recursive subtasks.
 """
 
-# Sandbox-side variable carrying the serialized sub-agent LM state for the setup code below.
+# Sandbox-side variables for the setup/teardown code below.
 _SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
+_SUB_DSPY_PRIOR_LM_VAR = "__dspy_prior_lm"
 
 # Without an explicit sub_lm, the host's default LM only fills an unconfigured environment.
 SUB_DSPY_SETUP_CODE = f"""import dspy
@@ -106,10 +107,18 @@ del {_SUB_DSPY_LM_STATE_VAR}
 """
 
 # An explicit sub_lm overrides an LM already configured in the environment, matching llm_query.
+# The prior LM is snapshotted so the override stays scoped to this invocation.
 SUB_DSPY_SUB_LM_SETUP_CODE = f"""import dspy
 if {_SUB_DSPY_LM_STATE_VAR} is not None:
+    {_SUB_DSPY_PRIOR_LM_VAR} = dspy.settings.lm
     dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
 del {_SUB_DSPY_LM_STATE_VAR}
+"""
+
+SUB_DSPY_TEARDOWN_CODE = f"""if "{_SUB_DSPY_PRIOR_LM_VAR}" in globals():
+    import dspy
+    dspy.configure(lm={_SUB_DSPY_PRIOR_LM_VAR})
+    del {_SUB_DSPY_PRIOR_LM_VAR}
 """
 
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
@@ -544,6 +553,15 @@ class RLM(Module):
         setup_code = SUB_DSPY_SUB_LM_SETUP_CODE if self.sub_lm is not None else SUB_DSPY_SETUP_CODE
         repl.execute(setup_code, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
+    def _teardown_sub_dspy(self, repl: CodeInterpreter) -> None:
+        """Restore the environment LM that an explicit sub_lm overrode."""
+        if not (self._sub_dspy and self.sub_lm is not None):
+            return
+        try:
+            repl.execute(SUB_DSPY_TEARDOWN_CODE)
+        except Exception:
+            logger.warning("Failed to restore the environment LM after sub-dspy execution", exc_info=True)
+
     # =========================================================================
     # CodeInterpreter Lifecycle
     # =========================================================================
@@ -591,7 +609,10 @@ class RLM(Module):
         if interpreter is not None:
             _validate_interpreter(interpreter)
             self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
+            try:
+                yield interpreter
+            finally:
+                self._teardown_sub_dspy(interpreter)
             return
 
         interpreter = _create_interpreter(self._interpreter_factory)
@@ -599,7 +620,10 @@ class RLM(Module):
             self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
         finally:
-            interpreter.shutdown()
+            try:
+                self._teardown_sub_dspy(interpreter)
+            finally:
+                interpreter.shutdown()
 
     # =========================================================================
     # Execution Core

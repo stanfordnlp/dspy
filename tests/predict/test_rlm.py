@@ -1898,6 +1898,21 @@ class TestRLMSubDspy:
         assert code == SUB_DSPY_SETUP_CODE
         assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
 
+    def test_explicit_sub_lm_does_not_leak_into_host_settings(self):
+        # In-process interpreters share host settings; the sub_lm override must not outlive the call.
+        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
+        rlm = RLM(
+            "query -> answer",
+            max_iters=1,
+            interpreter_factory=_InProcessSubDspyInterpreter,
+            sub_lm=dspy.LM("openai/sub-explicit", cache=False),
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        rlm(query="q")
+
+        assert dspy.settings.lm.model == "openai/host-original"
+
     def test_no_setup_without_capability(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
