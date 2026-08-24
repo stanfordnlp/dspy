@@ -560,23 +560,35 @@ class RLM(Module):
 
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
-        """Restore global dspy settings if generated code in a shared-process interpreter mutated them."""
+        """Restore global dspy settings if generated code in a shared-process interpreter changed them."""
         if not self._sub_dspy:
             yield
             return
-        snapshot = dict(main_thread_config)
+        originals = dict(main_thread_config)
+        copies = {k: v.copy() for k, v in originals.items() if isinstance(v, (list, dict, set))}
         try:
             yield
         finally:
-            mutated = {
+            replaced = {
                 key
-                for key in snapshot.keys() | main_thread_config.keys()
-                if main_thread_config.get(key) is not snapshot.get(key)
+                for key in originals.keys() | main_thread_config.keys()
+                if main_thread_config.get(key) is not originals.get(key)
             }
-            if mutated:
-                logger.warning("Generated code mutated global dspy settings %s; restoring them.", sorted(mutated))
+            mutated = {key for key, copied in copies.items() if originals[key] != copied}
+            if replaced or mutated:
+                logger.warning(
+                    "Generated code changed global dspy settings %s; restoring them.", sorted(replaced | mutated)
+                )
                 main_thread_config.clear()
-                main_thread_config.update(snapshot)
+                main_thread_config.update(originals)
+                for key in mutated:
+                    # Restore contents in place so aliases (e.g. context snapshots) see it too.
+                    container = originals[key]
+                    container.clear()
+                    if isinstance(container, list):
+                        container.extend(copies[key])
+                    else:
+                        container.update(copies[key])
 
     # =========================================================================
     # CodeInterpreter Lifecycle
