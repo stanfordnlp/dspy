@@ -214,11 +214,8 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
         self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
-        if self._sub_dspy and sub_lm is not None and self._serialized_sub_lm_state() is None:
-            raise ValueError(
-                "sub_lm must be a plain dspy.LM with JSON-serializable state to cross into a sub-dspy "
-                "interpreter; for custom LMs, configure the LM in the interpreter's environment instead."
-            )
+        if self._sub_dspy and sub_lm is not None:
+            self._serialized_sub_lm_state()
         self._user_tools = self._normalize_tools(tools)
         self._validate_namespace(self._user_tools)
 
@@ -533,15 +530,25 @@ class RLM(Module):
         return regular_args
 
     def _serialized_sub_lm_state(self) -> dict[str, Any] | None:
-        """JSON-able reconstruction state for the sub-agent LM, or None if it cannot cross the boundary."""
+        """JSON-able reconstruction state for the sub-agent LM.
+
+        Returns None when no host LM crosses the boundary (the environment's own LM applies);
+        raises when an explicit sub_lm cannot cross, since silently substituting the ambient
+        LM would violate the caller's model choice.
+        """
         lm = self.sub_lm if self.sub_lm is not None else dspy.settings.lm
-        if type(lm) is not dspy.LM:
-            return None
-        state = lm.dump_state()
-        try:
-            json.dumps(state)
-        except (TypeError, ValueError):
-            return None
+        state = None
+        if type(lm) is dspy.LM:
+            state = lm.dump_state()
+            try:
+                json.dumps(state)
+            except (TypeError, ValueError):
+                state = None
+        if state is None and self.sub_lm is not None:
+            raise ValueError(
+                "sub_lm must be a plain dspy.LM with JSON-serializable state to cross into a sub-dspy "
+                "interpreter; for custom LMs, configure the LM in the interpreter's environment instead."
+            )
         return state
 
     def _setup_sub_dspy(self, repl: CodeInterpreter) -> None:

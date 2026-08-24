@@ -1916,6 +1916,22 @@ class TestRLMSubDspy:
         # Without the capability, sub_lm stays host-side (llm_query) and any BaseLM works.
         RLM("query -> answer", interpreter_factory=MockInterpreterFactory(), sub_lm=custom_lm)
 
+    def test_sub_lm_that_becomes_non_serializable_fails_loudly(self):
+        # A sub_lm mutated after construction must raise the same configuration error at
+        # execution time, not crash the sandbox wrapper with load_state(None).
+        factory = SubDspyMockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM(
+            "query -> answer",
+            max_iters=1,
+            interpreter_factory=factory,
+            sub_lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+        rlm.sub_lm.kwargs["callback"] = object()
+
+        with pytest.raises(ValueError, match=r"sub_lm must be a plain dspy\.LM"):
+            rlm(query="q")
+
     def test_explicit_sub_lm_survives_generated_namespace_corruption(self):
         # Generated code overwriting the shipped LM state cannot affect later blocks:
         # each block re-injects the state fresh and applies it as a scoped override.
