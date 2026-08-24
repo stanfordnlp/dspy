@@ -106,9 +106,7 @@ if {_SUB_DSPY_LM_STATE_VAR} is not None and dspy.settings.lm is None:
 del {_SUB_DSPY_LM_STATE_VAR}
 """
 
-# Runs one generated code block under a scoped override for an explicit sub_lm, matching
-# llm_query's precedence over the environment default. The LM state and code arrive as fresh
-# per-block variables, so generated code cannot corrupt the binding between blocks.
+# Runs one generated code block under a scoped override for an explicit sub_lm.
 SUB_DSPY_SUB_LM_EXEC_CODE = f"""import contextlib as __contextlib
 import dspy as __dspy
 __dspy_ctx = (
@@ -546,10 +544,7 @@ class RLM(Module):
         return state
 
     def _setup_sub_dspy(self, repl: CodeInterpreter) -> None:
-        """Prepare a sub-dspy capable interpreter so REPL code can run dspy sub-agents.
-
-        An explicit sub_lm needs no setup; SUB_DSPY_SUB_LM_EXEC_CODE applies it per block.
-        """
+        """Prepare a sub-dspy capable interpreter so REPL code can run dspy sub-agents."""
         if not self._sub_dspy or self.sub_lm is not None:
             return
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
