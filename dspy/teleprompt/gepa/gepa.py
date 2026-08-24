@@ -488,8 +488,12 @@ class GEPA(Teleprompter):
             )
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self, num_preds, num_candidates, valset_size: int, minibatch_size: int | None = 35, full_eval_steps: int = 5
     ) -> int:
+        # ``None`` means that GEPA should evaluate the full validation set.
+        # Automatic budgets still need a concrete per-step size, so use the
+        # default batch size used by the optimizer for this calculation.
+        minibatch_size = 35 if minibatch_size is None else minibatch_size
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")

@@ -61,6 +61,20 @@ def test_auto_budget_uses_configured_reflection_minibatch_size():
     assert large > small
 
 
+def test_auto_budget_accepts_default_reflection_minibatch_size():
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        auto="light",
+        reflection_lm=DummyLM([]),
+        reflection_minibatch_size=None,
+        use_merge=False,
+    )
+
+    assert optimizer.auto_budget(num_preds=2, num_candidates=6, valset_size=100, minibatch_size=None) == optimizer.auto_budget(
+        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=35
+    )
+
+
 def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     correct = float(example.output == prediction.output)
     return dspy.Prediction(
