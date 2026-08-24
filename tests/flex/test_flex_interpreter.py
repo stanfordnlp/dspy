@@ -203,6 +203,12 @@ def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
         fields = inv.call("agent", {"question": "cats"})
     assert fields["answer"] == "found cats"
+    assert fields["termination_reason"] == "submit"
+    # The agent trace itself round-trips: both loop steps with the tool-call sequence intact.
+    tool_sequence = [
+        call["name"] for message in fields["history"]["messages"] for call in message["tool_calls"]["tool_calls"]
+    ]
+    assert tool_sequence == ["lookup", "submit"]
 
 
 def test_call_runs_predictor_via_host_lm() -> None:
