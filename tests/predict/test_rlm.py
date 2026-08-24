@@ -15,7 +15,13 @@ import pytest
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import _SUB_DSPY_LM_STATE_VAR, RLM, SUB_DSPY_SETUP_CODE, _strip_code_fences
+from dspy.predict.rlm import (
+    _SUB_DSPY_LM_STATE_VAR,
+    RLM,
+    SUB_DSPY_SETUP_CODE,
+    SUB_DSPY_SUB_LM_SETUP_CODE,
+    _strip_code_fences,
+)
 from dspy.primitives.code_interpreter import (
     SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
@@ -1871,7 +1877,7 @@ class TestRLMSubDspy:
 
         assert result.answer == "42"
         code, variables = factory.instances[0].call_history[0]
-        assert code == SUB_DSPY_SETUP_CODE
+        assert code == SUB_DSPY_SUB_LM_SETUP_CODE
         state = variables[_SUB_DSPY_LM_STATE_VAR]
         assert state["model"] == "openai/gpt-4o-mini"
         assert "api_key" not in state
@@ -1888,7 +1894,8 @@ class TestRLMSubDspy:
         with dummy_lm_context([{"answer": "unused"}]):
             rlm(query="q")
 
-        _, variables = factory.instances[0].call_history[0]
+        code, variables = factory.instances[0].call_history[0]
+        assert code == SUB_DSPY_SETUP_CODE
         assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
 
     def test_no_setup_without_capability(self):

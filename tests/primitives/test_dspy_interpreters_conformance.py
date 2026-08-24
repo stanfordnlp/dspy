@@ -26,6 +26,12 @@ InProcessInterpreter = dspy_interpreters.InProcessInterpreter
 SubprocessInterpreter = dspy_interpreters.SubprocessInterpreter
 
 
+class SubDspySubprocessInterpreter(SubprocessInterpreter):
+    """A worker-process backend declaring sub-dspy: it owns its settings, unlike in-process."""
+
+    capabilities = dspy.InterpreterCapability.SUB_DSPY
+
+
 class SubDspyInProcessInterpreter(InProcessInterpreter):
     """The user story's reference: a user-written CodeInterpreter that declares its capabilities."""
 
@@ -141,3 +147,41 @@ def test_rlm_runs_dspy_sub_agents_in_capable_backend():
         result = rlm(query="q")
 
     assert result.answer == "sub-agent says hi / found cats"
+
+
+def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
+    # An explicit sub_lm wins over an LM the environment already configured, matching llm_query.
+    interpreter = SubDspySubprocessInterpreter()
+    try:
+        interpreter.execute("import dspy\ndspy.configure(lm=dspy.LM('openai/env-default'))")
+        rlm = RLM(
+            "query -> answer",
+            max_iters=1,
+            interpreter_factory=SubDspySubprocessInterpreter,
+            sub_lm=dspy.LM("openai/sub-override", cache=False),
+        )
+        rlm.generate_action = make_scripted_predictor([
+            {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
+        ])
+        result = rlm(interpreter, query="q")
+    finally:
+        interpreter.shutdown()
+
+    assert result.answer == "openai/sub-override"
+
+
+def test_fallback_lm_state_does_not_override_preconfigured_environment_lm():
+    # Without an explicit sub_lm, a preconfigured environment LM stays in charge.
+    interpreter = SubDspySubprocessInterpreter()
+    try:
+        interpreter.execute("import dspy\ndspy.configure(lm=dspy.LM('openai/env-default'))")
+        dspy.configure(lm=dspy.LM("openai/host-default", cache=False))
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
+        rlm.generate_action = make_scripted_predictor([
+            {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
+        ])
+        result = rlm(interpreter, query="q")
+    finally:
+        interpreter.shutdown()
+
+    assert result.answer == "openai/env-default"

@@ -98,9 +98,16 @@ recursive subtasks.
 # Sandbox-side variable carrying the serialized sub-agent LM state for the setup code below.
 _SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
 
-# Run once per invocation in a sub-dspy capable interpreter, before any LM-authored code.
+# Without an explicit sub_lm, the host's default LM only fills an unconfigured environment.
 SUB_DSPY_SETUP_CODE = f"""import dspy
-if dspy.settings.lm is None and {_SUB_DSPY_LM_STATE_VAR} is not None:
+if {_SUB_DSPY_LM_STATE_VAR} is not None and dspy.settings.lm is None:
+    dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
+del {_SUB_DSPY_LM_STATE_VAR}
+"""
+
+# An explicit sub_lm overrides an LM already configured in the environment, matching llm_query.
+SUB_DSPY_SUB_LM_SETUP_CODE = f"""import dspy
+if {_SUB_DSPY_LM_STATE_VAR} is not None:
     dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
 del {_SUB_DSPY_LM_STATE_VAR}
 """
@@ -534,7 +541,8 @@ class RLM(Module):
         """Prepare a sub-dspy capable interpreter so REPL code can run dspy sub-agents."""
         if not self._sub_dspy:
             return
-        repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
+        setup_code = SUB_DSPY_SUB_LM_SETUP_CODE if self.sub_lm is not None else SUB_DSPY_SETUP_CODE
+        repl.execute(setup_code, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
     # =========================================================================
     # CodeInterpreter Lifecycle
