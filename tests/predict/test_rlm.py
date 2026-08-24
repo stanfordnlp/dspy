@@ -1970,6 +1970,23 @@ class TestRLMSubDspy:
 
         assert dspy.settings.lm.model == "openai/host-original"
 
+    def test_generated_code_cannot_persist_host_settings_mutation(self):
+        # Generated code calling dspy.configure in a shared-process interpreter must not
+        # change the host application's settings after the call returns.
+        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Reconfigure dspy",
+                "code": "import dspy\ndspy.configure(lm=dspy.LM('openai/attacker'))\nSUBMIT(\"42\")",
+            },
+        ])
+
+        result = rlm(query="q")
+
+        assert result.answer == "42"
+        assert dspy.settings.lm.model == "openai/host-original"
+
     def test_no_setup_without_capability(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)

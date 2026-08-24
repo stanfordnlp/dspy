@@ -27,6 +27,7 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.dsp.utils.settings import main_thread_config
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     SUB_DSPY_FACTORY_NAME,
@@ -92,7 +93,7 @@ subtasks that need structured inputs/outputs; a default LM is preconfigured when
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
   structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
-recursive subtasks.
+recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
 """
 
 # Sandbox-side variables for the setup and execution code below.
@@ -557,6 +558,26 @@ class RLM(Module):
             return
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
+    @contextmanager
+    def _host_settings_guard(self) -> Iterator[None]:
+        """Restore global dspy settings if generated code in a shared-process interpreter mutated them."""
+        if not self._sub_dspy:
+            yield
+            return
+        snapshot = dict(main_thread_config)
+        try:
+            yield
+        finally:
+            mutated = {
+                key
+                for key in snapshot.keys() | main_thread_config.keys()
+                if main_thread_config.get(key) is not snapshot.get(key)
+            }
+            if mutated:
+                logger.warning("Generated code mutated global dspy settings %s; restoring them.", sorted(mutated))
+                main_thread_config.clear()
+                main_thread_config.update(snapshot)
+
     # =========================================================================
     # CodeInterpreter Lifecycle
     # =========================================================================
@@ -601,18 +622,19 @@ class RLM(Module):
         interpreter: CodeInterpreter | None,
     ) -> Iterator[CodeInterpreter]:
         """Yield a caller-owned interpreter or manage a factory-created one."""
-        if interpreter is not None:
-            _validate_interpreter(interpreter)
-            self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
-            return
+        with self._host_settings_guard():
+            if interpreter is not None:
+                _validate_interpreter(interpreter)
+                self._inject_execution_context(interpreter, execution_tools)
+                yield interpreter
+                return
 
-        interpreter = _create_interpreter(self._interpreter_factory)
-        try:
-            self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
-        finally:
-            interpreter.shutdown()
+            interpreter = _create_interpreter(self._interpreter_factory)
+            try:
+                self._inject_execution_context(interpreter, execution_tools)
+                yield interpreter
+            finally:
+                interpreter.shutdown()
 
     # =========================================================================
     # Execution Core
