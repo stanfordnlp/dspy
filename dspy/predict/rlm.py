@@ -558,37 +558,52 @@ class RLM(Module):
             return
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
+    # Registry settings restored by contents. `trace` is deliberately not one of them: dspy
+    # itself appends to it during a forward, so restoring it would wipe legitimate traces.
+    _GUARDED_REGISTRIES = ("callbacks", "stream_listeners")
+
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
-        """Restore global dspy settings if generated code in a shared-process interpreter changed them."""
+        """Keep the host's global dspy settings structure intact across generated-code execution.
+
+        Restores top-level settings that generated code replaced (e.g. via ``dspy.configure``)
+        and the contents of dspy-owned registries it mutated in place. Internal state of user
+        objects reachable from settings is the interpreter's isolation boundary, not RLM's:
+        run untrusted code in a worker-process backend.
+        """
         if not self._sub_dspy:
             yield
             return
         originals = dict(main_thread_config)
-        copies = {k: v.copy() for k, v in originals.items() if isinstance(v, (list, dict, set))}
+        registries = {
+            name: list(value)
+            for name in self._GUARDED_REGISTRIES
+            if isinstance(value := main_thread_config.get(name), list)
+        }
         try:
             yield
         finally:
+            # Compare only by identity: user objects' __eq__ must not run inside this finally.
             replaced = {
                 key
                 for key in originals.keys() | main_thread_config.keys()
                 if main_thread_config.get(key) is not originals.get(key)
             }
-            mutated = {key for key, copied in copies.items() if originals[key] != copied}
+            mutated = {
+                name
+                for name, items in registries.items()
+                if len(originals[name]) != len(items)
+                or any(current is not item for current, item in zip(originals[name], items, strict=False))
+            }
             if replaced or mutated:
                 logger.warning(
                     "Generated code changed global dspy settings %s; restoring them.", sorted(replaced | mutated)
                 )
                 main_thread_config.clear()
                 main_thread_config.update(originals)
-                for key in mutated:
-                    # Restore contents in place so aliases (e.g. context snapshots) see it too.
-                    container = originals[key]
-                    container.clear()
-                    if isinstance(container, list):
-                        container.extend(copies[key])
-                    else:
-                        container.update(copies[key])
+                for name in mutated:
+                    # In place, so aliases such as active context snapshots see the restoration.
+                    originals[name][:] = registries[name]
 
     # =========================================================================
     # CodeInterpreter Lifecycle

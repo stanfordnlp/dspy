@@ -2003,6 +2003,44 @@ class TestRLMSubDspy:
         assert result.answer == "42"
         assert dspy.settings.callbacks == []
 
+    def test_settings_guard_does_not_wipe_traces_appended_during_forward(self):
+        # dspy itself appends to settings.trace on every predictor call, so the guard must
+        # leave trace contents alone instead of treating growth as a generated-code mutation.
+        dspy.configure(lm=dspy.LM("openai/host-original", cache=False), trace=[])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Trace grows mid-forward",
+                "code": "import dspy\ndspy.settings.trace.append('entry')\nSUBMIT(\"42\")",
+            },
+        ])
+
+        rlm(query="q")
+
+        assert dspy.settings.trace == ["entry"]
+
+    def test_nested_state_of_user_objects_is_the_interpreter_boundary(self):
+        # The guard restores dspy's settings structure, not the internals of user objects
+        # reachable from it; that isolation belongs to the interpreter (use a worker backend).
+        class Callback:
+            def __init__(self):
+                self.seen = ["host"]
+
+        callback = Callback()
+        dspy.configure(lm=dspy.LM("openai/host-original", cache=False), callbacks=[callback])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Mutate a user object",
+                "code": "import dspy\ndspy.settings.callbacks[0].seen.append('generated')\nSUBMIT(\"42\")",
+            },
+        ])
+
+        rlm(query="q")
+
+        assert dspy.settings.callbacks == [callback]
+        assert callback.seen == ["host", "generated"]
+
     def test_no_setup_without_capability(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
