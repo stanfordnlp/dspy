@@ -74,7 +74,7 @@ class CodeProposalSignature(dspy.Signature):
       1. ``def __init__(self):`` calling ``super().__init__()`` and assigning the predictors it
          needs. Pick the simplest primitive that fits each step: ``dspy.Predict("...")`` for a
          direct call (the common default), ``dspy.ChainOfThought("...")`` when explicit reasoning
-         helps, and ``dspy.RLM`` / ``dspy.ReAct`` when the step must call tools or explore a
+         helps, and ``dspy.RLM`` / ``dspy.ReActV2`` when the step must call tools or explore a
          large/structured input. Assign no predictors at all if the task needs no LM.
       2. ``def forward(self, **inputs):`` that calls those predictors as ``self.<name>`` and
          returns ``dspy.Prediction(<output fields>=...)``.
@@ -84,14 +84,14 @@ class CodeProposalSignature(dspy.Signature):
     Tools are OPTIONAL — use them only when a step genuinely needs one; many good modules are just
     a ``dspy.Predict`` or two plus plain Python. When you do use tools, they come from two places.
     (1) Any listed in ``available_context`` are in scope by name — wire the useful ones into
-    ``dspy.RLM(..., tools=[...])`` / ``dspy.ReAct(..., tools=[...])`` or call them directly
+    ``dspy.RLM(..., tools=[...])`` / ``dspy.ReActV2(..., tools=[...])`` or call them directly
     (reference them by the exact names; do not import or redefine them). If ``available_context``
     is '(no extra context)', no tools were provided — don't reference any.
     (2) AUTHOR your own: when a sub-step needs a capability the provided tools don't cover, define a
     documented helper nested inside ``forward`` and call it directly. Authored helpers live in this
     source, so they are optimized and persisted exactly like the rest of the code. They run in the
     sandbox and cannot be handed to a bridged sub-predictor, so only the provided tools may be wired
-    into ``dspy.RLM``/``dspy.ReAct`` via ``tools=[...]``.
+    into ``dspy.RLM``/``dspy.ReActV2`` via ``tools=[...]``.
 
     Optimize the predictors' INSTRUCTIONS, not just the code structure. Each predictor's
     natural-language instructions live in this source — construct a predictor over
