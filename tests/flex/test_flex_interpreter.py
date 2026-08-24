@@ -26,7 +26,7 @@ import pytest
 
 import dspy
 from dspy.predict.flex import Flex, bridge
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError
+from dspy.primitives.code_interpreter import SUB_DSPY_FACTORY_NAME, CodeExecutionError, CodeInterpreterError
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMError, LMRateLimitError
 from tests.mock_interpreter import MockInterpreter
@@ -172,6 +172,26 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     assert isinstance(agent, dspy.ReAct)
     # No interpreter is injected into a non-code-executing predictor.
     assert not hasattr(agent, "interpreter")
+
+
+def test_bridged_rlm_inherits_sub_dspy_capable_factory() -> None:
+    # A code-executing sub-predictor built through the bridge receives the Flex interpreter
+    # factory; when that factory declares the sub-dspy capability, the sub-RLM picks it up and
+    # its own action prompt advertises in-sandbox dspy sub-agents.
+    class SubDspyFactory:
+        capabilities = dspy.InterpreterCapability.SUB_DSPY
+
+        def __call__(self) -> MockInterpreter:
+            return MockInterpreter()
+
+    factory = SubDspyFactory()
+    flex = Flex(Doubler, interpreter_factory=factory)
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("RLM", "value: int -> result: int", "rlm", {})
+
+    sub_rlm = inv._predictors["rlm"]
+    assert sub_rlm._interpreter_factory is factory
+    assert SUB_DSPY_FACTORY_NAME in sub_rlm.generate_action.signature.instructions
 
 
 def test_call_runs_predictor_via_host_lm() -> None:

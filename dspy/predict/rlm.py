@@ -14,6 +14,7 @@ import base64
 import contextvars
 import functools
 import inspect
+import json
 import keyword
 import logging
 import threading
@@ -28,12 +29,15 @@ from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
+    SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
+    InterpreterCapability,
     _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
+    interpreter_capabilities,
 )
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -74,6 +78,27 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
+
+# Appended to the interpreter rules when the interpreter declares the sub-dspy capability.
+SUB_DSPY_INSTRUCTIONS = f"""
+Sub-agents (dspy):
+This environment can run dspy itself. You may `import dspy` and build sub-agents in the REPL for
+subtasks that need structured inputs/outputs; a default LM is preconfigured when available.
+- `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
+- `dspy.RLM("context, query -> answer", interpreter_factory={SUB_DSPY_FACTORY_NAME})(context=..., query=...)` -
+  a recursive sub-agent with its own REPL; always pass the provided `{SUB_DSPY_FACTORY_NAME}`.
+Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured or recursive subtasks.
+"""
+
+# Sandbox-side variable carrying the serialized sub-agent LM state for the setup code below.
+_SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
+
+# Run once per invocation in a sub-dspy capable interpreter, before any LM-authored code.
+SUB_DSPY_SETUP_CODE = f"""import dspy
+if dspy.settings.lm is None and {_SUB_DSPY_LM_STATE_VAR} is not None:
+    dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
+del {_SUB_DSPY_LM_STATE_VAR}
+"""
 
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
@@ -162,7 +187,8 @@ class RLM(Module):
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
-                an ``execution_instructions`` string describing its runtime for the action prompt.
+                an ``execution_instructions`` string describing its runtime for the action prompt, and a
+                ``capabilities`` declaration.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -173,6 +199,7 @@ class RLM(Module):
         self.verbose = verbose
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
+        self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
         self._user_tools = self._normalize_tools(tools)
         self._validate_namespace(self._user_tools)
 
@@ -218,14 +245,19 @@ class RLM(Module):
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
         """Validate names owned by the RLM result and sandbox APIs."""
+        reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES
+        if self._sub_dspy:
+            # In a sub-dspy sandbox, the `dspy` module and the environment-provided
+            # nested-interpreter factory are part of the execution namespace.
+            reserved_sandbox_names = reserved_sandbox_names | {"dspy", SUB_DSPY_FACTORY_NAME}
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
-            if name in self._RESERVED_SANDBOX_NAMES:
+            if name in reserved_sandbox_names:
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
-        reserved_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
+        reserved_inputs = sorted(input_names & reserved_sandbox_names)
         if reserved_inputs:
             raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
 
@@ -355,6 +387,8 @@ class RLM(Module):
         if not isinstance(execution_instructions, str):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+        if self._sub_dspy:
+            interpreter_rules += SUB_DSPY_INSTRUCTIONS
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
@@ -478,6 +512,24 @@ class RLM(Module):
             repl.execute("\n".join(code_lines), variables=payload_vars)
 
         return regular_args
+
+    def _serialized_sub_lm_state(self) -> dict[str, Any] | None:
+        """JSON-able reconstruction state for the sub-agent LM, or None if it cannot cross the boundary."""
+        lm = self.sub_lm if self.sub_lm is not None else dspy.settings.lm
+        if type(lm) is not dspy.LM:
+            return None
+        state = lm.dump_state()
+        try:
+            json.dumps(state)
+        except (TypeError, ValueError):
+            return None
+        return state
+
+    def _setup_sub_dspy(self, repl: CodeInterpreter) -> None:
+        """Prepare a sub-dspy capable interpreter so REPL code can run dspy sub-agents."""
+        if not self._sub_dspy:
+            return
+        repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -722,6 +774,7 @@ class RLM(Module):
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
+            self._setup_sub_dspy(repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
@@ -811,6 +864,7 @@ class RLM(Module):
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
+            self._setup_sub_dspy(repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):

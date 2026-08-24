@@ -7,12 +7,31 @@ code-executing modules to work with different interpreter implementations:
 - MockInterpreter: Scriptable responses for testing
 """
 
+import enum
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from dspy.utils.exceptions import DSPyError
 
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
+# Name of the zero-argument interpreter factory a sub-dspy capable interpreter must provide in
+# its execution namespace.
+SUB_DSPY_FACTORY_NAME = "dspy_interpreter_factory"
+
+
+class InterpreterCapability(enum.Flag):
+    """Optional capabilities a CodeInterpreter implementation can declare.
+
+    SUB_DSPY: Code executed inside the interpreter can `import dspy` and run dspy modules.
+        The environment must make dspy importable with LM network access and
+        credentials available, and must provide SUB_DSPY_FACTORY_NAME
+        ("dspy_interpreter_factory") in the execution namespace as a zero-argument callable
+        returning a fresh CodeInterpreter, so nested code-executing modules (sub-agents)
+        get their own interpreter.
+    """
+
+    SUB_DSPY = enum.auto()
 
 
 class CodeInterpreterError(DSPyError, RuntimeError):
@@ -73,6 +92,13 @@ class CodeInterpreter(Protocol):
     Pooling:
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
+
+    Optional declarations:
+        execution_instructions: A string describing the runtime; code-writing
+            modules (e.g. dspy.RLM) include it in their prompts.
+        capabilities: An InterpreterCapability flag value, read via
+            interpreter_capabilities(). See InterpreterCapability for what each
+            capability commits the implementation to.
     """
 
     @property
@@ -145,6 +171,22 @@ class CodeInterpreter(Protocol):
         A new instance should be created for a fresh session.
         """
         ...
+
+
+def interpreter_capabilities(interpreter_or_factory: Any) -> InterpreterCapability:
+    """Capabilities declared by an interpreter instance, class, or factory.
+
+    Reads the optional ``capabilities`` attribute (like ``execution_instructions``,
+    a stable class/factory-level declaration). Absent means no declared capabilities.
+    """
+    capabilities = getattr(interpreter_or_factory, "capabilities", None)
+    if capabilities is None:
+        return InterpreterCapability(0)
+    if not isinstance(capabilities, InterpreterCapability):
+        raise TypeError(
+            f"capabilities must be an InterpreterCapability flag value, not {type(capabilities).__name__}"
+        )
+    return capabilities
 
 
 def _validate_interpreter_factory(factory: Any) -> None:

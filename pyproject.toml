@@ -71,6 +71,11 @@ test_extras = [
     "numpy>=1.26.0",
 ]
 
+[dependency-groups]
+dev = [
+    "dspy-interpreters @ git+https://github.com/cmpnd-ai/dspy-interpreters",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dspy", "dspy.*"]

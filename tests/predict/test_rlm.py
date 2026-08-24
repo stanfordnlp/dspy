@@ -7,15 +7,22 @@ Test organization:
 """
 
 import base64
-from contextlib import contextmanager
+import io
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
 import pytest
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import RLM, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.predict.rlm import _SUB_DSPY_LM_STATE_VAR, RLM, SUB_DSPY_SETUP_CODE, _strip_code_fences
+from dspy.primitives.code_interpreter import (
+    SUB_DSPY_FACTORY_NAME,
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    InterpreterCapability,
+)
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -1760,6 +1767,169 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+# ============================================================================
+# Sub-dspy Capability (interpreters that can run dspy)
+# ============================================================================
+
+
+class SubDspyMockInterpreterFactory(MockInterpreterFactory):
+    """Mock factory declaring that its interpreters can run dspy in-sandbox."""
+
+    capabilities = InterpreterCapability.SUB_DSPY
+
+
+class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
+    def __init__(self, outputs: dict):
+        self.outputs = outputs
+
+
+class _InProcessSubDspyInterpreter:
+    """Minimal real interpreter honoring the sub-dspy contract for tests.
+
+    Executes code in the host process, so `import dspy` works and LM calls go
+    through the host-configured LM; the execution namespace provides
+    `dspy_interpreter_factory` for nested code-executing sub-agents.
+    """
+
+    capabilities = InterpreterCapability.SUB_DSPY
+
+    def __init__(self):
+        self.tools = {}
+        self.output_fields = None
+        self._namespace = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
+
+    def start(self) -> None:
+        pass
+
+    def execute(self, code: str, variables: dict | None = None):
+        self._namespace.update(self.tools)
+        self._namespace.update(variables or {})
+        output_names = [field["name"] for field in self.output_fields or []]
+
+        def SUBMIT(*args, **kwargs):  # noqa: N802 - sandbox API name
+            outputs = dict(zip(output_names, args, strict=False))
+            outputs.update(kwargs)
+            raise _Submit(outputs)
+
+        self._namespace["SUBMIT"] = SUBMIT
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                exec(code, self._namespace)
+        except _Submit as submit:
+            return FinalOutput(submit.outputs)
+        return buffer.getvalue()
+
+    def shutdown(self) -> None:
+        pass
+
+
+class TestRLMSubDspy:
+    def test_action_prompt_includes_sub_agent_instructions(self):
+        rlm = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
+        instructions = rlm.generate_action.signature.instructions
+        assert "Sub-agents (dspy)" in instructions
+        assert SUB_DSPY_FACTORY_NAME in instructions
+
+    def test_action_prompt_omits_sub_agent_instructions_without_capability(self):
+        rlm = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
+        instructions = rlm.generate_action.signature.instructions
+        assert "Sub-agents (dspy)" not in instructions
+        assert SUB_DSPY_FACTORY_NAME not in instructions
+
+    def test_sub_dspy_reserves_sandbox_names(self):
+        with pytest.raises(ValueError, match="conflict"):
+            RLM("dspy -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
+
+        def dspy_interpreter_factory() -> str:
+            """Tool colliding with the environment-provided factory name."""
+            return ""
+
+        with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
+            RLM(
+                "query -> answer",
+                tools=[dspy_interpreter_factory],
+                interpreter_factory=SubDspyMockInterpreterFactory(),
+            )
+
+        # Without the capability, the names stay available to users.
+        RLM("dspy -> answer", interpreter_factory=MockInterpreterFactory())
+
+    def test_forward_runs_setup_with_reconstructible_lm_state(self):
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM(
+            "query -> answer",
+            max_iters=1,
+            interpreter_factory=factory,
+            sub_lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        result = rlm(query="q")
+
+        assert result.answer == "42"
+        code, variables = factory.instances[0].call_history[0]
+        assert code == SUB_DSPY_SETUP_CODE
+        state = variables[_SUB_DSPY_LM_STATE_VAR]
+        assert state["model"] == "openai/gpt-4o-mini"
+        assert "api_key" not in state
+        # The state must round-trip the same way the sandbox-side setup reconstructs it.
+        assert dspy.BaseLM.load_state(state).model == "openai/gpt-4o-mini"
+
+    def test_setup_sends_no_state_for_non_reconstructible_lm(self):
+        # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox
+        # without opting into custom-class loading, so no state crosses the boundary.
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        with dummy_lm_context([{"answer": "unused"}]):
+            rlm(query="q")
+
+        _, variables = factory.instances[0].call_history[0]
+        assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
+
+    def test_no_setup_without_capability(self):
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        rlm(query="q")
+
+        interpreter = factory.instances[0]
+        assert interpreter.call_count == 1
+        assert "import dspy" not in interpreter.call_history[0][0]
+
+    def test_sub_agents_import_dspy_and_run_in_capable_interpreter(self):
+        # End-to-end: REPL code imports dspy, runs a dspy.Predict sub-agent against the
+        # configured LM, and builds a nested dspy.RLM from the environment-provided factory.
+        rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_InProcessSubDspyInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Run a sub-agent",
+                "code": (
+                    "import dspy\n"
+                    "sub = dspy.Predict('question -> answer')\n"
+                    "res = sub(question='ping')\n"
+                    "print(res.answer)"
+                ),
+            },
+            {
+                "reasoning": "Nested RLM gets its own interpreter, then submit",
+                "code": (
+                    f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
+                    "SUBMIT(res.answer)"
+                ),
+            },
+        ])
+
+        with dummy_lm_context([{"answer": "sub-agent says hi"}]):
+            result = rlm(query="q")
+
+        assert result.answer == "sub-agent says hi"
+        assert any("sub-agent says hi" in entry["output"] for entry in result.trajectory)
 
 
 if __name__ == "__main__":
