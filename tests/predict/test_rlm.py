@@ -1904,6 +1904,18 @@ class TestRLMSubDspy:
         assert code == SUB_DSPY_SETUP_CODE
         assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
 
+    def test_non_serializable_sub_lm_is_rejected_for_sub_dspy_interpreters(self):
+        # A sub_lm that cannot cross the boundary must fail loudly at construction
+        # instead of silently substituting the environment's ambient LM.
+        from dspy.utils.dummies import DummyLM
+
+        custom_lm = DummyLM([{"answer": "unused"}])
+        with pytest.raises(ValueError, match=r"sub_lm must be a plain dspy\.LM"):
+            RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory(), sub_lm=custom_lm)
+
+        # Without the capability, sub_lm stays host-side (llm_query) and any BaseLM works.
+        RLM("query -> answer", interpreter_factory=MockInterpreterFactory(), sub_lm=custom_lm)
+
     def test_explicit_sub_lm_survives_generated_namespace_corruption(self):
         # Generated code overwriting the shipped LM state cannot affect later blocks:
         # each block re-injects the state fresh and applies it as a scoped override.

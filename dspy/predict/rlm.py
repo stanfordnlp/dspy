@@ -107,14 +107,8 @@ del {_SUB_DSPY_LM_STATE_VAR}
 """
 
 # Runs one generated code block under a scoped override for an explicit sub_lm.
-SUB_DSPY_SUB_LM_EXEC_CODE = f"""import contextlib as __contextlib
-import dspy as __dspy
-__dspy_ctx = (
-    __contextlib.nullcontext()
-    if {_SUB_DSPY_LM_STATE_VAR} is None
-    else __dspy.context(lm=__dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
-)
-with __dspy_ctx:
+SUB_DSPY_SUB_LM_EXEC_CODE = f"""import dspy as __dspy
+with __dspy.context(lm=__dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})):
     exec({_SUB_DSPY_CODE_VAR}, globals())
 """
 
@@ -200,7 +194,9 @@ class RLM(Module):
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
-            sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
+            sub_lm: LM for llm_query/llm_query_batched and, on a sub-dspy interpreter, for
+                   in-sandbox sub-agents (then it must be a plain, serializable dspy.LM).
+                   Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
@@ -218,6 +214,11 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
         self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
+        if self._sub_dspy and sub_lm is not None and self._serialized_sub_lm_state() is None:
+            raise ValueError(
+                "sub_lm must be a plain dspy.LM with JSON-serializable state to cross into a sub-dspy "
+                "interpreter; for custom LMs, configure the LM in the interpreter's environment instead."
+            )
         self._user_tools = self._normalize_tools(tools)
         self._validate_namespace(self._user_tools)
 
