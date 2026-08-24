@@ -385,7 +385,7 @@ class GEPA(Teleprompter):
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
         # Reflection configuration
-        reflection_minibatch_size: int = 3,
+        reflection_minibatch_size: int | None = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
@@ -555,7 +555,7 @@ class GEPA(Teleprompter):
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
-                minibatch_size=self.reflection_minibatch_size,
+                minibatch_size=self.reflection_minibatch_size or 3,
             )
         elif self.max_full_evals is not None:
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
