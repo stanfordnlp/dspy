@@ -174,6 +174,43 @@ def test_react_kinds_are_bridgeable_and_construct_on_host() -> None:
     assert not hasattr(agent, "interpreter")
 
 
+def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
+    # primitives_doc recommends dspy.ReActV2 for tool-use steps, so the whole bridged path must
+    # work: a shim-style construct payload builds the real agent on the host with the resolved
+    # tool, the host LM drives the loop, and the prediction (incl. history) crosses the JSON
+    # boundary back to the sandbox.
+    def lookup(query: str) -> str:
+        """Look things up."""
+        return f"found {query}"
+
+    flex = Flex(ShoutSig, tools=[lookup], interpreter_factory=lambda: MockInterpreter())
+    inv = bridge._Invocation(flex._bridge, {})
+    inv.construct("ReActV2", "question: str -> answer: str", "agent", {"tools": [{bridge.TOOL_MARKER: "lookup"}]})
+    agent = inv._predictors["agent"]
+    assert isinstance(agent, dspy.ReActV2)
+    assert not hasattr(agent, "interpreter")  # not a code-executing predictor
+
+    lm = DummyLM([
+        {
+            "next_thought": "look it up",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
+        },
+        {
+            "next_thought": "answer now",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
+        },
+    ])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        fields = inv.call("agent", {"question": "cats"})
+    assert fields["answer"] == "found cats"
+    assert fields["termination_reason"] == "submit"
+    # The agent trace itself round-trips: both loop steps with the tool-call sequence intact.
+    tool_sequence = [
+        call["name"] for message in fields["history"]["messages"] for call in message["tool_calls"]["tool_calls"]
+    ]
+    assert tool_sequence == ["lookup", "submit"]
+
+
 def test_call_runs_predictor_via_host_lm() -> None:
     flex = _bridged_flex()
     inv = bridge._Invocation(flex._bridge, {})
