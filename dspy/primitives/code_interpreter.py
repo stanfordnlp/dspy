@@ -29,9 +29,9 @@ class InterpreterCapability(enum.Flag):
         ("dspy_interpreter_factory") in the execution namespace as a zero-argument callable
         returning a fresh CodeInterpreter, so nested code-executing modules (sub-agents)
         get their own interpreter. Invocation setup may call ``dspy.configure(lm=...)``
-        inside the execution environment: an explicit ``RLM(sub_lm=...)`` takes precedence
-        over an LM the environment already configured, and the prior LM is restored when
-        the invocation ends.
+        inside the execution environment when it has no LM configured; an explicit
+        ``RLM(sub_lm=...)`` is instead applied as a scoped override around each generated
+        code block, leaving the environment's configuration untouched.
     """
 
     SUB_DSPY = enum.auto()

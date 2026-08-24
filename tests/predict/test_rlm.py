@@ -16,9 +16,11 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import (
+    _SUB_DSPY_CODE_VAR,
     _SUB_DSPY_LM_STATE_VAR,
     RLM,
     SUB_DSPY_SETUP_CODE,
+    SUB_DSPY_SUB_LM_EXEC_CODE,
     SUB_DSPY_SUB_LM_SETUP_CODE,
     _strip_code_fences,
 )
@@ -1883,6 +1885,10 @@ class TestRLMSubDspy:
         assert "api_key" not in state
         # The state must round-trip the same way the sandbox-side setup reconstructs it.
         assert dspy.BaseLM.load_state(state).model == "openai/gpt-4o-mini"
+        # Generated code runs under a scoped LM override instead of a persistent configure.
+        code, variables = factory.instances[0].call_history[1]
+        assert code == SUB_DSPY_SUB_LM_EXEC_CODE
+        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
 
     def test_setup_sends_no_state_for_non_reconstructible_lm(self):
         # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox

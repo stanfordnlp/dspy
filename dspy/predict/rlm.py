@@ -95,9 +95,10 @@ Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, t
 recursive subtasks.
 """
 
-# Sandbox-side variables for the setup/teardown code below.
+# Sandbox-side variables for the setup and execution code below.
 _SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
-_SUB_DSPY_PRIOR_LM_VAR = "__dspy_prior_lm"
+_SUB_DSPY_SUB_LM_VAR = "__dspy_sub_lm"
+_SUB_DSPY_CODE_VAR = "__dspy_code"
 
 # Without an explicit sub_lm, the host's default LM only fills an unconfigured environment.
 SUB_DSPY_SETUP_CODE = f"""import dspy
@@ -106,19 +107,19 @@ if {_SUB_DSPY_LM_STATE_VAR} is not None and dspy.settings.lm is None:
 del {_SUB_DSPY_LM_STATE_VAR}
 """
 
-# An explicit sub_lm overrides an LM already configured in the environment, matching llm_query.
-# The prior LM is snapshotted so the override stays scoped to this invocation.
+# An explicit sub_lm is never persisted into the environment's settings; it is bound as an
+# object and applied per code block by SUB_DSPY_SUB_LM_EXEC_CODE below.
 SUB_DSPY_SUB_LM_SETUP_CODE = f"""import dspy
-if {_SUB_DSPY_LM_STATE_VAR} is not None:
-    {_SUB_DSPY_PRIOR_LM_VAR} = dspy.settings.lm
-    dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
+{_SUB_DSPY_SUB_LM_VAR} = None if {_SUB_DSPY_LM_STATE_VAR} is None else dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})
 del {_SUB_DSPY_LM_STATE_VAR}
 """
 
-SUB_DSPY_TEARDOWN_CODE = f"""if "{_SUB_DSPY_PRIOR_LM_VAR}" in globals():
-    import dspy
-    dspy.configure(lm={_SUB_DSPY_PRIOR_LM_VAR})
-    del {_SUB_DSPY_PRIOR_LM_VAR}
+# Runs one generated code block under a scoped LM override, matching llm_query's precedence of
+# an explicit sub_lm over the environment default (or without override if no sub_lm crossed).
+SUB_DSPY_SUB_LM_EXEC_CODE = f"""import contextlib as __contextlib
+import dspy as __dspy
+with __dspy.context(lm={_SUB_DSPY_SUB_LM_VAR}) if {_SUB_DSPY_SUB_LM_VAR} is not None else __contextlib.nullcontext():
+    exec({_SUB_DSPY_CODE_VAR}, globals())
 """
 
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
@@ -553,15 +554,6 @@ class RLM(Module):
         setup_code = SUB_DSPY_SUB_LM_SETUP_CODE if self.sub_lm is not None else SUB_DSPY_SETUP_CODE
         repl.execute(setup_code, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
-    def _teardown_sub_dspy(self, repl: CodeInterpreter) -> None:
-        """Restore the environment LM that an explicit sub_lm overrode."""
-        if not (self._sub_dspy and self.sub_lm is not None):
-            return
-        try:
-            repl.execute(SUB_DSPY_TEARDOWN_CODE)
-        except Exception:
-            logger.warning("Failed to restore the environment LM after sub-dspy execution", exc_info=True)
-
     # =========================================================================
     # CodeInterpreter Lifecycle
     # =========================================================================
@@ -609,10 +601,7 @@ class RLM(Module):
         if interpreter is not None:
             _validate_interpreter(interpreter)
             self._inject_execution_context(interpreter, execution_tools)
-            try:
-                yield interpreter
-            finally:
-                self._teardown_sub_dspy(interpreter)
+            yield interpreter
             return
 
         interpreter = _create_interpreter(self._interpreter_factory)
@@ -620,10 +609,7 @@ class RLM(Module):
             self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
         finally:
-            try:
-                self._teardown_sub_dspy(interpreter)
-            finally:
-                interpreter.shutdown()
+            interpreter.shutdown()
 
     # =========================================================================
     # Execution Core
@@ -747,8 +733,12 @@ class RLM(Module):
         input_args: dict[str, Any],
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
+        variables = dict(input_args)
+        if self._sub_dspy and self.sub_lm is not None:
+            variables[_SUB_DSPY_CODE_VAR] = code
+            code = SUB_DSPY_SUB_LM_EXEC_CODE
         try:
-            return repl.execute(code, variables=dict(input_args))
+            return repl.execute(code, variables=variables)
         except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {format_error_for_lm(e)}"
 
