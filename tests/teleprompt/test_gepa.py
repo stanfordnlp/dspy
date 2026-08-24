@@ -71,7 +71,7 @@ def test_auto_budget_accepts_default_reflection_minibatch_size():
     )
 
     assert optimizer.auto_budget(num_preds=2, num_candidates=6, valset_size=100, minibatch_size=None) == optimizer.auto_budget(
-        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=35
+        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=3
     )
 
 
