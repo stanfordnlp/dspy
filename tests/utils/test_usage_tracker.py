@@ -1,7 +1,7 @@
 import asyncio
-import pytest
 from unittest import mock
 
+import pytest
 from pydantic import BaseModel
 
 import dspy
