@@ -1,3 +1,5 @@
+import asyncio
+import pytest
 from unittest import mock
 
 from pydantic import BaseModel
@@ -504,6 +506,41 @@ def test_nested_usage_trackers_roll_up_despite_errors():
 
     total_prompt_tokens = 1100
     total_completion_tokens = 110
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+@pytest.mark.asyncio
+async def test_nested_usage_trackers_support_async_work():
+    """Test that nested usage trackers work well with asyncio.gather."""
+
+    async def llm_call():
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 1,
+                "total_tokens": 11,
+            },
+        )
+
+    async def subagent():
+        with track_usage():
+            await llm_call()
+
+    with track_usage() as orchestrator_cost:
+        tasks = [
+            asyncio.create_task(subagent())
+            for _ in range(5)
+        ]
+        await asyncio.gather(*tasks)
+
+    total_prompt_tokens = 10 * 5
+    total_completion_tokens = 1 * 5
     total_tokens = total_prompt_tokens + total_completion_tokens
     assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
         "prompt_tokens": total_prompt_tokens,
