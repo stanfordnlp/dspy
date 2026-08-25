@@ -399,27 +399,36 @@ def test_parallel_executor_with_usage_tracker():
 def test_non_numeric_usage_values_are_not_accumulated():
     """Non-count fields a provider reports in `usage` are kept, not concatenated or tallied."""
     tracker = UsageTracker()
-
-    for _ in range(3):
-        tracker.add_usage(
-            "openai/gpt-4o-mini",
-            {
-                "prompt_tokens": 10,
-                "completion_tokens": 2,
-                "service_tier": "standard",
-                "inference_geo": "us",
-                "iterations": None,
-                "is_byok": False,
-            },
-        )
+    tracker.add_usage(
+        "openai/gpt-4o-mini",
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "service_tier": "standard",
+            "inference_geo": "us",
+            "iterations": None,
+            "is_byok": False,
+        },
+    )
+    tracker.add_usage(
+        "openai/gpt-4o-mini",
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 2,
+            "service_tier": "flex",
+            "inference_geo": "us",
+            "iterations": None,
+            "is_byok": False,
+        },
+    )
 
     assert tracker.get_total_tokens()["openai/gpt-4o-mini"] == {
-        "prompt_tokens": 30,
-        "completion_tokens": 6,
-        "service_tier": "standard",
-        "inference_geo": "us",
-        "iterations": None,
-        "is_byok": False,
+        "prompt_tokens": 20,
+        "completion_tokens": 4,
+        "service_tier": "standard",  # Keeps first
+        "inference_geo": "us",  # Keeps value
+        "iterations": None,  # Keeps value
+        "is_byok": False,  # Keeps bool as-is
     }
 
 

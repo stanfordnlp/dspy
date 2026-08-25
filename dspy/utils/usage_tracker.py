@@ -50,8 +50,8 @@ class UsageTracker:
         if usage_entry2 is None or len(usage_entry2) == 0:
             return dict(usage_entry1)
 
-        result = dict(usage_entry2)
-        for k, v in usage_entry1.items():
+        result = dict(usage_entry1)
+        for k, v in usage_entry2.items():
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
