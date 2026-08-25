@@ -83,7 +83,11 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
+    """Context manager for tracking LM usage.
+
+    When nested, the child will roll-up recorded usage into the parent upon exit.
+    Note that usage added after the scope exit will not be recorded in the parent.
+    """
     tracker = UsageTracker()
 
     parent = settings.usage_tracker
