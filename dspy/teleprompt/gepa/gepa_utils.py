@@ -1,5 +1,7 @@
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
@@ -12,7 +14,16 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
+from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
+from dspy.teleprompt.gepa.gepa_flex_utils import (
+    code_reflective_records,
+    enumerate_flex_submodules,
+    evaluate_with_trace,
+    flex_task_context,
+    propose_code,
+    rebind_flex_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +57,13 @@ Each example contains the predictor inputs, generated outputs, and feedback from
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
+    objective_scores: dict[str, float] | None
+
+
+def _extract_score_and_objective_scores(score: Any) -> tuple[float | None, dict[str, float]]:
+    if isinstance(score, Prediction):
+        return score.score, dict(score.get("objective_scores") or {})
+    return score, {}
 
 
 class PredictorFeedbackFn(Protocol):
@@ -100,6 +118,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        self._warned_custom_proposer_skips_code = False
+
+        # dspy.Flex code components are keyed by the submodule's parameter path.
+        self._flex_paths = set(enumerate_flex_submodules(student_module))
+        # Task description + available context shown to the dspy.Flex code proposer, per submodule.
+        self._flex_task_descriptions, self._flex_context_blurbs = flex_task_context(student_module)
 
     def propose_new_texts(
         self,
@@ -108,16 +132,40 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         components_to_update: list[str],
     ) -> dict[str, str]:
         reflection_lm = self.reflection_lm or dspy.settings.lm
-        # If custom proposer provided, override everything with custom proposer
-        if self.custom_instruction_proposer:
-            with dspy.context(lm=reflection_lm):
-                return self.custom_instruction_proposer(
-                    candidate=candidate,
-                    reflective_dataset=reflective_dataset,
-                    components_to_update=components_to_update,
-                )
 
+        # dspy.Flex code components are rewritten by the code proposer.
         results: dict[str, str] = {}
+        code_keys = [c for c in components_to_update if c in self._flex_paths]
+        if code_keys:
+            results.update(
+                propose_code(
+                    code_keys, candidate, reflective_dataset,
+                    self._flex_task_descriptions, self._flex_context_blurbs, reflection_lm,
+                )
+            )
+        components_to_update = [c for c in components_to_update if c not in self._flex_paths]
+        if not components_to_update:
+            return results
+
+        # A custom proposer overrides the default *instruction* proposer only.
+        if self.custom_instruction_proposer:
+            if code_keys and not self._warned_custom_proposer_skips_code:
+                logger.warning(
+                    "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
+                    "being optimized. The custom proposer handles instruction components only; the "
+                    "built-in code proposer rewrites the flex source.",
+                    len(code_keys),
+                )
+                self._warned_custom_proposer_skips_code = True
+            with dspy.context(lm=reflection_lm):
+                results.update(
+                    self.custom_instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update,
+                    )
+                )
+                return results
 
         with dspy.context(lm=reflection_lm):
             for name in components_to_update:
@@ -136,19 +184,54 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
+        # Rebind code for any dspy.Flex submodules in the candidate (see gepa_flex_utils). A
+        # candidate that doesn't parse raises here (evaluate() catches it and scores the batch as
+        # a failure); runtime breakage surfaces per example when the code first runs at forward.
+        rebind_flex_code(new_prog, candidate)
+
+        # Apply instruction updates. Code components are keyed by a Flex's parameter path, which
+        # never names a predictor, and predictors inside a Flex were excluded from the candidate,
+        # so both are left untouched.
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
 
         return new_prog
 
-    def evaluate(self, batch, candidate, capture_traces=False):
-        program = self.build_program(candidate)
+    def evaluate(self, batch, candidate, capture_traces=False, num_threads=None):
+        num_threads = self.num_threads if num_threads is None else num_threads
+        try:
+            program = self.build_program(candidate)
+        except (SyntaxError, CodeInterpreterError) as e:
+            # A code candidate that fails to bind scores as a failure rather than
+            # crashing the run. Only source-level failures are caught. Anything else
+            # (e.g., an LM provider or rate-limit error) is not the candidate's fault and must
+            # propagate.
+            logger.warning("Candidate failed to build (%s); scoring the batch as failures.", e)
+            return self._make_evaluation_batch(
+                outputs=[None] * len(batch),
+                raw_scores=[None] * len(batch),
+                trajectories=[] if capture_traces else None,
+            )
         callback_metadata = (
             {"metric_key": "eval_full"}
             if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size
             else {"disable_logging": True}
         )
+
+        # When a dspy.Flex submodule is present, capture the execution trace at scoring time so a
+        # metric that declares a `program_trace` parameter can score against it (e.g. an LM-call
+        # penalty).
+        if self._flex_paths:
+            return evaluate_with_trace(
+                program,
+                batch,
+                metric_fn=self.metric_fn,
+                num_threads=num_threads,
+                failure_score=self.failure_score,
+                callback_metadata=callback_metadata,
+                capture_traces=capture_traces,
+            )
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
@@ -158,31 +241,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 program=program,
                 dataset=batch,
                 metric=self.metric_fn,
-                num_threads=self.num_threads,
+                num_threads=num_threads,
                 raise_on_error=False,
                 capture_failed_parses=True,
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
             )
-            scores = []
-            outputs = []
-            for t in trajs:
-                outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
-                    scores.append(self.failure_score)
-                else:
-                    score = t["score"]
-                    if hasattr(score, "score"):
-                        score = score["score"]
-                    scores.append(score)
-
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+            return self._make_evaluation_batch(
+                outputs=[t["prediction"] for t in trajs],
+                raw_scores=[t.get("score") for t in trajs],
+                trajectories=trajs,
+            )
         else:
             evaluator = Evaluate(
                 devset=batch,
                 metric=self.metric_fn,
-                num_threads=self.num_threads,
+                num_threads=num_threads,
                 return_all_scores=True,
                 failure_score=self.failure_score,
                 provide_traceback=True,
@@ -190,10 +265,51 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 callback_metadata=callback_metadata,
             )
             res = evaluator(program)
-            outputs = [r[1] for r in res.results]
-            scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+            return self._make_evaluation_batch(
+                outputs=[result[1] for result in res.results],
+                raw_scores=[result[2] for result in res.results],
+                trajectories=None,
+            )
+
+    def _make_evaluation_batch(self, outputs, raw_scores, trajectories) -> EvaluationBatch:
+        scores_and_objectives = [_extract_score_and_objective_scores(score) for score in raw_scores]
+        scores = [self.failure_score if score is None else score for score, _ in scores_and_objectives]
+        objective_scores = [objectives for _, objectives in scores_and_objectives]
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores if any(objective_scores) else None,
+        )
+
+    def batch_evaluate(self, items, *, capture_traces=True):
+        total_threads = self.num_threads or dspy.settings.num_threads
+        candidate_workers = min(len(items), total_threads) or 1
+        threads_per_candidate, extra_threads = divmod(total_threads, candidate_workers)
+
+        def evaluate(item):
+            context, (candidate, batch), num_threads = item
+            return context.run(
+                self.evaluate,
+                batch,
+                candidate,
+                capture_traces=capture_traces,
+                num_threads=num_threads,
+            )
+
+        work = [
+            (copy_context(), item, threads_per_candidate + (index < extra_threads))
+            for index, item in enumerate(items)
+        ]
+        with ThreadPoolExecutor(max_workers=candidate_workers) as executor:
+            return list(executor.map(evaluate, work))
+
+    def get_adapter_state(self) -> dict[str, Any]:
+        return {"rng_state": self.rng.getstate()}
+
+    def set_adapter_state(self, state: dict[str, Any]) -> None:
+        if "rng_state" in state:
+            self.rng.setstate(state["rng_state"])
 
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
@@ -203,6 +319,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
+            # Code components (dspy.Flex submodules) reflect on whole-program I/O, not per-predictor
+            # traces.
+            if pred_name in self._flex_paths:
+                recs = code_reflective_records(eval_batch)
+                if recs:
+                    ret_d[pred_name] = recs
+                continue
+
             # Find the predictor object
             module = None
             for name, m in program.named_predictors():
@@ -334,4 +458,3 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 raise TypeError("Unexpected output type from the base LM! Expected str or dict")
 
         return outputs
-

@@ -9,11 +9,13 @@ code-executing modules to work with different interpreter implementations:
 
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from dspy.utils.exceptions import DSPyError
+
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
-class CodeInterpreterError(RuntimeError):
+class CodeInterpreterError(DSPyError, RuntimeError):
     """Base class for errors reported by a code interpreter.
 
     A bare instance indicates a failure that submitted code cannot repair, such
@@ -74,11 +76,13 @@ class CodeInterpreter(Protocol):
     """
 
     @property
-    def tools(self) -> dict[str, Callable[..., str]]:
+    def tools(self) -> dict[str, Callable[..., Any]]:
         """Tools available for interpreter code to call.
 
         Tools are host-side functions that can be invoked from within the
-        interpreter. Each tool accepts keyword arguments and returns a string.
+        interpreter. Each tool accepts keyword arguments. Return values must
+        satisfy the boundary supported by the interpreter; Flex tools must
+        return JSON-compatible values.
 
         Implementations should accept tools via constructor and expose them
         through this property.

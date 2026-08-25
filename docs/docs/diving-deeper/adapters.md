@@ -65,7 +65,7 @@ The default. Builds a chat-style prompt with field markers, parses the response 
 Outputs structured JSON. Internally extends ChatAdapter — formatting is similar, but the output instruction asks for JSON and parsing uses `json_repair`. The constructor’s `use_native_function_calling=True` default flips when tool calling is wired in.
 
 **`dspy.XMLAdapter(callbacks=None)`**  
-`<field_name>value</field_name>` tags. The parser is a regex (`r"<(\w+)>(.*?)</\1>"` with `DOTALL`); it’s robust to whitespace but doesn’t tolerate nested tags of the same name.
+`<field_name>value</field_name>` tags. Lists use repeated `<item>` tags.
 
 **`dspy.TwoStepAdapter(extraction_model: BaseLM, **kwargs)`**  
 Two LM calls per inference. Use it when the main LM is a reasoning model that’s bad at formatting — the extractor is usually a cheap general-purpose LM with ChatAdapter. Doesn’t support finetuning yet.
@@ -123,14 +123,17 @@ Types adapters know how to render and parse beyond Python’s standard ones. Eac
 **`dspy.adapters.types.Type`**  
 The base class. Subclass it (it’s a `pydantic.BaseModel`) and implement `format()` to plug in a new type. Adapters wrap the output of `format()` with `<<CUSTOM-TYPE-START-IDENTIFIER>>...<<END-IDENTIFIER>>` so multi-modal content can be inserted into a single message stream and later split out.
 
-**`dspy.Image(url, download=False, verify=True)`**  
-URL, local path, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). `download=True` fetches the image and base64-encodes it, useful when the LM provider can’t reach the URL.
+**`dspy.Image(source)`**
 
-**`dspy.Audio(data, audio_format)`**  
-Base64 audio data plus format string (`"wav"`, `"mp3"`). Renders as the provider’s audio content block.
+URL reference, data URI, bytes, or PIL image. `format()` returns the provider’s image content block (`{"type": "image_url", "image_url": {"url": ...}}`). Ordinary construction and adapter parsing never access the filesystem or network. Use `Image.from_path(path)` to read a local file or `Image.from_url(url)` to download and base64-encode a remote resource. The deprecated direct call `Image(url, download=True)` also downloads for compatibility through 3.3; migrate it to `Image.from_url(url)`.
 
-**`dspy.File(file_data=None, file_id=None, filename=None)`**  
-Either a data URI or a file ID (some providers preupload files and reference them by ID).
+**`dspy.Audio(source)`**
+
+A data URI, in-memory bytes, or array data; raw base64 must be passed as `Audio(data=..., audio_format=...)`. Renders as the provider’s audio content block. Use `Audio.from_path(path)` or `Audio.from_url(url)` for resource loading.
+
+**`dspy.File(file_data=None, file_id=None, filename=None)`**
+
+Either in-memory bytes, a data URI, or a file ID (some providers preupload files and reference them by ID). Use `File.from_path(path)` to read a local file.
 
 **`dspy.Code(code, language="python")`**  
 Code with a class-level `language` parameter. `dspy.Code["java"]` produces a Code subclass typed for Java. `format()` returns the raw string — no wrapper, no fencing.
@@ -150,6 +153,25 @@ The list of tool calls the LM produced, parsed from native function-calling resp
 **`dspy.adapters.types.Citations`**  
 Declared as a default native response type. When the provider returns citations natively (e.g., Anthropic), adapters extract them through the type’s `parse_lm_response`.
 
+### Migrating resource loading in 3.3
+
+In DSPy 3.3, constructing or validating `Image`, `Audio`, and `File` values no longer interprets locator-shaped strings as instructions to read a local file or fetch a remote URL. This keeps LM output parsing and other validation paths from implicitly granting access to the host. Resource loading now requires an explicit factory:
+
+| Before 3.3 | 3.3 replacement | Behavior |
+| --- | --- | --- |
+| `Image(path)` | `Image.from_path(path)` | Read and embed a local image |
+| `Image(url, download=True)` | `Image.from_url(url)` | Download and embed a remote image |
+| `Image.from_url(url)` or `Image.from_url(url, download=False)` | `Image(url)` | Keep a non-downloading URL reference |
+| `Audio(path)` | `Audio.from_path(path)` | Read and embed a local audio file |
+| `Audio(url)` | `Audio.from_url(url)` | Download and embed remote audio |
+| `File(path)` | `File.from_path(path)` | Read and embed a local file |
+| `Image.from_file(path)` | `Image.from_path(path)` | Replace the deprecated alias |
+| `Audio.from_file(path)` | `Audio.from_path(path)` | Replace the deprecated alias |
+
+Safe in-memory inputs such as data URIs, bytes, PIL images, audio arrays, and structured dictionaries remain supported. The deprecated direct call `Image(url, download=True)` continues to work with a warning through 3.3; `Image.from_file()`, `Image.from_PIL()`, and `Audio.from_file()` are also scheduled for removal in 3.4.
+
+`Image.from_url()` and `Audio.from_url()` perform synchronous, caller-initiated HTTP requests and follow redirects. They do not validate destinations against an SSRF allowlist, so applications must validate or allowlist URLs derived from untrusted input before calling them.
+
 ### Configuring which adapter to use
 
 - **`dspy.configure(adapter=dspy.JSONAdapter())`** — process-wide default.
@@ -160,4 +182,5 @@ Declared as a default native response type. When the provider returns citations 
 
 - [Signatures in depth](signatures-in-depth.md) — what the adapter consumes.
 - [Settings and context()](settings-and-context.md) — how `configure` and `context` propagate the adapter choice.
-- Tools, ReAct, and MCP DD page — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [Tools and MCP](tools.md) — `Tool` and `ToolCalls` are adapter-formatted but module-driven.
+- [ReAct and ReActV2](react.md) — how the two agent loops present history and tool calls to adapters.

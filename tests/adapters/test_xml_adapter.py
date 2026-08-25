@@ -4,6 +4,7 @@ from unittest import mock
 import pydantic
 import pytest
 from litellm import Choices, Message, ModelResponse
+from typing_extensions import TypedDict
 
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
@@ -84,10 +85,195 @@ def test_xml_adapter_parse_raises_on_type_error():
     assert "Failed to parse field" in str(e.value)
 
 
+def test_xml_adapter_repeated_dict_elements_and_empty_lists():
+    class TestSignature(dspy.Signature):
+        counts: dict[str, list[int]] = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    completion = "<counts><first>3</first><first>4</first><second>5</second></counts>"
+    assert adapter.parse(TestSignature, completion) == {
+        "counts": {"first": [3, 4], "second": [5]},
+    }
+
+    counts = {"postal code": [3, 4], 'quoted "key" & more': [5], "line\nbreak": [6], "-status": [7], ".status": [8]}
+    field = FieldInfoWithName(name="counts", info=TestSignature.output_fields["counts"])
+    formatted = adapter.format_field_with_value({field: counts})
+    assert '<entry key="postal code"><item>3</item><item>4</item></entry>' in formatted
+    assert adapter.parse(TestSignature, formatted) == {"counts": counts}
+    assert adapter.parse(TestSignature, "<counts />") == {"counts": {}}
+
+    class EmptySignature(dspy.Signature):
+        items: list[str] = dspy.OutputField()
+
+    field = FieldInfoWithName(name="items", info=EmptySignature.output_fields["items"])
+    assert adapter.format_field_with_value({field: []}) == "<items />"
+    assert adapter.parse(EmptySignature, "<items />") == {"items": []}
+
+
+def test_xml_adapter_uses_pydantic_field_names_as_xml_tags():
+    class Address(pydantic.BaseModel):
+        postal_code: str = pydantic.Field(alias="postal code")
+        country_code: str = pydantic.Field(alias="country-code")
+
+    class TestSignature(dspy.Signature):
+        address: Address = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    address = Address(**{"postal code": "94305", "country-code": "US"})
+    xml = adapter.format_assistant_message_content(TestSignature, {"address": address})
+
+    assert xml == "<address><postal_code>94305</postal_code><country_code>US</country_code></address>"
+    assert "<address><postal_code>...</postal_code><country_code>...</country_code></address>" in (
+        adapter.format_field_structure(TestSignature)
+    )
+    assert adapter.parse(TestSignature, xml) == {"address": address}
+
+
+def test_xml_adapter_typed_dict_schema_and_parsing():
+    class Address(TypedDict):
+        city: str
+
+    class Order(TypedDict):
+        order_id: int
+        address: Address | None
+        labels: list[str]
+
+    class TestSignature(dspy.Signature):
+        order: Order = dspy.OutputField()
+        orders: list[Order] = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    order_schema = (
+        "<order><order_id>...</order_id><address><city>...</city></address>"
+        "<labels><item>...</item></labels></order>"
+    )
+    orders_schema = (
+        "<orders><item><order_id>...</order_id><address><city>...</city></address>"
+        "<labels><item>...</item></labels></item></orders>"
+    )
+    system_instructions = adapter.format_field_structure(TestSignature)
+    assert f"{order_schema}\n\n{orders_schema}" in system_instructions
+    assert f"Use this nested XML structure: {order_schema} {orders_schema}" in (
+        adapter.user_message_output_requirements(TestSignature)
+    )
+
+    completion = (
+        "<order><order_id>1</order_id><address><city>London</city></address><labels>new</labels></order>"
+        "<orders><order_id>2</order_id><address><city>Paris</city></address><labels>paid</labels></orders>"
+    )
+    assert adapter.parse(TestSignature, completion) == {
+        "order": {"order_id": 1, "address": {"city": "London"}, "labels": ["new"]},
+        "orders": [{"order_id": 2, "address": {"city": "Paris"}, "labels": ["paid"]}],
+    }
+
+
+def test_xml_adapter_parses_nullable_and_structured_union_fields():
+    class Profile(pydantic.BaseModel):
+        name: str
+
+    class Details(TypedDict):
+        label: str
+
+    class First(pydantic.BaseModel):
+        count: int
+
+    class Second(pydantic.BaseModel):
+        labels: list[str]
+
+    class FirstDict(TypedDict):
+        count: int
+
+    class SecondDict(TypedDict):
+        labels: list[str]
+
+    class NumberList(pydantic.BaseModel):
+        value: list[int]
+
+    class TextValue(pydantic.BaseModel):
+        value: str
+
+    class ScalarLabels(pydantic.BaseModel):
+        labels: str
+
+    class ListLabels(pydantic.BaseModel):
+        labels: list[str]
+
+    class Envelope(pydantic.BaseModel):
+        choice: ScalarLabels | ListLabels
+
+    class StringFirstEnvelope(pydantic.BaseModel):
+        child: str | ListLabels
+
+    class TestSignature(dspy.Signature):
+        text: str | None = dspy.OutputField()
+        profile: Profile | None = dspy.OutputField()
+        details: Details | None = dspy.OutputField()
+        model: First | Second = dspy.OutputField()
+        mapping: FirstDict | SecondDict = dspy.OutputField()
+        tied: NumberList | TextValue = dspy.OutputField()
+        nested: Envelope = dspy.OutputField()
+        string_first: StringFirstEnvelope = dspy.OutputField()
+
+    completion = (
+        "<text /><profile /><details />"
+        "<model><labels>one</labels><labels>two</labels></model>"
+        "<mapping><labels>three</labels></mapping>"
+        "<tied><value>later-branch-text</value></tied>"
+        "<nested><choice><labels>first</labels><labels>second</labels></choice></nested>"
+        "<string_first><child><labels>one</labels><labels>two</labels></child></string_first>"
+    )
+    assert XMLAdapter().parse(TestSignature, completion) == {
+        "text": None,
+        "profile": None,
+        "details": None,
+        "model": Second(labels=["one", "two"]),
+        "mapping": {"labels": ["three"]},
+        "tied": TextValue(value="later-branch-text"),
+        "nested": Envelope(choice=ListLabels(labels=["first", "second"])),
+        "string_first": StringFirstEnvelope(child=ListLabels(labels=["one", "two"])),
+    }
+
+
+def test_xml_adapter_recursive_model_schema_terminates():
+    class Node(pydantic.BaseModel):
+        value: str
+        children: list["Node"]
+
+    class TestSignature(dspy.Signature):
+        root: Node = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    assert "<root><value>...</value><children><item>...</item></children></root>" in (
+        adapter.format_field_structure(TestSignature)
+    )
+    completion = "<root><value>parent</value><children><value>child</value><children /></children></root>"
+    assert adapter.parse(TestSignature, completion) == {
+        "root": Node(value="parent", children=[Node(value="child", children=[])])
+    }
+
+
+def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
+    class TestSignature(dspy.Signature):
+        code: str = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    value = "print('</code> & done')"
+    formatted = adapter.format_assistant_message_content(TestSignature, {"code": value})
+    assert "&lt;/code> &amp; done" in formatted
+    assert adapter.parse(TestSignature, formatted) == {"code": value}
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse XML"):
+        adapter.parse(TestSignature, "<code>print('</code>')</code>")
+
+
 def test_xml_adapter_format_and_parse_nested_model():
+    class Address(pydantic.BaseModel):
+        city: str
+
     class InnerModel(pydantic.BaseModel):
         value: int
         label: str
+        address: Address
 
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -95,23 +281,16 @@ def test_xml_adapter_format_and_parse_nested_model():
 
     adapter = XMLAdapter()
     # Format output fields as XML
-    fields_with_values = {
-        FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
-    }
+    result = InnerModel(value=5, label="foo", address=Address(city="London"))
+    fields_with_values = {FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): result}
     xml = adapter.format_field_with_value(fields_with_values)
-    # The output will be a JSON string inside the XML tag
-    assert xml.strip().startswith("<result>")
-    assert '"value": 5' in xml
-    assert '"label": "foo"' in xml
-    assert xml.strip().endswith("</result>")
+    assert xml == "<result><value>5</value><label>foo</label><address><city>London</city></address></result>"
+    assert adapter.parse(TestSignature, xml) == {"result": result}
 
-    # Parse XML output (should parse as string, not as model)
-    completion = '<result>{"value": 5, "label": "foo"}</result>'
+    # Legacy JSON values inside the outer XML field remain supported.
+    completion = '<result>{"value": 5, "label": "foo", "address": {"city": "London"}}</result>'
     parsed = adapter.parse(TestSignature, completion)
-    # The parse_value helper will try to cast to InnerModel
-    assert isinstance(parsed["result"], InnerModel)
-    assert parsed["result"].value == 5
-    assert parsed["result"].label == "foo"
+    assert parsed == {"result": result}
 
 
 def test_xml_adapter_format_and_parse_list_of_models():
@@ -126,20 +305,17 @@ def test_xml_adapter_format_and_parse_list_of_models():
     items = [Item(name="a", score=1.1), Item(name="b", score=2.2)]
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
-    assert xml.strip().startswith("<items>")
-    assert '"name": "a"' in xml
-    assert '"score": 2.2' in xml
-    assert xml.strip().endswith("</items>")
+    assert xml == (
+        "<items><item><name>a</name><score>1.1</score></item>"
+        "<item><name>b</name><score>2.2</score></item></items>"
+    )
+    assert adapter.parse(TestSignature, xml) == {"items": items}
 
-    # Parse XML output
+    # Legacy JSON lists inside the outer XML field remain supported.
     import json
 
     completion = f"<items>{json.dumps([i.model_dump() for i in items])}</items>"
-    parsed = adapter.parse(TestSignature, completion)
-    assert isinstance(parsed["items"], list)
-    assert all(isinstance(i, Item) for i in parsed["items"])
-    assert parsed["items"][0].name == "a"
-    assert parsed["items"][1].score == 2.2
+    assert adapter.parse(TestSignature, completion) == {"items": items}
 
 
 def test_xml_adapter_with_tool_like_output():
@@ -167,8 +343,8 @@ def test_xml_adapter_with_tool_like_output():
     }
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml.strip().startswith("<tool_calls>")
-    assert '"name": "get_weather"' in xml
-    assert '"result": "125M"' in xml
+    assert "<name>get_weather</name>" in xml
+    assert "<result>125M</result>" in xml
     assert xml.strip().endswith("</answer>")
 
     import json
@@ -584,45 +760,40 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `answer` (AnswerCard):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<history>\n'
-                 '{history}\n'
-                 '</history>\n'
-                 '\n'
-                 '<image>\n'
-                 '{image}\n'
-                 '</image>\n'
-                 '\n'
-                 '<tools>\n'
-                 '{tools}\n'
-                 '</tools>\n'
-                 '\n'
-                 '<profile>\n'
-                 '{profile}\n'
-                 '</profile>\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<answer>\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
-                 '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
-                 '</answer>\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Answer using all supplied context.'},
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `image` (Image): \n"
+                 "3. `tools` (list[Tool]): \n"
+                 "4. `profile` (Profile): \n"
+                 "5. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (AnswerCard):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "<history>\n"
+                 "{history}\n"
+                 "</history>\n"
+                 "\n"
+                 "<image>\n"
+                 "{image}\n"
+                 "</image>\n"
+                 "\n"
+                 "<tools>\n"
+                 "{tools}\n"
+                 "</tools>\n"
+                 "\n"
+                 "<profile>\n"
+                 "{profile}\n"
+                 "</profile>\n"
+                 "\n"
+                 "<question>\n"
+                 "{question}\n"
+                 "</question>\n"
+                 "\n"
+                 "<answer><answer>...</answer><sources><item>...</item></sources></answer>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Answer using all supplied context."},
      {"role": "user",
       "content": [{"type": "text",
                    "text": "This is an example of the task, though some input or output fields are not "
@@ -649,7 +820,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            'What should we mention?\n'
                            '</question>'}]},
      {"role": "assistant",
-      "content": '<answer>\n{"answer": "Mention analytical engines.", "sources": ["demo"]}\n</answer>'},
+      "content": "<answer><answer>Mention analytical engines.</answer><sources><item>demo</item></sources></answer>"},
      {"role": "user",
       "content": '<profile>\n'
                  '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
@@ -660,7 +831,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  'Who is Ada?\n'
                  '</question>'},
      {"role": "assistant",
-      "content": '<answer>\n{"answer": "Ada is a mathematician.", "sources": ["memory"]}\n</answer>'},
+      "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>"},
      {"role": "user",
       "content": [{"type": "text", "text": "<image>\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
@@ -684,7 +855,8 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '</question>\n'
                            '\n'
                            'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`.'}]}]
+                           '`<answer>`. Use this nested XML structure: '
+                               '<answer><answer>...</answer><sources><item>...</item></sources></answer>'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -705,33 +877,30 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
     messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"})
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `summary` (XmlSummary):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '<question>\n'
-                 '{question}\n'
-                 '</question>\n'
-                 '\n'
-                 '<summary>\n'
-                 '{summary}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "$defs": {"XmlAddress": {"type": "object", "properties": {"city": '
-                 '{"type": "string", "title": "City"}, "country": {"type": "string", "title": '
-                 '"Country"}}, "required": ["city", "country"], "title": "XmlAddress"}}, "properties": '
-                 '{"address": {"$ref": "#/$defs/XmlAddress"}, "title": {"type": "string", "title": '
-                 '"Title"}}, "required": ["title", "address"], "title": "XmlSummary"}\n'
-                 '</summary>\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Given the fields `question`, produce the fields `summary`.'},
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `summary` (XmlSummary):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "<question>\n"
+                 "{question}\n"
+                 "</question>\n"
+                 "\n"
+                 "<summary><title>...</title><address><city>...</city><country>...</country>"
+                 "</address></summary>\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `summary`."},
      {"role": "user",
       "content": "<question>\n"
                  "Summarize\n"
                  "</question>\n"
                  "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`."}]
+                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
+                    "Use this nested XML structure: "
+                    "<summary><title>...</title><address><city>...</city><country>...</country>"
+                    "</address></summary>"}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -831,13 +1000,21 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 </question>
 
-<answers>
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
-</answers>
+<answers><item>...</item></answers>
 
-<scores>
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
-</scores>
+<scores><item>...</item></scores>
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_xml_adapter_missing_optional_output_fields_fall_back_to_defaults():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        note: str | None = dspy.OutputField(default="No note")
+        maybe: str | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    parsed = adapter.parse(TestSignature, "<answer>Paris</answer>")
+    assert parsed == {"answer": "Paris", "note": "No note", "maybe": None}

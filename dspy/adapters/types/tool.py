@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import json_repair
 import pydantic
@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from langchain.tools import BaseTool
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+class _MCPToolClient(Protocol):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
 
 class Tool(Type):
@@ -158,7 +162,7 @@ class Tool(Type):
                 "parameters": {
                     "type": "object",
                     "properties": self.args,
-                    "required": list(self.args.keys()),
+                    "required": [k for k in self.args if "default" not in self.args[k]],
                 },
             },
         }
@@ -200,20 +204,29 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(
+        cls,
+        session: _MCPToolClient,
+        tool: "mcp.types.Tool",
+        *,
+        result_mode: Literal["text", "structured"] = "text",
+    ) -> "Tool":
         """
-        Build a DSPy tool from an MCP tool and a ClientSession.
+        Build a DSPy tool from an MCP tool and a compatible MCP client.
 
         Args:
-            session: The MCP session to use.
+            session: An MCP client or session with an async ``call_tool`` method.
             tool: The MCP tool to convert.
+            result_mode: ``"text"`` preserves DSPy's existing text/non-text
+                conversion. ``"structured"`` returns MCP structured content
+                exactly when present, with the existing conversion as fallback.
 
         Returns:
             A Tool object.
         """
         from dspy.utils.mcp import convert_mcp_tool
 
-        return convert_mcp_tool(session, tool)
+        return convert_mcp_tool(session, tool, result_mode=result_mode)
 
     @classmethod
     def from_langchain(cls, tool: "BaseTool") -> "Tool":

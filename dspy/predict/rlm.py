@@ -42,6 +42,7 @@ from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
+from dspy.utils.exceptions import format_error_for_lm
 
 if TYPE_CHECKING:
 
@@ -55,14 +56,13 @@ ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the following ou
 {output_fields}
 
 You have access to a Python REPL environment. Write Python code and it will be executed. You will see the output, then write more code based on what you learned. This is an iterative process.
-
+{interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
-- Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
 
@@ -161,7 +161,8 @@ class RLM(Module):
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
-                the returned interpreter's mutable ``tools`` dictionary before execution.
+                the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
+                an ``execution_instructions`` string describing its runtime for the action prompt.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -318,7 +319,7 @@ class RLM(Module):
                     try:
                         results[idx] = future.result()
                     except dspy.LMError as e:
-                        results[idx] = f"[ERROR] {e}"
+                        results[idx] = f"[ERROR] {format_error_for_lm(e)}"
             return [results[i] for i in range(len(prompts))]
 
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
@@ -350,10 +351,15 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
+        execution_instructions = getattr(self._interpreter_factory, "execution_instructions", "")
+        if not isinstance(execution_instructions, str):
+            raise TypeError("interpreter_factory.execution_instructions must be a string")
+        interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
-                max_llm_calls=self.max_llm_calls,
+                max_llm_calls=self.max_llm_calls, interpreter_rules=interpreter_rules,
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
@@ -655,7 +661,7 @@ class RLM(Module):
         try:
             return repl.execute(code, variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
-            return f"[Error] {e}"
+            return f"[Error] {format_error_for_lm(e)}"
 
     def _execute_iteration(
         self,
@@ -683,7 +689,7 @@ class RLM(Module):
             code = _strip_code_fences(action.code)
         except SyntaxError as e:
             code = action.code
-            result = f"[Error] {e}"
+            result = f"[Error] {format_error_for_lm(e)}"
             return self._process_execution_result(action, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(action, code, result, history, output_field_names)
@@ -776,7 +782,7 @@ class RLM(Module):
             code = _strip_code_fences(pred.code)
         except SyntaxError as e:
             code = pred.code
-            result = f"[Error] {e}"
+            result = f"[Error] {format_error_for_lm(e)}"
             return self._process_execution_result(pred, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)

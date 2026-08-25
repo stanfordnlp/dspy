@@ -36,15 +36,11 @@ print(result.answer)
 
 RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
 
-You can install Deno with: `brew install deno` on MacOS or `curl -fsSL https://deno.land/install.sh | sh` on MacOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
-
-After you have installed Deno, **Make sure to restart your shell.**
-
-Deno may get confused by existing `package.json` files it happens to find; use the environment variable `DENO_NO_PACKAGE_JSON=1` to ignore `package.json` entirely and resolve `npm:pyodide` from its own cache, which is what DSPy expects.
+Install DSPy's managed Deno runtime with `pip install "dspy[deno]"`. See the
+[`PythonInterpreter` installation guide](../tools/PythonInterpreter.md#deno-installation) for supported platforms,
+system-Deno fallback instructions, and dependency-isolation details.
 
 Then you can run `dspy.RLM`.
-
-Users have reported issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
 
 You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
 
@@ -115,7 +111,7 @@ $20,000,000
 | `verbose` | `bool` | `False` | Log detailed execution info |
 | `tools` | `list[Union[Callable, dspy.Tool]]` | `None` | Additional tool functions callable from interpreter code |
 | `sub_lm` | `dspy.LM` | `None` | LM for sub-queries. Defaults to `dspy.settings.lm`. Use a cheaper model here. |
-| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. May expose an optional `execution_instructions` string for the action prompt. |
 
 ## Built-in Tools
 
@@ -204,6 +200,11 @@ rlm = dspy.RLM(
 ```
 
 RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+
+If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
+which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
+along with the rest of the action policy. Factory classes and configured callable provider objects can expose this
+metadata; anonymous factories without it continue to use the generic action prompt.
 
 ### Custom Sandbox-Serializable Inputs
 

@@ -229,7 +229,7 @@ class Hop(dspy.Module):
         return dspy.Prediction(notes=notes, titles=list(set(titles)))
 ```
 
-Then you can create a instance of the custom module class `Hop`, then invoke it by the `__call__` method:
+Then you can create an instance of the custom module class `Hop`, then invoke it by the `__call__` method:
 
 ```
 hop = Hop()

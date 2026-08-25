@@ -22,13 +22,28 @@ MCP enables you to:
 - **Share tools across stacks** - Use the same tools across different frameworks.
 - **Simplify integration** - Convert MCP tools to DSPy tools with one line.
 
-DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass `mcp.ClientSession` to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
+DSPy does not handle MCP server connections directly. Use a client interface from the `mcp` library, then pass the client or session to `dspy.Tool.from_mcp_tool`. DSPy supports both major versions of the `mcp` Python SDK.
 
 ## Using MCP with DSPy
 
 ### 1. HTTP Server (Remote)
 
-For remote MCP servers over HTTP, use the streamable HTTP transport:
+With `mcp` SDK v2, use the high-level `Client` for a remote server:
+
+```python
+import asyncio
+import dspy
+from mcp.client import Client
+
+async def main():
+    async with Client("http://localhost:8000/mcp") as client:
+        response = await client.list_tools()
+        dspy_tools = [dspy.Tool.from_mcp_tool(client, tool) for tool in response.tools]
+
+asyncio.run(main())
+```
+
+With SDK v1, use the streamable HTTP transport and a `ClientSession`:
 
 ```python
 import asyncio
@@ -69,7 +84,7 @@ asyncio.run(main())
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio:
+The most common way to use MCP is with a local server process communicating via stdio. This example works with both SDK versions:
 
 ```python
 import asyncio
@@ -142,6 +157,8 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 # Use it like any DSPy tool
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
+
+By default, MCP tools return the `content` field. Pass `result_mode="structured"` to `dspy.Tool.from_mcp_tool` to return `structuredContent` when available; if it is absent, DSPy falls back to the default conversion.
 
 ## Learn More
 

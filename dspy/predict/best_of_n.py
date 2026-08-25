@@ -5,6 +5,34 @@ from dspy.predict.predict import Module, Prediction
 
 
 class BestOfN(Module):
+    """Runs a module up to N times and returns the highest-scoring prediction.
+
+    At each attempt, the module is called with a different rollout ID at
+    ``temperature=1.0`` to encourage output diversity. The attempt with the
+    highest reward is returned, or the first attempt whose reward meets or
+    exceeds ``threshold`` (whichever comes first).
+
+    Args:
+        module: The DSPy module to run repeatedly.
+        N: Maximum number of attempts.
+        reward_fn: A callable that takes the input kwargs dict and a
+            ``Prediction``, and returns a scalar float reward score.
+        threshold: If an attempt's reward is at or above this value, that
+            prediction is returned immediately without further attempts.
+        fail_count: Number of allowed failures before raising an exception.
+            Defaults to ``N`` if not provided.
+
+    Example:
+        >>> import dspy
+        >>> dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        >>> qa = dspy.ChainOfThought("question -> answer")
+        >>> def one_word_answer(args, pred):
+        ...     return 1.0 if len(pred.answer.split()) == 1 else 0.0
+        >>> best_of_3 = dspy.BestOfN(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+        >>> result = best_of_3(question="What is the capital of Belgium?")
+        >>> print(result.answer)  # Brussels
+    """
+
     def __init__(
         self,
         module: Module,
@@ -13,39 +41,6 @@ class BestOfN(Module):
         threshold: float,
         fail_count: int | None = None,
     ):
-        """
-        Runs a module up to `N` times with different rollout IDs at `temperature=1.0` and
-        returns the best prediction out of `N` attempts or the first prediction that passes the
-        `threshold`.
-
-        Args:
-            module (Module): The module to run.
-            N (int): The number of times to run the module.
-            reward_fn (Callable[[dict, Prediction], float]): The reward function which takes in the args passed to the module, the resulting prediction, and returns a scalar reward.
-            threshold (float): The threshold for the reward function.
-            fail_count (Optional[int], optional): The number of times the module can fail before raising an error. Defaults to N if not provided.
-
-        Examples:
-            ```python
-            import dspy
-
-            dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-
-            # Define a QA module with chain of thought
-            qa = dspy.ChainOfThought("question -> answer")
-
-            # Define a reward function that checks for one-word answers
-            def one_word_answer(args, pred):
-                return 1.0 if len(pred.answer.split()) == 1 else 0.0
-
-            # Create a refined module that tries up to 3 times
-            best_of_3 = dspy.BestOfN(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
-
-            # Use the refined module
-            result = best_of_3(question="What is the capital of Belgium?").answer
-            # Returns: Brussels
-            ```
-        """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold

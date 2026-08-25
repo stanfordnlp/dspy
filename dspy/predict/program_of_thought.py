@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
@@ -16,14 +17,18 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.exceptions import format_error_for_lm
 
 logger = logging.getLogger(__name__)
 
 
 class ProgramOfThought(Module):
     """
+    .. deprecated:: 3.4
+        ProgramOfThought is deprecated. RLM is the preferred replacement.
+
     A DSPy module that runs Python programs to solve a problem.
-    This module requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
+    This module requires Deno. Install DSPy's managed runtime with ``pip install "dspy[deno]"``.
 
     Examples:
     ```
@@ -50,6 +55,11 @@ class ProgramOfThought(Module):
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
         """
         super().__init__()
+        warnings.warn(
+            "ProgramOfThought is deprecated and will be removed in 3.5. RLM is the preferred replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         _validate_interpreter_factory(interpreter_factory)
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
@@ -181,7 +191,7 @@ class ProgramOfThought(Module):
             output = json.dumps(result)
             return output, None
         except (CodeExecutionError, SyntaxError) as e:
-            return None, str(e)
+            return None, format_error_for_lm(e)
 
     def forward(self, interpreter: CodeInterpreter | None = None, /, **kwargs):
         """Run the program with a fresh interpreter or a caller-owned override.
