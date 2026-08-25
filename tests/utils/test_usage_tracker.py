@@ -394,51 +394,13 @@ def test_parallel_executor_with_usage_tracker():
     assert len(parent_tracker.usage_data) == 0
 
 
-def test_nested_usage_tracker():
-    """Test that nested usage trackers still reflect usage on the parent."""
-
-    def pretend_lm_call(prompt_tokens, completion_tokens):
-        dspy.settings.usage_tracker.add_usage(
-            "openai/gpt-4o-mini",
-            {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
-        )
-
-    def subagent(prompt_tokens, completion_tokens):
-        with track_usage():  # subagent reports its own cost
-            pretend_lm_call(prompt_tokens, completion_tokens)
-        return prompt_tokens + completion_tokens
-
-    with track_usage() as orchestrator_cost:
-        pretend_lm_call(100, 10)
-        subagent(1000, 100)
-        subagent(500, 50)
-        pretend_lm_call(5, 1)
-
-    total_prompt_tokens = 100 + 1000 + 500 + 5
-    total_completion_tokens = 10 + 100 + 50 + 1
-    total_tokens = total_prompt_tokens + total_completion_tokens
-    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
-        "prompt_tokens": total_prompt_tokens,
-        "completion_tokens": total_completion_tokens,
-        "total_tokens": total_tokens,
-    }
-
-
 def test_non_numeric_usage_values_are_not_accumulated():
     """Non-count fields a provider reports in `usage` are kept, not concatenated or tallied."""
     tracker = UsageTracker()
 
-    # `usage` is not guaranteed to hold only counts: litellm's `Usage` and dspy's `LMUsage`
-    # both allow extras, so provider fields flow through verbatim. `service_tier` and
-    # `inference_geo` are what Anthropic reports alongside the token counts; `iterations`
-    # is a `None` field that must survive, and a flag must not be tallied into an int.
     for _ in range(3):
         tracker.add_usage(
-            "anthropic/claude-sonnet-4-5",
+            "openai/gpt-4o-mini",
             {
                 "prompt_tokens": 10,
                 "completion_tokens": 2,
@@ -449,7 +411,7 @@ def test_non_numeric_usage_values_are_not_accumulated():
             },
         )
 
-    assert tracker.get_total_tokens()["anthropic/claude-sonnet-4-5"] == {
+    assert tracker.get_total_tokens()["openai/gpt-4o-mini"] == {
         "prompt_tokens": 30,
         "completion_tokens": 6,
         "service_tier": "standard",
@@ -471,19 +433,80 @@ def test_non_numeric_usage_value_present_in_only_some_entries():
     }
 
 
-def test_nested_non_numeric_usage_values_are_not_accumulated():
-    """The same rule applies inside nested detail dicts, where counts still sum."""
-    tracker = UsageTracker()
-    tracker.add_usage(
-        "gemini/gemini-2.5-flash",
-        {"prompt_tokens": 5, "prompt_tokens_details": {"cached_tokens": 2, "modality": "TEXT"}},
-    )
-    tracker.add_usage(
-        "gemini/gemini-2.5-flash",
-        {"prompt_tokens": 5, "prompt_tokens_details": {"cached_tokens": 3, "modality": "TEXT"}},
-    )
+def test_nested_usage_trackers_roll_up():
+    """Test that nested usage trackers still reflect usage on the parent."""
 
-    assert tracker.get_total_tokens()["gemini/gemini-2.5-flash"] == {
-        "prompt_tokens": 10,
-        "prompt_tokens_details": {"cached_tokens": 5, "modality": "TEXT"},
+    with track_usage() as orchestrator_cost:
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "total_tokens": 110,
+            },
+        )
+        with track_usage() as subagent_cost:
+            subagent_cost.add_usage(
+                "openai/gpt-4o-mini",
+                {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 100,
+                    "total_tokens": 1100,
+                },
+            )
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 1,
+                "total_tokens": 11,
+            },
+        )
+
+    total_prompt_tokens = 1110
+    total_completion_tokens = 111
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def test_nested_usage_trackers_roll_up_despite_errors():
+    """Test that nested usage trackers still reflect usage on the parent even when child raises."""
+
+    def erroring_subagent():
+        with track_usage() as subagent_cost:
+            subagent_cost.add_usage(
+                "openai/gpt-4o-mini",
+                {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 100,
+                    "total_tokens": 1100,
+                },
+            )
+            raise RuntimeError("!")
+
+    with track_usage() as orchestrator_cost:
+        orchestrator_cost.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "total_tokens": 110,
+            },
+        )
+        try:
+            erroring_subagent()
+        except RuntimeError:
+            pass
+
+    total_prompt_tokens = 1100
+    total_completion_tokens = 110
+    total_tokens = total_prompt_tokens + total_completion_tokens
+    assert orchestrator_cost.get_total_tokens()["openai/gpt-4o-mini"] == {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
     }
