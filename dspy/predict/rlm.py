@@ -558,18 +558,17 @@ class RLM(Module):
             return
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
 
-    # Registry settings restored by contents. `trace` is deliberately not one of them: dspy
-    # itself appends to it during a forward, so restoring it would wipe legitimate traces.
-    _GUARDED_REGISTRIES = ("callbacks", "stream_listeners")
-
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
         """Keep the host's global dspy settings structure intact across generated-code execution.
 
         Restores top-level settings that generated code replaced (e.g. via ``dspy.configure``)
-        and the contents of dspy-owned registries it mutated in place. Internal state of user
-        objects reachable from settings is the interpreter's isolation boundary, not RLM's:
-        run untrusted code in a worker-process backend.
+        and the contents of the callbacks/stream_listeners registries it mutated in place;
+        restoration mutates the original containers so aliases such as active context snapshots
+        heal too. ``trace`` is left alone because dspy itself appends to it during a forward,
+        and everything is compared by identity so user ``__eq__`` never runs here. Internal
+        state of user objects reachable from settings is the interpreter's isolation boundary,
+        not RLM's: run untrusted code in a worker-process backend.
         """
         if not self._sub_dspy:
             yield
@@ -577,13 +576,12 @@ class RLM(Module):
         originals = dict(main_thread_config)
         registries = {
             name: list(value)
-            for name in self._GUARDED_REGISTRIES
+            for name in ("callbacks", "stream_listeners")
             if isinstance(value := main_thread_config.get(name), list)
         }
         try:
             yield
         finally:
-            # Compare only by identity: user objects' __eq__ must not run inside this finally.
             replaced = {
                 key
                 for key in originals.keys() | main_thread_config.keys()
@@ -602,7 +600,6 @@ class RLM(Module):
                 main_thread_config.clear()
                 main_thread_config.update(originals)
                 for name in mutated:
-                    # In place, so aliases such as active context snapshots see the restoration.
                     originals[name][:] = registries[name]
 
     # =========================================================================
