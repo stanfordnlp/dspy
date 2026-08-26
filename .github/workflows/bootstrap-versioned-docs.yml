@@ -1,0 +1,58 @@
+---
+name: Bootstrap versioned documentation
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    if: github.repository == 'stanfordnlp/dspy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: dspy-docs-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Check out documentation deployment
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: krypticmouse/dspy-docs
+          ref: master
+          path: docs-deployment
+          token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Install bootstrap dependencies
+        run: |
+          grep -v 'github.com/stanfordnlp/dspy' docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
+          python -m pip install -r "$RUNNER_TEMP/docs-requirements.txt"
+      - name: Prepare Mike deployment branch
+        run: |
+          git -C docs-deployment config user.name github-actions
+          git -C docs-deployment config user.email github-actions@github.com
+          set +e
+          git -C docs-deployment ls-remote --exit-code --heads origin versioned-docs >/dev/null
+          branch_status=$?
+          set -e
+          if [[ "$branch_status" == 0 ]]; then
+            git -C docs-deployment fetch origin versioned-docs:versioned-docs
+          elif [[ "$branch_status" != 2 ]]; then
+            exit "$branch_status"
+          fi
+      - name: Reconstruct all historical snapshots
+        run: |
+          python docs/scripts/bootstrap_versioned_docs.py \
+            --deployment docs-deployment \
+            --branch versioned-docs
+      - name: Publish the complete bootstrap atomically
+        run: git -C docs-deployment push origin versioned-docs
