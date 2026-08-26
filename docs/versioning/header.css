@@ -1,30 +1,31 @@
 /* Shared header treatment for Material release snapshots and Zensical Current. */
 @media screen and (min-width: 60em) {
     .md-version {
+        position: relative;
         height: 2.4rem;
         margin-left: 0.4rem;
     }
 
     .md-version__current {
         box-sizing: border-box;
-        min-width: 5.75rem;
+        min-width: 5.25rem;
         height: 1.8rem;
         margin: 0.3rem 0;
-        padding: 0 1.7rem 0 0.65rem;
+        padding: 0 0.65rem;
         border: 1px solid var(--md-accent-fg-color);
         border-radius: 0.2rem;
         color: inherit;
         font-weight: 600;
     }
 
-    .md-version__current::after {
-        right: 0.65rem;
-    }
-
     .md-version__list {
         top: calc(100% - 0.3rem);
+        right: auto;
+        left: 1.4rem;
         width: 9.5rem;
         max-height: 19rem;
+        margin-right: 0;
+        margin-left: 0;
         padding: 0;
         overflow-y: auto;
         border: 1px solid var(--md-default-fg-color--lightest);
