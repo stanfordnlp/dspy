@@ -54,7 +54,7 @@ jobs:
             --no-fail
       - name: Upload parity report
         if: always()
-        uses: actions/upload-artifact@2d7f8f78c99ea3dd0b3b7f87e71a3bb1fb5b1f0e # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zensical-parity-report
           path: |
@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: error
       - name: Upload review sites
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@2d7f8f78c99ea3dd0b3b7f87e71a3bb1fb5b1f0e # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zensical-parity-sites
           path: |
