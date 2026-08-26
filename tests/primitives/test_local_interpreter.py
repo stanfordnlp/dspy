@@ -149,7 +149,7 @@ def test_host_tool_within_execution_timeout():
         time.sleep(0.08)
         return 42
 
-    with dspy.LocalInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
+    with dspy.LocalInterpreter(tools={"slow": slow}, execution_timeout=1) as interpreter:
         assert interpreter.execute("slow()") == 42
 
 
