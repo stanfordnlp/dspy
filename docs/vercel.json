@@ -1,7 +1,7 @@
 {
   "framework": null,
   "installCommand": "uv venv && uv pip install -r requirements.txt",
-  "buildCommand": ".venv/bin/mkdocs build",
+  "buildCommand": ".venv/bin/python scripts/build_docs.py current --renderer zensical",
   "outputDirectory": "site",
   "trailingSlash": true,
   "headers": [

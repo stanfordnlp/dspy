@@ -6,9 +6,15 @@ on:
       - main
     paths:
       - "docs/**"
+      - "dspy/**"
+      - "pyproject.toml"
+      - "uv.lock"
   pull_request:
     paths:
       - "docs/**"
+      - "dspy/**"
+      - "pyproject.toml"
+      - "uv.lock"
 
 permissions: {}
 
@@ -27,11 +33,14 @@ jobs:
         run: |
           cd docs
           pip install -r requirements.txt
-          mkdocs build
+          python scripts/build_docs.py current --renderer zensical
 
   update-docs-subtree:
     if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
     runs-on: ubuntu-latest
+    concurrency:
+      group: dspy-docs-deployment
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -39,13 +48,50 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Push docs to separate repo
-        uses: cpina/github-action-push-to-another-repository@55306faa4ed53b815ae49e564af8cfb359d32ae2 # main
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Set up Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          source-directory: "docs"
-          destination-github-username: "krypticmouse"
-          destination-repository-name: "dspy-docs"
-          user-email: github-actions@github.com
-          target-branch: master
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: docs/requirements.txt
+      - name: Install documentation dependencies
+        run: |
+          grep -v 'github.com/stanfordnlp/dspy' docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
+          python -m pip install -r "$RUNNER_TEMP/docs-requirements.txt" -e .
+      - name: Build Current documentation
+        run: |
+          python docs/scripts/build_docs.py current \
+            --config docs/mkdocs.yml \
+            --output current-site \
+            --renderer zensical
+      - name: Check out documentation deployment
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: krypticmouse/dspy-docs
+          ref: master
+          path: docs-deployment
+          token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Publish Current through Mike
+        run: |
+          git -C docs-deployment config user.name github-actions
+          git -C docs-deployment config user.email github-actions@github.com
+          set +e
+          git -C docs-deployment ls-remote --exit-code --heads origin versioned-docs >/dev/null
+          branch_status=$?
+          set -e
+          if [[ "$branch_status" == 0 ]]; then
+            git -C docs-deployment fetch origin versioned-docs:versioned-docs
+          elif [[ "$branch_status" != 2 ]]; then
+            exit "$branch_status"
+          fi
+          python docs/scripts/publish_versioned_docs.py \
+            --repository docs-deployment \
+            --site current-site \
+            --identifier current \
+            --title Current \
+            --renderer zensical \
+            --package-source working-tree \
+            --branch versioned-docs \
+            --mutable \
+            --default
+          git -C docs-deployment push origin versioned-docs
