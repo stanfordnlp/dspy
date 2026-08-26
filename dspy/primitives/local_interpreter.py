@@ -85,6 +85,7 @@ class LocalInterpreter:
         self._process: subprocess.Popen[str] | None = None
         self._responses: queue.Queue[str | None] = queue.Queue()
         self._lock = threading.Lock()
+        self._send_lock = threading.Lock()
         self._ended = False
 
     @staticmethod
@@ -143,13 +144,16 @@ class LocalInterpreter:
             self._responses.put(line)
         self._responses.put(None)
 
-    def _send(self, message: dict[str, Any]) -> None:
-        process = self._process
-        assert process is not None and process.stdin is not None
-        try:
-            print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=process.stdin, flush=True)
-        except (OSError, TypeError, ValueError) as exc:
-            self._raise_terminal_error(f"Unable to send request to Python worker: {exc}", exc)
+    def _send(self, message: dict[str, Any], process: subprocess.Popen[str] | None = None) -> None:
+        with self._send_lock:
+            current = self._process
+            if process is not None and current is not process:
+                return
+            assert current is not None and current.stdin is not None
+            try:
+                print(json.dumps(message, separators=(",", ":"), allow_nan=False), file=current.stdin, flush=True)
+            except (OSError, TypeError, ValueError) as exc:
+                self._raise_terminal_error(f"Unable to send request to Python worker: {exc}", exc)
 
     def _receive(self, deadline: float | None, timeout_message: str) -> dict[str, Any]:
         timeout = None if deadline is None else max(0, deadline - time.monotonic())
@@ -192,24 +196,14 @@ class LocalInterpreter:
         result = self.tools[tool_name](*args, **kwargs)
         return _await_in_sync(result) if inspect.isawaitable(result) else result
 
-    def _handle_tool(self, request: dict[str, Any], deadline: float | None, timeout_message: str) -> None:
-        def invoke() -> dict[str, Any]:
-            try:
-                value = self.invoke_tool(request["name"], request.get("args", []), request.get("kwargs", {}))
-                json.dumps(value, allow_nan=False)
-                return {"type": "tool_result", "value": value}
-            except Exception as exc:
-                return {"type": "tool_error", "error": f"{type(exc).__name__}: {exc}"}
-
-        if deadline is None:
-            response = invoke()
-        else:
-            timeout = max(0, deadline - time.monotonic())
-            try:
-                response = _run_in_thread(invoke).result(timeout)
-            except FutureTimeoutError:
-                self._raise_terminal_error(timeout_message)
-        self._send(response)
+    def _handle_tool(self, request: dict[str, Any], process: subprocess.Popen[str]) -> None:
+        try:
+            value = self.invoke_tool(request["name"], request.get("args", []), request.get("kwargs", {}))
+            json.dumps(value, allow_nan=False)
+            response = {"type": "tool_result", "id": request["id"], "value": value}
+        except Exception as exc:
+            response = {"type": "tool_error", "id": request["id"], "error": f"{type(exc).__name__}: {exc}"}
+        self._send(response, process)
 
     @with_callbacks
     def execute(self, code: str, variables: dict[str, Any] | None = None) -> Any:
@@ -260,10 +254,19 @@ class LocalInterpreter:
                 if self.execution_timeout is None
                 else f"Python worker exceeded execution timeout of {self.execution_timeout:g} seconds."
             )
+            process = self._process
+            assert process is not None
+            tool_calls: list[Future[Any]] = []
             message = self._receive(deadline, timeout_message)
             while message.get("type") == "tool_request":
-                self._handle_tool(message, deadline, timeout_message)
+                tool_calls.append(_run_in_thread(lambda request=message: self._handle_tool(request, process)))
                 message = self._receive(deadline, timeout_message)
+            for tool_call in tool_calls:
+                timeout = None if deadline is None else max(0, deadline - time.monotonic())
+                try:
+                    tool_call.result(timeout)
+                except FutureTimeoutError:
+                    self._raise_terminal_error(timeout_message)
             kind = message.get("type")
             if kind == "terminal_error":
                 self._raise_terminal_error(f"Python worker failed: {message.get('error')}")

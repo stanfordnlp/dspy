@@ -20,6 +20,18 @@ def test_persistent_worker_is_separate_and_captures_stdout(capsys):
         assert capsys.readouterr().out == ""
 
 
+def test_os_level_output_does_not_corrupt_protocol():
+    with dspy.LocalInterpreter() as interpreter:
+        output = interpreter.execute(
+            "import os, subprocess, sys\n"
+            "os.write(1, b'guest fd stdout\\n')\n"
+            "os.write(2, b'guest fd stderr\\n')\n"
+            "completed = subprocess.run([sys.executable, '-c', \"import os; os.write(1, b'child stdout\\\\n')\"])"
+        )
+        assert output == "guest fd stdout\nguest fd stderr\nchild stdout"
+        assert interpreter.execute("6 * 7") == 42
+
+
 def test_tools_and_typed_submit():
     fields = [{"name": "answer", "type": "str"}, {"name": "score", "type": "int"}]
     with dspy.LocalInterpreter(
@@ -139,6 +151,25 @@ def test_host_tool_within_execution_timeout():
 
     with dspy.LocalInterpreter(tools={"slow": slow}, execution_timeout=0.2) as interpreter:
         assert interpreter.execute("slow()") == 42
+
+
+def test_parallel_guest_code_invokes_host_tools_concurrently_and_routes_responses():
+    rendezvous = threading.Barrier(2)
+
+    def echo(value):
+        rendezvous.wait(timeout=1)
+        if value == "slow":
+            time.sleep(0.05)
+        return value
+
+    code = """
+from concurrent.futures import ThreadPoolExecutor
+with ThreadPoolExecutor(max_workers=2) as pool:
+    futures = [pool.submit(echo, value) for value in ["slow", "fast"]]
+[future.result() for future in futures]
+"""
+    with dspy.LocalInterpreter(tools={"echo": echo}, execution_timeout=2) as interpreter:
+        assert interpreter.execute(code) == ["slow", "fast"]
 
 
 def test_execution_timeout_does_not_wait_for_blocked_host_tool():
