@@ -73,6 +73,7 @@ class Evaluate:
         *,
         devset: list["dspy.Example"],
         metric: Callable | None = None,
+        population_metric: Callable | None = None,
         num_threads: int | None = None,
         display_progress: bool = False,
         display_table: bool | int = False,
@@ -86,7 +87,10 @@ class Evaluate:
         """
         Args:
             devset (list[dspy.Example]): the evaluation dataset.
-            metric (Callable): The metric function to use for evaluation.
+            metric (Callable): The per-example metric function to use for evaluation.
+            population_metric (Optional[Callable]): An optional metric that receives successfully evaluated examples
+                and predictions and determines the aggregate evaluation score. Items with tolerated per-example failures
+                are omitted. Its return value is scaled by 100 when stored in `EvaluationResult.score`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
@@ -101,6 +105,7 @@ class Evaluate:
         """
         self.devset = devset
         self.metric = metric
+        self.population_metric = population_metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -125,11 +130,12 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        population_metric: Callable | None = None,
     ) -> EvaluationResult:
         """
         Args:
             program (dspy.Module): The DSPy program to evaluate.
-            metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
+            metric (Callable): The per-example metric function to use for evaluation. if not provided, use `self.metric`.
             devset (list[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation. if not provided, use
                 `self.num_threads`.
@@ -138,6 +144,10 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            population_metric (Optional[Callable]): An optional metric that receives successfully evaluated examples
+                and predictions and determines the aggregate evaluation score. Items with tolerated per-example failures
+                are omitted. Its return value is scaled by 100 when stored in `EvaluationResult.score`. if not provided,
+                use `self.population_metric`.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -147,6 +157,7 @@ class Evaluate:
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
+        population_metric = population_metric if population_metric is not None else self.population_metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -169,7 +180,7 @@ class Evaluate:
 
         def process_item(example):
             prediction = program(**example.inputs())
-            score = metric(example, prediction)
+            score = metric(example, prediction) if metric is not None else 0.0
             return prediction, score
 
         results = executor.execute(process_item, devset)
@@ -178,13 +189,35 @@ class Evaluate:
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+        overall_score = round(100 * ncorrect / ntotal, 2)
 
-        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        if metric is not None:
+            logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+
+        if population_metric is not None:
+            failed_indices = set(executor.failed_indices)
+            population_results = [
+                result for index, result in enumerate(results) if index not in failed_indices
+            ]
+            if population_results:
+                examples = [example for example, _, _ in population_results]
+                predictions = [prediction for _, prediction, _ in population_results]
+                overall_score = round(100 * population_metric(examples, predictions), 2)
+                logger.info(f"Population Metric: {overall_score}%")
+            else:
+                logger.warning(
+                    "Skipping population metric because all examples failed; "
+                    "using the average failure score instead."
+                )
+
+        metric_name = (
+            metric.__name__
+            if isinstance(metric, types.FunctionType)
+            else metric.__class__.__name__ if metric is not None else None
+        )
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
-                # Rename the 'correct' column to the name of the metric object
-                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
 
@@ -193,26 +226,16 @@ class Evaluate:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
         if save_as_csv:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
             data = self._prepare_results_output(results, metric_name)
 
             with open(save_as_csv, "w", newline="") as csvfile:
-                fieldnames = data[0].keys()
+                fieldnames = list(dict.fromkeys(key for row in data for key in row))
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
                 writer.writeheader()
                 for row in data:
                     writer.writerow(row)
         if save_as_json:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
             data = self._prepare_results_output(results, metric_name)
             with open(
                     save_as_json,
@@ -221,25 +244,26 @@ class Evaluate:
                 json.dump(data, f)
 
         return EvaluationResult(
-            score=round(100 * ncorrect / ntotal, 2),
+            score=overall_score,
             results=results,
         )
 
     @staticmethod
     def _prepare_results_output(
-            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str | None
     ):
         return [
             (
-                merge_dicts(example, prediction) | {metric_name: score}
+                merge_dicts(example, prediction)
                 if prediction_is_dictlike(prediction)
-                else example.toDict() | {"prediction": prediction, metric_name: score}
+                else example.toDict() | {"prediction": prediction}
             )
+            | ({metric_name: score} if metric_name is not None else {})
             for example, prediction, score in results
         ]
 
     def _construct_result_table(
-        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str | None
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -247,7 +271,8 @@ class Evaluate:
 
         Args:
             results: The list of results to construct the result DataFrame from.
-            metric_name: The name of the metric used for evaluation.
+            metric_name: The name of the per-example metric used for evaluation. If `None`, no synthetic metric
+                column is added to the table.
 
         Returns:
             The constructed pandas DataFrame.
@@ -260,9 +285,9 @@ class Evaluate:
         result_df = pd.DataFrame(data)
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
-        return result_df.rename(columns={"correct": metric_name})
+        return result_df.rename(columns={"correct": metric_name}) if metric_name is not None else result_df
 
-    def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str):
+    def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str | None):
         """
         Display the specified result DataFrame in a table format.
 
@@ -270,7 +295,8 @@ class Evaluate:
             result_df: The result DataFrame to display.
             display_table: Whether to display the evaluation results in a table.
                 If a number is passed, the evaluation results will be truncated to that number before displayed.
-            metric_name: The name of the metric used for evaluation.
+            metric_name: The name of the per-example metric used for evaluation. If `None`, no metric column is
+                styled.
         """
         if isinstance(display_table, bool):
             df_to_display = result_df.copy()
@@ -279,7 +305,8 @@ class Evaluate:
             df_to_display = result_df.head(display_table).copy()
             truncated_rows = len(result_df) - display_table
 
-        df_to_display = stylize_metric_name(df_to_display, metric_name)
+        if metric_name is not None:
+            df_to_display = stylize_metric_name(df_to_display, metric_name)
 
         display_dataframe(df_to_display)
 
