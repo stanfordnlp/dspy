@@ -22,6 +22,7 @@ else:  # Direct script execution from the deployed docs repository.
 
 STABLE_VERSION = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
 SOURCE_MAP_COMMENT = re.compile(rb"(?:\n?//# sourceMappingURL=[^\r\n]*|/\*# sourceMappingURL=.*?\*/)", re.DOTALL)
+SHARED_HEADER_STYLES = Path(__file__).parent.parent / "versioning" / "header.css"
 
 
 def stable_version(value: str) -> str:
@@ -95,6 +96,19 @@ def optimize_site(site: Path) -> dict[str, int]:
         )
     after = sum(path.stat().st_size for path in site.rglob("*") if path.is_file())
     return {"before": before, "after": after, "source_maps": len(source_maps)}
+
+
+def install_shared_header_styles(site: Path, source: Path = SHARED_HEADER_STYLES) -> None:
+    """Give every renderer and historical snapshot the same header controls."""
+    destination = site / "_static" / "dspy-header.css"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(source.read_bytes())
+    for page in site.rglob("*.html"):
+        relative = Path(os.path.relpath(destination, page.parent)).as_posix()
+        tag = f'<link rel="stylesheet" href="{relative}">'
+        html = page.read_text()
+        if tag not in html:
+            page.write_text(html.replace("</head>", f"{tag}</head>", 1))
 
 
 def installed_packages() -> dict[str, str]:
@@ -188,6 +202,7 @@ def build(
         if artifact is None or package_source is None:
             raise ValueError("release builds require an artifact and package source")
         validate_release_site(output, config, version, renderer)
+    install_shared_header_styles(output)
     optimization = optimize_site(output)
     if version:
         repository = config.parent.parent

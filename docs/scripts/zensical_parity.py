@@ -19,10 +19,10 @@ from xml.etree import ElementTree
 import yaml
 
 if __package__:
-    from .build_docs import optimize_site
+    from .build_docs import install_shared_header_styles, optimize_site
     from .zensical_build import build_zensical_site
 else:
-    from build_docs import optimize_site
+    from build_docs import install_shared_header_styles, optimize_site
     from zensical_build import build_zensical_site
 
 REQUIRED_METADATA = (
@@ -88,6 +88,7 @@ def copy_project(source: Path, destination: Path) -> None:
 def freeze_material_config(config: Path, stats: dict[str, object], repository: Path) -> None:
     text = remove_top_level_block(config.read_text(), "hooks")
     text = inject_stats(text, stats)
+    text = text.replace("extra:\n", "extra:\n    version:\n        provider: mike\n        alias: true\n", 1)
     text = text.replace('paths: [".."]', f'paths: ["{repository}"]')
     config.write_text(text)
 
@@ -527,6 +528,7 @@ def main() -> None:
     )
     for site in (material_output, zensical_output):
         install_version_fixture(site, source / "versioning")
+        install_shared_header_styles(site, source / "versioning" / "header.css")
         optimize_site(site)
 
     report = compare_sites(material_output, zensical_output, notebooks, redirects, stats)

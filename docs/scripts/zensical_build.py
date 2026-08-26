@@ -135,6 +135,7 @@ def prepare_config(
 
     extra = dict(prepared.get("extra", {}))
     extra["stats"] = stats
+    extra["version"] = {"provider": "mike", "alias": True}
     prepared["extra"] = extra
 
     extensions = list(prepared.get("markdown_extensions", []))
