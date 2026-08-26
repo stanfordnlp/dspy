@@ -159,9 +159,6 @@ class Example:
         return isinstance(other, Example) and self._store == other._store
 
     def __hash__(self):
-        # `__eq__` above compares the underlying dicts (order-insensitive), so
-        # the hash must be order-insensitive too — Python's data model requires
-        # `a == b` to imply `hash(a) == hash(b)`.
         return hash(frozenset(self._store.items()))
 
     def keys(self, include_dspy=False):
