@@ -94,6 +94,16 @@ def exercise(page: Page, base_url: str) -> dict[str, object]:
     version_list.wait_for(state="visible")
     version_menu = version_list.is_visible()
     version_links = page.locator(".md-version__link").count()
+    version_geometry = version_list.evaluate(
+        "element => ({ width: element.getBoundingClientRect().width, "
+        "height: element.getBoundingClientRect().height, overflowY: getComputedStyle(element).overflowY })"
+    )
+    aliases_hidden = page.locator(".md-version__alias").evaluate_all(
+        "elements => elements.every(element => getComputedStyle(element).display === 'none')"
+    )
+    search_geometry = page.locator(".md-search").evaluate(
+        "element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })"
+    )
     tabs = {" ".join(text.split()) for text in page.locator(".md-tabs a:visible").all_text_contents()}
     scripts = {
         Path(source).name for source in page.locator("script[src]").evaluate_all("nodes => nodes.map(node => node.src)")
@@ -132,6 +142,9 @@ def exercise(page: Page, base_url: str) -> dict[str, object]:
     return {
         "selector_options": options,
         "version_menu": version_menu and version_links == len(options),
+        "version_geometry": version_geometry,
+        "version_aliases_hidden": aliases_hidden,
+        "search_geometry": search_geometry,
         "dark_mode": dark_mode,
         "search": searches,
         "mobile_navigation": mobile_navigation,
@@ -218,9 +231,26 @@ def main() -> None:
             "theme_persistence",
             "tutorial_navigation",
             "version_menu",
+            "version_aliases_hidden",
         ):
             if not behavior[feature]:
                 behavior_failures.append({"renderer": renderer, "feature": feature})
+        if not 180 <= behavior["version_geometry"]["width"] <= 200:
+            behavior_failures.append(
+                {"renderer": renderer, "feature": "version menu width", "actual": behavior["version_geometry"]}
+            )
+        if behavior["version_geometry"]["overflowY"] != "auto":
+            behavior_failures.append(
+                {"renderer": renderer, "feature": "version menu scrolling", "actual": behavior["version_geometry"]}
+            )
+        if not 250 <= behavior["search_geometry"]["width"] <= 270:
+            behavior_failures.append(
+                {"renderer": renderer, "feature": "search width", "actual": behavior["search_geometry"]}
+            )
+        if not 46 <= behavior["search_geometry"]["height"] <= 50:
+            behavior_failures.append(
+                {"renderer": renderer, "feature": "search height", "actual": behavior["search_geometry"]}
+            )
         missing_tabs = sorted(REQUIRED_TABS - set(behavior["tabs"]))
         if missing_tabs:
             behavior_failures.append(

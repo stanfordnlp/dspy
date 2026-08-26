@@ -4,6 +4,7 @@ import json
 import pytest
 
 from docs.hooks import fetch_stats as stats_hook
+from docs.scripts.build_docs import install_shared_header_styles
 from docs.scripts.zensical_build import (
     add_missing_titles,
     convert_notebooks,
@@ -66,7 +67,11 @@ nav:
     ]
     assert "hooks" not in result
     assert result["plugins"][1]["mkdocstrings"]["handlers"]["python"]["paths"] == [str(tmp_path)]
-    assert result["extra"]["stats"] == {"stars": "10k"}
+    assert result["extra"] == {
+        "social": [],
+        "stats": {"stars": "10k"},
+        "version": {"provider": "mike", "alias": True},
+    }
     assert "md_in_html" in result["markdown_extensions"]
     assert result["nav"] == [{"Guide": "guide.md"}]
 
@@ -81,6 +86,22 @@ def test_release_config_introspects_installed_package(tmp_path):
     python = result["plugins"][0]["mkdocstrings"]["handlers"]["python"]
     assert "paths" not in python
     assert python["options"] == {"show_source": True}
+
+
+def test_shared_header_styles_use_page_relative_links(tmp_path):
+    site = tmp_path / "site"
+    nested = site / "guide" / "example"
+    nested.mkdir(parents=True)
+    (site / "index.html").write_text("<html><head></head><body>Home</body></html>")
+    (nested / "index.html").write_text("<html><head></head><body>Guide</body></html>")
+    source = tmp_path / "header.css"
+    source.write_text(".md-version { width: 10rem; }\n")
+
+    install_shared_header_styles(site, source)
+
+    assert '<link rel="stylesheet" href="_static/dspy-header.css">' in (site / "index.html").read_text()
+    assert '<link rel="stylesheet" href="../../_static/dspy-header.css">' in (nested / "index.html").read_text()
+    assert (site / "_static" / "dspy-header.css").read_text() == source.read_text()
 
 
 def test_extracts_plugin_configuration_and_navigation_titles(tmp_path):
