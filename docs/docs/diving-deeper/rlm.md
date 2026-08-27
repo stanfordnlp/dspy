@@ -68,7 +68,7 @@ The model writes these into its code blocks. You don’t call them, but knowing 
 One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
-Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
+Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. Empty prompts and LM failures raise the same errors as `llm_query`. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
 
 **`SUBMIT(...)`**
 Ends the run and returns the final outputs. RLM validates the submitted dict against the signature’s output fields and parses each value to its declared type. On a type error or a missing field it feeds the message back to the model for another attempt instead of failing the call.
@@ -83,6 +83,8 @@ Three independent limits. `max_iters` bounds REPL turns before the extract fallb
 
 **`sub_lm`**
 The model for `llm_query` and `llm_query_batched`. Left unset it falls back to `dspy.settings.lm`, so by default the loop and its sub-calls share one model.
+
+RLM automatically rewrites independent `llm_query` loops to use concurrent execution. Loop prompts are gathered first, then parsing, printing, collection, and aggregation statements are replayed in source order with the corresponding responses. The compiler supports multiple independent queries per iteration and local prompt construction, including local accumulation loops. Successful calls preserve response and continuation order; prompt-building, prompt-validation, and call-budget failures are replayed at their scalar position after earlier results. If an LM call or replayed continuation fails, later independent calls may already be in flight and still count against the budget, but their continuations are not replayed. Code is left unchanged for `llm_query` list comprehensions and when a prompt depends on an earlier response, loop-carried state, a current-block helper function, unsupported control flow, a mutation the analysis cannot move safely, class definitions, wildcard imports, or dynamic namespace changes. The proof assumes formatting and iteration operands are ordinary JSON-like sandbox values, not custom objects with effectful dunder methods retained from an earlier REPL turn, and that built-in and query function names retain their injected bindings. Names beginning with `__dspy_` are reserved for compiler bookkeeping across REPL turns. Interpreter callbacks may observe the internal gather and replay tool calls rather than the original scalar tool-call cardinality. The action prompt presents both scalar and batched query interfaces, while the compiler accelerates eligible scalar loops without requiring generated code to opt in.
 
 ### Extending the sandbox with tools and inputs
 
