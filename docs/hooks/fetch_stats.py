@@ -25,10 +25,10 @@ CACHE_VERSION = 3
 CACHE_TTL = 3600  # 1 hour
 
 DEFAULTS = {
-    "release_version": "3.3.0b1",
+    "release_version": "3.3.1",
     "release_major_minor": "3.3",
-    "release_date": "May 2026",
-    "release_blurb": "New ReActV2 Module and improved LM/BaseLM",
+    "release_date": "Aug 2026",
+    "release_blurb": "PythonInterpreter improvements, faster GEPA, and MCP v2 compatibility",
     "monthly_downloads": "7.5M+",
     "contributors": "400+",
     "stars": "34.6k",

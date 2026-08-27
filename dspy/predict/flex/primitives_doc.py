@@ -5,7 +5,7 @@ implements the user's signature. It has exactly two methods:
 1) `def __init__(self):` — calls `super().__init__()` and assigns each predictor it
    needs to an attribute, e.g. `self.classify = dspy.Predict("text -> label")`.
    Each predictor is a constructed `dspy.Predict` / `dspy.ChainOfThought` /
-   `dspy.ReAct` / `dspy.RLM` over a sub-signature string. Define a predictor ONLY
+   `dspy.ReActV2` / `dspy.RLM` over a sub-signature string. Define a predictor ONLY
    for a step that genuinely needs a language model. If the task needs no LM at
    all, define no predictors (an `__init__` with just `super().__init__()`).
 
@@ -55,7 +55,7 @@ Available DSPy primitives:
 - `dspy.ChainOfThought("a -> b")`, like Predict but adds an implicit `reasoning`
    output field; useful when the answer benefits from explicit step-by-step thought.
 
-- `dspy.ReAct(signature_str, tools=[tool1, tool2])`, multi-step reasoning + tool
+- `dspy.ReActV2(signature_str, tools=[tool1, tool2])`, multi-step reasoning + tool
    use. `tools` is a list of plain Python callables or `dspy.Tool` instances.
 
 - `dspy.RLM("context, query -> output")`, Recursive Language Model: the LLM writes
@@ -67,16 +67,16 @@ Available DSPy primitives:
    calls, default 50), `sub_lm` (cheaper LM for sub-queries), `tools` (extra callables
    for the REPL).
 
-- Tools for `dspy.ReAct` / `dspy.RLM` come from two places:
+- Tools for `dspy.ReActV2` / `dspy.RLM` come from two places:
   (1) any tools listed in the available context, in scope by name — ONLY these provided tools may
-  be handed to a sub-predictor via `dspy.ReAct(..., tools=[...])` / `dspy.RLM(..., tools=[...])`;
+  be handed to a sub-predictor via `dspy.ReActV2(..., tools=[...])` / `dspy.RLM(..., tools=[...])`;
   and (2) helpers you AUTHOR yourself — when a sub-step needs a capability the provided tools don't
   cover (deterministic lookups, parsing/formatting, calculators, validators, retrieval helpers,
   etc.), define a plain function (with a docstring and type hints) nested inside `forward` and CALL
   IT DIRECTLY. This code runs in a sandbox, so an authored helper cannot be handed to a bridged
   sub-predictor — keep authored helpers to direct calls in `forward`.
 
-- `dspy.Tool(func)`, wraps a callable as a tool (for `ReAct`/`RLM`); usually you can pass the
+- `dspy.Tool(func)`, wraps a callable as a tool (for `ReActV2`/`RLM`); usually you can pass the
    bare function and it is wrapped for you.
 
 - `dspy.Prediction(field_a=value_a, field_b=value_b)`, construct the final return
@@ -135,7 +135,7 @@ Rules you MUST follow:
     * `dspy.Predict` for direct, single-call transformations.
     * `dspy.ChainOfThought` when the answer benefits from explicit step-by-step
       reasoning.
-    * `dspy.ReAct` when external tools must be called during reasoning.
+    * `dspy.ReActV2` when external tools must be called during reasoning.
     * `dspy.RLM` when an input field is a large blob (long document, big JSON,
       multi-table data) that doesn't fit naturally in a single prompt — RLM
       lets the LLM explore it iteratively via a sandboxed REPL.
