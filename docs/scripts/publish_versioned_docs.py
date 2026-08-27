@@ -101,6 +101,8 @@ def publish_site(
     from mike import commands, git_utils
 
     if not mutable:
+        # Automated publication is append-only. Intentional corrections to an
+        # existing snapshot go through review in the deployment repository.
         version_tuple(identifier)
         deployed = deployed_tree_digest(repository, branch, identifier)
         if deployed:
