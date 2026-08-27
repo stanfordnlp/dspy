@@ -617,7 +617,11 @@ for item in items:
         assert calls == ["a", "b"]
         assert batches == []
         assert namespace["answers"] == ["answer:a", "answer:b"]
-        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+        assert not any(
+            name.startswith("__dspy_")
+            and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"}
+            for name in namespace
+        )
 
     def test_persistent_compiler_name_collision_uses_scalar_loop_without_deleting_state(self):
         import ast
@@ -628,7 +632,11 @@ for item in items:
 """
         compiled, count = RLM._compile_llm_query_loops(code)
         tool_names = {"__dspy_llm_query_batched", "__dspy_replay_llm_query"}
-        generated_names = {node.id for node in ast.walk(ast.parse(compiled)) if isinstance(node, ast.Name) and node.id.startswith("__dspy_")} - tool_names
+        generated_names = {
+            node.id
+            for node in ast.walk(ast.parse(compiled))
+            if isinstance(node, ast.Name) and node.id.startswith("__dspy_")
+        } - tool_names
         retained = {name: f"retained:{name}" for name in generated_names}
         calls, batches = [], []
         namespace = {
