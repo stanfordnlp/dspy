@@ -165,6 +165,8 @@ class Image(Type, SandboxSerializable):
 
     def sandbox_setup(self) -> str:
         return """\
+from PIL import Image as PILImage
+
 class DSPyImage(str):
     @property
     def url(self):
@@ -175,7 +177,6 @@ class DSPyImage(str):
             raise ValueError("to_pil() requires an embedded image; construct it with dspy.Image.from_url() first")
         import base64
         import io
-        from PIL import Image as PILImage
         _, encoded = self.split(",", 1)
         image = PILImage.open(io.BytesIO(base64.b64decode(encoded)))
         image.load()

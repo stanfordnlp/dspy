@@ -30,6 +30,7 @@ from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
     CodeInterpreter,
+    CodeInterpreterError,
     FinalOutput,
     _create_interpreter,
     _validate_interpreter,
@@ -531,18 +532,25 @@ class RLM(Module):
         return regular_args
 
     def _preload_sandbox_packages(self, input_args: dict[str, Any], repl: CodeInterpreter) -> None:
-        """Preload packages declared by serializable inputs when the interpreter supports it."""
-        packages = list(
-            dict.fromkeys(
-                package
-                for value in input_args.values()
-                if isinstance(value, SandboxSerializable)
-                for package in value.sandbox_packages()
-            )
-        )
+        """Require the interpreter to provision packages declared by serializable inputs."""
+        packages = []
+        for value in input_args.values():
+            if not isinstance(value, SandboxSerializable):
+                continue
+            declared = value.sandbox_packages()
+            if not isinstance(declared, list) or not all(isinstance(package, str) and package for package in declared):
+                raise TypeError(f"{type(value).__name__}.sandbox_packages() must return a list of non-empty strings")
+            packages.extend(declared)
+        packages = list(dict.fromkeys(packages))
         preload_packages = getattr(repl, "preload_packages", None)
-        if packages and callable(preload_packages):
-            preload_packages(packages)
+        if not packages:
+            return
+        if not callable(preload_packages):
+            raise CodeInterpreterError(
+                f"{type(repl).__name__} cannot provision required sandbox packages {packages}. "
+                "Use an interpreter that implements preload_packages(packages)."
+            )
+        preload_packages(packages)
 
     # =========================================================================
     # CodeInterpreter Lifecycle

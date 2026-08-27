@@ -43,12 +43,13 @@ class SandboxSerializable(ABC):
 
     The serialization contract provides these methods:
 
-    - ``sandbox_packages``: optional Pyodide packages required to reconstruct
-      or manipulate the value. The default is no packages.
-    - ``sandbox_setup``: Python statements (usually imports) executed once
-      in the sandbox. The returned text is also surfaced to the LLM in the
-      variable description, so the model knows which names are in scope
-      (e.g. ``pd`` when pandas is imported).
+    - ``sandbox_packages``: packages the interpreter must provision before
+      reconstructing the value. The default is no packages.
+    - ``sandbox_setup``: Python statements executed once in the sandbox. This
+      must import required packages so unavailable dependencies fail during
+      input injection rather than later in generated code. The returned text
+      is also surfaced to the LLM in the variable description, so the model
+      knows which names are in scope (e.g. ``pd`` when pandas is imported).
     - ``to_sandbox``: serialize the value to text bytes or binary bytes.
     - ``sandbox_assignment``: Python code that reconstructs the value from
       a data expression.
@@ -85,7 +86,7 @@ class SandboxSerializable(ABC):
     def sandbox_setup(self) -> str: ...
 
     def sandbox_packages(self) -> list[str]:
-        """Return Pyodide packages that a supporting interpreter should preload."""
+        """Return packages that the interpreter must provision before setup."""
         return []
 
     @abstractmethod

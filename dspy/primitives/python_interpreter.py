@@ -388,7 +388,7 @@ class PythonInterpreter:
         return args
 
     def preload_packages(self, packages: list[str]) -> None:
-        """Add Pyodide packages before this interpreter session starts."""
+        """Ensure Pyodide packages are available before this interpreter session starts."""
         if not isinstance(packages, list) or not all(isinstance(package, str) and package for package in packages):
             raise TypeError("packages must be a list of non-empty strings")
         if not self._uses_default_deno_command:

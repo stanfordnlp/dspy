@@ -1723,6 +1723,25 @@ class TestPrepareSerializableVars:
 
         assert loaded == ["package-a", "package-b"]
 
+    def test_required_packages_need_interpreter_support(self):
+        class PackageSerializable(_StubSerializable):
+            def sandbox_packages(self) -> list[str]:
+                return ["package-a"]
+
+        with pytest.raises(CodeInterpreterError, match=r"cannot provision required sandbox packages \['package-a'\]"):
+            RLM("data -> answer")._preload_sandbox_packages({"data": PackageSerializable()}, MockInterpreter())
+
+    @pytest.mark.parametrize("packages", ["package-a", [""], [None]])
+    def test_rejects_invalid_sandbox_package_declarations(self, packages):
+        class InvalidPackageSerializable(_StubSerializable):
+            def sandbox_packages(self):
+                return packages
+
+        with pytest.raises(TypeError, match="must return a list of non-empty strings"):
+            RLM("data -> answer")._preload_sandbox_packages(
+                {"data": InvalidPackageSerializable()}, MockInterpreter()
+            )
+
     def test_separates_serializable_from_regular(self):
         """Serializable values are injected; regular values are returned."""
         mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
@@ -1870,20 +1889,21 @@ class TestLargeSerializableRoundTrip:
 
 
 @pytest.mark.deno
-def test_image_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
+def test_image_round_trips_from_sandbox_to_multimodal_llm():
     from unittest.mock import MagicMock
 
     lm = MagicMock(return_value=["a red square"])
     rlm = RLM("image -> answer", sub_lm=lm)
     image = dspy.Image("data:image/png;base64,aW1hZ2U=")
-    interp = pooled_interpreter
 
-    rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-    regular = rlm._prepare_serializable_vars({"image": image}, interp)
-    result = interp.execute(
-        'print(type(image).__name__); print(llm_query("Describe it", images=[image]))',
-        variables=regular,
-    )
+    with PythonInterpreter() as interp:
+        rlm._preload_sandbox_packages({"image": image}, interp)
+        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+        regular = rlm._prepare_serializable_vars({"image": image}, interp)
+        result = interp.execute(
+            'print(type(image).__name__); print(llm_query("Describe it", images=[image]))',
+            variables=regular,
+        )
 
     assert "DSPyImage" in result
     assert "a red square" in result
@@ -1892,7 +1912,7 @@ def test_image_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
 
 
 @pytest.mark.deno
-def test_image_batch_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
+def test_image_batch_round_trips_from_sandbox_to_multimodal_llm():
     class ImageEchoLM:
         def __call__(self, *, messages):
             content = messages[0]["content"]
@@ -1900,14 +1920,15 @@ def test_image_batch_round_trips_from_sandbox_to_multimodal_llm(pooled_interpret
 
     rlm = RLM("image -> answer", sub_lm=ImageEchoLM())
     image = dspy.Image("data:image/png;base64,aW1hZ2U=")
-    interp = pooled_interpreter
 
-    rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-    regular = rlm._prepare_serializable_vars({"image": image}, interp)
-    result = interp.execute(
-        'print(llm_query_batched(["first", "second"], images=[image, [image]]))',
-        variables=regular,
-    )
+    with PythonInterpreter() as interp:
+        rlm._preload_sandbox_packages({"image": image}, interp)
+        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+        regular = rlm._prepare_serializable_vars({"image": image}, interp)
+        result = interp.execute(
+            'print(llm_query_batched(["first", "second"], images=[image, [image]]))',
+            variables=regular,
+        )
 
     assert "first:data:image/png;base64,aW1hZ2U=" in result
     assert "second:data:image/png;base64,aW1hZ2U=" in result

@@ -38,7 +38,10 @@ this option is not supported with a custom `deno_command`, whose runner and pack
 RLM also calls `preload_packages()` automatically for package requirements declared by `SandboxSerializable` inputs;
 for example, `dspy.Image` declares Pillow. Package declarations can extend an unstarted interpreter, but the package
 set is fixed after its process starts. Configure all packages up front when reusing a caller-owned interpreter across
-inputs with different requirements. Custom Deno commands must provide their own package management.
+inputs with different requirements. A custom interpreter used with package-bearing values must implement
+`preload_packages(packages)` and either provision the packages or raise an error; `sandbox_setup()` then imports the
+dependencies to verify they are available before generated code runs. Custom Deno commands must provide their own
+package management.
 
 ## Execution Instructions
 
