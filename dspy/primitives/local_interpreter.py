@@ -6,7 +6,9 @@ import contextvars
 import inspect
 import json
 import keyword
+import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -62,7 +64,8 @@ class LocalInterpreter:
 
     execution_instructions = (
         "Code runs as Python in a persistent local subprocess. State, imports, functions, and JSON-compatible "
-        "variables persist for this session. Host tools and SUBMIT are available as global functions."
+        "variables persist for this session. Host tools and SUBMIT are available as global functions. All threads "
+        "must finish before each code execution returns; use context-managed executors for parallel work."
     )
 
     def __init__(
@@ -128,6 +131,8 @@ class LocalInterpreter:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+                start_new_session=os.name == "posix",
                 text=True,
             )
         except OSError as exc:
@@ -181,7 +186,19 @@ class LocalInterpreter:
         self._process = None
         if process is None:
             return
-        process.kill()
+        if os.name == "posix":
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)
+        elif os.name == "nt":
+            with contextlib.suppress(OSError):
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        with contextlib.suppress(OSError):
+            process.kill()
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=1)
         for stream in (process.stdin, process.stdout):
@@ -299,8 +316,4 @@ class LocalInterpreter:
         if self._ended:
             return
         self._ended = True
-        if self._process is not None:
-            with contextlib.suppress(CodeInterpreterError, subprocess.TimeoutExpired):
-                self._send({"type": "shutdown"})
-                self._process.wait(timeout=1)
         self._kill()

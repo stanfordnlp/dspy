@@ -25,6 +25,11 @@ Python executable.
 Python cannot forcibly stop a running host callable, so that callable may finish in a detached daemon thread; its
 result is discarded and the interpreter session remains terminal.
 
+Parallel guest code is supported when all threads finish before the current `execute()` call returns, such as a
+context-managed `ThreadPoolExecutor`. Leaving a guest thread running makes the session terminal because that thread
+could otherwise mutate state, write output, or invoke tools during a later execution. Shutdown and terminal failures
+also terminate ordinary descendant processes with the worker.
+
 `LocalInterpreter.execution_instructions` is stable class metadata. `RLM` adds it to the action prompt without
 starting a worker.
 

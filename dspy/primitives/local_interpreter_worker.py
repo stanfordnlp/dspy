@@ -15,6 +15,11 @@ from typing import Any
 
 _protocol_output = os.fdopen(os.dup(sys.__stdout__.fileno()), "w", encoding="utf-8")
 os.set_inheritable(_protocol_output.fileno(), False)
+_worker_stdout, _worker_stderr = sys.stdout, sys.stderr
+_sink = os.open(os.devnull, os.O_WRONLY)
+os.dup2(_sink, 1)
+os.dup2(_sink, 2)
+os.close(_sink)
 _send_lock = threading.Lock()
 
 
@@ -74,7 +79,8 @@ class Protocol:
 class CapturedOutput:
     def __enter__(self) -> CapturedOutput:
         self.file = tempfile.TemporaryFile()
-        for stream in (sys.stdout, sys.stderr):
+        sys.stdout, sys.stderr = _worker_stdout, _worker_stderr
+        for stream in (_worker_stdout, _worker_stderr):
             with contextlib.suppress(Exception):
                 stream.flush()
         self.saved = os.dup(1), os.dup(2)
@@ -86,6 +92,7 @@ class CapturedOutput:
         for stream in (sys.stdout, sys.stderr):
             with contextlib.suppress(Exception):
                 stream.flush()
+        sys.stdout, sys.stderr = _worker_stdout, _worker_stderr
         os.dup2(self.saved[0], 1)
         os.dup2(self.saved[1], 2)
         os.close(self.saved[0])
@@ -98,6 +105,7 @@ class CapturedOutput:
 class Session:
     def __init__(self, protocol: Protocol) -> None:
         self.protocol = protocol
+        self.worker_threads = set(threading.enumerate())
         self.namespace: dict[str, Any] = {"__builtins__": vars(builtins).copy()}
         self.tool_names: set[str] = set()
         self.output_fields: list[dict[str, Any]] | None = None
@@ -163,6 +171,12 @@ class Session:
             except BaseException as exc:
                 outcome = {"type": "execution_error", "error": describe(exc)}
         outcome["stdout"] = captured.value
+        leaked_threads = [thread.name for thread in threading.enumerate() if thread not in self.worker_threads]
+        if leaked_threads:
+            return {
+                "type": "terminal_error",
+                "error": f"executed code left background threads running: {leaked_threads!r}",
+            }
         return outcome
 
 
@@ -208,7 +222,10 @@ def main() -> None:
                 raise ValueError(request.get("error"))
             if request.get("type") != "execute":
                 raise ValueError("unknown request")
-            send(session.execute(request))
+            response = session.execute(request)
+            send(response)
+            if response.get("type") == "terminal_error":
+                return
     except EOFError:
         return
     except BaseException as exc:

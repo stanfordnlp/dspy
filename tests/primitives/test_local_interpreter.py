@@ -1,7 +1,9 @@
 import contextvars
 import os
+import tempfile
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +32,53 @@ def test_os_level_output_does_not_corrupt_protocol():
         )
         assert output == "guest fd stdout\nguest fd stderr\nchild stdout"
         assert interpreter.execute("6 * 7") == 42
+
+
+def test_python_stdout_reassignment_does_not_break_later_capture():
+    with dspy.LocalInterpreter() as interpreter:
+        assert interpreter.execute("import io, sys\nsys.stdout = io.StringIO()\nprint('hidden')") is None
+        assert interpreter.execute("print('captured')") == "captured"
+
+
+def test_background_thread_is_terminal_before_it_can_cross_executions():
+    calls = []
+    interpreter = dspy.LocalInterpreter(tools={"record": lambda *, value: calls.append(value)})
+
+    with pytest.raises(CodeInterpreterError, match="left background threads running"):
+        interpreter.execute(
+            "import threading\n"
+            "def late():\n"
+            "    threading.Event().wait(60)\n"
+            "    record(value='late')\n"
+            "threading.Thread(target=late, daemon=True).start()"
+        )
+
+    assert calls == []
+    with pytest.raises(CodeInterpreterError, match="shut down"):
+        interpreter.execute("1")
+
+
+def test_shutdown_terminates_descendant_processes():
+    fd, path_string = tempfile.mkstemp(prefix="local-interpreter-child-", suffix=".txt")
+    os.close(fd)
+    path = Path(path_string)
+    path.unlink()
+    interpreter = dspy.LocalInterpreter()
+
+    try:
+        assert interpreter.execute(
+            "import subprocess, sys\n"
+            f"path = {str(path)!r}\n"
+            "child = subprocess.Popen([sys.executable, '-c', "
+            "f\"import time; from pathlib import Path; time.sleep(0.4); Path({path!r}).write_text('survived')\"])\n"
+            "'child started'"
+        ) == "child started"
+        interpreter.shutdown()
+        time.sleep(0.8)
+        assert not path.exists()
+    finally:
+        interpreter.shutdown()
+        path.unlink(missing_ok=True)
 
 
 def test_tools_and_typed_submit():
