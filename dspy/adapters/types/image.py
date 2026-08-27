@@ -11,6 +11,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 
 try:
     from PIL import Image as PILImage
@@ -24,7 +25,7 @@ except ImportError:
 _UNSET = object()
 
 
-class Image(Type):
+class Image(Type, SandboxSerializable):
     url: str
 
     model_config = pydantic.ConfigDict(
@@ -161,6 +162,57 @@ class Image(Type):
             image_type = self.url.split(";")[0].split("/")[-1]
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
         return f"Image(url='{self.url}')"
+
+    def sandbox_setup(self) -> str:
+        return """\
+class DSPyImage(str):
+    @property
+    def url(self):
+        return str(self)
+
+    def to_pil(self):
+        if not self.startswith("data:"):
+            raise ValueError("to_pil() requires an embedded image; construct it with dspy.Image.from_url() first")
+        import base64
+        import io
+        from PIL import Image as PILImage
+        _, encoded = self.split(",", 1)
+        image = PILImage.open(io.BytesIO(base64.b64decode(encoded)))
+        image.load()
+        return image
+
+    @classmethod
+    def from_pil(cls, image, format="PNG"):
+        import base64
+        import io
+        buffer = io.BytesIO()
+        image.save(buffer, format=format)
+        mime_type = "image/jpeg" if format.upper() in ("JPG", "JPEG") else f"image/{format.lower()}"
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return cls(f"data:{mime_type};base64,{encoded}")
+"""
+
+    def sandbox_packages(self) -> list[str]:
+        return ["Pillow"]
+
+    def to_sandbox(self) -> bytes:
+        return self.url.encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = DSPyImage({data_expr})"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        if self.url.startswith("data:"):
+            media_type = self.url.partition(";")[0].removeprefix("data:")
+            source = f"embedded {media_type} image ({len(self.url):,} encoded characters)"
+        else:
+            source = f"image URL: {self.url}"
+        preview = (
+            f"{source}. In the sandbox this is a string-compatible DSPyImage. "
+            "Pass it to llm_query(..., images=[image]). If Pillow is installed, use image.to_pil() "
+            "and DSPyImage.from_pil(...) to manipulate it."
+        )
+        return preview[:max_chars]
 
 
 def is_url(string: str) -> bool:

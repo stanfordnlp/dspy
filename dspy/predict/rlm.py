@@ -59,7 +59,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query(prompt, images=None)` - query a sub-LLM (~500K char capacity), optionally with images
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
@@ -273,13 +273,42 @@ class RLM(Module):
                     )
                 state["call_count"] += n
 
-        def _query_lm(prompt: str) -> str:
+        def _normalize_images(images: Any) -> list[dspy.Image]:
+            if images is None:
+                return []
+            if isinstance(images, (str, dspy.Image, dict)):
+                images = [images]
+            if not isinstance(images, (list, tuple)):
+                raise TypeError("images must be an image or a list of images")
+
+            normalized = []
+            for image in images:
+                if isinstance(image, dspy.Image):
+                    normalized.append(image)
+                elif isinstance(image, str):
+                    normalized.append(dspy.Image(image))
+                elif isinstance(image, dict) and set(image) == {"url"}:
+                    normalized.append(dspy.Image(image))
+                else:
+                    raise TypeError(
+                        "Each image must be a dspy.Image, URL, data URI, or {'url': ...} mapping, "
+                        f"got {type(image).__name__}."
+                    )
+            return normalized
+
+        def _query_lm(prompt: str, images: Any = None) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
                 raise dspy.LMNotConfiguredError(
                     "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
                 )
-            response = target_lm(prompt)
+            normalized_images = _normalize_images(images)
+            if normalized_images:
+                content = [{"type": "text", "text": prompt}]
+                content.extend(image.format()[0] for image in normalized_images)
+                response = target_lm(messages=[{"role": "user", "content": content}])
+            else:
+                response = target_lm(prompt)
             if isinstance(response, dspy.LMResponse):
                 text = response.text
             elif isinstance(response, list) and response:
@@ -295,12 +324,12 @@ class RLM(Module):
                 raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
             return text
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
+        def llm_query(prompt: str, images=None) -> str:
+            """Query the LLM with a prompt and optional image or list of images."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
-            return _query_lm(prompt)
+            return _query_lm(prompt, images)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
@@ -437,6 +466,15 @@ class RLM(Module):
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
+    def _normalize_image_inputs(self, input_args: dict[str, Any]) -> dict[str, Any]:
+        """Wrap bare PIL images so they use dspy.Image's sandbox transport."""
+        normalized = dict(input_args)
+        for name, value in normalized.items():
+            value_type = type(value)
+            if value_type.__module__.startswith("PIL."):
+                normalized[name] = dspy.Image(value)
+        return normalized
+
     def _prepare_serializable_vars(
         self, input_args: dict[str, Any], repl: CodeInterpreter,
     ) -> dict[str, Any]:
@@ -478,6 +516,20 @@ class RLM(Module):
             repl.execute("\n".join(code_lines), variables=payload_vars)
 
         return regular_args
+
+    def _preload_sandbox_packages(self, input_args: dict[str, Any], repl: CodeInterpreter) -> None:
+        """Preload packages declared by serializable inputs when the interpreter supports it."""
+        packages = list(
+            dict.fromkeys(
+                package
+                for value in input_args.values()
+                if isinstance(value, SandboxSerializable)
+                for package in value.sandbox_packages()
+            )
+        )
+        preload_packages = getattr(repl, "preload_packages", None)
+        if packages and callable(preload_packages):
+            preload_packages(packages)
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -715,12 +767,14 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        input_args = self._normalize_image_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
+            self._preload_sandbox_packages(input_args, repl)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -804,12 +858,14 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        input_args = self._normalize_image_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
+            self._preload_sandbox_packages(input_args, repl)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 

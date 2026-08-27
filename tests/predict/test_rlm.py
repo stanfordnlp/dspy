@@ -295,6 +295,36 @@ class TestRLMInitialization:
 
         assert result == "[[ ## answer ## ]]\ntyped answer"
 
+    def test_llm_query_sends_images_as_multimodal_content(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["a red square"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+        image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+
+        assert tools["llm_query"]("What is this?", images=[image]) == "a red square"
+
+        messages = lm.call_args.kwargs["messages"]
+        assert messages == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is this?"},
+                    {"type": "image_url", "image_url": {"url": image.url}},
+                ],
+            }
+        ]
+
+    def test_llm_query_accepts_one_sandbox_image_string(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["caption"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        assert tools["llm_query"]("Caption this", images="https://example.com/image.png") == "caption"
+        content = lm.call_args.kwargs["messages"][0]["content"]
+        assert content[1]["image_url"]["url"] == "https://example.com/image.png"
+
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
 
@@ -1630,6 +1660,23 @@ class TestBuildVariablesWithSerializable:
 class TestPrepareSerializableVars:
     """Tests for _prepare_serializable_vars with MockInterpreter."""
 
+    def test_preloads_deduplicated_serializable_packages(self):
+        class PackageSerializable(_StubSerializable):
+            def sandbox_packages(self) -> list[str]:
+                return ["package-a", "package-b"]
+
+        mock = MockInterpreter()
+        loaded = []
+        mock.preload_packages = loaded.extend
+        rlm = RLM("first, second -> answer")
+
+        rlm._preload_sandbox_packages(
+            {"first": PackageSerializable(), "second": PackageSerializable()},
+            mock,
+        )
+
+        assert loaded == ["package-a", "package-b"]
+
     def test_separates_serializable_from_regular(self):
         """Serializable values are injected; regular values are returned."""
         mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
@@ -1676,6 +1723,30 @@ class TestPrepareSerializableVars:
         code, variables = mock.call_history[0]
         assert "_raw_data = base64.b64decode(_raw_data_base64)" in code
         assert variables["_raw_data_base64"] == base64.b64encode(b"\xff\xfe\xfd").decode("ascii")
+
+    def test_dspy_image_is_injected_as_sandbox_image(self):
+        mock = MockInterpreter(responses=[""])
+        rlm = RLM("image, query -> answer")
+        image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+
+        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
+        regular = rlm._prepare_serializable_vars({"image": image, "query": "caption it"}, mock)
+
+        assert regular == {"query": "caption it"}
+        code, variables = mock.call_history[0]
+        assert "class DSPyImage(str)" in code
+        assert "image = DSPyImage(_raw_image)" in code
+        assert variables == {"_raw_image": image.url}
+
+    def test_bare_pil_image_is_normalized_to_dspy_image(self):
+        pytest.importorskip("PIL.Image")
+        from PIL import Image as PILImage
+
+        rlm = RLM("image -> answer")
+        normalized = rlm._normalize_image_inputs({"image": PILImage.new("RGB", (2, 3), "red")})
+
+        assert isinstance(normalized["image"], dspy.Image)
+        assert normalized["image"].url.startswith("data:image/png;base64,")
 
     def test_large_payload_not_inlined_in_code(self):
         """Large payloads should ride in the variables kwarg, not the code string.
@@ -1760,6 +1831,46 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+@pytest.mark.deno
+def test_image_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
+    from unittest.mock import MagicMock
+
+    lm = MagicMock(return_value=["a red square"])
+    rlm = RLM("image -> answer", sub_lm=lm)
+    image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+    interp = pooled_interpreter
+
+    rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+    regular = rlm._prepare_serializable_vars({"image": image}, interp)
+    result = interp.execute(
+        'print(type(image).__name__); print(llm_query("Describe it", images=[image]))',
+        variables=regular,
+    )
+
+    assert "DSPyImage" in result
+    assert "a red square" in result
+    content = lm.call_args.kwargs["messages"][0]["content"]
+    assert content[1]["image_url"]["url"] == image.url
+
+
+@pytest.mark.deno
+def test_image_preloads_pillow_for_default_sandbox():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image as PILImage
+
+    image = dspy.Image(PILImage.new("RGB", (2, 3), "red"))
+    rlm = RLM("image -> answer", max_iters=2)
+    rlm.generate_action = make_mock_predictor([
+        {"reasoning": "Inspect the image", "code": "print(image.to_pil().size)"},
+        {"reasoning": "Return the observed size", "code": 'SUBMIT("2x3")'},
+    ])
+
+    result = rlm(image=image)
+
+    assert result.answer == "2x3"
+    assert result.trajectory[0]["output"] == "(2, 3)\n"
 
 
 if __name__ == "__main__":

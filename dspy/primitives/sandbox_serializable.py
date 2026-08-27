@@ -41,8 +41,10 @@ __all__ = ["SandboxSerializable", "build_repl_variable"]
 class SandboxSerializable(ABC):
     """Abstract base for types that support RLM sandbox injection.
 
-    Subclasses implement four methods:
+    The serialization contract provides these methods:
 
+    - ``sandbox_packages``: optional Pyodide packages required to reconstruct
+      or manipulate the value. The default is no packages.
     - ``sandbox_setup``: Python statements (usually imports) executed once
       in the sandbox. The returned text is also surfaced to the LLM in the
       variable description, so the model knows which names are in scope
@@ -57,6 +59,9 @@ class SandboxSerializable(ABC):
         class DataFrame(SandboxSerializable):
             def __init__(self, df):
                 self.data = df
+
+            def sandbox_packages(self) -> list[str]:
+                return ["pandas", "pyarrow"]
 
             def sandbox_setup(self) -> str:
                 return "import pandas as pd\\nimport base64\\nimport io"
@@ -78,6 +83,10 @@ class SandboxSerializable(ABC):
 
     @abstractmethod
     def sandbox_setup(self) -> str: ...
+
+    def sandbox_packages(self) -> list[str]:
+        """Return Pyodide packages that a supporting interpreter should preload."""
+        return []
 
     @abstractmethod
     def to_sandbox(self) -> bytes: ...

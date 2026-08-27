@@ -20,7 +20,7 @@ A normal `Predict` call puts the whole context into the prompt, so every token c
 
 ### 4. Built-in `llm_query` tools give the loop its recursion
 
-The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox, `llm_query(prompt)` for one call and `llm_query_batched(prompts)` for concurrent calls. For example, the outer model might use code to locate and slice relevant text, then hands a focused snippet to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One long-context question becomes many short-context ones.
+The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox: `llm_query(prompt, images=None)` for one text or multimodal call, and `llm_query_batched(prompts)` for concurrent text calls. For example, the outer model might use code to locate and slice relevant text, or crop an image, then hand the focused input to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One large-context question becomes many focused ones.
 
 ### 5. A shared counter caps sub-LLM calls per run
 
@@ -64,11 +64,11 @@ The public call validates the inputs against the signature, builds the variable 
 
 The model writes these into its code blocks. You don’t call them, but knowing them tells you what the model can do.
 
-**`llm_query(prompt)`**
-One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
+**`llm_query(prompt, images=None)`**
+One sub-LLM call. It sends the prompt and any image, or list of images, to `sub_lm` or the configured LM, increments the counter, and returns the response text. Images may be `dspy.Image` objects, URLs, data URIs, or sandbox `DSPyImage` values. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
-Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
+Concurrent text-only sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
 
 **`SUBMIT(...)`**
 Ends the run and returns the final outputs. RLM validates the submitted dict against the signature’s output fields and parses each value to its declared type. On a type error or a missing field it feeds the message back to the model for another attempt instead of failing the call.
@@ -96,7 +96,9 @@ A zero-argument callable that returns a fresh `CodeInterpreter` for one invocati
 An escape hatch for a caller-owned interpreter, supplied as the first positional argument. RLM mutates its `tools` dictionary and, when supported, its output-field metadata, but does not shut down or restore the instance. Reuse is supported only for sequential calls to the same RLM instance, so retained variables and tool registrations stay within one program and trust boundary. Use `interpreter_factory` for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
 **`dspy.SandboxSerializable`**
-The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
+The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`; override `sandbox_packages` when a supporting interpreter should preload Pyodide packages before setup. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
+
+`dspy.Image` implements this contract and declares Pillow as its sandbox package. With the default `PythonInterpreter`, an image enters the sandbox as a string-compatible `DSPyImage`, and Pillow is preloaded automatically. Generated code can pass the image directly to `llm_query(..., images=[image])`, or convert embedded images with `image.to_pil()` and convert them back after manipulation with `DSPyImage.from_pil(...)`. Bare host-side PIL images are automatically wrapped as `dspy.Image` inputs by RLM. Custom interpreters own their package environment and can implement `preload_packages(packages)` to consume package declarations.
 
 ### Inspecting the trajectory
 

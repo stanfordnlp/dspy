@@ -251,6 +251,7 @@ class PythonInterpreter:
         tools: dict[str, Callable[..., str]] | None = None,
         output_fields: list[dict] | None = None,
         callbacks: list[BaseCallback] | None = None,
+        packages: list[str] | None = None,
     ) -> None:
         """
         Args:
@@ -267,10 +268,18 @@ class PythonInterpreter:
             output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
             callbacks: Optional instance-level callback handlers.
+            packages: Pyodide packages to preload before sandboxed execution, such as ``["Pillow"]``.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
+        if packages is not None and (
+            not isinstance(packages, list) or not all(isinstance(package, str) and package for package in packages)
+        ):
+            raise TypeError("packages must be a list of non-empty strings")
+        if deno_command and packages:
+            raise ValueError("packages can only be used with PythonInterpreter's default Deno command")
 
+        self.packages = list(packages or [])
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
         mounts = {}
@@ -291,49 +300,12 @@ class PythonInterpreter:
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         self._uses_default_deno_command = not deno_command
+        self._deno_executable = None
+        self._deno_dir = None
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            deno_executable = _find_deno_executable()
-            args = [
-                deno_executable,
-                "run",
-                "--no-config",
-                "--no-lock",
-                "--node-modules-dir=false",
-            ]
-
-            # Also allow reading Deno's cache directory so Pyodide can load its files
-            deno_dir = self._get_deno_dir(deno_executable)
-            protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
-            if any(_paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected):
-                raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
-            raw_read_paths = [
-                self._get_runner_path(),
-                *([deno_dir] if deno_dir else []),
-                *self.enable_read_paths,
-                *self.enable_write_paths,
-            ]
-            allowed_read_paths = [_canonicalize_path(p) for p in raw_read_paths]
-            args.append(f"--allow-read={','.join(allowed_read_paths)}")
-
-            self._env_arg = ""
-            if self.enable_env_vars:
-                user_vars = [str(v).strip() for v in self.enable_env_vars]
-                args.append("--allow-env=" + ",".join(user_vars))
-                self._env_arg = ",".join(user_vars)
-            if self.enable_network_access:
-                args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
-            if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
-
-            args.append(_canonicalize_path(self._get_runner_path()))
-
-            # For runner.js to load in env vars and revoke cache access after startup
-            args.append(self._env_arg)
-            if deno_dir:
-                args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
-            self.deno_command = args
+            self.deno_command = self._build_default_deno_command()
 
         self.deno_process = None
         self._mounted_files = False
@@ -348,6 +320,82 @@ class PythonInterpreter:
         "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available. "
         "Host filesystem, environment, and network access require explicit permission."
     )
+
+    def _build_default_deno_command(self) -> list[str]:
+        if self._deno_executable is None:
+            self._deno_executable = _find_deno_executable()
+            self._deno_dir = self._get_deno_dir(self._deno_executable)
+
+        deno_dir = self._deno_dir
+        args = [
+            self._deno_executable,
+            "run",
+            "--no-config",
+            "--no-lock",
+            "--node-modules-dir=false",
+        ]
+
+        protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
+        if any(
+            _paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected
+        ):
+            raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
+        raw_read_paths = [
+            self._get_runner_path(),
+            *([deno_dir] if deno_dir else []),
+            *self.enable_read_paths,
+            *self.enable_write_paths,
+        ]
+        allowed_read_paths = [_canonicalize_path(path) for path in raw_read_paths]
+        args.append(f"--allow-read={','.join(allowed_read_paths)}")
+
+        env_arg = ""
+        if self.enable_env_vars:
+            env_arg = ",".join(str(value).strip() for value in self.enable_env_vars)
+            args.append(f"--allow-env={env_arg}")
+
+        network_access = [str(value) for value in self.enable_network_access]
+        package_cdn = "cdn.jsdelivr.net"
+        revoke_package_network = bool(self.packages and package_cdn not in network_access)
+        if revoke_package_network:
+            network_access.append(package_cdn)
+        if network_access:
+            args.append(f"--allow-net={','.join(network_access)}")
+
+        write_paths = [_canonicalize_path(path) for path in self.enable_write_paths]
+        revoke_package_cache_write = bool(
+            self.packages and deno_dir and _canonicalize_path(deno_dir) not in write_paths
+        )
+        if revoke_package_cache_write:
+            write_paths.append(_canonicalize_path(deno_dir))
+        if write_paths:
+            args.append(f"--allow-write={','.join(write_paths)}")
+
+        args.extend([_canonicalize_path(self._get_runner_path()), env_arg])
+        if self.packages:
+            args.append(f"--dspy-packages={json.dumps(self.packages, separators=(',', ':'))}")
+        if deno_dir:
+            args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
+        if revoke_package_cache_write:
+            args.append("--dspy-revoke-package-cache-write")
+        if revoke_package_network:
+            args.append(f"--dspy-revoke-package-net={package_cdn}")
+        return args
+
+    def preload_packages(self, packages: list[str]) -> None:
+        """Add Pyodide packages before this interpreter session starts."""
+        if not isinstance(packages, list) or not all(isinstance(package, str) and package for package in packages):
+            raise TypeError("packages must be a list of non-empty strings")
+        if not self._uses_default_deno_command:
+            raise ValueError("packages can only be used with PythonInterpreter's default Deno command")
+        merged_packages = list(dict.fromkeys([*self.packages, *packages]))
+        if merged_packages == self.packages:
+            return
+        if self.deno_process is not None:
+            raise CodeInterpreterError("Pyodide packages must be configured before the interpreter starts")
+
+        self.packages = merged_packages
+        self.deno_command = self._build_default_deno_command()
 
     def _check_session_active(self) -> None:
         if self._session_ended:
