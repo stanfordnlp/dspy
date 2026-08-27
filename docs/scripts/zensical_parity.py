@@ -474,11 +474,21 @@ def write_report(report: dict[str, object], output: Path) -> None:
 
 
 def build_site(python: Path, renderer: str, project: Path, output: Path) -> None:
-    command = python.with_name("mkdocs" if renderer == "material" else "zensical")
+    module = "mkdocs" if renderer == "material" else "zensical"
     if renderer == "material":
-        arguments = [command, "build", "--clean", "--config-file", project / "mkdocs.yml", "--site-dir", output]
+        arguments = [
+            python,
+            "-m",
+            module,
+            "build",
+            "--clean",
+            "--config-file",
+            project / "mkdocs.yml",
+            "--site-dir",
+            output,
+        ]
     else:
-        arguments = [command, "build", "--clean", "--config-file", project / "mkdocs.yml"]
+        arguments = [python, "-m", module, "build", "--clean", "--config-file", project / "mkdocs.yml"]
     subprocess.run([str(argument) for argument in arguments], cwd=project, check=True)
     if renderer == "zensical":
         shutil.move(project / "site", output)

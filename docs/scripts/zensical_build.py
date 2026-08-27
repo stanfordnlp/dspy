@@ -418,7 +418,7 @@ def build_zensical_site(
         add_missing_titles(project / str(prepared.get("docs_dir", "docs")), nav_entries(source_config.get("nav", [])))
 
         subprocess.run(
-            [str(python.with_name("zensical")), "build", "--clean", "--config-file", prepared_config],
+            [str(python), "-m", "zensical", "build", "--clean", "--config-file", prepared_config],
             cwd=project,
             check=True,
         )
