@@ -475,15 +475,6 @@ class RLM(Module):
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
-    def _normalize_image_inputs(self, input_args: dict[str, Any]) -> dict[str, Any]:
-        """Wrap bare PIL images so they use dspy.Image's sandbox transport."""
-        normalized = dict(input_args)
-        for name, value in normalized.items():
-            value_type = type(value)
-            if value_type.__module__.startswith("PIL."):
-                normalized[name] = dspy.Image(value)
-        return normalized
-
     def _prepare_serializable_vars(
         self, input_args: dict[str, Any], repl: CodeInterpreter,
     ) -> dict[str, Any]:
@@ -773,7 +764,6 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
-        input_args = self._normalize_image_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
@@ -865,7 +855,6 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
-        input_args = self._normalize_image_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()

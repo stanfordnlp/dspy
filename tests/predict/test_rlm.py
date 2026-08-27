@@ -1745,16 +1745,6 @@ class TestPrepareSerializableVars:
         assert "image = DSPyImage(_raw_image)" in code
         assert variables == {"_raw_image": image.url}
 
-    def test_bare_pil_image_is_normalized_to_dspy_image(self):
-        pytest.importorskip("PIL.Image")
-        from PIL import Image as PILImage
-
-        rlm = RLM("image -> answer")
-        normalized = rlm._normalize_image_inputs({"image": PILImage.new("RGB", (2, 3), "red")})
-
-        assert isinstance(normalized["image"], dspy.Image)
-        assert normalized["image"].url.startswith("data:image/png;base64,")
-
     def test_large_payload_not_inlined_in_code(self):
         """Large payloads should ride in the variables kwarg, not the code string.
 
