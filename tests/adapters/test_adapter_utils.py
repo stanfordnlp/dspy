@@ -77,6 +77,16 @@ def test_parse_value_literal():
         parse_value("invalid", Literal["option1", "option2"])
 
 
+def test_parse_value_literal_non_string_members():
+    # Text adapters yield literal values as strings; coerce them to the member type.
+    assert parse_value("2", Literal[1, 2, 3]) == 2
+    assert parse_value('"2"', Literal[1, 2, 3]) == 2
+    assert parse_value("True", Literal[True, False]) is True
+
+    with pytest.raises(ValueError):
+        parse_value("42", Literal[1, 2, 3])
+
+
 def test_parse_value_union():
     # Test Union with None (Optional)
     assert parse_value("test", Optional[str]) == "test"

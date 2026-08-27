@@ -111,6 +111,12 @@ class Example:
         # Initialize from a base Example if provided
         if base and isinstance(base, type(self)):
             self._store = base._store.copy()
+            # Preserve the input/label split so copy()/without()/Example(base=...)
+            # don't silently break .inputs()/.labels() on the new instance.
+            # Use getattr: subclasses such as Prediction don't keep _input_keys.
+            base_input_keys = getattr(base, "_input_keys", None)
+            if base_input_keys is not None:
+                self._input_keys = set(base_input_keys)
 
         # Initialize from a dict if provided
         elif base and isinstance(base, dict):
