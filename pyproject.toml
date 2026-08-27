@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.3.0"
+version="3.3.1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -26,7 +26,7 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
-    "pydantic>=2.0",
+    "pydantic>=2.11.0",
     "litellm>=1.65.8",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",

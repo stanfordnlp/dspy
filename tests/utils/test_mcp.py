@@ -12,30 +12,99 @@ from dspy.utils.mcp import _convert_mcp_tool_result, convert_mcp_tool
 if importlib.util.find_spec("mcp") is None:
     pytest.skip(reason="mcp is not installed", allow_module_level=True)
 
+_UNSET = object()
 
-def make_call_tool_result(field_style, texts=(), is_error=False):
+
+def make_call_tool_result(field_style, texts=(), structured=_UNSET, is_error=False):
     from mcp.types import TextContent
 
     fields = {
         "content": [TextContent(type="text", text=text) for text in texts],
-        "structured_content" if field_style == "snake" else "structuredContent": {"result": "ignored"},
         "is_error" if field_style == "snake" else "isError": is_error,
     }
+    if structured is not _UNSET:
+        fields["structured_content" if field_style == "snake" else "structuredContent"] = structured
     return SimpleNamespace(**fields)
 
 
 @pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
-    assert _convert_mcp_tool_result(make_call_tool_result("camel", texts=["hi"])) == "hi"
-    assert _convert_mcp_tool_result(make_call_tool_result("snake", texts=["a", "b"])) == ["a", "b"]
+    camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
+    snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
+
+    assert _convert_mcp_tool_result(camel_result) == "hi"
+    assert _convert_mcp_tool_result(snake_result) == ["a", "b"]
 
 
 @pytest.mark.extra
 @pytest.mark.parametrize("field_style", ["camel", "snake"])
-def test_error_result_raises(field_style):
-    result = make_call_tool_result(field_style, texts=["boom"], is_error=True)
+@pytest.mark.parametrize(
+    "structured",
+    [
+        pytest.param({"answer": 42}, id="object"),
+        pytest.param([1, 2], id="array"),
+        pytest.param("answer", id="string"),
+        pytest.param(3.5, id="number"),
+        pytest.param(False, id="boolean"),
+        pytest.param(None, id="null"),
+        pytest.param({}, id="empty-object"),
+        pytest.param([], id="empty-array"),
+        pytest.param("", id="empty-string"),
+        pytest.param(0, id="zero"),
+    ],
+)
+def test_structured_result_mode_returns_every_json_value_exactly(field_style, structured):
+    result = make_call_tool_result(field_style, texts=["fallback"], structured=structured)
+
+    converted = _convert_mcp_tool_result(result, result_mode="structured")
+    assert converted == structured
+    assert type(converted) is type(structured)
+
+
+@pytest.mark.extra
+@pytest.mark.parametrize("field_style", ["camel", "snake"])
+def test_structured_result_mode_falls_back_when_field_is_absent(field_style):
+    result = make_call_tool_result(field_style, texts=["fallback"])
+
+    assert _convert_mcp_tool_result(result, result_mode="structured") == "fallback"
+
+
+@pytest.mark.extra
+def test_structured_result_mode_distinguishes_explicit_null_from_omission():
+    from mcp.types import CallToolResult
+
+    model_fields = getattr(CallToolResult, "model_fields", None)
+    if model_fields is None:
+        model_fields = getattr(CallToolResult, "__fields__", {})
+    field_name = next(
+        (name for name in ("structured_content", "structuredContent") if name in model_fields),
+        None,
+    )
+    if field_name is None:
+        pytest.skip("This MCP version predates structured content")
+
+    omitted = CallToolResult(content=[])
+    explicit_null = CallToolResult(content=[], **{field_name: None})
+
+    assert _convert_mcp_tool_result(omitted, result_mode="structured") == []
+    assert _convert_mcp_tool_result(explicit_null, result_mode="structured") is None
+
+
+@pytest.mark.extra
+@pytest.mark.parametrize("field_style", ["camel", "snake"])
+@pytest.mark.parametrize("result_mode", ["text", "structured"])
+def test_error_result_raises_before_conversion(field_style, result_mode):
+    result = make_call_tool_result(field_style, texts=["boom"], structured={"result": "ignored"}, is_error=True)
     with pytest.raises(RuntimeError, match="Failed to call a MCP tool: boom"):
-        _convert_mcp_tool_result(result)
+        _convert_mcp_tool_result(result, result_mode=result_mode)
+
+
+@pytest.mark.extra
+def test_convert_mcp_tool_rejects_unknown_result_mode():
+    tool = SimpleNamespace(name="test", description="test", input_schema={})
+
+    with pytest.raises(ValueError, match="Unsupported MCP result mode: 'invalid'"):
+        convert_mcp_tool(SimpleNamespace(), tool, result_mode="invalid")
 
 
 @pytest.mark.asyncio
@@ -56,7 +125,10 @@ async def test_convert_mcp_tool_with_v2_client():
     async with Client(server) as client:
         response = await client.list_tools()
         increment_tool = Tool.from_mcp_tool(client, response.tools[0])
+        structured_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="structured")
+
         assert await increment_tool.acall(value=1) == "2"
+        assert await structured_increment_tool.acall(value=1) == {"result": 2}
 
 
 @pytest.mark.asyncio

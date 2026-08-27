@@ -328,6 +328,12 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
     ]
 
 
+@pytest.mark.parametrize("reserved", ["history", "termination_reason"])
+def test_react_v2_rejects_reserved_output_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
+
+
 @pytest.mark.asyncio
 async def test_react_v2_aforward_runs_the_loop():
     def lookup(query: str) -> str:

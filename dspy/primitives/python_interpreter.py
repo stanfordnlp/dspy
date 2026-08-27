@@ -345,7 +345,8 @@ class PythonInterpreter:
 
     execution_instructions = (
         "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
-        "extensions are unavailable. Host filesystem, environment, and network access require explicit permission."
+        "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available. "
+        "Host filesystem, environment, and network access require explicit permission."
     )
 
     def _check_session_active(self) -> None:

@@ -74,6 +74,9 @@ class DspyGEPAResult:
     - val_subscores: per-candidate scores keyed by validation instance id
     - per_val_instance_best_candidates: for each val instance id, a set of candidate indices achieving the best score
     - discovery_eval_counts: Budget (number of metric calls / rollouts) consumed up to the discovery of each candidate
+    - val_aggregate_subscores: per-candidate objective scores aggregated over the validation set
+    - per_objective_best_candidates: candidate indices achieving the best score for each objective
+    - objective_pareto_front: highest score achieved for each objective
 
     - total_metric_calls: total number of metric calls made across the run
     - num_full_val_evals: number of full validation evaluations performed
@@ -100,6 +103,11 @@ class DspyGEPAResult:
     num_full_val_evals: int | None = None
     log_dir: str | None = None
     seed: int | None = None
+
+    # Multi-objective data
+    val_aggregate_subscores: list[dict[str, float]] | None = None
+    per_objective_best_candidates: dict[str, set[int]] | None = None
+    objective_pareto_front: dict[str, float] | None = None
 
     @property
     def best_idx(self) -> int:
@@ -140,6 +148,13 @@ class DspyGEPAResult:
             per_val_instance_best_candidates={
                 val_id: list(s) for val_id, s in self.per_val_instance_best_candidates.items()
             },
+            val_aggregate_subscores=self.val_aggregate_subscores,
+            per_objective_best_candidates=(
+                {objective: list(s) for objective, s in self.per_objective_best_candidates.items()}
+                if self.per_objective_best_candidates is not None
+                else None
+            ),
+            objective_pareto_front=self.objective_pareto_front,
             discovery_eval_counts=self.discovery_eval_counts,
             total_metric_calls=self.total_metric_calls,
             num_full_val_evals=self.num_full_val_evals,
@@ -158,6 +173,9 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
+            val_aggregate_subscores=gepa_result.val_aggregate_subscores,
+            per_objective_best_candidates=gepa_result.per_objective_best_candidates,
+            objective_pareto_front=gepa_result.objective_pareto_front,
             total_metric_calls=gepa_result.total_metric_calls,
             num_full_val_evals=gepa_result.num_full_val_evals,
             log_dir=gepa_result.run_dir,
