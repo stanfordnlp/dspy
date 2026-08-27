@@ -180,11 +180,20 @@ def build(
     output.parent.mkdir(parents=True, exist_ok=True)
     identifier = version or "current"
     effective_config = patched_config(config, identifier, edit_ref=version)
-    command = Path(sys.executable).with_name("mkdocs" if renderer == "material" else "zensical")
     try:
         if renderer == "material":
             subprocess.run(
-                [str(command), "build", "--clean", "--config-file", str(effective_config), "--site-dir", str(output)],
+                [
+                    sys.executable,
+                    "-m",
+                    "mkdocs",
+                    "build",
+                    "--clean",
+                    "--config-file",
+                    str(effective_config),
+                    "--site-dir",
+                    str(output),
+                ],
                 cwd=config.parent,
                 check=True,
             )
