@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.dsp.utils.utils import dotdict
 
@@ -324,6 +326,12 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_1",
         "call_provider_2",
     ]
+
+
+@pytest.mark.parametrize("reserved", ["history", "termination_reason"])
+def test_react_v2_rejects_reserved_output_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
 
 
 def test_react_v2_max_iters_still_returns_output_fields():

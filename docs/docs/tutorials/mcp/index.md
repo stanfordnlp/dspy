@@ -282,15 +282,12 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
-Now we have finished writing the server! Let's launch it:
-
-```shell
-python path_to_your_working_directory/mcp_server.py
-```
+Now we have finished writing the server. You do not need to launch it separately; the MCP client
+below starts it as a subprocess.
 
 ## Write a DSPy Program That Utilizes Tools in MCP Server
 
-Now that the server is running, let's build the actual airline service agent which
+Now that the server is ready, let's build the actual airline service agent which
 utilizes the MCP tools in our server to assist users. In your working directory,
 create a file named `dspy_mcp_agent.py`, and follow the guide to add code to it.
 
@@ -300,12 +297,15 @@ We first need to gather all available tools from the MCP server and make them
 usable by DSPy. DSPy provides an API [`dspy.Tool`](https://dspy.ai/api/primitives/Tool/)
 as the standard tool interface. Let's convert all the MCP tools to `dspy.Tool`.
 
-We need to create an MCP client instance to communicate with the MCP server, fetch all available
-tools, and convert them to `dspy.Tool` using the static method `from_mcp_tool`:
+We use the MCP SDK v2 high-level `Client` to start the server, fetch its available tools, and convert
+them to `dspy.Tool` using the static method `from_mcp_tool`. Keep the client context open while DSPy
+uses the converted tools:
 
 ```python
-from mcp import ClientSession, StdioServerParameters
+from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+import dspy
 
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
@@ -314,21 +314,19 @@ server_params = StdioServerParameters(
     env=None,
 )
 
+
 async def run():
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
-            # List available tools
-            tools = await session.list_tools()
+    async with Client(stdio_client(server_params)) as client:
+        # List available tools
+        tools = await client.list_tools()
 
-            # Convert MCP tools to DSPy tools
-            dspy_tools = []
-            for tool in tools.tools:
-                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+        # Convert MCP tools to DSPy tools
+        dspy_tools = []
+        for tool in tools.tools:
+            dspy_tools.append(dspy.Tool.from_mcp_tool(client, tool))
 
-            print(len(dspy_tools))
-            print(dspy_tools[0].args)
+        print(len(dspy_tools))
+        print(dspy_tools[0].args)
 
 if __name__ == "__main__":
     import asyncio
@@ -374,7 +372,7 @@ Then we create the ReAct agent by passing the tools and signature into the `dspy
 put together the complete code script:
 
 ```python
-from mcp import ClientSession, StdioServerParameters
+from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 import dspy
@@ -382,7 +380,7 @@ import dspy
 # Create server parameters for stdio connection
 server_params = StdioServerParameters(
     command="python",  # Executable
-    args=["script_tmp/mcp_server.py"],  # Optional command line arguments
+    args=["path_to_your_working_directory/mcp_server.py"],  # Server script
     env=None,  # Optional environment variables
 )
 
@@ -404,23 +402,20 @@ dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 
 async def run(user_request):
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
-            # List available tools
-            tools = await session.list_tools()
+    async with Client(stdio_client(server_params)) as client:
+        # List available tools
+        tools = await client.list_tools()
 
-            # Convert MCP tools to DSPy tools
-            dspy_tools = []
-            for tool in tools.tools:
-                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+        # Convert MCP tools to DSPy tools
+        dspy_tools = []
+        for tool in tools.tools:
+            dspy_tools.append(dspy.Tool.from_mcp_tool(client, tool))
 
-            # Create the agent
-            react = dspy.ReAct(DSPyAirlineCustomerService, tools=dspy_tools)
+        # Create the agent
+        react = dspy.ReAct(DSPyAirlineCustomerService, tools=dspy_tools)
 
-            result = await react.acall(user_request=user_request)
-            print(result)
+        result = await react.acall(user_request=user_request)
+        print(result)
 
 
 if __name__ == "__main__":
