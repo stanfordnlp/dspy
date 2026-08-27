@@ -12,8 +12,6 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
-from mike import commands, git_utils
-
 STABLE_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 DEFAULT_BRANCH = "versioned-docs"
 HOST_CONFIG = (
@@ -100,6 +98,8 @@ def publish_site(
     mutable: bool = False,
     default: bool = False,
 ) -> bool:
+    from mike import commands, git_utils
+
     if not mutable:
         version_tuple(identifier)
         deployed = deployed_tree_digest(repository, branch, identifier)
