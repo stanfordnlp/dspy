@@ -60,7 +60,8 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` queries one sub-LLM (~500K char capacity); `llm_query_batched(prompts)` queries independent prompts concurrently and preserves input order
+- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
 
@@ -69,7 +70,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
-4. USE llm_query FREQUENTLY FOR SMALL SEMANTIC EXPLORATIONS - String matching finds WHERE things are; focused llm_query calls understand WHAT things mean.
+4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
 5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 

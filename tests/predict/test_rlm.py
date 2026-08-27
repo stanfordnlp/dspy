@@ -2740,7 +2740,6 @@ class TestRLMDynamicSignature:
         instructions = action_sig.instructions
         assert "llm_query" in instructions
         assert "llm_query_batched" in instructions
-        assert "USE llm_query FREQUENTLY FOR SMALL SEMANTIC EXPLORATIONS" in instructions
         assert "SUBMIT" in instructions
         assert "`document`" in instructions
         assert "`question`" in instructions
