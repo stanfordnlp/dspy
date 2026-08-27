@@ -1,4 +1,5 @@
 import argparse
+import importlib.util
 import json
 import subprocess
 
@@ -6,6 +7,11 @@ import pytest
 
 from docs.scripts.build_docs import optimize_site, patched_config, stable_version
 from docs.scripts.publish_versioned_docs import publish_site, version_tuple
+
+requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
+requires_htmlmin = pytest.mark.skipif(
+    importlib.util.find_spec("htmlmin") is None, reason="htmlmin2 is a docs-only dependency"
+)
 
 
 def make_site(root, content: str):
@@ -62,6 +68,7 @@ def test_release_config_enables_mike_and_scopes_urls(tmp_path):
         result.unlink()
 
 
+@requires_htmlmin
 def test_production_optimization_preserves_preformatted_content(tmp_path):
     site = tmp_path / "site"
     assets = site / "assets"
@@ -84,6 +91,7 @@ def test_production_optimization_preserves_preformatted_content(tmp_path):
     assert "sourceMappingURL" not in (assets / "app.js").read_text()
 
 
+@requires_mike
 def test_mike_preserves_patches_and_moves_minor_redirect(tmp_path):
     repository = make_repository(tmp_path)
     first = make_site(tmp_path / "first", "3.0.0")
@@ -111,6 +119,7 @@ def test_mike_preserves_patches_and_moves_minor_redirect(tmp_path):
     assert inventory[1]["aliases"] == []
 
 
+@requires_mike
 def test_mike_refuses_to_replace_an_immutable_snapshot(tmp_path):
     repository = make_repository(tmp_path)
     site = make_site(tmp_path / "first", "original")
@@ -131,6 +140,7 @@ def test_mike_refuses_to_replace_an_immutable_snapshot(tmp_path):
         publish_site(**arguments)
 
 
+@requires_mike
 def test_mike_current_is_mutable_and_default(tmp_path):
     repository = make_repository(tmp_path)
     site = make_site(tmp_path / "current", "first")
