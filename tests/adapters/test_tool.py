@@ -408,6 +408,14 @@ def test_async_tool_call_in_sync_mode():
         assert result == "hello 1"
 
 
+@pytest.mark.asyncio
+async def test_async_tool_sync_call_within_running_loop():
+    tool = Tool(async_dummy_function)
+    with dspy.context(allow_tool_async_sync_conversion=True):
+        with pytest.raises(ValueError, match=r".*await tool\.acall.*"):
+            tool(x=1, y="hello")
+
+
 TOOL_CALL_TEST_CASES = [
     ([], {"tool_calls": []}),
     (
