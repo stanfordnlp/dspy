@@ -56,6 +56,20 @@ and pixel output are not part of the contract. Mike's version selector, build
 metadata, HTML minification, and omission of production source maps are
 intentional additions.
 
+## Historical corrections
+
+Release snapshots are immutable to automated publication, not permanently
+write-once storage. A retry with byte-identical output is a no-op; a retry with
+different output fails before Mike can replace `/X.Y.Z/`. This prevents routine
+release automation from silently changing the meaning of an existing version
+URL.
+
+If an old snapshot needs a deliberate correction, make a reviewed pull request
+directly against `krypticmouse/dspy-docs`. Limit the change to the affected
+version directory unless its picker metadata or aliases genuinely need to
+change. The deployment repository's pull request and Git history are the audit
+trail and rollback mechanism, so no separate replacement workflow is needed.
+
 ## Output size
 
 Production builds use Mike's redirect aliases so `/X.Y/` contains redirect
