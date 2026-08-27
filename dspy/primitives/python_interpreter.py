@@ -321,6 +321,44 @@ class PythonInterpreter:
         "Host filesystem, environment, and network access require explicit permission."
     )
 
+    def _build_permission_args(self, deno_dir: str | None) -> tuple[list[str], str, bool, bool]:
+        protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
+        if any(
+            _paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected
+        ):
+            raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
+
+        raw_read_paths = [
+            self._get_runner_path(),
+            *([deno_dir] if deno_dir else []),
+            *self.enable_read_paths,
+            *self.enable_write_paths,
+        ]
+        env_vars = [str(value).strip() for value in self.enable_env_vars]
+        network_access = [str(value) for value in self.enable_network_access]
+        write_paths = [_canonicalize_path(path) for path in self.enable_write_paths]
+
+        package_cdn = "cdn.jsdelivr.net"
+        revoke_package_network = bool(self.packages and package_cdn not in network_access)
+        if revoke_package_network:
+            network_access.append(package_cdn)
+        revoke_package_cache_write = bool(
+            self.packages and deno_dir and _canonicalize_path(deno_dir) not in write_paths
+        )
+        if revoke_package_cache_write:
+            write_paths.append(_canonicalize_path(deno_dir))
+
+        permission_args = []
+        for permission, values in (
+            ("read", [_canonicalize_path(path) for path in raw_read_paths]),
+            ("env", env_vars),
+            ("net", network_access),
+            ("write", write_paths),
+        ):
+            if values:
+                permission_args.append(f"--allow-{permission}={','.join(values)}")
+        return permission_args, ",".join(env_vars), revoke_package_cache_write, revoke_package_network
+
     def _build_default_deno_command(self) -> list[str]:
         if self._deno_executable is None:
             self._deno_executable = _find_deno_executable()
@@ -334,43 +372,10 @@ class PythonInterpreter:
             "--no-lock",
             "--node-modules-dir=false",
         ]
-
-        protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
-        if any(
-            _paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected
-        ):
-            raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
-        raw_read_paths = [
-            self._get_runner_path(),
-            *([deno_dir] if deno_dir else []),
-            *self.enable_read_paths,
-            *self.enable_write_paths,
-        ]
-        allowed_read_paths = [_canonicalize_path(path) for path in raw_read_paths]
-        args.append(f"--allow-read={','.join(allowed_read_paths)}")
-
-        env_arg = ""
-        if self.enable_env_vars:
-            env_arg = ",".join(str(value).strip() for value in self.enable_env_vars)
-            args.append(f"--allow-env={env_arg}")
-
-        network_access = [str(value) for value in self.enable_network_access]
-        package_cdn = "cdn.jsdelivr.net"
-        revoke_package_network = bool(self.packages and package_cdn not in network_access)
-        if revoke_package_network:
-            network_access.append(package_cdn)
-        if network_access:
-            args.append(f"--allow-net={','.join(network_access)}")
-
-        write_paths = [_canonicalize_path(path) for path in self.enable_write_paths]
-        revoke_package_cache_write = bool(
-            self.packages and deno_dir and _canonicalize_path(deno_dir) not in write_paths
+        permission_args, env_arg, revoke_package_cache_write, revoke_package_network = self._build_permission_args(
+            deno_dir
         )
-        if revoke_package_cache_write:
-            write_paths.append(_canonicalize_path(deno_dir))
-        if write_paths:
-            args.append(f"--allow-write={','.join(write_paths)}")
-
+        args.extend(permission_args)
         args.extend([_canonicalize_path(self._get_runner_path()), env_arg])
         if self.packages:
             args.append(f"--dspy-packages={json.dumps(self.packages, separators=(',', ':'))}")
@@ -379,7 +384,7 @@ class PythonInterpreter:
         if revoke_package_cache_write:
             args.append("--dspy-revoke-package-cache-write")
         if revoke_package_network:
-            args.append(f"--dspy-revoke-package-net={package_cdn}")
+            args.append("--dspy-revoke-package-net=cdn.jsdelivr.net")
         return args
 
     def preload_packages(self, packages: list[str]) -> None:

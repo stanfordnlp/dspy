@@ -258,11 +258,84 @@ class RLM(Module):
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _normalize_llm_query_images(images: Any) -> list[dspy.Image]:
+        if images is None:
+            return []
+        if isinstance(images, (str, dspy.Image, dict)):
+            images = [images]
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("images must be an image or a list of images")
+
+        normalized = []
+        for image in images:
+            if isinstance(image, dspy.Image):
+                normalized.append(image)
+            elif isinstance(image, str):
+                normalized.append(dspy.Image(image))
+            elif isinstance(image, dict) and set(image) == {"url"}:
+                normalized.append(dspy.Image(image))
+            else:
+                raise TypeError(
+                    "Each image must be a dspy.Image, URL, data URI, or {'url': ...} mapping, "
+                    f"got {type(image).__name__}."
+                )
+        return normalized
+
+    def _query_lm(self, prompt: str, images: Any = None, *, lm: Any) -> str:
+        target_lm = lm if lm is not None else dspy.settings.lm
+        if target_lm is None:
+            raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+
+        normalized_images = self._normalize_llm_query_images(images)
+        if normalized_images:
+            if getattr(target_lm, "model_type", None) == "text":
+                raise ValueError(
+                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
+                )
+            content = [{"type": "text", "text": prompt}]
+            content.extend(image.format()[0] for image in normalized_images)
+            response = target_lm(messages=[{"role": "user", "content": content}])
+        else:
+            response = target_lm(prompt)
+
+        if isinstance(response, dspy.LMResponse):
+            text = response.text
+        elif isinstance(response, list) and response:
+            first_output = response[0]
+            text = first_output.get("text") if isinstance(first_output, dict) else first_output
+        else:
+            raise TypeError(
+                "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
+                f"got {type(response).__name__}."
+            )
+
+        if not isinstance(text, str):
+            raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
+        return text
+
+    @staticmethod
+    def _query_lm_batched(prompts: list[str], query_lm: Callable[[str], str], max_workers: int) -> list[str]:
+        results: dict[int, str] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(contextvars.copy_context().run, query_lm, prompt): index
+                for index, prompt in enumerate(prompts)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except dspy.LMError as e:
+                    results[idx] = f"[ERROR] {format_error_for_lm(e)}"
+        return [results[index] for index in range(len(prompts))]
+
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools with a fresh call counter."""
         state = {"call_count": 0}
         lock = threading.Lock()
         lm = self.sub_lm
+        query_lm = functools.partial(self._query_lm, lm=lm)
 
         def _check_and_increment(n: int = 1) -> None:
             with lock:
@@ -273,87 +346,19 @@ class RLM(Module):
                     )
                 state["call_count"] += n
 
-        def _normalize_images(images: Any) -> list[dspy.Image]:
-            if images is None:
-                return []
-            if isinstance(images, (str, dspy.Image, dict)):
-                images = [images]
-            if not isinstance(images, (list, tuple)):
-                raise TypeError("images must be an image or a list of images")
-
-            normalized = []
-            for image in images:
-                if isinstance(image, dspy.Image):
-                    normalized.append(image)
-                elif isinstance(image, str):
-                    normalized.append(dspy.Image(image))
-                elif isinstance(image, dict) and set(image) == {"url"}:
-                    normalized.append(dspy.Image(image))
-                else:
-                    raise TypeError(
-                        "Each image must be a dspy.Image, URL, data URI, or {'url': ...} mapping, "
-                        f"got {type(image).__name__}."
-                    )
-            return normalized
-
-        def _query_lm(prompt: str, images: Any = None) -> str:
-            target_lm = lm if lm is not None else dspy.settings.lm
-            if target_lm is None:
-                raise dspy.LMNotConfiguredError(
-                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
-                )
-            normalized_images = _normalize_images(images)
-            if normalized_images:
-                if getattr(target_lm, "model_type", None) == "text":
-                    raise ValueError(
-                        "llm_query images require a chat or responses LM; model_type='text' does not support images."
-                    )
-                content = [{"type": "text", "text": prompt}]
-                content.extend(image.format()[0] for image in normalized_images)
-                response = target_lm(messages=[{"role": "user", "content": content}])
-            else:
-                response = target_lm(prompt)
-            if isinstance(response, dspy.LMResponse):
-                text = response.text
-            elif isinstance(response, list) and response:
-                first_output = response[0]
-                text = first_output.get("text") if isinstance(first_output, dict) else first_output
-            else:
-                raise TypeError(
-                    "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
-                    f"got {type(response).__name__}."
-                )
-
-            if not isinstance(text, str):
-                raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
-            return text
-
         def llm_query(prompt: str, images=None) -> str:
             """Query the LLM with a prompt and optional image or list of images."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
-            return _query_lm(prompt, images)
+            return query_lm(prompt, images)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
-
-            results: dict[int, str] = {}
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {
-                    executor.submit(contextvars.copy_context().run, _query_lm, prompt): index
-                    for index, prompt in enumerate(prompts)
-                }
-                for future in as_completed(future_to_idx):
-                    idx = future_to_idx[future]
-                    try:
-                        results[idx] = future.result()
-                    except dspy.LMError as e:
-                        results[idx] = f"[ERROR] {format_error_for_lm(e)}"
-            return [results[i] for i in range(len(prompts))]
+            return self._query_lm_batched(prompts, query_lm, max_workers)
 
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
 
