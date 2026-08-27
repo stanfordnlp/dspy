@@ -619,6 +619,35 @@ for item in items:
         assert namespace["answers"] == ["answer:a", "answer:b"]
         assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
 
+    def test_persistent_compiler_name_collision_uses_scalar_loop_without_deleting_state(self):
+        import ast
+
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(item))
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        tool_names = {"__dspy_llm_query_batched", "__dspy_replay_llm_query"}
+        generated_names = {node.id for node in ast.walk(ast.parse(compiled)) if isinstance(node, ast.Name) and node.id.startswith("__dspy_")} - tool_names
+        retained = {name: f"retained:{name}" for name in generated_names}
+        calls, batches = [], []
+        namespace = {
+            **retained,
+            "items": ["a", "b"],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert generated_names
+        assert calls == ["a", "b"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a", "answer:b"]
+        assert {name: namespace[name] for name in generated_names} == retained
+
     def test_rejects_rebound_current_block_prompt_helper(self):
         code = """state = []
 def helper(item):

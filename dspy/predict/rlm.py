@@ -293,6 +293,7 @@ class RLM(Module):
                 rewrite_count += 1
                 return replacement
             def _rewrite_for(self, node: ast.For) -> list[ast.stmt] | None:
+                generated_start = set(used_names)
                 if node.orelse or not is_pure(node.iter) or any(isinstance(child, (ast.Await, ast.AsyncWith, ast.Import, ast.ImportFrom, ast.Return, ast.With, ast.Yield, ast.YieldFrom)) or (isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (child.decorator_list or child.returns or child.args.defaults or any(child.args.kw_defaults) or any(argument.annotation for argument in [*child.args.posonlyargs, *child.args.args, child.args.vararg, *child.args.kwonlyargs, child.args.kwarg] if argument) or getattr(child, "type_params", []))) or (isinstance(child, ast.Lambda) and (child.args.defaults or any(child.args.kw_defaults))) for child in ast.walk(node)):
                     return None
                 loop_names, parameter_aliases = bound_names(node.target), with_aliases({arg.arg for function in [enclosing_function(node)] if function is not None for arg in ast.walk(function.args) if isinstance(arg, ast.arg)})
@@ -457,6 +458,7 @@ class RLM(Module):
                 system, gettrace, getprofile = (fresh_name(f"__dspy_{name}") for name in ("sys", "gettrace", "getprofile"))
                 trusted_instrumentation = f"type({gettrace}) is type(len) and {gettrace}.__self__ is {system} and {gettrace}.__module__ == 'sys' and {gettrace}.__name__ == 'gettrace' and type({getprofile}) is type(len) and {getprofile}.__self__ is {system} and {getprofile}.__module__ == 'sys' and {getprofile}.__name__ == 'getprofile'"
                 compiled = f"{system} = __import__('sys')\n{gettrace}, {getprofile} = {system}.gettrace, {system}.getprofile\ntry:\n" + "\n".join(f"    {line}" for line in (f"if not ({trusted_instrumentation}) or {gettrace}() is not None or {getprofile}() is not None:\n" + "\n".join(f"    {line}" for line in original_loop.splitlines()) + "\nelse:\n" + "\n".join(f"    {line}" for line in compiled.splitlines())).splitlines()) + f"\nfinally:\n    del {system}, {gettrace}, {getprofile}"
+                compiled = f"if {' or '.join(f'{name!r} in globals()' for name in sorted(used_names - generated_start))}:\n" + "\n".join(f"    {line}" for line in original_loop.splitlines()) + "\nelse:\n" + "\n".join(f"    {line}" for line in compiled.splitlines())
                 return ast.parse(compiled).body
         transformed = QueryBatchTransformer().visit(tree)
         if not rewrite_count:
