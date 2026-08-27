@@ -1723,13 +1723,12 @@ class TestPrepareSerializableVars:
 
         assert loaded == ["package-a", "package-b"]
 
-    def test_required_packages_need_interpreter_support(self):
+    def test_package_declarations_are_optional_for_custom_interpreters(self):
         class PackageSerializable(_StubSerializable):
             def sandbox_packages(self) -> list[str]:
                 return ["package-a"]
 
-        with pytest.raises(CodeInterpreterError, match=r"cannot provision required sandbox packages \['package-a'\]"):
-            RLM("data -> answer")._preload_sandbox_packages({"data": PackageSerializable()}, MockInterpreter())
+        RLM("data -> answer")._preload_sandbox_packages({"data": PackageSerializable()}, MockInterpreter())
 
     @pytest.mark.parametrize("packages", ["package-a", [""], [None]])
     def test_rejects_invalid_sandbox_package_declarations(self, packages):

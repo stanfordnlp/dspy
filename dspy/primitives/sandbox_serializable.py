@@ -43,8 +43,8 @@ class SandboxSerializable(ABC):
 
     The serialization contract provides these methods:
 
-    - ``sandbox_packages``: packages the interpreter must provision before
-      reconstructing the value. The default is no packages.
+    - ``sandbox_packages``: packages an interpreter with dynamic provisioning
+      can install before reconstructing the value. The default is no packages.
     - ``sandbox_setup``: Python statements executed once in the sandbox. This
       must import required packages so unavailable dependencies fail during
       input injection rather than later in generated code. The returned text
@@ -86,7 +86,7 @@ class SandboxSerializable(ABC):
     def sandbox_setup(self) -> str: ...
 
     def sandbox_packages(self) -> list[str]:
-        """Return packages that the interpreter must provision before setup."""
+        """Return packages that capable interpreters should provision before setup."""
         return []
 
     @abstractmethod

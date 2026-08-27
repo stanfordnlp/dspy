@@ -30,7 +30,6 @@ from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
     CodeInterpreter,
-    CodeInterpreterError,
     FinalOutput,
     _create_interpreter,
     _validate_interpreter,
@@ -532,7 +531,7 @@ class RLM(Module):
         return regular_args
 
     def _preload_sandbox_packages(self, input_args: dict[str, Any], repl: CodeInterpreter) -> None:
-        """Require the interpreter to provision packages declared by serializable inputs."""
+        """Ask capable interpreters to provision packages declared by serializable inputs."""
         packages = []
         for value in input_args.values():
             if not isinstance(value, SandboxSerializable):
@@ -543,14 +542,8 @@ class RLM(Module):
             packages.extend(declared)
         packages = list(dict.fromkeys(packages))
         preload_packages = getattr(repl, "preload_packages", None)
-        if not packages:
-            return
-        if not callable(preload_packages):
-            raise CodeInterpreterError(
-                f"{type(repl).__name__} cannot provision required sandbox packages {packages}. "
-                "Use an interpreter that implements preload_packages(packages)."
-            )
-        preload_packages(packages)
+        if packages and callable(preload_packages):
+            preload_packages(packages)
 
     # =========================================================================
     # CodeInterpreter Lifecycle

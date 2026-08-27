@@ -208,7 +208,7 @@ metadata; anonymous factories without it continue to use the generic action prom
 
 ### Custom Sandbox-Serializable Inputs
 
-For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, requires the interpreter to provision packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. If packages are declared, the interpreter must implement `preload_packages(packages)`; `sandbox_setup()` must import required dependencies so missing packages fail during input injection.
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, lets interpreters with dynamic provisioning preload packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. Package provisioning is an optional interpreter capability; `sandbox_setup()` is the portable contract and must import required dependencies so missing packages fail during input injection.
 
 ```python
 class DataFrame(dspy.SandboxSerializable):
