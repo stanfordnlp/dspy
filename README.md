@@ -37,7 +37,8 @@ To install the very latest from `main`:
 pip install git+https://github.com/stanfordnlp/dspy.git
 ```
 
-
+## 🌐 Community & Ecosystem
+- [Hybrid RAG GitHub Action](https://github.com/Cagrik34/hybrid-rag-action): Zero-dependency GitHub Action & DSPy retriever combining Okapi BM25 and dense semantic embeddings with RRF for automated repo triage.
 
 
 ## 📜 Citation & Reading More
