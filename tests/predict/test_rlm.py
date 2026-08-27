@@ -332,6 +332,45 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="model_type='text' does not support images"):
             tools["llm_query"]("Caption this", images="https://example.com/image.png")
 
+    def test_llm_query_batched_supports_images_per_prompt(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["result"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+        first_image = dspy.Image("data:image/png;base64,Zmlyc3Q=")
+        second_image = dspy.Image("https://example.com/second.png")
+
+        results = tools["llm_query_batched"](
+            ["inspect first", "text only", "compare two"],
+            images=[first_image, None, [first_image, second_image]],
+        )
+
+        assert results == ["result", "result", "result"]
+        calls_by_prompt = {}
+        for call in lm.call_args_list:
+            if call.kwargs:
+                content = call.kwargs["messages"][0]["content"]
+                calls_by_prompt[content[0]["text"]] = content[1:]
+            else:
+                calls_by_prompt[call.args[0]] = []
+        assert calls_by_prompt == {
+            "inspect first": [first_image.format()[0]],
+            "text only": [],
+            "compare two": [first_image.format()[0], second_image.format()[0]],
+        }
+
+    def test_llm_query_batched_requires_images_per_prompt(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["result"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        with pytest.raises(ValueError, match=r"same length as prompts \(1 != 2\)"):
+            tools["llm_query_batched"](["one", "two"], images=[None])
+        with pytest.raises(TypeError, match="one image entry per prompt"):
+            tools["llm_query_batched"](["one"], images=dspy.Image("https://example.com/image.png"))
+        lm.assert_not_called()
+
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
 
@@ -1850,6 +1889,28 @@ def test_image_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
     assert "a red square" in result
     content = lm.call_args.kwargs["messages"][0]["content"]
     assert content[1]["image_url"]["url"] == image.url
+
+
+@pytest.mark.deno
+def test_image_batch_round_trips_from_sandbox_to_multimodal_llm(pooled_interpreter):
+    class ImageEchoLM:
+        def __call__(self, *, messages):
+            content = messages[0]["content"]
+            return [f"{content[0]['text']}:{content[1]['image_url']['url']}"]
+
+    rlm = RLM("image -> answer", sub_lm=ImageEchoLM())
+    image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+    interp = pooled_interpreter
+
+    rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+    regular = rlm._prepare_serializable_vars({"image": image}, interp)
+    result = interp.execute(
+        'print(llm_query_batched(["first", "second"], images=[image, [image]]))',
+        variables=regular,
+    )
+
+    assert "first:data:image/png;base64,aW1hZ2U=" in result
+    assert "second:data:image/png;base64,aW1hZ2U=" in result
 
 
 @pytest.mark.deno

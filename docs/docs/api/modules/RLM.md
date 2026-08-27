@@ -52,7 +52,7 @@ RLM operates in an iterative REPL loop:
 1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
 2. The LLM writes **Python code** to explore the data (print samples, search, filter)
 3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
-4. The LLM can call `llm_query(prompt, images=None)` to run **sub-LLM calls** over text and optional images
+4. The LLM can call `llm_query(prompt, images=None)` or `llm_query_batched(prompts, images=None)` to run **sub-LLM calls** over text and optional images
 5. When done, the LLM calls `SUBMIT(output)` to return the final answer
 
 #### What the LLM sees (step-by-step trace):
@@ -120,7 +120,7 @@ Inside the REPL, the LLM has access to:
 | Tool | Description |
 |------|-------------|
 | `llm_query(prompt, images=None)` | Query a sub-LLM with text and an optional image or image list |
-| `llm_query_batched(prompts)` | Query multiple text prompts concurrently (faster for batch operations) |
+| `llm_query_batched(prompts, images=None)` | Query prompts concurrently, optionally with one image entry per prompt |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
 | Standard library | `re`, `json`, `collections`, `math`, etc. |

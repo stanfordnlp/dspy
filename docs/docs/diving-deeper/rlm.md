@@ -20,7 +20,7 @@ A normal `Predict` call puts the whole context into the prompt, so every token c
 
 ### 4. Built-in `llm_query` tools give the loop its recursion
 
-The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox: `llm_query(prompt, images=None)` for one text or multimodal call, and `llm_query_batched(prompts)` for concurrent text calls. For example, the outer model might use code to locate and slice relevant text, or crop an image, then hand the focused input to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One large-context question becomes many focused ones.
+The recursion in an RLM is the model’s ability to call a model from inside its own code. `dspy.RLM` injects two functions into the sandbox: `llm_query(prompt, images=None)` for one text or multimodal call, and `llm_query_batched(prompts, images=None)` for concurrent calls. For example, the outer model might use code to locate and slice relevant text, or crop an image, then hand the focused input to a sub-LLM for the semantic read. Results come back as Python values it can store and combine rather than as a text blob forced into the context window. One large-context question becomes many focused ones.
 
 ### 5. A shared counter caps sub-LLM calls per run
 
@@ -67,8 +67,8 @@ The model writes these into its code blocks. You don’t call them, but knowing 
 **`llm_query(prompt, images=None)`**
 One sub-LLM call. It sends the prompt and any image, or list of images, to `sub_lm` or the configured LM, increments the counter, and returns the response text. Images may be `dspy.Image` objects, URLs, data URIs, or sandbox `DSPyImage` values. It raises if the prompt is empty or the budget is spent.
 
-**`llm_query_batched(prompts)`**
-Concurrent text-only sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
+**`llm_query_batched(prompts, images=None)`**
+Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. When provided, `images` must have the same length as `prompts`; each entry may be one image, a list of images, or `None`, so text-only and multimodal requests can share a batch. For example, `llm_query_batched(prompts, images=[crop_a, None, [crop_b, crop_c]])` sends one image with the first prompt, no images with the second, and two images with the third. A failed LM call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch, while malformed inputs raise immediately.
 
 **`SUBMIT(...)`**
 Ends the run and returns the final outputs. RLM validates the submitted dict against the signature’s output fields and parses each value to its declared type. On a type error or a missing field it feeds the message back to the model for another attempt instead of failing the call.

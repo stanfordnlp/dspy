@@ -60,7 +60,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 Available:
 - Variables: {inputs} (your input data)
 - `llm_query(prompt, images=None)` - query a sub-LLM (~500K char capacity), optionally with images
-- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
+- `llm_query_batched(prompts, images=None)` - query multiple text or multimodal prompts concurrently
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
 
@@ -156,7 +156,7 @@ class RLM(Module):
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
-                  Built-in tools: llm_query(prompt), llm_query_batched(prompts).
+                  Built-in tools: llm_query(prompt, images=None), llm_query_batched(prompts, images=None).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
@@ -315,12 +315,24 @@ class RLM(Module):
         return text
 
     @staticmethod
-    def _query_lm_batched(prompts: list[str], query_lm: Callable[[str], str], max_workers: int) -> list[str]:
+    def _normalize_llm_query_batch_images(prompts: list[str], images: Any) -> list[Any]:
+        if images is None:
+            return [None] * len(prompts)
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("images must be a list with one image entry per prompt")
+        if len(images) != len(prompts):
+            raise ValueError(f"images must have the same length as prompts ({len(images)} != {len(prompts)})")
+        return list(images)
+
+    @staticmethod
+    def _query_lm_batched(
+        prompts: list[str], images: list[Any], query_lm: Callable[[str, Any], str], max_workers: int
+    ) -> list[str]:
         results: dict[int, str] = {}
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
-                executor.submit(contextvars.copy_context().run, query_lm, prompt): index
-                for index, prompt in enumerate(prompts)
+                executor.submit(contextvars.copy_context().run, query_lm, prompt, prompt_images): index
+                for index, (prompt, prompt_images) in enumerate(zip(prompts, images, strict=True))
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
@@ -353,12 +365,13 @@ class RLM(Module):
             _check_and_increment(1)
             return query_lm(prompt, images)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query prompts concurrently, isolating LM failures while propagating contract errors."""
+        def llm_query_batched(prompts: list[str], images=None) -> list[str]:
+            """Query prompts and corresponding optional images concurrently."""
+            batch_images = self._normalize_llm_query_batch_images(prompts, images)
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
-            return self._query_lm_batched(prompts, query_lm, max_workers)
+            return self._query_lm_batched(prompts, batch_images, query_lm, max_workers)
 
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
 
