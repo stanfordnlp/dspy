@@ -325,6 +325,13 @@ class TestRLMInitialization:
         content = lm.call_args.kwargs["messages"][0]["content"]
         assert content[1]["image_url"]["url"] == "https://example.com/image.png"
 
+    def test_llm_query_rejects_images_for_text_lm(self):
+        lm = dspy.LM("openai/gpt-4o-mini", model_type="text")
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        with pytest.raises(ValueError, match="model_type='text' does not support images"):
+            tools["llm_query"]("Caption this", images="https://example.com/image.png")
+
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
 
@@ -1870,6 +1877,41 @@ def test_image_preloads_pillow_for_default_sandbox():
     result = rlm(image=image)
 
     assert result.answer == "2x3"
+    assert result.trajectory[0]["output"] == "(2, 3)\n"
+
+
+@pytest.mark.deno
+def test_reused_interpreter_reports_late_image_package_requirement():
+    rlm = RLM("value -> answer", max_iters=1)
+    rlm.generate_action = make_mock_predictor([
+        {"reasoning": "Return", "code": 'SUBMIT("done")'},
+    ])
+
+    with PythonInterpreter() as interpreter:
+        assert rlm(interpreter, value="text").answer == "done"
+        previous_llm_query = interpreter.tools["llm_query"]
+        with pytest.raises(CodeInterpreterError, match=r"Create a fresh interpreter or configure packages=\['Pillow'\]"):
+            rlm(interpreter, value=dspy.Image("data:image/png;base64,aW1hZ2U="))
+        assert interpreter.tools["llm_query"] is previous_llm_query
+
+
+@pytest.mark.deno
+def test_preconfigured_interpreter_reuse_supports_later_image():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image as PILImage
+
+    rlm = RLM("value -> answer", max_iters=2)
+    rlm.generate_action = make_mock_predictor([
+        {"reasoning": "Return", "code": 'SUBMIT("text")'},
+        {"reasoning": "Inspect", "code": "print(value.to_pil().size)"},
+        {"reasoning": "Return", "code": 'SUBMIT("image")'},
+    ])
+
+    with PythonInterpreter(packages=["Pillow"]) as interpreter:
+        assert rlm(interpreter, value="text").answer == "text"
+        result = rlm(interpreter, value=dspy.Image(PILImage.new("RGB", (2, 3), "red")))
+
+    assert result.answer == "image"
     assert result.trajectory[0]["output"] == "(2, 3)\n"
 
 

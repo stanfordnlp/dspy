@@ -36,7 +36,9 @@ DSPy temporarily grants the default runner access to Pyodide's package CDN and D
 then revokes that access before executing submitted Python. Packages must be available in the Pyodide distribution;
 this option is not supported with a custom `deno_command`, whose runner and package lifecycle are caller-owned.
 RLM also calls `preload_packages()` automatically for package requirements declared by `SandboxSerializable` inputs;
-for example, `dspy.Image` declares Pillow.
+for example, `dspy.Image` declares Pillow. Package declarations can extend an unstarted interpreter, but the package
+set is fixed after its process starts. Configure all packages up front when reusing a caller-owned interpreter across
+inputs with different requirements. Custom Deno commands must provide their own package management.
 
 ## Execution Instructions
 

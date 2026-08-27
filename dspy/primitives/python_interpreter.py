@@ -392,7 +392,11 @@ class PythonInterpreter:
         if merged_packages == self.packages:
             return
         if self.deno_process is not None:
-            raise CodeInterpreterError("Pyodide packages must be configured before the interpreter starts")
+            missing_packages = [package for package in merged_packages if package not in self.packages]
+            raise CodeInterpreterError(
+                f"Cannot add Pyodide packages {missing_packages} after the interpreter process has started. "
+                f"Create a fresh interpreter or configure packages={merged_packages} before its first execution."
+            )
 
         self.packages = merged_packages
         self.deno_command = self._build_default_deno_command()

@@ -304,6 +304,10 @@ class RLM(Module):
                 )
             normalized_images = _normalize_images(images)
             if normalized_images:
+                if getattr(target_lm, "model_type", None) == "text":
+                    raise ValueError(
+                        "llm_query images require a chat or responses LM; model_type='text' does not support images."
+                    )
                 content = [{"type": "text", "text": prompt}]
                 content.extend(image.format()[0] for image in normalized_images)
                 response = target_lm(messages=[{"role": "user", "content": content}])
@@ -571,19 +575,16 @@ class RLM(Module):
     @contextmanager
     def _interpreter_context(
         self,
-        execution_tools: dict[str, Callable],
         interpreter: CodeInterpreter | None,
     ) -> Iterator[CodeInterpreter]:
         """Yield a caller-owned interpreter or manage a factory-created one."""
         if interpreter is not None:
             _validate_interpreter(interpreter)
-            self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
             return
 
         interpreter = _create_interpreter(self._interpreter_factory)
         try:
-            self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
         finally:
             interpreter.shutdown()
@@ -773,8 +774,9 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(interpreter) as repl:
             self._preload_sandbox_packages(input_args, repl)
+            self._inject_execution_context(repl, execution_tools)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -864,8 +866,9 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(interpreter) as repl:
             self._preload_sandbox_packages(input_args, repl)
+            self._inject_execution_context(repl, execution_tools)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 

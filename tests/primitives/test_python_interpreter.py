@@ -492,7 +492,7 @@ def test_preload_packages_rejects_started_interpreter():
     with PythonInterpreter(packages=["micropip"]) as interpreter:
         interpreter.start()
         interpreter.preload_packages(["micropip"])
-        with pytest.raises(CodeInterpreterError, match="before the interpreter starts"):
+        with pytest.raises(CodeInterpreterError, match=r"configure packages=\['micropip', 'Pillow'\]"):
             interpreter.preload_packages(["Pillow"])
 
 

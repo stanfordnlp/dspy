@@ -199,7 +199,7 @@ rlm = dspy.RLM(
 )
 ```
 
-RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency. A started `PythonInterpreter` has a fixed package set, so configure packages needed by later calls when constructing it, for example `PythonInterpreter(packages=["Pillow"])`.
 
 If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
 which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
