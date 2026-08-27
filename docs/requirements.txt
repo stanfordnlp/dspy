@@ -7,4 +7,4 @@ mkdocstrings
 mkdocstrings-python
 mkdocs-llmstxt>=0.5.0
 urllib3==2.7.0
-mistune==3.2.1
+mistune==3.3.4
