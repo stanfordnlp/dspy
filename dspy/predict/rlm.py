@@ -283,17 +283,21 @@ class RLM(Module):
                 )
         return normalized
 
-    def _query_lm(self, prompt: str, images: Any = None, *, lm: Any) -> str:
+    def _prepare_lm_query(self, images: Any, lm: Any) -> tuple[Any, list[dspy.Image]]:
         target_lm = lm if lm is not None else dspy.settings.lm
         if target_lm is None:
             raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
 
         normalized_images = self._normalize_llm_query_images(images)
+        if normalized_images and getattr(target_lm, "model_type", None) == "text":
+            raise ValueError(
+                "llm_query images require a chat or responses LM; model_type='text' does not support images."
+            )
+        return target_lm, normalized_images
+
+    def _query_lm(self, prompt: str, images: Any = None, *, lm: Any) -> str:
+        target_lm, normalized_images = self._prepare_lm_query(images, lm)
         if normalized_images:
-            if getattr(target_lm, "model_type", None) == "text":
-                raise ValueError(
-                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
-                )
             content = [{"type": "text", "text": prompt}]
             content.extend(image.format()[0] for image in normalized_images)
             response = target_lm(messages=[{"role": "user", "content": content}])
@@ -363,8 +367,9 @@ class RLM(Module):
             """Query the LLM with a prompt and optional image or list of images."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
+            target_lm, normalized_images = self._prepare_lm_query(images, lm)
             _check_and_increment(1)
-            return query_lm(prompt, images)
+            return self._query_lm(prompt, normalized_images, lm=target_lm)
 
         def llm_query_batched(prompts: list[str], images=None) -> list[str]:
             """Query prompts and corresponding optional images concurrently."""

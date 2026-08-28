@@ -327,11 +327,16 @@ class TestRLMInitialization:
         assert content[1]["image_url"]["url"] == "https://example.com/image.png"
 
     def test_llm_query_rejects_images_for_text_lm(self):
-        lm = dspy.LM("openai/gpt-4o-mini", model_type="text")
-        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["valid text response"])
+        lm.model_type = "text"
+        tools = RLM("context -> answer", sub_lm=lm, max_llm_calls=1)._make_llm_tools()
 
         with pytest.raises(ValueError, match="model_type='text' does not support images"):
             tools["llm_query"]("Caption this", images="https://example.com/image.png")
+        assert tools["llm_query"]("Answer this") == "valid text response"
+        lm.assert_called_once()
 
     def test_llm_query_batched_supports_images_per_prompt(self):
         from unittest.mock import MagicMock
