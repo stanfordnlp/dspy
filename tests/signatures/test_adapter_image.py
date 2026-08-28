@@ -473,8 +473,9 @@ def test_image_implements_sandbox_serializable_contract():
     assert isinstance(image, SandboxSerializable)
     assert image.to_sandbox() == image.url.encode("utf-8")
     assert image.sandbox_assignment("photo", "_raw_photo") == "photo = DSPyImage(_raw_photo)"
-    assert image.sandbox_packages() == ["Pillow"]
+    assert image.sandbox_packages() == ["Pillow", "opencv-python"]
     assert "from PIL import Image as PILImage" in image.sandbox_setup()
+    assert "import cv2" in image.sandbox_setup()
     assert "class DSPyImage(str)" in image.sandbox_setup()
     assert "llm_query(..., images=[image])" in image.rlm_preview()
 

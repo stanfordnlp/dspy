@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -1960,6 +1961,32 @@ def test_image_preloads_pillow_for_default_sandbox():
 
 
 @pytest.mark.deno
+def test_image_round_trips_through_typed_rlm_output():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image as PILImage
+
+    class EditImage(dspy.Signature):
+        source: dspy.Image = dspy.InputField()
+        edited: dspy.Image = dspy.OutputField()
+
+    source = dspy.Image(PILImage.new("RGB", (3, 2), "red"))
+    rlm = RLM(EditImage, max_iters=2)
+    rlm.generate_action = make_mock_predictor([
+        {
+            "reasoning": "Edit the image",
+            "code": "edited = cv2.rotate(source.to_cv2(), cv2.ROTATE_90_CLOCKWISE)\nprint(edited.shape)",
+        },
+        {"reasoning": "Return the edited image", "code": "SUBMIT(DSPyImage.from_cv2(edited))"},
+    ])
+
+    result = rlm(source=source)
+
+    assert isinstance(result.edited, dspy.Image)
+    edited = PILImage.open(BytesIO(base64.b64decode(result.edited.url.split(",", 1)[1])))
+    assert edited.size == (2, 3)
+
+
+@pytest.mark.deno
 def test_reused_interpreter_reports_late_image_package_requirement():
     rlm = RLM("value -> answer", max_iters=1)
     rlm.generate_action = make_mock_predictor([
@@ -1969,7 +1996,10 @@ def test_reused_interpreter_reports_late_image_package_requirement():
     with PythonInterpreter() as interpreter:
         assert rlm(interpreter, value="text").answer == "done"
         previous_llm_query = interpreter.tools["llm_query"]
-        with pytest.raises(CodeInterpreterError, match=r"Create a fresh interpreter or configure packages=\['Pillow'\]"):
+        with pytest.raises(
+            CodeInterpreterError,
+            match=r"Create a fresh interpreter or configure packages=\['Pillow', 'opencv-python'\]",
+        ):
             rlm(interpreter, value=dspy.Image("data:image/png;base64,aW1hZ2U="))
         assert interpreter.tools["llm_query"] is previous_llm_query
 
@@ -1986,7 +2016,7 @@ def test_preconfigured_interpreter_reuse_supports_later_image():
         {"reasoning": "Return", "code": 'SUBMIT("image")'},
     ])
 
-    with PythonInterpreter(packages=["Pillow"]) as interpreter:
+    with PythonInterpreter(packages=["Pillow", "opencv-python"]) as interpreter:
         assert rlm(interpreter, value="text").answer == "text"
         result = rlm(interpreter, value=dspy.Image(PILImage.new("RGB", (2, 3), "red")))
 

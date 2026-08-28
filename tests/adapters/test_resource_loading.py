@@ -67,6 +67,14 @@ def test_image_url_constructor_does_not_download(monkeypatch):
     assert image.url == "https://example.com/image.png"
 
 
+def test_image_string_validation_does_not_download(monkeypatch):
+    _forbid_host_io(monkeypatch)
+
+    image = TypeAdapter(dspy.Image).validate_python("https://example.com/image.png")
+
+    assert image == dspy.Image("https://example.com/image.png")
+
+
 def test_image_validation_rejects_download_without_host_io(monkeypatch):
     _forbid_host_io(monkeypatch)
 
