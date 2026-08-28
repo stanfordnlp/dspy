@@ -376,7 +376,12 @@ class RLM(Module):
             batch_images = self._normalize_llm_query_batch_images(prompts, images)
             if not prompts:
                 return []
-            batch_images = [self._prepare_lm_query(prompt_images, lm)[1] for prompt_images in batch_images]
+            batch_images = [self._normalize_llm_query_images(prompt_images) for prompt_images in batch_images]
+            target_lm = lm if lm is not None else dspy.settings.lm
+            if any(batch_images) and target_lm is not None and getattr(target_lm, "model_type", None) == "text":
+                raise ValueError(
+                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
+                )
             _check_and_increment(len(prompts))
             return self._query_lm_batched(prompts, batch_images, query_lm, max_workers)
 
