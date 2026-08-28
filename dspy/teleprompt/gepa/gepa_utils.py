@@ -248,12 +248,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 format_failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
             )
-            # bootstrap_trace_data drops examples whose program call raised (dspy.Evaluate
-            # substitutes an empty Prediction it cannot unpack), so `trajs` may be shorter than
-            # `batch`. gepa merges valset results by batch position, so keep outputs and scores
-            # sized to the batch and fill by example_ind, as evaluate_with_trace does for Flex.
-            # A dropped example keeps a None score, which _make_evaluation_batch maps to
-            # failure_score.
+            # bootstrap_trace_data drops examples whose program raised, but gepa indexes results by
+            # batch position, so keep outputs and scores batch-sized (dropped -> failure_score).
             outputs: list[Any] = [None] * len(batch)
             raw_scores: list[Any] = [None] * len(batch)
             for t in trajs:
