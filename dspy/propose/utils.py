@@ -1,6 +1,9 @@
 import inspect
 import json
 import re
+from typing import get_args
+
+from pydantic import BaseModel
 
 import dspy
 
@@ -143,6 +146,50 @@ def create_example_string(fields, example):
     # Joining all the field strings
     return "\n".join(output)
 
+
+def _referenced_pydantic_models(signature):
+    models = []
+    seen = set()
+
+    def visit(annotation):
+        try:
+            is_pydantic_model = isinstance(annotation, type) and issubclass(annotation, BaseModel)
+        except TypeError:
+            is_pydantic_model = False
+
+        if is_pydantic_model:
+            if annotation in seen:
+                return
+            seen.add(annotation)
+            if annotation.__module__.split(".", 1)[0] in {"dspy", "pydantic"}:
+                return
+            for base in annotation.__bases__:
+                visit(base)
+            for field in annotation.model_fields.values():
+                visit(field.annotation)
+            models.append(annotation)
+            return
+
+        for argument in get_args(annotation):
+            visit(argument)
+
+    for field in signature.fields.values():
+        visit(field.annotation)
+
+    return models
+
+
+def _pydantic_model_sources(signature):
+    sources = []
+    for model in _referenced_pydantic_models(signature):
+        try:
+            sources.append(inspect.getsource(model))
+        except (TypeError, OSError):
+            schema = json.dumps(model.model_json_schema(), indent=2, sort_keys=True)
+            sources.append(f"# JSON Schema for {model.__name__}\n{schema}")
+    return sources
+
+
 def get_dspy_source_code(module):
     header = []
     base_code = ""
@@ -172,7 +219,15 @@ def get_dspy_source_code(module):
             except TypeError:
                 continue
             if isinstance(item, Parameter):
-                if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:
+                if (
+                    hasattr(item, "signature")
+                    and item.signature is not None
+                    and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set
+                ):
+                    for model_source in _pydantic_model_sources(item.signature):
+                        if model_source not in completed_set:
+                            header.append(model_source)
+                            completed_set.add(model_source)
                     try:
                         header.append(inspect.getsource(item.signature))
                         print(inspect.getsource(item.signature))
