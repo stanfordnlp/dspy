@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import types
 import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
+
+from pydantic import BaseModel
+
+from dspy.adapters.types.base_type import Type as _CustomType
 
 
 @dataclass
@@ -45,6 +50,9 @@ class FlexContext:
                 extra = finfo.json_schema_extra or {}
                 desc = extra.get("desc", "")
                 line = f"  - {fname}: {type_str}"
+                model_fields = _model_field_names(finfo.annotation)
+                if model_fields:
+                    line += f" (fields: {', '.join(model_fields)})"
                 if desc and not desc.startswith("${"):
                     line += f"  -- {desc}"
                 lines.append(line)
@@ -106,6 +114,22 @@ def _type_name(t: Any) -> str:
     if name:
         return name
     return str(t).replace("typing.", "")
+
+
+def _model_field_names(annotation: Any) -> list[str]:
+    """Field names of the pydantic model or dataclass named in ``annotation`` (looking through
+    containers), so the proposer knows what a value that arrives as a record contains."""
+    for arg in get_args(annotation):
+        names = _model_field_names(arg)
+        if names:
+            return names
+    if not isinstance(annotation, type) or issubclass(annotation, _CustomType):
+        return []  # dspy.Type values (Image, Audio, ...) cross as opaque strings, not records
+    if issubclass(annotation, BaseModel):
+        return list(annotation.model_fields)
+    if dataclasses.is_dataclass(annotation):
+        return [f.name for f in dataclasses.fields(annotation)]
+    return []
 
 
 def _collect_custom_types(annotation: Any, out: dict[str, type]) -> None:

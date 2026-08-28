@@ -45,6 +45,26 @@ class _DspyPrediction:
         return "Prediction(" + repr(object.__getattribute__(self, "_fields")) + ")"
 
 
+class _DspyRecord(dict):
+    """A dict that arrived from the host (a model-typed input, a predictor's output field). Still a
+    dict, so `rec["name"]` and JSON encoding work; `rec.name` works too, as it would on the model."""
+
+    def __getattr__(self, _name):
+        try:
+            return self[_name]
+        except KeyError:
+            raise AttributeError(_name) from None
+
+
+def _dspy_hydrate(_v):
+    # Turn every dict crossing in from the host into a record, recursing through containers.
+    if isinstance(_v, dict):
+        return _DspyRecord({_k: _dspy_hydrate(_x) for _k, _x in _v.items()})
+    if isinstance(_v, list):
+        return [_dspy_hydrate(_x) for _x in _v]
+    return _v
+
+
 class _DspyProxy:
     """Sandbox-side handle to a host predictor. Calling it runs the real predictor on the host."""
 
@@ -54,7 +74,7 @@ class _DspyProxy:
     def __call__(self, **_inputs):
         _h = object.__getattribute__(self, "_handle")
         _out = _dspy_host("__dspy_call__", handle=_h, inputs=_inputs)
-        return _DspyPrediction(**(_out or {}))
+        return _DspyPrediction(**_dspy_hydrate(_out or {}))
 
 
 class _DspyPending:
