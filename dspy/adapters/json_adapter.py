@@ -4,7 +4,6 @@ from typing import Any, get_origin
 
 import json_repair
 import pydantic
-import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
@@ -36,6 +35,46 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
         if get_origin(annotation) is dict:
             return True
     return False
+
+
+def _extract_json_object(text: str) -> str | None:
+    """
+    Return the outermost JSON object in ``text`` as a substring.
+
+    Unlike a naive recursive regex, this scanner understands JSON string literals, so
+    curly braces that appear inside string values (e.g. a code snippet such as
+    ``"if (user) {"``) are not mistaken for structural braces. This matters because LM
+    responses frequently embed source code or prose containing braces inside string
+    fields, which previously broke JSON extraction (see issue #8759).
+
+    Returns ``None`` if no balanced object is found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        char = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
 
 
 class JSONAdapter(ChatAdapter):
@@ -169,11 +208,9 @@ class JSONAdapter(ChatAdapter):
         fields = json_repair.loads(completion)
 
         if not isinstance(fields, dict):
-            pattern = r"\{(?:[^{}]|(?R))*\}"
-            match = regex.search(pattern, completion, regex.DOTALL)
-            if match:
-                completion = match.group(0)
-                fields = json_repair.loads(completion)
+            extracted = _extract_json_object(completion)
+            if extracted is not None:
+                fields = json_repair.loads(extracted)
 
         if not isinstance(fields, dict):
             raise AdapterParseError(
