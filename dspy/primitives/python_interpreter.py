@@ -318,7 +318,10 @@ class PythonInterpreter:
     execution_instructions = (
         "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
         "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available. "
-        "Host filesystem, environment, and network access require explicit permission."
+        "Do not assume other packages such as numpy, scipy, matplotlib, IPython, or dspy are installed; additional "
+        "packages are available only when provisioned for reconstructed inputs. Use methods exposed by those inputs, "
+        "such as image.to_pil(), instead of importing their host-side types. Host filesystem, environment, and network "
+        "access require explicit permission."
     )
 
     def _build_permission_args(self, deno_dir: str | None) -> tuple[list[str], str, bool, bool]:

@@ -66,12 +66,13 @@ Available:
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
 
-1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
+1. EXPLORE FIRST - Inspect structure cheaply before processing: print small samples, types, shapes, or lengths rather than entire large values.
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
 4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
-5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
-6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
+5. WORK WITH IMAGES VISUALLY - Use `llm_query(..., images=[...])` early for semantic visual inspection. Printing or displaying an image encoding does not let you see it. When useful, apply deterministic edits through methods exposed by the image (for example crops, rotations, enhancement, or contact sheets), then query the edited image. Validate brittle pixel heuristics against visual evidence instead of letting an unverified heuristic override it.
+6. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
+7. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 

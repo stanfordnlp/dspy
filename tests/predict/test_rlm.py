@@ -515,6 +515,12 @@ class TestRLMInterpreterLifecycle:
         assert "standard libraries" not in signature.instructions
         assert optimized.instructions == "Optimized instructions"
 
+    def test_python_interpreter_runtime_limits_are_part_of_action_prompt(self):
+        instructions = RLM("image -> answer").generate_action.signature.instructions
+
+        assert "Do not assume other packages such as numpy" in instructions
+        assert "image.to_pil()" in instructions
+
     def test_python_interpreter_lm_request_bytes(self):
         class StopLMCall(BaseException):
             pass
@@ -1023,6 +1029,8 @@ class TestRLMDynamicSignature:
         assert "`question`" in instructions
         assert "`summary`" in instructions
         assert "`answer`" in instructions
+        assert "llm_query(..., images=[...])" in instructions
+        assert "Printing or displaying an image encoding does not let you see it" in instructions
 
     def test_extract_signature_structure(self):
         """Test extract signature has required fields for all outputs."""
