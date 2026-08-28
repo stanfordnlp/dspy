@@ -376,6 +376,7 @@ class RLM(Module):
             batch_images = self._normalize_llm_query_batch_images(prompts, images)
             if not prompts:
                 return []
+            batch_images = [self._prepare_lm_query(prompt_images, lm)[1] for prompt_images in batch_images]
             _check_and_increment(len(prompts))
             return self._query_lm_batched(prompts, batch_images, query_lm, max_workers)
 
