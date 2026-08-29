@@ -248,11 +248,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 format_failure_score=self.failure_score,
                 callback_metadata=callback_metadata,
             )
-            return self._make_evaluation_batch(
-                outputs=[t["prediction"] for t in trajs],
-                raw_scores=[t.get("score") for t in trajs],
-                trajectories=trajs,
-            )
+            # bootstrap_trace_data drops examples whose program raised, but gepa indexes results by
+            # batch position, so keep outputs and scores batch-sized (dropped -> failure_score).
+            outputs: list[Any] = [None] * len(batch)
+            raw_scores: list[Any] = [None] * len(batch)
+            for t in trajs:
+                outputs[t["example_ind"]] = t["prediction"]
+                raw_scores[t["example_ind"]] = t.get("score")
+            return self._make_evaluation_batch(outputs=outputs, raw_scores=raw_scores, trajectories=trajs)
         else:
             evaluator = Evaluate(
                 devset=batch,
