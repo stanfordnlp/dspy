@@ -97,6 +97,50 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection
     assert captured_kwargs["callback_metadata"] == expected_callback_metadata
 
 
+def test_gepa_adapter_evaluate_keeps_outputs_aligned_when_program_crashes(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class CrashingModule(dspy.Module):
+        def forward(self, **kwargs):
+            if kwargs["input"] == "crash":
+                raise RuntimeError("boom")
+            return dspy.Prediction(output=kwargs["input"])
+
+    def always_one_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+        return 1.0
+
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=always_one_metric,
+        feedback_map={},
+        failure_score=-0.5,
+    )
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: CrashingModule(),
+    )
+
+    batch = [
+        Example(input="first", output="first").with_inputs("input"),
+        Example(input="crash", output="crash").with_inputs("input"),
+        Example(input="third", output="third").with_inputs("input"),
+    ]
+
+    with dspy.context(max_errors=100):
+        result = adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
+
+    # gepa's valset evaluation indexes outputs and scores by batch position, so a
+    # crashed example must keep its slot rather than shrinking the lists.
+    assert len(result.outputs) == 3
+    assert len(result.scores) == 3
+    assert result.outputs[0].output == "first"
+    assert result.outputs[1] is None
+    assert result.outputs[2].output == "third"
+    assert result.scores == [1.0, -0.5, 1.0]
+    assert [t["example_ind"] for t in result.trajectories] == [0, 2]
+
+
 def test_gepa_adapter_forwards_sparse_objective_scores():
     from dspy.teleprompt.gepa import gepa_utils
 

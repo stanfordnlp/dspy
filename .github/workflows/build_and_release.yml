@@ -33,13 +33,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python 3.11
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Install Deno
-        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: v2.7.7
       - name: Get correct version for TestPyPI release
@@ -75,7 +75,7 @@ jobs:
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -96,13 +96,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python 3.11
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Install Deno
-        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: v2.7.7
       - name: Update version in pyproject.toml
@@ -135,7 +135,7 @@ jobs:
           deactivate
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: false
       # Publish to dspy-ai
@@ -154,7 +154,7 @@ jobs:
       - name: Validate built distributions (dspy-ai)
         run: python3 -m twine check --strict .github/.internal_dspyai/dist/*
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
