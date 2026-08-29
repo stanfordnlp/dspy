@@ -1,7 +1,7 @@
 import types
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from typing import Any, Union, get_args, get_origin
+from typing import Annotated, Any, Union, get_args, get_origin
 from xml.sax.saxutils import quoteattr
 
 import pydantic
@@ -116,7 +116,15 @@ class XMLAdapter(ChatAdapter):
                     try:
                         fields[name] = parse_value(value, field.annotation, field)
                     except pydantic.ValidationError:
-                        fields[name] = adapter.validate_python(value, by_name=True)
+                        # By-name retry for aliased nested models. Keep the FieldInfo
+                        # constraints attached, so this fallback cannot accept a value
+                        # the primary path just rejected for violating them (#7925).
+                        target = (
+                            Annotated[(field.annotation, *field.metadata)]
+                            if field.metadata
+                            else field.annotation
+                        )
+                        fields[name] = TypeAdapter(target).validate_python(value, by_name=True)
                     break
                 except Exception as e:
                     error = e
