@@ -44,10 +44,13 @@ def test_forward_embeds_query_and_returns_passages():
     retriever, client = _make_retriever(k=2)
     client.search_docs.return_value = [_FakeDoc("doc one"), _FakeDoc("doc two")]
 
-    prediction = retriever("what is rostam")
+    result = retriever("what is rostam")
 
     client.search_docs.assert_called_once_with("my_collection", _fake_embedder("what is rostam"), 2, filter=None)
-    assert prediction.passages == ["doc one", "doc two"]
+    # forward returns the retrieval-model contract dspy.Retrieve consumes: a list
+    # of dotdicts exposing long_text (NOT a Prediction — that broke the configured
+    # rm path, which does [psg.long_text for psg in rm_result]).
+    assert [p.long_text for p in result] == ["doc one", "doc two"]
 
 
 def test_forward_k_and_filter_override_defaults():
@@ -63,10 +66,36 @@ def test_forward_accepts_multiple_queries():
     retriever, client = _make_retriever(k=1)
     client.search_docs.side_effect = [[_FakeDoc("a")], [_FakeDoc("b")]]
 
-    prediction = retriever(["q1", "q2"])
+    result = retriever(["q1", "q2"])
 
-    assert prediction.passages == ["a", "b"]
+    assert [p.long_text for p in result] == ["a", "b"]
     assert client.search_docs.call_count == 2
+
+
+def test_works_as_configured_retrieval_model():
+    """Regression: as the global rm, dspy.Retrieve reads .long_text off each item
+    forward returns. RostamRM used to return a Prediction, which dspy.Retrieve
+    iterated as its field names -> AttributeError. It must return long_text items."""
+    import dspy
+
+    retriever, client = _make_retriever(k=2)
+    client.search_docs.return_value = [_FakeDoc("first"), _FakeDoc("second")]
+    with dspy.context(rm=retriever):
+        passages = dspy.Retrieve(k=2)("a query").passages
+    assert passages == ["first", "second"]
+
+
+def test_index_validates_lengths_before_mutating():
+    """Regression: a length mismatch must be rejected BEFORE any server mutation —
+    previously index() created the collection and upserted the first doc, then
+    raised, leaving the store partially written by a call that reports failure."""
+    retriever, client = _make_retriever()
+
+    with pytest.raises(ValueError):
+        retriever.index(["a", "b"], embeddings=[[0.0, 0.0, 0.0]])  # 2 texts, 1 embedding
+
+    client.create_collection.assert_not_called()
+    client.upsert.assert_not_called()
 
 
 def test_index_creates_collection_once_and_upserts():

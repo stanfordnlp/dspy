@@ -4,7 +4,7 @@ import hashlib
 from typing import Any, Callable
 
 import dspy
-from dspy.primitives.prediction import Prediction
+from dspy.dsp.utils import dotdict
 
 try:
     from rostam import Rostam, RostamError
@@ -127,7 +127,7 @@ class RostamRM(dspy.Module):
         query_or_queries: str | list[str],
         k: int | None = None,
         filter: dict[str, Any] | None = None,
-    ) -> Prediction:
+    ) -> list[dotdict]:
         """Search Rostam for the top-k passages for query or queries.
 
         Args:
@@ -137,7 +137,11 @@ class RostamRM(dspy.Module):
                 construction time.
 
         Returns:
-            dspy.Prediction: An object containing the retrieved passages.
+            list[dotdict]: The retrieved passages, each a ``dotdict`` with a
+            ``long_text`` field. This matches the retrieval-model contract
+            ``dspy.Retrieve`` consumes (it reads ``.long_text`` off each item and
+            wraps them into a ``Prediction(passages=[...])``), so ``RostamRM`` works
+            both as the configured ``rm`` and when called directly.
         """
         k = k if k is not None else self.k
         queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
@@ -150,7 +154,7 @@ class RostamRM(dspy.Module):
             hits = self._client.search_docs(self._collection, vector, k, filter=active_filter)
             passages.extend(hit.content for hit in hits)
 
-        return Prediction(passages=passages)
+        return [dotdict(long_text=content) for content in passages]
 
     def index(
         self,
@@ -169,6 +173,15 @@ class RostamRM(dspy.Module):
         texts = list(texts)
         if not texts:
             return []
+
+        # Validate every supplied parallel input against texts BEFORE touching the
+        # server: otherwise a mismatch would create the collection and upsert the
+        # first documents before the loop's length check raised, leaving the store
+        # partially mutated by a call that reports failure.
+        n = len(texts)
+        for name, seq in (("embeddings", embeddings), ("ids", ids), ("metadatas", metadatas)):
+            if seq is not None and len(seq) != n:
+                raise ValueError(f"index(): {name} has length {len(seq)}, expected {n} (one per text)")
 
         vectors = list(embeddings) if embeddings is not None else [self._embedder(t) for t in texts]
         if vectors:
