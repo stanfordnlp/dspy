@@ -1637,7 +1637,10 @@ def _history_part_as_openai_content(part: LMPart) -> dict[str, Any]:
     if isinstance(part, LMTextPart):
         return {"type": "text", "text": part.text}
     if isinstance(part, LMImagePart):
-        return {"type": "image_url", "image_url": {"url": _history_part_source(part)}}
+        image_url: dict[str, Any] = {"url": _history_part_source(part)}
+        if part.detail is not None:
+            image_url["detail"] = part.detail
+        return {"type": "image_url", "image_url": image_url}
     if isinstance(part, LMAudioPart):
         input_audio = {"format": _history_media_format(part.media_type)}
         if part.data is not None:
@@ -1809,7 +1812,7 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
             url = image.get("url")
             if url is None:
                 raise ValueError("Image content block requires url.")
-            parts.append(_image_source_to_part(url))
+            parts.append(_image_source_to_part(url, detail=image.get("detail")))
         elif item_type == "input_audio":
             audio = item.get("input_audio", {})
             parts.append(_audio_dict_to_part(audio))
@@ -1857,14 +1860,14 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
     )
 
 
-def _image_source_to_part(source: str) -> LMImagePart:
+def _image_source_to_part(source: str, detail: str | None = None) -> LMImagePart:
     if not isinstance(source, str):
         raise TypeError("Image URL must be a string.")
     if source.startswith("data:"):
         media_type, data = _split_data_uri(source)
-        return LMImagePart(data=data, media_type=media_type)
+        return LMImagePart(data=data, media_type=media_type, detail=detail)
     media_type = mimetypes.guess_type(urlparse(source).path)[0] or "image/png"
-    return LMImagePart(url=source, media_type=media_type)
+    return LMImagePart(url=source, media_type=media_type, detail=detail)
 
 
 def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:

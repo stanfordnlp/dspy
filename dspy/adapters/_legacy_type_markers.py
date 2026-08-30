@@ -103,11 +103,12 @@ def _legacy_content_block_to_lm_part(block: Any) -> LMPart:
         return LMTextPart(text=block.get("text", ""))
     if block_type == "image_url":
         image_url = block.get("image_url", {})
+        detail = image_url.get("detail") if isinstance(image_url, dict) else None
         source = image_url.get("url") if isinstance(image_url, dict) else image_url
         if isinstance(source, str) and source.startswith("data:") and "," in source:
             media_type, data = _split_data_uri(source)
-            return LMImagePart(data=data, media_type=media_type)
-        return LMImagePart(url=source or "")
+            return LMImagePart(data=data, media_type=media_type, detail=detail)
+        return LMImagePart(url=source or "", detail=detail)
     if block_type == "input_audio":
         audio = block.get("input_audio", {})
         return LMAudioPart(data=audio.get("data", ""), media_type=f"audio/{audio.get('format', 'wav')}")
