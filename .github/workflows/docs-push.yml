@@ -75,14 +75,9 @@ jobs:
         run: |
           git -C docs-deployment config user.name github-actions
           git -C docs-deployment config user.email github-actions@github.com
-          set +e
-          git -C docs-deployment ls-remote --exit-code --heads origin versioned-docs >/dev/null
-          branch_status=$?
-          set -e
-          if [[ "$branch_status" == 0 ]]; then
-            git -C docs-deployment fetch origin versioned-docs:versioned-docs
-          elif [[ "$branch_status" != 2 ]]; then
-            exit "$branch_status"
+          if ! git -C docs-deployment show HEAD:versions.json >/dev/null 2>&1; then
+            echo "::error::Refusing to publish before the reviewed versioned site is promoted to master"
+            exit 1
           fi
           python docs/scripts/publish_versioned_docs.py \
             --repository docs-deployment \
@@ -91,7 +86,7 @@ jobs:
             --title Current \
             --renderer zensical \
             --package-source working-tree \
-            --branch versioned-docs \
+            --branch master \
             --mutable \
             --default
-          git -C docs-deployment push origin versioned-docs
+          git -C docs-deployment push origin master
