@@ -201,12 +201,14 @@ def test_named_parameters_dict_keys_do_not_collide():
     assert "dict_a[0]" in names
 
 
-def test_load_state_raises_clear_error_for_pre_fix_dict_key_names():
+def test_load_state_accepts_pre_fix_dict_key_names():
     """
-    Loading a state saved by a DSPy version before the #1302 fix, for a dict-valued attribute with
-    a non-string key, must fail loudly with a clear message rather than a bare KeyError - matching
-    the existing "fail-fast, no partial corruption" design (see test_load_state_is_transactional,
-    regression test for #9589).
+    Backward-compatibility regression test for https://github.com/stanfordnlp/dspy/issues/1302.
+
+    State saved by a DSPy version before the #1302 fix quoted dict keys as if they were strings
+    (e.g. an int key 0 was persisted as "dict_a['0']" instead of the current "dict_a[0]").
+    load_state() must still restore such state after upgrading, not merely fail with a clearer
+    error - old save files must keep working.
     """
 
     class Prog(Module):
@@ -215,12 +217,28 @@ def test_load_state_raises_clear_error_for_pre_fix_dict_key_names():
             self.dict_a = {0: dspy.Predict("question -> answer")}
 
     prog = Prog()
-    # Simulate a pre-fix save: the old code always quoted dict keys, so an int key 0 was persisted
-    # as "dict_a['0']" instead of the current "dict_a[0]".
-    state = {"dict_a['0']": prog.dict_a[0].dump_state()}
+    legacy_state = {"dict_a['0']": prog.dict_a[0].dump_state()}
+
+    prog.load_state(legacy_state)  # must not raise
+
+
+def test_load_state_raises_clear_error_when_name_missing_in_both_formats():
+    """
+    A parameter missing under BOTH its current name and its pre-#1302 legacy name is a genuine
+    problem (not just an old save format) and must still fail loudly - matching the existing
+    "fail-fast, no partial corruption" design (see test_load_state_is_transactional, regression
+    test for #9589).
+    """
+
+    class Prog(Module):
+        def __init__(self):
+            super().__init__()
+            self.dict_a = {0: dspy.Predict("question -> answer")}
+
+    prog = Prog()
 
     with pytest.raises(KeyError, match="issues/1302"):
-        prog.load_state(state)
+        prog.load_state({})
 
 
 def test_named_sub_modules_dict_keys_do_not_collide():
@@ -253,6 +271,7 @@ def test_load_dspy_program_cross_version():
 
     assert len(loaded_react.react.demos) == 2
     assert len(loaded_react.extract.predict.demos) == 2
+
 
 def test_load_state_is_transactional():
     """
@@ -291,6 +310,4 @@ def test_load_state_is_transactional():
         with pytest.raises(KeyError):
             template.load(str(path))
 
-        assert template.a.predict.demos == [], (
-            "load_state partially mutated module before failing"
-        )
+        assert template.a.predict.demos == [], "load_state partially mutated module before failing"

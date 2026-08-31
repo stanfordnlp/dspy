@@ -20,9 +20,15 @@ class BaseModule:
     def __init__(self):
         pass
 
-    def named_parameters(self):
+    def _traverse_parameters(self, dict_key_name):
         """
-        Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        Shared traversal behind named_parameters(): walks self.__dict__ collecting Parameters,
+        recursing into dspy.Module attributes and (non-recursive) lists/tuples/dicts.
+
+        `dict_key_name(name, key)` builds the parameter name for a dict-valued attribute's entry;
+        it's a hook so load_state() can re-run this traversal with the pre-#1302 naming scheme
+        (see https://github.com/stanfordnlp/dspy/issues/1302) to locate parameters in state files
+        saved by older DSPy versions.
         """
 
         import dspy
@@ -40,7 +46,7 @@ class BaseModule:
             elif isinstance(param_value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
                 if not getattr(param_value, "_compiled", False):
-                    for sub_name, param in param_value.named_parameters():
+                    for sub_name, param in param_value._traverse_parameters(dict_key_name):
                         add_parameter(f"{param_name}.{sub_name}", param)
 
         if isinstance(self, Parameter):
@@ -53,7 +59,7 @@ class BaseModule:
             elif isinstance(value, dspy.Module):
                 # When a sub-module is pre-compiled, keep it frozen.
                 if not getattr(value, "_compiled", False):
-                    for sub_name, param in value.named_parameters():
+                    for sub_name, param in value._traverse_parameters(dict_key_name):
                         add_parameter(f"{name}.{sub_name}", param)
 
             elif isinstance(value, (list, tuple)):
@@ -62,9 +68,15 @@ class BaseModule:
 
             elif isinstance(value, dict):
                 for key, item in value.items():
-                    add_parameter(f"{name}[{key!r}]", item)
+                    add_parameter(dict_key_name(name, key), item)
 
         return named_parameters
+
+    def named_parameters(self):
+        """
+        Unlike PyTorch, handles (non-recursive) lists of parameters too.
+        """
+        return self._traverse_parameters(lambda name, key: f"{name}[{key!r}]")
 
     def named_sub_modules(self, type_=None, skip_compiled=False) -> Generator[tuple[str, "BaseModule"], None, None]:
         """Find all sub-modules in the module, as well as their names.
@@ -160,16 +172,25 @@ class BaseModule:
         from dspy import Module
 
         def _apply(module):
-            for name, param in module.named_parameters():
-                try:
+            # Also traverse with the pre-#1302 dict-key naming (always-quoted, e.g. "d['0']" for both
+            # str and int keys) so state saved by an older DSPy version can still be loaded: only
+            # non-string dict keys ever differ between the two names, so this is a no-op fallback for
+            # everything else.
+            legacy_names = [
+                legacy_name for legacy_name, _ in module._traverse_parameters(lambda name, key: f"{name}['{key}']")
+            ]
+            for (name, param), legacy_name in zip(module.named_parameters(), legacy_names, strict=True):
+                if name in state:
                     param_state = state[name]
-                except KeyError as e:
+                elif legacy_name in state:
+                    param_state = state[legacy_name]
+                else:
                     raise KeyError(
-                        f"{e}. If this state was saved by a DSPy version older than the one that fixed "
+                        f"'{name}'. If this state was saved by a DSPy version older than the one that fixed "
                         "https://github.com/stanfordnlp/dspy/issues/1302, and a dict-valued module "
-                        "attribute uses a non-string key (e.g. an int or tuple), note the persisted "
-                        "parameter name for such keys changed there."
-                    ) from e
+                        "attribute uses a non-string key (e.g. an int or tuple), the pre-fix name "
+                        f"('{legacy_name}') was also not found in the saved state."
+                    )
                 if isinstance(param, Module):
                     param.load_state(param_state, allow_unsafe_lm_state=allow_unsafe_lm_state)
                 else:
@@ -177,6 +198,7 @@ class BaseModule:
 
         _apply(self.deepcopy())  # trial run raises before self is touched
         _apply(self)
+
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
@@ -219,8 +241,10 @@ class BaseModule:
             if not path.exists():
                 # Create the directory (and any parent directories)
                 path.mkdir(parents=True)
-            logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
-                          'this, prefer saving using json format using module.save("module.json").')
+            logger.warning(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
+                'this, prefer saving using json format using module.save("module.json").'
+            )
             try:
                 modules_to_serialize = modules_to_serialize or []
                 for module in modules_to_serialize:
@@ -251,8 +275,10 @@ class BaseModule:
                     "with `.pkl`, or saving the whole program by setting `save_program=True`."
                 )
         elif path.suffix == ".pkl":
-            logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
-                          'this, prefer saving using json format using module.save("module.json").')
+            logger.warning(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
+                'this, prefer saving using json format using module.save("module.json").'
+            )
             state = self.dump_state(json_mode=False)
             state["metadata"] = metadata
             with open(path, "wb") as f:
@@ -279,9 +305,11 @@ class BaseModule:
                 state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
             if not allow_pickle:
-                raise ValueError("Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
-                                 "saving with .json files if possible. Set `allow_pickle=True` "
-                                 "if you are sure about the source of the file and in a trusted environment.")
+                raise ValueError(
+                    "Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
+                    "saving with .json files if possible. Set `allow_pickle=True` "
+                    "if you are sure about the source of the file and in a trusted environment."
+                )
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)
         else:
