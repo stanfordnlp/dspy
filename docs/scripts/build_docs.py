@@ -14,6 +14,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+if __package__:
+    from .zensical_build import build_zensical_site
+else:  # Direct script execution from the deployed docs repository.
+    from zensical_build import build_zensical_site
+
+
 STABLE_VERSION = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
 SOURCE_MAP_COMMENT = re.compile(rb"(?:\n?//# sourceMappingURL=[^\r\n]*|/\*# sourceMappingURL=.*?\*/)", re.DOTALL)
 ROOT_URL_ATTRIBUTE = re.compile(
@@ -138,9 +144,8 @@ def installed_packages() -> dict[str, str]:
 
 
 def renderer_version(renderer: str) -> str:
-    if renderer != "material":
-        raise ValueError(f"unsupported documentation renderer: {renderer}")
-    return importlib.metadata.version("mkdocs-material")
+    package = "mkdocs-material" if renderer == "material" else "zensical"
+    return importlib.metadata.version(package)
 
 
 def validate_release_site(site: Path, config: Path, version: str, renderer: str) -> None:
@@ -198,21 +203,29 @@ def build(
     identifier = version or "current"
     effective_config = patched_config(config, identifier, edit_ref=version)
     try:
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "mkdocs",
-                "build",
-                "--clean",
-                "--config-file",
-                str(effective_config),
-                "--site-dir",
-                str(output),
-            ],
-            cwd=config.parent,
-            check=True,
-        )
+        if renderer == "material":
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mkdocs",
+                    "build",
+                    "--clean",
+                    "--config-file",
+                    str(effective_config),
+                    "--site-dir",
+                    str(output),
+                ],
+                cwd=config.parent,
+                check=True,
+            )
+        else:
+            build_zensical_site(
+                config=effective_config,
+                output=output,
+                python=Path(sys.executable),
+                introspect_installed_package=version is not None,
+            )
     finally:
         effective_config.unlink(missing_ok=True)
 
@@ -257,7 +270,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("mode", choices=("current", "release"))
     parser.add_argument("--config", type=Path, default=Path("mkdocs.yml"))
     parser.add_argument("--output", type=Path, default=Path("site"))
-    parser.add_argument("--renderer", choices=("material",), default="material")
+    parser.add_argument("--renderer", choices=("material", "zensical"), default="material")
     parser.add_argument("--version", type=stable_version)
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--package-source", choices=("pypi-wheel", "workflow-wheel", "tag-built-wheel"))

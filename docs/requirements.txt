@@ -1,12 +1,15 @@
 git+https://github.com/stanfordnlp/dspy.git
-mkdocs-material
-mkdocs-jupyter
-mkdocs-material[imaging]
-mkdocs-redirects
-mkdocstrings
-mkdocstrings-python
-mkdocs-llmstxt>=0.5.0
+mkdocs-material==9.7.7
+mkdocs-jupyter==0.26.3
+mkdocs-material[imaging]==9.7.7
+mkdocs-redirects==1.2.3
+mkdocstrings==1.0.6
+mkdocstrings-python==2.0.7
+mkdocs-llmstxt==0.5.0
 htmlmin2==0.1.13
+nbconvert==7.17.1
+pillow==12.3.0
+zensical==0.0.57
 mike @ git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac
 urllib3==2.7.0
 mistune==3.3.4

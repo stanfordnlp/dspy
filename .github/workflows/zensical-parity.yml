@@ -1,0 +1,81 @@
+name: Zensical docs parity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/zensical-parity.yml"
+      - "docs/**"
+      - "dspy/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            docs/requirements.txt
+            docs/versioning/parity-requirements.txt
+      - name: Install documentation toolchains
+        run: |
+          python -m pip install -r docs/versioning/parity-requirements.txt
+          python -m pip install -e . pytest
+          python -m playwright install --with-deps chromium
+      - name: Run focused parity tests
+        run: python -m pytest -q --confcutdir=tests/docs tests/docs/test_zensical_parity.py
+      - name: Build and compare Material and Zensical
+        run: |
+          python docs/scripts/zensical_parity.py \
+            --material-output site-material \
+            --zensical-output site-zensical \
+            --report zensical-parity.json \
+            --no-fail
+      - name: Exercise and visually compare both sites
+        run: |
+          python docs/scripts/zensical_browser_parity.py \
+            --material site-material \
+            --zensical site-zensical \
+            --report zensical-browser-parity.json \
+            --screenshots zensical-parity-screenshots \
+            --no-fail
+      - name: Upload parity report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zensical-parity-report
+          path: |
+            zensical-parity.json
+            zensical-browser-parity.json
+            zensical-parity-screenshots
+          if-no-files-found: error
+      - name: Upload review sites
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zensical-parity-sites
+          path: |
+            site-material
+            site-zensical
+          retention-days: 7
+      - name: Enforce parity
+        run: |
+          python - <<'PY'
+          import json
+
+          for report in ("zensical-parity.json", "zensical-browser-parity.json"):
+              assert json.load(open(report))["passed"], f"{report} failed"
+          PY
