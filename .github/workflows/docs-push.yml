@@ -144,7 +144,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: krypticmouse/dspy-docs
-          ref: versioned-docs
+          ref: master
           path: docs-deployment
           persist-credentials: false
           token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
@@ -155,10 +155,20 @@ jobs:
           gh auth setup-git
           git -C docs-deployment config user.name github-actions
           git -C docs-deployment config user.email github-actions@github.com
-          python docs/scripts/publish_versioned_docs.py \
-            --repository docs-deployment \
-            --site current-site \
-            --identifier current \
-            --package-source working-tree \
-            --branch versioned-docs
-          git -C docs-deployment push origin versioned-docs
+          for attempt in 1 2 3; do
+            git -C docs-deployment fetch origin master
+            git -C docs-deployment reset --hard origin/master
+            python docs/scripts/publish_versioned_docs.py \
+              --repository docs-deployment \
+              --site current-site \
+              --identifier current \
+              --package-source working-tree \
+              --branch master \
+              --require-current-renderer zensical
+            if git -C docs-deployment push origin master; then
+              exit 0
+            fi
+            sleep $((2 ** attempt + RANDOM % 5))
+          done
+          echo "::error::Documentation deployment changed repeatedly; rerun this workflow"
+          exit 1
