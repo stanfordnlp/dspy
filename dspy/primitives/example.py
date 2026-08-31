@@ -165,7 +165,7 @@ class Example:
         return isinstance(other, Example) and self._store == other._store
 
     def __hash__(self):
-        return hash(tuple(self._store.items()))
+        return hash(frozenset(self._store.items()))
 
     def keys(self, include_dspy=False):
         """Return field names, like `dict.keys()`.
