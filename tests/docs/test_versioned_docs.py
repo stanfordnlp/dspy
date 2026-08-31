@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from docs.scripts.build_docs import patched_config, remove_source_maps, scope_root_relative_urls, stable_version
-from docs.scripts.publish_versioned_docs import publish_site, version_tuple
+from docs.scripts.publish_versioned_docs import publish_site, require_current_renderer, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
 
@@ -131,6 +131,28 @@ def test_mike_preserves_patches_and_moves_minor_redirect(tmp_path):
 
 
 @requires_mike
+def test_delayed_older_patch_does_not_move_minor_redirect_backward(tmp_path):
+    repository = make_repository(tmp_path)
+    newest = make_site(tmp_path / "newest", "3.0.1")
+    delayed = make_site(tmp_path / "delayed", "3.0.0")
+
+    for version, site in (("3.0.1", newest), ("3.0.0", delayed)):
+        publish_site(
+            repository=repository,
+            site=site,
+            identifier=version,
+            aliases=["3.0"],
+            package_source="workflow-wheel",
+        )
+
+    alias = branch_file(repository, "versioned-docs", "3.0/guide/index.html")
+    assert "../../3.0.1/guide/" in alias
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+    aliases = {entry["version"]: entry["aliases"] for entry in inventory}
+    assert aliases == {"3.0.0": [], "3.0.1": ["3.0"]}
+
+
+@requires_mike
 def test_mike_refuses_to_replace_an_immutable_snapshot(tmp_path):
     repository = make_repository(tmp_path)
     site = make_site(tmp_path / "first", "original")
@@ -173,6 +195,9 @@ def test_mike_current_is_mutable_and_default(tmp_path):
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
     )
     assert production_inventory.returncode != 0
+    require_current_renderer(repository, "versioned-docs", "zensical")
+    with pytest.raises(RuntimeError, match="expected 'material'"):
+        require_current_renderer(repository, "versioned-docs", "material")
 
 
 @requires_mike
