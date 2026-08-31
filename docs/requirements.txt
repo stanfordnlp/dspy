@@ -6,5 +6,7 @@ mkdocs-redirects
 mkdocstrings
 mkdocstrings-python
 mkdocs-llmstxt>=0.5.0
+htmlmin2==0.1.13
+mike @ git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac
 urllib3==2.7.0
 mistune==3.3.4
