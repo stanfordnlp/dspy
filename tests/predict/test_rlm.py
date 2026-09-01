@@ -19,8 +19,8 @@ from dspy.predict.rlm import (
     _SUB_DSPY_CODE_VAR,
     _SUB_DSPY_LM_STATE_VAR,
     RLM,
+    SUB_DSPY_EXEC_CODE,
     SUB_DSPY_SETUP_CODE,
-    SUB_DSPY_SUB_LM_EXEC_CODE,
     _strip_code_fences,
 )
 from dspy.primitives.code_interpreter import (
@@ -1865,7 +1865,7 @@ class TestRLMSubDspy:
         RLM("dspy -> answer", interpreter_factory=MockInterpreterFactory())
 
     def test_explicit_sub_lm_ships_state_per_block(self):
-        factory = SubDspyMockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM(
             "query -> answer",
             max_iters=1,
@@ -1877,12 +1877,14 @@ class TestRLMSubDspy:
         result = rlm(query="q")
 
         assert result.answer == "42"
-        # An explicit sub_lm needs no setup: every block runs under a scoped override,
-        # with the LM state shipped fresh per block instead of a persistent configure.
         interpreter = factory.instances[0]
-        assert interpreter.call_count == 1
+        # Setup only validates the contract; nothing is persisted into the environment.
         code, variables = interpreter.call_history[0]
-        assert code == SUB_DSPY_SUB_LM_EXEC_CODE
+        assert code == SUB_DSPY_SETUP_CODE
+        assert variables == {}
+        # Every block runs under a scoped override with the LM state shipped fresh per block.
+        code, variables = interpreter.call_history[1]
+        assert code == SUB_DSPY_EXEC_CODE
         assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
         state = variables[_SUB_DSPY_LM_STATE_VAR]
         assert state["model"] == "openai/gpt-4o-mini"
@@ -1890,9 +1892,22 @@ class TestRLMSubDspy:
         # The state must round-trip the same way the sandbox-side wrapper reconstructs it.
         assert dspy.BaseLM.load_state(state).model == "openai/gpt-4o-mini"
 
-    def test_setup_sends_no_state_for_non_reconstructible_lm(self):
-        # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox
-        # without opting into custom-class loading, so no state crosses the boundary.
+    def test_host_default_lm_ships_per_block_when_no_sub_lm(self):
+        # sub_lm defaults to the host LM, delivered the same way: a scoped per-block override.
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        dspy.configure(lm=dspy.LM("openai/host-default", cache=False))
+        rlm(query="q")
+
+        code, variables = factory.instances[0].call_history[1]
+        assert code == SUB_DSPY_EXEC_CODE
+        assert variables[_SUB_DSPY_LM_STATE_VAR]["model"] == "openai/host-default"
+
+    def test_blocks_run_bare_when_no_lm_crosses_the_boundary(self):
+        # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox, and
+        # without an explicit sub_lm that is not an error: the environment's LM applies.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
@@ -1900,9 +1915,9 @@ class TestRLMSubDspy:
         with dummy_lm_context([{"answer": "unused"}]):
             rlm(query="q")
 
-        code, variables = factory.instances[0].call_history[0]
-        assert code == SUB_DSPY_SETUP_CODE
-        assert variables == {_SUB_DSPY_LM_STATE_VAR: None}
+        code, variables = factory.instances[0].call_history[1]
+        assert code == 'SUBMIT("42")'
+        assert _SUB_DSPY_LM_STATE_VAR not in variables
 
     def test_non_serializable_sub_lm_is_rejected_for_sub_dspy_interpreters(self):
         # A sub_lm that cannot cross the boundary must fail loudly at construction
@@ -1930,6 +1945,18 @@ class TestRLMSubDspy:
         rlm.sub_lm.kwargs["callback"] = object()
 
         with pytest.raises(ValueError, match=r"sub_lm must be a plain dspy\.LM"):
+            rlm(query="q")
+
+    def test_declaring_interpreter_without_factory_fails_at_invocation_start(self):
+        class NoFactoryInterpreter(_InProcessSubDspyInterpreter):
+            def __init__(self):
+                super().__init__()
+                del self._namespace[SUB_DSPY_FACTORY_NAME]
+
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=NoFactoryInterpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        with pytest.raises(RuntimeError, match=f"does not provide {SUB_DSPY_FACTORY_NAME}"):
             rlm(query="q")
 
     def test_explicit_sub_lm_survives_generated_namespace_corruption(self):

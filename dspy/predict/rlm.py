@@ -100,15 +100,18 @@ recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is al
 _SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
 
-# Without an explicit sub_lm, the host's default LM only fills an unconfigured environment.
+# Validates the SUB_DSPY contract at invocation start.
 SUB_DSPY_SETUP_CODE = f"""import dspy
-if {_SUB_DSPY_LM_STATE_VAR} is not None and dspy.settings.lm is None:
-    dspy.configure(lm=dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR}))
-del {_SUB_DSPY_LM_STATE_VAR}
+if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
+    raise RuntimeError(
+        "This interpreter declares InterpreterCapability.SUB_DSPY but does not provide "
+        "{SUB_DSPY_FACTORY_NAME} in its execution namespace."
+    )
 """
 
-# Runs one generated code block under a scoped override for an explicit sub_lm.
-SUB_DSPY_SUB_LM_EXEC_CODE = f"""import dspy as __dspy
+# Runs one generated code block under a scoped override with the sub-agent LM (an explicit
+# sub_lm or the host's default).
+SUB_DSPY_EXEC_CODE = f"""import dspy as __dspy
 with __dspy.context(lm=__dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})):
     exec({_SUB_DSPY_CODE_VAR}, globals())
 """
@@ -196,8 +199,8 @@ class RLM(Module):
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched and, on a sub-dspy interpreter, for
-                   in-sandbox sub-agents (then it must be a plain, serializable dspy.LM).
-                   Defaults to dspy.settings.lm.
+                   in-sandbox sub-agents (applied per code block; when given explicitly it
+                   must be a plain, serializable dspy.LM). Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
@@ -553,10 +556,10 @@ class RLM(Module):
         return state
 
     def _setup_sub_dspy(self, repl: CodeInterpreter) -> None:
-        """Prepare a sub-dspy capable interpreter so REPL code can run dspy sub-agents."""
-        if not self._sub_dspy or self.sub_lm is not None:
+        """Validate the SUB_DSPY contract before any generated code runs."""
+        if not self._sub_dspy:
             return
-        repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_LM_STATE_VAR: self._serialized_sub_lm_state()})
+        repl.execute(SUB_DSPY_SETUP_CODE)
 
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
@@ -783,10 +786,10 @@ class RLM(Module):
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
         variables = dict(input_args)
-        if self._sub_dspy and self.sub_lm is not None:
+        if self._sub_dspy and (state := self._serialized_sub_lm_state()) is not None:
             variables[_SUB_DSPY_CODE_VAR] = code
-            variables[_SUB_DSPY_LM_STATE_VAR] = self._serialized_sub_lm_state()
-            code = SUB_DSPY_SUB_LM_EXEC_CODE
+            variables[_SUB_DSPY_LM_STATE_VAR] = state
+            code = SUB_DSPY_EXEC_CODE
         try:
             return repl.execute(code, variables=variables)
         except (CodeExecutionError, SyntaxError) as e:

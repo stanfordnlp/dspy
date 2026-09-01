@@ -153,7 +153,11 @@ def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
     # An explicit sub_lm wins over an LM the environment already configured, matching llm_query.
     interpreter = SubDspySubprocessInterpreter()
     try:
-        interpreter.execute("import dspy\ndspy.configure(lm=dspy.LM('openai/env-default'))")
+        interpreter.execute(
+            "import dspy\n"
+            f"from dspy_interpreters import SubprocessInterpreter as {SUB_DSPY_FACTORY_NAME}\n"
+            "dspy.configure(lm=dspy.LM('openai/env-default'))"
+        )
         rlm = RLM(
             "query -> answer",
             max_iters=1,
@@ -172,18 +176,25 @@ def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
     assert "openai/env-default" in str(restored)
 
 
-def test_fallback_lm_state_does_not_override_preconfigured_environment_lm():
-    # Without an explicit sub_lm, a preconfigured environment LM stays in charge.
+def test_default_sub_lm_matches_llm_query_precedence():
+    # Without an explicit sub_lm, sub-agents use the host's LM, exactly like llm_query;
+    # the override is scoped per block, so the environment's own LM survives the call.
     interpreter = SubDspySubprocessInterpreter()
     try:
-        interpreter.execute("import dspy\ndspy.configure(lm=dspy.LM('openai/env-default'))")
+        interpreter.execute(
+            "import dspy\n"
+            f"from dspy_interpreters import SubprocessInterpreter as {SUB_DSPY_FACTORY_NAME}\n"
+            "dspy.configure(lm=dspy.LM('openai/env-default'))"
+        )
         dspy.configure(lm=dspy.LM("openai/host-default", cache=False))
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
         rlm.generate_action = make_scripted_predictor([
             {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
         ])
         result = rlm(interpreter, query="q")
+        restored = interpreter.execute("print(dspy.settings.lm.model)")
     finally:
         interpreter.shutdown()
 
-    assert result.answer == "openai/env-default"
+    assert result.answer == "openai/host-default"
+    assert "openai/env-default" in str(restored)
