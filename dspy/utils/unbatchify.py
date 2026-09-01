@@ -67,12 +67,18 @@ class Unbatchify:
 
             if batch:
                 try:
-                    outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures, strict=False):
+                    outputs = list(self.batch_fn(batch))
+                    if len(outputs) != len(batch):
+                        raise ValueError(
+                            f"batch_fn returned {len(outputs)} output(s) for {len(batch)} input(s). "
+                            "batch_fn must return exactly one output per input, in the same order."
+                        )
+                    for output, future in zip(outputs, futures, strict=True):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:
-                        future.set_exception(e)
+                        if not future.done():
+                            future.set_exception(e)
             else:
                 time.sleep(0.01)
 
