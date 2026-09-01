@@ -1,7 +1,9 @@
 import importlib.util
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
+import time
+import types
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
@@ -84,3 +86,56 @@ def test_concurrent_lm_first_use_materializes_litellm_once():
         get_litellm.cache_clear()
         if original_litellm is not None:
             sys.modules["litellm"] = original_litellm
+
+
+def test_concurrent_litellm_first_use_serializes_materialization(monkeypatch):
+    import dspy.clients._litellm as litellm_client
+
+    class RaceSensitiveLiteLLM(types.ModuleType):
+        def __init__(self):
+            super().__init__("litellm")
+            self._lock = threading.Lock()
+            self._materializing = False
+            self._materialized = False
+
+        @property
+        def completion(self):
+            with self._lock:
+                if self._materializing and not self._materialized:
+                    raise AttributeError("module 'litellm' has no attribute 'completion'")
+                if self._materialized:
+                    return object()
+                self._materializing = True
+
+            time.sleep(0.02)
+
+            with self._lock:
+                self._materialized = True
+                self._materializing = False
+            return object()
+
+    fake_litellm = RaceSensitiveLiteLLM()
+
+    def require_litellm(*args, **kwargs):
+        return fake_litellm
+
+    litellm_client.get_litellm.cache_clear()
+    litellm_client._configure_litellm_defaults.cache_clear()
+    monkeypatch.setattr(litellm_client, "require", require_litellm)
+
+    try:
+        workers = 8
+        barrier = threading.Barrier(workers)
+
+        def worker():
+            barrier.wait()
+            return litellm_client.get_litellm(feature="dspy.LM")
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(worker) for _ in range(workers)]
+            results = [future.result() for future in as_completed(futures)]
+
+        assert results == [fake_litellm] * workers
+    finally:
+        litellm_client.get_litellm.cache_clear()
+        litellm_client._configure_litellm_defaults.cache_clear()
