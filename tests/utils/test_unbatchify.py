@@ -1,3 +1,4 @@
+import itertools
 import time
 from concurrent.futures import Future
 from unittest.mock import MagicMock
@@ -151,5 +152,28 @@ def test_unbatchify_does_not_misalign_outputs_when_batch_fn_drops_items():
         # Before the fix this future resolved to "result-for-b" -- the wrong input's output.
         with pytest.raises(ValueError, match="exactly one output per input"):
             future.result(timeout=5)
+    finally:
+        unbatcher.close()
+
+
+def test_unbatchify_does_not_stall_on_unbounded_batch_fn_output():
+    """An output iterable that never terminates must not block the worker thread.
+
+    The worker cannot fully materialize the result before resolving futures, or a lazy
+    batch_fn hangs every caller in the batch -- the exact failure this validation exists
+    to prevent.
+    """
+
+    def unbounded_batch_fn(batch):
+        return itertools.count()
+
+    unbatcher = Unbatchify(batch_fn=unbounded_batch_fn, max_batch_size=2, max_wait_time=5.0)
+
+    try:
+        futures = [unbatcher.submit(1), unbatcher.submit(2)]
+
+        for future in futures:
+            with pytest.raises(ValueError, match="exactly one output per input"):
+                future.result(timeout=5)
     finally:
         unbatcher.close()
