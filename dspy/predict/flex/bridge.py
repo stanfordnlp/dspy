@@ -193,7 +193,7 @@ class _Invocation:
         self._lm_error = None
         if kind not in BRIDGEABLE_KINDS:
             raise CodeInterpreterError(
-                f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
+                f"dspy.{kind} is not supported through the sandbox dspy bridge yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
         self._predictors[attr_name] = self._runtime._build_predictor(kind, signature, kwargs)

@@ -57,6 +57,9 @@ class _DspyProxy:
         return _DspyPrediction(**(_out or {}))
 
 
+_dspy_anon_count = 0
+
+
 class _DspyPending:
     """Returned by a shim constructor before the attribute name is known (captured in __setattr__)."""
 
@@ -64,6 +67,21 @@ class _DspyPending:
         self.kind = _kind
         self.sig = _sig
         self.kwargs = _kwargs
+        self.proxy = None
+
+    def __call__(self, **_inputs):
+        if self.proxy is None:
+            global _dspy_anon_count
+            _dspy_anon_count += 1
+            _handle = _dspy_host(
+                "__dspy_construct__",
+                kind=self.kind,
+                signature=self.sig,
+                attr_name="_dspy_anon_" + str(_dspy_anon_count),
+                kwargs=self.kwargs,
+            )
+            self.proxy = _DspyProxy(_handle)
+        return self.proxy(**_inputs)
 
 
 class _DspyModule:

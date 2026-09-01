@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 import io
+import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from dspy.predict.rlm import (
     RLM,
     SUB_DSPY_EXEC_CODE,
     SUB_DSPY_SETUP_CODE,
+    _FacadeRuntime,
     _strip_code_fences,
 )
 from dspy.primitives.code_interpreter import (
@@ -34,6 +36,7 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.sandbox_serializable import SandboxSerializable
+from dspy.utils.dummies import DummyLM
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
 # ============================================================================
@@ -1833,6 +1836,26 @@ class _InProcessSubDspyInterpreter:
         pass
 
 
+class _FacadeInProcessInterpreter(_InProcessSubDspyInterpreter):
+    """Facade-declaring variant: dspy is not importable and no nested-interpreter factory exists."""
+
+    capabilities = InterpreterCapability.FACADE_DSPY
+
+    def __init__(self):
+        super().__init__()
+        del self._namespace[SUB_DSPY_FACTORY_NAME]
+
+
+@contextmanager
+def preserve_real_dspy_module():
+    """The facade shim registers itself in sys.modules; in-process tests must restore real dspy."""
+    real_dspy = sys.modules["dspy"]
+    try:
+        yield
+    finally:
+        sys.modules["dspy"] = real_dspy
+
+
 class TestRLMSubDspy:
     def test_action_prompt_includes_sub_agent_instructions(self):
         rlm = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
@@ -2107,6 +2130,147 @@ class TestRLMSubDspy:
 
         assert result.answer == "sub-agent says hi"
         assert any("sub-agent says hi" in entry["output"] for entry in result.trajectory)
+
+
+class TestRLMFacadeDspy:
+    def test_action_prompt_includes_facade_instructions(self):
+        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        instructions = rlm.generate_action.signature.instructions
+        assert "dspy facade" in instructions
+        assert SUB_DSPY_FACTORY_NAME not in instructions
+
+    def test_sub_dspy_takes_precedence_over_facade(self):
+        class BothInterpreter(_InProcessSubDspyInterpreter):
+            capabilities = InterpreterCapability.SUB_DSPY | InterpreterCapability.FACADE_DSPY
+
+        rlm = RLM("query -> answer", interpreter_factory=BothInterpreter)
+        assert rlm._sub_dspy is True
+        assert rlm._facade_dspy is False
+        assert SUB_DSPY_FACTORY_NAME in rlm.generate_action.signature.instructions
+
+    def test_facade_reserves_sandbox_names(self):
+        with pytest.raises(ValueError, match="conflict"):
+            RLM("dspy -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+
+        # The sub-dspy factory name stays available: the facade does not use it.
+        def dspy_interpreter_factory() -> str:
+            """Unrelated user tool."""
+            return ""
+
+        RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
+
+    def _facade_invocation(self, rlm):
+        from dspy.predict.flex import bridge
+
+        return bridge._Invocation(_FacadeRuntime(rlm), {})
+
+    def test_facade_invocation_builds_and_runs_predictors_on_host(self):
+        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        invocation = self._facade_invocation(rlm)
+
+        handle = invocation.construct("Predict", "question -> answer", "sub")
+        dspy.configure(lm=DummyLM([{"answer": "bridged"}]))
+        fields = invocation.call(handle, {"question": "ping"})
+
+        assert fields["answer"] == "bridged"
+        with pytest.raises(CodeInterpreterError, match="not supported through the sandbox dspy bridge"):
+            invocation.construct("Flex", "q -> a", "nope")
+        with pytest.raises(CodeInterpreterError, match="Unknown predictor handle"):
+            invocation.call("missing")
+
+    def test_facade_nested_rlm_gets_the_rlm_interpreter_factory(self):
+        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        invocation = self._facade_invocation(rlm)
+
+        invocation.construct("RLM", "q -> a", "nested")
+
+        assert invocation._predictors["nested"]._interpreter_factory is _FacadeInProcessInterpreter
+
+    def test_facade_tool_markers_resolve_only_provided_tools(self):
+        from dspy.predict.flex import bridge
+
+        rlm = RLM("query -> answer", tools=[echo_tool], interpreter_factory=_FacadeInProcessInterpreter)
+        runtime = _FacadeRuntime(rlm)
+
+        assert runtime._decode_tools({bridge.TOOL_MARKER: "echo_tool"}) is rlm._user_tools["echo_tool"]
+        with pytest.raises(CodeInterpreterError, match="cannot cross to the host"):
+            runtime._decode_tools({bridge.TOOL_MARKER: "repl_defined"})
+
+    def test_facade_calls_have_a_predictor_budget_of_max_llm_calls(self):
+        from dspy.predict.flex import bridge
+
+        rlm = RLM("query -> answer", max_llm_calls=1, interpreter_factory=_FacadeInProcessInterpreter)
+        tools = rlm._prepare_execution_tools()
+
+        dspy.configure(lm=DummyLM([{"answer": "first"}, {"answer": "second"}]))
+        handle = tools[bridge.CONSTRUCT_TOOL](kind="Predict", signature="question -> answer", attr_name="sub")
+        tools[bridge.CALL_TOOL](handle=handle, inputs={"question": "ping"})
+        with pytest.raises(CodeInterpreterError, match="predictor-call budget"):
+            tools[bridge.CALL_TOOL](handle=handle, inputs={"question": "again"})
+
+    def test_facade_calls_use_sub_lm(self):
+        # Bridged predictors run host-side, so any BaseLM works as sub_lm without serialization.
+        rlm = RLM(
+            "query -> answer",
+            interpreter_factory=_FacadeInProcessInterpreter,
+            sub_lm=DummyLM([{"answer": "from sub_lm"}]),
+        )
+        invocation = self._facade_invocation(rlm)
+
+        handle = invocation.construct("Predict", "question -> answer", "sub")
+        fields = invocation.call(handle, {"question": "ping"})
+
+        assert fields["answer"] == "from sub_lm"
+
+    def test_facade_sub_agents_run_end_to_end(self):
+        with preserve_real_dspy_module():
+            rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_FacadeInProcessInterpreter)
+            rlm.generate_action = make_mock_predictor([
+                {
+                    "reasoning": "Run a sub-agent through the facade",
+                    "code": (
+                        "sub = dspy.Predict('question -> answer')\n"
+                        "res = sub(question='ping')\n"
+                        "print(res.answer)"
+                    ),
+                },
+                {
+                    "reasoning": "A nested RLM builds host-side, then submit",
+                    "code": "nested = dspy.RLM('q -> a')\nSUBMIT(res.answer)",
+                },
+            ])
+
+            with dspy.context(lm=DummyLM([{"answer": "facade says hi"}])):
+                result = rlm(query="q")
+
+        assert result.answer == "facade says hi"
+
+
+@pytest.mark.deno
+class TestRLMFacadeDeno:
+    def test_facade_runs_on_the_default_sandbox(self):
+        # The facade needs no dspy inside the sandbox, so it works on the default
+        # Deno/Pyodide interpreter once that declares the capability.
+        class FacadePythonInterpreter(PythonInterpreter):
+            capabilities = InterpreterCapability.FACADE_DSPY
+
+        rlm = RLM("query -> answer", max_iters=2, interpreter_factory=FacadePythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Run a sub-agent through the facade",
+                "code": (
+                    "sub = dspy.Predict('question -> answer')\n"
+                    "res = sub(question='ping')\n"
+                    "print(res.answer)"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+        ])
+
+        with dummy_lm_context([{"answer": "facade on pyodide"}]):
+            result = rlm(query="q")
+
+        assert result.answer == "facade on pyodide"
 
 
 if __name__ == "__main__":
