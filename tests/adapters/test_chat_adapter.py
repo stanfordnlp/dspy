@@ -93,6 +93,24 @@ def test_chat_adapter_sync_call():
     assert result == [{"answer": "Paris"}]
 
 
+def test_chat_adapter_parse_inline_field_headers():
+    signature = dspy.make_signature("question->next_thought, next_tool_name, next_tool_args")
+    adapter = dspy.ChatAdapter()
+    completion = """[[ ## next_thought ## ]]
+Need to search transactions.[[ ## next_tool_name ## ]]
+search[[ ## next_tool_args ## ]]
+{"query": "transactions"}
+[[ ## completed ## ]]"""
+
+    result = adapter.parse(signature, completion)
+
+    assert result == {
+        "next_thought": "Need to search transactions.",
+        "next_tool_name": "search",
+        "next_tool_args": '{"query": "transactions"}',
+    }
+
+
 @pytest.mark.asyncio
 async def test_chat_adapter_async_call():
     signature = dspy.make_signature("question->answer")
