@@ -61,7 +61,10 @@ class Refine(Module):
             N (int): The number of times to run the module. must
             reward_fn (Callable): The reward function.
             threshold (float): The threshold for the reward function.
-            fail_count (Optional[int], optional): The number of times the module can fail before raising an error
+            fail_count (Optional[int], optional): The number of failed attempts
+                tolerated before raising an error. Defaults to N-1, so a module
+                whose every attempt fails still raises rather than returning no
+                prediction.
 
         Examples:
             ```python
@@ -88,7 +91,11 @@ class Refine(Module):
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
-        self.fail_count = fail_count or N  # default to N if fail_count is not provided
+        # Use an explicit None check so fail_count=0 is honored (0 allowed
+        # failures); `fail_count or N` would silently fall back to N. The
+        # default is N-1 so a module whose every attempt fails still raises
+        # rather than silently returning no prediction.
+        self.fail_count = fail_count if fail_count is not None else max(N - 1, 0)
         self.module_code = inspect.getsource(module.__class__)
         try:
             self.reward_fn_code = inspect.getsource(reward_fn)
@@ -102,6 +109,10 @@ class Refine(Module):
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        # Track the failure budget in a local variable so it is reset on every
+        # call rather than eroding (and eventually going negative) across
+        # repeated calls to the same module instance.
+        remaining_failures = self.fail_count
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -169,9 +180,9 @@ class Refine(Module):
 
             except Exception as e:
                 print(f"Refine: Attempt failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                if remaining_failures <= 0:
                     raise e
-                self.fail_count -= 1
+                remaining_failures -= 1
         if best_trace:
             dspy.settings.trace.extend(best_trace)
         return best_pred
