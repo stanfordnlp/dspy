@@ -46,6 +46,7 @@ class ChatAdapter(Adapter):
         native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
         parallel_tool_calls: bool | None = None,
+        field_markers : bool = True,
     ):
         """
         Args:
@@ -56,7 +57,12 @@ class ChatAdapter(Adapter):
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
-                calling is active. If None, the adapter does not set the provider option.
+                calling is active. If None, the adapter does not set the p0ovider option.
+            field_markers: Whether to wrap each field in `[[ ## field_name ## ]]` markers in prompts and
+                completions. Defaults to True. Set to False to reduce token overhead — only supported for
+                signatures with a single output field, since markers are what let the parser separate
+                multiple output fields in the r
+                aw completion text.
         """
         super().__init__(
             callbacks=callbacks,
@@ -65,15 +71,24 @@ class ChatAdapter(Adapter):
             native_response_types=native_response_types,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
+        self.field_markers = field_markers
+        
+    def _validate_field_markers(self, signature: type[Signature]) -> None:
+        if not self.field_markers and len(signature.output_fields) > 1:
+            raise ValueError(
+                "field_markers=False is only supported for signatures with a single output field, "
+                f"but got {len(signature.output_fields)} output fields: "
+                f"{list(signature.output_fields.keys())}. Field markers are required to separate "
+                "multiple output fields in the raw completion text. Use JSONAdapter instead if you "
+                "need both low token overhead and multiple output fields."
+            )
 
     def _make_json_adapter_fallback(self):
         from dspy.adapters.json_adapter import JSONAdapter
-
         return JSONAdapter(
             use_native_function_calling=self.use_native_function_calling,
             parallel_tool_calls=self.parallel_tool_calls,
         )
-
     def __call__(
         self,
         lm: BaseLM,
@@ -82,6 +97,7 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        self._validate_field_markers(signature)
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
@@ -102,6 +118,7 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        self._validate_field_markers(signature)
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
@@ -126,6 +143,8 @@ class ChatAdapter(Adapter):
         `[[ ## field_name ## ]]`. An arbitrary field `completed` ([[ ## completed ## ]]) is added to the end of the
         output fields section to indicate the end of the output fields.
         """
+        if not self.field_markers:
+            return ""
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
@@ -160,8 +179,10 @@ class ChatAdapter(Adapter):
             if k in inputs:
                 value = inputs.get(k)
                 formatted_field_value = format_field_value(field_info=v, value=value)
-                messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
-
+                if self.field_markers:
+                   messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
+                else:
+                   messages.append(formatted_field_value)
         if main_request:
             output_requirements = self.user_message_output_requirements(signature)
             if output_requirements is not None:
@@ -196,6 +217,10 @@ class ChatAdapter(Adapter):
             else:
                 return ""
 
+        if not self.field_markers:
+            (f, v), = signature.output_fields.items()
+            return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."
+    
         message = "Respond with the corresponding output fields, starting with the field "
         message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
@@ -213,10 +238,23 @@ class ChatAdapter(Adapter):
                 for k, v in signature.output_fields.items()
             },
         )
-        assistant_message_content += "\n\n[[ ## completed ## ]]\n"
+        if self.field_markers:
+            assistant_message_content += "\n\n[[ ## completed ## ]]\n"
         return assistant_message_content
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
+        if not self.field_markers:
+            (field_name, field_info), = signature.output_fields.items()
+            try:
+                return {field_name: parse_value(completion.strip(), field_info.annotation)}
+            except Exception as e:
+                raise AdapterParseError(
+                    adapter_name="ChatAdapter",
+                    signature=signature,
+                    lm_response=completion,
+                    message=f"Failed to parse field {field_name} with value {completion!r} from the LM response. Error message: {e}",
+                )
+
         sections = [(None, [])]
 
         for line in completion.splitlines():
@@ -270,8 +308,10 @@ class ChatAdapter(Adapter):
         output = []
         for field, field_value in fields_with_values.items():
             formatted_field_value = format_field_value(field_info=field.info, value=field_value)
-            output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
-
+            if self.field_markers:
+               output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+            else:
+               output.append(formatted_field_value)
         return "\n\n".join(output).strip()
 
     def format_finetune_data(
