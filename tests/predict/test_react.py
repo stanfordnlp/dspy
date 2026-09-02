@@ -746,6 +746,58 @@ def test_react_extract_parse_error_propagates_after_retry():
         react(a=1, b=2)
 
 
+@pytest.mark.asyncio
+async def test_async_react_extract_parse_error_is_retried_with_feedback():
+    async def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I have the answer, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            # The extraction step emits a wrong field name -> AdapterParseError.
+            {"reasoning": "Adding the numbers.", "d": "3"},
+            # The retry (with parse feedback in the prompt) self-corrects.
+            {"reasoning": "Adding the numbers.", "c": "3"},
+        ]
+    )
+    # dspy.configure may only be called from the first async task; use dspy.context here.
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        outputs = await react.acall(a=1, b=2)
+    assert outputs.c == 3
+    # The prompt-only feedback is not stored in the returned trajectory.
+    assert "parse_feedback" not in outputs.trajectory
+
+
+@pytest.mark.asyncio
+async def test_async_react_extract_parse_error_propagates_after_retry():
+    from dspy.utils.exceptions import AdapterParseError
+
+    async def add(a: int, b: int) -> int:
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[add])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I have the answer, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            # The extraction step fails to parse twice: the error is real, surface it.
+            {"reasoning": "Adding the numbers.", "d": "3"},
+            {"reasoning": "Adding the numbers.", "d": "3"},
+        ]
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_json_adapter_fallback=False)):
+        with pytest.raises(AdapterParseError):
+            await react.acall(a=1, b=2)
+
+
 def test_codeact_recovers_from_adapter_parse_error():
     from dspy.predict import CodeAct
 
