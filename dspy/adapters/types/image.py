@@ -108,12 +108,8 @@ class Image(Type):
     @classmethod
     def validate_input(cls, values: Any) -> Any:
         """Normalize image values passed through Pydantic validation."""
-        if isinstance(values, cls):
-            return {"url": values.url}
-        if isinstance(values, dict):
-            if set(values) != {"url"}:
-                return values
-            values = values["url"]
+        if isinstance(values, dict) and set(values) != {"url"}:
+            return values
         return {"url": encode_image(values)}
 
     @lru_cache(maxsize=32)
