@@ -478,6 +478,25 @@ def test_image_constructor_supports_positional_source_and_url_keyword():
         dspy.Image(source, url=source)
 
 
+def test_image_pydantic_validation_accepts_bare_data_uri():
+    source = "data:image/png;base64,iVBORw0KGgo="
+
+    image = pydantic.TypeAdapter(dspy.Image).validate_python(source)
+
+    assert image.url == source
+
+
+def test_image_pydantic_model_accepts_bare_data_uri():
+    class ImageModel(pydantic.BaseModel):
+        image: dspy.Image
+
+    source = "data:image/png;base64,iVBORw0KGgo="
+
+    model = ImageModel(image=source)
+
+    assert model.image.url == source
+
+
 def test_canonical_factories_do_not_warn(tmp_path):
     tmp_file = tmp_path / "test.png"
     tmp_file.write_bytes(b"pngdata")

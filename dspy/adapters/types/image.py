@@ -104,6 +104,18 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, values: Any) -> Any:
+        """Normalize image values passed through Pydantic validation."""
+        if isinstance(values, cls):
+            return {"url": values.url}
+        if isinstance(values, dict):
+            if set(values) != {"url"}:
+                return values
+            values = values["url"]
+        return {"url": encode_image(values)}
+
     @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
         try:
