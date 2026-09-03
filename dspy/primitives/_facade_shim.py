@@ -151,6 +151,13 @@ dspy = _dspy
 dspy_interpreter_factory = "__dspy_interpreter_factory__"
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
-# present in globals().
+# present in globals(). A sandbox whose ``dspy`` is the host's own module image (the host process or a
+# fork of it) would hand generated code the host's memory, so the facade refuses it.
 if "__dspy_construct__" in globals():
+    _dspy_host_facade = getattr(_dspy_sys, "modules", {}).get("dspy.primitives.facade")
+    if getattr(_dspy_host_facade, "_HOST_PROCESS_TOKEN", None) == __dspy_host_token:  # noqa: F821 - host-injected
+        raise RuntimeError(
+            "This interpreter runs code in the host's memory (the host process or a fork of it); "
+            "the dspy facade needs an isolated interpreter."
+        )
     _dspy_sys.modules["dspy"] = _dspy

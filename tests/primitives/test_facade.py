@@ -54,7 +54,10 @@ def test_reserve_meters_admitted_calls_only():
     with pytest.raises(TypeError):
         sandbox("two", api_key="sk-x")
     sandbox.copy(temperature=0.9)("three")
-    assert reserved == [1, 1]
+    sandbox.forward("four")
+    with pytest.raises(TypeError):
+        sandbox.forward("five", api_base="http://evil.example")
+    assert reserved == [1, 1, 1]
 
 
 def test_proxy_mirrors_identity_kwargs_and_capabilities_of_the_wrapped_lm():

@@ -24,6 +24,7 @@ import contextlib
 import functools
 import inspect
 import json
+import secrets
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +53,9 @@ FACTORY_MARKER = "__dspy_interpreter_factory__"
 
 # The sandbox-side dspy shim, injected as text into each interpreter.
 SHIM_SETUP = (Path(__file__).parent / "_facade_shim.py").read_text(encoding="utf-8")
+# Shipped to the shim so it can refuse a sandbox that is the host's own memory image (host process or fork).
+HOST_TOKEN_VAR = "__dspy_host_token"
+_HOST_PROCESS_TOKEN = secrets.token_hex(16)
 
 
 def is_reserved_sandbox_name(name: str) -> bool:
@@ -197,7 +201,12 @@ class SandboxLM(BaseLM):
         return await self._lm.acall(*args, **kwargs)
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
+        self._admit(kwargs)
         return self._lm.forward(*args, **kwargs)
+
+    async def aforward(self, *args: Any, **kwargs: Any) -> Any:
+        self._admit(kwargs)
+        return await self._lm.aforward(*args, **kwargs)
 
     def copy(self, **kwargs: Any) -> SandboxLM:
         self._check(kwargs)
@@ -252,7 +261,7 @@ class FacadeInvocation:
     def install(self, interpreter: Any) -> None:
         """Register the tools the shim calls, then install the ``dspy`` facade in the sandbox."""
         interpreter.tools.update({CONSTRUCT_TOOL: self.construct, CALL_TOOL: self.call})
-        interpreter.execute(SHIM_SETUP)
+        interpreter.execute(SHIM_SETUP, variables={HOST_TOKEN_VAR: _HOST_PROCESS_TOKEN})
 
     def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
         self._lm_error = None

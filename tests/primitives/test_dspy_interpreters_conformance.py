@@ -59,8 +59,14 @@ def test_undeclared_backends_get_no_sub_agents(backend_name):
 @pytest.mark.parametrize("backend_name", BACKENDS)
 def test_library_consumer_checks_pass(backend_name):
     backend = getattr(dspy_interpreters, backend_name)
-    for check in (dspy_interpreters.check_interpreter, dspy_interpreters.check_rlm, dspy_interpreters.check_flex_facade):
-        check(backend).raise_for_failures()
+    dspy_interpreters.check_interpreter(backend).raise_for_failures()
+    dspy_interpreters.check_rlm(backend).raise_for_failures()
+
+
+def test_flex_facade_needs_an_isolated_backend():
+    dspy_interpreters.check_flex_facade(SubprocessInterpreter).raise_for_failures()
+    report = dspy_interpreters.check_flex_facade(InProcessInterpreter)
+    assert not report.passed and "host's memory" in report.results[0].detail
 
 
 def test_declaring_backend_runs_bridged_sub_agents_with_host_tools():

@@ -1797,7 +1797,7 @@ class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
 
 
 class _InProcessInterpreter:
-    """Minimal interpreter for tests: executes code in the host process, hosting the facade."""
+    """Minimal interpreter for tests: declares the facade capability but executes in the host process."""
 
     capabilities = InterpreterCapability.SUB_DSPY
 
@@ -1830,16 +1830,6 @@ class _InProcessInterpreter:
 
     def shutdown(self) -> None:
         pass
-
-
-@contextmanager
-def preserve_real_dspy_module():
-    """The facade shim registers itself in sys.modules; in-process tests must restore real dspy."""
-    real_dspy = sys.modules["dspy"]
-    try:
-        yield
-    finally:
-        sys.modules["dspy"] = real_dspy
 
 
 class TestRLMSubDspy:
@@ -1883,17 +1873,6 @@ class TestRLMFacadeDspy:
     def test_action_prompt_includes_facade_instructions(self):
         rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
         assert "cannot cross to the host" in rlm.generate_action.signature.instructions
-
-    def test_callable_only_sub_lm_still_works(self):
-        class PlainLM:
-            def __call__(self, prompt):
-                return ["plain:" + prompt]
-
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter, sub_lm=PlainLM())
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": "SUBMIT(llm_query('x'))"}])
-
-        with preserve_real_dspy_module():
-            assert rlm(query="q").answer == "plain:x"
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
@@ -2014,28 +1993,14 @@ class TestRLMFacadeDspy:
 
         assert fields["answer"] == "from sub_lm"
 
-    def test_facade_sub_agents_run_end_to_end(self):
-        with preserve_real_dspy_module():
-            rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_InProcessInterpreter)
-            rlm.generate_action = make_mock_predictor([
-                {
-                    "reasoning": "Run a sub-agent through the facade",
-                    "code": (
-                        "sub = dspy.Predict('question -> answer')\n"
-                        "res = sub(question='ping')\n"
-                        "print(res.answer)"
-                    ),
-                },
-                {
-                    "reasoning": "A nested RLM builds host-side, then submit",
-                    "code": "nested = dspy.RLM('q -> a')\nSUBMIT(res.answer)",
-                },
-            ])
+    def test_facade_refuses_an_interpreter_sharing_the_host_memory(self):
+        # The shim would otherwise replace the host's `dspy` module and expose host objects to generated code.
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
-            with dspy.context(lm=DummyLM([{"answer": "facade says hi"}])):
-                result = rlm(query="q")
-
-        assert result.answer == "facade says hi"
+        with pytest.raises(RuntimeError, match="host's memory"):
+            rlm(query="q")
+        assert sys.modules["dspy"] is dspy
 
 
 @pytest.mark.deno

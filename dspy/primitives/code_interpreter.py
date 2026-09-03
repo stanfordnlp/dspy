@@ -27,7 +27,8 @@ class InterpreterCapability(enum.Flag):
         as globals in executed code and state persists across execute() calls. dspy.RLM then
         installs a ``dspy`` shim whose predictors are built and run on the host, and offers
         sub-agents in its prompt. PythonInterpreter declares it; an interpreter whose runtime
-        cannot run the shim leaves it unset and gets no sub-agents.
+        cannot run the shim leaves it unset and gets no sub-agents. The facade refuses an
+        interpreter that runs code in the host's memory (the host process or a fork of it).
     """
 
     SUB_DSPY = enum.auto()
