@@ -24,6 +24,7 @@ from dspy.predict.rlm import (
     SUB_DSPY_EXEC_CODE,
     SUB_DSPY_LM_TOOL,
     SUB_DSPY_SETUP_CODE,
+    _LLMCallBudget,
     _strip_code_fences,
 )
 from dspy.primitives.code_interpreter import (
@@ -2205,9 +2206,7 @@ class TestRLMFacadeDspy:
             RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
 
     def _facade_invocation(self, rlm):
-        from dspy.primitives import facade
-
-        return facade.FacadeInvocation(rlm._user_tools, rlm._interpreter_factory, rlm.max_llm_calls, lm=rlm.sub_lm)
+        return rlm._facade_invocation(_LLMCallBudget(rlm.max_llm_calls))
 
     def test_facade_invocation_builds_and_runs_predictors_on_host(self):
         rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
@@ -2245,15 +2244,39 @@ class TestRLMFacadeDspy:
         with pytest.raises(CodeInterpreterError, match="cannot be handed to a bridged sub-predictor"):
             invocation._decode_tools({facade.TOOL_MARKER: "repl_defined"})
 
-    def test_facade_calls_have_a_predictor_budget_of_max_llm_calls(self):
+    def test_facade_lm_calls_draw_on_max_llm_calls(self):
+        # Bridged predictors are charged per LM call on the forward's budget, not per predictor call.
         rlm = RLM("query -> answer", max_llm_calls=1, interpreter_factory=_FacadeInProcessInterpreter)
+        dspy.configure(lm=DummyLM([{"answer": "first"}, {"answer": "second"}]))
         invocation = self._facade_invocation(rlm)
 
-        dspy.configure(lm=DummyLM([{"answer": "first"}, {"answer": "second"}]))
         handle = invocation.construct("Predict", "question -> answer", "sub")
-        invocation.call(handle, {"question": "ping"})
-        with pytest.raises(CodeInterpreterError, match="predictor-call budget"):
+        assert invocation.call(handle, {"question": "ping"})["answer"] == "first"
+        with pytest.raises(RuntimeError, match=r"LLM call limit exceeded: 1 \+ 1 > 1"):
             invocation.call(handle, {"question": "again"})
+
+    def test_facade_lm_is_a_scoped_override_reaching_nested_sub_llm_calls(self):
+        # sub_lm applies through dspy.context around each bridged call, so a bridged RLM's own
+        # llm_query resolves to it as well (set_lm would only reach its predictors).
+        sub_lm = DummyLM([{"answer": "from sub_lm"}] * 4)
+        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter, sub_lm=sub_lm)
+        invocation = self._facade_invocation(rlm)
+
+        handle = invocation.construct("RLM", "question -> answer", "nested")
+        nested = invocation._predictors["nested"]
+        assert nested.generate_action.lm is None  # not set_lm'd
+        seen = {}
+
+        def probe(**kwargs):
+            seen["llm_query_lm"] = nested._host_lm()
+            raise _Submit({"answer": "done"})
+
+        nested.forward = probe
+        with pytest.raises(_Submit):
+            invocation.call(handle, {"question": "ping"})
+
+        assert isinstance(seen["llm_query_lm"], dspy.BaseLM)
+        assert seen["llm_query_lm"]._lm is sub_lm
 
     def test_facade_calls_use_sub_lm(self):
         # Bridged predictors run host-side, so any BaseLM works as sub_lm without serialization.
@@ -2315,6 +2338,28 @@ class TestRLMFacadeDeno:
             result = rlm(query="q")
 
         assert result.answer == "facade on pyodide"
+
+    def test_facade_lm_calls_share_the_llm_query_budget_on_the_default_sandbox(self):
+        rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Spend the budget with llm_query, then try a bridged sub-agent",
+                "code": (
+                    "first = llm_query('a')\n"
+                    "try:\n"
+                    "    dspy.Predict('question -> answer')(question='b')\n"
+                    "except Exception as e:\n"
+                    "    print('sub-agent:', e)\n"
+                ),
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(first)"},
+        ])
+
+        with dummy_lm_context([{"answer": "one"}, {"answer": "two"}]):
+            result = rlm(query="q")
+
+        assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
+        assert "one" in result.answer
 
     def test_facade_survives_serializable_inputs_on_the_default_sandbox(self):
         # Serializable inputs run setup code before generated code; the default interpreter

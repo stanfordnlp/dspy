@@ -8,6 +8,8 @@ backends:
 
 * dspy side: the library's backends satisfy the ``CodeInterpreter`` protocol, a user-written
   subclass can declare ``SUB_DSPY``, and ``dspy.RLM`` then runs real dspy sub-agents inside it.
+  The reference is a worker process: SUB_DSPY commits an interpreter to executing generated code
+  outside the host process (see ``tests/sub_dspy_interpreters.py``).
 * library side: a capability-declaring subclass still passes the library's own
   ``check_interpreter`` conformance suite.
 """
@@ -25,19 +27,8 @@ sub_dspy_interpreters = pytest.importorskip("tests.sub_dspy_interpreters")
 
 InProcessInterpreter = dspy_interpreters.InProcessInterpreter
 SubprocessInterpreter = dspy_interpreters.SubprocessInterpreter
-# A worker-process backend declaring sub-dspy: it owns its settings, unlike in-process.
+# The user story's reference: a user-written CodeInterpreter (a worker process) declaring its capabilities.
 SubDspySubprocessInterpreter = sub_dspy_interpreters.SubDspySubprocessInterpreter
-
-
-class SubDspyInProcessInterpreter(InProcessInterpreter):
-    """The user story's reference: a user-written CodeInterpreter that declares its capabilities."""
-
-    capabilities = dspy.InterpreterCapability.SUB_DSPY
-
-    def __init__(self, tools=None, output_fields=None):
-        super().__init__(tools=tools, output_fields=output_fields)
-        # The sub-dspy contract: the environment provides the nested-interpreter factory.
-        self._namespace[SUB_DSPY_FACTORY_NAME] = SubDspyInProcessInterpreter
 
 
 def make_scripted_predictor(responses: list[dict]):
@@ -77,8 +68,8 @@ def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
 
 
 def test_capability_declaring_subclass_passes_library_conformance():
-    assert dspy.InterpreterCapability.SUB_DSPY in interpreter_capabilities(SubDspyInProcessInterpreter)
-    dspy_interpreters.check_interpreter(SubDspyInProcessInterpreter).raise_for_failures()
+    assert dspy.InterpreterCapability.SUB_DSPY in interpreter_capabilities(SubDspySubprocessInterpreter)
+    dspy_interpreters.check_interpreter(SubDspySubprocessInterpreter).raise_for_failures()
 
 
 def test_subprocess_backend_runs_dspy():
@@ -96,7 +87,7 @@ def test_rlm_runs_dspy_sub_agents_in_capable_backend():
     # against the configured LM, runs a dspy.ReActV2 sub-agent with a REPL-defined tool,
     # and builds a nested dspy.RLM from the environment-provided factory, so each
     # sub-agent gets its own interpreter.
-    rlm = RLM("query -> answer", max_iters=4, interpreter_factory=SubDspyInProcessInterpreter)
+    rlm = RLM("query -> answer", max_iters=4, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
             "reasoning": "Run a sub-agent",

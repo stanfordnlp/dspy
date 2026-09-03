@@ -30,7 +30,10 @@ class InterpreterCapability(enum.Flag):
         get their own interpreter. Sub-agent LM calls are served by the host through a
         tool (running ``RLM(sub_lm=...)`` or the host's default LM), so the environment
         needs no LM credentials; its own LM configuration applies only when the host
-        has no LM.
+        has no LM. Declaring SUB_DSPY also commits the interpreter to executing generated
+        code outside the host process: an in-process executor hands generated code the
+        host's memory (settings, environment, LM credentials, the host-side tool
+        callables), which no host-side plumbing can prevent.
     """
 
     SUB_DSPY = enum.auto()

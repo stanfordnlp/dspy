@@ -26,6 +26,7 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import main_thread_config
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
@@ -192,6 +193,35 @@ class _LLMCallBudget:
             self._count += n
 
 
+class _BudgetedLM(BaseLM):
+    """The host LM as generated code may spend it: every call reserves one slot of the forward's budget.
+
+    Wraps the caller's sub_lm or default LM for both the sub-agent LM endpoint and bridged facade
+    predictors, so LM calls made anywhere on behalf of generated code share one ceiling with llm_query.
+    The wrapped LM does the actual work (cache, callbacks, history, retries).
+    """
+
+    def __init__(self, lm: BaseLM, budget: _LLMCallBudget):
+        super().__init__(model=lm.model, model_type=lm.model_type)
+        self.kwargs = dict(lm.kwargs)  # adapters and Predict read these
+        self._lm = lm
+        self._budget = budget
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self._budget.reserve(1)
+        return self._lm(*args, **kwargs)
+
+    async def acall(self, *args: Any, **kwargs: Any) -> Any:
+        self._budget.reserve(1)
+        return await self._lm.acall(*args, **kwargs)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self._lm.forward(*args, **kwargs)
+
+    def copy(self, **kwargs: Any) -> _BudgetedLM:
+        return _BudgetedLM(self._lm.copy(**kwargs), self._budget)
+
+
 def _strip_code_fences(code: str) -> str:
     """Extract Python code from markdown fences, or return as-is if no fences."""
     code = code.strip()
@@ -266,8 +296,8 @@ class RLM(Module):
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
             max_iters: Maximum REPL interaction iterations.
-            max_llm_calls: Maximum sub-LLM calls per execution: llm_query/llm_query_batched and, on a
-                  sub-dspy interpreter, the LM calls made by in-sandbox sub-agents.
+            max_llm_calls: Maximum sub-LLM calls per execution, shared by llm_query/llm_query_batched
+                  and every LM call sub-agents make on behalf of generated code (native or bridged).
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
@@ -599,32 +629,38 @@ class RLM(Module):
 
         return regular_args
 
-    def _sub_dspy_lm(self) -> Any:
-        """The LM serving in-sandbox sub-agents: the explicit sub_lm, else the host's default."""
+    def _host_lm(self) -> Any:
+        """The LM serving sub-agents: the explicit sub_lm, else the host's default."""
         return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
-    def _make_sub_dspy_lm_tool(self, budget: _LLMCallBudget) -> Callable:
-        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM object never crosses the boundary.
+    def _budgeted_host_lm(self, budget: _LLMCallBudget) -> _BudgetedLM | None:
+        """The host LM generated code may spend, or None when the host has no LM.
 
-        Every sub-agent LM call draws on the same per-forward ``budget`` as llm_query. The LM is
-        resolved once per forward: inside the sandbox ``dspy.settings.lm`` is the host-served LM
-        itself, so resolving at call time on a shared-process interpreter would recurse.
+        Resolved once per forward: inside a sub-dspy sandbox ``dspy.settings.lm`` is the host-served
+        LM itself, so resolving at call time on a shared-process interpreter would recurse.
         """
-        lm = self._sub_dspy_lm()
+        lm = self._host_lm()
+        return None if lm is None else _BudgetedLM(lm, budget)
+
+    def _make_sub_dspy_lm_tool(self, lm: _BudgetedLM | None) -> Callable:
+        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM object never crosses the boundary."""
 
         def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
             if lm is None:
                 raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
-            budget.reserve(1)
             response = lm(prompt=prompt, messages=messages, **(kwargs or {}))
             return response.to_legacy_outputs() if isinstance(response, dspy.LMResponse) else response
 
         return serve_lm
 
-    def _setup_dspy_support(self, repl: CodeInterpreter) -> None:
+    def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
+        """Host side of the dspy facade for one forward: bridged predictors run on the budgeted host LM."""
+        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._budgeted_host_lm(budget))
+
+    def _setup_dspy_support(self, repl: CodeInterpreter, budget: _LLMCallBudget) -> None:
         """Install the dspy facade, or validate the SUB_DSPY contract, before generated code runs."""
         if not self._sub_dspy:
-            FacadeInvocation(self._user_tools, self._interpreter_factory, self.max_llm_calls, lm=self.sub_lm).install(repl)
+            self._facade_invocation(budget).install(repl)
             return
         tool_schemas = {name: {"desc": tool.desc, "args": tool.args} for name, tool in self._user_tools.items()}
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_TOOLS_VAR: tool_schemas})
@@ -695,12 +731,12 @@ class RLM(Module):
         invoke.__signature__ = inspect.signature(tool.func)
         return invoke
 
-    def _prepare_execution_tools(self) -> dict[str, Callable]:
-        """Create fresh LLM tools and merge with user-provided tools."""
-        budget = _LLMCallBudget(self.max_llm_calls)
+    def _prepare_execution_tools(self, budget: _LLMCallBudget | None = None) -> dict[str, Callable]:
+        """Create the LLM tools on ``budget`` (fresh by default) and merge with user-provided tools."""
+        budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         execution_tools = self._make_llm_tools(budget)
         if self._sub_dspy:
-            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool(budget)
+            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool(self._budgeted_host_lm(budget))
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 
@@ -864,7 +900,7 @@ class RLM(Module):
         variables = dict(input_args)
         if self._sub_dspy:
             variables[_SUB_DSPY_CODE_VAR] = code
-            lm = self._sub_dspy_lm()
+            lm = self._host_lm()
             variables[_SUB_DSPY_LM_VAR] = None if lm is None else {"model": lm.model, "model_type": lm.model_type}
             code = SUB_DSPY_EXEC_CODE
         try:
@@ -926,11 +962,12 @@ class RLM(Module):
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        budget = _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._prepare_execution_tools(budget)
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            self._setup_dspy_support(repl)
+            self._setup_dspy_support(repl, budget)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
@@ -1016,11 +1053,12 @@ class RLM(Module):
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        budget = _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._prepare_execution_tools(budget)
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            self._setup_dspy_support(repl)
+            self._setup_dspy_support(repl, budget)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 

@@ -17,6 +17,7 @@ the last LM infrastructure error) lives in a ``FacadeInvocation`` created for th
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import json
@@ -201,8 +202,12 @@ class FacadeInvocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        # The invocation's LM is a scoped override, not set_lm: it then also governs nested
+        # predictors and a bridged RLM's own sub-LLM calls.
+        lm_scope = dspy.context(lm=self._lm) if self._lm is not None else contextlib.nullcontext()
         try:
-            return prediction_to_fields(predictor(**restored))
+            with lm_scope:
+                return prediction_to_fields(predictor(**restored))
         except LMError as e:
             tag = f"[dspy bridge lm-error #{self._calls}]"
             self._lm_error = (e, tag)
@@ -217,10 +222,7 @@ class FacadeInvocation:
             extra.pop("interpreter_factory", None)
             if self._interpreter_factory and _accepts_interpreter_factory(cls):
                 extra["interpreter_factory"] = self._interpreter_factory
-        predictor = cls(_resolve_signature(signature, self._custom_types), **extra)
-        if self._lm is not None:
-            predictor.set_lm(self._lm)
-        return predictor
+        return cls(_resolve_signature(signature, self._custom_types), **extra)
 
     def _decode_tools(self, value: Any) -> Any:
         """Turn the shim's tool name-markers back into the real host tool objects."""
