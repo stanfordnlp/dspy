@@ -1792,3 +1792,45 @@ def test_structured_outputs_unconstrained_field_schema_is_unchanged():
     schema = _get_structured_outputs_response_format(Plain).model_json_schema()
 
     assert schema["properties"]["answer"] == {"title": "Answer", "type": "string"}
+
+
+def test_structured_outputs_do_not_carry_field_aliases():
+    # The parser keys off the signature field names, so an alias in the schema would
+    # make a schema-valid provider response unparseable.
+    class Aliased(dspy.Signature):
+        question: str = dspy.InputField()
+        answer_text: str = dspy.OutputField(alias="answer")
+
+    schema = _get_structured_outputs_response_format(Aliased).model_json_schema()
+
+    assert list(schema["properties"]) == ["answer_text"]
+    assert schema["required"] == ["answer_text"]
+
+
+def test_structured_outputs_do_not_carry_field_descriptions():
+    # DSPy states field descriptions in the prompt; adding them to the wire schema
+    # would be a separate change from preserving constraints.
+    class Described(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(description="the answer")
+
+    schema = _get_structured_outputs_response_format(Described).model_json_schema()
+
+    assert "description" not in schema["properties"]["answer"]
+
+
+def test_aliased_output_field_still_parses_end_to_end():
+    class Aliased(dspy.Signature):
+        question: str = dspy.InputField()
+        answer_text: str = dspy.OutputField(alias="answer")
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"answer_text": "sunny"}'))],
+            model="openai/gpt-4o-mini",
+        )
+        adapter = dspy.JSONAdapter()
+        lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+        result = adapter(lm, {}, Aliased, [], {"question": "weather?"})
+
+    assert result[0]["answer_text"] == "sunny"

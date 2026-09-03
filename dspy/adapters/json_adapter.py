@@ -1,7 +1,6 @@
-import copy
 import json
 import logging
-from typing import Any, get_origin
+from typing import Annotated, Any, get_origin
 
 import json_repair
 import pydantic
@@ -258,15 +257,17 @@ def _get_structured_outputs_response_format(
         if use_native_function_calling and annotation == ToolCalls:
             # Skip ToolCalls field if native function calling is enabled.
             continue
-        # `field` carries the constraint metadata the user declared on the OutputField
-        # (ge/le/gt/lt, multiple_of, pattern, min_length/max_length). Passing only
-        # (annotation, default) drops all of it, so the derived schema stops asking the
-        # provider to honor a bound that the prompt-side path still states through
-        # json_schema_extra["constraints"]. Rebuild from the FieldInfo instead, and drop
-        # only DSPy's own prompt metadata, which is not part of the wire schema.
-        field_info = copy.deepcopy(field)
-        field_info.json_schema_extra = None
-        fields[name] = (annotation, field_info)
+        default = field.default if hasattr(field, "default") else ...
+        # `field.metadata` holds exactly the constraints the user declared on the
+        # OutputField (ge/le/gt/lt, multiple_of, pattern, min_length/max_length).
+        # Passing only (annotation, default) drops all of it, so the derived schema
+        # stops asking the provider to honor a bound that the prompt-side path still
+        # states through json_schema_extra["constraints"]. Re-attach just the
+        # constraints: carrying the whole FieldInfo would also put the field's alias
+        # and description into the wire schema, and the parser keys off the signature
+        # field names, so an alias there makes a schema-valid response unparseable.
+        annotation = Annotated[(annotation, *field.metadata)] if field.metadata else annotation
+        fields[name] = (annotation, default)
 
     # Build the model with extra fields forbidden.
     pydantic_model = pydantic.create_model(
