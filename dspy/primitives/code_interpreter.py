@@ -24,14 +24,13 @@ class InterpreterCapability(enum.Flag):
     """Optional capabilities a CodeInterpreter implementation can declare.
 
     SUB_DSPY: Code executed inside the interpreter can `import dspy` and run dspy modules.
-        The environment must make dspy importable with LM network access and
-        credentials available, and must provide SUB_DSPY_FACTORY_NAME
+        The environment must make dspy importable and must provide SUB_DSPY_FACTORY_NAME
         ("dspy_interpreter_factory") in the execution namespace as a zero-argument callable
         returning a fresh CodeInterpreter, so nested code-executing modules (sub-agents)
-        get their own interpreter. The sub-agent LM (an explicit ``RLM(sub_lm=...)``
-        or the host's default) is applied as a scoped override around each generated
-        code block; the environment's own configuration applies only when no LM crosses
-        the boundary.
+        get their own interpreter. Sub-agent LM calls are served by the host through a
+        tool (running ``RLM(sub_lm=...)`` or the host's default LM), so the environment
+        needs no LM credentials; its own LM configuration applies only when the host
+        has no LM.
     """
 
     SUB_DSPY = enum.auto()

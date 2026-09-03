@@ -217,6 +217,34 @@ def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
     assert calls == ["hi"]
 
 
+def test_sub_agent_lm_calls_are_served_by_the_host():
+    # The host LM (a DummyLM, which no worker could reconstruct) serves the sub-agent's calls
+    # through the host tool; the sandbox sees only the model identity, never the LM's kwargs.
+    host_lm = DummyLM([{"answer": "served by host"}])
+    host_lm.kwargs["api_key"] = "sk-secret"
+    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Inspect the sandbox LM, then run a sub-agent",
+            "code": (
+                "print(type(dspy.settings.lm).__name__, dspy.settings.lm.model, sorted(dspy.settings.lm.kwargs))\n"
+                "res = dspy.Predict('question -> answer')(question='ping')\n"
+                "print(res.answer)"
+            ),
+        },
+        {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+    ])
+
+    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
+        result = rlm(query="q")
+
+    inspected = result.trajectory[0]["output"]
+    assert "_DspyHostLM dummy" in inspected
+    assert "api_key" not in inspected and "sk-secret" not in inspected
+    assert result.answer == "served by host"
+    assert host_lm.history  # the call ran on the host object
+
+
 def test_host_tools_keep_their_schema_for_native_sub_agents():
     # Regression: across a process boundary a host tool arrives as an anonymous proxy, so a
     # native ReActV2 would otherwise register a tool named "<lambda>" with no description.
@@ -227,32 +255,31 @@ def test_host_tools_keep_their_schema_for_native_sub_agents():
         calls.append(query)
         return f"found {query}"
 
-    interpreter = SubDspySubprocessInterpreter()
-    try:
-        interpreter.execute(
-            "import dspy\n"
-            "dspy.configure(adapter=dspy.ChatAdapter(), lm=dspy.utils.DummyLM([\n"
-            "    {'next_thought': 'look it up', 'tool_calls': dspy.ToolCalls.from_dict_list(\n"
-            "        [{'name': 'search', 'args': {'query': 'cats'}}])},\n"
-            "    {'next_thought': 'done', 'tool_calls': dspy.ToolCalls.from_dict_list(\n"
-            "        [{'name': 'submit', 'args': {'answer': 'found cats'}}])},\n"
-            "]))"
-        )
-        rlm = RLM("query -> answer", max_iters=2, tools=[search], interpreter_factory=SubDspySubprocessInterpreter)
-        rlm.generate_action = make_scripted_predictor([
-            {
-                "reasoning": "Inspect what the sub-agent sees, then run it",
-                "code": (
-                    "agent = dspy.ReActV2('question -> answer', tools=[search])\n"
-                    "print(sorted(agent.tools), '|', agent.tools['search'].desc, '|', agent.tools['search'].args)\n"
-                    "print(search(query='direct'))"
-                ),
-            },
-            {"reasoning": "Run it", "code": "SUBMIT(agent(question='cats').answer)"},
-        ])
-        result = rlm(interpreter, query="q")
-    finally:
-        interpreter.shutdown()
+    rlm = RLM("query -> answer", max_iters=2, tools=[search], interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Inspect what the sub-agent sees, then run it",
+            "code": (
+                "agent = dspy.ReActV2('question -> answer', tools=[search])\n"
+                "print(sorted(agent.tools), '|', agent.tools['search'].desc, '|', agent.tools['search'].args)\n"
+                "print(search(query='direct'))"
+            ),
+        },
+        {"reasoning": "Run it", "code": "SUBMIT(agent(question='cats').answer)"},
+    ])
+    lm = DummyLM([
+        {
+            "next_thought": "look it up",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "search", "args": {"query": "cats"}}]),
+        },
+        {
+            "next_thought": "done",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
+        },
+    ])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = rlm(query="q")
 
     inspected = result.trajectory[0]["output"]
     assert "['search', 'submit'] | Search the knowledge base. | {'query': {'type': 'string'}}" in inspected

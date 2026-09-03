@@ -18,10 +18,11 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import (
     _SUB_DSPY_CODE_VAR,
-    _SUB_DSPY_LM_STATE_VAR,
+    _SUB_DSPY_LM_VAR,
     _SUB_DSPY_TOOLS_VAR,
     RLM,
     SUB_DSPY_EXEC_CODE,
+    SUB_DSPY_LM_TOOL,
     SUB_DSPY_SETUP_CODE,
     _strip_code_fences,
 )
@@ -1897,89 +1898,82 @@ class TestRLMSubDspy:
         with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
             RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
-    def test_explicit_sub_lm_ships_state_per_block(self):
+    def test_sub_agent_lm_is_served_by_the_host(self):
+        # The sub_lm never enters the sandbox: each block gets a host-served LM mirroring only the
+        # model identity, and the host tool runs the call on the caller's sub_lm (any BaseLM).
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM(
-            "query -> answer",
-            max_iters=1,
-            interpreter_factory=factory,
-            sub_lm=dspy.LM("openai/gpt-4o-mini", cache=False),
-        )
+        sub_lm = DummyLM([{"answer": "served by sub_lm"}])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory, sub_lm=sub_lm)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
         result = rlm(query="q")
 
         assert result.answer == "42"
         interpreter = factory.instances[0]
-        # Setup validates the contract and ships the host tools' schemas (none here).
         code, variables = interpreter.call_history[0]
         assert code == SUB_DSPY_SETUP_CODE
         assert variables == {_SUB_DSPY_TOOLS_VAR: {}}
-        # Every block runs under a scoped override with the LM state shipped fresh per block.
         code, variables = interpreter.call_history[1]
         assert code == SUB_DSPY_EXEC_CODE
         assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
-        state = variables[_SUB_DSPY_LM_STATE_VAR]
-        assert state["model"] == "openai/gpt-4o-mini"
-        assert "api_key" not in state
-        # The state must round-trip the same way the sandbox-side wrapper reconstructs it.
-        assert dspy.BaseLM.load_state(state).model == "openai/gpt-4o-mini"
+        assert variables[_SUB_DSPY_LM_VAR] == {"model": sub_lm.model, "model_type": "chat"}
+        outputs = interpreter.tools[SUB_DSPY_LM_TOOL](messages=[{"role": "user", "content": "hi"}])
+        assert "served by sub_lm" in outputs[0]
 
-    def test_host_default_lm_ships_per_block_when_no_sub_lm(self):
-        # sub_lm defaults to the host LM, delivered the same way: a scoped per-block override.
+    def test_sub_agent_lm_defaults_to_the_host_lm(self):
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
-        dspy.configure(lm=dspy.LM("openai/host-default", cache=False))
+        with dummy_lm_context([{"answer": "served by host"}]):
+            rlm(query="q")
+            host_model = dspy.settings.lm.model
+            outputs = factory.instances[0].tools[SUB_DSPY_LM_TOOL](prompt="hi")
+
+        _, variables = factory.instances[0].call_history[1]
+        assert variables[_SUB_DSPY_LM_VAR]["model"] == host_model
+        assert "served by host" in outputs[0]
+
+    def test_no_lm_override_when_the_host_has_no_lm(self):
+        # Without a host LM nothing is served; the environment's own LM configuration applies.
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
         rlm(query="q")
 
-        code, variables = factory.instances[0].call_history[1]
-        assert code == SUB_DSPY_EXEC_CODE
-        assert variables[_SUB_DSPY_LM_STATE_VAR]["model"] == "openai/host-default"
+        _, variables = factory.instances[0].call_history[1]
+        assert variables[_SUB_DSPY_LM_VAR] is None
+        with pytest.raises(dspy.LMNotConfiguredError):
+            factory.instances[0].tools[SUB_DSPY_LM_TOOL](prompt="hi")
 
-    def test_no_lm_override_when_no_lm_crosses_the_boundary(self):
-        # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox, and
-        # without an explicit sub_lm that is not an error: the environment's LM applies.
+    def test_lm_kwargs_never_cross_into_the_sandbox(self):
+        # Credential-bearing LM kwargs stay on the host; only the model identity is mirrored.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        with dummy_lm_context([{"answer": "unused"}]):
-            rlm(query="q")
-
-        code, variables = factory.instances[0].call_history[1]
-        assert code == SUB_DSPY_EXEC_CODE
-        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
-        assert variables[_SUB_DSPY_LM_STATE_VAR] is None
-
-    def test_non_serializable_sub_lm_is_rejected_for_sub_dspy_interpreters(self):
-        # A sub_lm that cannot cross the boundary must fail loudly at construction
-        # instead of silently substituting the environment's ambient LM.
-        from dspy.utils.dummies import DummyLM
-
-        custom_lm = DummyLM([{"answer": "unused"}])
-        with pytest.raises(ValueError, match=r"sub_lm must be a plain dspy\.LM"):
-            RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory(), sub_lm=custom_lm)
-
-        # Without the capability, sub_lm stays host-side (llm_query) and any BaseLM works.
-        RLM("query -> answer", interpreter_factory=MockInterpreterFactory(), sub_lm=custom_lm)
-
-    def test_sub_lm_that_becomes_non_serializable_fails_loudly(self):
-        # A sub_lm mutated after construction must raise the same configuration error at
-        # execution time, not crash the sandbox wrapper with load_state(None).
-        factory = SubDspyMockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM(
             "query -> answer",
             max_iters=1,
             interpreter_factory=factory,
-            sub_lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+            sub_lm=dspy.LM(
+                "openai/gpt-4o-mini",
+                api_key="sk-secret",
+                api_base="https://internal.example/v1",
+                extra_headers={"Authorization": "Bearer proxy-token"},
+                cache=False,
+            ),
         )
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-        rlm.sub_lm.kwargs["callback"] = object()
 
-        with pytest.raises(ValueError, match=r"sub_lm must be a plain dspy\.LM"):
-            rlm(query="q")
+        rlm(query="q")
+
+        for _, variables in factory.instances[0].call_history:
+            assert "sk-secret" not in repr(variables)
+            assert "internal.example" not in repr(variables)
+            assert "proxy-token" not in repr(variables)
+        assert factory.instances[0].call_history[1][1][_SUB_DSPY_LM_VAR] == {
+            "model": "openai/gpt-4o-mini",
+            "model_type": "chat",
+        }
 
     def test_declaring_interpreter_without_factory_fails_at_invocation_start(self):
         class NoFactoryInterpreter(_InProcessSubDspyInterpreter):
@@ -1994,8 +1988,8 @@ class TestRLMSubDspy:
             rlm(query="q")
 
     def test_explicit_sub_lm_survives_generated_namespace_corruption(self):
-        # Generated code overwriting the shipped LM state cannot affect later blocks:
-        # each block re-injects the state fresh and applies it as a scoped override.
+        # Generated code overwriting the shipped LM info cannot affect later blocks:
+        # each block re-injects it fresh and applies it as a scoped override.
         dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
         rlm = RLM(
             "query -> answer",
@@ -2006,7 +2000,10 @@ class TestRLMSubDspy:
         rlm.generate_action = make_mock_predictor([
             {
                 "reasoning": "Corrupt the wrapper state",
-                "code": f"{_SUB_DSPY_LM_STATE_VAR} = {{'model': 'openai/generated-replacement'}}\nprint('done')",
+                "code": (
+                    f"{_SUB_DSPY_LM_VAR} = {{'model': 'openai/generated-replacement', 'model_type': 'chat'}}\n"
+                    "print('done')"
+                ),
             },
             {"reasoning": "Report the active LM", "code": "import dspy\nSUBMIT(dspy.settings.lm.model)"},
         ])
@@ -2079,6 +2076,24 @@ class TestRLMSubDspy:
         rlm(query="q")
 
         assert dspy.settings.trace == ["entry"]
+
+    def test_generated_code_cannot_persist_context_local_registry_mutation(self):
+        # Inside dspy.context(callbacks=...), the effective registry is the context-local list, not
+        # main_thread_config's; the guard restores whichever registry generated code could see.
+        from dspy.utils.callback import BaseCallback
+
+        host_callback = BaseCallback()
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Install a callback",
+                "code": "import dspy\ndspy.settings.callbacks.append(dspy.utils.callback.BaseCallback())\nSUBMIT('42')",
+            },
+        ])
+
+        with dspy.context(lm=dspy.LM("openai/host-original", cache=False), callbacks=[host_callback]):
+            rlm(query="q")
+            assert dspy.settings.callbacks == [host_callback]
 
     def test_nested_state_of_user_objects_is_the_interpreter_boundary(self):
         # The guard restores dspy's settings structure, not the internals of user objects

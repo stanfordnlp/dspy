@@ -14,7 +14,6 @@ import base64
 import contextvars
 import functools
 import inspect
-import json
 import keyword
 import logging
 import threading
@@ -101,31 +100,70 @@ FACADE_TOOLS_RULE = (
     "Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host."
 )
 
-# Sandbox-side variables for the setup and execution code below.
-_SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
+# Sandbox-side names for the setup and execution code below.
+SUB_DSPY_LM_TOOL = "__dspy_lm__"
+_SUB_DSPY_LM_VAR = "__dspy_lm_info"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
 _SUB_DSPY_TOOLS_VAR = "__dspy_tools"
 
-# Validates the SUB_DSPY contract at invocation start.
+# Validates the SUB_DSPY contract at invocation start and defines the sub-agent LM: a BaseLM whose
+# calls the host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its credentials)
+# never enters the sandbox and any BaseLM works as sub_lm.
 SUB_DSPY_SETUP_CODE = f"""import dspy
 if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
     raise RuntimeError(
         "This interpreter declares InterpreterCapability.SUB_DSPY but does not provide "
         "{SUB_DSPY_FACTORY_NAME} in its execution namespace."
     )
+
+
+def _dspy_lm_kwargs(kwargs):
+    import json
+    import pydantic
+
+    crossing = {{}}
+    for key, value in kwargs.items():
+        if isinstance(value, type) and issubclass(value, pydantic.BaseModel):  # e.g. JSONAdapter's response_format
+            value = {{"type": "json_schema", "json_schema": {{"name": value.__name__, "schema": value.model_json_schema()}}}}
+        json.dumps(value, allow_nan=False)
+        crossing[key] = value
+    return crossing
+
+
+class _DspyHostLM(dspy.BaseLM):
+    # Sub-agent LM: every call is served by the host, which applies the caller's sub_lm or default LM.
+    def __init__(self, model, model_type):
+        import threading
+
+        super().__init__(model=model, model_type=model_type, cache=False)
+        self._lock = threading.Lock()  # the host tool channel serves one call at a time
+
+    def __call__(self, *items, prompt=None, messages=None, request=None, **kwargs):
+        if request is not None or len(items) > 1 or (items and not isinstance(items[0], str)):
+            raise TypeError("The host-served sub-agent LM accepts a prompt string or messages, not typed requests.")
+        if items:
+            prompt = items[0]
+        with self._lock:
+            return globals()["{SUB_DSPY_LM_TOOL}"](prompt=prompt, messages=messages, kwargs=_dspy_lm_kwargs(kwargs))
+
+    async def acall(self, *items, prompt=None, messages=None, request=None, **kwargs):
+        return self(*items, prompt=prompt, messages=messages, request=request, **kwargs)
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        raise NotImplementedError("_DspyHostLM calls are served by the host; forward() is never used.")
 """
 
 # Runs one generated code block. Host tools are exposed as dspy.Tool objects carrying their host
 # schema (re-done per block: interpreters may rebind tool names on every execute); the block runs
-# under a scoped override with the sub-agent LM (an explicit sub_lm or the host's default) when one
-# crossed, and a trailing bare expression is re-echoed so REPL-style backends still display it.
+# under a scoped override with the host-served sub-agent LM when the host has one, and a trailing
+# bare expression is re-echoed so REPL-style backends still display it.
 SUB_DSPY_EXEC_CODE = f"""import ast as __dspy_ast, contextlib as __dspy_contextlib, dspy as __dspy
 for __dspy_name, __dspy_meta in {_SUB_DSPY_TOOLS_VAR}.items():
     if __dspy_name in globals() and not isinstance(globals()[__dspy_name], __dspy.Tool):
         globals()[__dspy_name] = __dspy.Tool(globals()[__dspy_name], name=__dspy_name, **__dspy_meta)
 __dspy_tree = __dspy_ast.parse({_SUB_DSPY_CODE_VAR})
 __dspy_tail = __dspy_tree.body.pop() if __dspy_tree.body and isinstance(__dspy_tree.body[-1], __dspy_ast.Expr) else None
-__dspy_lm = None if {_SUB_DSPY_LM_STATE_VAR} is None else __dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})
+__dspy_lm = None if {_SUB_DSPY_LM_VAR} is None else _DspyHostLM(**{_SUB_DSPY_LM_VAR})
 with __dspy_contextlib.nullcontext() if __dspy_lm is None else __dspy.context(lm=__dspy_lm):
     exec(compile(__dspy_tree, "<generated>", "exec"), globals())
     __dspy_value = None if __dspy_tail is None else eval(compile(__dspy_ast.Expression(__dspy_tail.value), "<generated>", "eval"), globals())
@@ -216,9 +254,9 @@ class RLM(Module):
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched and, on a sub-dspy interpreter, for
-                   in-sandbox sub-agents (applied per code block; when given explicitly it
-                   must be a plain, serializable dspy.LM). Defaults to dspy.settings.lm.
-                   Allows using a different (e.g., cheaper) model for sub-queries.
+                   in-sandbox sub-agents, whose calls the host serves (the LM itself never
+                   enters the sandbox). Defaults to dspy.settings.lm. Allows using a
+                   different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
@@ -236,8 +274,6 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
         self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
-        if self._sub_dspy and sub_lm is not None:
-            self._serialized_sub_lm_state()
         self._user_tools = self._normalize_tools(tools)
         self._validate_namespace(self._user_tools)
 
@@ -554,39 +590,31 @@ class RLM(Module):
 
         return regular_args
 
-    def _serialized_sub_lm_state(self) -> dict[str, Any] | None:
-        """JSON-able reconstruction state for the sub-agent LM.
+    def _sub_dspy_lm(self) -> Any:
+        """The LM serving in-sandbox sub-agents: the explicit sub_lm, else the host's default."""
+        return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
-        Returns None when no host LM crosses the boundary (the environment's own LM applies);
-        raises when an explicit sub_lm cannot cross, since silently substituting the ambient
-        LM would violate the caller's model choice.
+    def _make_sub_dspy_lm_tool(self) -> Callable:
+        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM object never crosses the boundary.
+
+        The LM is resolved once per forward: inside the sandbox ``dspy.settings.lm`` is the
+        host-served LM itself, so resolving at call time on a shared-process interpreter would recurse.
         """
-        lm = self.sub_lm if self.sub_lm is not None else dspy.settings.lm
-        state = None
-        if type(lm) is dspy.LM:
-            state = lm.dump_state()
-            for key in ("launch_kwargs", "train_kwargs"):  # deployment config; may hold credentials
-                state.pop(key, None)
-            try:
-                json.dumps(state)
-            except (TypeError, ValueError):
-                state = None
-        if state is None and self.sub_lm is not None:
-            raise ValueError(
-                "sub_lm must be a plain dspy.LM with JSON-serializable state to cross into a sub-dspy "
-                "interpreter; for custom LMs, configure the LM in the interpreter's environment instead."
-            )
-        return state
+        lm = self._sub_dspy_lm()
+
+        def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
+            if lm is None:
+                raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            response = lm(prompt=prompt, messages=messages, **(kwargs or {}))
+            return response.to_legacy_outputs() if isinstance(response, dspy.LMResponse) else response
+
+        return serve_lm
 
     def _setup_dspy_support(self, repl: CodeInterpreter) -> None:
         """Install the dspy facade, or validate the SUB_DSPY contract, before generated code runs."""
         if not self._sub_dspy:
             FacadeInvocation(self._user_tools, self._interpreter_factory, self.max_llm_calls, lm=self.sub_lm).install(repl)
             return
-        if self.sub_lm is None and dspy.settings.lm is not None and self._serialized_sub_lm_state() is None:
-            logger.warning(
-                "The host LM cannot cross into the sub-dspy interpreter; sub-agents will use the environment's LM."
-            )
         tool_schemas = {name: {"desc": tool.desc, "args": tool.args} for name, tool in self._user_tools.items()}
         repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_TOOLS_VAR: tool_schemas})
 
@@ -595,9 +623,11 @@ class RLM(Module):
         """Keep the host's global dspy settings structure intact across generated-code execution.
 
         Restores top-level settings that generated code replaced (e.g. via ``dspy.configure``)
-        and the contents of the callbacks/stream_listeners registries it mutated in place;
-        restoration mutates the original containers so aliases such as active context snapshots
-        heal too. ``trace`` is left alone because dspy itself appends to it during a forward,
+        and the contents of the callbacks/stream_listeners registries it mutated in place. The
+        registries are taken from ``dspy.settings`` as generated code sees them, so a
+        context-local registry (``dspy.context(callbacks=...)``) is restored as well; restoration
+        mutates the original containers so aliases such as active context snapshots heal too.
+        ``trace`` is left alone because dspy itself appends to it during a forward,
         and everything is compared by identity so user ``__eq__`` never runs here. Internal
         state of user objects reachable from settings is the interpreter's isolation boundary,
         not RLM's: run untrusted code in a worker-process backend.
@@ -607,9 +637,9 @@ class RLM(Module):
             return
         originals = dict(main_thread_config)
         registries = {
-            name: list(value)
+            name: (registry, list(registry))
             for name in ("callbacks", "stream_listeners")
-            if isinstance(value := main_thread_config.get(name), list)
+            if isinstance(registry := getattr(dspy.settings, name, None), list)
         }
         try:
             yield
@@ -621,18 +651,21 @@ class RLM(Module):
             }
             mutated = {
                 name
-                for name, items in registries.items()
-                if len(originals[name]) != len(items)
-                or any(current is not item for current, item in zip(originals[name], items, strict=False))
+                for name, (registry, items) in registries.items()
+                if len(registry) != len(items)
+                or any(current is not item for current, item in zip(registry, items, strict=False))
             }
             if replaced or mutated:
                 logger.warning(
                     "Generated code changed global dspy settings %s; restoring them.", sorted(replaced | mutated)
                 )
-                main_thread_config.clear()
-                main_thread_config.update(originals)
+                for key in replaced:
+                    if key in originals:
+                        main_thread_config[key] = originals[key]
+                    else:
+                        del main_thread_config[key]
                 for name in mutated:
-                    originals[name][:] = registries[name]
+                    registries[name][0][:] = registries[name][1]
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -654,6 +687,8 @@ class RLM(Module):
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
         execution_tools = self._make_llm_tools()
+        if self._sub_dspy:
+            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool()
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 
@@ -817,7 +852,8 @@ class RLM(Module):
         variables = dict(input_args)
         if self._sub_dspy:
             variables[_SUB_DSPY_CODE_VAR] = code
-            variables[_SUB_DSPY_LM_STATE_VAR] = self._serialized_sub_lm_state()
+            lm = self._sub_dspy_lm()
+            variables[_SUB_DSPY_LM_VAR] = None if lm is None else {"model": lm.model, "model_type": lm.model_type}
             code = SUB_DSPY_EXEC_CODE
         try:
             return repl.execute(code, variables=variables)
