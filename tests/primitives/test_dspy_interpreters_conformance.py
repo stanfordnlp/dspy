@@ -68,14 +68,14 @@ def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
 
 
 @pytest.mark.parametrize("backend_name", ["InProcessInterpreter", "SubprocessInterpreter"])
-def test_rlm_omits_sub_dspy_guidance_for_undeclared_backends(backend_name):
+def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
     # The capability is a declaration, not a detection: these backends could factually run
     # dspy (InProcess shares the host process), but without declaring SUB_DSPY the action
-    # prompt must not advertise dspy sub-agents and the sub-dspy setup path must stay off.
+    # prompt offers the bridged facade rather than native dspy.
     backend = getattr(dspy_interpreters, backend_name)
     rlm = RLM("query -> answer", interpreter_factory=backend)
     instructions = rlm.generate_action.signature.instructions
-    assert "Sub-agents (dspy)" not in instructions
+    assert "dspy facade" in instructions
     assert "import dspy" not in instructions
     assert SUB_DSPY_FACTORY_NAME not in instructions
     assert rlm._sub_dspy is False

@@ -22,7 +22,6 @@ from dspy.predict.rlm import (
     RLM,
     SUB_DSPY_EXEC_CODE,
     SUB_DSPY_SETUP_CODE,
-    _FacadeRuntime,
     _strip_code_fences,
 )
 from dspy.primitives.code_interpreter import (
@@ -487,7 +486,7 @@ class TestRLMInterpreterLifecycle:
         assert request == snapshot.read_bytes().removesuffix(b"\n")
 
     def test_interpreter_remains_available_as_signature_input(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
+        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return input", "code": "SUBMIT(interpreter)"},
@@ -496,11 +495,11 @@ class TestRLMInterpreterLifecycle:
         result = rlm(interpreter="CPython")
 
         assert result.answer == "CPython"
-        assert factory.instances[0].call_history[0][1] == {"interpreter": "CPython"}
+        assert factory.instances[0].call_history[1][1] == {"interpreter": "CPython"}
 
     @pytest.mark.asyncio
     async def test_factory_creates_and_shuts_down_one_interpreter_per_call(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -522,7 +521,9 @@ class TestRLMInterpreterLifecycle:
         factory = MockInterpreterFactory()
         interpreter = MockInterpreter(
             responses=[
+                "",  # facade installation, first forward
                 FinalOutput({"answer": "first"}),
+                "",  # facade installation, second forward
                 FinalOutput({"answer": "second"}),
             ]
         )
@@ -800,7 +801,7 @@ class TestRLMCallMethod:
 
     def test_call_is_alias_for_forward(self):
         """Test that __call__ is an alias for forward()."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -845,6 +846,7 @@ class TestRLMToolExceptions:
             raise RuntimeError("Tool failed!")
 
         mock = MockInterpreter(responses=[
+            "",
             CodeExecutionError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -860,6 +862,7 @@ class TestRLMToolExceptions:
     def test_runtime_error_history_uses_stripped_code(self):
         """Runtime execution failures should preserve stripped code in history."""
         mock = MockInterpreter(responses=[
+            "",
             CodeExecutionError("NameError: name 'x' is not defined"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -877,6 +880,7 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_execute_is_recoverable(self):
         """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
         mock = MockInterpreter(responses=[
+            "",
             SyntaxError("invalid syntax"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -893,6 +897,7 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_strip_code_fences_is_recoverable(self):
         """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
         mock = MockInterpreter(responses=[
+            "",
             FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iters=5)
@@ -1192,7 +1197,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -1204,7 +1209,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
+        mock = MockInterpreter(responses=["", FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
@@ -1243,7 +1248,7 @@ class TestRLMTypeCoercionMock:
     ])
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
+        mock = MockInterpreter(responses=["", FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
@@ -1733,6 +1738,7 @@ class TestPrepareSerializableVars:
         """Full forward() pass with a SandboxSerializable input."""
         mock = MockInterpreter(responses=[
             "",  # setup execution for _prepare_serializable_vars
+            "",  # dspy facade installation
             FinalOutput({"answer": "done"}),
         ])
         rlm = RLM("data, query -> answer", max_iters=3)
@@ -1745,7 +1751,7 @@ class TestPrepareSerializableVars:
         assert result.answer == "done"
 
         # First call should be the serializable setup, second should be the iteration
-        assert mock.call_count == 2
+        assert mock.call_count == 3
 
 
 @pytest.mark.deno
@@ -1837,9 +1843,9 @@ class _InProcessSubDspyInterpreter:
 
 
 class _FacadeInProcessInterpreter(_InProcessSubDspyInterpreter):
-    """Facade-declaring variant: dspy is not importable and no nested-interpreter factory exists."""
+    """Declares nothing, so RLM installs the facade; no native dspy contract, no factory."""
 
-    capabilities = InterpreterCapability.FACADE_DSPY
+    capabilities = InterpreterCapability(0)
 
     def __init__(self):
         super().__init__()
@@ -1863,10 +1869,10 @@ class TestRLMSubDspy:
         assert "Sub-agents (dspy)" in instructions
         assert SUB_DSPY_FACTORY_NAME in instructions
 
-    def test_action_prompt_omits_sub_agent_instructions_without_capability(self):
+    def test_action_prompt_offers_the_facade_without_capability(self):
         rlm = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
         instructions = rlm.generate_action.signature.instructions
-        assert "Sub-agents (dspy)" not in instructions
+        assert "dspy facade" in instructions
         assert SUB_DSPY_FACTORY_NAME not in instructions
 
     def test_sub_dspy_reserves_sandbox_names(self):
@@ -1884,8 +1890,8 @@ class TestRLMSubDspy:
                 interpreter_factory=SubDspyMockInterpreterFactory(),
             )
 
-        # Without the capability, the names stay available to users.
-        RLM("dspy -> answer", interpreter_factory=MockInterpreterFactory())
+        # Without the capability, the factory name stays available to users.
+        RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
     def test_explicit_sub_lm_ships_state_per_block(self):
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
@@ -2091,16 +2097,18 @@ class TestRLMSubDspy:
         assert dspy.settings.callbacks == [callback]
         assert callback.seen == ["host", "generated"]
 
-    def test_no_setup_without_capability(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
+    def test_facade_is_the_default_without_capabilities(self):
+        from dspy.primitives import facade
+
+        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
         rlm(query="q")
 
         interpreter = factory.instances[0]
-        assert interpreter.call_count == 1
-        assert "import dspy" not in interpreter.call_history[0][0]
+        assert interpreter.call_history[0][0] == facade.SHIM_SETUP
+        assert {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} <= interpreter.tools.keys()
 
     def test_sub_agents_import_dspy_and_run_in_capable_interpreter(self):
         # End-to-end: REPL code imports dspy, runs a dspy.Predict sub-agent against the
@@ -2139,15 +2147,6 @@ class TestRLMFacadeDspy:
         assert "dspy facade" in instructions
         assert SUB_DSPY_FACTORY_NAME not in instructions
 
-    def test_sub_dspy_takes_precedence_over_facade(self):
-        class BothInterpreter(_InProcessSubDspyInterpreter):
-            capabilities = InterpreterCapability.SUB_DSPY | InterpreterCapability.FACADE_DSPY
-
-        rlm = RLM("query -> answer", interpreter_factory=BothInterpreter)
-        assert rlm._sub_dspy is True
-        assert rlm._facade_dspy is False
-        assert SUB_DSPY_FACTORY_NAME in rlm.generate_action.signature.instructions
-
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
             RLM("dspy -> answer", interpreter_factory=_FacadeInProcessInterpreter)
@@ -2160,9 +2159,9 @@ class TestRLMFacadeDspy:
         RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
 
     def _facade_invocation(self, rlm):
-        from dspy.predict.flex import bridge
+        from dspy.primitives import facade
 
-        return bridge._Invocation(_FacadeRuntime(rlm), {})
+        return facade.FacadeInvocation(rlm._user_tools, rlm._interpreter_factory, rlm.max_llm_calls, lm=rlm.sub_lm)
 
     def test_facade_invocation_builds_and_runs_predictors_on_host(self):
         rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
@@ -2187,26 +2186,24 @@ class TestRLMFacadeDspy:
         assert invocation._predictors["nested"]._interpreter_factory is _FacadeInProcessInterpreter
 
     def test_facade_tool_markers_resolve_only_provided_tools(self):
-        from dspy.predict.flex import bridge
+        from dspy.primitives import facade
 
         rlm = RLM("query -> answer", tools=[echo_tool], interpreter_factory=_FacadeInProcessInterpreter)
-        runtime = _FacadeRuntime(rlm)
+        invocation = self._facade_invocation(rlm)
 
-        assert runtime._decode_tools({bridge.TOOL_MARKER: "echo_tool"}) is rlm._user_tools["echo_tool"]
-        with pytest.raises(CodeInterpreterError, match="cannot cross to the host"):
-            runtime._decode_tools({bridge.TOOL_MARKER: "repl_defined"})
+        assert invocation._decode_tools({facade.TOOL_MARKER: "echo_tool"}) is rlm._user_tools["echo_tool"]
+        with pytest.raises(CodeInterpreterError, match="cannot be handed to a bridged sub-predictor"):
+            invocation._decode_tools({facade.TOOL_MARKER: "repl_defined"})
 
     def test_facade_calls_have_a_predictor_budget_of_max_llm_calls(self):
-        from dspy.predict.flex import bridge
-
         rlm = RLM("query -> answer", max_llm_calls=1, interpreter_factory=_FacadeInProcessInterpreter)
-        tools = rlm._prepare_execution_tools()
+        invocation = self._facade_invocation(rlm)
 
         dspy.configure(lm=DummyLM([{"answer": "first"}, {"answer": "second"}]))
-        handle = tools[bridge.CONSTRUCT_TOOL](kind="Predict", signature="question -> answer", attr_name="sub")
-        tools[bridge.CALL_TOOL](handle=handle, inputs={"question": "ping"})
+        handle = invocation.construct("Predict", "question -> answer", "sub")
+        invocation.call(handle, {"question": "ping"})
         with pytest.raises(CodeInterpreterError, match="predictor-call budget"):
-            tools[bridge.CALL_TOOL](handle=handle, inputs={"question": "again"})
+            invocation.call(handle, {"question": "again"})
 
     def test_facade_calls_use_sub_lm(self):
         # Bridged predictors run host-side, so any BaseLM works as sub_lm without serialization.
@@ -2249,12 +2246,9 @@ class TestRLMFacadeDspy:
 @pytest.mark.deno
 class TestRLMFacadeDeno:
     def test_facade_runs_on_the_default_sandbox(self):
-        # The facade needs no dspy inside the sandbox, so it works on the default
-        # Deno/Pyodide interpreter once that declares the capability.
-        class FacadePythonInterpreter(PythonInterpreter):
-            capabilities = InterpreterCapability.FACADE_DSPY
-
-        rlm = RLM("query -> answer", max_iters=2, interpreter_factory=FacadePythonInterpreter)
+        # The facade needs no dspy inside the sandbox, so RLM works out of the box on the
+        # default Deno/Pyodide interpreter.
+        rlm = RLM("query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
         rlm.generate_action = make_mock_predictor([
             {
                 "reasoning": "Run a sub-agent through the facade",

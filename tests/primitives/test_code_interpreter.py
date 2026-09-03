@@ -34,10 +34,6 @@ def test_sub_dspy_contract_is_public():
     # factory-name constant and the reader helper are deliberately module-level only.
     assert dspy.InterpreterCapability is InterpreterCapability
     assert dspy.InterpreterCapability.SUB_DSPY
-    assert dspy.InterpreterCapability.FACADE_DSPY
-    combined = InterpreterCapability.SUB_DSPY | InterpreterCapability.FACADE_DSPY
-    assert InterpreterCapability.SUB_DSPY in combined
-    assert InterpreterCapability.FACADE_DSPY in combined
     assert SUB_DSPY_FACTORY_NAME == "dspy_interpreter_factory"
     assert not hasattr(dspy, "SUB_DSPY_FACTORY_NAME")
     assert not hasattr(dspy, "interpreter_capabilities")

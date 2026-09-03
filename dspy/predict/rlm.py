@@ -33,7 +33,6 @@ from dspy.primitives.code_interpreter import (
     SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreter,
-    CodeInterpreterError,
     FinalOutput,
     InterpreterCapability,
     _create_interpreter,
@@ -41,6 +40,7 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     interpreter_capabilities,
 )
+from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -97,7 +97,7 @@ Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, t
 recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
 """
 
-# Appended to the interpreter rules when the interpreter declares the facade-dspy capability.
+# Appended to the interpreter rules for interpreters without native dspy: RLM installs a bridged facade.
 FACADE_DSPY_INSTRUCTIONS = """
 Sub-agents (dspy):
 A dspy facade is available in the REPL. Build sub-agents for subtasks that need structured
@@ -129,52 +129,6 @@ SUB_DSPY_EXEC_CODE = f"""import dspy as __dspy
 with __dspy.context(lm=__dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})):
     exec({_SUB_DSPY_CODE_VAR}, globals())
 """
-
-
-def _flex_bridge():
-    """Deferred import: flex loads after rlm in dspy's import graph."""
-    from dspy.predict.flex import bridge
-
-    return bridge
-
-
-class _FacadeRuntime:
-    """Backs flex's ``_Invocation`` for RLM's dspy facade.
-
-    Predictors are built with the RLM's tools and interpreter factory, run on the host with
-    ``sub_lm`` when set, and get their own predictor-call budget of ``max_llm_calls``.
-    """
-
-    def __init__(self, rlm: RLM) -> None:
-        self._rlm = rlm
-        self._max_predictor_calls = rlm.max_llm_calls
-
-    def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
-        bridge = _flex_bridge()
-        cls = getattr(dspy, kind)
-        extra = {key: self._decode_tools(value) for key, value in (kwargs or {}).items()}
-        if "interpreter_factory" not in extra and bridge._accepts_interpreter_factory(cls):
-            extra["interpreter_factory"] = self._rlm._interpreter_factory
-        predictor = cls(bridge._resolve_signature(signature), **extra)
-        if self._rlm.sub_lm is not None:
-            predictor.set_lm(self._rlm.sub_lm)
-        return predictor
-
-    def _decode_tools(self, value: Any) -> Any:
-        if isinstance(value, dict) and _flex_bridge().TOOL_MARKER in value:
-            name = value[_flex_bridge().TOOL_MARKER]
-            tool = self._rlm._user_tools.get(name)
-            if tool is None:
-                raise CodeInterpreterError(
-                    f"Sandboxed code passed tool {name!r} to a sub-agent, but it was not provided "
-                    "to RLM(tools=...); functions defined in the REPL cannot cross to the host."
-                )
-            return tool
-        if isinstance(value, list):
-            return [self._decode_tools(item) for item in value]
-        if isinstance(value, dict):
-            return {key: self._decode_tools(item) for key, item in value.items()}
-        return value
 
 
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
@@ -267,7 +221,8 @@ class RLM(Module):
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
                 an ``execution_instructions`` string describing its runtime for the action prompt, and a
-                ``capabilities`` declaration.
+                ``capabilities`` declaration; without ``InterpreterCapability.SUB_DSPY`` RLM installs a
+                bridged dspy facade in the sandbox instead.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -278,9 +233,7 @@ class RLM(Module):
         self.verbose = verbose
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
-        capabilities = interpreter_capabilities(interpreter_factory)
-        self._sub_dspy = InterpreterCapability.SUB_DSPY in capabilities
-        self._facade_dspy = not self._sub_dspy and InterpreterCapability.FACADE_DSPY in capabilities
+        self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
         if self._sub_dspy and sub_lm is not None:
             self._serialized_sub_lm_state()
         self._user_tools = self._normalize_tools(tools)
@@ -296,7 +249,7 @@ class RLM(Module):
     # =========================================================================
 
     # Names owned by RLM rather than the user-provided signature or tools.
-    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print", "dspy"})
     _RESERVED_RESULT_NAMES = frozenset({"trajectory", "final_reasoning"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
@@ -328,14 +281,10 @@ class RLM(Module):
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
         """Validate names owned by the RLM result and sandbox APIs."""
-        reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES
         if self._sub_dspy:
-            # In a sub-dspy sandbox, the `dspy` module and the environment-provided
-            # nested-interpreter factory are part of the execution namespace.
-            reserved_sandbox_names = reserved_sandbox_names | {"dspy", SUB_DSPY_FACTORY_NAME}
-        if self._facade_dspy:
-            bridge = _flex_bridge()
-            reserved_sandbox_names = reserved_sandbox_names | {"dspy", bridge.CONSTRUCT_TOOL, bridge.CALL_TOOL}
+            reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES | {SUB_DSPY_FACTORY_NAME}
+        else:
+            reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES | {CONSTRUCT_TOOL, CALL_TOOL}
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
@@ -473,10 +422,7 @@ class RLM(Module):
         if not isinstance(execution_instructions, str):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
-        if self._sub_dspy:
-            interpreter_rules += SUB_DSPY_INSTRUCTIONS
-        elif self._facade_dspy:
-            interpreter_rules += FACADE_DSPY_INSTRUCTIONS
+        interpreter_rules += SUB_DSPY_INSTRUCTIONS if self._sub_dspy else FACADE_DSPY_INSTRUCTIONS
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
@@ -612,6 +558,8 @@ class RLM(Module):
         state = None
         if type(lm) is dspy.LM:
             state = lm.dump_state()
+            for key in ("launch_kwargs", "train_kwargs"):  # deployment config; may hold credentials
+                state.pop(key, None)
             try:
                 json.dumps(state)
             except (TypeError, ValueError):
@@ -624,11 +572,15 @@ class RLM(Module):
         return state
 
     def _setup_dspy_support(self, repl: CodeInterpreter) -> None:
-        """Validate the SUB_DSPY contract or install the dspy facade before generated code runs."""
-        if self._sub_dspy:
-            repl.execute(SUB_DSPY_SETUP_CODE)
-        elif self._facade_dspy:
-            repl.execute(_flex_bridge().SHIM_SETUP)
+        """Install the dspy facade, or validate the SUB_DSPY contract, before generated code runs."""
+        if not self._sub_dspy:
+            FacadeInvocation(self._user_tools, self._interpreter_factory, self.max_llm_calls, lm=self.sub_lm).install(repl)
+            return
+        if self.sub_lm is None and dspy.settings.lm is not None and self._serialized_sub_lm_state() is None:
+            logger.warning(
+                "The host LM cannot cross into the sub-dspy interpreter; sub-agents will use the environment's LM."
+            )
+        repl.execute(SUB_DSPY_SETUP_CODE)
 
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
@@ -692,13 +644,8 @@ class RLM(Module):
         return invoke
 
     def _prepare_execution_tools(self) -> dict[str, Callable]:
-        """Create fresh LLM tools (and facade bridge tools) and merge with user-provided tools."""
+        """Create fresh LLM tools and merge with user-provided tools."""
         execution_tools = self._make_llm_tools()
-        if self._facade_dspy:
-            bridge = _flex_bridge()
-            invocation = bridge._Invocation(_FacadeRuntime(self), {})
-            execution_tools[bridge.CONSTRUCT_TOOL] = invocation.construct
-            execution_tools[bridge.CALL_TOOL] = invocation.call
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 

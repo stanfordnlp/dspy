@@ -1,7 +1,7 @@
-"""Sandbox side of the dspy.Flex bridge: a stand-in ``dspy`` module for optimizer-authored code.
+"""Sandbox side of the dspy facade: a stand-in ``dspy`` module for sandboxed code.
 
-``BridgeRuntime.forward`` executes this source in each per-forward interpreter before the bound
-``module_src``, so the generated module runs sandboxed while predictors are built and called on
+Consumers such as ``dspy.Flex`` and ``dspy.RLM`` execute this source in the interpreter after
+registering the host tools, so sandboxed code builds and calls predictors that actually run on
 the host:
 
 - ``dspy.Predict`` and other allowed modules return a ``_DspyPending``; construction waits for attribute assignment,
@@ -13,8 +13,8 @@ the host:
   markers the host resolves: tools by name (``__dspy_tool__``), ``dspy.Signature(...)`` results
   as ``__dspy_sig__`` payloads.
 
-Every name here is ``_dspy``-prefixed to stay clear of generated code; ``FlexContext`` rejects
-user tool names in that namespace.
+Every name here is ``_dspy``-prefixed to stay clear of sandboxed code; consumers reject user tool
+names in that namespace.
 """
 
 import sys as _dspy_sys

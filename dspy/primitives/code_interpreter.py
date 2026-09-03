@@ -32,16 +32,9 @@ class InterpreterCapability(enum.Flag):
         or the host's default) is applied as a scoped override around each generated
         code block; the environment's own configuration applies only when no LM crosses
         the boundary.
-
-    FACADE_DSPY: Code executed inside the interpreter can use a stand-in ``dspy`` module
-        whose predictor construction and calls are bridged to the host over the
-        interpreter's tool protocol; the host builds and runs the real predictors. The
-        environment only needs working host tool calls from executed code. SUB_DSPY takes
-        precedence when both are declared.
     """
 
     SUB_DSPY = enum.auto()
-    FACADE_DSPY = enum.auto()
 
 
 class CodeInterpreterError(DSPyError, RuntimeError):
