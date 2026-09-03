@@ -21,15 +21,12 @@ from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
 dspy_interpreters = pytest.importorskip("dspy_interpreters")
+sub_dspy_interpreters = pytest.importorskip("tests.sub_dspy_interpreters")
 
 InProcessInterpreter = dspy_interpreters.InProcessInterpreter
 SubprocessInterpreter = dspy_interpreters.SubprocessInterpreter
-
-
-class SubDspySubprocessInterpreter(SubprocessInterpreter):
-    """A worker-process backend declaring sub-dspy: it owns its settings, unlike in-process."""
-
-    capabilities = dspy.InterpreterCapability.SUB_DSPY
+# A worker-process backend declaring sub-dspy: it owns its settings, unlike in-process.
+SubDspySubprocessInterpreter = sub_dspy_interpreters.SubDspySubprocessInterpreter
 
 
 class SubDspyInProcessInterpreter(InProcessInterpreter):
@@ -70,14 +67,12 @@ def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
 @pytest.mark.parametrize("backend_name", ["InProcessInterpreter", "SubprocessInterpreter"])
 def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
     # The capability is a declaration, not a detection: these backends could factually run
-    # dspy (InProcess shares the host process), but without declaring SUB_DSPY the action
-    # prompt offers the bridged facade rather than native dspy.
+    # dspy (InProcess shares the host process), but without declaring SUB_DSPY RLM installs the
+    # bridged facade, whose sub-agents can only take host-provided tools.
     backend = getattr(dspy_interpreters, backend_name)
     rlm = RLM("query -> answer", interpreter_factory=backend)
     instructions = rlm.generate_action.signature.instructions
-    assert "dspy facade" in instructions
-    assert "import dspy" not in instructions
-    assert SUB_DSPY_FACTORY_NAME not in instructions
+    assert "cannot cross to the host" in instructions
     assert rlm._sub_dspy is False
 
 
@@ -149,13 +144,129 @@ def test_rlm_runs_dspy_sub_agents_in_capable_backend():
     assert result.answer == "sub-agent says hi / found cats"
 
 
+def test_factory_created_worker_recurses_natively():
+    # The reference worker satisfies the contract on its own, and the factory it provides declares
+    # SUB_DSPY too, so nested RLMs (and their nested interpreters) stay native all the way down.
+    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([{
+        "reasoning": "Nest twice",
+        "code": (
+            f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
+            f"child = {SUB_DSPY_FACTORY_NAME}()\n"
+            "try:\n"
+            f"    depth2 = child.execute(\"print(callable(globals().get('{SUB_DSPY_FACTORY_NAME}')))\")\n"
+            "finally:\n"
+            "    child.shutdown()\n"
+            "SUBMIT(f'{nested._sub_dspy} {str(depth2).strip()}')"
+        ),
+    }])
+
+    assert rlm(query="q").answer == "True True"
+
+
+def test_trailing_expression_is_echoed_from_native_blocks():
+    # The per-block wrapper must not swallow the REPL echo of a trailing bare expression.
+    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {"reasoning": "REPL-style", "code": "x = 5\nx * 2"},
+        {"reasoning": "Submit", "code": "SUBMIT(str(x))"},
+    ])
+
+    result = rlm(query="q")
+
+    assert "10" in result.trajectory[0]["output"]
+    assert result.answer == "5"
+
+
+def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
+    # Regression: the shim named host tools by the sandbox callable's __name__, which is "<lambda>"
+    # on worker backends; it now uses the global the tool is bound to.
+    calls = []
+
+    def echo(text: str) -> str:
+        """Echo the text."""
+        calls.append(text)
+        return text
+
+    rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=SubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Bridged ReActV2 with a host tool",
+            "code": (
+                "agent = dspy.ReActV2('question -> answer', tools=[echo])\n"
+                "res = agent(question='hi')\n"
+                "print(res.answer)"
+            ),
+        },
+        {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+    ])
+    lm = DummyLM([
+        {
+            "next_thought": "echo it",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "echo", "args": {"text": "hi"}}]),
+        },
+        {
+            "next_thought": "done",
+            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "echoed hi"}}]),
+        },
+    ])
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        result = rlm(query="q")
+
+    assert result.answer == "echoed hi"
+    assert calls == ["hi"]
+
+
+def test_host_tools_keep_their_schema_for_native_sub_agents():
+    # Regression: across a process boundary a host tool arrives as an anonymous proxy, so a
+    # native ReActV2 would otherwise register a tool named "<lambda>" with no description.
+    calls = []
+
+    def search(query: str) -> str:
+        """Search the knowledge base."""
+        calls.append(query)
+        return f"found {query}"
+
+    interpreter = SubDspySubprocessInterpreter()
+    try:
+        interpreter.execute(
+            "import dspy\n"
+            "dspy.configure(adapter=dspy.ChatAdapter(), lm=dspy.utils.DummyLM([\n"
+            "    {'next_thought': 'look it up', 'tool_calls': dspy.ToolCalls.from_dict_list(\n"
+            "        [{'name': 'search', 'args': {'query': 'cats'}}])},\n"
+            "    {'next_thought': 'done', 'tool_calls': dspy.ToolCalls.from_dict_list(\n"
+            "        [{'name': 'submit', 'args': {'answer': 'found cats'}}])},\n"
+            "]))"
+        )
+        rlm = RLM("query -> answer", max_iters=2, tools=[search], interpreter_factory=SubDspySubprocessInterpreter)
+        rlm.generate_action = make_scripted_predictor([
+            {
+                "reasoning": "Inspect what the sub-agent sees, then run it",
+                "code": (
+                    "agent = dspy.ReActV2('question -> answer', tools=[search])\n"
+                    "print(sorted(agent.tools), '|', agent.tools['search'].desc, '|', agent.tools['search'].args)\n"
+                    "print(search(query='direct'))"
+                ),
+            },
+            {"reasoning": "Run it", "code": "SUBMIT(agent(question='cats').answer)"},
+        ])
+        result = rlm(interpreter, query="q")
+    finally:
+        interpreter.shutdown()
+
+    inspected = result.trajectory[0]["output"]
+    assert "['search', 'submit'] | Search the knowledge base. | {'query': {'type': 'string'}}" in inspected
+    assert "found direct" in inspected
+    assert result.answer == "found cats"
+    assert calls == ["direct", "cats"]  # both the direct call and the sub-agent's ran on the host
+
+
 def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
     # An explicit sub_lm wins over an LM the environment already configured, matching llm_query.
     interpreter = SubDspySubprocessInterpreter()
     try:
         interpreter.execute(
             "import dspy\n"
-            f"from dspy_interpreters import SubprocessInterpreter as {SUB_DSPY_FACTORY_NAME}\n"
             "dspy.configure(lm=dspy.LM('openai/env-default'))"
         )
         rlm = RLM(
@@ -183,7 +294,6 @@ def test_default_sub_lm_matches_llm_query_precedence():
     try:
         interpreter.execute(
             "import dspy\n"
-            f"from dspy_interpreters import SubprocessInterpreter as {SUB_DSPY_FACTORY_NAME}\n"
             "dspy.configure(lm=dspy.LM('openai/env-default'))"
         )
         dspy.configure(lm=dspy.LM("openai/host-default", cache=False))

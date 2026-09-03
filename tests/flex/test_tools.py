@@ -68,7 +68,7 @@ def test_reserved_bridge_tool_names_are_rejected() -> None:
     # The sandbox bridge registers its own callbacks (__dspy_construct__, __dspy_call__) alongside
     # user tools, and the shim owns `dspy`/`_dspy*` in the sandbox namespace; a user tool with a
     # reserved name would silently replace or be shadowed by them.
-    for reserved in ("__dspy_call__", "_dspy_host", "dspy"):
+    for reserved in ("__dspy_call__", "_dspy_host", "dspy", "dspy_interpreter_factory"):
         with pytest.raises(ValueError, match="reserved"):
             Flex(Echo, tools=[dspy.Tool(shout, name=reserved)], interpreter_factory=lambda: MockInterpreter())
 

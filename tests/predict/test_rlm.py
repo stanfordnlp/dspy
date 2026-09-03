@@ -19,6 +19,7 @@ from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import (
     _SUB_DSPY_CODE_VAR,
     _SUB_DSPY_LM_STATE_VAR,
+    _SUB_DSPY_TOOLS_VAR,
     RLM,
     SUB_DSPY_EXEC_CODE,
     SUB_DSPY_SETUP_CODE,
@@ -1868,12 +1869,14 @@ class TestRLMSubDspy:
         instructions = rlm.generate_action.signature.instructions
         assert "Sub-agents (dspy)" in instructions
         assert SUB_DSPY_FACTORY_NAME in instructions
+        assert "functions you define in the REPL." in instructions  # native: REPL functions can be tools
 
     def test_action_prompt_offers_the_facade_without_capability(self):
         rlm = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
         instructions = rlm.generate_action.signature.instructions
-        assert "dspy facade" in instructions
-        assert SUB_DSPY_FACTORY_NAME not in instructions
+        assert "Sub-agents (dspy)" in instructions
+        assert SUB_DSPY_FACTORY_NAME in instructions  # same nested-RLM idiom in both environments
+        assert "cannot cross to the host" in instructions
 
     def test_sub_dspy_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
@@ -1890,8 +1893,9 @@ class TestRLMSubDspy:
                 interpreter_factory=SubDspyMockInterpreterFactory(),
             )
 
-        # Without the capability, the factory name stays available to users.
-        RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
+        # The facade provides the same name (as a marker), so it is reserved in both environments.
+        with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
+            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
     def test_explicit_sub_lm_ships_state_per_block(self):
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
@@ -1907,10 +1911,10 @@ class TestRLMSubDspy:
 
         assert result.answer == "42"
         interpreter = factory.instances[0]
-        # Setup only validates the contract; nothing is persisted into the environment.
+        # Setup validates the contract and ships the host tools' schemas (none here).
         code, variables = interpreter.call_history[0]
         assert code == SUB_DSPY_SETUP_CODE
-        assert variables == {}
+        assert variables == {_SUB_DSPY_TOOLS_VAR: {}}
         # Every block runs under a scoped override with the LM state shipped fresh per block.
         code, variables = interpreter.call_history[1]
         assert code == SUB_DSPY_EXEC_CODE
@@ -1934,7 +1938,7 @@ class TestRLMSubDspy:
         assert code == SUB_DSPY_EXEC_CODE
         assert variables[_SUB_DSPY_LM_STATE_VAR]["model"] == "openai/host-default"
 
-    def test_blocks_run_bare_when_no_lm_crosses_the_boundary(self):
+    def test_no_lm_override_when_no_lm_crosses_the_boundary(self):
         # A custom BaseLM subclass (like DummyLM) cannot be reconstructed in-sandbox, and
         # without an explicit sub_lm that is not an error: the environment's LM applies.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
@@ -1945,8 +1949,9 @@ class TestRLMSubDspy:
             rlm(query="q")
 
         code, variables = factory.instances[0].call_history[1]
-        assert code == 'SUBMIT("42")'
-        assert _SUB_DSPY_LM_STATE_VAR not in variables
+        assert code == SUB_DSPY_EXEC_CODE
+        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
+        assert variables[_SUB_DSPY_LM_STATE_VAR] is None
 
     def test_non_serializable_sub_lm_is_rejected_for_sub_dspy_interpreters(self):
         # A sub_lm that cannot cross the boundary must fail loudly at construction
@@ -2144,19 +2149,29 @@ class TestRLMFacadeDspy:
     def test_action_prompt_includes_facade_instructions(self):
         rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
         instructions = rlm.generate_action.signature.instructions
-        assert "dspy facade" in instructions
-        assert SUB_DSPY_FACTORY_NAME not in instructions
+        assert "cannot cross to the host" in instructions
+        assert "functions you define in the REPL." not in instructions
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
             RLM("dspy -> answer", interpreter_factory=_FacadeInProcessInterpreter)
 
-        # The sub-dspy factory name stays available: the facade does not use it.
+        # Shim internals and host-injected variables live under the _dspy/__dspy prefixes.
+        for reserved in ("_dspy_host", "__dspy_code"):
+            with pytest.raises(ValueError, match="conflict"):
+                RLM(
+                    "query -> answer",
+                    tools=[dspy.Tool(lambda: "", name=reserved)],
+                    interpreter_factory=_FacadeInProcessInterpreter,
+                )
+
+        # The facade provides the factory name as a marker, so it is reserved here too.
         def dspy_interpreter_factory() -> str:
             """Unrelated user tool."""
             return ""
 
-        RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
+        with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
+            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
 
     def _facade_invocation(self, rlm):
         from dspy.primitives import facade
@@ -2178,12 +2193,16 @@ class TestRLMFacadeDspy:
             invocation.call("missing")
 
     def test_facade_nested_rlm_gets_the_rlm_interpreter_factory(self):
+        from dspy.primitives import facade
+
         rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
         invocation = self._facade_invocation(rlm)
 
         invocation.construct("RLM", "q -> a", "nested")
+        invocation.construct("RLM", "q -> a", "marked", {"interpreter_factory": facade.FACTORY_MARKER})
 
         assert invocation._predictors["nested"]._interpreter_factory is _FacadeInProcessInterpreter
+        assert invocation._predictors["marked"]._interpreter_factory is _FacadeInProcessInterpreter
 
     def test_facade_tool_markers_resolve_only_provided_tools(self):
         from dspy.primitives import facade
@@ -2265,6 +2284,26 @@ class TestRLMFacadeDeno:
             result = rlm(query="q")
 
         assert result.answer == "facade on pyodide"
+
+    def test_facade_survives_serializable_inputs_on_the_default_sandbox(self):
+        # Serializable inputs run setup code before generated code; the default interpreter
+        # registers its tools once, so the facade's host tools must be in place by then.
+        rlm = RLM("data, query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
+        rlm.generate_action = make_mock_predictor([
+            {
+                "reasoning": "Run a sub-agent through the facade",
+                "code": "res = dspy.Predict('question -> answer')(question='ping')\nprint(res.answer)",
+            },
+            {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
+        ])
+
+        with dummy_lm_context([{"answer": "facade with serializable input"}]):
+            result = rlm(data=_StubSerializable("payload"), query="q")
+
+        # Check the block's own output: a dead facade would error here and the extract fallback
+        # would still produce the DummyLM answer.
+        assert "facade with serializable input" in result.trajectory[0]["output"]
+        assert len(result.trajectory) == 2
 
 
 if __name__ == "__main__":

@@ -130,6 +130,12 @@ jobs:
         run: |
           uv sync -p .venv --extra deno --extra dev --extra test_extras
           uv run -p .venv python -c 'import deno, subprocess; subprocess.run([deno.find_deno_bin(), "--version"], check=True)'
+      - name: Install sandbox-runtime (srt) for the sandboxed-interpreter tests
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap socat ripgrep
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which bubblewrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          npm install -g @anthropic-ai/sandbox-runtime
       - name: Run extra and deno tests
         run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
 

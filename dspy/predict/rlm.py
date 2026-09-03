@@ -40,7 +40,7 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     interpreter_capabilities,
 )
-from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation
+from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -81,14 +81,14 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Appended to the interpreter rules when the interpreter declares the sub-dspy capability.
-SUB_DSPY_INSTRUCTIONS = f"""
+# Appended to the interpreter rules. Native dspy (SUB_DSPY) and the bridged facade differ only in
+# which tools a sub-agent may take.
+SUB_AGENT_INSTRUCTIONS = f"""
 Sub-agents (dspy):
-This environment can run dspy itself. You may `import dspy` and build sub-agents in the REPL for
-subtasks that need structured inputs/outputs; a default LM is preconfigured when available.
+You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
-- `dspy.ReActV2("question -> answer", tools=[my_tool])(question=...)` - a multi-step tool-using
-  sub-agent; pass plain functions you define in the REPL as tools.
+- `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
+  {{tools_rule}}
 - `dspy.RLM("context, query -> answer", interpreter_factory={SUB_DSPY_FACTORY_NAME})(context=..., query=...)` -
   a recursive sub-agent with its own REPL; always pass the provided `{SUB_DSPY_FACTORY_NAME}`.
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
@@ -96,23 +96,15 @@ subtasks that need structured inputs/outputs; a default LM is preconfigured when
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
 recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
 """
-
-# Appended to the interpreter rules for interpreters without native dspy: RLM installs a bridged facade.
-FACADE_DSPY_INSTRUCTIONS = """
-Sub-agents (dspy):
-A dspy facade is available in the REPL. Build sub-agents for subtasks that need structured
-inputs/outputs; their LM calls run on the host.
-- `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
-- `dspy.ReActV2("question -> answer", tools=[...])` / `dspy.RLM("context, query -> answer")` - tool-using
-  and recursive sub-agents. Only the provided tools listed above may be passed to them; functions
-  you define in the REPL cannot cross to the host.
-Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
-recursive subtasks. dspy.RLM is the heaviest option: reserve it for deep subtasks.
-"""
+NATIVE_TOOLS_RULE = "Pass the provided tools listed above or plain functions you define in the REPL."
+FACADE_TOOLS_RULE = (
+    "Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host."
+)
 
 # Sandbox-side variables for the setup and execution code below.
 _SUB_DSPY_LM_STATE_VAR = "__dspy_sub_lm_state"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
+_SUB_DSPY_TOOLS_VAR = "__dspy_tools"
 
 # Validates the SUB_DSPY contract at invocation start.
 SUB_DSPY_SETUP_CODE = f"""import dspy
@@ -123,11 +115,21 @@ if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
     )
 """
 
-# Runs one generated code block under a scoped override with the sub-agent LM (an explicit
-# sub_lm or the host's default).
-SUB_DSPY_EXEC_CODE = f"""import dspy as __dspy
-with __dspy.context(lm=__dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})):
-    exec({_SUB_DSPY_CODE_VAR}, globals())
+# Runs one generated code block. Host tools are exposed as dspy.Tool objects carrying their host
+# schema (re-done per block: interpreters may rebind tool names on every execute); the block runs
+# under a scoped override with the sub-agent LM (an explicit sub_lm or the host's default) when one
+# crossed, and a trailing bare expression is re-echoed so REPL-style backends still display it.
+SUB_DSPY_EXEC_CODE = f"""import ast as __dspy_ast, contextlib as __dspy_contextlib, dspy as __dspy
+for __dspy_name, __dspy_meta in {_SUB_DSPY_TOOLS_VAR}.items():
+    if __dspy_name in globals() and not isinstance(globals()[__dspy_name], __dspy.Tool):
+        globals()[__dspy_name] = __dspy.Tool(globals()[__dspy_name], name=__dspy_name, **__dspy_meta)
+__dspy_tree = __dspy_ast.parse({_SUB_DSPY_CODE_VAR})
+__dspy_tail = __dspy_tree.body.pop() if __dspy_tree.body and isinstance(__dspy_tree.body[-1], __dspy_ast.Expr) else None
+__dspy_lm = None if {_SUB_DSPY_LM_STATE_VAR} is None else __dspy.BaseLM.load_state({_SUB_DSPY_LM_STATE_VAR})
+with __dspy_contextlib.nullcontext() if __dspy_lm is None else __dspy.context(lm=__dspy_lm):
+    exec(compile(__dspy_tree, "<generated>", "exec"), globals())
+    __dspy_value = None if __dspy_tail is None else eval(compile(__dspy_ast.Expression(__dspy_tail.value), "<generated>", "eval"), globals())
+__dspy_value
 """
 
 
@@ -249,7 +251,7 @@ class RLM(Module):
     # =========================================================================
 
     # Names owned by RLM rather than the user-provided signature or tools.
-    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print", "dspy"})
+    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
     _RESERVED_RESULT_NAMES = frozenset({"trajectory", "final_reasoning"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
@@ -281,18 +283,21 @@ class RLM(Module):
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
         """Validate names owned by the RLM result and sandbox APIs."""
-        if self._sub_dspy:
-            reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES | {SUB_DSPY_FACTORY_NAME}
-        else:
-            reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES | {CONSTRUCT_TOOL, CALL_TOOL}
+        reserved_sandbox_names = self._RESERVED_SANDBOX_NAMES
+        if not self._sub_dspy:
+            reserved_sandbox_names = reserved_sandbox_names | {CONSTRUCT_TOOL, CALL_TOOL}
+
+        def is_reserved(name: str) -> bool:
+            return name in reserved_sandbox_names or is_reserved_sandbox_name(name)
+
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
-            if name in reserved_sandbox_names:
+            if is_reserved(name):
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
-        reserved_inputs = sorted(input_names & reserved_sandbox_names)
+        reserved_inputs = sorted(name for name in input_names if is_reserved(name))
         if reserved_inputs:
             raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
 
@@ -422,7 +427,9 @@ class RLM(Module):
         if not isinstance(execution_instructions, str):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
-        interpreter_rules += SUB_DSPY_INSTRUCTIONS if self._sub_dspy else FACADE_DSPY_INSTRUCTIONS
+        interpreter_rules += SUB_AGENT_INSTRUCTIONS.format(
+            tools_rule=NATIVE_TOOLS_RULE if self._sub_dspy else FACADE_TOOLS_RULE
+        )
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
@@ -580,7 +587,8 @@ class RLM(Module):
             logger.warning(
                 "The host LM cannot cross into the sub-dspy interpreter; sub-agents will use the environment's LM."
             )
-        repl.execute(SUB_DSPY_SETUP_CODE)
+        tool_schemas = {name: {"desc": tool.desc, "args": tool.args} for name, tool in self._user_tools.items()}
+        repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_TOOLS_VAR: tool_schemas})
 
     @contextmanager
     def _host_settings_guard(self) -> Iterator[None]:
@@ -807,9 +815,9 @@ class RLM(Module):
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
         variables = dict(input_args)
-        if self._sub_dspy and (state := self._serialized_sub_lm_state()) is not None:
+        if self._sub_dspy:
             variables[_SUB_DSPY_CODE_VAR] = code
-            variables[_SUB_DSPY_LM_STATE_VAR] = state
+            variables[_SUB_DSPY_LM_STATE_VAR] = self._serialized_sub_lm_state()
             code = SUB_DSPY_EXEC_CODE
         try:
             return repl.execute(code, variables=variables)
@@ -874,8 +882,8 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            regular_args = self._prepare_serializable_vars(input_args, repl)
             self._setup_dspy_support(repl)
+            regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
@@ -964,8 +972,8 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            regular_args = self._prepare_serializable_vars(input_args, repl)
             self._setup_dspy_support(repl)
+            regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):

@@ -104,10 +104,19 @@ class _DspyModule:
         return self.forward(**_kw)
 
 
+def _dspy_tool_name(_v):
+    # Host tools are referenced by the sandbox global they are bound to: backends may bind them as
+    # anonymous proxies, so the callable's own __name__ is only a fallback.
+    for _k, _x in globals().items():
+        if _x is _v and not _k.startswith("_"):
+            return _k
+    return getattr(_v, "__name__", type(_v).__name__)
+
+
 def _dspy_enc(_v):
-    # Tool references (e.g. tools=[shout]) are sandbox functions; send them to the host by name.
-    if callable(_v) and hasattr(_v, "__name__"):
-        return {"__dspy_tool__": _v.__name__}
+    # Tool references (e.g. tools=[shout]) are sandbox callables; send them to the host by name.
+    if callable(_v):
+        return {"__dspy_tool__": _dspy_tool_name(_v)}
     if isinstance(_v, (list, tuple)):
         return [_dspy_enc(_x) for _x in _v]
     if isinstance(_v, dict):
@@ -138,6 +147,8 @@ _dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy
+# Nested code-executing sub-agents take this in place of a real factory; the host substitutes its own.
+dspy_interpreter_factory = "__dspy_interpreter_factory__"
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
 # present in globals().

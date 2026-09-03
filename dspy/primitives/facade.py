@@ -27,7 +27,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
-from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.code_interpreter import SUB_DSPY_FACTORY_NAME, CodeInterpreterError
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
 
@@ -42,9 +42,17 @@ SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
 # against the host module's tools.
 TOOL_MARKER = "__dspy_tool__"
+# Value of the shim's ``dspy_interpreter_factory`` global: the host substitutes its own factory.
+FACTORY_MARKER = "__dspy_interpreter_factory__"
 
 # The sandbox-side dspy shim, injected as text into each interpreter.
 SHIM_SETUP = (Path(__file__).parent / "_facade_shim.py").read_text(encoding="utf-8")
+
+
+def is_reserved_sandbox_name(name: str) -> bool:
+    """Names the facade owns in the sandbox namespace: ``dspy``, the ``_dspy``/``__dspy`` prefixes
+    of its internals and host-injected variables, and the nested-interpreter factory name."""
+    return name == "dspy" or name.startswith(("_dspy", "__dspy")) or name == SUB_DSPY_FACTORY_NAME
 
 
 def _accepts_interpreter_factory(cls: type) -> bool:
@@ -205,8 +213,10 @@ class FacadeInvocation:
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
         # A code-executing sub-predictor runs its inner code on the host module's backend; sandbox
         # code can't set this itself, since a live interpreter can't cross the boundary.
-        if "interpreter_factory" not in extra and self._interpreter_factory and _accepts_interpreter_factory(cls):
-            extra["interpreter_factory"] = self._interpreter_factory
+        if extra.get("interpreter_factory", FACTORY_MARKER) == FACTORY_MARKER:
+            extra.pop("interpreter_factory", None)
+            if self._interpreter_factory and _accepts_interpreter_factory(cls):
+                extra["interpreter_factory"] = self._interpreter_factory
         predictor = cls(_resolve_signature(signature, self._custom_types), **extra)
         if self._lm is not None:
             predictor.set_lm(self._lm)
