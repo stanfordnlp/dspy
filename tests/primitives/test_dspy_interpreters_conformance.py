@@ -17,7 +17,7 @@ backends:
 import pytest
 
 import dspy
-from dspy.predict.rlm import RLM
+from dspy.predict.rlm import _SUB_DSPY_LM_VAR, RLM
 from dspy.primitives.code_interpreter import SUB_DSPY_FACTORY_NAME, interpreter_capabilities
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
@@ -355,3 +355,36 @@ def test_default_sub_lm_matches_llm_query_precedence():
 
     assert result.answer == "openai/host-default"
     assert "openai/env-default" in str(restored)
+
+
+def test_generated_code_cannot_redirect_the_sub_agent_lm_of_later_blocks():
+    # Each block re-ships the LM identity and applies it as a scoped override, so overwriting the
+    # shipped variable in one block does not change the LM that later blocks' sub-agents use.
+    rlm = RLM(
+        "query -> answer",
+        max_iters=2,
+        interpreter_factory=SubDspySubprocessInterpreter,
+        sub_lm=dspy.LM("openai/sub-explicit", cache=False),
+    )
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Corrupt the shipped LM info",
+            "code": f"{_SUB_DSPY_LM_VAR} = {{'model': 'openai/generated-replacement', 'model_type': 'chat'}}",
+        },
+        {"reasoning": "Report the active LM", "code": "SUBMIT(dspy.settings.lm.model)"},
+    ])
+
+    assert rlm(query="q").answer == "openai/sub-explicit"
+
+
+def test_generated_code_configuring_dspy_reaches_only_the_worker():
+    # The process boundary is the isolation: dspy.configure in generated code changes the worker's
+    # settings and never the host's, so RLM needs no host-side settings guard.
+    dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
+    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {"reasoning": "Reconfigure dspy", "code": "dspy.configure(lm=dspy.LM('openai/attacker'))\nSUBMIT('42')"},
+    ])
+
+    assert rlm(query="q").answer == "42"
+    assert dspy.settings.lm.model == "openai/host-original"

@@ -33,7 +33,9 @@ class InterpreterCapability(enum.Flag):
         has no LM. Declaring SUB_DSPY also commits the interpreter to executing generated
         code outside the host process: an in-process executor hands generated code the
         host's memory (settings, environment, LM credentials, the host-side tool
-        callables), which no host-side plumbing can prevent.
+        callables), which no host-side plumbing can prevent. dspy.RLM checks this at
+        invocation start and rejects an interpreter that runs its setup code in the host
+        process.
     """
 
     SUB_DSPY = enum.auto()

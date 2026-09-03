@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 import io
+import os
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -17,7 +18,9 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import (
+    _HOST_PROCESS_TOKEN,
     _SUB_DSPY_CODE_VAR,
+    _SUB_DSPY_HOST_VAR,
     _SUB_DSPY_LM_VAR,
     _SUB_DSPY_TOOLS_VAR,
     RLM,
@@ -1804,20 +1807,19 @@ class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
         self.outputs = outputs
 
 
-class _InProcessSubDspyInterpreter:
-    """Minimal real interpreter honoring the sub-dspy contract for tests.
+class _InProcessInterpreter:
+    """Minimal interpreter for tests: executes code in the host process.
 
-    Executes code in the host process, so `import dspy` works and LM calls go
-    through the host-configured LM; the execution namespace provides
-    `dspy_interpreter_factory` for nested code-executing sub-agents.
+    Declares no capabilities, so RLM installs the facade over it; the host tools land in the
+    execution namespace, where the shim finds them.
     """
 
-    capabilities = InterpreterCapability.SUB_DSPY
+    capabilities = InterpreterCapability(0)
 
     def __init__(self):
         self.tools = {}
         self.output_fields = None
-        self._namespace = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
+        self._namespace = {}
 
     def start(self) -> None:
         pass
@@ -1845,14 +1847,14 @@ class _InProcessSubDspyInterpreter:
         pass
 
 
-class _FacadeInProcessInterpreter(_InProcessSubDspyInterpreter):
-    """Declares nothing, so RLM installs the facade; no native dspy contract, no factory."""
+class _InProcessSubDspyInterpreter(_InProcessInterpreter):
+    """Declares SUB_DSPY and provides the factory, yet executes in the host process: RLM must reject it."""
 
-    capabilities = InterpreterCapability(0)
+    capabilities = InterpreterCapability.SUB_DSPY
 
     def __init__(self):
         super().__init__()
-        del self._namespace[SUB_DSPY_FACTORY_NAME]
+        self._namespace[SUB_DSPY_FACTORY_NAME] = _InProcessSubDspyInterpreter
 
 
 @contextmanager
@@ -1913,7 +1915,7 @@ class TestRLMSubDspy:
         interpreter = factory.instances[0]
         code, variables = interpreter.call_history[0]
         assert code == SUB_DSPY_SETUP_CODE
-        assert variables == {_SUB_DSPY_TOOLS_VAR: {}}
+        assert variables == {_SUB_DSPY_HOST_VAR: [os.getpid(), _HOST_PROCESS_TOKEN], _SUB_DSPY_TOOLS_VAR: {}}
         code, variables = interpreter.call_history[1]
         assert code == SUB_DSPY_EXEC_CODE
         assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
@@ -1992,147 +1994,39 @@ class TestRLMSubDspy:
             "model_type": "chat",
         }
 
-    def test_declaring_interpreter_without_factory_fails_at_invocation_start(self):
-        class NoFactoryInterpreter(_InProcessSubDspyInterpreter):
-            def __init__(self):
-                super().__init__()
-                del self._namespace[SUB_DSPY_FACTORY_NAME]
-
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=NoFactoryInterpreter)
+    def test_in_process_sub_dspy_interpreter_is_rejected_at_invocation_start(self):
+        # SUB_DSPY commits the interpreter to running generated code outside the host process, where
+        # it could read host memory (settings, credentials, tool closures); an interpreter that runs
+        # RLM's setup code in the host process fails before any generated code block.
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
+        with pytest.raises(RuntimeError, match="executes code in the host process"):
+            rlm(query="q")
+
+        assert rlm.generate_action.idx == 0
+
+    @staticmethod
+    def _run_setup_code(host_process: list, **namespace):
+        namespace = {_SUB_DSPY_HOST_VAR: host_process, _SUB_DSPY_TOOLS_VAR: {}, **namespace}
+        exec(SUB_DSPY_SETUP_CODE, namespace)
+        return namespace
+
+    def test_setup_code_tells_the_host_process_from_workers(self):
+        # Only an executor in the host process matches both the pid and the process token: a worker
+        # forked from the host shares the token but not the pid, a remote sandbox may share the pid
+        # but never the token.
+        factory = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
+        for host_process in ([os.getpid() + 1, _HOST_PROCESS_TOKEN], [os.getpid(), "another host"]):
+            namespace = self._run_setup_code(host_process, **factory)
+            assert issubclass(namespace["_DspyHostLM"], dspy.BaseLM)
+
+        with pytest.raises(RuntimeError, match="executes code in the host process"):
+            self._run_setup_code([os.getpid(), _HOST_PROCESS_TOKEN], **factory)
+
+    def test_setup_code_requires_the_interpreter_factory(self):
         with pytest.raises(RuntimeError, match=f"does not provide {SUB_DSPY_FACTORY_NAME}"):
-            rlm(query="q")
-
-    def test_explicit_sub_lm_survives_generated_namespace_corruption(self):
-        # Generated code overwriting the shipped LM info cannot affect later blocks:
-        # each block re-injects it fresh and applies it as a scoped override.
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
-        rlm = RLM(
-            "query -> answer",
-            max_iters=2,
-            interpreter_factory=_InProcessSubDspyInterpreter,
-            sub_lm=dspy.LM("openai/sub-explicit", cache=False),
-        )
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Corrupt the wrapper state",
-                "code": (
-                    f"{_SUB_DSPY_LM_VAR} = {{'model': 'openai/generated-replacement', 'model_type': 'chat'}}\n"
-                    "print('done')"
-                ),
-            },
-            {"reasoning": "Report the active LM", "code": "import dspy\nSUBMIT(dspy.settings.lm.model)"},
-        ])
-
-        result = rlm(query="q")
-
-        assert result.answer == "openai/sub-explicit"
-        assert dspy.settings.lm.model == "openai/host-original"
-
-    def test_explicit_sub_lm_does_not_leak_into_host_settings(self):
-        # In-process interpreters share host settings; the sub_lm override must not outlive the call.
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
-        rlm = RLM(
-            "query -> answer",
-            max_iters=1,
-            interpreter_factory=_InProcessSubDspyInterpreter,
-            sub_lm=dspy.LM("openai/sub-explicit", cache=False),
-        )
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        rlm(query="q")
-
-        assert dspy.settings.lm.model == "openai/host-original"
-
-    def test_generated_code_cannot_persist_host_settings_mutation(self):
-        # Generated code calling dspy.configure in a shared-process interpreter must not
-        # change the host application's settings after the call returns.
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Reconfigure dspy",
-                "code": "import dspy\ndspy.configure(lm=dspy.LM('openai/attacker'))\nSUBMIT(\"42\")",
-            },
-        ])
-
-        result = rlm(query="q")
-
-        assert result.answer == "42"
-        assert dspy.settings.lm.model == "openai/host-original"
-
-    def test_generated_code_cannot_persist_in_place_settings_mutation(self):
-        # In-place mutation of a mutable setting (same object identity) must be restored too.
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False), callbacks=[])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Append a callback",
-                "code": "import dspy\ndspy.settings.callbacks.append('generated')\nSUBMIT(\"42\")",
-            },
-        ])
-
-        result = rlm(query="q")
-
-        assert result.answer == "42"
-        assert dspy.settings.callbacks == []
-
-    def test_settings_guard_does_not_wipe_traces_appended_during_forward(self):
-        # dspy itself appends to settings.trace on every predictor call, so the guard must
-        # leave trace contents alone instead of treating growth as a generated-code mutation.
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False), trace=[])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Trace grows mid-forward",
-                "code": "import dspy\ndspy.settings.trace.append('entry')\nSUBMIT(\"42\")",
-            },
-        ])
-
-        rlm(query="q")
-
-        assert dspy.settings.trace == ["entry"]
-
-    def test_generated_code_cannot_persist_context_local_registry_mutation(self):
-        # Inside dspy.context(callbacks=...), the effective registry is the context-local list, not
-        # main_thread_config's; the guard restores whichever registry generated code could see.
-        from dspy.utils.callback import BaseCallback
-
-        host_callback = BaseCallback()
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Install a callback",
-                "code": "import dspy\ndspy.settings.callbacks.append(dspy.utils.callback.BaseCallback())\nSUBMIT('42')",
-            },
-        ])
-
-        with dspy.context(lm=dspy.LM("openai/host-original", cache=False), callbacks=[host_callback]):
-            rlm(query="q")
-            assert dspy.settings.callbacks == [host_callback]
-
-    def test_nested_state_of_user_objects_is_the_interpreter_boundary(self):
-        # The guard restores dspy's settings structure, not the internals of user objects
-        # reachable from it; that isolation belongs to the interpreter (use a worker backend).
-        class Callback:
-            def __init__(self):
-                self.seen = ["host"]
-
-        callback = Callback()
-        dspy.configure(lm=dspy.LM("openai/host-original", cache=False), callbacks=[callback])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Mutate a user object",
-                "code": "import dspy\ndspy.settings.callbacks[0].seen.append('generated')\nSUBMIT(\"42\")",
-            },
-        ])
-
-        rlm(query="q")
-
-        assert dspy.settings.callbacks == [callback]
-        assert callback.seen == ["host", "generated"]
+            self._run_setup_code([os.getpid(), "another host"])
 
     def test_facade_is_the_default_without_capabilities(self):
         from dspy.primitives import facade
@@ -2147,46 +2041,17 @@ class TestRLMSubDspy:
         assert interpreter.call_history[0][0] == facade.SHIM_SETUP
         assert {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} <= interpreter.tools.keys()
 
-    def test_sub_agents_import_dspy_and_run_in_capable_interpreter(self):
-        # End-to-end: REPL code imports dspy, runs a dspy.Predict sub-agent against the
-        # configured LM, and builds a nested dspy.RLM from the environment-provided factory.
-        rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([
-            {
-                "reasoning": "Run a sub-agent",
-                "code": (
-                    "import dspy\n"
-                    "sub = dspy.Predict('question -> answer')\n"
-                    "res = sub(question='ping')\n"
-                    "print(res.answer)"
-                ),
-            },
-            {
-                "reasoning": "Nested RLM gets its own interpreter, then submit",
-                "code": (
-                    f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
-                    "SUBMIT(res.answer)"
-                ),
-            },
-        ])
-
-        with dummy_lm_context([{"answer": "sub-agent says hi"}]):
-            result = rlm(query="q")
-
-        assert result.answer == "sub-agent says hi"
-        assert any("sub-agent says hi" in entry["output"] for entry in result.trajectory)
-
 
 class TestRLMFacadeDspy:
     def test_action_prompt_includes_facade_instructions(self):
-        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
         instructions = rlm.generate_action.signature.instructions
         assert "cannot cross to the host" in instructions
         assert "functions you define in the REPL." not in instructions
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):
-            RLM("dspy -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+            RLM("dspy -> answer", interpreter_factory=_InProcessInterpreter)
 
         # Shim internals and host-injected variables live under the _dspy/__dspy prefixes.
         for reserved in ("_dspy_host", "__dspy_code"):
@@ -2194,7 +2059,7 @@ class TestRLMFacadeDspy:
                 RLM(
                     "query -> answer",
                     tools=[dspy.Tool(lambda: "", name=reserved)],
-                    interpreter_factory=_FacadeInProcessInterpreter,
+                    interpreter_factory=_InProcessInterpreter,
                 )
 
         # The facade provides the factory name as a marker, so it is reserved here too.
@@ -2203,13 +2068,13 @@ class TestRLMFacadeDspy:
             return ""
 
         with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
-            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_FacadeInProcessInterpreter)
+            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_InProcessInterpreter)
 
     def _facade_invocation(self, rlm):
         return rlm._facade_invocation(_LLMCallBudget(rlm.max_llm_calls))
 
     def test_facade_invocation_builds_and_runs_predictors_on_host(self):
-        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
         invocation = self._facade_invocation(rlm)
 
         handle = invocation.construct("Predict", "question -> answer", "sub")
@@ -2225,19 +2090,19 @@ class TestRLMFacadeDspy:
     def test_facade_nested_rlm_gets_the_rlm_interpreter_factory(self):
         from dspy.primitives import facade
 
-        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter)
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
         invocation = self._facade_invocation(rlm)
 
         invocation.construct("RLM", "q -> a", "nested")
         invocation.construct("RLM", "q -> a", "marked", {"interpreter_factory": facade.FACTORY_MARKER})
 
-        assert invocation._predictors["nested"]._interpreter_factory is _FacadeInProcessInterpreter
-        assert invocation._predictors["marked"]._interpreter_factory is _FacadeInProcessInterpreter
+        assert invocation._predictors["nested"]._interpreter_factory is _InProcessInterpreter
+        assert invocation._predictors["marked"]._interpreter_factory is _InProcessInterpreter
 
     def test_facade_tool_markers_resolve_only_provided_tools(self):
         from dspy.primitives import facade
 
-        rlm = RLM("query -> answer", tools=[echo_tool], interpreter_factory=_FacadeInProcessInterpreter)
+        rlm = RLM("query -> answer", tools=[echo_tool], interpreter_factory=_InProcessInterpreter)
         invocation = self._facade_invocation(rlm)
 
         assert invocation._decode_tools({facade.TOOL_MARKER: "echo_tool"}) is rlm._user_tools["echo_tool"]
@@ -2246,7 +2111,7 @@ class TestRLMFacadeDspy:
 
     def test_facade_lm_calls_draw_on_max_llm_calls(self):
         # Bridged predictors are charged per LM call on the forward's budget, not per predictor call.
-        rlm = RLM("query -> answer", max_llm_calls=1, interpreter_factory=_FacadeInProcessInterpreter)
+        rlm = RLM("query -> answer", max_llm_calls=1, interpreter_factory=_InProcessInterpreter)
         dspy.configure(lm=DummyLM([{"answer": "first"}, {"answer": "second"}]))
         invocation = self._facade_invocation(rlm)
 
@@ -2259,7 +2124,7 @@ class TestRLMFacadeDspy:
         # sub_lm applies through dspy.context around each bridged call, so a bridged RLM's own
         # llm_query resolves to it as well (set_lm would only reach its predictors).
         sub_lm = DummyLM([{"answer": "from sub_lm"}] * 4)
-        rlm = RLM("query -> answer", interpreter_factory=_FacadeInProcessInterpreter, sub_lm=sub_lm)
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter, sub_lm=sub_lm)
         invocation = self._facade_invocation(rlm)
 
         handle = invocation.construct("RLM", "question -> answer", "nested")
@@ -2282,7 +2147,7 @@ class TestRLMFacadeDspy:
         # Bridged predictors run host-side, so any BaseLM works as sub_lm without serialization.
         rlm = RLM(
             "query -> answer",
-            interpreter_factory=_FacadeInProcessInterpreter,
+            interpreter_factory=_InProcessInterpreter,
             sub_lm=DummyLM([{"answer": "from sub_lm"}]),
         )
         invocation = self._facade_invocation(rlm)
@@ -2294,7 +2159,7 @@ class TestRLMFacadeDspy:
 
     def test_facade_sub_agents_run_end_to_end(self):
         with preserve_real_dspy_module():
-            rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_FacadeInProcessInterpreter)
+            rlm = RLM("query -> answer", max_iters=3, interpreter_factory=_InProcessInterpreter)
             rlm.generate_action = make_mock_predictor([
                 {
                     "reasoning": "Run a sub-agent through the facade",

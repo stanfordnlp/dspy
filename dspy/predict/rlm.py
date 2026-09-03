@@ -16,6 +16,8 @@ import functools
 import inspect
 import keyword
 import logging
+import os
+import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -27,7 +29,6 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.clients.base_lm import BaseLM
-from dspy.dsp.utils.settings import main_thread_config
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     SUB_DSPY_FACTORY_NAME,
@@ -103,14 +104,27 @@ FACADE_TOOLS_RULE = (
 
 # Sandbox-side names for the setup and execution code below.
 SUB_DSPY_LM_TOOL = "__dspy_lm__"
+_SUB_DSPY_HOST_VAR = "__dspy_host_process"
 _SUB_DSPY_LM_VAR = "__dspy_lm_info"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
 _SUB_DSPY_TOOLS_VAR = "__dspy_tools"
 
-# Validates the SUB_DSPY contract at invocation start and defines the sub-agent LM: a BaseLM whose
-# calls the host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its credentials)
-# never enters the sandbox and any BaseLM works as sub_lm.
-SUB_DSPY_SETUP_CODE = f"""import dspy
+# Identifies this host process to the setup code below, together with its pid: a worker forked from
+# the host inherits the token but not the pid, a remote sandbox may share the pid but never the
+# token, so only an interpreter executing in the host process itself matches both.
+_HOST_PROCESS_TOKEN = secrets.token_hex(16)
+
+# Validates the SUB_DSPY contract at invocation start (generated code runs outside the host process
+# and the interpreter factory is provided) and defines the sub-agent LM: a BaseLM whose calls the
+# host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its credentials) stays in
+# the host process and any BaseLM works as sub_lm.
+SUB_DSPY_SETUP_CODE = f"""import os as __dspy_os, dspy
+import dspy.predict.rlm as __dspy_rlm
+if [__dspy_os.getpid(), getattr(__dspy_rlm, "_HOST_PROCESS_TOKEN", None)] == list({_SUB_DSPY_HOST_VAR}):
+    raise RuntimeError(
+        "This interpreter declares InterpreterCapability.SUB_DSPY but executes code in the host process; "
+        "a SUB_DSPY interpreter must run generated code in a separate process."
+    )
 if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
     raise RuntimeError(
         "This interpreter declares InterpreterCapability.SUB_DSPY but does not provide "
@@ -634,16 +648,16 @@ class RLM(Module):
         return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
     def _budgeted_host_lm(self, budget: _LLMCallBudget) -> _BudgetedLM | None:
-        """The host LM generated code may spend, or None when the host has no LM.
+        """The host LM sub-agents may spend, or None when the host has no LM.
 
-        Resolved once per forward: inside a sub-dspy sandbox ``dspy.settings.lm`` is the host-served
-        LM itself, so resolving at call time on a shared-process interpreter would recurse.
+        One wrapper per forward serves both the sub-agent LM endpoint and the facade, which needs an
+        LM object to scope each bridged predictor call under.
         """
         lm = self._host_lm()
         return None if lm is None else _BudgetedLM(lm, budget)
 
     def _make_sub_dspy_lm_tool(self, lm: _BudgetedLM | None) -> Callable:
-        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM object never crosses the boundary."""
+        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM itself stays in the host process."""
 
         def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
             if lm is None:
@@ -663,56 +677,10 @@ class RLM(Module):
             self._facade_invocation(budget).install(repl)
             return
         tool_schemas = {name: {"desc": tool.desc, "args": tool.args} for name, tool in self._user_tools.items()}
-        repl.execute(SUB_DSPY_SETUP_CODE, variables={_SUB_DSPY_TOOLS_VAR: tool_schemas})
-
-    @contextmanager
-    def _host_settings_guard(self) -> Iterator[None]:
-        """Keep the host's global dspy settings structure intact across generated-code execution.
-
-        Restores top-level settings that generated code replaced (e.g. via ``dspy.configure``)
-        and the contents of the callbacks/stream_listeners registries it mutated in place. The
-        registries are taken from ``dspy.settings`` as generated code sees them, so a
-        context-local registry (``dspy.context(callbacks=...)``) is restored as well; restoration
-        mutates the original containers so aliases such as active context snapshots heal too.
-        ``trace`` is left alone because dspy itself appends to it during a forward,
-        and everything is compared by identity so user ``__eq__`` never runs here. Internal
-        state of user objects reachable from settings is the interpreter's isolation boundary,
-        not RLM's: run untrusted code in a worker-process backend.
-        """
-        if not self._sub_dspy:
-            yield
-            return
-        originals = dict(main_thread_config)
-        registries = {
-            name: (registry, list(registry))
-            for name in ("callbacks", "stream_listeners")
-            if isinstance(registry := getattr(dspy.settings, name, None), list)
-        }
-        try:
-            yield
-        finally:
-            replaced = {
-                key
-                for key in originals.keys() | main_thread_config.keys()
-                if main_thread_config.get(key) is not originals.get(key)
-            }
-            mutated = {
-                name
-                for name, (registry, items) in registries.items()
-                if len(registry) != len(items)
-                or any(current is not item for current, item in zip(registry, items, strict=False))
-            }
-            if replaced or mutated:
-                logger.warning(
-                    "Generated code changed global dspy settings %s; restoring them.", sorted(replaced | mutated)
-                )
-                for key in replaced:
-                    if key in originals:
-                        main_thread_config[key] = originals[key]
-                    else:
-                        del main_thread_config[key]
-                for name in mutated:
-                    registries[name][0][:] = registries[name][1]
+        repl.execute(
+            SUB_DSPY_SETUP_CODE,
+            variables={_SUB_DSPY_HOST_VAR: [os.getpid(), _HOST_PROCESS_TOKEN], _SUB_DSPY_TOOLS_VAR: tool_schemas},
+        )
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -761,19 +729,18 @@ class RLM(Module):
         interpreter: CodeInterpreter | None,
     ) -> Iterator[CodeInterpreter]:
         """Yield a caller-owned interpreter or manage a factory-created one."""
-        with self._host_settings_guard():
-            if interpreter is not None:
-                _validate_interpreter(interpreter)
-                self._inject_execution_context(interpreter, execution_tools)
-                yield interpreter
-                return
+        if interpreter is not None:
+            _validate_interpreter(interpreter)
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+            return
 
-            interpreter = _create_interpreter(self._interpreter_factory)
-            try:
-                self._inject_execution_context(interpreter, execution_tools)
-                yield interpreter
-            finally:
-                interpreter.shutdown()
+        interpreter = _create_interpreter(self._interpreter_factory)
+        try:
+            self._inject_execution_context(interpreter, execution_tools)
+            yield interpreter
+        finally:
+            interpreter.shutdown()
 
     # =========================================================================
     # Execution Core
