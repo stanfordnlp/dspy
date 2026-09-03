@@ -62,7 +62,7 @@ def test_worker_runs_native_dspy_under_the_declared_policy():
             "try:\n"
             "    open(os.path.expanduser('~/srt-escape.txt'), 'w')\n"
             "    print('home write: allowed')\n"
-            "except PermissionError:\n"
+            "except OSError:\n"  # EPERM under Seatbelt (macOS), EROFS under bubblewrap (Linux)
             "    print('home write: denied')\n"
         ))
     finally:

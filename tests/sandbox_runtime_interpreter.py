@@ -1,7 +1,9 @@
 """The reference SUB_DSPY worker run under Anthropic's sandbox-runtime (``srt``).
 
-``srt`` (``npm install -g @anthropic-ai/sandbox-runtime``) applies OS-level filesystem and network
-policy to an arbitrary process: Seatbelt on macOS, bubblewrap + seccomp on Linux. Wrapping the
+``srt`` applies OS-level filesystem and network policy to an arbitrary process: Seatbelt on macOS,
+bubblewrap + seccomp on Linux. The version CI tests against is locked in
+``.github/sandbox-runtime/package-lock.json`` (``npm ci --prefix .github/sandbox-runtime``, then put its
+``node_modules/.bin`` on PATH); ``npm install -g @anthropic-ai/sandbox-runtime`` also works locally. Wrapping the
 worker gives the SUB_DSPY interpreter teeth: real dspy runs inside, writes are confined to a scratch
 directory, and egress is limited to ``allowed_domains`` (typically just the LM endpoint), so an
 inherited API key can only be spent against those hosts. Child processes inherit the sandbox, so the

@@ -135,7 +135,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y bubblewrap socat ripgrep
           # Ubuntu 24.04 restricts unprivileged user namespaces, which bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          npm install -g @anthropic-ai/sandbox-runtime
+          npm ci --prefix .github/sandbox-runtime
+          echo "$GITHUB_WORKSPACE/.github/sandbox-runtime/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Run extra and deno tests
         run: uv run -p .venv pytest tests/ -m 'extra or deno' --extra --deno -n auto --dist worksteal
 

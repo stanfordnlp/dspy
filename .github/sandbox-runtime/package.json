@@ -1,0 +1,8 @@
+{
+  "name": "dspy-sandbox-runtime-ci",
+  "private": true,
+  "description": "Pins Anthropic's sandbox-runtime (srt) for the sandboxed-interpreter tests; installed in CI with `npm ci`.",
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.75"
+  }
+}
