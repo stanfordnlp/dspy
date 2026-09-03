@@ -16,7 +16,6 @@ import functools
 import inspect
 import keyword
 import logging
-import os
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,7 +27,6 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     SUB_DSPY_FACTORY_NAME,
@@ -41,7 +39,7 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter_factory,
     interpreter_capabilities,
 )
-from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
+from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, SandboxLM, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -104,26 +102,26 @@ FACADE_TOOLS_RULE = (
 
 # Sandbox-side names for the setup and execution code below.
 SUB_DSPY_LM_TOOL = "__dspy_lm__"
-_SUB_DSPY_HOST_VAR = "__dspy_host_process"
+_SUB_DSPY_HOST_VAR = "__dspy_host_token"
 _SUB_DSPY_LM_VAR = "__dspy_lm_info"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
 _SUB_DSPY_TOOLS_VAR = "__dspy_tools"
 
-# Identifies this host process to the setup code below, together with its pid: a worker forked from
-# the host inherits the token but not the pid, a remote sandbox may share the pid but never the
-# token, so only an interpreter executing in the host process itself matches both.
+# Marks this host process's memory image for the setup code below: an executor in the host process
+# or in a process forked from it carries the token (along with the host's settings and credentials);
+# a fresh worker or a remote sandbox never does.
 _HOST_PROCESS_TOKEN = secrets.token_hex(16)
 
-# Validates the SUB_DSPY contract at invocation start (generated code runs outside the host process
-# and the interpreter factory is provided) and defines the sub-agent LM: a BaseLM whose calls the
-# host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its credentials) stays in
-# the host process and any BaseLM works as sub_lm.
-SUB_DSPY_SETUP_CODE = f"""import os as __dspy_os, dspy
+# Validates the SUB_DSPY contract at invocation start (generated code runs in a process that does not
+# share the host's memory, and the interpreter factory is provided) and defines the sub-agent LM: a
+# BaseLM whose calls the host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its
+# credentials) stays in the host process and any BaseLM works as sub_lm.
+SUB_DSPY_SETUP_CODE = f"""import dspy
 import dspy.predict.rlm as __dspy_rlm
-if [__dspy_os.getpid(), getattr(__dspy_rlm, "_HOST_PROCESS_TOKEN", None)] == list({_SUB_DSPY_HOST_VAR}):
+if getattr(__dspy_rlm, "_HOST_PROCESS_TOKEN", None) == {_SUB_DSPY_HOST_VAR}:
     raise RuntimeError(
-        "This interpreter declares InterpreterCapability.SUB_DSPY but executes code in the host process; "
-        "a SUB_DSPY interpreter must run generated code in a separate process."
+        "This interpreter declares InterpreterCapability.SUB_DSPY but executes code in the host's memory (in the "
+        "host process or in a process forked from it); a SUB_DSPY interpreter must run generated code in a fresh process."
     )
 if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
     raise RuntimeError(
@@ -205,35 +203,6 @@ class _LLMCallBudget:
                     f"Use Python code for aggregation instead of making more LLM calls."
                 )
             self._count += n
-
-
-class _BudgetedLM(BaseLM):
-    """The host LM as generated code may spend it: every call reserves one slot of the forward's budget.
-
-    Wraps the caller's sub_lm or default LM for both the sub-agent LM endpoint and bridged facade
-    predictors, so LM calls made anywhere on behalf of generated code share one ceiling with llm_query.
-    The wrapped LM does the actual work (cache, callbacks, history, retries).
-    """
-
-    def __init__(self, lm: BaseLM, budget: _LLMCallBudget):
-        super().__init__(model=lm.model, model_type=lm.model_type)
-        self.kwargs = dict(lm.kwargs)  # adapters and Predict read these
-        self._lm = lm
-        self._budget = budget
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        self._budget.reserve(1)
-        return self._lm(*args, **kwargs)
-
-    async def acall(self, *args: Any, **kwargs: Any) -> Any:
-        self._budget.reserve(1)
-        return await self._lm.acall(*args, **kwargs)
-
-    def forward(self, *args: Any, **kwargs: Any) -> Any:
-        return self._lm.forward(*args, **kwargs)
-
-    def copy(self, **kwargs: Any) -> _BudgetedLM:
-        return _BudgetedLM(self._lm.copy(**kwargs), self._budget)
 
 
 def _strip_code_fences(code: str) -> str:
@@ -647,16 +616,17 @@ class RLM(Module):
         """The LM serving sub-agents: the explicit sub_lm, else the host's default."""
         return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
-    def _budgeted_host_lm(self, budget: _LLMCallBudget) -> _BudgetedLM | None:
-        """The host LM sub-agents may spend, or None when the host has no LM.
+    def _sandbox_host_lm(self, budget: _LLMCallBudget) -> SandboxLM | None:
+        """The host LM as sub-agents may spend it, or None when the host has no LM.
 
-        One wrapper per forward serves both the sub-agent LM endpoint and the facade, which needs an
-        LM object to scope each bridged predictor call under.
+        One proxy per forward serves both the sub-agent LM endpoint and the facade, which needs an LM
+        object to scope each bridged predictor call under; every call draws one slot of ``budget``
+        and may set only generation parameters.
         """
         lm = self._host_lm()
-        return None if lm is None else _BudgetedLM(lm, budget)
+        return None if lm is None else SandboxLM(lm, budget.reserve)
 
-    def _make_sub_dspy_lm_tool(self, lm: _BudgetedLM | None) -> Callable:
+    def _make_sub_dspy_lm_tool(self, lm: SandboxLM | None) -> Callable:
         """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM itself stays in the host process."""
 
         def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
@@ -668,8 +638,8 @@ class RLM(Module):
         return serve_lm
 
     def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
-        """Host side of the dspy facade for one forward: bridged predictors run on the budgeted host LM."""
-        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._budgeted_host_lm(budget))
+        """Host side of the dspy facade for one forward: bridged predictors run on the sandbox host LM."""
+        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
 
     def _setup_dspy_support(self, repl: CodeInterpreter, budget: _LLMCallBudget) -> None:
         """Install the dspy facade, or validate the SUB_DSPY contract, before generated code runs."""
@@ -679,7 +649,7 @@ class RLM(Module):
         tool_schemas = {name: {"desc": tool.desc, "args": tool.args} for name, tool in self._user_tools.items()}
         repl.execute(
             SUB_DSPY_SETUP_CODE,
-            variables={_SUB_DSPY_HOST_VAR: [os.getpid(), _HOST_PROCESS_TOKEN], _SUB_DSPY_TOOLS_VAR: tool_schemas},
+            variables={_SUB_DSPY_HOST_VAR: _HOST_PROCESS_TOKEN, _SUB_DSPY_TOOLS_VAR: tool_schemas},
         )
 
     # =========================================================================
@@ -704,7 +674,7 @@ class RLM(Module):
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         execution_tools = self._make_llm_tools(budget)
         if self._sub_dspy:
-            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool(self._budgeted_host_lm(budget))
+            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool(self._sandbox_host_lm(budget))
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 

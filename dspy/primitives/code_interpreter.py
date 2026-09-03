@@ -31,11 +31,13 @@ class InterpreterCapability(enum.Flag):
         tool (running ``RLM(sub_lm=...)`` or the host's default LM), so the environment
         needs no LM credentials; its own LM configuration applies only when the host
         has no LM. Declaring SUB_DSPY also commits the interpreter to executing generated
-        code outside the host process: an in-process executor hands generated code the
-        host's memory (settings, environment, LM credentials, the host-side tool
-        callables), which no host-side plumbing can prevent. dspy.RLM checks this at
-        invocation start and rejects an interpreter that runs its setup code in the host
-        process.
+        code in a fresh process: an executor that shares the host's memory (the host
+        process itself, or a process forked from it) hands generated code the host's
+        settings, environment, LM credentials, and host-side tool callables, which no
+        host-side plumbing can prevent. dspy.RLM checks this at invocation start and
+        rejects such an interpreter. Sub-agent LM calls at any nesting depth are served
+        by the top-level host, admit only generation parameters, and draw on the
+        top-level RLM's max_llm_calls; bounding processes and CPU is the environment's job.
     """
 
     SUB_DSPY = enum.auto()

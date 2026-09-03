@@ -13,6 +13,10 @@ Callables and signatures travel as markers the host resolves: tools by name (``_
 against the host module's tools, ``dspy.Signature(...)`` results as ``__dspy_sig__`` payloads.
 All per-forward state (constructed predictors, the predictor-call budget, custom-type originals,
 the last LM infrastructure error) lives in a ``FacadeInvocation`` created for that forward.
+
+Every LM call made on behalf of sandboxed code runs on a ``SandboxLM`` proxy over the host LM. It
+admits only generation parameters per call (``SANDBOX_LM_KWARGS``), so predictor config authored in
+the sandbox cannot redirect requests or replace credentials, and it lets the host meter the calls.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
 from dspy.adapters.types.base_type import Type as _CustomType
+from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import SUB_DSPY_FACTORY_NAME, CodeInterpreterError
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
@@ -149,12 +154,71 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
+# Generation parameters sandboxed code may set on a host LM call: dspy's own LM config vocabulary
+# (LMConfig and the kwargs adapters add). Routing, credentials, and transport options (api_base,
+# api_key, headers, model, timeout, ...) stay with the host and are rejected.
+SANDBOX_LM_KWARGS = frozenset({
+    "temperature", "top_p", "max_tokens", "max_completion_tokens", "stop", "n", "seed",
+    "logprobs", "top_logprobs", "response_format",
+    "reasoning", "reasoning_effort",
+    "tools", "tool_choice", "parallel_tool_calls",
+    "cache", "rollout_id", "prompt_cache", "prompt_cache_key",
+})
+_LM_CALL_INPUTS = frozenset({"prompt", "messages", "request"})
+
+
+class SandboxLM(BaseLM):
+    """The host LM as sandboxed code may call it.
+
+    Bridged predictors and host-served sub-agent LM calls run on this proxy. A call may set only
+    ``SANDBOX_LM_KWARGS``, so generated code cannot redirect requests or replace credentials through
+    per-call options, and ``reserve``, when given, is called with 1 before each request so the host
+    can meter the calls. The wrapped LM does the actual work (cache, callbacks, history, retries).
+    """
+
+    def __init__(self, lm: BaseLM, reserve: Callable[[int], None] | None = None) -> None:
+        super().__init__(model=lm.model, model_type=lm.model_type)
+        self.kwargs = dict(lm.kwargs)  # adapters and Predict read these
+        self._lm = lm
+        self._reserve = reserve
+
+    @staticmethod
+    def _check(kwargs: dict[str, Any]) -> None:
+        rejected = sorted(kwargs.keys() - _LM_CALL_INPUTS - SANDBOX_LM_KWARGS)
+        if rejected:
+            raise TypeError(
+                f"Sandboxed code may not set LM option(s) {rejected}: only generation parameters cross the "
+                f"sandbox boundary ({sorted(SANDBOX_LM_KWARGS)}); routing and credentials stay with the host."
+            )
+
+    def _admit(self, kwargs: dict[str, Any]) -> None:
+        self._check(kwargs)
+        if self._reserve is not None:
+            self._reserve(1)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self._admit(kwargs)
+        return self._lm(*args, **kwargs)
+
+    async def acall(self, *args: Any, **kwargs: Any) -> Any:
+        self._admit(kwargs)
+        return await self._lm.acall(*args, **kwargs)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self._lm.forward(*args, **kwargs)
+
+    def copy(self, **kwargs: Any) -> SandboxLM:
+        self._check(kwargs)
+        return SandboxLM(self._lm.copy(**kwargs), self._reserve)
+
+
 class FacadeInvocation:
     """Per-forward host side of the sandbox dspy facade.
 
     Builds the predictors the shim asks for (keyed by the sandbox attribute name) from the host
-    module's tools and interpreter factory, runs them by handle under a predictor-call budget,
-    and restores custom-type inputs. Each forward gets its own ``FacadeInvocation``.
+    module's tools and interpreter factory, runs them by handle under a predictor-call budget on a
+    ``SandboxLM`` (``lm``, else the host's current LM wrapped per call), and restores custom-type
+    inputs. Each forward gets its own ``FacadeInvocation``.
     """
 
     def __init__(
@@ -202,16 +266,21 @@ class FacadeInvocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
-        # The invocation's LM is a scoped override, not set_lm: it then also governs nested
-        # predictors and a bridged RLM's own sub-LLM calls.
-        lm_scope = dspy.context(lm=self._lm) if self._lm is not None else contextlib.nullcontext()
         try:
-            with lm_scope:
+            with self._lm_scope():
                 return prediction_to_fields(predictor(**restored))
         except LMError as e:
             tag = f"[dspy bridge lm-error #{self._calls}]"
             self._lm_error = (e, tag)
             raise CodeInterpreterError(f"{tag} {type(e).__name__}: {e}") from e
+
+    def _lm_scope(self) -> contextlib.AbstractContextManager[Any]:
+        """Run a bridged call on a SandboxLM, as a scoped override rather than set_lm, so nested
+        predictors and a bridged RLM's own sub-LLM calls run on it too."""
+        lm = self._lm if self._lm is not None else dspy.settings.lm
+        if lm is None:
+            return contextlib.nullcontext()
+        return dspy.context(lm=lm if isinstance(lm, SandboxLM) else SandboxLM(lm))
 
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)

@@ -242,6 +242,19 @@ def test_call_runs_predictor_via_host_lm() -> None:
     assert "reasoning" in fields
 
 
+def test_bridged_predictors_cannot_set_lm_routing_or_credentials() -> None:
+    # Predictor config becomes per-call LM kwargs on the host. Bridged predictors run on a SandboxLM
+    # that admits only generation parameters, so module code cannot redirect requests or swap keys.
+    flex = _bridged_flex()
+    inv = flex._bridge.invocation()
+    inv.construct("Predict", "value: int -> result: int", "solve", {"api_base": "http://evil.example", "api_key": "sk-x"})
+    dspy.configure(lm=DummyLM([{"result": "4"}]))
+    with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_base', 'api_key'\]"):
+        inv.call("solve", {"value": 2})
+    inv.construct("Predict", "value: int -> result: int", "tuned", {"temperature": 0.7})
+    assert inv.call("tuned", {"value": 2}) == {"result": 4}
+
+
 def test_call_unknown_handle_raises() -> None:
     flex = _bridged_flex()
     with pytest.raises(CodeInterpreterError):

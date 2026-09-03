@@ -8,7 +8,6 @@ Test organization:
 
 import base64
 import io
-import os
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -1915,7 +1914,7 @@ class TestRLMSubDspy:
         interpreter = factory.instances[0]
         code, variables = interpreter.call_history[0]
         assert code == SUB_DSPY_SETUP_CODE
-        assert variables == {_SUB_DSPY_HOST_VAR: [os.getpid(), _HOST_PROCESS_TOKEN], _SUB_DSPY_TOOLS_VAR: {}}
+        assert variables == {_SUB_DSPY_HOST_VAR: _HOST_PROCESS_TOKEN, _SUB_DSPY_TOOLS_VAR: {}}
         code, variables = interpreter.call_history[1]
         assert code == SUB_DSPY_EXEC_CODE
         assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
@@ -1995,38 +1994,37 @@ class TestRLMSubDspy:
         }
 
     def test_in_process_sub_dspy_interpreter_is_rejected_at_invocation_start(self):
-        # SUB_DSPY commits the interpreter to running generated code outside the host process, where
-        # it could read host memory (settings, credentials, tool closures); an interpreter that runs
-        # RLM's setup code in the host process fails before any generated code block.
+        # SUB_DSPY commits the interpreter to running generated code in a fresh process; an executor
+        # that shares the host's memory could read its settings, credentials, and tool closures, so
+        # RLM fails the forward before any generated code block.
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
-        with pytest.raises(RuntimeError, match="executes code in the host process"):
+        with pytest.raises(RuntimeError, match="executes code in the host's memory"):
             rlm(query="q")
 
         assert rlm.generate_action.idx == 0
 
     @staticmethod
-    def _run_setup_code(host_process: list, **namespace):
-        namespace = {_SUB_DSPY_HOST_VAR: host_process, _SUB_DSPY_TOOLS_VAR: {}, **namespace}
+    def _run_setup_code(host_token: str, **namespace):
+        namespace = {_SUB_DSPY_HOST_VAR: host_token, _SUB_DSPY_TOOLS_VAR: {}, **namespace}
         exec(SUB_DSPY_SETUP_CODE, namespace)
         return namespace
 
-    def test_setup_code_tells_the_host_process_from_workers(self):
-        # Only an executor in the host process matches both the pid and the process token: a worker
-        # forked from the host shares the token but not the pid, a remote sandbox may share the pid
-        # but never the token.
+    def test_setup_code_rejects_any_executor_carrying_the_host_memory_image(self):
+        # The check is the host's process token, imported fresh (and so different) in any new process:
+        # an executor in the host process or forked from it sees the host's own token and is rejected,
+        # whatever its pid; a fresh worker or a remote sandbox never has it.
         factory = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
-        for host_process in ([os.getpid() + 1, _HOST_PROCESS_TOKEN], [os.getpid(), "another host"]):
-            namespace = self._run_setup_code(host_process, **factory)
-            assert issubclass(namespace["_DspyHostLM"], dspy.BaseLM)
+        namespace = self._run_setup_code("token of another host", **factory)
+        assert issubclass(namespace["_DspyHostLM"], dspy.BaseLM)
 
-        with pytest.raises(RuntimeError, match="executes code in the host process"):
-            self._run_setup_code([os.getpid(), _HOST_PROCESS_TOKEN], **factory)
+        with pytest.raises(RuntimeError, match="host process or in a process forked from it"):
+            self._run_setup_code(_HOST_PROCESS_TOKEN, **factory)
 
     def test_setup_code_requires_the_interpreter_factory(self):
         with pytest.raises(RuntimeError, match=f"does not provide {SUB_DSPY_FACTORY_NAME}"):
-            self._run_setup_code([os.getpid(), "another host"])
+            self._run_setup_code("token of another host")
 
     def test_facade_is_the_default_without_capabilities(self):
         from dspy.primitives import facade
@@ -2142,6 +2140,21 @@ class TestRLMFacadeDspy:
 
         assert isinstance(seen["llm_query_lm"], dspy.BaseLM)
         assert seen["llm_query_lm"]._lm is sub_lm
+
+    def test_facade_predictors_cannot_set_lm_routing_or_credentials(self):
+        # Predictor config and per-call config become LM kwargs on the host; the SandboxLM every bridged
+        # call runs on admits only generation parameters, so sandbox code cannot redirect requests or
+        # replace credentials, while sampling options still work.
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter, sub_lm=DummyLM([{"answer": "ok"}] * 2))
+        invocation = self._facade_invocation(rlm)
+
+        handle = invocation.construct("Predict", "question -> answer", "sub", {"api_base": "http://evil.example"})
+        with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_base'\]"):
+            invocation.call(handle, {"question": "ping"})
+        handle = invocation.construct("Predict", "question -> answer", "plain", {"temperature": 0.7})
+        with pytest.raises(TypeError, match=r"may not set LM option\(s\) \['api_key', 'extra_headers'\]"):
+            invocation.call(handle, {"question": "ping", "config": {"api_key": "sk-x", "extra_headers": {"X": "y"}}})
+        assert invocation.call(handle, {"question": "ping"})["answer"] == "ok"
 
     def test_facade_calls_use_sub_lm(self):
         # Bridged predictors run host-side, so any BaseLM works as sub_lm without serialization.
