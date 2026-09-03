@@ -211,6 +211,24 @@ class SandboxLM(BaseLM):
         self._check(kwargs)
         return SandboxLM(self._lm.copy(**kwargs), self._reserve)
 
+    # Adapters choose structured outputs, native tool calling, and reasoning options by the model's
+    # capabilities, which are the wrapped LM's (BaseLM's defaults would report none).
+    @property
+    def supports_function_calling(self) -> bool:
+        return self._lm.supports_function_calling
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return self._lm.supports_reasoning
+
+    @property
+    def supports_response_schema(self) -> bool:
+        return self._lm.supports_response_schema
+
+    @property
+    def supported_params(self) -> set[str]:
+        return self._lm.supported_params
+
 
 class FacadeInvocation:
     """Per-forward host side of the sandbox dspy facade.
