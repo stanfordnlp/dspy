@@ -57,12 +57,11 @@ class ChatAdapter(Adapter):
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
-                calling is active. If None, the adapter does not set the p0ovider option.
+                calling is active. If None, the adapter does not set the provider option.
             field_markers: Whether to wrap each field in `[[ ## field_name ## ]]` markers in prompts and
                 completions. Defaults to True. Set to False to reduce token overhead — only supported for
                 signatures with a single output field, since markers are what let the parser separate
-                multiple output fields in the r
-                aw completion text.
+                multiple output fields in the raw completion text
         """
         super().__init__(
             callbacks=callbacks,
@@ -217,10 +216,12 @@ class ChatAdapter(Adapter):
             else:
                 return ""
 
-        if not self.field_markers:
+        if not self.field_markers:         
+            if not signature.output_fields:
+                return None
             (f, v), = signature.output_fields.items()
-            return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."
-    
+            return f"Respond with the value for `{f}`{type_info(v)}. Do not include any other text."   # <-- also inside type_info(), and dedented one level short
+
         message = "Respond with the corresponding output fields, starting with the field "
         message += ", then ".join(f"`[[ ## {f} ## ]]`{type_info(v)}" for f, v in signature.output_fields.items())
         message += ", and then ending with the marker for `[[ ## completed ## ]]`."
