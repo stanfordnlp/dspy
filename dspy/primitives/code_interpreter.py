@@ -24,20 +24,14 @@ class InterpreterCapability(enum.Flag):
     """Optional capabilities a CodeInterpreter implementation can declare.
 
     SUB_DSPY: Code executed inside the interpreter can `import dspy` and run dspy modules.
-        The environment must make dspy importable and must provide SUB_DSPY_FACTORY_NAME
+        The environment must make dspy importable and provide SUB_DSPY_FACTORY_NAME
         ("dspy_interpreter_factory") in the execution namespace as a zero-argument callable
-        returning a fresh CodeInterpreter, so nested code-executing modules (sub-agents)
-        get their own interpreter. Sub-agent LM calls are served by the host through a
-        tool (running ``RLM(sub_lm=...)`` or the host's default LM), so the environment
-        needs no LM credentials; its own LM configuration applies only when the host
-        has no LM. Declaring SUB_DSPY also commits the interpreter to executing generated
-        code in a fresh process: an executor that shares the host's memory (the host
-        process itself, or a process forked from it) hands generated code the host's
-        settings, environment, LM credentials, and host-side tool callables, which no
-        host-side plumbing can prevent. dspy.RLM checks this at invocation start and
-        rejects such an interpreter. Sub-agent LM calls at any nesting depth are served
-        by the top-level host, admit only generation parameters, and draw on the
-        top-level RLM's max_llm_calls; bounding processes and CPU is the environment's job.
+        returning a fresh CodeInterpreter, so nested code-executing sub-agents get their own
+        interpreter. Sub-agent LM calls are served by the host (``RLM(sub_lm=...)`` or its
+        default LM), admit only generation parameters, and draw on the RLM's max_llm_calls, so
+        the environment needs no LM credentials. Generated code must run in a fresh process:
+        an executor sharing the host's memory (the host process or a fork of it) exposes the
+        host's settings and credentials, and dspy.RLM rejects it at invocation start.
     """
 
     SUB_DSPY = enum.auto()

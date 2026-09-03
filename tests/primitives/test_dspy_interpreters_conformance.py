@@ -57,9 +57,7 @@ def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
 
 @pytest.mark.parametrize("backend_name", ["InProcessInterpreter", "SubprocessInterpreter"])
 def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
-    # The capability is a declaration, not a detection: these backends could factually run
-    # dspy (InProcess shares the host process), but without declaring SUB_DSPY RLM installs the
-    # bridged facade, whose sub-agents can only take host-provided tools.
+    # The capability is a declaration, not a detection.
     backend = getattr(dspy_interpreters, backend_name)
     rlm = RLM("query -> answer", interpreter_factory=backend)
     instructions = rlm.generate_action.signature.instructions
@@ -83,10 +81,7 @@ def test_subprocess_backend_runs_dspy():
 
 
 def test_rlm_runs_dspy_sub_agents_in_capable_backend():
-    # End-to-end on a real backend: REPL code imports dspy, runs a dspy.Predict sub-agent
-    # against the configured LM, runs a dspy.ReActV2 sub-agent with a REPL-defined tool,
-    # and builds a nested dspy.RLM from the environment-provided factory, so each
-    # sub-agent gets its own interpreter.
+    # Predict, ReActV2 with a REPL-defined tool, and a nested RLM from the provided factory.
     rlm = RLM("query -> answer", max_iters=4, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
@@ -136,8 +131,7 @@ def test_rlm_runs_dspy_sub_agents_in_capable_backend():
 
 
 def test_factory_created_worker_recurses_natively():
-    # The reference worker satisfies the contract on its own, and the factory it provides declares
-    # SUB_DSPY too, so nested RLMs (and their nested interpreters) stay native all the way down.
+    # The provided factory declares SUB_DSPY too, so nesting stays native all the way down.
     rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([{
         "reasoning": "Nest twice",
@@ -170,8 +164,7 @@ def test_trailing_expression_is_echoed_from_native_blocks():
 
 
 def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
-    # Regression: the shim named host tools by the sandbox callable's __name__, which is "<lambda>"
-    # on worker backends; it now uses the global the tool is bound to.
+    # Regression: worker backends bind host tools as "<lambda>" proxies; the shim names them by global.
     calls = []
 
     def echo(text: str) -> str:
@@ -209,8 +202,7 @@ def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
 
 
 def test_sub_agent_lm_calls_are_served_by_the_host():
-    # The host LM (a DummyLM, which no worker could reconstruct) serves the sub-agent's calls
-    # through the host tool; the sandbox sees only the model identity, never the LM's kwargs.
+    # The sandbox sees only the model identity, never the LM's kwargs.
     host_lm = DummyLM([{"answer": "served by host"}])
     host_lm.kwargs["api_key"] = "sk-secret"
     rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
@@ -237,8 +229,6 @@ def test_sub_agent_lm_calls_are_served_by_the_host():
 
 
 def test_sub_agent_lm_calls_count_against_max_llm_calls():
-    # Generated code cannot spend unbounded host LM calls through sub-agents: the second
-    # dspy.Predict call in a worker exceeds RLM(max_llm_calls=1) and fails inside the sandbox.
     host_lm = DummyLM([{"answer": "one"}, {"answer": "two"}])
     rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
@@ -266,8 +256,7 @@ def test_sub_agent_lm_calls_count_against_max_llm_calls():
 
 
 def test_host_tools_keep_their_schema_for_native_sub_agents():
-    # Regression: across a process boundary a host tool arrives as an anonymous proxy, so a
-    # native ReActV2 would otherwise register a tool named "<lambda>" with no description.
+    # Regression: a native ReActV2 would otherwise register a tool named "<lambda>" with no description.
     calls = []
 
     def search(query: str) -> str:
@@ -335,8 +324,7 @@ def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
 
 
 def test_default_sub_lm_matches_llm_query_precedence():
-    # Without an explicit sub_lm, sub-agents use the host's LM, exactly like llm_query;
-    # the override is scoped per block, so the environment's own LM survives the call.
+    # The override is scoped per block, so the environment's own LM survives the call.
     interpreter = SubDspySubprocessInterpreter()
     try:
         interpreter.execute(
@@ -358,8 +346,7 @@ def test_default_sub_lm_matches_llm_query_precedence():
 
 
 def test_generated_code_cannot_redirect_the_sub_agent_lm_of_later_blocks():
-    # Each block re-ships the LM identity and applies it as a scoped override, so overwriting the
-    # shipped variable in one block does not change the LM that later blocks' sub-agents use.
+    # Each block re-ships the LM identity, so corrupting it in one block cannot affect the next.
     rlm = RLM(
         "query -> answer",
         max_iters=2,
@@ -378,8 +365,6 @@ def test_generated_code_cannot_redirect_the_sub_agent_lm_of_later_blocks():
 
 
 def test_generated_code_configuring_dspy_reaches_only_the_worker():
-    # The process boundary is the isolation: dspy.configure in generated code changes the worker's
-    # settings and never the host's, so RLM needs no host-side settings guard.
     dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
     rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
@@ -391,8 +376,6 @@ def test_generated_code_configuring_dspy_reaches_only_the_worker():
 
 
 def test_sub_agents_cannot_set_host_lm_routing_or_credentials():
-    # Per-call LM options from generated code reach the host endpoint, which admits only generation
-    # parameters: routing and credential options never reach the host LM.
     host_lm = DummyLM([{"answer": "unused"}])
     rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
@@ -417,8 +400,7 @@ def test_sub_agents_cannot_set_host_lm_routing_or_credentials():
 
 
 def test_nested_rlm_calls_draw_on_the_top_level_budget():
-    # Recursion is bounded through the LM tunnel: a nested dspy.RLM in the worker generates its
-    # actions on the host-served LM, so its calls count against the top-level RLM's max_llm_calls.
+    # A nested RLM generates its actions on the host-served LM, so recursion is bounded by the top-level budget.
     host_lm = DummyLM([{"answer": "one"}, {"reasoning": "never reached", "code": "SUBMIT('x')"}])
     rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([

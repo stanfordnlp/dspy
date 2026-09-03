@@ -213,9 +213,7 @@ def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
 
 
 def test_bridged_rlm_inherits_sub_dspy_capable_factory() -> None:
-    # A code-executing sub-predictor built through the bridge receives the Flex interpreter
-    # factory; when that factory declares the sub-dspy capability, the sub-RLM picks it up and
-    # its own action prompt advertises in-sandbox dspy sub-agents.
+    # A bridged sub-RLM gets the Flex factory, capability included.
     class SubDspyFactory:
         capabilities = dspy.InterpreterCapability.SUB_DSPY
 
@@ -243,8 +241,6 @@ def test_call_runs_predictor_via_host_lm() -> None:
 
 
 def test_bridged_predictors_cannot_set_lm_routing_or_credentials() -> None:
-    # Predictor config becomes per-call LM kwargs on the host. Bridged predictors run on a SandboxLM
-    # that admits only generation parameters, so module code cannot redirect requests or swap keys.
     flex = _bridged_flex()
     inv = flex._bridge.invocation()
     inv.construct("Predict", "value: int -> result: int", "solve", {"api_base": "http://evil.example", "api_key": "sk-x"})

@@ -1901,8 +1901,7 @@ class TestRLMSubDspy:
             RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
     def test_sub_agent_lm_is_served_by_the_host(self):
-        # The sub_lm never enters the sandbox: each block gets a host-served LM mirroring only the
-        # model identity, and the host tool runs the call on the caller's sub_lm (any BaseLM).
+        # Only the model identity crosses; the host tool runs the call on the caller's sub_lm.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         sub_lm = DummyLM([{"answer": "served by sub_lm"}])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory, sub_lm=sub_lm)
@@ -1937,8 +1936,6 @@ class TestRLMSubDspy:
         assert "served by host" in outputs[0]
 
     def test_sub_agent_lm_calls_share_the_llm_query_budget(self):
-        # max_llm_calls is one per-forward ceiling: llm_query and in-sandbox sub-agent calls
-        # draw on the same counter, so sub-agents cannot bypass the limit.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         sub_lm = DummyLM([{"answer": "a"}, {"answer": "b"}, {"answer": "c"}])
         rlm = RLM("query -> answer", max_iters=1, max_llm_calls=2, interpreter_factory=factory, sub_lm=sub_lm)
@@ -1994,13 +1991,10 @@ class TestRLMSubDspy:
         }
 
     def test_in_process_sub_dspy_interpreter_is_rejected_at_invocation_start(self):
-        # SUB_DSPY commits the interpreter to running generated code in a fresh process; an executor
-        # that shares the host's memory could read its settings, credentials, and tool closures, so
-        # RLM fails the forward before any generated code block.
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
         rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
 
-        with pytest.raises(RuntimeError, match="executes code in the host's memory"):
+        with pytest.raises(RuntimeError, match="runs code in the host's memory"):
             rlm(query="q")
 
         assert rlm.generate_action.idx == 0
@@ -2012,14 +2006,12 @@ class TestRLMSubDspy:
         return namespace
 
     def test_setup_code_rejects_any_executor_carrying_the_host_memory_image(self):
-        # The check is the host's process token, imported fresh (and so different) in any new process:
-        # an executor in the host process or forked from it sees the host's own token and is rejected,
-        # whatever its pid; a fresh worker or a remote sandbox never has it.
+        # A fork inherits the host's token; a fresh process imports its own.
         factory = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
         namespace = self._run_setup_code("token of another host", **factory)
         assert issubclass(namespace["_DspyHostLM"], dspy.BaseLM)
 
-        with pytest.raises(RuntimeError, match="host process or in a process forked from it"):
+        with pytest.raises(RuntimeError, match="a fork of it"):
             self._run_setup_code(_HOST_PROCESS_TOKEN, **factory)
 
     def test_setup_code_requires_the_interpreter_factory(self):
@@ -2119,8 +2111,7 @@ class TestRLMFacadeDspy:
             invocation.call(handle, {"question": "again"})
 
     def test_facade_lm_is_a_scoped_override_reaching_nested_sub_llm_calls(self):
-        # sub_lm applies through dspy.context around each bridged call, so a bridged RLM's own
-        # llm_query resolves to it as well (set_lm would only reach its predictors).
+        # A scoped override (not set_lm), so a bridged RLM's own llm_query resolves to it too.
         sub_lm = DummyLM([{"answer": "from sub_lm"}] * 4)
         rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter, sub_lm=sub_lm)
         invocation = self._facade_invocation(rlm)
@@ -2142,9 +2133,6 @@ class TestRLMFacadeDspy:
         assert seen["llm_query_lm"]._lm is sub_lm
 
     def test_facade_predictors_cannot_set_lm_routing_or_credentials(self):
-        # Predictor config and per-call config become LM kwargs on the host; the SandboxLM every bridged
-        # call runs on admits only generation parameters, so sandbox code cannot redirect requests or
-        # replace credentials, while sampling options still work.
         rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter, sub_lm=DummyLM([{"answer": "ok"}] * 2))
         invocation = self._facade_invocation(rlm)
 
@@ -2197,8 +2185,7 @@ class TestRLMFacadeDspy:
 @pytest.mark.deno
 class TestRLMFacadeDeno:
     def test_facade_runs_on_the_default_sandbox(self):
-        # The facade needs no dspy inside the sandbox, so RLM works out of the box on the
-        # default Deno/Pyodide interpreter.
+        # The facade needs no dspy inside the sandbox.
         rlm = RLM("query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
         rlm.generate_action = make_mock_predictor([
             {
@@ -2240,8 +2227,7 @@ class TestRLMFacadeDeno:
         assert "one" in result.answer
 
     def test_facade_survives_serializable_inputs_on_the_default_sandbox(self):
-        # Serializable inputs run setup code before generated code; the default interpreter
-        # registers its tools once, so the facade's host tools must be in place by then.
+        # PythonInterpreter registers tools once, so the facade must be installed before serializable setup.
         rlm = RLM("data, query -> answer", max_iters=2, interpreter_factory=PythonInterpreter)
         rlm.generate_action = make_mock_predictor([
             {
@@ -2254,8 +2240,7 @@ class TestRLMFacadeDeno:
         with dummy_lm_context([{"answer": "facade with serializable input"}]):
             result = rlm(data=_StubSerializable("payload"), query="q")
 
-        # Check the block's own output: a dead facade would error here and the extract fallback
-        # would still produce the DummyLM answer.
+        # The block's own output: a dead facade would fall back to extract and still yield the answer.
         assert "facade with serializable input" in result.trajectory[0]["output"]
         assert len(result.trajectory) == 2
 

@@ -14,9 +14,8 @@ against the host module's tools, ``dspy.Signature(...)`` results as ``__dspy_sig
 All per-forward state (constructed predictors, the predictor-call budget, custom-type originals,
 the last LM infrastructure error) lives in a ``FacadeInvocation`` created for that forward.
 
-Every LM call made on behalf of sandboxed code runs on a ``SandboxLM`` proxy over the host LM. It
-admits only generation parameters per call (``SANDBOX_LM_KWARGS``), so predictor config authored in
-the sandbox cannot redirect requests or replace credentials, and it lets the host meter the calls.
+Every LM call made for sandboxed code runs on a ``SandboxLM`` over the host LM, which admits only
+generation parameters (``SANDBOX_LM_KWARGS``) and meters the calls.
 """
 
 from __future__ import annotations
@@ -154,9 +153,7 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
-# Generation parameters sandboxed code may set on a host LM call: dspy's own LM config vocabulary
-# (LMConfig and the kwargs adapters add). Routing, credentials, and transport options (api_base,
-# api_key, headers, model, timeout, ...) stay with the host and are rejected.
+# Generation parameters sandboxed code may set per LM call; routing, credential, and transport options are not.
 SANDBOX_LM_KWARGS = frozenset({
     "temperature", "top_p", "max_tokens", "max_completion_tokens", "stop", "n", "seed",
     "logprobs", "top_logprobs", "response_format",
@@ -168,13 +165,7 @@ _LM_CALL_INPUTS = frozenset({"prompt", "messages", "request"})
 
 
 class SandboxLM(BaseLM):
-    """The host LM as sandboxed code may call it.
-
-    Bridged predictors and host-served sub-agent LM calls run on this proxy. A call may set only
-    ``SANDBOX_LM_KWARGS``, so generated code cannot redirect requests or replace credentials through
-    per-call options, and ``reserve``, when given, is called with 1 before each request so the host
-    can meter the calls. The wrapped LM does the actual work (cache, callbacks, history, retries).
-    """
+    """The host LM as sandboxed code may call it: only ``SANDBOX_LM_KWARGS`` per call, ``reserve(1)`` before each."""
 
     def __init__(self, lm: BaseLM, reserve: Callable[[int], None] | None = None) -> None:
         super().__init__(model=lm.model, model_type=lm.model_type)
@@ -187,8 +178,7 @@ class SandboxLM(BaseLM):
         rejected = sorted(kwargs.keys() - _LM_CALL_INPUTS - SANDBOX_LM_KWARGS)
         if rejected:
             raise TypeError(
-                f"Sandboxed code may not set LM option(s) {rejected}: only generation parameters cross the "
-                f"sandbox boundary ({sorted(SANDBOX_LM_KWARGS)}); routing and credentials stay with the host."
+                f"Sandboxed code may not set LM option(s) {rejected}; allowed per call: {sorted(SANDBOX_LM_KWARGS)}."
             )
 
     def _admit(self, kwargs: dict[str, Any]) -> None:
@@ -211,8 +201,7 @@ class SandboxLM(BaseLM):
         self._check(kwargs)
         return SandboxLM(self._lm.copy(**kwargs), self._reserve)
 
-    # Adapters choose structured outputs, native tool calling, and reasoning options by the model's
-    # capabilities, which are the wrapped LM's (BaseLM's defaults would report none).
+    # Adapters choose structured outputs and native tool calling by these; answer for the wrapped model.
     @property
     def supports_function_calling(self) -> bool:
         return self._lm.supports_function_calling
@@ -235,8 +224,7 @@ class FacadeInvocation:
 
     Builds the predictors the shim asks for (keyed by the sandbox attribute name) from the host
     module's tools and interpreter factory, runs them by handle under a predictor-call budget on a
-    ``SandboxLM`` (``lm``, else the host's current LM wrapped per call), and restores custom-type
-    inputs. Each forward gets its own ``FacadeInvocation``.
+    ``SandboxLM``, and restores custom-type inputs. Each forward gets its own ``FacadeInvocation``.
     """
 
     def __init__(
@@ -293,8 +281,7 @@ class FacadeInvocation:
             raise CodeInterpreterError(f"{tag} {type(e).__name__}: {e}") from e
 
     def _lm_scope(self) -> contextlib.AbstractContextManager[Any]:
-        """Run a bridged call on a SandboxLM, as a scoped override rather than set_lm, so nested
-        predictors and a bridged RLM's own sub-LLM calls run on it too."""
+        """dspy.context(lm=SandboxLM) for one bridged call; a scoped override, so nested predictors use it too."""
         lm = self._lm if self._lm is not None else dspy.settings.lm
         if lm is None:
             return contextlib.nullcontext()

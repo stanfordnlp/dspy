@@ -80,8 +80,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Appended to the interpreter rules. Native dspy (SUB_DSPY) and the bridged facade differ only in
-# which tools a sub-agent may take.
+# Appended to the interpreter rules; native dspy (SUB_DSPY) and the facade differ only in {tools_rule}.
 SUB_AGENT_INSTRUCTIONS = f"""
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
@@ -107,21 +106,16 @@ _SUB_DSPY_LM_VAR = "__dspy_lm_info"
 _SUB_DSPY_CODE_VAR = "__dspy_code"
 _SUB_DSPY_TOOLS_VAR = "__dspy_tools"
 
-# Marks this host process's memory image for the setup code below: an executor in the host process
-# or in a process forked from it carries the token (along with the host's settings and credentials);
-# a fresh worker or a remote sandbox never does.
+# Marks this process's memory image: a fork inherits it, a fresh process never has it.
 _HOST_PROCESS_TOKEN = secrets.token_hex(16)
 
-# Validates the SUB_DSPY contract at invocation start (generated code runs in a process that does not
-# share the host's memory, and the interpreter factory is provided) and defines the sub-agent LM: a
-# BaseLM whose calls the host serves through the SUB_DSPY_LM_TOOL tool, so the caller's LM (and its
-# credentials) stays in the host process and any BaseLM works as sub_lm.
+# Runs once per invocation: checks the SUB_DSPY contract and defines the host-served sub-agent LM.
 SUB_DSPY_SETUP_CODE = f"""import dspy
 import dspy.predict.rlm as __dspy_rlm
 if getattr(__dspy_rlm, "_HOST_PROCESS_TOKEN", None) == {_SUB_DSPY_HOST_VAR}:
     raise RuntimeError(
-        "This interpreter declares InterpreterCapability.SUB_DSPY but executes code in the host's memory (in the "
-        "host process or in a process forked from it); a SUB_DSPY interpreter must run generated code in a fresh process."
+        "This interpreter declares InterpreterCapability.SUB_DSPY but runs code in the host's memory "
+        "(the host process or a fork of it); generated code must run in a fresh process."
     )
 if not callable(globals().get("{SUB_DSPY_FACTORY_NAME}")):
     raise RuntimeError(
@@ -166,10 +160,8 @@ class _DspyHostLM(dspy.BaseLM):
         raise NotImplementedError("_DspyHostLM calls are served by the host; forward() is never used.")
 """
 
-# Runs one generated code block. Host tools are exposed as dspy.Tool objects carrying their host
-# schema (re-done per block: interpreters may rebind tool names on every execute); the block runs
-# under a scoped override with the host-served sub-agent LM when the host has one, and a trailing
-# bare expression is re-echoed so REPL-style backends still display it.
+# Runs one generated block under the host-served LM, with host tools rebound as dspy.Tool carrying their
+# host schema (per block: backends may rebind tools on every execute); re-echoes a trailing bare expression.
 SUB_DSPY_EXEC_CODE = f"""import ast as __dspy_ast, contextlib as __dspy_contextlib, dspy as __dspy
 for __dspy_name, __dspy_meta in {_SUB_DSPY_TOOLS_VAR}.items():
     if __dspy_name in globals() and not isinstance(globals()[__dspy_name], __dspy.Tool):
@@ -279,22 +271,18 @@ class RLM(Module):
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
             max_iters: Maximum REPL interaction iterations.
-            max_llm_calls: Maximum sub-LLM calls per execution, shared by llm_query/llm_query_batched
-                  and every LM call sub-agents make on behalf of generated code (native or bridged).
+            max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched and sub-agent LM calls) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
-            sub_lm: LM for llm_query/llm_query_batched and, on a sub-dspy interpreter, for
-                   in-sandbox sub-agents, whose calls the host serves (the LM itself never
-                   enters the sandbox). Defaults to dspy.settings.lm. Allows using a
-                   different (e.g., cheaper) model for sub-queries.
+            sub_lm: LM for llm_query/llm_query_batched and in-sandbox sub-agents. Defaults to dspy.settings.lm.
+                   Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
                 an ``execution_instructions`` string describing its runtime for the action prompt, and a
-                ``capabilities`` declaration; without ``InterpreterCapability.SUB_DSPY`` RLM installs a
-                bridged dspy facade in the sandbox instead.
+                ``capabilities`` declaration (see ``InterpreterCapability``).
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -617,17 +605,12 @@ class RLM(Module):
         return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
     def _sandbox_host_lm(self, budget: _LLMCallBudget) -> SandboxLM | None:
-        """The host LM as sub-agents may spend it, or None when the host has no LM.
-
-        One proxy per forward serves both the sub-agent LM endpoint and the facade, which needs an LM
-        object to scope each bridged predictor call under; every call draws one slot of ``budget``
-        and may set only generation parameters.
-        """
+        """One SandboxLM per forward for the sub-agent endpoint and the facade; None when the host has no LM."""
         lm = self._host_lm()
         return None if lm is None else SandboxLM(lm, budget.reserve)
 
     def _make_sub_dspy_lm_tool(self, lm: SandboxLM | None) -> Callable:
-        """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM itself stays in the host process."""
+        """Host-side endpoint for the sandbox's ``_DspyHostLM``."""
 
         def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
             if lm is None:
@@ -638,7 +621,7 @@ class RLM(Module):
         return serve_lm
 
     def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
-        """Host side of the dspy facade for one forward: bridged predictors run on the sandbox host LM."""
+        """Host side of the dspy facade for one forward."""
         return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
 
     def _setup_dspy_support(self, repl: CodeInterpreter, budget: _LLMCallBudget) -> None:
