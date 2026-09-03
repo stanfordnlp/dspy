@@ -245,6 +245,8 @@ class ChatAdapter(Adapter):
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         if not self.field_markers:
+            if not signature.output_fields:
+                return {}
             (field_name, field_info), = signature.output_fields.items()
             try:
                 return {field_name: parse_value(completion.strip(), field_info.annotation)}
