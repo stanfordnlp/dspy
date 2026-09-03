@@ -96,6 +96,7 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         self._validate_field_markers(signature)
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
@@ -117,6 +118,7 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         self._validate_field_markers(signature)
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
