@@ -66,3 +66,16 @@ def test_proxy_mirrors_identity_kwargs_and_capabilities_of_the_wrapped_lm():
     assert sandbox.supports_function_calling and sandbox.supports_response_schema and not sandbox.supports_reasoning
     assert sandbox.supported_params == {"temperature", "response_format", "tools"}
     assert not SandboxLM(_lm()).supports_function_calling
+
+
+def test_wraps_a_callable_only_lm():
+    # RLM accepts any callable as sub_lm; the facade is installed by default, so the proxy must too.
+    class PlainLM:
+        def __call__(self, prompt):
+            return ["plain:" + prompt]
+
+    sandbox = SandboxLM(PlainLM())
+    assert sandbox("hi") == ["plain:hi"]
+    assert (sandbox.model, sandbox.kwargs, sandbox.supports_function_calling, sandbox.supported_params) == (
+        None, {}, False, set()
+    )

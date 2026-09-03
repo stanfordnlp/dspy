@@ -1935,6 +1935,20 @@ class TestRLMSubDspy:
         assert variables[_SUB_DSPY_LM_VAR]["model"] == host_model
         assert "served by host" in outputs[0]
 
+    def test_callable_only_sub_lm_still_works(self):
+        class PlainLM:
+            def __call__(self, prompt):
+                return ["plain:" + prompt]
+
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory, sub_lm=PlainLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        assert rlm(query="q").answer == "42"
+        _, variables = factory.instances[0].call_history[1]
+        assert variables[_SUB_DSPY_LM_VAR] == {"model": None, "model_type": "chat"}
+        assert factory.instances[0].tools["llm_query"]("x") == "plain:x"
+
     def test_sub_agent_lm_calls_share_the_llm_query_budget(self):
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         sub_lm = DummyLM([{"answer": "a"}, {"answer": "b"}, {"answer": "c"}])

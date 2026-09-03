@@ -68,6 +68,7 @@ def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
 def test_capability_declaring_subclass_passes_library_conformance():
     assert dspy.InterpreterCapability.SUB_DSPY in interpreter_capabilities(SubDspySubprocessInterpreter)
     dspy_interpreters.check_interpreter(SubDspySubprocessInterpreter).raise_for_failures()
+    dspy_interpreters.check_rlm(SubDspySubprocessInterpreter).raise_for_failures()
 
 
 def test_subprocess_backend_runs_dspy():

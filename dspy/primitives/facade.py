@@ -167,9 +167,10 @@ _LM_CALL_INPUTS = frozenset({"prompt", "messages", "request"})
 class SandboxLM(BaseLM):
     """The host LM as sandboxed code may call it: only ``SANDBOX_LM_KWARGS`` per call, ``reserve(1)`` before each."""
 
-    def __init__(self, lm: BaseLM, reserve: Callable[[int], None] | None = None) -> None:
-        super().__init__(model=lm.model, model_type=lm.model_type)
-        self.kwargs = dict(lm.kwargs)  # adapters and Predict read these
+    def __init__(self, lm: Any, reserve: Callable[[int], None] | None = None) -> None:
+        # lm may be any callable RLM accepts as sub_lm, not only a BaseLM.
+        super().__init__(model=getattr(lm, "model", None), model_type=getattr(lm, "model_type", "chat"))
+        self.kwargs = dict(getattr(lm, "kwargs", None) or {})  # adapters and Predict read these
         self._lm = lm
         self._reserve = reserve
 
@@ -204,19 +205,19 @@ class SandboxLM(BaseLM):
     # Adapters choose structured outputs and native tool calling by these; answer for the wrapped model.
     @property
     def supports_function_calling(self) -> bool:
-        return self._lm.supports_function_calling
+        return getattr(self._lm, "supports_function_calling", False)
 
     @property
     def supports_reasoning(self) -> bool:
-        return self._lm.supports_reasoning
+        return getattr(self._lm, "supports_reasoning", False)
 
     @property
     def supports_response_schema(self) -> bool:
-        return self._lm.supports_response_schema
+        return getattr(self._lm, "supports_response_schema", False)
 
     @property
     def supported_params(self) -> set[str]:
-        return self._lm.supported_params
+        return getattr(self._lm, "supported_params", set())
 
 
 class FacadeInvocation:

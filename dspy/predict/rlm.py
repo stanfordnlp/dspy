@@ -821,7 +821,9 @@ class RLM(Module):
         if self._sub_dspy:
             variables[_SUB_DSPY_CODE_VAR] = code
             lm = self._host_lm()
-            variables[_SUB_DSPY_LM_VAR] = None if lm is None else {"model": lm.model, "model_type": lm.model_type}
+            variables[_SUB_DSPY_LM_VAR] = None if lm is None else {
+                "model": getattr(lm, "model", None), "model_type": getattr(lm, "model_type", "chat")
+            }
             code = SUB_DSPY_EXEC_CODE
         try:
             return repl.execute(code, variables=variables)
