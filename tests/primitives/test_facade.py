@@ -59,10 +59,11 @@ def test_reserve_meters_admitted_calls_only():
 
 def test_proxy_mirrors_identity_kwargs_and_capabilities_of_the_wrapped_lm():
     lm = _CapableLM([{"answer": "a"}])
-    lm.kwargs.update(temperature=0.7)
+    lm.kwargs.update(temperature=0.7, api_key="sk-secret", api_base="http://internal.example")
     sandbox = SandboxLM(lm)
-    assert (sandbox.model, sandbox.model_type, sandbox.kwargs) == (lm.model, lm.model_type, lm.kwargs)
-    assert sandbox.kwargs is not lm.kwargs
+    assert (sandbox.model, sandbox.model_type) == (lm.model, lm.model_type)
+    assert sandbox.kwargs["temperature"] == 0.7
+    assert not {"api_key", "api_base"} & sandbox.kwargs.keys()  # credentials stay on the wrapped LM
     assert sandbox.supports_function_calling and sandbox.supports_response_schema and not sandbox.supports_reasoning
     assert sandbox.supported_params == {"temperature", "response_format", "tools"}
     assert not SandboxLM(_lm()).supports_function_calling

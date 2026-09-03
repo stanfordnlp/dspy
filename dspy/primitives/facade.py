@@ -168,9 +168,10 @@ class SandboxLM(BaseLM):
     """The host LM as sandboxed code may call it: only ``SANDBOX_LM_KWARGS`` per call, ``reserve(1)`` before each."""
 
     def __init__(self, lm: Any, reserve: Callable[[int], None] | None = None) -> None:
-        # lm may be any callable RLM accepts as sub_lm, not only a BaseLM.
+        # lm may be any callable RLM accepts as sub_lm, not only a BaseLM. Adapters and Predict read the
+        # generation defaults off the proxy; credentials and routing stay on the wrapped LM.
         super().__init__(model=getattr(lm, "model", None), model_type=getattr(lm, "model_type", "chat"))
-        self.kwargs = dict(getattr(lm, "kwargs", None) or {})  # adapters and Predict read these
+        self.kwargs = {k: v for k, v in (getattr(lm, "kwargs", None) or {}).items() if k in SANDBOX_LM_KWARGS}
         self._lm = lm
         self._reserve = reserve
 
