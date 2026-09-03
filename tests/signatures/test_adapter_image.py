@@ -1,7 +1,9 @@
 import base64
+import gc
 import os
 import tempfile
 import warnings
+import weakref
 from io import BytesIO
 
 import pydantic
@@ -10,7 +12,7 @@ import requests
 from PIL import Image as PILImage
 
 import dspy
-from dspy.adapters.types.image import encode_image
+from dspy.adapters.types.image import _format_image, encode_image
 from dspy.utils.dummies import DummyLM
 
 
@@ -463,6 +465,29 @@ def test_image_repr():
     assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
+
+
+def test_format_cache_does_not_retain_image_instances():
+    """lru_cache must key on the URL string, not the Image instance (see #10273)."""
+    _format_image.cache_clear()
+    image = dspy.Image("data:image/png;base64,AAAA")
+    reference = weakref.ref(image)
+
+    formatted = image.format()
+    assert formatted == [{"type": "image_url", "image_url": {"url": image.url}}]
+
+    # Same URL should hit the module-level cache without keeping `image` alive.
+    again = dspy.Image("data:image/png;base64,AAAA")
+    assert again.format() == formatted
+    info = _format_image.cache_info()
+    assert info.hits >= 1
+
+    del image
+    del again
+    gc.collect()
+
+    assert reference() is None
+    _format_image.cache_clear()
 
 
 def test_image_constructor_supports_positional_source_and_url_keyword():
