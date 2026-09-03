@@ -66,6 +66,3 @@ docs/docs/**/*.json*
 
 test_before_pypi/
 .github/.internal_dspyai/dist/
-
-# CI-only npm manifest for the sandboxed-interpreter tests
-.github/sandbox-runtime/node_modules/
