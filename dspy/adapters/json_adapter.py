@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from typing import Any, get_origin
@@ -257,8 +258,15 @@ def _get_structured_outputs_response_format(
         if use_native_function_calling and annotation == ToolCalls:
             # Skip ToolCalls field if native function calling is enabled.
             continue
-        default = field.default if hasattr(field, "default") else ...
-        fields[name] = (annotation, default)
+        # `field` carries the constraint metadata the user declared on the OutputField
+        # (ge/le/gt/lt, multiple_of, pattern, min_length/max_length). Passing only
+        # (annotation, default) drops all of it, so the derived schema stops asking the
+        # provider to honor a bound that the prompt-side path still states through
+        # json_schema_extra["constraints"]. Rebuild from the FieldInfo instead, and drop
+        # only DSPy's own prompt metadata, which is not part of the wire schema.
+        field_info = copy.deepcopy(field)
+        field_info.json_schema_extra = None
+        fields[name] = (annotation, field_info)
 
     # Build the model with extra fields forbidden.
     pydantic_model = pydantic.create_model(

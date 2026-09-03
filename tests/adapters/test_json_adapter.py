@@ -9,6 +9,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 from openai.types.responses import ResponseOutputMessage
 
 import dspy
+from dspy.adapters.json_adapter import _get_structured_outputs_response_format
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
@@ -1716,3 +1717,78 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+def test_structured_outputs_preserve_numeric_field_constraints():
+    class Score(dspy.Signature):
+        text: str = dspy.InputField()
+        score: float = dspy.OutputField(ge=0.0, le=1.0, multiple_of=0.25)
+
+    schema = _get_structured_outputs_response_format(Score).model_json_schema()
+
+    score_schema = schema["properties"]["score"]
+    assert score_schema["minimum"] == 0.0
+    assert score_schema["maximum"] == 1.0
+    assert score_schema["multipleOf"] == 0.25
+
+
+def test_structured_outputs_preserve_string_field_constraints():
+    class Label(dspy.Signature):
+        text: str = dspy.InputField()
+        label: str = dspy.OutputField(pattern="^[a-z]+$", max_length=10, min_length=2)
+
+    schema = _get_structured_outputs_response_format(Label).model_json_schema()
+
+    label_schema = schema["properties"]["label"]
+    assert label_schema["pattern"] == "^[a-z]+$"
+    assert label_schema["maxLength"] == 10
+    assert label_schema["minLength"] == 2
+
+
+def test_structured_outputs_preserve_exclusive_numeric_field_constraints():
+    class Ratio(dspy.Signature):
+        text: str = dspy.InputField()
+        ratio: float = dspy.OutputField(gt=0.0, lt=1.0)
+
+    schema = _get_structured_outputs_response_format(Ratio).model_json_schema()
+
+    ratio_schema = schema["properties"]["ratio"]
+    assert ratio_schema["exclusiveMinimum"] == 0.0
+    assert ratio_schema["exclusiveMaximum"] == 1.0
+
+
+def test_structured_outputs_do_not_leak_dspy_metadata():
+    class Score(dspy.Signature):
+        text: str = dspy.InputField()
+        score: float = dspy.OutputField(desc="a score", ge=0.0, le=1.0)
+
+    schema = _get_structured_outputs_response_format(Score).model_json_schema()
+
+    score_schema = schema["properties"]["score"]
+    # DSPy's own field metadata is prompt-side only and is not part of the wire schema.
+    assert "json_schema_extra" not in score_schema
+    assert "__dspy_field_type" not in score_schema
+    assert "desc" not in score_schema
+    assert "constraints" not in score_schema
+
+
+def test_structured_outputs_keep_required_and_additional_properties():
+    class Score(dspy.Signature):
+        text: str = dspy.InputField()
+        score: float = dspy.OutputField(ge=0.0, le=1.0)
+        note: str = dspy.OutputField()
+
+    schema = _get_structured_outputs_response_format(Score).model_json_schema()
+
+    assert schema["required"] == ["score", "note"]
+    assert schema["additionalProperties"] is False
+
+
+def test_structured_outputs_unconstrained_field_schema_is_unchanged():
+    class Plain(dspy.Signature):
+        text: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="the answer")
+
+    schema = _get_structured_outputs_response_format(Plain).model_json_schema()
+
+    assert schema["properties"]["answer"] == {"title": "Answer", "type": "string"}
