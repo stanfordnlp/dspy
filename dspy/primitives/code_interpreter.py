@@ -8,6 +8,7 @@ code-executing modules to work with different interpreter implementations:
 """
 
 import enum
+import functools
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from dspy.utils.exceptions import DSPyError
@@ -15,23 +16,18 @@ from dspy.utils.exceptions import DSPyError
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
-# Name of the zero-argument interpreter factory a sub-dspy capable interpreter must provide in
-# its execution namespace.
+# Sandbox global the dspy facade provides for nested code-executing sub-agents; the host substitutes its factory.
 SUB_DSPY_FACTORY_NAME = "dspy_interpreter_factory"
 
 
 class InterpreterCapability(enum.Flag):
     """Optional capabilities a CodeInterpreter implementation can declare.
 
-    SUB_DSPY: Code executed inside the interpreter can `import dspy` and run dspy modules.
-        The environment must make dspy importable and provide SUB_DSPY_FACTORY_NAME
-        ("dspy_interpreter_factory") in the execution namespace as a zero-argument callable
-        returning a fresh CodeInterpreter, so nested code-executing sub-agents get their own
-        interpreter. Sub-agent LM calls are served by the host (``RLM(sub_lm=...)`` or its
-        default LM), admit only generation parameters, and draw on the RLM's max_llm_calls, so
-        the environment needs no LM credentials. Generated code must run in a fresh process:
-        an executor sharing the host's memory (the host process or a fork of it) exposes the
-        host's settings and credentials, and dspy.RLM rejects it at invocation start.
+    SUB_DSPY: The interpreter can host the sandbox dspy facade: registered tools are callable
+        as globals in executed code and state persists across execute() calls. dspy.RLM then
+        installs a ``dspy`` shim whose predictors are built and run on the host, and offers
+        sub-agents in its prompt. PythonInterpreter declares it; an interpreter whose runtime
+        cannot run the shim leaves it unset and gets no sub-agents.
     """
 
     SUB_DSPY = enum.auto()
@@ -180,8 +176,11 @@ def interpreter_capabilities(interpreter_or_factory: Any) -> InterpreterCapabili
     """Capabilities declared by an interpreter instance, class, or factory.
 
     Reads the optional ``capabilities`` attribute (like ``execution_instructions``,
-    a stable class/factory-level declaration). Absent means no declared capabilities.
+    a stable class/factory-level declaration; a ``functools.partial`` of an interpreter
+    class inherits it). Absent means no declared capabilities.
     """
+    while isinstance(interpreter_or_factory, functools.partial):
+        interpreter_or_factory = interpreter_or_factory.func
     capabilities = getattr(interpreter_or_factory, "capabilities", None)
     if capabilities is None:
         return InterpreterCapability(0)

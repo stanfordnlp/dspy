@@ -1,3 +1,5 @@
+import functools
+
 import pytest
 
 import dspy
@@ -60,6 +62,8 @@ def test_interpreter_capabilities_reads_class_instance_and_factory():
 
     factory.capabilities = InterpreterCapability.SUB_DSPY
     assert InterpreterCapability.SUB_DSPY in interpreter_capabilities(factory)
+    assert InterpreterCapability.SUB_DSPY in interpreter_capabilities(functools.partial(Capable))
+    assert not interpreter_capabilities(lambda: Capable())
 
 
 @pytest.mark.parametrize("bad", ["sub_dspy", 42, [InterpreterCapability.SUB_DSPY]])

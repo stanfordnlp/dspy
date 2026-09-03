@@ -26,7 +26,13 @@ from typing import Any, Callable, NoReturn
 from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    SIMPLE_TYPES,
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    InterpreterCapability,
+)
 from dspy.utils.callback import BaseCallback, with_callbacks
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
@@ -239,6 +245,8 @@ class PythonInterpreter:
             result = interp("print(my_tool(question='test'))")
         ```
     """
+
+    capabilities = InterpreterCapability.SUB_DSPY
 
     def __init__(
         self,

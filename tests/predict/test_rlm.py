@@ -16,19 +16,7 @@ import pytest
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import (
-    _HOST_PROCESS_TOKEN,
-    _SUB_DSPY_CODE_VAR,
-    _SUB_DSPY_HOST_VAR,
-    _SUB_DSPY_LM_VAR,
-    _SUB_DSPY_TOOLS_VAR,
-    RLM,
-    SUB_DSPY_EXEC_CODE,
-    SUB_DSPY_LM_TOOL,
-    SUB_DSPY_SETUP_CODE,
-    _LLMCallBudget,
-    _strip_code_fences,
-)
+from dspy.predict.rlm import RLM, _LLMCallBudget, _strip_code_fences
 from dspy.primitives.code_interpreter import (
     SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
@@ -491,7 +479,7 @@ class TestRLMInterpreterLifecycle:
         assert request == snapshot.read_bytes().removesuffix(b"\n")
 
     def test_interpreter_remains_available_as_signature_input(self):
-        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "CPython"})])
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
         rlm = RLM("interpreter -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return input", "code": "SUBMIT(interpreter)"},
@@ -500,11 +488,11 @@ class TestRLMInterpreterLifecycle:
         result = rlm(interpreter="CPython")
 
         assert result.answer == "CPython"
-        assert factory.instances[0].call_history[1][1] == {"interpreter": "CPython"}
+        assert factory.instances[0].call_history[0][1] == {"interpreter": "CPython"}
 
     @pytest.mark.asyncio
     async def test_factory_creates_and_shuts_down_one_interpreter_per_call(self):
-        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -526,9 +514,7 @@ class TestRLMInterpreterLifecycle:
         factory = MockInterpreterFactory()
         interpreter = MockInterpreter(
             responses=[
-                "",  # facade installation, first forward
                 FinalOutput({"answer": "first"}),
-                "",  # facade installation, second forward
                 FinalOutput({"answer": "second"}),
             ]
         )
@@ -806,7 +792,7 @@ class TestRLMCallMethod:
 
     def test_call_is_alias_for_forward(self):
         """Test that __call__ is an alias for forward()."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -851,7 +837,6 @@ class TestRLMToolExceptions:
             raise RuntimeError("Tool failed!")
 
         mock = MockInterpreter(responses=[
-            "",
             CodeExecutionError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -867,7 +852,6 @@ class TestRLMToolExceptions:
     def test_runtime_error_history_uses_stripped_code(self):
         """Runtime execution failures should preserve stripped code in history."""
         mock = MockInterpreter(responses=[
-            "",
             CodeExecutionError("NameError: name 'x' is not defined"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -885,7 +869,6 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_execute_is_recoverable(self):
         """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
         mock = MockInterpreter(responses=[
-            "",
             SyntaxError("invalid syntax"),
             FinalOutput({"answer": "recovered"}),
         ])
@@ -902,7 +885,6 @@ class TestRLMToolExceptions:
     def test_syntax_error_from_strip_code_fences_is_recoverable(self):
         """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
         mock = MockInterpreter(responses=[
-            "",
             FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iters=5)
@@ -1202,7 +1184,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -1214,7 +1196,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
-        mock = MockInterpreter(responses=["", FinalOutput({"count": 42})])
+        mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
@@ -1253,7 +1235,7 @@ class TestRLMTypeCoercionMock:
     ])
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
-        mock = MockInterpreter(responses=["", FinalOutput({output_field: final_value})])
+        mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iters=3)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
@@ -1659,7 +1641,7 @@ class TestPrepareSerializableVars:
 
     def test_separates_serializable_from_regular(self):
         """Serializable values are injected; regular values are returned."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("data, query -> answer", max_iters=3)
 
         stub = _StubSerializable("payload")
@@ -1743,7 +1725,6 @@ class TestPrepareSerializableVars:
         """Full forward() pass with a SandboxSerializable input."""
         mock = MockInterpreter(responses=[
             "",  # setup execution for _prepare_serializable_vars
-            "",  # dspy facade installation
             FinalOutput({"answer": "done"}),
         ])
         rlm = RLM("data, query -> answer", max_iters=3)
@@ -1756,7 +1737,7 @@ class TestPrepareSerializableVars:
         assert result.answer == "done"
 
         # First call should be the serializable setup, second should be the iteration
-        assert mock.call_count == 3
+        assert mock.call_count == 2
 
 
 @pytest.mark.deno
@@ -1791,14 +1772,23 @@ class TestLargeSerializableRoundTrip:
 
 
 # ============================================================================
-# Sub-dspy Capability (interpreters that can run dspy)
+# Sub-dspy capability (interpreters that can host the dspy facade)
 # ============================================================================
 
 
+class SubDspyMockInterpreter(MockInterpreter):
+    capabilities = InterpreterCapability.SUB_DSPY
+
+
 class SubDspyMockInterpreterFactory(MockInterpreterFactory):
-    """Mock factory declaring that its interpreters can run dspy in-sandbox."""
+    """Mock factory whose interpreters declare they can host the dspy facade."""
 
     capabilities = InterpreterCapability.SUB_DSPY
+
+    def __call__(self) -> MockInterpreter:
+        interpreter = SubDspyMockInterpreter(responses=self.responses, execute_fn=self.execute_fn)
+        self.instances.append(interpreter)
+        return interpreter
 
 
 class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
@@ -1807,13 +1797,9 @@ class _Submit(Exception):  # noqa: N818 - control-flow signal, not an error
 
 
 class _InProcessInterpreter:
-    """Minimal interpreter for tests: executes code in the host process.
+    """Minimal interpreter for tests: executes code in the host process, hosting the facade."""
 
-    Declares no capabilities, so RLM installs the facade over it; the host tools land in the
-    execution namespace, where the shim finds them.
-    """
-
-    capabilities = InterpreterCapability(0)
+    capabilities = InterpreterCapability.SUB_DSPY
 
     def __init__(self):
         self.tools = {}
@@ -1846,16 +1832,6 @@ class _InProcessInterpreter:
         pass
 
 
-class _InProcessSubDspyInterpreter(_InProcessInterpreter):
-    """Declares SUB_DSPY and provides the factory, yet executes in the host process: RLM must reject it."""
-
-    capabilities = InterpreterCapability.SUB_DSPY
-
-    def __init__(self):
-        super().__init__()
-        self._namespace[SUB_DSPY_FACTORY_NAME] = _InProcessSubDspyInterpreter
-
-
 @contextmanager
 def preserve_real_dspy_module():
     """The facade shim registers itself in sys.modules; in-process tests must restore real dspy."""
@@ -1867,191 +1843,57 @@ def preserve_real_dspy_module():
 
 
 class TestRLMSubDspy:
-    def test_action_prompt_includes_sub_agent_instructions(self):
-        rlm = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
-        instructions = rlm.generate_action.signature.instructions
-        assert "Sub-agents (dspy)" in instructions
-        assert SUB_DSPY_FACTORY_NAME in instructions
-        assert "functions you define in the REPL." in instructions  # native: REPL functions can be tools
+    def test_sub_agents_are_offered_only_with_the_capability(self):
+        with_facade = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
+        without = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
 
-    def test_action_prompt_offers_the_facade_without_capability(self):
-        rlm = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
-        instructions = rlm.generate_action.signature.instructions
-        assert "Sub-agents (dspy)" in instructions
-        assert SUB_DSPY_FACTORY_NAME in instructions  # same nested-RLM idiom in both environments
-        assert "cannot cross to the host" in instructions
+        assert "Sub-agents (dspy)" in with_facade.generate_action.signature.instructions
+        assert SUB_DSPY_FACTORY_NAME in with_facade.generate_action.signature.instructions
+        assert "Sub-agents (dspy)" not in without.generate_action.signature.instructions
+
+    def test_facade_is_installed_only_with_the_capability(self):
+        from dspy.primitives import facade
+
+        for factory in (
+            SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})]),
+            MockInterpreterFactory(responses=[FinalOutput({"answer": "42"})]),
+        ):
+            rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+            rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+            assert rlm(query="q").answer == "42"
+            interpreter = factory.instances[0]
+            installed = interpreter.call_history[0][0] == facade.SHIM_SETUP
+            assert installed is bool(rlm._sub_dspy)
+            assert ({facade.CONSTRUCT_TOOL, facade.CALL_TOOL} <= interpreter.tools.keys()) is installed
 
     def test_sub_dspy_reserves_sandbox_names(self):
-        with pytest.raises(ValueError, match="conflict"):
-            RLM("dspy -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
-
         def dspy_interpreter_factory() -> str:
-            """Tool colliding with the environment-provided factory name."""
+            """Tool colliding with the facade-provided factory name."""
             return ""
 
+        with pytest.raises(ValueError, match="conflict"):
+            RLM("dspy -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
         with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
-            RLM(
-                "query -> answer",
-                tools=[dspy_interpreter_factory],
-                interpreter_factory=SubDspyMockInterpreterFactory(),
-            )
+            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=SubDspyMockInterpreterFactory())
+        # Without the facade these names are ordinary.
+        RLM("dspy -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
-        # The facade provides the same name (as a marker), so it is reserved in both environments.
-        with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
-            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
 
-    def test_sub_agent_lm_is_served_by_the_host(self):
-        # Only the model identity crosses; the host tool runs the call on the caller's sub_lm.
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        sub_lm = DummyLM([{"answer": "served by sub_lm"}])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory, sub_lm=sub_lm)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        result = rlm(query="q")
-
-        assert result.answer == "42"
-        interpreter = factory.instances[0]
-        code, variables = interpreter.call_history[0]
-        assert code == SUB_DSPY_SETUP_CODE
-        assert variables == {_SUB_DSPY_HOST_VAR: _HOST_PROCESS_TOKEN, _SUB_DSPY_TOOLS_VAR: {}}
-        code, variables = interpreter.call_history[1]
-        assert code == SUB_DSPY_EXEC_CODE
-        assert variables[_SUB_DSPY_CODE_VAR] == 'SUBMIT("42")'
-        assert variables[_SUB_DSPY_LM_VAR] == {"model": sub_lm.model, "model_type": "chat"}
-        outputs = interpreter.tools[SUB_DSPY_LM_TOOL](messages=[{"role": "user", "content": "hi"}])
-        assert "served by sub_lm" in outputs[0]
-
-    def test_sub_agent_lm_defaults_to_the_host_lm(self):
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        with dummy_lm_context([{"answer": "served by host"}]):
-            rlm(query="q")
-            host_model = dspy.settings.lm.model
-            outputs = factory.instances[0].tools[SUB_DSPY_LM_TOOL](prompt="hi")
-
-        _, variables = factory.instances[0].call_history[1]
-        assert variables[_SUB_DSPY_LM_VAR]["model"] == host_model
-        assert "served by host" in outputs[0]
+class TestRLMFacadeDspy:
+    def test_action_prompt_includes_facade_instructions(self):
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
+        assert "cannot cross to the host" in rlm.generate_action.signature.instructions
 
     def test_callable_only_sub_lm_still_works(self):
         class PlainLM:
             def __call__(self, prompt):
                 return ["plain:" + prompt]
 
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory, sub_lm=PlainLM())
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessInterpreter, sub_lm=PlainLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": "SUBMIT(llm_query('x'))"}])
 
-        assert rlm(query="q").answer == "42"
-        _, variables = factory.instances[0].call_history[1]
-        assert variables[_SUB_DSPY_LM_VAR] == {"model": None, "model_type": "chat"}
-        assert factory.instances[0].tools["llm_query"]("x") == "plain:x"
-
-    def test_sub_agent_lm_calls_share_the_llm_query_budget(self):
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        sub_lm = DummyLM([{"answer": "a"}, {"answer": "b"}, {"answer": "c"}])
-        rlm = RLM("query -> answer", max_iters=1, max_llm_calls=2, interpreter_factory=factory, sub_lm=sub_lm)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        rlm(query="q")
-
-        tools = factory.instances[0].tools
-        tools["llm_query"]("first")
-        tools[SUB_DSPY_LM_TOOL](prompt="second")
-        with pytest.raises(RuntimeError, match="LLM call limit exceeded: 2 \\+ 1 > 2"):
-            tools[SUB_DSPY_LM_TOOL](prompt="third")
-
-    def test_no_lm_override_when_the_host_has_no_lm(self):
-        # Without a host LM nothing is served; the environment's own LM configuration applies.
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        rlm(query="q")
-
-        _, variables = factory.instances[0].call_history[1]
-        assert variables[_SUB_DSPY_LM_VAR] is None
-        with pytest.raises(dspy.LMNotConfiguredError):
-            factory.instances[0].tools[SUB_DSPY_LM_TOOL](prompt="hi")
-
-    def test_lm_kwargs_never_cross_into_the_sandbox(self):
-        # Credential-bearing LM kwargs stay on the host; only the model identity is mirrored.
-        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM(
-            "query -> answer",
-            max_iters=1,
-            interpreter_factory=factory,
-            sub_lm=dspy.LM(
-                "openai/gpt-4o-mini",
-                api_key="sk-secret",
-                api_base="https://internal.example/v1",
-                extra_headers={"Authorization": "Bearer proxy-token"},
-                cache=False,
-            ),
-        )
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        rlm(query="q")
-
-        for _, variables in factory.instances[0].call_history:
-            assert "sk-secret" not in repr(variables)
-            assert "internal.example" not in repr(variables)
-            assert "proxy-token" not in repr(variables)
-        assert factory.instances[0].call_history[1][1][_SUB_DSPY_LM_VAR] == {
-            "model": "openai/gpt-4o-mini",
-            "model_type": "chat",
-        }
-
-    def test_in_process_sub_dspy_interpreter_is_rejected_at_invocation_start(self):
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=_InProcessSubDspyInterpreter)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        with pytest.raises(RuntimeError, match="runs code in the host's memory"):
-            rlm(query="q")
-
-        assert rlm.generate_action.idx == 0
-
-    @staticmethod
-    def _run_setup_code(host_token: str, **namespace):
-        namespace = {_SUB_DSPY_HOST_VAR: host_token, _SUB_DSPY_TOOLS_VAR: {}, **namespace}
-        exec(SUB_DSPY_SETUP_CODE, namespace)
-        return namespace
-
-    def test_setup_code_rejects_any_executor_carrying_the_host_memory_image(self):
-        # A fork inherits the host's token; a fresh process imports its own.
-        factory = {SUB_DSPY_FACTORY_NAME: _InProcessSubDspyInterpreter}
-        namespace = self._run_setup_code("token of another host", **factory)
-        assert issubclass(namespace["_DspyHostLM"], dspy.BaseLM)
-
-        with pytest.raises(RuntimeError, match="a fork of it"):
-            self._run_setup_code(_HOST_PROCESS_TOKEN, **factory)
-
-    def test_setup_code_requires_the_interpreter_factory(self):
-        with pytest.raises(RuntimeError, match=f"does not provide {SUB_DSPY_FACTORY_NAME}"):
-            self._run_setup_code("token of another host")
-
-    def test_facade_is_the_default_without_capabilities(self):
-        from dspy.primitives import facade
-
-        factory = MockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
-        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
-
-        rlm(query="q")
-
-        interpreter = factory.instances[0]
-        assert interpreter.call_history[0][0] == facade.SHIM_SETUP
-        assert {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} <= interpreter.tools.keys()
-
-
-class TestRLMFacadeDspy:
-    def test_action_prompt_includes_facade_instructions(self):
-        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
-        instructions = rlm.generate_action.signature.instructions
-        assert "cannot cross to the host" in instructions
-        assert "functions you define in the REPL." not in instructions
+        with preserve_real_dspy_module():
+            assert rlm(query="q").answer == "plain:x"
 
     def test_facade_reserves_sandbox_names(self):
         with pytest.raises(ValueError, match="conflict"):

