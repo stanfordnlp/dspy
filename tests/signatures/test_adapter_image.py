@@ -490,6 +490,30 @@ def test_format_cache_does_not_retain_image_instances():
     _format_image.cache_clear()
 
 
+def test_format_cache_payload_is_isolated_from_mutation():
+    """Mutating one format() result must not poison the shared cache entry."""
+    _format_image.cache_clear()
+    url = "https://example.com/isolation-test.jpg"
+    first = dspy.Image(url)
+    second = dspy.Image(url)
+
+    formatted_a = first.format()
+    formatted_b = second.format()
+    assert formatted_a == formatted_b
+    assert formatted_a is not formatted_b
+    assert formatted_a[0] is not formatted_b[0]
+
+    formatted_a[0]["image_url"]["url"] = "https://evil.example/poisoned.jpg"
+    formatted_a[0]["type"] = "tampered"
+
+    formatted_c = second.format()
+    expected = [{"type": "image_url", "image_url": {"url": url}}]
+    assert formatted_b == expected
+    assert formatted_c == expected
+    assert formatted_c is not formatted_a
+    _format_image.cache_clear()
+
+
 def test_image_constructor_supports_positional_source_and_url_keyword():
     source = "https://example.com/dog.jpg"
 

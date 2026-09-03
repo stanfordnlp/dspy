@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import mimetypes
 import os
@@ -106,7 +107,9 @@ class Image(Type):
 
     def format(self) -> list[dict[str, Any]] | str:
         try:
-            return _format_image(self.url)
+            # Deep-copy so callers that mutate the nested list/dict cannot
+            # poison the shared @lru_cache entry for this URL.
+            return copy.deepcopy(_format_image(self.url))
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
 
