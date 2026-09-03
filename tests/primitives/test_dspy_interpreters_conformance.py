@@ -245,6 +245,35 @@ def test_sub_agent_lm_calls_are_served_by_the_host():
     assert host_lm.history  # the call ran on the host object
 
 
+def test_sub_agent_lm_calls_count_against_max_llm_calls():
+    # Generated code cannot spend unbounded host LM calls through sub-agents: the second
+    # dspy.Predict call in a worker exceeds RLM(max_llm_calls=1) and fails inside the sandbox.
+    host_lm = DummyLM([{"answer": "one"}, {"answer": "two"}])
+    rlm = RLM("query -> answer", max_iters=2, max_llm_calls=1, interpreter_factory=SubDspySubprocessInterpreter)
+    rlm.generate_action = make_scripted_predictor([
+        {
+            "reasoning": "Two sub-agent calls",
+            "code": (
+                "sub = dspy.Predict('question -> answer')\n"
+                "first = sub(question='a').answer\n"
+                "try:\n"
+                "    sub(question='b')\n"
+                "except Exception as e:\n"
+                "    print('second call:', e)\n"
+            ),
+        },
+        {"reasoning": "Submit", "code": "SUBMIT(first)"},
+    ])
+
+    with dspy.context(lm=host_lm, adapter=dspy.ChatAdapter()):
+        result = rlm(query="q")
+
+    assert "second call:" in result.trajectory[0]["output"]
+    assert "LLM call limit exceeded: 1 + 1 > 1" in result.trajectory[0]["output"]
+    assert result.answer == "one"
+    assert len(host_lm.history) == 1
+
+
 def test_host_tools_keep_their_schema_for_native_sub_agents():
     # Regression: across a process boundary a host tool arrives as an anonymous proxy, so a
     # native ReActV2 would otherwise register a tool named "<lambda>" with no description.

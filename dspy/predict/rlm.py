@@ -174,6 +174,24 @@ __dspy_value
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
+class _LLMCallBudget:
+    """Per-forward ceiling on sub-LLM calls, shared by every host path generated code can reach."""
+
+    def __init__(self, limit: int):
+        self._limit = limit
+        self._count = 0
+        self._lock = threading.Lock()
+
+    def reserve(self, n: int = 1) -> None:
+        with self._lock:
+            if self._count + n > self._limit:
+                raise RuntimeError(
+                    f"LLM call limit exceeded: {self._count} + {n} > {self._limit}. "
+                    f"Use Python code for aggregation instead of making more LLM calls."
+                )
+            self._count += n
+
+
 def _strip_code_fences(code: str) -> str:
     """Extract Python code from markdown fences, or return as-is if no fences."""
     code = code.strip()
@@ -248,7 +266,8 @@ class RLM(Module):
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
             max_iters: Maximum REPL interaction iterations.
-            max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
+            max_llm_calls: Maximum sub-LLM calls per execution: llm_query/llm_query_batched and, on a
+                  sub-dspy interpreter, the LM calls made by in-sandbox sub-agents.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
@@ -366,20 +385,10 @@ class RLM(Module):
 
         return "\n".join(lines)
 
-    def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query and llm_query_batched tools with a fresh call counter."""
-        state = {"call_count": 0}
-        lock = threading.Lock()
+    def _make_llm_tools(self, budget: _LLMCallBudget | None = None, max_workers: int = 8) -> dict[str, Callable]:
+        """Create llm_query and llm_query_batched tools drawing on ``budget`` (fresh by default)."""
+        budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
-
-        def _check_and_increment(n: int = 1) -> None:
-            with lock:
-                if state["call_count"] + n > self.max_llm_calls:
-                    raise RuntimeError(
-                        f"LLM call limit exceeded: {state['call_count']} + {n} > {self.max_llm_calls}. "
-                        f"Use Python code for aggregation instead of making more LLM calls."
-                    )
-                state["call_count"] += n
 
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
@@ -407,14 +416,14 @@ class RLM(Module):
             """Query the LLM with a prompt string."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
-            _check_and_increment(1)
+            budget.reserve(1)
             return _query_lm(prompt)
 
         def llm_query_batched(prompts: list[str]) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
             if not prompts:
                 return []
-            _check_and_increment(len(prompts))
+            budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -594,17 +603,19 @@ class RLM(Module):
         """The LM serving in-sandbox sub-agents: the explicit sub_lm, else the host's default."""
         return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
 
-    def _make_sub_dspy_lm_tool(self) -> Callable:
+    def _make_sub_dspy_lm_tool(self, budget: _LLMCallBudget) -> Callable:
         """Host-side endpoint for the sandbox's ``_DspyHostLM``; the LM object never crosses the boundary.
 
-        The LM is resolved once per forward: inside the sandbox ``dspy.settings.lm`` is the
-        host-served LM itself, so resolving at call time on a shared-process interpreter would recurse.
+        Every sub-agent LM call draws on the same per-forward ``budget`` as llm_query. The LM is
+        resolved once per forward: inside the sandbox ``dspy.settings.lm`` is the host-served LM
+        itself, so resolving at call time on a shared-process interpreter would recurse.
         """
         lm = self._sub_dspy_lm()
 
         def serve_lm(prompt: str | None = None, messages: list[dict[str, Any]] | None = None, kwargs: dict | None = None):
             if lm is None:
                 raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            budget.reserve(1)
             response = lm(prompt=prompt, messages=messages, **(kwargs or {}))
             return response.to_legacy_outputs() if isinstance(response, dspy.LMResponse) else response
 
@@ -686,9 +697,10 @@ class RLM(Module):
 
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
-        execution_tools = self._make_llm_tools()
+        budget = _LLMCallBudget(self.max_llm_calls)
+        execution_tools = self._make_llm_tools(budget)
         if self._sub_dspy:
-            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool()
+            execution_tools[SUB_DSPY_LM_TOOL] = self._make_sub_dspy_lm_tool(budget)
         execution_tools.update({name: self._make_interpreter_tool(tool) for name, tool in self._user_tools.items()})
         return execution_tools
 

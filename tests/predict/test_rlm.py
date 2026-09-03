@@ -1934,6 +1934,22 @@ class TestRLMSubDspy:
         assert variables[_SUB_DSPY_LM_VAR]["model"] == host_model
         assert "served by host" in outputs[0]
 
+    def test_sub_agent_lm_calls_share_the_llm_query_budget(self):
+        # max_llm_calls is one per-forward ceiling: llm_query and in-sandbox sub-agent calls
+        # draw on the same counter, so sub-agents cannot bypass the limit.
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        sub_lm = DummyLM([{"answer": "a"}, {"answer": "b"}, {"answer": "c"}])
+        rlm = RLM("query -> answer", max_iters=1, max_llm_calls=2, interpreter_factory=factory, sub_lm=sub_lm)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": 'SUBMIT("42")'}])
+
+        rlm(query="q")
+
+        tools = factory.instances[0].tools
+        tools["llm_query"]("first")
+        tools[SUB_DSPY_LM_TOOL](prompt="second")
+        with pytest.raises(RuntimeError, match="LLM call limit exceeded: 2 \\+ 1 > 2"):
+            tools[SUB_DSPY_LM_TOOL](prompt="third")
+
     def test_no_lm_override_when_the_host_has_no_lm(self):
         # Without a host LM nothing is served; the environment's own LM configuration applies.
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
