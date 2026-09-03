@@ -97,7 +97,7 @@ class ChatAdapter(Adapter):
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        self._validate_field_markers(signature)
+        self._validate_field_markers(processed_signature)
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
@@ -118,8 +118,8 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        self._validate_field_markers(signature)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        self._validate_field_markers(processed_signature)
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
