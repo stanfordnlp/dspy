@@ -31,9 +31,10 @@ jobs:
           persist-credentials: false
       - name: Install dependencies and build
         run: |
-          cd docs
-          pip install -r requirements.txt
-          python scripts/build_docs.py current
+          pip install -r docs/requirements.txt -e .
+          python docs/scripts/build_docs.py current \
+            --config docs/mkdocs.yml \
+            --output docs/site
 
   detect-versioned-deployment:
     if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
@@ -133,9 +134,7 @@ jobs:
           cache: "pip"
           cache-dependency-path: docs/requirements.txt
       - name: Install documentation dependencies
-        run: |
-          grep -v 'github.com/stanfordnlp/dspy' docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
-          python -m pip install -r "$RUNNER_TEMP/docs-requirements.txt" -e .
+        run: python -m pip install -r docs/requirements.txt -e .
       - name: Build Current documentation
         run: |
           python docs/scripts/build_docs.py current \
@@ -145,7 +144,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: krypticmouse/dspy-docs
-          ref: master
+          ref: versioned-docs
           path: docs-deployment
           persist-credentials: false
           token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
@@ -161,5 +160,5 @@ jobs:
             --site current-site \
             --identifier current \
             --package-source working-tree \
-            --branch master
-          git -C docs-deployment push origin master
+            --branch versioned-docs
+          git -C docs-deployment push origin versioned-docs
