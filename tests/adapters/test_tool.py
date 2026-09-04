@@ -449,28 +449,37 @@ async def test_async_tool_propagates_sync_function_exception():
 
 
 @pytest.mark.asyncio
-async def test_async_tool_cancellation_does_not_wait_for_sync_function():
-    started = threading.Event()
-    release = threading.Event()
-    finished = threading.Event()
+async def test_async_tool_cancellation_retains_worker_limit_until_sync_function_finishes():
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
 
-    def blocking_tool():
-        started.set()
+    def blocking_tool(call_number: int):
+        if call_number == 1:
+            first_started.set()
+            release_first.wait(timeout=1)
+        else:
+            second_started.set()
+        return call_number
+
+    tool = Tool(blocking_tool)
+    with dspy.context(async_max_workers=1):
+        first_task = asyncio.create_task(tool.acall(call_number=1))
+        assert await asyncio.wait_for(asyncio.to_thread(first_started.wait, 1), timeout=2)
+
+        first_task.cancel()
+        second_task = asyncio.create_task(tool.acall(call_number=2))
+        await asyncio.sleep(0.05)
+
         try:
-            release.wait(timeout=1)
+            assert not first_task.done()
+            assert not second_started.is_set()
         finally:
-            finished.set()
+            release_first.set()
 
-    task = asyncio.create_task(Tool(blocking_tool).acall())
-    try:
-        assert await asyncio.wait_for(asyncio.to_thread(started.wait, 1), timeout=2)
-
-        task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
-        assert not finished.is_set()
-    finally:
-        release.set()
+            await first_task
+        assert await second_task == 2
 
 
 @pytest.mark.asyncio

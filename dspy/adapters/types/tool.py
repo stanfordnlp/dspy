@@ -213,7 +213,17 @@ class Tool(Type):
             result = self.func(**parsed_kwargs)
         else:
             call = functools.partial(self.func, **parsed_kwargs)
-            result = await anyio.to_thread.run_sync(call, abandon_on_cancel=True, limiter=get_limiter())
+            worker_task = asyncio.create_task(anyio.to_thread.run_sync(call, limiter=get_limiter()))
+            try:
+                result = await asyncio.shield(worker_task)
+            except asyncio.CancelledError:
+                # Python cannot stop a running thread. Wait for it to finish so its limiter
+                # token is not released while the underlying function is still running.
+                try:
+                    await asyncio.shield(worker_task)
+                except BaseException:
+                    pass
+                raise
 
         if inspect.isawaitable(result):
             return await result
