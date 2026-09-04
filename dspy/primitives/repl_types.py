@@ -58,8 +58,9 @@ class REPLVariable(pydantic.BaseModel):
             value_str = str(jsonable)
         is_truncated = len(value_str) > preview_chars
         if is_truncated:
-            half = preview_chars // 2
-            preview = value_str[:half] + "..." + value_str[-half:]
+            head_chars = preview_chars // 2
+            tail_chars = preview_chars - head_chars if preview_chars > 0 else head_chars
+            preview = value_str[:head_chars] + "..." + value_str[-tail_chars:]
         else:
             preview = value_str
 
@@ -113,9 +114,10 @@ class REPLEntry(pydantic.BaseModel):
         """Format output with head+tail truncation, preserving true length in header."""
         raw_len = len(output)
         if raw_len > max_output_chars:
-            half = max_output_chars // 2
+            head_chars = max_output_chars // 2
+            tail_chars = max_output_chars - head_chars if max_output_chars > 0 else head_chars
             omitted = raw_len - max_output_chars
-            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
+            output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
         return f"Output ({raw_len:,} chars):\n{output}"
 
     def format(self, index: int, max_output_chars: int = 10_000) -> str:
