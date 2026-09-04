@@ -283,8 +283,10 @@ class GEPA(Teleprompter):
             update, the current candidate, the reflective dataset, and per-component task
             descriptions (the rendered Flex signature) and context blurbs (available tools and
             style notes). It must return a complete replacement `dspy.Module` subclass source per
-            component. Like instruction_proposer, it is invoked inside the reflection_lm context
-            when one is set, and may invoke its own LM otherwise.
+            component. It is invoked inside the reflection_lm context, so predictors it creates
+            use the reflection LM unless it selects a different one with `dspy.context(lm=...)`.
+            Unlike instruction_proposer, it does not satisfy the requirement for a reflection
+            provider: GEPA still requires reflection_lm or instruction_proposer to be set.
 
             Only Flex components are routed to it; regular predictors keep going to
             instruction_proposer (or the default instruction proposer). This parameter has no
