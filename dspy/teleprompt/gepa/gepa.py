@@ -23,6 +23,13 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+DEFAULT_REFLECTION_MINIBATCH_SIZE = 3
+LEGACY_AUTO_BUDGET_MINIBATCH_SIZE = 35
+
+# GEPA evaluates a merge candidate on up to five validation examples before
+# deciding whether to run its full validation evaluation.
+MERGE_MINIBATCH_SIZE = 5
+
 
 @experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
@@ -324,6 +331,8 @@ class GEPA(Teleprompter):
             Available parameters:
             - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string
               ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
+              In auto mode, DSPy uses the sampler's `minibatch_size` attribute for budget estimation when
+              available. Otherwise, it uses the legacy estimate of 35 and logs a warning.
             - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before
               attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'.
               Default is 5.
@@ -385,7 +394,7 @@ class GEPA(Teleprompter):
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
         # Reflection configuration
-        reflection_minibatch_size: int = 3,
+        reflection_minibatch_size: int = DEFAULT_REFLECTION_MINIBATCH_SIZE,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
@@ -487,36 +496,95 @@ class GEPA(Teleprompter):
                 "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
             )
 
+    def _resolve_auto_budget_minibatch_size(self) -> int:
+        """Resolve the minibatch-size estimate used by the automatic budget."""
+        if self.reflection_minibatch_size is not None:
+            return self.reflection_minibatch_size
+
+        batch_sampler = self.gepa_kwargs.get("batch_sampler", "epoch_shuffled")
+        if isinstance(batch_sampler, str) and batch_sampler == "epoch_shuffled":
+            return DEFAULT_REFLECTION_MINIBATCH_SIZE
+
+        sampler_minibatch_size = getattr(batch_sampler, "minibatch_size", None)
+        if (
+            isinstance(sampler_minibatch_size, int)
+            and not isinstance(sampler_minibatch_size, bool)
+            and sampler_minibatch_size > 0
+        ):
+            return sampler_minibatch_size
+
+        logger.warning(
+            "Could not infer the minibatch size from the custom GEPA batch sampler. "
+            f"Using the legacy auto-budget estimate of {LEGACY_AUTO_BUDGET_MINIBATCH_SIZE}. "
+            "Set max_metric_calls explicitly for precise budget control."
+        )
+        return LEGACY_AUTO_BUDGET_MINIBATCH_SIZE
+
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self,
+        num_preds: int,
+        num_candidates: int,
+        valset_size: int,
+        minibatch_size: int | None = None,
+        full_eval_steps: int = 5,
     ) -> int:
-        num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
-        if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
-            raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
+        """Estimate a metric-call budget for the current GEPA optimization loop.
+
+        Each reflective proposal evaluates both its parent and child on the
+        reflection minibatch. Candidates that pass the minibatch acceptance
+        check are then evaluated on the full validation set. The auto modes use
+        ``num_candidates`` as the number of such full evaluations to reserve and
+        retain the existing component-aware heuristic for the number of proposal
+        trials. Enabled merge invocations reserve their five-example screening
+        evaluation and a full validation evaluation as well.
+
+        The result is an allocation rather than an exact prediction: rejected
+        proposals do not consume a full validation evaluation, while custom GEPA
+        sampling or evaluation policies passed through ``gepa_kwargs`` can have
+        different costs.
+
+        ``minibatch_size`` retains the name used by the original public API. If
+        omitted, the effective reflection minibatch size is resolved from this
+        optimizer's configuration. ``full_eval_steps`` is retained and validated
+        for backward compatibility, but no longer affects the budget because GEPA
+        does not perform periodic full evaluations.
+        """
+        reflection_minibatch_size = (
+            minibatch_size if minibatch_size is not None else self._resolve_auto_budget_minibatch_size()
+        )
+        max_merge_invocations = self.max_merge_invocations if self.use_merge else 0
+
+        if num_preds < 1:
+            raise ValueError("num_preds must be >= 1.")
+        if num_candidates < 1:
+            raise ValueError("num_candidates must be >= 1.")
+        if valset_size < 0:
+            raise ValueError("valset_size must be >= 0.")
+        if reflection_minibatch_size < 1:
+            raise ValueError("minibatch_size must be >= 1.")
         if full_eval_steps < 1:
             raise ValueError("full_eval_steps must be >= 1.")
+        if max_merge_invocations is None:
+            raise ValueError(
+                "auto budget requires a concrete max_merge_invocations when merge is enabled. "
+                "Set max_merge_invocations, disable merge, or set max_metric_calls instead."
+            )
+        if max_merge_invocations < 0:
+            raise ValueError("max_merge_invocations must be >= 0.")
 
-        V = valset_size
-        N = num_trials
-        M = minibatch_size
-        m = full_eval_steps
+        num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
 
-        # Initial full evaluation on the default program
-        total = V
+        # The seed candidate is evaluated once on the full validation set.
+        total = valset_size
 
-        # Assume upto 5 trials for bootstrapping each candidate
-        total += num_candidates * 5
+        # A reflective proposal evaluates the parent and child on the same minibatch.
+        total += num_trials * 2 * reflection_minibatch_size
 
-        # N minibatch evaluations
-        total += N * M
-        if N == 0:
-            return total  # no periodic/full evals inside the loop
-        # Periodic full evals occur when trial_num % (m+1) == 0, where trial_num runs 2..N+1
-        periodic_fulls = (N + 1) // (m) + 1
-        # If 1 <= N < m, the code triggers one final full eval at the end
-        extra_final = 1 if N < m else 0
+        # Reserve full validation evaluations for the target number of accepted candidates.
+        total += num_candidates * valset_size
 
-        total += (periodic_fulls + extra_final) * V
+        # Each accepted merge uses a five-example screening evaluation followed by full validation.
+        total += max_merge_invocations * (MERGE_MINIBATCH_SIZE + valset_size)
         return total
 
     def compile(
@@ -550,6 +618,11 @@ class GEPA(Teleprompter):
 
         num_components = len(instruction_predictors) + len(flex_submodules)
         if self.auto is not None:
+            if self.use_merge and self.max_merge_invocations is None:
+                raise ValueError(
+                    "auto budget requires a concrete max_merge_invocations when merge is enabled. "
+                    "Set max_merge_invocations, disable merge, or set max_metric_calls instead."
+                )
             self.max_metric_calls = self.auto_budget(
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
@@ -569,12 +642,9 @@ class GEPA(Teleprompter):
                 "No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainset, as it makes GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible."
             )
         valset = valset or trainset
-        # 35 matches the default minibatch_size in auto_budget(); when the valset is
-        # at or below this size, suggesting further reduction is unhelpful since GEPA
-        # would already evaluate the full valset per step.
-        if len(valset) > 35:
+        if self.reflection_minibatch_size is None or len(valset) > self.reflection_minibatch_size:
             logger.info(
-                f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
+                f"Using {len(valset)} examples for tracking Pareto scores. Each accepted candidate is evaluated on the full valset, so you can consider using a smaller representative sample to allow GEPA to explore more diverse solutions within the same budget."
             )
         else:
             logger.info(f"Using {len(valset)} examples for tracking Pareto scores.")
