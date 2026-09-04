@@ -36,6 +36,17 @@ def branch_file(repository, branch: str, path: str) -> str:
     return subprocess.check_output(["git", "show", f"{branch}:{path}"], cwd=repository, text=True)
 
 
+def set_current_renderer(repository, renderer: str):
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+    current = next(entry for entry in inventory if entry["version"] == "current")
+    current["properties"]["renderer"] = renderer
+    subprocess.run(["git", "checkout", "-q", "versioned-docs"], cwd=repository, check=True)
+    (repository / "versions.json").write_text(json.dumps(inventory, indent=2) + "\n")
+    subprocess.run(["git", "add", "versions.json"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", f"Set Current renderer to {renderer}"], cwd=repository, check=True)
+    subprocess.run(["git", "checkout", "-q", "master"], cwd=repository, check=True)
+
+
 def test_stable_versions_reject_prereleases_and_old_major_versions():
     assert stable_version("3.1.2") == "3.1.2"
     assert version_tuple("3.1.2") == (3, 1, 2)
@@ -198,6 +209,37 @@ def test_mike_current_is_mutable_and_default(tmp_path):
     require_current_renderer(repository, "versioned-docs", "zensical")
     with pytest.raises(RuntimeError, match="expected 'material'"):
         require_current_renderer(repository, "versioned-docs", "material")
+
+
+@requires_mike
+def test_publication_requires_reviewed_zensical_current(tmp_path):
+    repository = make_repository(tmp_path)
+    deployed = make_site(tmp_path / "deployed", "deployed")
+    publish_site(
+        repository=repository,
+        site=deployed,
+        identifier="current",
+        aliases=[],
+        package_source="working-tree",
+    )
+    set_current_renderer(repository, "material")
+
+    update = make_site(tmp_path / "update", "update")
+    arguments = {
+        "repository": repository,
+        "site": update,
+        "identifier": "current",
+        "aliases": [],
+        "package_source": "working-tree",
+        "required_current_renderer": "zensical",
+    }
+    with pytest.raises(RuntimeError, match="expected 'zensical'"):
+        publish_site(**arguments)
+    assert "deployed" in branch_file(repository, "versioned-docs", "current/index.html")
+
+    set_current_renderer(repository, "zensical")
+    assert publish_site(**arguments)
+    assert "update" in branch_file(repository, "versioned-docs", "current/index.html")
 
 
 @requires_mike

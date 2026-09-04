@@ -12,21 +12,17 @@ DSPy's versioned documentation is one static site managed by
 The picker lists Current and every patch release. Minor aliases are navigation
 conveniences and are hidden from the picker. Mike owns `versions.json`, the
 default redirect, aliases, and version directories on the generated
-`versioned-docs` branch in `krypticmouse/dspy-docs`.
+`master` branch in `krypticmouse/dspy-docs`.
 
 Historical snapshots use Material for MkDocs, while Current and future release
 snapshots use Zensical. Stored static versions do not need to share a renderer.
 
-## Deployment and promotion
+## Deployment
 
-Generated candidates are written to the `versioned-docs` branch and promoted
-to production `master` through reviewed pull requests in
-`krypticmouse/dspy-docs`. Production's `versions.json` is the activation marker
-for Mike publication; a candidate branch alone never changes production.
-
-Renderer migrations are built on `versioned-docs` first. After that branch is
-reviewed and promoted, the Current workflow's explicit publication target is
-changed to `master`. There is no implicit promotion based on site metadata.
+Current and release publication update production `master` in
+`krypticmouse/dspy-docs`. Both paths require Mike metadata identifying Current
+as Zensical before they write, so an unversioned or unexpected deployment fails
+closed. Corrections use reviewed pull requests in that repository.
 
 Existing unversioned page URLs remain valid. Publishing Current generates root
 redirect pages such as `/api/` → `/current/api/`, and each build scopes
