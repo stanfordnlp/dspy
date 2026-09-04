@@ -17,7 +17,7 @@ import inspect
 import keyword
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
@@ -26,6 +26,7 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.predict.rlm_query_compiler import compile_llm_query_loops
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
     CodeExecutionError,
@@ -166,6 +167,10 @@ class RLM(Module):
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
+        if isinstance(signature, str) and any(
+            field.split(":", 1)[0].strip().startswith("__dspy_") for field in signature.split("->", 1)[0].split(",")
+        ):
+            raise ValueError("Input fields conflict with built-in sandbox functions")
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
@@ -186,8 +191,12 @@ class RLM(Module):
     # =========================================================================
 
     # Names owned by RLM rather than the user-provided signature or tools.
-    _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_SANDBOX_NAMES = frozenset(
+        {"llm_query", "llm_query_batched", "__dspy_llm_query_batched", "__dspy_replay_llm_query", "SUBMIT", "print"}
+    )
     _RESERVED_RESULT_NAMES = frozenset({"trajectory", "final_reasoning"})
+
+    _compile_llm_query_loops = staticmethod(compile_llm_query_loops)
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -221,11 +230,13 @@ class RLM(Module):
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
-            if name in self._RESERVED_SANDBOX_NAMES:
+            if name in self._RESERVED_SANDBOX_NAMES or name.startswith("__dspy_"):
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
-        reserved_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
+        reserved_inputs = sorted(
+            name for name in input_names if name in self._RESERVED_SANDBOX_NAMES or name.startswith("__dspy_")
+        )
         if reserved_inputs:
             raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
 
@@ -261,6 +272,7 @@ class RLM(Module):
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools with a fresh call counter."""
         state = {"call_count": 0}
+        errors = []
         lock = threading.Lock()
         lm = self.sub_lm
 
@@ -272,6 +284,11 @@ class RLM(Module):
                         f"Use Python code for aggregation instead of making more LLM calls."
                     )
                 state["call_count"] += n
+
+        def _error_outcome(error: Exception) -> dict[str, int]:
+            with lock:
+                errors.append(error)
+                return {"error": len(errors) - 1}
 
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
@@ -302,27 +319,46 @@ class RLM(Module):
             _check_and_increment(1)
             return _query_lm(prompt)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query prompts concurrently, isolating LM failures while propagating contract errors."""
-            if not prompts:
-                return []
-            _check_and_increment(len(prompts))
-
-            results: dict[int, str] = {}
+        def __dspy_llm_query_batched(prompts: list[str]) -> list[dict[str, str | int]]:
+            """Run the scalar-call prefix allowed by validation and budget, retaining ordered failures for replay."""
+            outcomes = []
+            futures = []
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {
-                    executor.submit(contextvars.copy_context().run, _query_lm, prompt): index
-                    for index, prompt in enumerate(prompts)
-                }
-                for future in as_completed(future_to_idx):
-                    idx = future_to_idx[future]
+                for prompt in prompts:
+                    if not prompt:
+                        outcomes.append(_error_outcome(ValueError("prompt cannot be empty")))
+                        break
                     try:
-                        results[idx] = future.result()
-                    except dspy.LMError as e:
-                        results[idx] = f"[ERROR] {format_error_for_lm(e)}"
-            return [results[i] for i in range(len(prompts))]
+                        _check_and_increment(1)
+                    except Exception as error:
+                        outcomes.append(_error_outcome(error))
+                        break
+                    outcomes.append({})
+                    futures.append(
+                        (len(outcomes) - 1, executor.submit(contextvars.copy_context().run, _query_lm, prompt))
+                    )
+                for index, future in futures:
+                    try:
+                        outcomes[index] = {"value": future.result()}
+                    except Exception as error:
+                        outcomes[index] = _error_outcome(error)
+            return outcomes
 
-        return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
+        def __dspy_replay_llm_query(outcome: dict) -> str:
+            if "error" in outcome:
+                raise errors[outcome["error"]]
+            return outcome["value"]
+
+        def llm_query_batched(prompts: list[str]) -> list[str]:
+            """Query prompts concurrently with the same validation and errors as llm_query."""
+            return [__dspy_replay_llm_query(outcome) for outcome in __dspy_llm_query_batched(prompts)]
+
+        return {
+            "llm_query": llm_query,
+            "llm_query_batched": llm_query_batched,
+            "__dspy_llm_query_batched": __dspy_llm_query_batched,
+            "__dspy_replay_llm_query": __dspy_replay_llm_query,
+        }
 
     @property
     def tools(self) -> dict[str, Tool]:
@@ -658,8 +694,9 @@ class RLM(Module):
         input_args: dict[str, Any],
     ) -> Any:
         """Execute code in the interpreter, returning the result or an error string."""
+        execution_code, _ = self._compile_llm_query_loops(code)
         try:
-            return repl.execute(code, variables=dict(input_args))
+            return repl.execute(execution_code, variables=dict(input_args))
         except (CodeExecutionError, SyntaxError) as e:
             return f"[Error] {format_error_for_lm(e)}"
 

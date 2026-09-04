@@ -170,7 +170,7 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="not a keyword"):
             RLM("context -> answer", tools=[tool])
 
-    @pytest.mark.parametrize("tool_name", ["llm_query", "llm_query_batched", "SUBMIT", "print"])
+    @pytest.mark.parametrize("tool_name", ["llm_query", "llm_query_batched", "__dspy_llm_query_batched", "__dspy_replay_llm_query", "__dspy_frames", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
         """Test RLM rejects tool names that conflict with built-in functions."""
         def my_tool() -> str:
@@ -204,7 +204,7 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="Duplicate tool name 'lookup'"):
             RLM("context -> answer", tools=[Tool(first, name="lookup"), Tool(second, name="lookup")])
 
-    @pytest.mark.parametrize("input_name", ["llm_query", "llm_query_batched", "SUBMIT", "print"])
+    @pytest.mark.parametrize("input_name", ["llm_query", "llm_query_batched", "__dspy_frames", "SUBMIT", "print"])
     def test_input_names_cannot_shadow_sandbox_functions(self, input_name):
         with pytest.raises(ValueError, match="Input fields conflict with built-in sandbox functions"):
             RLM(f"{input_name} -> answer")
@@ -329,8 +329,7 @@ class TestRLMInitialization:
 
         assert factory.instances == []
 
-    def test_batched_query_errors_have_clear_markers(self):
-        """Test that errors in llm_query_batched are prefixed with [ERROR]."""
+    def test_batched_query_propagates_lm_errors(self):
         from unittest.mock import MagicMock
 
         import dspy
@@ -341,19 +340,16 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)
         tools = rlm._make_llm_tools()
 
-        results = tools["llm_query_batched"](prompts=["test prompt"])
-        assert len(results) == 1
-        assert results[0].startswith("[ERROR]")
-        assert "LM failed" in results[0]
+        with pytest.raises(dspy.LMTransportError, match="LM failed"):
+            tools["llm_query_batched"](prompts=["test prompt"])
 
-    def test_batched_query_marks_missing_lm_configuration(self):
+    def test_batched_query_propagates_missing_lm_configuration(self):
         import dspy
 
         with dspy.context(lm=None):
             tools = RLM("context -> answer")._make_llm_tools()
-            results = tools["llm_query_batched"](["test prompt"])
-
-        assert results == ["[ERROR] No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."]
+            with pytest.raises(dspy.LMNotConfiguredError, match="No LM configured"):
+                tools["llm_query_batched"](["test prompt"])
 
     def test_batched_query_propagates_programming_errors(self):
         from unittest.mock import MagicMock
@@ -364,6 +360,17 @@ class TestRLMInitialization:
 
         with pytest.raises(TypeError, match="invalid LM implementation"):
             tools["llm_query_batched"](["test prompt"])
+
+    def test_batched_query_replays_validation_after_successful_prefix(self):
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        tools = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)._make_llm_tools()
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            tools["llm_query_batched"](["first", ""])
+
+        mock_lm.assert_called_once_with("first")
 
     def test_batched_query_inherits_request_context(self):
         import contextvars
@@ -425,6 +432,1797 @@ class TestRLMInitialization:
 
         with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
             tools["llm_query"](prompt="one more")
+
+
+class TestRLMQueryBatchCompiler:
+    @staticmethod
+    def execute_compiled(code, items):
+        batches = []
+
+        def query_batch(prompts):
+            batches.append(prompts)
+            return [{"value": f"answer:{prompt}"} for prompt in prompts]
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+        namespace = {
+            "items": items,
+            "llm_query": lambda prompt: f"answer:{prompt}",
+            "__dspy_llm_query_batched": query_batch,
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+        exec(compiled, namespace)
+        return namespace, batches, compiled, count
+
+    def test_leaves_llm_query_list_comprehension_unchanged(self):
+        code = 'answers = [llm_query(f"Analyze: {item}") for item in items]'
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_compiles_prompt_formatting_loop_and_preserves_final_locals(self):
+        code = """answers = []
+for item in items:
+    prompt = "Analyze: {}".format(item)
+    answer = llm_query(prompt)
+    answers.append(answer)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a", "b"])
+
+        assert count == 1
+        assert batches == [["Analyze: a", "Analyze: b"]]
+        assert namespace["answers"] == ["answer:Analyze: a", "answer:Analyze: b"]
+        assert namespace["item"] == "b"
+        assert namespace["prompt"] == "Analyze: b"
+        assert namespace["answer"] == "answer:Analyze: b"
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    def test_compiles_singleton_destructuring_target(self):
+        code = """answers = []
+for (item,) in items:
+    answer = llm_query(item)
+    answers.append(answer)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, [["ab"], ["cd"]])
+
+        assert count == 1
+        assert batches == [["ab", "cd"]]
+        assert namespace["answers"] == ["answer:ab", "answer:cd"]
+        assert namespace["item"] == "cd"
+
+    def test_compiles_iteration_local_list_prompt_builder(self):
+        code = """answers = []
+for batch in items:
+    lines = []
+    for index, item in enumerate(batch):
+        rendered = f"{index + 1}. {item}"
+        lines.append(rendered)
+    prompt = "\\n".join(lines)
+    answer = llm_query(prompt)
+    answers.append(answer)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, [["a", "b"], ["c"]])
+
+        assert count == 1
+        assert batches == [["1. a\n2. b", "1. c"]]
+        assert namespace["answers"] == ["answer:1. a\n2. b", "answer:1. c"]
+        assert namespace["lines"] == ["1. c"]
+        assert namespace["rendered"] == "1. c"
+
+    def test_compiles_iteration_local_string_builder(self):
+        code = """answers = []
+for start in range(0, len(items) + 2, 2):
+    batch = items[start:start + 2]
+    if len(batch) == 0:
+        break
+    prompt = "Items:"
+    for item in batch:
+        if len(item) > 3:
+            item = item[:3]
+        prompt += f" {item}"
+    answer = llm_query(prompt)
+    answers.append(answer)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["alpha", "b", "charlie"])
+
+        assert count == 1
+        assert batches == [["Items: alp b", "Items: cha"]]
+        assert namespace["answers"] == ["answer:Items: alp b", "answer:Items: cha"]
+        assert namespace["start"] == 4
+        assert namespace["batch"] == []
+        assert namespace["prompt"] == "Items: cha"
+        assert namespace["item"] == "cha"
+
+    def test_leaves_loop_using_current_block_prompt_helper_unchanged(self):
+        code = """def make_prompt(batch):
+    text = "Items:"
+    for item in batch:
+        text += f" {item}"
+    return text
+
+answers = []
+for batch in items:
+    prompt = make_prompt(batch)
+    answers.append(llm_query(prompt))
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize("instrument", ["trace", "profile"])
+    def test_runtime_instrumentation_uses_scalar_loop(self, instrument):
+        import sys
+
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(item))
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        calls, batches = [], []
+        namespace = {
+            "items": ["a", "b"],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+        get_instrument, set_instrument = getattr(sys, f"get{instrument}"), getattr(sys, f"set{instrument}")
+        previous = get_instrument()
+
+        try:
+            set_instrument(lambda *args: None)
+            exec(compiled, namespace)
+        finally:
+            set_instrument(previous)
+
+        assert count == 1
+        assert calls == ["a", "b"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a", "answer:b"]
+
+    @pytest.mark.parametrize("instrument", ["trace", "profile"])
+    def test_rebound_runtime_instrumentation_getter_uses_scalar_without_calling(self, instrument):
+        import sys
+
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(item))
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        calls, batches = [], []
+        namespace = {
+            "items": ["a", "b"],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+        getter_name = f"get{instrument}"
+        original = getattr(sys, getter_name)
+        called = False
+
+        def retained_getter():
+            nonlocal called
+            called = True
+            raise RuntimeError(f"retained {getter_name} called")
+
+        try:
+            setattr(sys, getter_name, retained_getter)
+            exec(compiled, namespace)
+        finally:
+            setattr(sys, getter_name, original)
+
+        assert count == 1
+        assert not called
+        assert calls == ["a", "b"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a", "answer:b"]
+        assert not any(
+            name.startswith("__dspy_")
+            and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"}
+            for name in namespace
+        )
+
+    def test_persistent_compiler_name_collision_uses_scalar_loop_without_deleting_state(self):
+        import ast
+
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(item))
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        tool_names = {"__dspy_llm_query_batched", "__dspy_replay_llm_query"}
+        generated_names = {
+            node.id
+            for node in ast.walk(ast.parse(compiled))
+            if isinstance(node, ast.Name) and node.id.startswith("__dspy_")
+        } - tool_names
+        retained = {name: f"retained:{name}" for name in generated_names}
+        calls, batches = [], []
+        namespace = {
+            **retained,
+            "items": ["a", "b"],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert generated_names
+        assert calls == ["a", "b"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a", "answer:b"]
+        assert {name: namespace[name] for name in generated_names} == retained
+
+    def test_rejects_rebound_current_block_prompt_helper(self):
+        code = """state = []
+def helper(item):
+    return item
+def replacement(item):
+    state.append("helper")
+    return f"{item}|{len(state)}"
+helper.__code__ = replacement.__code__
+answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+    state.append("continuation")
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize("mutation", ["holder.value", "mutate()", "import json"])
+    def test_rejects_effectful_code_before_current_block_prompt_helper_use(self, mutation):
+        code = f"""def helper(item):
+    return item
+{mutation}
+answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_rejects_class_registry_reflection(self):
+        code = """def helper(item):
+    return item
+answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+    str.__base__.__subclasses__()
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_rejects_frame_builtins_reflection(self):
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(item))
+    try:
+        1 / 0
+    except Exception as error:
+        error.__traceback__.tb_frame.f_builtins["__im" + "port__"]("pydoc")
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize(("constructor", "empty"), [("dict", "{}"), ("list", "[]")])
+    def test_rejects_shadowed_owned_value_constructor_before_prompt_helper_use(self, constructor, empty):
+        code = f"""def helper(item):
+    return item
+def {constructor}():
+    mutate()
+    return {empty}
+owned = {constructor}()
+answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_rejects_current_block_prompt_helper_defined_after_use(self):
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+def helper(item):
+    return item
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize(
+        "setup, mutation",
+        [
+            ("", 'replacement.__globals__["helper"].__code__ = replacement.__code__'),
+            ("", 'replacement.__getattribute__("__globals__")["helper"].__code__ = replacement.__code__'),
+            ("", 'object.__getattribute__(replacement, "__globals__")["helper"].__code__ = replacement.__code__'),
+            ("import inspect\n", 'inspect.currentframe().f_globals["helper"].__code__ = replacement.__code__'),
+            ("import builtins\n", 'builtins.globals()["helper"].__code__ = replacement.__code__'),
+            ("import operator\n", 'operator.attrgetter("__globals__")(replacement)["helper"].__code__ = replacement.__code__'),
+            ("import operator\n", 'operator.methodcaller("__getattribute__", "__globals__")(replacement)["helper"].__code__ = replacement.__code__'),
+            ("import sys\n", "sys.modules[__name__].helper = replacement"),
+            ("", 'print.__self__.__import__("pydoc").locate("dspy_rlm_builtin_self_probe").helper = replacement'),
+        ],
+    )
+    def test_rejects_dynamic_namespace_helper_rebinding(self, setup, mutation):
+        code = setup + f"""def helper(item):
+    return item
+def replacement(item):
+    return f"changed:{{item}}"
+{mutation}
+answers = []
+for item in items:
+    answers.append(llm_query(helper(item)))
+"""
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_runtime_guard_preserves_query_parsing_and_aggregation(self):
+        code = """import json
+chunk_results = []
+totals = {"count": 0}
+for start in range(0, len(items), 2):
+    chunk = items[start:start + 2]
+    numbered = "|".join(chunk)
+    prompt = f"Classify: {numbered}"
+    print(f"querying {start}")
+    result = llm_query(prompt)
+    clean_json = result.strip()
+    parsed = json.loads(clean_json)
+    chunk_results.append(parsed)
+    for category, count in parsed.items():
+        totals[category] += count
+"""
+        batches = []
+
+        def query_batch(prompts):
+            batches.append(prompts)
+            return [{"value": '{"count": 2}'}, {"value": '{"count": 1}'}]
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+        namespace = {
+            "items": ["a", "b", "c"],
+            "llm_query": lambda prompt: '{"count": 2}' if prompt.endswith("a|b") else '{"count": 1}',
+            "__dspy_llm_query_batched": query_batch,
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert batches == []
+        assert namespace["chunk_results"] == [{"count": 2}, {"count": 1}]
+        assert namespace["totals"] == {"count": 3}
+
+    def test_runtime_receiver_guard_handles_retained_json_monkeypatch(self):
+        import json
+
+        code = """import json
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{len(state)}"))
+    parsed = json.loads('"ok"')
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        original_loads = json.loads
+        state, calls, batches = [], [], []
+
+        def retained_loads(value):
+            state.append("loads")
+            return "ok"
+
+        namespace = {
+            "items": ["a", "b"],
+            "state": state,
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        try:
+            json.loads = retained_loads
+            exec(compiled, namespace)
+        finally:
+            json.loads = original_loads
+
+        assert count == 1
+        assert calls == ["a|0", "b|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|0", "answer:b|1"]
+        assert state == ["loads", "loads"]
+        assert namespace["parsed"] == "ok"
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    def test_runtime_receiver_guard_handles_retained_json_prompt_monkeypatch(self):
+        import json
+
+        code = """import json
+answers = []
+for item in items:
+    prompt = json.dumps(item)
+    answer = llm_query(prompt)
+    answers.append(answer)
+    state.append(answer)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        original_dumps = json.dumps
+        state, calls, batches = [], [], []
+
+        def retained_dumps(value):
+            return f"{value}|{len(state)}"
+
+        namespace = {
+            "items": ["a", "b"],
+            "state": state,
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        try:
+            json.dumps = retained_dumps
+            exec(compiled, namespace)
+        finally:
+            json.dumps = original_dumps
+
+        assert count == 1
+        assert calls == ["a|0", "b|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|0", "answer:b|1"]
+        assert state == namespace["answers"]
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    def test_compiles_multiple_independent_queries_per_iteration(self):
+        code = """answers = []
+for item in items:
+    subject_prompt = f"Subject: {item}"
+    subject = llm_query(subject_prompt)
+    mood_prompt = f"Mood: {item}"
+    mood = llm_query(mood_prompt)
+    answers.append((subject, mood))
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a", "b"])
+
+        assert count == 1
+        assert batches == [["Subject: a", "Mood: a", "Subject: b", "Mood: b"]]
+        assert namespace["answers"] == [
+            ("answer:Subject: a", "answer:Mood: a"),
+            ("answer:Subject: b", "answer:Mood: b"),
+        ]
+
+    def test_compiles_loop_inside_helper_definition(self):
+        code = """def classify(values):
+    results = []
+    for value in values:
+        prompt = f"Classify: {value}"
+        results.append(llm_query(prompt))
+    return results
+
+answers = classify(items)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a", "b"])
+
+        assert count == 1
+        assert batches == [["Classify: a", "Classify: b"]]
+        assert namespace["answers"] == ["answer:Classify: a", "answer:Classify: b"]
+
+    def test_compiles_empty_chunk_guard_and_postquery_continue(self):
+        code = """answers = []
+for index in range(len(items) + 1):
+    chunk = items[index:index + 1]
+    if len(chunk) == 0:
+        break
+    prompt = chr(10).join(chunk)
+    result = llm_query(prompt)
+    if "skip" in result:
+        continue
+    answers.append(result)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a", "skip", "b"])
+
+        assert count == 1
+        assert batches == [["a", "skip", "b"]]
+        assert namespace["answers"] == ["answer:a", "answer:b"]
+        assert namespace["index"] == 3
+        assert namespace["chunk"] == []
+        assert namespace["prompt"] == "b"
+        assert namespace["result"] == "answer:b"
+
+    def test_replays_ordered_lm_failure_and_cleans_temporaries(self):
+        import dspy
+
+        calls = []
+
+        class FailingLM:
+            def __call__(self, prompt):
+                calls.append(prompt)
+                if prompt == "p:b":
+                    raise dspy.LMTransportError("LM failed")
+                return [f"R:{prompt}"]
+
+        code = """import dspy
+answers = []
+result = "before"
+try:
+    for item in items:
+        prompt = f"p:{item}"
+        result = llm_query(prompt)
+        answers.append(result)
+except dspy.LMTransportError as error:
+    caught = str(error)
+"""
+        rlm = RLM("items -> answer", max_llm_calls=10, sub_lm=FailingLM())
+        tools = rlm._make_llm_tools()
+        compiled, count = rlm._compile_llm_query_loops(code)
+        namespace = {"items": ["a", "b", "c"], **tools}
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert set(calls) == {"p:a", "p:b", "p:c"}  # Later independent calls may already be in flight.
+        assert namespace["answers"] == ["R:p:a"]
+        assert namespace["item"] == "b"
+        assert namespace["prompt"] == "p:b"
+        assert namespace["result"] == "R:p:a"
+        assert namespace["caught"] == "LM failed"
+        assert not any(name.startswith("__dspy_") and name not in tools for name in namespace)
+
+    def test_cleans_temporaries_when_replay_postprocessing_fails(self):
+        calls = []
+
+        class ParsingLM:
+            def __call__(self, prompt):
+                calls.append(prompt)
+                return [{"a": "1", "b": "bad", "c": "3"}[prompt]]
+
+        code = """answers = []
+raw = "before"
+try:
+    for item in items:
+        raw = llm_query(item)
+        answers.append(int(raw))
+except ValueError as error:
+    caught = str(error)
+"""
+        rlm = RLM("items -> answer", max_llm_calls=10, sub_lm=ParsingLM())
+        tools = rlm._make_llm_tools()
+        compiled, count = rlm._compile_llm_query_loops(code)
+        namespace = {"items": ["a", "b", "c"], **tools}
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert set(calls) == {"a", "b", "c"}
+        assert namespace["answers"] == [1]
+        assert namespace["item"] == "b"
+        assert namespace["raw"] == "bad"
+        assert "invalid literal" in namespace["caught"]
+        assert not any(name.startswith("__dspy_") and name not in tools for name in namespace)
+
+    def test_lm_failure_does_not_replay_later_prompt_assignments(self):
+        import dspy
+
+        calls = []
+
+        class FailingLM:
+            def __call__(self, prompt):
+                calls.append(prompt)
+                if prompt == "first:b":
+                    raise dspy.LMTransportError("LM failed")
+                return [f"R:{prompt}"]
+
+        code = """import dspy
+answers = []
+first = second = first_prompt = second_prompt = "before"
+try:
+    for item in items:
+        first_prompt = f"first:{item}"
+        first = llm_query(first_prompt)
+        second_prompt = f"second:{item}"
+        second = llm_query(second_prompt)
+        answers.append((first, second))
+except dspy.LMTransportError as error:
+    caught = str(error)
+"""
+        rlm = RLM("items -> answer", max_llm_calls=10, sub_lm=FailingLM())
+        tools = rlm._make_llm_tools()
+        compiled, count = rlm._compile_llm_query_loops(code)
+        namespace = {"items": ["a", "b", "c"], **tools}
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert set(calls) == {"first:a", "second:a", "first:b", "second:b", "first:c", "second:c"}
+        assert namespace["answers"] == [("R:first:a", "R:second:a")]
+        assert (namespace["item"], namespace["first_prompt"], namespace["second_prompt"]) == ("b", "first:b", "second:a")
+        assert (namespace["first"], namespace["second"], namespace["caught"]) == ("R:first:a", "R:second:a", "LM failed")
+
+    def test_compiled_batch_preserves_scalar_budget_prefix(self):
+        calls = []
+
+        class EchoLM:
+            def __call__(self, prompt):
+                calls.append(prompt)
+                return [f"R:{prompt}"]
+
+        code = """answers = []
+try:
+    for item in ["a", "b", "c"]:
+        result = llm_query(item)
+        answers.append(result)
+except Exception as error:
+    caught = str(error)
+try:
+    after = llm_query("after")
+except Exception as error:
+    after_error = str(error)
+"""
+        rlm = RLM("items -> answer", max_llm_calls=2, sub_lm=EchoLM())
+        tools = rlm._make_llm_tools()
+        compiled, count = rlm._compile_llm_query_loops(code)
+        namespace = dict(tools)
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["a", "b"]
+        assert namespace["answers"] == ["R:a", "R:b"]
+        assert namespace["item"] == "c"
+        assert "2 + 1 > 2" in namespace["caught"]
+        assert "2 + 1 > 2" in namespace["after_error"]
+
+    def test_replays_gather_exception_after_successful_scalar_prefix(self):
+        code = """answers = []
+try:
+    for index in [0, 1]:
+        first = llm_query(f"first:{index}")
+        prompt = items[index]
+        second = llm_query(prompt)
+        answers.append((first, second))
+except IndexError as error:
+    caught = str(error)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a"])
+
+        assert count == 1
+        assert batches == [["first:0", "a", "first:1"]]
+        assert namespace["answers"] == [("answer:first:0", "answer:a")]
+        assert (namespace["index"], namespace["first"], namespace["prompt"], namespace["second"]) == (1, "answer:first:1", "a", "answer:a")
+        assert namespace["caught"] == "list index out of range"
+
+    def test_replays_prefix_and_restores_locals_before_iterator_failure(self):
+        code = """answers = []
+try:
+    for item in items:
+        if item == "skip":
+            continue
+        answers.append(llm_query(item))
+except RuntimeError as error:
+    caught = str(error)
+"""
+
+        def failing_items():
+            yield "a"
+            yield "skip"
+            raise RuntimeError("iteration failed")
+
+        namespace, batches, _, count = self.execute_compiled(code, failing_items())
+
+        assert count == 1
+        assert batches == [["a"]]
+        assert namespace["answers"] == ["answer:a"]
+        assert (namespace["item"], namespace["caught"]) == ("skip", "iteration failed")
+
+    def test_stages_prequery_print_conversion_failure_before_batch(self, capsys):
+        code = """answers = []
+try:
+    for item in items:
+        print(int(item))
+        answers.append(llm_query(item))
+except ValueError as error:
+    caught = str(error)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["1", "bad"])
+
+        assert count == 1
+        assert batches == [["1"]]
+        assert namespace["answers"] == ["answer:1"]
+        assert namespace["item"] == "bad"
+        assert "invalid literal" in namespace["caught"]
+        assert capsys.readouterr().out == "1\n"
+
+    def test_stages_prequery_print_subscript_failure_before_batch(self, capsys):
+        code = """answers = []
+try:
+    for index in range(len(items) + 1):
+        print(items[index])
+        answers.append(llm_query(str(index)))
+except IndexError as error:
+    caught = str(error)
+"""
+        namespace, batches, _, count = self.execute_compiled(code, ["a"])
+
+        assert count == 1
+        assert batches == [["0"]]
+        assert namespace["answers"] == ["answer:0"]
+        assert namespace["index"] == 1
+        assert namespace["caught"] == "list index out of range"
+        assert capsys.readouterr().out == "a\n"
+
+    def test_runtime_alias_guard_handles_retained_plain_list_aliases(self):
+        code = """answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        summary = []
+        batches = []
+        namespace = {
+            "items": ["a", "b"],
+            "summary": summary,
+            "alias": summary,
+            "llm_query": lambda prompt: f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|", "answer:b|answer:a|"]
+        assert summary == namespace["answers"]
+
+    def test_runtime_callback_guard_handles_retained_callback(self):
+        code = """import re
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    re.sub("1", callback, "1")
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        state, calls, batches = [], [], []
+
+        def callback(match):
+            state.append(match.group())
+            return match.group()
+
+        namespace = {
+            "items": ["a", "b"],
+            "state": state,
+            "callback": callback,
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["a|0", "b|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|0", "answer:b|1"]
+        assert state == ["1", "1"]
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    def test_runtime_callback_guard_handles_retained_container_callback(self):
+        code = """import re
+answers = []
+for item in ["a", "b"]:
+    prompt = f"{item}|{len(state)}"
+    answers.append(llm_query(prompt))
+    re.sub("1", callbacks[0], "1")
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        state, calls, batches = [], [], []
+
+        def callback(match):
+            state.append(match.group())
+            return match.group()
+
+        namespace = {
+            "state": state,
+            "callbacks": [callback],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["a|0", "b|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|0", "answer:b|1"]
+        assert state == ["1", "1"]
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    def test_runtime_callback_guard_handles_retained_container_callee(self):
+        code = """answers = []
+for item in ["a", "b"]:
+    prompt = f"{item}|{len(state)}"
+    answers.append(llm_query(prompt))
+    callbacks[0]()
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        state, calls, batches = [], [], []
+
+        def callback():
+            state.append("x")
+
+        namespace = {
+            "state": state,
+            "callbacks": [callback],
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["a|0", "b|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|0", "answer:b|1"]
+        assert state == ["x", "x"]
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    @pytest.mark.parametrize(
+        "continuation",
+        [
+            "recorder.record()",
+            '{"recorder": recorder}["recorder"].record()',
+            "marker = recorder.value",
+            'marker = {"recorder": recorder}["recorder"].value',
+            "marker = -recorder",
+            "marker = recorder + 1",
+            "marker = recorder == 1",
+            "marker = bool(recorder)",
+            "marker = len(recorder)",
+            "marker = {recorder: 1}",
+            "if recorder:\n        marker = 1",
+            "recorder += 1",
+            "scratch = [recorder for recorder in []]\n    marker = recorder + 1",
+            "recorder = -recorder",
+            "marker = (recorder := -recorder)",
+        ],
+    )
+    def test_runtime_receiver_guard_handles_retained_custom_access(self, continuation):
+        code = """answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{len(state)}"))
+    CONTINUATION
+""".replace("CONTINUATION", continuation)
+        compiled, count = RLM._compile_llm_query_loops(code)
+        state, calls, batches = [], [], []
+
+        class Recorder:
+            def record(self):
+                state.append("x")
+
+            @property
+            def value(self):
+                state.append("x")
+                return len(state)
+
+            def __neg__(self):
+                state.append("x")
+                return self
+
+            def __add__(self, other):
+                return -self
+
+            __eq__ = __add__
+
+            def __iadd__(self, other):
+                self.__neg__()
+                return self
+
+            def __bool__(self):
+                state.append("x")
+                return True
+
+            def __hash__(self):
+                state.append("x")
+                return len(state)
+
+            def __len__(self):
+                state.append("x")
+                return len(state)
+
+        namespace = {
+            "items": ["x", "y"],
+            "state": state,
+            "recorder": Recorder(),
+            "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["x|0", "y|1"]
+        assert batches == []
+        assert namespace["answers"] == ["answer:x|0", "answer:y|1"]
+        assert state == ["x", "x"]
+        assert not any(name.startswith("__dspy_") and name not in {"__dspy_llm_query_batched", "__dspy_replay_llm_query"} for name in namespace)
+
+    @pytest.mark.parametrize(
+        "definition",
+        [
+            "def marker(value=holder.value):\n        pass",
+            "def marker(*, value=holder.value):\n        pass",
+            "def marker(value: holder.value) -> holder.value:\n        pass",
+            "def marker(*args: holder.value, **kwargs: holder.value):\n        pass",
+            "async def marker(value: holder.value):\n        pass",
+            "fn = lambda value=holder.value: value",
+            "fn = lambda *, value=holder.value: value",
+        ],
+    )
+    def test_leaves_eager_function_definition_expressions_unchanged(self, definition):
+        code = """answers = []
+for item in ["a", "b"]:
+    prompt = f"{item}|{len(state)}"
+    answers.append(llm_query(prompt))
+    DEFINITION
+""".replace("DEFINITION", definition)
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            """answers = []
+for item in ["a", "b"]:
+    answers.append(llm_query(item))
+    with manager:
+        pass
+""",
+            """async def classify():
+    answers = []
+    for item in ["a", "b"]:
+        answers.append(llm_query(item))
+        async with manager:
+            pass
+""",
+        ],
+    )
+    def test_leaves_context_managers_unchanged(self, code):
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_runtime_alias_guard_handles_imported_list_aliases(self):
+        import sys
+
+        code = """import sys
+from sys import path as source
+sink = sys.path
+answers = []
+for item in items:
+    prompt = f"{item}|{len(source)}"
+    answer = llm_query(prompt)
+    answers.append(answer)
+    sink.append(answer)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        original_path = list(sys.path)
+        calls = []
+        batches = []
+
+        try:
+            exec(compiled, {
+                "items": ["a", "b"],
+                "llm_query": lambda prompt: calls.append(prompt) or f"answer:{prompt}",
+                "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+                "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+            })
+        finally:
+            sys.path[:] = original_path
+
+        assert count == 1
+        assert batches == []
+        assert calls == [f"a|{len(original_path)}", f"b|{len(original_path) + 1}"]
+
+    def test_runtime_alias_guard_handles_retained_nested_aliases(self):
+        code = """answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(box['alias'])}")
+    answers.append(answer)
+    summary.append(answer)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        summary = []
+        batches = []
+        namespace = {
+            "items": ["a", "b"],
+            "summary": summary,
+            "box": {"alias": summary},
+            "llm_query": lambda prompt: f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|", "answer:b|answer:a|"]
+        assert summary == namespace["answers"]
+
+    def test_runtime_alias_guard_handles_local_for_binding_aliases(self):
+        code = """summary = []
+choices = [summary]
+for alias in choices:
+    pass
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        batches = []
+        namespace = {
+            "items": ["a", "b"],
+            "llm_query": lambda prompt: f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert batches == []
+        assert namespace["answers"] == ["answer:a|", "answer:b|answer:a|"]
+        assert namespace["summary"] == namespace["answers"]
+
+    def test_runtime_alias_guard_does_not_read_same_named_retained_global(self):
+        code = """def classify(items):
+    answers = []
+    for item in items:
+        answer = llm_query(item)
+        answers.append(answer)
+    return answers
+result = classify(items)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        batches = []
+        namespace = {
+            "items": ["a", "b"],
+            "answer": "retained",
+            "llm_query": lambda prompt: f"answer:{prompt}",
+            "__dspy_llm_query_batched": lambda prompts: batches.append(prompts) or [{"value": f"answer:{prompt}"} for prompt in prompts],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert batches == [["a", "b"]]
+        assert namespace["result"] == ["answer:a", "answer:b"]
+        assert namespace["answer"] == "retained"
+
+    def test_runtime_alias_guard_does_not_read_unbound_mutable_local(self):
+        code = """def classify(items):
+    answers = []
+    for item in items:
+        raw = llm_query(item)
+        parsed = []
+        parsed.append(raw)
+        answers.append(parsed)
+    return answers
+result = classify(items)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        namespace = {
+            "items": ["a", "b"],
+            "parsed": [],
+            "__dspy_llm_query_batched": lambda prompts: [{"value": f"answer:{prompt}"} for prompt in prompts],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert namespace["result"] == [["answer:a"], ["answer:b"]]
+        assert namespace["parsed"] == []
+
+    def test_runtime_alias_guard_replays_prefix_before_unbound_augassign(self):
+        code = """def classify(items):
+    answers = []
+    try:
+        for item in items:
+            answer = llm_query(item)
+            answers.append(answer)
+            total += 1
+    except UnboundLocalError:
+        return answers
+result = classify(items)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        calls = []
+
+        def query(prompt):
+            calls.append(prompt)
+            return f"answer:{prompt}"
+
+        namespace = {
+            "items": ["a", "b"],
+            "total": 0,
+            "__dspy_llm_query_batched": lambda prompts: [{"value": query(prompt)} for prompt in prompts],
+            "__dspy_replay_llm_query": lambda outcome: outcome["value"],
+        }
+
+        exec(compiled, namespace)
+
+        assert count == 1
+        assert calls == ["a", "b"]  # Later calls may be in flight before the replayed continuation fails.
+        assert namespace["result"] == ["answer:a"]
+        assert namespace["total"] == 0
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            """answers = []
+for item in items:
+    first = llm_query(f"First: {item}")
+    second = llm_query(f"Second: {first}")
+    answers.append((first, second))
+""",
+            """answers = []
+summary = ""
+for item in items:
+    answer = llm_query(f"Prior: {summary}; item: {item}")
+    answers.append(answer)
+    summary += answer
+""",
+        ],
+    )
+    def test_rejects_query_and_cross_iteration_dependencies(self, code):
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            """answers = []
+answer = ""
+for item in items:
+    prompt = answer + item
+    answer = llm_query(prompt)
+    answers.append(answer)
+""",
+            """answers = []
+for item in items:
+    prompt = make_prompt(item)
+    answers.append(llm_query(prompt))
+""",
+            """answers = []
+shared_lines = []
+for batch in items:
+    lines = shared_lines
+    for item in batch:
+        lines.append(item)
+    answers.append(llm_query("\\n".join(lines)))
+""",
+            """answers = []
+for batch in items:
+    lines = []
+    for item in batch:
+        lines.append(item)
+    if len(lines) == 0:
+        continue
+    answers.append(llm_query("\\n".join(lines)))
+""",
+            """summary = []
+alias = summary
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+""",
+            """summary = []
+(alias,) = (summary,)
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+""",
+            """summary = []
+alias: list = summary
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+""",
+            """summary = []
+alias = summary or []
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(alias)}")
+    answers.append(answer)
+    summary.append(answer)
+""",
+            """summary = []
+box = {"alias": summary}
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+box = dict(alias=summary)
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+box = list([summary])
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box[0])}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+box = dict({"alias": summary})
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+original = {"alias": summary}
+box = original.copy()
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+def identity(value):
+    return value
+alias = identity(summary)
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(alias)}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+for alias in [summary]:
+    pass
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(alias)}"))
+    summary.append(answers[-1])
+""",
+            """summary = []
+for first_alias in [summary]:
+    pass
+for alias in [first_alias]:
+    pass
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(alias)}"))
+    summary.append(answers[-1])
+""",
+            """history = []
+answers = []
+for item in items:
+    lines = []
+    for prior in history:
+        lines.append(prior)
+    lines.append(item)
+    answers.append(llm_query("|".join(lines)))
+    history.append(answers[-1])
+""",
+            """answers = []
+x = ["seed"]
+for item in ["a", "b"]:
+    values = [x for x in x]
+    prompt = f"{item}|{values}"
+    answer = llm_query(prompt)
+    answers.append(answer)
+    x.append(answer)
+""",
+            """answers = []
+x = ["seed"]
+for item in ["a", "b"]:
+    values = list(x for x in x)
+    prompt = f"{item}|{values}"
+    answer = llm_query(prompt)
+    answers.append(answer)
+    x.append(answer)
+""",
+            """summary = []
+box = {"alias": summary}
+wrapper = {"box": box}
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(wrapper['box']['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """box = {}
+summary = box.setdefault("alias", [])
+answers = []
+for item in items:
+    answers.append(llm_query(f"{item}|{'/'.join(box['alias'])}"))
+    summary.append(answers[-1])
+""",
+            """class Box:
+    pass
+summary = []
+box = Box()
+box.alias = summary
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{'/'.join(box.alias)}")
+    answers.append(answer)
+    summary.append(answer)
+""",
+            """answers = []
+for item in items:
+    answers.append(llm_query(str(item)))
+    if item < 3:
+        items.append(item + 1)
+""",
+            """state = [1]
+def generate():
+    for value in state:
+        yield value
+answers = []
+for item in generate():
+    answer = llm_query(str(item))
+    answers.append(answer)
+    if item < 3:
+        state.append(item + 1)
+""",
+            """answers = []
+class Item:
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return f"{self.value}:{len(answers)}"
+items = [Item("a"), Item("b")]
+for item in items:
+    answers.append(llm_query(str(item)))
+""",
+            """answers = []
+Item = type("Item", (), {"__str__": lambda self: str(len(answers))})
+items = [Item(), Item()]
+for item in items:
+    answers.append(llm_query(str(item)))
+""",
+            """def make_prompt(item):
+    return f"Prompt: {item}"
+def classify(make_prompt, items):
+    answers = []
+    for item in items:
+        answers.append(llm_query(make_prompt(item)))
+    return answers
+""",
+            """import json
+from helpers import json
+answers = []
+for item in items:
+    answers.append(llm_query(json.dumps(item)))
+""",
+            """import json
+import helpers as json
+answers = []
+for item in items:
+    answers.append(llm_query(json.dumps(item)))
+""",
+            """answers = []
+for item in items:
+    answers.append(llm_query(builder.get(item)))
+""",
+            """shared = []
+answers = []
+for item in items:
+    holder = [shared]
+    holder[0].append(item)
+    answers.append(llm_query("|".join(holder[0])))
+""",
+            """source = iter(["x"])
+answers = []
+for item in items:
+    lines = []
+    lines.extend(source)
+    answers.append(llm_query("|".join(lines)))
+""",
+            """source = iter(["x"])
+answers = []
+for item in items:
+    lines = []
+    for value in source:
+        lines.append(value)
+    answers.append(llm_query(f"{item}|{''.join(lines)}"))
+""",
+            """state = []
+def make_prompt(item, state=state):
+    return f"{item}|{len(state)}"
+answers = []
+for item in items:
+    answers.append(llm_query(make_prompt(item)))
+    state.append(answers[-1])
+""",
+            """phase = 0
+def key(value):
+    return ord(value) if phase == 0 else -ord(value)
+answers = []
+for item in items:
+    prompt = "".join(sorted(item, key=key))
+    answer = llm_query(prompt)
+    answers.append(answer)
+    phase += 1
+""",
+            """import json
+phase = 0
+def parse(value):
+    return int(value) + phase
+answers = []
+for item in items:
+    prompt = str(json.loads(item, parse_int=parse))
+    answer = llm_query(prompt)
+    answers.append(answer)
+    phase += 1
+""",
+            """import json
+state = []
+def parse(value):
+    state.append(value)
+    return int(value)
+answers = []
+for item in items:
+    prompt = f"{item}|{len(state)}"
+    answers.append(llm_query(prompt))
+    json.loads("1", parse_int=parse)
+""",
+            """state = []
+def key(value):
+    state.append(value)
+    return value
+values = ["b", "a"]
+answers = []
+for item in ["x", "y"]:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    values.sort(key=key)
+""",
+            """state = []
+key = lambda value: (state.append(value), value)[1]
+values = ["b", "a"]
+answers = []
+for item in ["x", "y"]:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    values.sort(key=key)
+""",
+            """state = []
+def key(value):
+    state.append(value)
+    return value
+def classify(items, callback):
+    values = ["b", "a"]
+    answers = []
+    for item in items:
+        answers.append(llm_query(f"{item}|{len(state)}"))
+        values.sort(key=callback)
+    return answers
+result = classify(items, key)
+""",
+            """state = []
+def make_prompt(item):
+    def unused():
+        state = []
+    return f"{item}|{len(state)}"
+answers = []
+for item in items:
+    answer = llm_query(make_prompt(item))
+    answers.append(answer)
+    state.append(answer)
+""",
+            """state = []
+def record(value, target):
+    target.append(value)
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    record(answer, target=state)
+""",
+            """def stop(*, target):
+    target.clear()
+answers = []
+for item in items:
+    answers.append(llm_query(item))
+    stop(target=items)
+""",
+            """state = []
+def record(value, target):
+    target.append(value)
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    record(answer, *[state])
+""",
+            """state = []
+def record(value, state=state):
+    state.append(value)
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    record(answer)
+""",
+            """state = []
+def make_prompt(item):
+    return str(item)
+def make_prompt(item):
+    return f"{item}|{len(state)}"
+answers = []
+for item in items:
+    answer = llm_query(make_prompt(item))
+    answers.append(answer)
+    state.append(answer)
+""",
+            """events = []
+def print(value):
+    events.append(value)
+answers = []
+for item in items:
+    print(item)
+    answers.append(llm_query(f"{item}|{len(events)}"))
+""",
+            """source = iter(["x"])
+answers = []
+for item in items:
+    lines = []
+    lines += source
+    answers.append(llm_query("|".join(lines)))
+""",
+            """answers = []
+for item in items:
+    answer = (record_side_effect(), llm_query(item))
+    answers.append(answer)
+""",
+            """answers = []
+for item in items:
+    item.append(llm_query(str(len(items[0]))))
+""",
+            """answers = []
+for item in items:
+    answer = llm_query(str(len(items[0])))
+    answers.append(answer)
+    item.append(answer)
+""",
+            """try:
+    for item in items:
+        total += llm_query(item)
+except NameError:
+    pass
+""",
+            """slots = []
+for item in items:
+    slots[1] = llm_query(item)
+""",
+            """for item in items:
+    answer: Missing = llm_query(item)
+""",
+            """answers = {}
+for item in items:
+    answers.append(llm_query(item))
+""",
+            """answers = []
+for item in items:
+    answers.insert(llm_query(item))
+""",
+            """answers = []
+answers = None
+for item in items:
+    answers.append(llm_query(item))
+""",
+            """answers = []
+for item in items:
+    answers.append(llm_query("fixed"))
+    item = "changed"
+""",
+            """answers = []
+for item in items:
+    lines = []
+    for item in ["x", "y"]:
+        lines.append(item)
+    answers.append(llm_query("|".join(lines)))
+""",
+            """answers = []
+for divisor in items:
+    answers.append((10 // divisor, llm_query(str(divisor))))
+""",
+            """answers = []
+for item in items:
+    print(item, end=1)
+    answers.append(llm_query(item))
+""",
+            """answers = []
+for item in items:
+    print(f"{enumerate(items)}")
+    answers.append(llm_query(item))
+""",
+            """source = []
+answers = []
+for item in ["a", "b"]:
+    answer = llm_query(f"{item}|{len(source)}")
+    answers.append(answer)
+    from sys import path as source
+""",
+            """source = []
+answers = []
+for item in ["a", "b"]:
+    answers.append(llm_query(f"{item}|{len(source)}"))
+    def source():
+        pass
+""",
+            """source = []
+answers = []
+for item in ["a", "b"]:
+    answers.append(llm_query(f"{item}|{len(source)}"))
+    async def source():
+        pass
+""",
+            """state = []
+def record(function):
+    state.append(len(state))
+    return function
+answers = []
+for item in ["a", "b"]:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    @record
+    def decorated():
+        pass
+""",
+            """state = []
+def record(function):
+    state.append(len(state))
+    return function
+answers = []
+for item in ["a", "b"]:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    @record
+    async def decorated():
+        pass
+""",
+            """source = []
+answers = []
+for item in ["a", "b"]:
+    prompt = f"{item}|{len(source)}"
+    answer = llm_query(prompt)
+    answers.append(answer)
+    try:
+        1 / 0
+    except Exception as source:
+        pass
+""",
+            """state = []
+def mutate_global():
+    state.append("changed")
+answers = []
+for item in items:
+    answer = llm_query(f"{item}|{len(state)}")
+    answers.append(answer)
+    mutate_global()
+""",
+            """answers = []
+for item in items:
+    if item:
+        answers.append(llm_query(item))
+""",
+            """try:
+    answers = llm_query_batched(items)
+except Exception:
+    answers = [llm_query(item) for item in items]
+""",
+            """from helpers import llm_query
+answers = [llm_query(item) for item in items]
+""",
+            """from helpers import *
+answers = [llm_query(item) for item in items]
+""",
+            """exec("marker = 1")
+answers = [llm_query(item) for item in items]
+""",
+            """run = exec
+run("marker = 1")
+answers = [llm_query(item) for item in items]
+""",
+            """globals()["llm_query"] = lambda prompt: "local:" + prompt
+answers = [llm_query(item) for item in items]
+""",
+            """__dspy_frames = "keep"
+answers = []
+for item in items:
+    answers.append(llm_query(item))
+""",
+            """del llm_query
+answers = [llm_query(item) for item in items]
+""",
+            """from helpers import str
+answers = [llm_query(str(item)) for item in items]
+""",
+            """answers = []
+for item in items:
+    prompt = f"Classify: {item}"
+    answer = llm_query(prompt)
+    prompt = answer
+    answers.append(answer)
+""",
+        ],
+    )
+    def test_leaves_uncertain_loops_unchanged(self, code):
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_reserves_generated_name_prefix(self):
+        code = """def classify(__dspy_frames, items):
+    answers = []
+    for item in items:
+        answers.append(llm_query(item))
+    return answers, __dspy_frames
+
+result = classify("keep", items)
+"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+
+        assert count == 0
+        assert compiled == code
+
+    def test_executes_compiled_code_but_keeps_original_code_in_trajectory(self):
+        code = 'answers = []\nfor item in items:\n    answers.append(llm_query(f"Analyze: {item}"))'
+        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "done"})])
+        rlm = RLM("items -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Analyze", "code": code}])
+
+        result = rlm(items=["a", "b"])
+
+        assert "llm_query_batched" in factory.instances[0].call_history[0][0]
+        assert result.trajectory[0]["code"] == code
 
 
 class TestRLMInterpreterLifecycle:
@@ -1427,6 +3225,200 @@ class TestRLMWithDummyLM:
             result = rlm.forward(pooled_interpreter, numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+    def test_auto_batches_scalar_queries_e2e(self, pooled_interpreter):
+        class EchoLM:
+            def __call__(self, prompt):
+                return [prompt.upper()]
+
+        code = 'answers = [llm_query(f"value:{item}") for item in items]\nSUBMIT("|".join(answers))'
+        rlm = RLM("items: list[str] -> answer: str", max_iters=1, sub_lm=EchoLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Query every item", "code": code}])
+
+        result = rlm.forward(pooled_interpreter, items=["a", "b"])
+
+        assert result.answer == "VALUE:A|VALUE:B"
+        assert result.trajectory[0]["code"] == code
+
+    def test_auto_batches_query_postprocessing_e2e(self, pooled_interpreter):
+        class JsonLM:
+            def __call__(self, prompt):
+                return ['{"count": 0}' if "skip" in prompt else '{"count": 1}']
+
+        code = """import json
+total = 0
+for index in range(len(items) + 1):
+    chunk = items[index:index + 1]
+    if len(chunk) == 0:
+        break
+    item = chunk[0]
+    prompt = f"classify:{item}"
+    print(f"querying {item}")
+    result = llm_query(prompt)
+    parsed = json.loads(result)
+    if parsed["count"] == 0:
+        continue
+    total += parsed["count"]
+SUBMIT(total)
+"""
+        rlm = RLM("items: list[str] -> answer: int", max_iters=1, sub_lm=JsonLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Query every item", "code": code}])
+
+        result = rlm.forward(pooled_interpreter, items=["a", "skip", "c"])
+
+        assert result.answer == 2
+        assert result.trajectory[0]["code"] == code.strip()
+
+    def test_auto_batch_replays_ordered_failure_and_cleans_temporaries_e2e(self, pooled_interpreter):
+        calls = []
+
+        class FailingLM:
+            def __call__(self, prompt):
+                calls.append(prompt)
+                if prompt == "p:b":
+                    raise dspy.LMTransportError("LM failed")
+                return [f"R:{prompt}"]
+
+        code = """answers = []
+result = "before"
+try:
+    for item in items:
+        prompt = f"p:{item}"
+        result = llm_query(prompt)
+        answers.append(result)
+except RuntimeError as error:
+    caught = str(error)
+SUBMIT(answers, item, prompt, result, caught)"""
+        compiled, count = RLM._compile_llm_query_loops(code)
+        assert count == 1
+        assert "__dspy_replay_llm_query" in compiled
+
+        rlm = RLM(
+            "items: list[str] -> answers: list[str], item: str, prompt: str, result: str, caught: str",
+            max_iters=1,
+            sub_lm=FailingLM(),
+        )
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Query every item", "code": code}])
+
+        output = rlm.forward(pooled_interpreter, items=["a", "b", "c"])
+
+        assert set(calls) == {"p:a", "p:b", "p:c"}
+        assert output.answers == ["R:p:a"]
+        assert (output.item, output.prompt, output.result) == ("b", "p:b", "R:p:a")
+        assert output.caught == "LMTransportError: LM failed"
+        assert output.trajectory[0]["code"] == code
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            # Luna: chunk formatting, query, parse, append.
+            """import json
+counts = []
+for start in range(0, len(items), 1):
+    chunk = items[start:start + 1]
+    numbered = "\\n".join(f"{offset + 1}. {text}" for offset, text in enumerate(chunk))
+    prompt = f"Classify each item:\\n{numbered}"
+    raw = llm_query(prompt)
+    parsed = json.loads(raw)
+    counts.append(parsed["count"])
+SUBMIT(sum(counts))""",
+            # Haiku: progress output, response cleanup, guarded parsing.
+            """import json
+total = 0
+for index, item in enumerate(items):
+    print(f"Query {index + 1}/{len(items)}")
+    prompt = "Count this item: {}".format(item)
+    raw = llm_query(prompt)
+    cleaned = raw.strip()
+    try:
+        parsed = json.loads(cleaned)
+    except ValueError:
+        parsed = {"count": 0}
+    if parsed["count"] < 0:
+        print("invalid")
+    total += parsed["count"]
+SUBMIT(total)""",
+            # DeepSeek: call counter, parse failure continue, nested aggregation.
+            """import json
+calls = 0
+total = 0
+for start in range(0, len(items), 1):
+    chunk = items[start:start + 1]
+    prompt = f"Return a count for: {' | '.join(chunk)}"
+    raw = llm_query(prompt)
+    calls += 1
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        continue
+    if "count" not in parsed:
+        continue
+    for key, value in parsed.items():
+        total += value
+SUBMIT(total)""",
+            # Kimi: tuple loop target, JSON fallback, nested filtering.
+            """import json
+batch_counts = []
+for batch_number, batch in enumerate(items):
+    prompt = f"Analyze batch {batch_number}: {batch}"
+    raw = llm_query(prompt)
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = {"count": 0}
+    for key, value in parsed.items():
+        if key == "count":
+            batch_counts.append(value)
+SUBMIT(sum(batch_counts))""",
+        ],
+        ids=["luna", "haiku", "deepseek", "kimi"],
+    )
+    def test_auto_batches_observed_model_loop_shapes_e2e(self, pooled_interpreter, code):
+        class JsonLM:
+            def __call__(self, prompt):
+                return ['{"count": 1}']
+
+        compiled, count = RLM._compile_llm_query_loops(code)
+        assert count == 1
+        assert "llm_query_batched" in compiled
+
+        rlm = RLM("items: list[str] -> answer: int", max_iters=1, sub_lm=JsonLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Classify all items", "code": code}])
+
+        result = rlm.forward(pooled_interpreter, items=["a", "b", "c"])
+
+        assert result.answer == 3
+        assert result.trajectory[0]["code"] == code
+
+    def test_auto_batch_executes_subqueries_concurrently_e2e(self, pooled_interpreter):
+        import threading
+
+        barrier = threading.Barrier(3)
+
+        class BarrierLM:
+            def __call__(self, prompt):
+                barrier.wait(timeout=3)
+                return [prompt.upper()]
+
+        code = """answers = []
+for start in range(0, len(items) + 2, 2):
+    batch = items[start:start + 2]
+    if len(batch) == 0:
+        break
+    lines = []
+    for index, item in enumerate(batch):
+        lines.append(f"{index + 1}:{item}")
+    prompt = "|".join(lines)
+    answer = llm_query(prompt)
+    answers.append(answer)
+SUBMIT("|".join(answers))"""
+        rlm = RLM("items: list[str] -> answer: str", max_iters=1, sub_lm=BarrierLM())
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Query concurrently", "code": code}])
+
+        result = rlm.forward(pooled_interpreter, items=["a", "b", "c", "d", "e"])
+
+        assert result.answer == "1:A|2:B|1:C|2:D|1:E"
+        assert barrier.n_waiting == 0
 
     def test_with_tool_e2e(self, pooled_interpreter):
         """Test RLM calling a host-side tool through the sandbox."""
