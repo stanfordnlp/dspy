@@ -533,12 +533,6 @@ class TestRLMInterpreterLifecycle:
         assert "standard libraries" not in signature.instructions
         assert optimized.instructions == "Optimized instructions"
 
-    def test_python_interpreter_runtime_limits_are_part_of_action_prompt(self):
-        instructions = RLM("image -> answer").generate_action.signature.instructions
-
-        assert "Do not assume other packages such as numpy" in instructions
-        assert "image.to_pil()" in instructions
-
     def test_python_interpreter_lm_request_bytes(self):
         class StopLMCall(BaseException):
             pass
@@ -1049,6 +1043,8 @@ class TestRLMDynamicSignature:
         assert "`answer`" in instructions
         assert "llm_query(..., images=[...])" in instructions
         assert "Printing or displaying an image encoding does not let you see it" in instructions
+        assert "Do not assume other packages such as numpy" in instructions
+        assert "image.to_pil()" in instructions
 
     def test_extract_signature_structure(self):
         """Test extract signature has required fields for all outputs."""
@@ -1814,20 +1810,6 @@ class TestPrepareSerializableVars:
         assert "_raw_data = base64.b64decode(_raw_data_base64)" in code
         assert variables["_raw_data_base64"] == base64.b64encode(b"\xff\xfe\xfd").decode("ascii")
 
-    def test_dspy_image_is_injected_as_sandbox_image(self):
-        mock = MockInterpreter(responses=[""])
-        rlm = RLM("image, query -> answer")
-        image = dspy.Image("data:image/png;base64,aW1hZ2U=")
-
-        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"image": image, "query": "caption it"}, mock)
-
-        assert regular == {"query": "caption it"}
-        code, variables = mock.call_history[0]
-        assert "class DSPyImage(str)" in code
-        assert "image = DSPyImage(_raw_image)" in code
-        assert variables == {"_raw_image": image.url}
-
     def test_large_payload_not_inlined_in_code(self):
         """Large payloads should ride in the variables kwarg, not the code string.
 
@@ -1914,67 +1896,25 @@ class TestLargeSerializableRoundTrip:
 
 
 @pytest.mark.deno
-def test_image_round_trips_from_sandbox_to_multimodal_llm():
-    from unittest.mock import MagicMock
-
-    lm = MagicMock(return_value=["a red square"])
-    rlm = RLM("image -> answer", sub_lm=lm)
-    image = dspy.Image("data:image/png;base64,aW1hZ2U=")
-
-    with PythonInterpreter() as interp:
-        rlm._preload_sandbox_packages({"image": image}, interp)
-        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"image": image}, interp)
-        result = interp.execute(
-            'print(type(image).__name__); print(llm_query("Describe it", images=[image]))',
-            variables=regular,
-        )
-
-    assert "DSPyImage" in result
-    assert "a red square" in result
-    content = lm.call_args.kwargs["messages"][0]["content"]
-    assert content[1]["image_url"]["url"] == image.url
-
-
-@pytest.mark.deno
 def test_image_batch_round_trips_from_sandbox_to_multimodal_llm():
     class ImageEchoLM:
         def __call__(self, *, messages):
             content = messages[0]["content"]
             return [f"{content[0]['text']}:{content[1]['image_url']['url']}"]
 
-    rlm = RLM("image -> answer", sub_lm=ImageEchoLM())
     image = dspy.Image("data:image/png;base64,aW1hZ2U=")
-
-    with PythonInterpreter() as interp:
-        rlm._preload_sandbox_packages({"image": image}, interp)
-        rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"image": image}, interp)
-        result = interp.execute(
-            'print(llm_query_batched(["first", "second"], images=[image, [image]]))',
-            variables=regular,
-        )
-
-    assert "first:data:image/png;base64,aW1hZ2U=" in result
-    assert "second:data:image/png;base64,aW1hZ2U=" in result
-
-
-@pytest.mark.deno
-def test_image_preloads_pillow_for_default_sandbox():
-    pytest.importorskip("PIL.Image")
-    from PIL import Image as PILImage
-
-    image = dspy.Image(PILImage.new("RGB", (2, 3), "red"))
-    rlm = RLM("image -> answer", max_iters=2)
+    rlm = RLM("image -> answer", sub_lm=ImageEchoLM(), max_iters=1)
     rlm.generate_action = make_mock_predictor([
-        {"reasoning": "Inspect the image", "code": "print(image.to_pil().size)"},
-        {"reasoning": "Return the observed size", "code": 'SUBMIT("2x3")'},
+        {
+            "reasoning": "Query both forms",
+            "code": 'answers = llm_query_batched(["first", "second"], images=[image, [image]])\nSUBMIT("|".join(answers))',
+        }
     ])
 
     result = rlm(image=image)
 
-    assert result.answer == "2x3"
-    assert result.trajectory[0]["output"] == "(2, 3)\n"
+    assert "first:data:image/png;base64,aW1hZ2U=" in result.answer
+    assert "second:data:image/png;base64,aW1hZ2U=" in result.answer
 
 
 @pytest.mark.deno
@@ -1991,7 +1931,7 @@ def test_image_round_trips_through_typed_rlm_output():
     rlm.generate_action = make_mock_predictor([
         {
             "reasoning": "Edit the image",
-            "code": "edited = cv2.rotate(source.to_cv2(), cv2.ROTATE_90_CLOCKWISE)\nprint(edited.shape)",
+            "code": "print(source.to_pil().size)\nedited = cv2.rotate(source.to_cv2(), cv2.ROTATE_90_CLOCKWISE)\nprint(edited.shape)",
         },
         {"reasoning": "Return the edited image", "code": "SUBMIT(DSPyImage.from_cv2(edited))"},
     ])
@@ -2001,6 +1941,7 @@ def test_image_round_trips_through_typed_rlm_output():
     assert isinstance(result.edited, dspy.Image)
     edited = PILImage.open(BytesIO(base64.b64decode(result.edited.url.split(",", 1)[1])))
     assert edited.size == (2, 3)
+    assert result.trajectory[0]["output"].startswith("(3, 2)\n")
 
 
 @pytest.mark.deno

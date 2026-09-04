@@ -333,7 +333,7 @@ class RLM(Module):
     def _query_lm_batched(
         prompts: list[str], images: list[Any], query_lm: Callable[[str, Any], str], max_workers: int
     ) -> list[str]:
-        results: dict[int, str] = {}
+        results = [""] * len(prompts)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
                 executor.submit(contextvars.copy_context().run, query_lm, prompt, prompt_images): index
@@ -345,7 +345,7 @@ class RLM(Module):
                     results[idx] = future.result()
                 except dspy.LMError as e:
                     results[idx] = f"[ERROR] {format_error_for_lm(e)}"
-        return [results[index] for index in range(len(prompts))]
+        return results
 
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools with a fresh call counter."""
