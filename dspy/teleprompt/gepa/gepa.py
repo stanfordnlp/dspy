@@ -488,8 +488,51 @@ class GEPA(Teleprompter):
             )
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self,
+        num_preds,
+        num_candidates,
+        valset_size: int,
+        minibatch_size: int = 35,
+        full_eval_steps: int = 5,
+        *,
+        use_merge: bool = True,
+        max_merge_invocations: int = 5,
     ) -> int:
+        """Estimate the metric-call budget for an auto run.
+
+        Models the current reflective loop: each proposal evaluates the
+        parent and the child on ``minibatch_size`` training examples
+        (``2 * minibatch_size`` calls), and a child that passes the
+        minibatch acceptance criterion pays a full validation
+        (``valset_size`` calls) — rejected proposals skip it, so the
+        full-validation term is an upper-bound allocation, not an exact
+        prediction. The seed candidate's initial validation, and merge
+        validation when merge is enabled, are included (#10245).
+
+        Merges follow the engine's runtime behavior: at most
+        ``max_merge_invocations`` are attempted, each screened on a fixed
+        five-example subsample whose evaluations the accepted merge's full
+        validation reuses (cache-aware), so one invocation costs at most
+        one full validation.
+
+        :param num_preds: Number of optimizable components (instruction
+            predictors + flex submodules), e.g. ``2``.
+        :param num_candidates: Candidate budget from the auto preset,
+            e.g. ``6`` for ``auto="light"``.
+        :param valset_size: Number of validation examples.
+        :param minibatch_size: Reflective minibatch size — the knob that
+            scales every proposal's cost. Defaults to 35 for callers that
+            model the legacy cadence; DSPy's own call passes its
+            configured ``reflection_minibatch_size`` so the budget tracks
+            the configuration.
+        :param full_eval_steps: Retained for call compatibility; the
+            current engine has no fixed full-evaluation period.
+        :param use_merge: Include merge validation terms.
+        :param max_merge_invocations: The engine's merge-invocation cap
+            (``max_merge_invocations``, 5 by default). Merge work cannot
+            exceed it regardless of the candidate budget.
+        :returns: The estimated metric-call budget.
+        """
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
@@ -499,24 +542,29 @@ class GEPA(Teleprompter):
         V = valset_size
         N = num_trials
         M = minibatch_size
-        m = full_eval_steps
 
-        # Initial full evaluation on the default program
+        # Initial full validation of the seed (default) program.
         total = V
 
-        # Assume upto 5 trials for bootstrapping each candidate
-        total += num_candidates * 5
+        # Each reflective proposal: parent minibatch + child minibatch.
+        total += N * 2 * M
 
-        # N minibatch evaluations
-        total += N * M
-        if N == 0:
-            return total  # no periodic/full evals inside the loop
-        # Periodic full evals occur when trial_num % (m+1) == 0, where trial_num runs 2..N+1
-        periodic_fulls = (N + 1) // (m) + 1
-        # If 1 <= N < m, the code triggers one final full eval at the end
-        extra_final = 1 if N < m else 0
+        # Full validation of ACCEPTED children: every trial could accept,
+        # so this is the worst-case allocation — rejected proposals skip
+        # the full pass and leave budget for more trials in practice.
+        total += N * V
 
-        total += (periodic_fulls + extra_final) * V
+        if use_merge:
+            # Each merge invocation screens the merged candidate on a
+            # fixed five-example subsample and, when accepted, pays a
+            # full validation that reuses the screen's evaluations
+            # (cache-aware) — at most one full validation per
+            # invocation. The engine caps invocations at
+            # max_merge_invocations, and the candidate budget bounds
+            # them independently (each merge consumes two candidates).
+            merges = min(max(num_candidates - 1, 0), max_merge_invocations)
+            total += merges * V
+
         return total
 
     def compile(
@@ -554,6 +602,9 @@ class GEPA(Teleprompter):
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
+                minibatch_size=self.reflection_minibatch_size,
+                use_merge=self.use_merge,
+                max_merge_invocations=self.gepa_kwargs.get("max_merge_invocations", 5),
             )
         elif self.max_full_evals is not None:
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
