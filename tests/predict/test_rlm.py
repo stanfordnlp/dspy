@@ -698,6 +698,15 @@ class TestREPLTypes:
         # True original length shown in header
         assert "200 chars" in formatted
 
+    @pytest.mark.parametrize(
+        ("limit", "head", "tail"),
+        [(1, "", "f"), (5, "ab", "def"), (0, "", "abcdef"), (-1, "abcde", "bcdef")],
+    )
+    def test_repl_entry_truncation_limits(self, limit, head, tail):
+        formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
+
+        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
         output = "a" * 50
@@ -729,6 +738,15 @@ class TestREPLTypes:
         assert var.preview.startswith("a" * 25)
         assert var.preview.endswith("b" * 25)
         assert "..." in var.preview
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(1, "...f"), (5, "ab...def"), (0, "...abcdef"), (-1, "abcde...bcdef")],
+    )
+    def test_repl_variable_truncation_limits(self, limit, expected):
+        var = REPLVariable.from_value("value", "abcdef", preview_chars=limit)
+
+        assert var.preview == expected
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
