@@ -93,6 +93,9 @@ class ReActV2(Module):
                 "Call tools when more information is needed.",
                 f"When the final answer is ready, call `submit` with {outputs}.",
                 f"The available tools are: {tool_names}.",
+                "The `[[ ## ... ## ]]` field markers only structure this response's own output fields "
+                "(e.g. `next_thought`); never include them inside a tool call's arguments. Tool arguments, "
+                "including `submit`'s, must contain plain final values, not planning text or markers.",
             ]
         ).strip()
 

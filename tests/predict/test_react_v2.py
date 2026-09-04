@@ -17,6 +17,15 @@ def test_react_v2_submit_tool_returns_original_output_fields():
     assert "tool_call_results" not in react.react.signature.input_fields
 
 
+def test_react_v2_instructions_warn_against_markers_in_tool_arguments():
+    react = dspy.ReActV2("question -> answer", tools=[])
+
+    instructions = react.react.signature.instructions
+    assert "tool call" in instructions
+    assert "markers" in instructions
+    assert "submit" in instructions
+
+
 def test_react_v2_text_mock_lm_loop_records_inputs_once():
     def lookup(query: str) -> str:
         return f"found {query}"
