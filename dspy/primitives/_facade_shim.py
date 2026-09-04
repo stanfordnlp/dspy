@@ -1,7 +1,7 @@
-"""Sandbox side of the dspy.Flex bridge: a stand-in ``dspy`` module for optimizer-authored code.
+"""Sandbox side of the dspy facade: a stand-in ``dspy`` module for sandboxed code.
 
-``BridgeRuntime.forward`` executes this source in each per-forward interpreter before the bound
-``module_src``, so the generated module runs sandboxed while predictors are built and called on
+Consumers such as ``dspy.Flex`` and ``dspy.RLM`` execute this source in the interpreter after
+registering the host tools, so sandboxed code builds and calls predictors that actually run on
 the host:
 
 - ``dspy.Predict`` and other allowed modules return a ``_DspyPending``; construction waits for attribute assignment,
@@ -13,8 +13,8 @@ the host:
   markers the host resolves: tools by name (``__dspy_tool__``), ``dspy.Signature(...)`` results
   as ``__dspy_sig__`` payloads.
 
-Every name here is ``_dspy``-prefixed to stay clear of generated code; ``FlexContext`` rejects
-user tool names in that namespace.
+Every name here is ``_dspy``-prefixed to stay clear of sandboxed code; consumers reject user tool
+names in that namespace.
 """
 
 import sys as _dspy_sys
@@ -57,6 +57,9 @@ class _DspyProxy:
         return _DspyPrediction(**(_out or {}))
 
 
+_dspy_anon_count = 0
+
+
 class _DspyPending:
     """Returned by a shim constructor before the attribute name is known (captured in __setattr__)."""
 
@@ -64,6 +67,21 @@ class _DspyPending:
         self.kind = _kind
         self.sig = _sig
         self.kwargs = _kwargs
+        self.proxy = None
+
+    def __call__(self, **_inputs):
+        if self.proxy is None:
+            global _dspy_anon_count
+            _dspy_anon_count += 1
+            _handle = _dspy_host(
+                "__dspy_construct__",
+                kind=self.kind,
+                signature=self.sig,
+                attr_name="_dspy_anon_" + str(_dspy_anon_count),
+                kwargs=self.kwargs,
+            )
+            self.proxy = _DspyProxy(_handle)
+        return self.proxy(**_inputs)
 
 
 class _DspyModule:
@@ -86,10 +104,19 @@ class _DspyModule:
         return self.forward(**_kw)
 
 
+def _dspy_tool_name(_v):
+    # Host tools are referenced by the sandbox global they are bound to: backends may bind them as
+    # anonymous proxies, so the callable's own __name__ is only a fallback.
+    for _k, _x in globals().items():
+        if _x is _v and not _k.startswith("_"):
+            return _k
+    return getattr(_v, "__name__", type(_v).__name__)
+
+
 def _dspy_enc(_v):
-    # Tool references (e.g. tools=[shout]) are sandbox functions; send them to the host by name.
-    if callable(_v) and hasattr(_v, "__name__"):
-        return {"__dspy_tool__": _v.__name__}
+    # Tool references (e.g. tools=[shout]) are sandbox callables; send them to the host by name.
+    if callable(_v):
+        return {"__dspy_tool__": _dspy_tool_name(_v)}
     if isinstance(_v, (list, tuple)):
         return [_dspy_enc(_x) for _x in _v]
     if isinstance(_v, dict):
@@ -120,8 +147,17 @@ _dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy
+# Nested code-executing sub-agents take this in place of a real factory; the host substitutes its own.
+dspy_interpreter_factory = "__dspy_interpreter_factory__"
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
-# present in globals().
+# present in globals(). A sandbox whose ``dspy`` is the host's own module image (the host process or a
+# fork of it) would hand generated code the host's memory, so the facade refuses it.
 if "__dspy_construct__" in globals():
+    _dspy_host_facade = getattr(_dspy_sys, "modules", {}).get("dspy.primitives.facade")
+    if getattr(_dspy_host_facade, "_HOST_PROCESS_TOKEN", None) == __dspy_host_token:  # noqa: F821 - host-injected
+        raise RuntimeError(
+            "This interpreter runs code in the host's memory (the host process or a fork of it); "
+            "the dspy facade needs an isolated interpreter."
+        )
     _dspy_sys.modules["dspy"] = _dspy

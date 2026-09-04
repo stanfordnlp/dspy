@@ -7,12 +7,31 @@ code-executing modules to work with different interpreter implementations:
 - MockInterpreter: Scriptable responses for testing
 """
 
+import enum
+import functools
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from dspy.utils.exceptions import DSPyError
 
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
+# Sandbox global the dspy facade provides for nested code-executing sub-agents; the host substitutes its factory.
+SUB_DSPY_FACTORY_NAME = "dspy_interpreter_factory"
+
+
+class InterpreterCapability(enum.Flag):
+    """Optional capabilities a CodeInterpreter implementation can declare.
+
+    SUB_DSPY: The interpreter can host the sandbox dspy facade: registered tools are callable
+        as globals in executed code and state persists across execute() calls. dspy.RLM then
+        installs a ``dspy`` shim whose predictors are built and run on the host, and offers
+        sub-agents in its prompt. PythonInterpreter declares it; an interpreter whose runtime
+        cannot run the shim leaves it unset and gets no sub-agents. The facade refuses an
+        interpreter that runs code in the host's memory (the host process or a fork of it).
+    """
+
+    SUB_DSPY = enum.auto()
 
 
 class CodeInterpreterError(DSPyError, RuntimeError):
@@ -73,6 +92,13 @@ class CodeInterpreter(Protocol):
     Pooling:
         For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
+
+    Optional declarations:
+        execution_instructions: A string describing the runtime; code-writing
+            modules (e.g. dspy.RLM) include it in their prompts.
+        capabilities: An InterpreterCapability flag value, read via
+            interpreter_capabilities(). See InterpreterCapability for what each
+            capability commits the implementation to.
     """
 
     @property
@@ -145,6 +171,25 @@ class CodeInterpreter(Protocol):
         A new instance should be created for a fresh session.
         """
         ...
+
+
+def interpreter_capabilities(interpreter_or_factory: Any) -> InterpreterCapability:
+    """Capabilities declared by an interpreter instance, class, or factory.
+
+    Reads the optional ``capabilities`` attribute (like ``execution_instructions``,
+    a stable class/factory-level declaration; a ``functools.partial`` of an interpreter
+    class inherits it). Absent means no declared capabilities.
+    """
+    while isinstance(interpreter_or_factory, functools.partial):
+        interpreter_or_factory = interpreter_or_factory.func
+    capabilities = getattr(interpreter_or_factory, "capabilities", None)
+    if capabilities is None:
+        return InterpreterCapability(0)
+    if not isinstance(capabilities, InterpreterCapability):
+        raise TypeError(
+            f"capabilities must be an InterpreterCapability flag value, not {type(capabilities).__name__}"
+        )
+    return capabilities
 
 
 def _validate_interpreter_factory(factory: Any) -> None:
