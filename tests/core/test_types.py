@@ -310,6 +310,56 @@ def test_file_content_block_with_data_and_id_round_trips_losslessly_to_responses
     ]
 
 
+def test_file_content_block_preserves_provider_extras_on_file_id_only_input():
+    """A ``{"type": "file", "file": {...}}`` block whose file dict carries provider
+    keys beyond ``file_id``/``filename`` (e.g. AI Studio / Vertex video files use
+    ``format`` / ``detail`` / ``video_metadata``) used to lose them when the wire
+    block was projected to :class:`LMBinaryPart`. The typed part now stashes the
+    original block so the outgoing wire representation is byte-for-byte identical.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9898.
+    """
+    from dspy.clients.openai_format import parts_to_openai_content
+
+    original_block = {
+        "type": "file",
+        "file": {
+            "file_id": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+            "format": "video/webm",
+            "detail": "high",
+            "video_metadata": {"fps": 1.0},
+        },
+    }
+
+    message = LMMessage(role="user", content=[original_block])
+    part = message.parts[0]
+
+    assert isinstance(part, LMBinaryPart)
+    assert part.file_id == original_block["file"]["file_id"]
+    assert part.metadata["legacy_content_block"] == original_block
+
+    assert parts_to_openai_content(message.parts) == [original_block]
+
+
+def test_file_content_block_without_extras_leaves_metadata_clean():
+    """A ``{"type": "file", "file": {...}}`` block that only uses recognized keys
+    (``file_id`` / ``filename``) still projects to a plain LMBinaryPart with no
+    stashed legacy block: the typed part can already re-emit it losslessly."""
+    from dspy.clients.openai_format import parts_to_openai_content
+
+    original_block = {
+        "type": "file",
+        "file": {"file_id": "file-abc", "filename": "notes.txt"},
+    }
+
+    message = LMMessage(role="user", content=[original_block])
+    part = message.parts[0]
+
+    assert isinstance(part, LMBinaryPart)
+    assert "legacy_content_block" not in part.metadata
+    assert parts_to_openai_content(message.parts) == [original_block]
+
+
 def test_document_source_url_stays_url_and_round_trips_through_history_messages():
     message = LMMessage(
         role="user",

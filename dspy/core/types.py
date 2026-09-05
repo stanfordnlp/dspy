@@ -1908,7 +1908,15 @@ def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
         media_type, data = _split_data_uri(file["data"])
         return LMBinaryPart(data=data, media_type=media_type, filename=file.get("filename"))
     if file.get("file_id") is not None:
-        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"))
+        # Preserve provider-specific keys the typed LMBinaryPart can't represent
+        # (e.g. `format` / `detail` / `video_metadata` for AI Studio / Vertex
+        # video files) by stashing the original block; part_to_openai_blocks
+        # will re-emit it verbatim on the wire. See issue #9898.
+        known_keys = {"file_id", "filename"}
+        metadata: dict[str, Any] = {}
+        if any(key not in known_keys for key in file):
+            metadata["legacy_content_block"] = {"type": "file", "file": dict(file)}
+        return LMBinaryPart(file_id=file["file_id"], filename=file.get("filename"), metadata=metadata)
     raise ValueError("Binary content block requires data, file_data, or file_id.")
 
 
