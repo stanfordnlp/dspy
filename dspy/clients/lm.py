@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import re
@@ -6,7 +5,8 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
-import anyio.from_thread
+import anyio
+import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
@@ -17,12 +17,12 @@ from dspy.clients.openai_format import to_openai_responses_request
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.core.types import LMRequest
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import (
     ContextWindowExceededError,
     LMAuthError,
     LMBillingError,
-    LMConfigurationError,
     LMError,
     LMInvalidRequestError,
     LMNotConfiguredError,
@@ -47,18 +47,19 @@ def _get_litellm():
 
 def _is_openai_reasoning_model(model: str) -> bool:
     model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
-    return re.match(
-        r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
-        model_family,
-    ) is not None
+    return (
+        re.match(
+            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+            model_family,
+        )
+        is not None
+    )
 
 
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
-
-    forward_contract = "legacy"
 
     def __init__(
         self,
@@ -76,22 +77,21 @@ class LM(BaseLM):
         use_developer_role: bool = False,
         **kwargs,
     ):
-        """Create a new language model instance for use with DSPy modules and programs.
+        """
+        Create a new language model instance for use with DSPy modules and programs.
 
         Args:
-            model: The model to use. This should be a string of the form
-                `"llm_provider/llm_name"` supported by LiteLLM. For example,
-                `"openai/gpt-4o"`.
-            model_type: The type of the model, such as `"chat"`, `"text"`, or
-                `"responses"`.
+            model: The model to use. This should be a string of the form ``"llm_provider/llm_name"``
+                   supported by LiteLLM. For example, ``"openai/gpt-4o"``.
+            model_type: The type of the model, either ``"chat"`` or ``"text"``.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
-                and reduce costs.
+                   and reduce costs.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
-                network error, rate limiting, etc. Requests are retried with exponential
-                backoff.
+                         network error, rate limiting, etc. Requests are retried with exponential
+                         backoff.
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
@@ -101,69 +101,50 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
-        super().__init__(
-            model=model,
-            model_type=model_type,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            cache=cache,
-            num_retries=num_retries,
-            callbacks=callbacks,
-            **kwargs,
-        )
-
+        # Remember to update LM.copy() if you modify the constructor!
+        self.model = model
+        self.model_type = model_type
+        self.cache = cache
         self.provider = provider or self.infer_provider()
+        self.callbacks = callbacks or []
+        self.history = []
+        self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
         self.use_developer_role = use_developer_role
+        self._warned_zero_temp_rollout = False
+
+        # Handle model-specific configuration for different model families
+        model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+
+        # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
+        # Exclude non-reasoning variants like gpt-5-chat this is in azure ai foundry
+        # Allow date suffixes like -2023-01-01 after model name or mini/nano/pro
+        # For gpt-5, use negative lookahead to exclude -chat and allow other suffixes
+        model_pattern = re.match(
+            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+            model_family,
+        )
+
+        if model_pattern:
+            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
+                raise ValueError(
+                    "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
+                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
+                )
+            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+            if self.kwargs.get("rollout_id") is None:
+                self.kwargs.pop("rollout_id", None)
+        else:
+            self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+            if self.kwargs.get("rollout_id") is None:
+                self.kwargs.pop("rollout_id", None)
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
-    def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
-        # Override BaseLM's default kwargs shape for LiteLLM/model-family-specific token parameters.
-        if _is_openai_reasoning_model(self.model):
-            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
-                raise LMConfigurationError(
-                    "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
-                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)",
-                    model=self.model,
-                    provider=self._provider_name,
-                )
-            initial_kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
-        else:
-            initial_kwargs = super()._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
-
-        if initial_kwargs.get("rollout_id") is None:
-            initial_kwargs.pop("rollout_id", None)
-        return initial_kwargs
-
-    @property
-    def _provider_name(self) -> str:
-        """Extract the provider name from the model string (e.g., 'openai' from 'openai/gpt-4o')."""
-        if "/" in self.model:
-            return self.model.split("/", 1)[0]
-        return "openai"
-
-    @property
-    def supports_function_calling(self) -> bool:
-        return _get_litellm().supports_function_calling(model=self.model)
-
-    @property
-    def supports_reasoning(self) -> bool:
-        return _get_litellm().supports_reasoning(self.model)
-
-    @property
-    def supports_response_schema(self) -> bool:
-        return _get_litellm().supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
-
-    @property
-    def supported_params(self) -> set[str]:
-        params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
-        return set(params) if params else set()
-
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
-        if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
+        if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
                 stacklevel=3,
@@ -182,53 +163,12 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def _wrap_litellm_exception(self, exc: Exception) -> LMError:
-        """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions."""
-        if isinstance(exc, LMError):
-            return exc
-
-        status = _exception_status(exc)
-        provider = getattr(exc, "llm_provider", None) or self._provider_name
-        model = getattr(exc, "model", None) or self.model
-        message = _exception_message(exc)
-        metadata = {
-            "model": model,
-            "provider": provider,
-            "provider_code": _exception_provider_code(exc),
-            "status": status,
-            "request_id": _exception_request_id(exc),
-            "retry_after": _exception_retry_after(exc),
-        }
-
-        if is_litellm_context_window_error(exc):
-            return ContextWindowExceededError(message=message or "Context window exceeded", **metadata)
-
-        exc_cls = _lm_error_class_from_litellm_exception(exc) or _lm_error_class_from_status(status)
-        return exc_cls(message, **metadata)
-
     def forward(
         self,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ):
-        """Call the configured LM synchronously.
-
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
-
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
-
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
-        """
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -255,13 +195,19 @@ class LM(BaseLM):
                 num_retries=self.num_retries,
                 cache=litellm_cache_args,
             )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
+        except Exception as err:
+            raise self._wrap_litellm_exception(err) from err
 
         self._check_truncation(results)
 
+        if not getattr(results, "cache_hit", False):
+            usage = getattr(results, "usage", None)
+            if dspy.settings.usage_tracker and usage is not None:
+                settings.usage_tracker.add_usage(self.model, dict(usage))
+            if dspy.settings.cost_tracker:
+                cost = getattr(results, "_hidden_params", {}).get("response_cost")
+                usage_dict = dict(usage) if usage is not None else None
+                settings.cost_tracker.add_cost(self.model, cost, usage_dict)
         return results
 
     async def aforward(
@@ -270,23 +216,6 @@ class LM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs,
     ):
-        """Call the configured LM asynchronously.
-
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
-
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
-
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
-        """
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -313,13 +242,19 @@ class LM(BaseLM):
                 num_retries=self.num_retries,
                 cache=litellm_cache_args,
             )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
+        except Exception as err:
+            raise self._wrap_litellm_exception(err) from err
 
         self._check_truncation(results)
 
+        if not getattr(results, "cache_hit", False):
+            usage = getattr(results, "usage", None)
+            if dspy.settings.usage_tracker and usage is not None:
+                settings.usage_tracker.add_usage(self.model, dict(usage))
+            if dspy.settings.cost_tracker:
+                cost = getattr(results, "_hidden_params", {}).get("response_cost")
+                usage_dict = dict(usage) if usage is not None else None
+                settings.cost_tracker.add_cost(self.model, cost, usage_dict)
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
@@ -337,13 +272,10 @@ class LM(BaseLM):
         from dspy import settings as settings
 
         if not self.provider.finetunable:
-            raise LMUnsupportedFeatureError(
+            raise ValueError(
                 f"Provider {self.provider} does not support fine-tuning, please specify your provider by explicitly "
                 "setting `provider` when creating the `dspy.LM` instance. For example, "
-                "`dspy.LM('openai/gpt-4.1-mini-2025-04-14', provider=dspy.OpenAIProvider())`.",
-                model=self.model,
-                provider=self._provider_name,
-                features=["finetuning"],
+                "`dspy.LM('openai/gpt-4.1-mini-2025-04-14', provider=dspy.OpenAIProvider())`."
             )
 
         def thread_function_wrapper():
@@ -367,13 +299,8 @@ class LM(BaseLM):
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
-        if not self.provider.reinforceable:
-            raise LMUnsupportedFeatureError(
-                f"Provider {self.provider} does not implement the reinforcement learning interface.",
-                model=self.model,
-                provider=self._provider_name,
-                features=["reinforce"],
-            )
+        err = f"Provider {self.provider} does not implement the reinforcement learning interface."
+        assert self.provider.reinforceable, err
 
         job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
         job.initialize()
@@ -401,12 +328,69 @@ class LM(BaseLM):
             return OpenAIProvider()
         return Provider()
 
+    @property
+    def _provider_name(self) -> str:
+        """Extract the provider name from the model string (e.g. 'openai' from 'openai/gpt-4o')."""
+        if "/" in self.model:
+            return self.model.split("/", 1)[0]
+        return "openai"
+
+    @property
+    def supports_function_calling(self) -> bool:
+        return _get_litellm().supports_function_calling(model=self.model)
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return _get_litellm().supports_reasoning(self.model)
+
+    @property
+    def supports_response_schema(self) -> bool:
+        return _get_litellm().supports_response_schema(
+            model=self.model, custom_llm_provider=self._provider_name
+        )
+
+    @property
+    def supported_params(self) -> set[str]:
+        params = _get_litellm().get_supported_openai_params(
+            model=self.model, custom_llm_provider=self._provider_name
+        )
+        return set(params) if params else set()
+
+    def _wrap_litellm_exception(self, exc: Exception) -> LMError:
+        """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions.
+
+        Kept as an instance method so tests and call sites can exercise the full
+        metadata-preserving seam (status, request_id, retry_after, provider).
+        """
+        if isinstance(exc, LMError):
+            return exc
+
+        status = _exception_status(exc)
+        provider = getattr(exc, "llm_provider", None) or self._provider_name
+        model = getattr(exc, "model", None) or self.model
+        message = _exception_message(exc)
+        metadata = {
+            "model": model,
+            "provider": provider,
+            "provider_code": _exception_provider_code(exc),
+            "status": status,
+            "request_id": _exception_request_id(exc),
+            "retry_after": _exception_retry_after(exc),
+        }
+
+        if is_litellm_context_window_error(exc):
+            return ContextWindowExceededError(message=message or "Context window exceeded", **metadata)
+
+        exc_cls = _lm_error_class_from_litellm_exception(exc) or _lm_error_class_from_status(status)
+        return exc_cls(message, **metadata)
+
     def dump_state(self):
         """Return a sanitized reconstruction state for this LM.
 
         Returns:
             A dictionary that can be passed to `BaseLM.load_state` to
-            reconstruct this `LM`. The state excludes API keys.
+            reconstruct this `LM`. The state excludes API keys and callbacks
+            (callbacks are runtime objects and not JSON-serializable).
         """
         state = super().dump_state()
         state.update(
@@ -416,8 +400,11 @@ class LM(BaseLM):
                 "train_kwargs": self.train_kwargs,
             }
         )
+        # Persist developer-role flag; omit callbacks (not serializable).
         if self.use_developer_role:
             state["use_developer_role"] = self.use_developer_role
+        # Reasoning models store max_tokens as max_completion_tokens internally;
+        # serialize under the public max_tokens name so load_state can reconstruct.
         if _is_openai_reasoning_model(self.model) and "max_completion_tokens" in state:
             state["max_tokens"] = state.pop("max_completion_tokens")
         return state
@@ -427,7 +414,11 @@ class LM(BaseLM):
         state = dict(state)
 
         model = state.get("model")
-        if isinstance(model, str) and _is_openai_reasoning_model(model) and "max_completion_tokens" in state:
+        if (
+            isinstance(model, str)
+            and _is_openai_reasoning_model(model)
+            and "max_completion_tokens" in state
+        ):
             if "max_tokens" not in state:
                 state["max_tokens"] = state["max_completion_tokens"]
             state.pop("max_completion_tokens")
@@ -481,7 +472,23 @@ def _get_stream_completion_fn(
         return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
+        # Bridge async streaming into a sync caller safely:
+        # - no running loop: drive one with anyio.run on this thread
+        # - loop already running (async apps / notebooks): use a worker thread
+        #   with its own loop (anyio.run fails on the loop-owning thread)
+        import asyncio
+        import concurrent.futures
+
+        def _run_in_fresh_loop():
+            return anyio.run(stream_completion, request, cache_kwargs)
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return _run_in_fresh_loop()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_run_in_fresh_loop).result()
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
@@ -625,10 +632,16 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     old pass-through converter forwarded verbatim — Responses-native shapes and
     provider-SDK dumps — are tolerated here and only here; the typed path stays
     strict.
+
+    Each chat message is converted independently so multi-message prompts keep
+    distinct roles (e.g. system + user) instead of collapsing into one item.
     """
     request = dict(request)
-    model = request.pop("model")
-    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
+    model = request.pop("model", None)
+    messages = [
+        _sanitize_legacy_message(message) if isinstance(message, dict) else message
+        for message in (request.pop("messages", None) or [])
+    ]
     tools = list(request.pop("tools", None) or [])
 
     # Reasoning models use `max_completion_tokens` in the chat path. The
@@ -639,9 +652,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
 
     # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
     # compatibility shim: requesting reasoning effort also asks OpenAI for an
-    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
-    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
-    # is discarded rather than merged.
+    # automatic reasoning summary.
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
         if request.get("reasoning") is None:
@@ -657,6 +668,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     responses_native_tool_choice = None
     if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
         responses_native_tool_choice = request.pop("tool_choice")
+
+    # Drop any pre-collapsed `input` leftover so the typed mapper owns role mapping.
+    request.pop("input", None)
 
     lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
     # The old converter never validated reasoning/temperature combinations
@@ -714,73 +728,7 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         **headers,
     }
 
-#--------
-# Errors
-#--------
 
-def _safe_litellm_exception_class(name: str) -> type[Exception] | None:
-    cls = getattr(_get_litellm(), name, None)
-    return cls if isinstance(cls, type) and issubclass(cls, Exception) else None
-
-
-def _lm_error_class_from_litellm_exception(exc: Exception) -> type[LMError] | None:
-    message = _exception_message(exc).lower()
-    class_name = type(exc).__name__.lower()
-    if _exception_status(exc) is None and any(
-        phrase in message for phrase in ("api key", "apikey", "credentials", "environment variable")
-    ):
-        return LMNotConfiguredError
-    if "timeout" in class_name or "timed out" in message or "timeout" in message:
-        return LMTimeoutError
-    if "connection" in class_name or "network" in message or "connection" in message:
-        return LMTransportError
-
-    mappings = [
-        ("AuthenticationError", LMAuthError),
-        ("RateLimitError", LMRateLimitError),
-        ("NotFoundError", LMUnsupportedModelError),
-        ("UnsupportedParamsError", LMUnsupportedFeatureError),
-        ("UnprocessableEntityError", LMInvalidRequestError),
-        ("ContentPolicyViolationError", LMInvalidRequestError),
-        ("BadRequestError", LMInvalidRequestError),
-        ("InvalidRequestError", LMInvalidRequestError),
-        ("InternalServerError", LMServerError),
-        ("ServiceUnavailableError", LMServerError),
-        ("APIConnectionError", LMTransportError),
-        ("APIResponseValidationError", LMProviderError),
-        ("BudgetExceededError", LMBillingError),
-        ("RouterRateLimitError", LMRateLimitError),
-    ]
-    for litellm_name, dspy_cls in mappings:
-        litellm_cls = _safe_litellm_exception_class(litellm_name)
-        if litellm_cls is not None and isinstance(exc, litellm_cls):
-            return dspy_cls
-    return None
-
-
-def _lm_error_class_from_status(status: int | None) -> type[LMError]:
-    if status in (401, 403):
-        return LMAuthError
-    if status == 402:
-        return LMBillingError
-    if status == 404:
-        return LMUnsupportedModelError
-    if status == 408:
-        return LMTimeoutError
-    if status == 429:
-        return LMRateLimitError
-    if status is not None and 400 <= status < 500:
-        return LMInvalidRequestError
-    if status is not None and status >= 500:
-        return LMServerError
-    return LMUnexpectedError if status is None else LMProviderError
-
-
-# Best-effort LiteLLM/provider exception metadata extraction.
-#
-# LiteLLM exception metadata is not exposed as a single stable typed shape across providers, exception classes, and
-# LiteLLM versions. Keep the defensive getattr-based extraction localized here so the rest of DSPy sees structured
-# DSPyError metadata.
 def _exception_status(exc: Exception) -> int | None:
     status = getattr(exc, "status_code", None)
     if status is None:
@@ -840,3 +788,62 @@ def _exception_provider_code(exc: Exception) -> str | None:
         if body.get("code") is not None:
             return str(body["code"])
     return None
+
+
+def _safe_litellm_exception_class(name: str) -> type[Exception] | None:
+    cls = getattr(_get_litellm(), name, None)
+    return cls if isinstance(cls, type) and issubclass(cls, Exception) else None
+
+
+def _lm_error_class_from_litellm_exception(exc: Exception) -> type[LMError] | None:
+    message = _exception_message(exc).lower()
+    class_name = type(exc).__name__.lower()
+    if _exception_status(exc) is None and any(
+        phrase in message for phrase in ("api key", "apikey", "credentials", "environment variable")
+    ):
+        return LMNotConfiguredError
+    if "timeout" in class_name or "timed out" in message or "timeout" in message:
+        return LMTimeoutError
+    if "connection" in class_name or "network" in message or "connection" in message:
+        return LMTransportError
+
+    mappings = [
+        ("AuthenticationError", LMAuthError),
+        ("RateLimitError", LMRateLimitError),
+        ("NotFoundError", LMUnsupportedModelError),
+        ("UnsupportedParamsError", LMUnsupportedFeatureError),
+        ("UnprocessableEntityError", LMInvalidRequestError),
+        ("ContentPolicyViolationError", LMInvalidRequestError),
+        ("BadRequestError", LMInvalidRequestError),
+        ("InvalidRequestError", LMInvalidRequestError),
+        ("InternalServerError", LMServerError),
+        ("ServiceUnavailableError", LMServerError),
+        ("APIConnectionError", LMTransportError),
+        ("APIResponseValidationError", LMProviderError),
+        ("BudgetExceededError", LMBillingError),
+        ("RouterRateLimitError", LMRateLimitError),
+        ("ContextWindowExceededError", ContextWindowExceededError),
+    ]
+    for litellm_name, dspy_cls in mappings:
+        litellm_cls = _safe_litellm_exception_class(litellm_name)
+        if litellm_cls is not None and isinstance(exc, litellm_cls):
+            return dspy_cls
+    return None
+
+
+def _lm_error_class_from_status(status: int | None) -> type[LMError]:
+    if status in (401, 403):
+        return LMAuthError
+    if status == 402:
+        return LMBillingError
+    if status == 404:
+        return LMUnsupportedModelError
+    if status == 408:
+        return LMTimeoutError
+    if status == 429:
+        return LMRateLimitError
+    if status is not None and 400 <= status < 500:
+        return LMInvalidRequestError
+    if status is not None and status >= 500:
+        return LMServerError
+    return LMUnexpectedError if status is None else LMProviderError
