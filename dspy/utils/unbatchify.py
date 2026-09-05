@@ -2,6 +2,7 @@ import queue
 import threading
 import time
 from concurrent.futures import Future
+from itertools import islice
 from typing import Any, Callable
 
 
@@ -67,12 +68,22 @@ class Unbatchify:
 
             if batch:
                 try:
-                    outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures, strict=False):
+                    # Take at most one output beyond the batch size: enough to detect a
+                    # too-long result, but bounded, so a lazy or unterminated iterable
+                    # cannot stall the worker and hang every caller in the batch.
+                    outputs = list(islice(iter(self.batch_fn(batch)), len(batch) + 1))
+                    if len(outputs) != len(batch):
+                        got = len(outputs) if len(outputs) < len(batch) else f"more than {len(batch)}"
+                        raise ValueError(
+                            f"batch_fn returned {got} output(s) for {len(batch)} input(s). "
+                            "batch_fn must return exactly one output per input, in the same order."
+                        )
+                    for output, future in zip(outputs, futures, strict=True):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:
-                        future.set_exception(e)
+                        if not future.done():
+                            future.set_exception(e)
             else:
                 time.sleep(0.01)
 
