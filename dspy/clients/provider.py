@@ -216,6 +216,17 @@ class Provider:
         self.TrainingJob = TrainingJob
         self.ReinforceJob = ReinforceJob
 
+    def batch(self, lm, requests, *, cancel_event, timeout, poll_interval):
+        """Return one provider response or exception per request, in input order.
+
+        Implementations must reconcile provider IDs, honor cancellation, and
+        bound network operations. This synchronous boundary is used only by
+        explicit provider-batch execution, never by ordinary LM calls.
+        """
+        from dspy.utils.exceptions import LMUnsupportedFeatureError
+
+        raise LMUnsupportedFeatureError("This provider does not support Batch API execution", model=lm.model)
+
     @staticmethod
     def is_provider_model(model: str) -> bool:
         """Check if a model identifier is supported by this provider.

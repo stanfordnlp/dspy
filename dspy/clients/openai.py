@@ -1,11 +1,18 @@
+import json
+import logging
+import math
 import time
 from datetime import datetime
 from typing import Any
 
 import openai
+import pydantic
 
+from dspy.clients.openai_format import response_format_to_responses
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingJobOpenAI(TrainingJob):
@@ -44,6 +51,178 @@ class OpenAIProvider(Provider):
         super().__init__()
         self.finetunable = True
         self.TrainingJob = TrainingJobOpenAI
+
+    def batch(self, lm, requests, *, cancel_event, timeout, poll_interval):
+        """Run chat batches using the public OpenAI Files and Batches APIs.
+
+        Separate credentials, headers, endpoints and models never share a job.
+        No automatic submission retries: a lost create response may represent
+        an accepted, billable job. Completed files are deleted best-effort;
+        uncertain remote state is retained and logged for manual recovery.
+        """
+        from dspy.utils.exceptions import LMUnsupportedFeatureError
+
+        groups = []
+        for index, request in enumerate(requests):
+            body = dict(request)
+            model = body["model"]
+            if lm.model_type != "chat" or not self.is_provider_model(model) or body.get("stream"):
+                raise LMUnsupportedFeatureError("OpenAI batches require non-streaming OpenAI chat models", model=model)
+            body["model"] = self._remove_provider_prefix(model)
+            body.pop("rollout_id", None)
+            response_format = body.get("response_format")
+            if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
+                schema_format = response_format_to_responses(response_format)
+                schema_format.pop("type")
+                body["response_format"] = {"type": "json_schema", "json_schema": {**schema_format, "strict": True}}
+            options = {}
+            for name in ("api_key", "organization", "project"):
+                if body.get(name) is not None:
+                    options[name] = body.pop(name)
+                else:
+                    body.pop(name, None)
+            base_url = body.pop("base_url", None)
+            api_base = body.pop("api_base", None)
+            if base_url and api_base and base_url != api_base:
+                raise ValueError("Conflicting base_url and api_base for OpenAI batch")
+            if base_url or api_base:
+                options["base_url"] = base_url or api_base
+            headers = body.pop("headers", None)
+            if headers is not None:
+                options["default_headers"] = headers
+            # Bound each HTTP operation, including cancellation and cleanup.
+            request_timeout = body.pop("timeout", 60)
+            if (
+                not isinstance(request_timeout, (int, float))
+                or not math.isfinite(request_timeout)
+                or request_timeout <= 0
+            ):
+                raise ValueError("OpenAI batch request timeout must be a finite positive number of seconds")
+            options["timeout"] = min(request_timeout, timeout, 60)
+            options["max_retries"] = 0
+            for group_options, group_model, entries in groups:
+                if options == group_options and body["model"] == group_model:
+                    entries.append((index, body))
+                    break
+            else:
+                groups.append((options, body["model"], [(index, body)]))
+
+        outcomes = [None] * len(requests)
+        for options, _, entries in groups:
+            try:
+                with openai.OpenAI(**options) as client:
+                    results = self._run_batch(client, entries, cancel_event, timeout, poll_interval)
+                for index, result in results.items():
+                    outcomes[index] = result
+            except Exception as error:
+                for index, _ in entries:
+                    outcomes[index] = lm._wrap_litellm_exception(error)
+        return outcomes
+
+    @staticmethod
+    def _run_batch(client, entries, cancel_event, timeout, poll_interval):
+        from dspy.utils.exceptions import LMProviderError, LMTimeoutError
+
+        endpoint = "/v1/chat/completions"
+        payload = "\n".join(
+            json.dumps({"custom_id": str(index), "method": "POST", "url": endpoint, "body": body})
+            for index, body in entries
+        ).encode()
+        if len(entries) > 50000 or len(payload) > 200_000_000:
+            raise ValueError("OpenAI batch exceeds 50,000 requests or 200 MB; reduce num_threads or input size")
+        file_ids = set()
+        job = None
+        creating = False
+        terminal = {"completed", "failed", "expired", "cancelled"}
+        deadline = time.monotonic() + timeout
+
+        def check_cancelled():
+            if cancel_event.is_set():
+                raise LMProviderError("Provider batch execution cancelled")
+            if time.monotonic() >= deadline:
+                raise LMTimeoutError("Timed out waiting for OpenAI batch completion")
+
+        try:
+            check_cancelled()
+            uploaded = client.files.create(file=("dspy-batch.jsonl", payload, "application/jsonl"), purpose="batch")
+            file_ids.add(uploaded.id)
+            check_cancelled()
+            creating = True
+            job = client.batches.create(input_file_id=uploaded.id, endpoint=endpoint, completion_window="24h")
+            creating = False
+            logger.info("OpenAI batch submitted: %s", job.id)
+            while job.status not in terminal:
+                check_cancelled()
+                if job.status not in {"validating", "in_progress", "finalizing", "cancelling"}:
+                    raise LMProviderError(f"Unknown OpenAI batch status {job.status!r} for {job.id}")
+                cancel_event.wait(min(poll_interval, max(0, deadline - time.monotonic())))
+                check_cancelled()
+                job = client.batches.retrieve(job.id)
+
+            file_ids.update(file_id for file_id in (job.output_file_id, job.error_file_id) if file_id)
+            if job.status == "failed":
+                raise LMProviderError(f"OpenAI batch {job.id} failed: {job.errors}")
+            rows = []
+            for file_id in (job.output_file_id, job.error_file_id):
+                if file_id:
+                    check_cancelled()
+                    rows.extend(json.loads(line) for line in client.files.content(file_id).text.splitlines() if line)
+            return OpenAIProvider._parse_batch_results(entries, rows, job.id, job.status)
+        finally:
+            if job is not None and job.status not in terminal:
+                try:
+                    client.batches.cancel(job.id)
+                except Exception:
+                    logger.warning("Could not cancel OpenAI batch %s; check its remote status", job.id)
+                logger.warning("OpenAI batch %s may still be running; retained files %s", job.id, sorted(file_ids))
+            elif creating:
+                logger.warning(
+                    "OpenAI batch submission outcome unknown; check batches for input files %s", sorted(file_ids)
+                )
+            else:
+                for file_id in file_ids:
+                    try:
+                        client.files.delete(file_id)
+                    except Exception:
+                        logger.warning("Could not delete OpenAI batch file %s", file_id)
+
+    @staticmethod
+    def _parse_batch_results(entries, rows, job_id, status):
+        from dspy.clients._litellm import get_litellm
+        from dspy.clients.lm import _lm_error_class_from_status
+        from dspy.utils.exceptions import LMProviderError
+
+        expected = {str(index): (index, body) for index, body in entries}
+        results = {}
+        for row in rows:
+            custom_id = row.get("custom_id")
+            if custom_id not in expected or custom_id in results:
+                raise LMProviderError(f"Unknown or duplicate custom_id in OpenAI batch {job_id}")
+            _, body = expected[custom_id]
+            response = row.get("response") or {}
+            error = row.get("error") or (response.get("body") or {}).get("error")
+            code = response.get("status_code")
+            if error or code != 200:
+                error = error or {}
+                results[custom_id] = _lm_error_class_from_status(code)(
+                    error.get("message", "OpenAI batch request failed"),
+                    model=body["model"],
+                    provider="openai",
+                    status=code,
+                    provider_code=error.get("code"),
+                    request_id=response.get("request_id"),
+                )
+            else:
+                response_body = response.get("body")
+                if not isinstance(response_body, dict) or not response_body.get("choices"):
+                    raise LMProviderError(f"Malformed response in OpenAI batch {job_id}")
+                results[custom_id] = get_litellm(feature="OpenAI batch responses").ModelResponse(**response_body)
+        return {
+            index: results.get(
+                custom_id, LMProviderError(f"Missing result {custom_id} in OpenAI batch {job_id} ({status})")
+            )
+            for custom_id, (index, _) in expected.items()
+        }
 
     @staticmethod
     def is_provider_model(model: str) -> bool:

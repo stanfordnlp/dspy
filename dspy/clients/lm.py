@@ -247,6 +247,15 @@ class LM(BaseLM):
             completion = litellm_text_completion
         elif self.model_type == "responses":
             completion = litellm_responses_completion
+        coordinator = dspy.settings.get("batch_coordinator")
+        if coordinator is not None:
+            if self.model_type != "chat" or dspy.settings.send_stream is not None or kwargs.get("stream"):
+                raise LMUnsupportedFeatureError("Provider batch execution supports non-streaming chat calls only")
+
+            @functools.wraps(completion)
+            def completion(request, **_):
+                return coordinator.submit(self, request)
+
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         try:
@@ -287,6 +296,9 @@ class LM(BaseLM):
                 failures, which adapters use to avoid inappropriate fallback
                 retries when the prompt is too long.
         """
+        if dspy.settings.get("batch_coordinator") is not None:
+            raise LMUnsupportedFeatureError("Provider batch execution supports synchronous LM calls only")
+
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
