@@ -1,7 +1,9 @@
 import asyncio
+import functools
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
+import anyio
 import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
@@ -9,6 +11,7 @@ from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
 from dspy.dsp.utils.settings import settings
+from dspy.utils.asyncify import get_limiter
 from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
@@ -202,12 +205,19 @@ class Tool(Type):
     @with_callbacks
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = self.func(**parsed_kwargs)
-        if asyncio.iscoroutine(result):
-            return await result
+
+        is_async_callable = inspect.iscoroutinefunction(self.func) or (
+            not inspect.isroutine(self.func) and inspect.iscoroutinefunction(self.func.__call__)
+        )
+        if is_async_callable:
+            result = self.func(**parsed_kwargs)
         else:
-            # We should allow calling a sync tool in the async path.
-            return result
+            call = functools.partial(self.func, **parsed_kwargs)
+            result = await anyio.to_thread.run_sync(call, abandon_on_cancel=True, limiter=get_limiter())
+
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     @classmethod
     def from_mcp_tool(
