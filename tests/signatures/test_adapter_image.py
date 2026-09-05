@@ -465,6 +465,21 @@ def test_image_repr():
     assert "base64" in str(pil_image)
 
 
+def test_image_implements_sandbox_serializable_contract():
+    from dspy.primitives.sandbox_serializable import SandboxSerializable
+
+    image = dspy.Image(PILImage.new("RGB", (2, 3), color="red"))
+
+    assert isinstance(image, SandboxSerializable)
+    assert image.to_sandbox() == image.url.encode("utf-8")
+    assert image.sandbox_assignment("photo", "_raw_photo") == "photo = DSPyImage(_raw_photo)"
+    assert image.sandbox_packages() == ["Pillow", "opencv-python"]
+    assert "from PIL import Image as PILImage" in image.sandbox_setup()
+    assert "import cv2" in image.sandbox_setup()
+    assert "class DSPyImage(str)" in image.sandbox_setup()
+    assert "llm_query(..., images=[image])" in image.rlm_preview()
+
+
 def test_image_constructor_supports_positional_source_and_url_keyword():
     source = "https://example.com/dog.jpg"
 
