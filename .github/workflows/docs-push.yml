@@ -6,9 +6,15 @@ on:
       - main
     paths:
       - "docs/**"
+      - "dspy/**"
+      - "pyproject.toml"
+      - "uv.lock"
   pull_request:
     paths:
       - "docs/**"
+      - "dspy/**"
+      - "pyproject.toml"
+      - "uv.lock"
 
 permissions: {}
 
@@ -27,11 +33,42 @@ jobs:
         run: |
           cd docs
           pip install -r requirements.txt
-          mkdocs build
+          python scripts/build_docs.py current
 
-  update-docs-subtree:
+  detect-versioned-deployment:
     if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      enabled: ${{ steps.deployment.outputs.enabled }}
+    steps:
+      - name: Check out deployment tooling
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Check the production deployment format
+        id: deployment
+        run: |
+          git clone --depth 1 --branch master https://github.com/krypticmouse/dspy-docs.git docs-deployment
+          # The staging branch deliberately does not activate Mike. Only the
+          # reviewed promotion of versions.json to production master does.
+          if [[ ! -f docs-deployment/versions.json ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif jq -e 'type == "array" and any(.[]; .version == "current")' docs-deployment/versions.json >/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Production versions.json does not contain Current"
+            exit 1
+          fi
+
+  update-legacy-deployment:
+    needs: detect-versioned-deployment
+    if: needs.detect-versioned-deployment.outputs.enabled == 'false'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dspy-docs-deployment
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -39,13 +76,90 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Push docs to separate repo
-        uses: cpina/github-action-push-to-another-repository@55306faa4ed53b815ae49e564af8cfb359d32ae2 # main
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Check out the legacy deployment
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          source-directory: "docs"
-          destination-github-username: "krypticmouse"
-          destination-repository-name: "dspy-docs"
-          user-email: github-actions@github.com
-          target-branch: master
+          repository: krypticmouse/dspy-docs
+          ref: master
+          path: docs-deployment
+          persist-credentials: false
+          token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Update the legacy deployment without crossing the cutover
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh auth setup-git
+          if [[ -f docs-deployment/versions.json ]]; then
+            echo "The versioned deployment is already live; leaving it unchanged."
+            exit 0
+          fi
+          rsync --archive --delete --exclude=.git docs/ docs-deployment/
+          git -C docs-deployment config user.name github-actions
+          git -C docs-deployment config user.email github-actions@github.com
+          git -C docs-deployment add --all
+          if git -C docs-deployment diff --cached --quiet; then
+            exit 0
+          fi
+          git -C docs-deployment commit -m "Update documentation"
+          if git -C docs-deployment push origin HEAD:master; then
+            exit 0
+          fi
+          git -C docs-deployment fetch origin master
+          if git -C docs-deployment show origin/master:versions.json >/dev/null 2>&1; then
+            echo "The versioned deployment won the race; leaving it unchanged."
+            exit 0
+          fi
+          echo "::error::The deployment changed concurrently; rerun this workflow"
+          exit 1
+
+  update-versioned-deployment:
+    needs: detect-versioned-deployment
+    if: needs.detect-versioned-deployment.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dspy-docs-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: docs/requirements.txt
+      - name: Install documentation dependencies
+        run: |
+          grep -v 'github.com/stanfordnlp/dspy' docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
+          python -m pip install -r "$RUNNER_TEMP/docs-requirements.txt" -e .
+      - name: Build Current documentation
+        run: |
+          python docs/scripts/build_docs.py current \
+            --config docs/mkdocs.yml \
+            --output current-site
+      - name: Check out documentation deployment
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: krypticmouse/dspy-docs
+          ref: master
+          path: docs-deployment
+          persist-credentials: false
+          token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
+      - name: Publish Current through Mike
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh auth setup-git
+          git -C docs-deployment config user.name github-actions
+          git -C docs-deployment config user.email github-actions@github.com
+          python docs/scripts/publish_versioned_docs.py \
+            --repository docs-deployment \
+            --site current-site \
+            --identifier current \
+            --package-source working-tree \
+            --branch master
+          git -C docs-deployment push origin master
