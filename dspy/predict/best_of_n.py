@@ -20,7 +20,8 @@ class BestOfN(Module):
         threshold: If an attempt's reward is at or above this value, that
             prediction is returned immediately without further attempts.
         fail_count: Number of allowed failures before raising an exception.
-            Defaults to ``N`` if not provided.
+            Defaults to ``N - 1`` if not provided, so a module whose every
+            attempt fails still raises rather than returning no prediction.
 
     Example:
         >>> import dspy
@@ -45,13 +46,21 @@ class BestOfN(Module):
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
-        self.fail_count = fail_count or N  # default to N if fail_count is not provided
+        # Use an explicit None check so fail_count=0 is honored (0 allowed
+        # failures); `fail_count or N` would silently fall back to N. The
+        # default is N-1 so a module whose every attempt fails still raises
+        # rather than silently returning no prediction.
+        self.fail_count = fail_count if fail_count is not None else max(N - 1, 0)
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
+        # Track the failure budget in a local variable so it is reset on every
+        # call rather than eroding (and eventually going negative) across
+        # repeated calls to the same module instance.
+        remaining_failures = self.fail_count
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -74,9 +83,9 @@ class BestOfN(Module):
 
             except Exception as e:
                 print(f"BestOfN: Attempt {idx + 1} failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                if remaining_failures <= 0:
                     raise e
-                self.fail_count -= 1
+                remaining_failures -= 1
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)
