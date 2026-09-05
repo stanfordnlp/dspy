@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # expansion at the `Prediction(**final_outputs, history=..., termination_reason=...)` call sites.
 _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 
+# Input names `_make_react_signature` always adds. A user field with the same name is
+# overwritten there, and `forward` pops `history` as the ReAct transcript rather than
+# passing it through as a signature input.
+_RESERVED_INPUT_KEYS = frozenset({"history", "tools"})
+
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
 
@@ -37,6 +42,14 @@ class ReActV2(Module):
             raise ValueError(
                 f"Output field name(s) {names} are reserved by ReActV2 and attached to every "
                 "returned Prediction. Rename these output fields on your signature."
+            )
+
+        reserved_inputs = _RESERVED_INPUT_KEYS.intersection(self.signature.input_fields)
+        if reserved_inputs:
+            names = ", ".join(f"`{name}`" for name in sorted(reserved_inputs))
+            raise ValueError(
+                f"Input field name(s) {names} are reserved by ReActV2 for the conversation "
+                "history and the tool list. Rename these input fields on your signature."
             )
 
         user_tools = [tool if isinstance(tool, Tool) else Tool(tool) for tool in tools]
