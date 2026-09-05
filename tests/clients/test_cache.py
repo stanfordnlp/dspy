@@ -382,6 +382,71 @@ def test_cache_fallback_on_restricted_environment():
             os.environ["DSPY_CACHEDIR"] = old_env
 
 
+def test_get_dspy_cache_falls_back_on_corrupted_sqlite_file(tmp_path):
+    """A truncated/garbage sqlite file in the cache dir shouldn't crash `import dspy`."""
+    from dspy.clients import _get_dspy_cache
+
+    shard_dir = tmp_path / "000"
+    shard_dir.mkdir()
+    (shard_dir / "cache.db").write_bytes(b"not a sqlite database" * 50)
+
+    old_env = os.environ.get("DSPY_CACHEDIR")
+    try:
+        os.environ["DSPY_CACHEDIR"] = str(tmp_path)
+
+        cache = _get_dspy_cache()  # this is what `import dspy` runs at module load time
+
+        assert cache.disk_cache == {}
+        request = {"model": "test", "prompt": "corrupted_sqlite_file"}
+        cache.put(request, "fallback_result")
+        assert cache.get(request) == "fallback_result"
+    finally:
+        if old_env is None:
+            os.environ.pop("DSPY_CACHEDIR", None)
+        else:
+            os.environ["DSPY_CACHEDIR"] = old_env
+
+
+def test_configure_cache_falls_back_on_corrupted_sqlite_file(tmp_path):
+    """A corrupted disk cache shouldn't crash configure_cache the way it shouldn't crash import-time init."""
+    shard_dir = tmp_path / "000"
+    shard_dir.mkdir()
+    (shard_dir / "cache.db").write_bytes(b"not a sqlite database" * 50)
+
+    original_cache = dspy.cache
+    try:
+        dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path))
+
+        assert dspy.cache.disk_cache == {}
+        request = {"model": "test", "prompt": "corrupted_disk"}
+        dspy.cache.put(request, "fallback_result")
+        assert dspy.cache.get(request) == "fallback_result"
+    finally:
+        dspy.cache = original_cache
+
+
+def test_configure_cache_still_raises_for_non_disk_errors():
+    """configure_cache shouldn't swallow errors that have nothing to do with the disk cache."""
+    with pytest.raises(ValueError, match=r"`memory_max_entries` must be a positive number"):
+        dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=True, memory_max_entries=-1)
+
+
+def test_configure_cache_raises_for_invalid_safe_types_even_with_disk_cache_enabled():
+    """An invalid safe_types entry is a config error, not a disk-init failure, so the
+    disk-cache-init fallback shouldn't retry with disk disabled and swallow it."""
+    with pytest.raises(TypeError, match=r"safe_types entries must be types"):
+        dspy.configure_cache(enable_disk_cache=True, restrict_pickle=True, safe_types=["not_a_type"])
+
+
+def test_configure_cache_raises_for_invalid_disk_size_limit_bytes(tmp_path):
+    """Same as above for disk_size_limit_bytes: a bad type shouldn't get silently
+    converted into a memory-only cache by the disk-cache-init fallback."""
+    with pytest.raises(TypeError, match=r"disk_size_limit_bytes must be None or an int"):
+        dspy.configure_cache(
+            enable_disk_cache=True, disk_cache_dir=str(tmp_path), disk_size_limit_bytes="not-a-number"
+        )
+
+
 def test_cache_init_with_disk_disabled_and_none_dir():
     cache = Cache(
         enable_disk_cache=False,
