@@ -488,8 +488,12 @@ class GEPA(Teleprompter):
             )
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self, num_preds, num_candidates, valset_size: int, minibatch_size: int | None = 35, full_eval_steps: int = 5
     ) -> int:
+        # ``None`` means that GEPA should evaluate the full validation set.
+        # Automatic budgets still need a concrete per-step size, so use the
+        # default batch size used by the optimizer for this calculation.
+        minibatch_size = 3 if minibatch_size is None else minibatch_size
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
@@ -507,8 +511,9 @@ class GEPA(Teleprompter):
         # Assume upto 5 trials for bootstrapping each candidate
         total += num_candidates * 5
 
-        # N minibatch evaluations
-        total += N * M
+        # Each reflective proposal evaluates both the parent and child on the
+        # minibatch before deciding whether to run full validation.
+        total += 2 * N * M
         if N == 0:
             return total  # no periodic/full evals inside the loop
         # Periodic full evals occur when trial_num % (m+1) == 0, where trial_num runs 2..N+1
@@ -554,6 +559,7 @@ class GEPA(Teleprompter):
                 num_preds=max(num_components, 1),
                 num_candidates=AUTO_RUN_SETTINGS[self.auto]["n"],
                 valset_size=len(valset) if valset is not None else len(trainset),
+                minibatch_size=self.reflection_minibatch_size,
             )
         elif self.max_full_evals is not None:
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
