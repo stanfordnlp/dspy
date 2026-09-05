@@ -332,3 +332,9 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
 def test_react_v2_rejects_reserved_output_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
+
+
+@pytest.mark.parametrize("reserved", ["history", "tools"])
+def test_react_v2_rejects_reserved_input_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReActV2(f"{reserved}, question -> answer", tools=[])
