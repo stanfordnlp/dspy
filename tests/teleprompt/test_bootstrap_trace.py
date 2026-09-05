@@ -178,3 +178,45 @@ def test_capture_crashes_does_not_capture_lm_errors():
         Flaky(), dataset=[example], num_threads=1, capture_crashes=True, raise_on_error=False
     )
     assert data == []  # handled by the evaluator as an error, never repainted as a FailedPrediction
+
+
+def test_bootstrap_trace_partial_parse_capture():
+    """A response that parses as JSON but misses output fields is captured with an interpolated format reward."""
+    import pytest
+
+    class TwoFieldSignature(dspy.Signature):
+        """Convert a string number to integer and echo its word"""
+
+        text: str = dspy.InputField()
+        number: int = dspy.OutputField()
+        word: str = dspy.OutputField()
+
+    program = dspy.Predict(TwoFieldSignature)
+    dataset = [Example(text="one", number=1, word="one").with_inputs("text")]
+
+    def exact_match_metric(example, prediction, trace=None):
+        return example.number == prediction.number
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+
+    # Valid JSON that is missing the 'word' output field -> AdapterParseError with a non-empty parsed_result
+    partial_response = ModelResponse(
+        choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
+        model="openai/gpt-4o-mini",
+    )
+
+    with mock.patch("litellm.completion", return_value=partial_response):
+        results = bootstrap_trace_data(
+            program=program,
+            dataset=dataset,
+            metric=exact_match_metric,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+        )
+
+    assert len(results) == 1, f"Expected 1 result, got {len(results)}"
+    prediction = results[0]["prediction"]
+    assert isinstance(prediction, FailedPrediction)
+    # 1 of 2 expected fields present -> halfway between format_failure_score (-1) and failure_score (0)
+    assert prediction.format_reward == pytest.approx(-0.5)
