@@ -171,6 +171,11 @@ def streamify(
         callbacks.append(status_streaming_callback)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
+        # Reset listeners at the start of every top-level call so a listener built once and reused
+        # across many calls (the common streamify(program) pattern) keeps streaming, not only on the
+        # first call (default allow_reuse=False, #8425).
+        for listener in stream_listeners:
+            listener.reset()
         with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
             prediction = await program(*args, **kwargs)
 
