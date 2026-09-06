@@ -332,3 +332,68 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
 def test_react_v2_rejects_reserved_output_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
+
+
+def test_react_v2_max_iters_still_returns_output_fields():
+    def noop(x: str) -> str:
+        return "noop"
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Stalling.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "noop", "args": {"x": "a"}}]),
+            }
+        ]
+        * 10
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[noop], max_iters=2)(question="cats")
+
+    assert pred.termination_reason == "max_iters"
+    assert pred.answer is None
+
+
+def test_react_v2_empty_tool_calls_still_returns_output_fields():
+    lm = dspy.utils.DummyLM(
+        [{"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 10
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="cats")
+
+    assert pred.termination_reason == "empty_tool_calls"
+    assert pred.answer is None
+
+
+def test_react_v2_failed_submit_still_returns_output_fields():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Submitting without the required field.",
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {}}]),
+            }
+        ]
+        * 10
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer", tools=[], max_iters=1)(question="cats")
+
+    assert pred.termination_reason == "max_iters"
+    assert pred.answer is None
+
+
+def test_react_v2_terminal_prediction_covers_every_output_field():
+    lm = dspy.utils.DummyLM(
+        [{"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 10
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        pred = dspy.ReActV2("question -> answer, confidence: float", tools=[])(question="cats")
+
+    assert pred.answer is None
+    assert pred.confidence is None
+    assert pred.termination_reason == "empty_tool_calls"
+    assert isinstance(pred.history, dspy.History)
