@@ -108,6 +108,16 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
         return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
     merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
+    if merged.get("stream"):
+        if hasattr(lm, "_validate_stream_arg"):
+            lm._validate_stream_arg(merged)
+        else:
+            raise LMUnsupportedFeatureError(
+                "dspy.LM does not support raw 'stream=True'. Use 'dspy.streamify' for streaming responses.",
+                model=getattr(lm, "model", None),
+                provider=getattr(lm, "_provider_name", None),
+                features=["stream"],
+            )
     prompt_cache = merged.get("prompt_cache")
     if prompt_cache is not None:
         if not isinstance(prompt_cache, CacheConfig):

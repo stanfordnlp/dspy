@@ -1741,3 +1741,62 @@ def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
     sent = responses.call_args.kwargs
     assert sent["temperature"] == 0.7
     assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
+
+def test_lm_rejects_stream_true_in_init():
+    with pytest.raises(dspy.LMUnsupportedFeatureError) as exc_info:
+        dspy.LM("openai/gpt-4o", stream=True)
+    assert "dspy.streamify" in str(exc_info.value)
+    assert exc_info.value.features == ["stream"]
+
+
+def test_lm_rejects_stream_true_in_forward_and_does_not_pollute_cache():
+    original_cache = dspy.cache
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=True)
+    cache = dspy.cache
+    cache.reset_memory_cache()
+
+    try:
+        with (
+            mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy,
+            mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy,
+        ):
+            lm = dspy.LM("openai/gpt-4o", cache=True)
+
+            with pytest.raises(dspy.LMUnsupportedFeatureError) as exc_info:
+                lm("test prompt", stream=True)
+            assert "dspy.streamify" in str(exc_info.value)
+            assert exc_info.value.features == ["stream"]
+
+            # Verify that neither cache lookup nor cache storage occurred
+            cache_get_spy.assert_not_called()
+            cache_put_spy.assert_not_called()
+            assert len(cache.memory_cache) == 0
+    finally:
+        dspy.cache = original_cache
+
+
+@pytest.mark.asyncio
+async def test_lm_rejects_stream_true_in_aforward_and_does_not_pollute_cache():
+    original_cache = dspy.cache
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=True)
+    cache = dspy.cache
+    cache.reset_memory_cache()
+
+    try:
+        with (
+            mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy,
+            mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy,
+        ):
+            lm = dspy.LM("openai/gpt-4o", cache=True)
+
+            with pytest.raises(dspy.LMUnsupportedFeatureError) as exc_info:
+                await lm.aforward("test prompt", stream=True)
+            assert "dspy.streamify" in str(exc_info.value)
+            assert exc_info.value.features == ["stream"]
+
+            cache_get_spy.assert_not_called()
+            cache_put_spy.assert_not_called()
+            assert len(cache.memory_cache) == 0
+    finally:
+        dspy.cache = original_cache
+
