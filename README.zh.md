@@ -50,8 +50,8 @@ DSPy 将传统杂乱的手工 Prompt 转化为结构化、可测试、可自动�
 
 1. **签名 (Signatures)**：声明输入与输出契约（例如 `question -> answer`），将“任务意图”与“具体 Prompt 措辞”彻底解耦。
 2. **模块 (Modules)**：内置 `dspy.Predict`、`dspy.ChainOfThought`、`dspy.ReAct`、`dspy.ProgramOfThought` 等可自由组合的高级推理原语。
-3. **优化器 (Optimizers / Teleprompters)**：提供 MIPROv2、BootstrapFewShot、SIMPRO、GEPA 等编译算法，根据评估指标（Metric）自动搜索最优 Few-shot 示例组合与最佳 Instruction。
-4. **断言与约束 (Assertions)**：通过计算级约束实现自我修正（Self-refining），确保生成内容百分之百符合业务校验逻辑。
+3. **优化器 (Optimizers / Teleprompters)**：提供 MIPROv2、BootstrapFewShot、SIMBA、GEPA 等编译算法，根据评估指标（Metric）自动搜索最优 Few-shot 示例组合与最佳 Instruction。
+4. **结果精炼与候选筛选 (Refinement & Selection)**：提供 `dspy.Refine` 与 `dspy.BestOfN` 等高阶原语进行有界重试与最优结果评估筛选，持续提升生成质量并贴合业务评估目标。
 
 ---
 
