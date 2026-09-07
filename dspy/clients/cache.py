@@ -126,7 +126,13 @@ class Cache:
             with self._lock:
                 response = self.memory_cache.get(key)
             if response is not None:
-                return self._prepare_cached_response(response)
+                try:
+                    return self._prepare_cached_response(response)
+                except Exception as e:
+                    logger.debug("Failed to prepare memory cache entry %s: %s", key, e)
+                    with self._lock:
+                        if self.memory_cache.get(key) is response:
+                            self.memory_cache.pop(key, None)
 
         if self.enable_disk_cache:
             try:
@@ -139,10 +145,17 @@ class Cache:
             if response is None:
                 return None
 
+            try:
+                prepared_response = self._prepare_cached_response(response)
+            except Exception as e:
+                logger.debug("Failed to prepare disk cache entry %s: %s", key, e)
+                self.disk_cache.delete(key)
+                return None
+
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
-            return self._prepare_cached_response(response)
+            return prepared_response
 
         return None
 
@@ -176,15 +189,23 @@ class Cache:
             logger.debug("Failed to generate cache key for request: %s", request)
             return
 
+        # Keep a private snapshot so callers cannot mutate the cached value, and verify
+        # that the value can be copied again when it is read from the cache.
+        try:
+            value_to_cache = copy.deepcopy(value)
+        except Exception as e:
+            logger.debug("Failed to copy value for cache: %s", e)
+            return
+
         if enable_memory_cache:
             with self._lock:
-                self.memory_cache[key] = value
+                self.memory_cache[key] = value_to_cache
 
         if self.enable_disk_cache:
             try:
-                self.disk_cache.set(key, value)
+                self.disk_cache.set(key, value_to_cache)
             except Exception as e:
-                logger.debug("Failed to put value in disk cache: %s, %s", value, e)
+                logger.debug("Failed to put value in disk cache: %s", e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:

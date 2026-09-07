@@ -1,4 +1,5 @@
 import os
+import threading
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -162,6 +163,29 @@ def test_put_and_get(cache):
     assert cache.cache_key(request) in cache.memory_cache
 
 
+def test_get_evicts_unreadable_memory_entry(cache):
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    key = cache.cache_key(request)
+    cache.memory_cache[key] = {"result": "SUCCESS", "lock": threading.RLock()}
+
+    assert cache.get(request) is None
+    assert key not in cache.memory_cache
+
+
+def test_get_evicts_unreadable_disk_entry(cache):
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    response = {"result": "SUCCESS", "lock": threading.RLock()}
+
+    with (
+        patch.object(cache.disk_cache, "get", return_value=response),
+        patch.object(cache.disk_cache, "delete") as delete,
+    ):
+        assert cache.get(request) is None
+
+    delete.assert_called_once_with(cache.cache_key(request))
+    assert cache.cache_key(request) not in cache.memory_cache
+
+
 def test_cache_miss(cache):
     """Test getting a non-existent key."""
     assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
@@ -260,6 +284,44 @@ def test_request_cache_decorator(cache):
         # Call with different arguments should compute again
         result3 = test_function(prompt="Different", model="openai/gpt-4o-mini")
         assert result3 == "Response for Different with openai/gpt-4o-mini"
+
+
+def test_request_cache_does_not_share_mutable_result_with_cache(cache):
+    from dspy.clients.cache import request_cache
+
+    call_count = 0
+
+    with patch("dspy.cache", cache):
+        @request_cache()
+        def test_function():
+            nonlocal call_count
+            call_count += 1
+            return {"choices": [{"message": {"content": "ORIGINAL"}}]}
+
+        first_result = test_function()
+        first_result["choices"][0]["message"]["content"] = "MUTATED"
+        second_result = test_function()
+
+    assert second_result["choices"][0]["message"]["content"] == "ORIGINAL"
+    assert call_count == 1
+
+
+def test_request_cache_recomputes_values_that_cannot_be_copied(cache):
+    from dspy.clients.cache import request_cache
+
+    call_count = 0
+
+    with patch("dspy.cache", cache):
+        @request_cache()
+        def test_function():
+            nonlocal call_count
+            call_count += 1
+            return {"result": "SUCCESS", "lock": threading.RLock()}
+
+        assert test_function()["result"] == "SUCCESS"
+        assert test_function()["result"] == "SUCCESS"
+
+    assert call_count == 2
 
 
 def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
