@@ -186,6 +186,37 @@ def test_get_evicts_unreadable_disk_entry(cache):
     assert cache.cache_key(request) not in cache.memory_cache
 
 
+def test_get_preserves_disk_entry_replaced_during_preparation(cache):
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    key = cache.cache_key(request)
+    stale_response = {"result": "STALE"}
+    replacement = {"result": "REPLACEMENT"}
+    cache.disk_cache.set(key, stale_response)
+    original_prepare = cache._prepare_cached_response
+
+    def replace_then_fail(response):
+        if response == stale_response:
+            cache.disk_cache.set(key, replacement)
+            raise TypeError("stale response cannot be prepared")
+        return original_prepare(response)
+
+    with patch.object(cache, "_prepare_cached_response", side_effect=replace_then_fail):
+        assert cache.get(request) is None
+
+    assert cache.disk_cache.get(key) == replacement
+
+
+def test_get_returns_miss_when_disk_eviction_fails(cache):
+    request = {"prompt": "Hello", "model": "openai/gpt-4o-mini"}
+    response = {"result": "SUCCESS", "lock": threading.RLock()}
+
+    with (
+        patch.object(cache.disk_cache, "get", return_value=response),
+        patch.object(cache.disk_cache, "delete", side_effect=OSError("disk is read-only")),
+    ):
+        assert cache.get(request) is None
+
+
 def test_cache_miss(cache):
     """Test getting a non-existent key."""
     assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
