@@ -99,6 +99,10 @@ git clone {url-to-your-fork}
 cd dspy
 ```
 
+DSPy ships a vendored copy of [lm15](https://github.com/cmpnd-ai/lm15-python) at `dspy/_vendor/lm15`.
+Never edit those files directly; contribute to the lm15 repository and refresh the copy with
+`python scripts/update_vendored_lm15.py <ref>`.
+
 Next, we must set up a Python environment with the correct dependencies. There are two recommended ways to set up the
 dev environment.
 
