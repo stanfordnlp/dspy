@@ -32,12 +32,7 @@ JsonObject = dict[str, Any]
 
 LANGUAGE = "python"
 
-try:
-    from importlib.metadata import version as _dist_version
-
-    IMPL_VERSION = _dist_version("lm15")
-except Exception:  # pragma: no cover - metadata is absent in odd installs
-    IMPL_VERSION = "0.0.0"
+from ._version import __version__ as IMPL_VERSION
 
 # Parse-only ops (parse_response, replay_stream, normalize_error) construct an
 # adapter but never build auth headers; the key value is irrelevant and must
