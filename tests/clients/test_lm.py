@@ -51,7 +51,7 @@ def test_chat_lms_can_be_queried(litellm_test_server):
     expected_response = ["Hi!"]
 
     openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
+        engine="litellm", model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         model_type="chat",
@@ -59,7 +59,7 @@ def test_chat_lms_can_be_queried(litellm_test_server):
     assert openai_lm("openai query") == expected_response
 
     azure_openai_lm = dspy.LM(
-        model="azure/dspy-test-model",
+        engine="litellm", model="azure/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         model_type="chat",
@@ -79,7 +79,7 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     cache = dspy.cache
 
     lm = dspy.LM(
-        model="openai/dspy-test-model",
+        engine="litellm", model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         model_type="text",
@@ -121,7 +121,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
-            lm = dspy.LM("dummy", model_type="chat")
+            lm = dspy.LM("dummy", engine="litellm", model_type="chat")
             lm(messages=[{"role": "user", "content": "Hello"}])
 
             cache_key_spy.assert_not_called()
@@ -151,7 +151,7 @@ def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
         disk_cache_dir=tmp_path / ".disk_cache",
     )
 
-    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+    lm = dspy.LM(engine="litellm", model="openai/dspy-test-model", model_type="chat")
 
     with track_usage() as usage_tracker:
         lm(messages=[{"role": "user", "content": "Query"}], rollout_id=1)
@@ -188,7 +188,7 @@ def test_zero_temperature_rollout_warns_once(monkeypatch):
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
 
-    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat", temperature=0)
+    lm = dspy.LM(engine="litellm", model="openai/dspy-test-model", model_type="chat", temperature=0)
     with pytest.warns(UserWarning, match="rollout_id has no effect"):
         lm("Query", rollout_id=1)
     with warnings.catch_warnings(record=True) as record:
@@ -209,7 +209,7 @@ def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
 
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        lm = dspy.LM(model="openai/gpt-5-nano", model_type="chat", rollout_id=1)
+        lm = dspy.LM(engine="litellm", model="openai/gpt-5-nano", model_type="chat", rollout_id=1)
         lm("Query")
         assert len(record) == 0
 
@@ -219,7 +219,7 @@ def test_text_lms_can_be_queried(litellm_test_server):
     expected_response = ["Hi!"]
 
     openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
+        engine="litellm", model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         model_type="text",
@@ -227,7 +227,7 @@ def test_text_lms_can_be_queried(litellm_test_server):
     assert openai_lm("openai query") == expected_response
 
     azure_openai_lm = dspy.LM(
-        model="azure/dspy-test-model",
+        engine="litellm", model="azure/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         model_type="text",
@@ -244,7 +244,7 @@ def test_lm_calls_support_callables(litellm_test_server):
             return None
 
         lm_with_callable = dspy.LM(
-            model="openai/dspy-test-model",
+            engine="litellm", model="openai/dspy-test-model",
             api_base=api_base,
             api_key="fakekey",
             azure_ad_token_provider=azure_ad_token_provider,
@@ -268,7 +268,7 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
         response: str
 
     lm = dspy.LM(
-        model="openai/dspy-test-model",
+        engine="litellm", model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
         response_format=ResponseFormat,
@@ -315,7 +315,7 @@ def test_lm_wraps_unknown_boundary_error_as_unexpected_error():
 
 def test_lm_preserves_existing_lm_error_without_self_cause():
     error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
     with mock.patch("dspy.clients.lm.litellm_completion", side_effect=error):
         with pytest.raises(dspy.LMRateLimitError) as exc_info:
@@ -328,7 +328,7 @@ def test_lm_preserves_existing_lm_error_without_self_cause():
 @pytest.mark.asyncio
 async def test_lm_preserves_existing_lm_error_without_self_cause_async():
     error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
     with mock.patch("dspy.clients.lm.alitellm_completion", side_effect=error):
         with pytest.raises(dspy.LMRateLimitError) as exc_info:
@@ -339,11 +339,12 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
 
 
 def test_retry_number_set_correctly():
-    lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
         lm("query")
 
-    assert mock_completion.call_args.kwargs["num_retries"] == 3
+    # DSPy owns retries; every individual backend attempt disables them.
+    assert mock_completion.call_args.kwargs["num_retries"] == 0
 
 
 def test_retry_made_on_system_errors():
@@ -363,7 +364,7 @@ def test_retry_made_on_system_errors():
         kwargs["sleep"] = lambda _: None
         return original_retrying(*args, **kwargs)
 
-    lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
     with (
         mock.patch("tenacity.Retrying", side_effect=immediate_retrying),
         mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create),
@@ -464,86 +465,18 @@ def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
     assert lm.callbacks is not callbacks
 
 
-def test_base_lm_forward_contract_defaults_to_legacy():
-    class CustomLM(dspy.BaseLM):
-        pass
-
-    lm = CustomLM("custom-model")
-
-    assert lm._get_forward_contract() == "legacy"
-    assert not lm._declares_forward_contract()
 
 
-def test_base_lm_forward_contract_accepts_explicit_values():
-    class LegacyLM(dspy.BaseLM):
-        forward_contract = "legacy"
-
-    class TypedLM(dspy.BaseLM):
-        forward_contract = "typed_lm"
-
-    assert LegacyLM("custom-model")._get_forward_contract() == "legacy"
-    assert LegacyLM("custom-model")._declares_forward_contract()
-    assert TypedLM("custom-model")._get_forward_contract() == "typed_lm"
-    assert TypedLM("custom-model")._declares_forward_contract()
 
 
-def test_base_lm_forward_contract_rejects_unknown_values():
-    class CustomLM(dspy.BaseLM):
-        forward_contract = "normalized"
-
-    with pytest.raises(ValueError, match="forward_contract must be 'legacy' or 'typed_lm'"):
-        CustomLM("custom-model")._get_forward_contract()
 
 
-def test_base_lm_validates_typed_lm_response():
-    lm = dspy.BaseLM("custom-model")
-    response = dspy.LMResponse.from_text("ok", model="custom-model")
-
-    assert lm._validate_typed_lm_response(response) is response
-
-    with pytest.raises(TypeError, match=r"requires forward\(request\).*dspy.LMResponse"):
-        lm._validate_typed_lm_response(["ok"])
 
 
-def test_base_lm_warns_when_inherited_legacy_forward_returns_lm_response():
-    class CustomLM(dspy.BaseLM):
-        pass
-
-    lm = CustomLM("custom-model")
-    response = dspy.LMResponse.from_text("ok", model="custom-model")
-
-    with pytest.warns(DeprecationWarning, match="default legacy forward_contract"):
-        assert lm._validate_legacy_lm_response(response) is response
-
-    assert lm._validate_legacy_lm_response(["ok"]) is None
 
 
-def test_base_lm_errors_when_explicit_legacy_forward_returns_lm_response():
-    class CustomLM(dspy.BaseLM):
-        forward_contract = "legacy"
-
-    lm = CustomLM("custom-model")
-    response = dspy.LMResponse.from_text("ok", model="custom-model")
-
-    with pytest.raises(TypeError, match=r"forward_contract='legacy'.*got dspy.LMResponse"):
-        lm._validate_legacy_lm_response(response)
 
 
-def test_base_lm_inherited_legacy_forward_returning_lm_response_errors_on_direct_call():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            return dspy.LMResponse.from_text(
-                "ok",
-                model="custom-model",
-                usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-            )
-
-    lm = CustomLM("custom-model")
-
-    with pytest.raises(TypeError, match="legacy direct path"):
-        lm("Query")
-
-    assert len(lm.history) == 0
 
 
 # BaseLM direct-call compatibility tests.
@@ -566,91 +499,12 @@ def test_base_lm_default_call_keeps_legacy_outputs():
     assert CustomLM("custom-model")("Query") == ["Hi!"]
 
 
-def test_base_lm_experimental_call_returns_lm_response_through_legacy_bridge():
-    class CustomLM(dspy.BaseLM):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.seen = None
-
-        def forward(self, prompt=None, messages=None, **kwargs):
-            self.seen = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi!"), finish_reason="stop")],
-                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                model="custom-model",
-            )
-
-    lm = CustomLM("custom-model", temperature=0.2)
-    with dspy.context(experimental=True):
-        response = lm("Query", rollout_id=7)
-
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "Hi!"
-    assert response.output.finish_reason == "stop"
-    assert lm.seen["prompt"] == "Query"
-    assert lm.seen["messages"] is None
-    assert lm.seen["kwargs"]["temperature"] == 0.2
-    assert lm.seen["kwargs"]["cache"] is True
-    assert lm.seen["kwargs"]["rollout_id"] == 7
 
 
-def test_base_lm_explicit_lm_request_returns_lm_response_without_experimental():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
-                usage={},
-                model="custom-model",
-            )
-
-    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
-    response = CustomLM("custom-model")(request)
-
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "Hi!"
 
 
-def test_base_lm_legacy_bridge_records_typed_history_and_usage_once():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
-                usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-                model="custom-model",
-            )
-
-    lm = CustomLM("custom-model")
-    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
-
-    with track_usage() as usage_tracker:
-        response = lm(request)
-
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "Hi!"
-    assert len(lm.history) == 1
-    assert lm.history[0].request == request
-    assert lm.history[0].response == response
-    total_usage = usage_tracker.get_total_tokens()["custom-model"]
-    assert total_usage["prompt_tokens"] == 1
-    assert total_usage["completion_tokens"] == 2
-    assert total_usage["total_tokens"] == 3
 
 
-def test_base_lm_typed_forward_contract_uses_lm_request():
-    class CustomLM(dspy.BaseLM):
-        forward_contract = "typed_lm"
-
-        def forward(self, request):
-            assert isinstance(request, dspy.LMRequest)
-            return dspy.LMResponse.from_text(f"model={request.model}; text={request.messages[0].text}")
-
-    lm = CustomLM("custom-model")
-
-    assert lm("Query") == ["model=custom-model; text=Query"]
-    with dspy.context(experimental=True):
-        response = lm("Query")
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "model=custom-model; text=Query"
 
 
 def test_base_lm_typed_forward_contract_rejects_non_lm_response_at_call_time():
@@ -664,14 +518,6 @@ def test_base_lm_typed_forward_contract_rejects_non_lm_response_at_call_time():
         CustomLM("custom-model")("Query")
 
 
-def test_base_lm_request_call_rejects_mixed_inputs():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            raise AssertionError("forward should not be called")
-
-    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
-    with pytest.raises(ValueError, match="Pass either an LMRequest or direct-call inputs"):
-        CustomLM("custom-model")(request, "extra")
 
 
 def _model_response(text: str) -> ModelResponse:
@@ -682,165 +528,16 @@ def _model_response(text: str) -> ModelResponse:
     )
 
 
-class _TypedContractLM(dspy.BaseLM):
-    """Test double that records normalized requests received through the typed LM contract."""
-
-    forward_contract = "typed_lm"
-
-    def __init__(self, *args, outputs: list[str], **kwargs):
-        super().__init__(*args, **kwargs)
-        self.outputs = outputs
-        self.requests = []
-
-    def forward(self, request):
-        assert isinstance(request, dspy.LMRequest)
-        self.requests.append(request)
-        return dspy.LMResponse.from_text(self.outputs[len(self.requests) - 1], model=request.model)
 
 
-def _direct_lm_case(lm_kind: str, outputs: list[str]):
-    """Return a direct-call test double and helpers for inspecting normalized messages."""
-    if lm_kind == "current_lm":
-        patcher = mock.patch(
-            "dspy.clients.lm.litellm_completion",
-            side_effect=[_model_response(output) for output in outputs],
-        )
-        completion = patcher.start()
-        lm = dspy.LM("custom-model", cache=False)
-
-        def get_messages(index: int) -> list[dict[str, object]]:
-            return completion.call_args_list[index].kwargs["request"]["messages"]
-
-        def get_request(index: int):
-            return None
-
-        return lm, get_messages, get_request, patcher
-
-    if lm_kind == "typed_lm":
-        lm = _TypedContractLM("custom-model", outputs=outputs)
-
-        def get_messages(index: int) -> list[dict[str, object]]:
-            from dspy.clients.openai_format import to_openai_chat_request
-
-            return to_openai_chat_request(lm.requests[index])["messages"]
-
-        def get_request(index: int):
-            return lm.requests[index]
-
-        return lm, get_messages, get_request, None
-
-    raise ValueError(f"Unknown lm_kind: {lm_kind}")
 
 
-@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
-def test_base_lm_experimental_direct_messages_support_system_user_and_assistant_turns(lm_kind):
-    lm, get_messages, get_request, patcher = _direct_lm_case(lm_kind, ["Five-word answer."])
-    try:
-        with dspy.context(experimental=True):
-            response = lm(
-                dspy.System("Be concise."),
-                dspy.User("What is DSPy?"),
-                dspy.Assistant("DSPy is a framework for programming LM pipelines."),
-                dspy.User("Say that in five words."),
-                temperature=0.2,
-            )
-    finally:
-        if patcher is not None:
-            patcher.stop()
-
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "Five-word answer."
-    assert get_messages(0) == [
-        {"role": "system", "content": "Be concise."},
-        {"role": "user", "content": "What is DSPy?"},
-        {"role": "assistant", "content": "DSPy is a framework for programming LM pipelines."},
-        {"role": "user", "content": "Say that in five words."},
-    ]
-    if lm_kind == "typed_lm":
-        assert get_request(0).config.temperature == 0.2
 
 
-@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
-def test_base_lm_experimental_direct_messages_support_tool_call_transcripts(lm_kind):
-    lm, get_messages, get_request, patcher = _direct_lm_case(lm_kind, ["It is 22 C in Paris."])
-    try:
-        with dspy.context(experimental=True):
-            response = lm(
-                dspy.User("What is the weather in Paris?"),
-                dspy.Assistant(dspy.ToolCall(id="call_1", name="get_weather", args={"city": "Paris"})),
-                dspy.ToolResult('{"temperature": "22 C"}', call_id="call_1", name="get_weather"),
-                dspy.User("Summarize the result."),
-            )
-    finally:
-        if patcher is not None:
-            patcher.stop()
-
-    assert response.text == "It is 22 C in Paris."
-    assert get_messages(0) == [
-        {"role": "user", "content": "What is the weather in Paris?"},
-        {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
-                    "id": "call_1",
-                }
-            ],
-        },
-        {"role": "tool", "content": '{"temperature": "22 C"}', "tool_call_id": "call_1", "name": "get_weather"},
-        {"role": "user", "content": "Summarize the result."},
-    ]
-    if lm_kind == "typed_lm":
-        assert isinstance(get_request(0), dspy.LMRequest)
 
 
-@pytest.mark.parametrize("lm_kind", ["current_lm", "typed_lm"])
-def test_base_lm_experimental_direct_messages_can_reuse_lm_response_as_assistant_turn(lm_kind):
-    lm, get_messages, get_request, patcher = _direct_lm_case(
-        lm_kind,
-        ["DSPy programs LM pipelines.", "DSPy programs pipelines."],
-    )
-    try:
-        with dspy.context(experimental=True):
-            first = lm("Explain DSPy in one sentence.")
-            follow_up = lm(
-                dspy.User("Explain DSPy in one sentence."),
-                first,
-                dspy.User("Now make it even shorter."),
-            )
-    finally:
-        if patcher is not None:
-            patcher.stop()
-
-    assert first.text == "DSPy programs LM pipelines."
-    assert follow_up.text == "DSPy programs pipelines."
-    assert get_messages(0) == [{"role": "user", "content": "Explain DSPy in one sentence."}]
-    assert get_messages(1) == [
-        {"role": "user", "content": "Explain DSPy in one sentence."},
-        {"role": "assistant", "content": "DSPy programs LM pipelines."},
-        {"role": "user", "content": "Now make it even shorter."},
-    ]
-    if lm_kind == "typed_lm":
-        assert isinstance(get_request(1), dspy.LMRequest)
 
 
-@pytest.mark.asyncio
-async def test_base_lm_async_explicit_lm_request_returns_lm_response():
-    class CustomLM(dspy.BaseLM):
-        async def aforward(self, prompt=None, messages=None, **kwargs):
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi async!"))],
-                usage={},
-                model="custom-model",
-            )
-
-    request = dspy.LMRequest.from_call(model="custom-model", prompt="Query")
-    response = await CustomLM("custom-model").acall(request)
-
-    assert isinstance(response, dspy.LMResponse)
-    assert response.text == "Hi async!"
 
 
 def test_base_lm_tracks_usage_for_custom_subclasses():
@@ -1012,7 +709,7 @@ def test_lm_load_state_forwards_allow_custom_lm_class(monkeypatch):
 
     monkeypatch.setattr(dspy.BaseLM, "load_state", classmethod(spy_load_state))
 
-    dspy.LM.load_state(dspy.LM("openai/gpt-4o-mini").dump_state(), allow_custom_lm_class=True)
+    dspy.LM.load_state(dspy.LM("openai/gpt-4o-mini", engine="litellm").dump_state(), allow_custom_lm_class=True)
 
     assert calls == [True]
 
@@ -1033,19 +730,20 @@ def test_exponential_backoff_retry():
         kwargs["sleep"] = retry_delays.append
         return original_retrying(*args, **kwargs)
 
-    lm = dspy.LM(model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
+    lm = dspy.LM(engine="litellm", model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
     with (
+        mock.patch("dspy.clients.execution.time.sleep", side_effect=retry_delays.append),
         mock.patch("tenacity.Retrying", side_effect=immediate_retrying),
         mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create),
     ):
         with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
-    assert retry_delays == [1.0, 2.0]
+    assert retry_delays == [1, 2, 4]
 
 
 def test_logprobs_included_when_requested():
-    lm = dspy.LM(model="dspy-test-model", logprobs=True, cache=False)
+    lm = dspy.LM(engine="litellm", model="dspy-test-model", logprobs=True, cache=False)
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
@@ -1091,7 +789,7 @@ async def test_async_lm_call():
     with patch("litellm.acompletion") as mock_acompletion:
         mock_acompletion.return_value = mock_response
 
-        lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False)
         result = await lm.acall("question")
 
         assert result == ["answer"]
@@ -1109,7 +807,7 @@ async def test_async_lm_call_with_cache(tmp_path):
     )
     cache = dspy.cache
 
-    lm = dspy.LM(model="openai/gpt-4o-mini")
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
 
     with mock.patch("dspy.clients.lm.alitellm_completion") as mock_alitellm_completion:
         mock_alitellm_completion.return_value = ModelResponse(
@@ -1137,7 +835,7 @@ async def test_async_lm_call_with_cache(tmp_path):
 
 
 def test_lm_history_size_limit():
-    lm = dspy.LM(model="openai/gpt-4o-mini")
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     with dspy.context(max_history_size=5):
         with mock.patch("litellm.completion") as mock_completion:
             mock_completion.return_value = ModelResponse(
@@ -1152,7 +850,7 @@ def test_lm_history_size_limit():
 
 
 def test_disable_history():
-    lm = dspy.LM(model="openai/gpt-4o-mini")
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     with dspy.context(disable_history=True):
         with mock.patch("litellm.completion") as mock_completion:
             mock_completion.return_value = ModelResponse(
@@ -1198,7 +896,7 @@ def test_responses_api():
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
-            model="openai/gpt-5-mini",
+            engine="litellm", model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
             temperature=1.0,
@@ -1221,7 +919,7 @@ def test_lm_replaces_system_with_developer_role():
     with mock.patch("dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}) as mock_completion:
         lm = dspy.LM(
             "openai/gpt-4o-mini",
-            cache=False,
+            engine="litellm", cache=False,
             model_type="responses",
             use_developer_role=True,
         )
@@ -1270,7 +968,7 @@ def test_responses_api_tool_calls(litellm_test_server, provider_fields):
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
-            model="openai/dspy-test-model",
+            engine="litellm", model="openai/dspy-test-model",
             api_base=api_base,
             api_key="fakekey",
             model_type="responses",
@@ -1304,7 +1002,7 @@ def test_responses_api_cache_hit_preserves_outputs_and_skips_usage(tmp_path):
     dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=tmp_path / ".dspy_cache")
     try:
         with mock.patch("litellm.responses", autospec=True, return_value=api_response) as responses:
-            lm = dspy.LM("openai/dspy-test-model", model_type="responses")
+            lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses")
             with track_usage() as first_usage:
                 first = lm("cache me")
             with track_usage() as second_usage:
@@ -1343,7 +1041,7 @@ def test_responses_api_joins_multiple_text_outputs():
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response):
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
         outputs = lm("multi part query")
 
     assert outputs == [{"text": "part one. part two."}]
@@ -1353,7 +1051,7 @@ def test_reasoning_effort_responses_api():
     """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
     with mock.patch("litellm.responses", return_value=make_response([])) as mock_responses:
         lm = dspy.LM(
-            model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
+            engine="litellm", model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
         lm("openai query")
         call_kwargs = mock_responses.call_args.kwargs
@@ -1382,7 +1080,7 @@ def test_call_reasoning_model_with_chat_api():
         with mock.patch("litellm.supports_reasoning", return_value=True):
             # Create reasoning model with chat API
             lm = dspy.LM(
-                model="anthropic/claude-3-7-sonnet-20250219",
+                engine="litellm", model="anthropic/claude-3-7-sonnet-20250219",
                 model_type="chat",
                 temperature=1.0,
                 max_tokens=16000,
@@ -1650,7 +1348,7 @@ def test_responses_api_with_image_input():
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
-            model="openai/gpt-5-mini",
+            engine="litellm", model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
             temperature=1.0,
@@ -1715,7 +1413,7 @@ def test_responses_api_with_pydantic_model_input():
     )
 
     lm = dspy.LM(
-        model="openai/gpt-5-mini",
+        engine="litellm", model="openai/gpt-5-mini",
         model_type="responses",
         cache=False,
         temperature=1.0,
@@ -1788,7 +1486,7 @@ def test_responses_api_with_none_usage():
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response):
         lm = dspy.LM(
-            model="openai/gpt-5-mini",
+            engine="litellm", model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
             temperature=1.0,
@@ -1845,7 +1543,7 @@ async def test_responses_api_with_none_usage_async():
 
     with mock.patch("litellm.aresponses", autospec=True, return_value=api_response):
         lm = dspy.LM(
-            model="openai/gpt-5-mini",
+            engine="litellm", model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
             temperature=1.0,
@@ -1936,92 +1634,8 @@ class ContractSchema(pydantic.BaseModel):
     answer: str
 
 
-def test_openai_format_responses_request_maps_tools_choices_and_config():
-    from dspy.clients.openai_format import to_openai_responses_request
-    from dspy.core.types import LMRequest
-
-    tool = _chat_shaped_weather_tool()
-    tool["function"]["strict"] = True
-    request = LMRequest.from_call(
-        model="openai/gpt-5-mini",
-        messages=[{"role": "user", "content": "What is the weather in Paris?"}],
-        tools=[tool],
-        tool_choice={"type": "function", "function": {"name": "get_weather"}},
-        parallel_tool_calls=False,
-        reasoning={"effort": "low", "summary": "auto"},
-        response_format=ContractSchema,
-        max_tokens=123,
-    )
-
-    data = to_openai_responses_request(request)
-
-    assert data["input"] == [
-        {
-            "role": "user",
-            "content": [{"type": "input_text", "text": "What is the weather in Paris?"}],
-        }
-    ]
-    assert data["tools"] == [
-        {
-            "type": "function",
-            "name": "get_weather",
-            "description": "Get weather.",
-            "parameters": {
-                "type": "object",
-                "properties": {"city": {"type": "string"}},
-                "required": ["city"],
-            },
-            "strict": True,
-        }
-    ]
-    assert data["tool_choice"] == {"type": "function", "name": "get_weather"}
-    assert data["parallel_tool_calls"] is False
-    assert data["reasoning"] == {"effort": "low", "summary": "auto"}
-    assert data["max_output_tokens"] == 123
-    # Closed schema, not a raw model_json_schema(): the Responses API rejects
-    # schemas without explicit additionalProperties: false.
-    assert data["text"]["format"] == {
-        "type": "json_schema",
-        "name": "ContractSchema",
-        "schema": {**ContractSchema.model_json_schema(), "additionalProperties": False},
-    }
 
 
-def test_responses_request_converts_assistant_tool_calls_and_tool_results():
-    from dspy.clients.openai_format import to_openai_responses_request
-    from dspy.core.types import LMRequest
-
-    request = LMRequest.from_call(
-        model="openai/gpt-5-mini",
-        messages=[
-            {"role": "user", "content": "What is the weather?"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})},
-                    }
-                ],
-            },
-            {"role": "tool", "tool_call_id": "call_1", "name": "get_weather", "content": "sunny"},
-        ],
-    )
-
-    data = to_openai_responses_request(request)
-
-    assert data["input"] == [
-        {"role": "user", "content": [{"type": "input_text", "text": "What is the weather?"}]},
-        {
-            "type": "function_call",
-            "name": "get_weather",
-            "arguments": json.dumps({"city": "Paris"}),
-            "call_id": "call_1",
-        },
-        {"type": "function_call_output", "output": "sunny", "call_id": "call_1"},
-    ]
 
 
 def test_lm_responses_passes_hosted_tools_through_unchanged():
@@ -2035,7 +1649,7 @@ def test_lm_responses_passes_hosted_tools_through_unchanged():
     }
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
         lm("What is in the news?", tools=[hosted_tool, _chat_shaped_weather_tool(), flat_tool])
 
     sent_tools = responses.call_args.kwargs["tools"]
@@ -2052,7 +1666,7 @@ def test_lm_responses_passes_native_tool_choice_shapes_through():
         {"type": "allowed_tools", "mode": "auto", "tools": [{"type": "function", "name": "get_weather"}]},
     ):
         with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-            lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+            lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
             lm("What is the weather?", tools=[_chat_shaped_weather_tool()], tool_choice=native_choice)
 
         assert responses.call_args.kwargs["tool_choice"] == native_choice
@@ -2062,7 +1676,7 @@ def test_lm_responses_tolerates_native_content_and_sdk_message_dumps():
     response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
         lm(
             messages=[
                 {"role": "user", "content": [{"type": "input_text", "text": "Say hi."}]},
@@ -2090,7 +1704,7 @@ def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
     response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False, reasoning_effort="low")
+        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False, reasoning_effort="low")
         lm("Say hi.", reasoning={"effort": "high"})
 
     sent = responses.call_args.kwargs
@@ -2103,7 +1717,7 @@ def test_lm_responses_forwards_raw_base64_file_data_verbatim():
     raw_base64 = "JVBERi0xLjQK"
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
         lm(
             messages=[
                 {
@@ -2125,50 +1739,9 @@ def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
     response = _responses_text_response()
 
     with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/gpt-5-nano", model_type="responses", cache=False, max_tokens=16000)
+        lm = dspy.LM("openai/gpt-5-nano", engine="litellm", model_type="responses", cache=False, max_tokens=16000)
         lm("Say hi.", temperature=0.7, reasoning_effort="low")
 
     sent = responses.call_args.kwargs
     assert sent["temperature"] == 0.7
     assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
-def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls():
-    from dspy.clients.openai_format import responses_to_lm_response
-    from dspy.core.types import LMRequest, LMThinkingPart
-
-    response = make_response(
-        [
-            ResponseOutputMessage(
-                id="msg_1",
-                type="message",
-                role="assistant",
-                status="completed",
-                content=[{"type": "output_text", "text": "I should use weather.", "annotations": []}],
-            ),
-            {
-                "type": "function_call",
-                "name": "get_weather",
-                "arguments": '{"city": "Paris",}',
-                "call_id": "call_1",
-                "id": "fc_1",
-                "status": "completed",
-            },
-            ResponseReasoningItem(
-                id="reasoning_1",
-                type="reasoning",
-                summary=[Summary(type="summary_text", text="Need live weather.")],
-            ),
-        ]
-    )
-
-    lm_response = responses_to_lm_response(response, LMRequest(model="openai/dspy-test-model", messages=[]))
-    output = lm_response.outputs[0]
-
-    assert output.text == "I should use weather."
-    assert output.reasoning_content == "Need live weather."
-    assert isinstance(output.parts[2], LMThinkingPart)
-    assert output.tool_calls[0].id == "call_1"
-    assert output.tool_calls[0].name == "get_weather"
-    assert output.tool_calls[0].args == {}
-    assert output.tool_calls[0].provider_data["raw_arguments"] == '{"city": "Paris",}'
-    assert "arguments_parse_error" in output.tool_calls[0].provider_data
-    assert lm_response.usage.total_tokens == 2

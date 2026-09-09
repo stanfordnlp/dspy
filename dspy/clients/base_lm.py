@@ -7,7 +7,6 @@ from typing import Any, TextIO
 
 from dspy.clients.legacy_outputs import responses_outputs
 from dspy.dsp.utils import settings
-from dspy.lm15 import Request
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
@@ -154,66 +153,21 @@ class BaseLM:
 
         return outputs
 
-    def _prepare_call(self, prompt, messages, kwargs):
-        contract = getattr(type(self), "forward_contract", "legacy")
-        if contract != "legacy":
-            raise TypeError(
-                "The DSPy 3.3 experimental forward_contract API has been removed. "
-                "Use dspy.lm15.Request and Response with the new LM integration; "
-                "legacy subclasses must implement forward(prompt=None, messages=None, **kwargs)."
-            )
-        request = kwargs.pop("request", None)
-        if isinstance(prompt, Request):
-            if request is not None:
-                raise TypeError("Pass a Request either positionally or by keyword, not both.")
-            request, prompt = prompt, None
-        if request is None:
-            return prompt, messages, kwargs, None
-        if not isinstance(request, Request):
-            raise TypeError("request must be a dspy.lm15.Request")
-        if prompt is not None or messages is not None:
-            raise TypeError("Do not combine a Request with prompt or messages.")
-        if request.model != self.model:
-            raise ValueError("Request.model must match this LM's model; construct another LM to change models.")
-        extra = set(kwargs) - {"cache", "rollout_id"}
-        if extra:
-            raise TypeError(f"Put generation options in Request.config, not call kwargs: {sorted(extra)}")
-        return None, None, kwargs, request
-
-    def _forward_request(self, request, **controls):
-        raise TypeError(
-            "This legacy custom LM accepts prompt/messages calls, not lm15.Request. "
-            "Use ordinary calls; native custom-engine support is a separate integration step."
-        )
-
-    async def _aforward_request(self, request, **controls):
-        raise TypeError("This legacy custom LM does not support asynchronous lm15.Request calls.")
-
     @with_callbacks
     def __call__(self, prompt=None, *, messages=None, **kwargs):
-        prompt, messages, kwargs, request = self._prepare_call(prompt, messages, dict(kwargs))
-        response = (self._forward_request(request, **kwargs) if request is not None
-                    else self.forward(prompt=prompt, messages=messages, **kwargs))
-        return self._finish_call(response, prompt, messages, kwargs, request)
+        """Return legacy outputs, or one lm15.Response for an explicit Request."""
+        from dspy.clients.execution import execute, finalize, prepare
+
+        call = prepare(self, prompt, messages, kwargs)
+        return finalize(self, call, execute(self, call))
 
     @with_callbacks
     async def acall(self, prompt=None, *, messages=None, **kwargs):
-        prompt, messages, kwargs, request = self._prepare_call(prompt, messages, dict(kwargs))
-        response = (await self._aforward_request(request, **kwargs) if request is not None
-                    else await self.aforward(prompt=prompt, messages=messages, **kwargs))
-        return self._finish_call(response, prompt, messages, kwargs, request)
+        """Async equivalent of __call__, with the same execution ownership."""
+        from dspy.clients.execution import aexecute, finalize, prepare
 
-    def _finish_call(self, response, prompt, messages, kwargs, request):
-        if request is None:
-            return self._process_lm_response(response, prompt, messages, **kwargs)
-        from dspy.clients.lm15_boundary import history_messages, response_value
-
-        # Preserve ordinary history fields, but derive typed-call output flags
-        # from the actual request rather than the LM's generation defaults.
-        outputs = (self._process_response(response) if self.model_type == "responses"
-                   else self._process_completion(response, {"logprobs": request.config.logprobs is not None}))
-        self._record_response(response, None, history_messages(request), outputs, kwargs, request=request)
-        return response_value(response, self.model_type, request)
+        call = prepare(self, prompt, messages, kwargs, asynchronous=True)
+        return finalize(self, call, await aexecute(self, call))
 
     def forward(self, prompt=None, messages=None, **kwargs):
         """Return an OpenAI-shaped provider response for a legacy LM call."""

@@ -55,14 +55,14 @@ def test_dspy_context_parallel():
 
 
 def test_dspy_context_with_dspy_parallel():
-    dspy.configure(lm=dspy.LM("openai/gpt-4o", cache=False), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM("openai/gpt-4o", engine="litellm", cache=False), adapter=dspy.ChatAdapter())
 
     class MyModule(dspy.Module):
         def __init__(self):
             self.predict = dspy.Predict("question -> answer")
 
         def forward(self, question: str) -> str:
-            lm = dspy.LM("openai/gpt-4o-mini", cache=False) if "France" in question else dspy.settings.lm
+            lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False) if "France" in question else dspy.settings.lm
             with dspy.context(lm=lm):
                 time.sleep(1)
                 assert dspy.settings.lm.model == lm.model
@@ -104,9 +104,9 @@ async def test_dspy_context_with_async_task_group():
 
         async def aforward(self, question: str) -> str:
             lm = (
-                dspy.LM("openai/gpt-4o-mini", cache=False)
+                dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
                 if "France" in question
-                else dspy.LM("openai/gpt-4o", cache=False)
+                else dspy.LM("openai/gpt-4o", engine="litellm", cache=False)
             )
             with dspy.context(lm=lm, trace=[]):
                 await asyncio.sleep(1)
@@ -117,7 +117,7 @@ async def test_dspy_context_with_async_task_group():
 
     module = MyModule()
 
-    with dspy.context(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter()):
+    with dspy.context(lm=dspy.LM("openai/gpt-4.1", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
         with mock.patch("litellm.acompletion") as mock_completion:
             mock_completion.return_value = ModelResponse(
                 choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],

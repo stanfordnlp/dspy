@@ -24,11 +24,6 @@ class _LegacyConfig:
             raise TypeError("Use LiteLLMEngine for the built-in LM, not a nested LegacyEngine")
         if getattr(type(lm), "forward_contract", "legacy") != "legacy":
             raise TypeError("The removed DSPy 3.3 typed_lm contract is not a legacy plugin")
-        if lm.model_type != "chat":
-            raise LMUnsupportedFeatureError(
-                "LegacyEngine currently adapts chat-shaped custom LMs only. "
-                "Other plugins retain their ordinary DSPy call interface."
-            )
         self.lm = lm
         self._closed = False
 
@@ -61,6 +56,12 @@ class _LegacyConfig:
 
 
 class LegacyEngine(_LegacyConfig):
+    def complete_legacy(self, lm, request, *, prompt=None, messages=None, call_kwargs=None):
+        from dspy.clients.call_result import CallResult
+
+        raw = self.lm.forward(prompt=prompt, messages=messages, **(call_kwargs or {}))
+        return CallResult.legacy(self.lm, raw, kwargs=call_kwargs)
+
     def complete(self, request: Request):
         kwargs = self._arguments(request)
         try:
@@ -84,6 +85,12 @@ class LegacyEngine(_LegacyConfig):
 
 
 class AsyncLegacyEngine(_LegacyConfig):
+    async def complete_legacy(self, lm, request, *, prompt=None, messages=None, call_kwargs=None):
+        from dspy.clients.call_result import CallResult
+
+        raw = await self.lm.aforward(prompt=prompt, messages=messages, **(call_kwargs or {}))
+        return CallResult.legacy(self.lm, raw, kwargs=call_kwargs)
+
     async def complete(self, request: Request):
         kwargs = self._arguments(request)
         try:

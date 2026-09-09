@@ -1,8 +1,8 @@
 """Execution backends for DSPy's LM layer.
 
-These engines are not yet the default dspy.LM execution path. Construct one
-explicitly to use it. Selection and fallback belong to the outer LM layer;
-no engine silently delegates a failed request to another backend.
+The outer LM layer selects these engines and owns caching, retries, fan-out
+and bookkeeping. No engine silently delegates a failed request to another
+backend.
 """
 
 from dspy.clients.engines.base import AsyncEngine, Engine

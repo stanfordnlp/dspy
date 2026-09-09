@@ -35,7 +35,7 @@ def test_bootstrap_trace_data():
         return example.number == prediction.number
 
     # Configure dspy
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     # Mock litellm completion responses
     # 4 successful responses and 1 that will trigger AdapterParseError

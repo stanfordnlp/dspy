@@ -87,7 +87,7 @@ async def test_calls_match_3_3_outputs_keys_and_bookkeeping(case, saved, backend
     cache = Cache(True, not saved, str(tmp_path))
     monkeypatch.setattr(dspy, "cache", cache)
     trace = Trace()
-    lm = dspy.LM(**case["init"], callbacks=[trace])
+    lm = dspy.LM(engine="litellm", **case["init"], callbacks=[trace])
     try:
         with track_usage() as usage:
             outputs = lm(**case["call"]) if case["mode"] == "sync" else await lm.acall(**case["call"])
@@ -117,7 +117,7 @@ async def test_calls_match_3_3_outputs_keys_and_bookkeeping(case, saved, backend
 async def test_cache_controls_and_usage_are_per_call(mode, backend):
     calls, _ = backend
     trace = Trace()
-    lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7, max_tokens=32, callbacks=[trace])
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", temperature=0.7, max_tokens=32, callbacks=[trace])
 
     async def invoke(**kwargs):
         return lm("Say hello.", **kwargs) if mode == "sync" else await lm.acall("Say hello.", **kwargs)
@@ -147,7 +147,7 @@ async def test_cache_controls_and_usage_are_per_call(mode, backend):
 @pytest.mark.parametrize("override", [{"n": 2}, {"temperature": 0.8}, {"max_tokens": 33}])
 def test_generation_changes_do_not_reuse_the_original_cache_entry(override, backend):
     calls, _ = backend
-    lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7, max_tokens=32)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", temperature=0.7, max_tokens=32)
     lm("Say hello.")
     lm("Say hello.", **override)
     lm("Say hello.", **override)

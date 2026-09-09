@@ -6,7 +6,6 @@ from typing import Any
 
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.base_lm import BaseLM
-from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.lazy_import import require
 
@@ -89,6 +88,13 @@ class DummyLM(BaseLM):
             adapter = ChatAdapter()
         self.adapter = adapter
 
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+        self._engine_spec = DummyEngine(self)
+        self._async_engine_spec = AsyncDummyEngine(self._engine_spec)
+        # DummyLM has always consumed scripted answers even for repeated calls.
+        self._cache_responses = False
+
     def _use_example(self, messages):
         # find all field names
         fields = defaultdict(int)
@@ -123,34 +129,22 @@ class DummyLM(BaseLM):
             return adapter.format_field_with_value(fields_with_values)
 
     def forward(self, prompt=None, messages=None, **kwargs):
-        messages = messages or [{"role": "user", "content": prompt}]
-        kwargs = {**self.kwargs, **kwargs}
+        from dspy.clients.execution import execute, prepare
 
-        choices = []
-        for _ in range(kwargs.get("n", 1)):
-            if self.follow_examples:
-                current_output = self._use_example(messages)
-            elif isinstance(self.answers, dict):
-                current_output = next(
-                    (self._format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
-                    "No more responses",
-                )
-            else:
-                current_output = self._format_answer_fields(next(self.answers, {"answer": "No more responses"}))
-
-            message = dotdict(content=current_output, tool_calls=None)
-            if self.reasoning:
-                message.reasoning_content = "Some reasoning"
-            choices.append(dotdict(message=message, finish_reason="stop"))
-
-        return dotdict(
-            choices=choices,
-            usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-            model="dummy",
-        )
+        return execute(self, prepare(self, prompt, messages, kwargs)).provider_response()
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
-        return self.forward(prompt=prompt, messages=messages, **kwargs)
+        from dspy.clients.execution import aexecute, prepare
+
+        return (await aexecute(self, prepare(self, prompt, messages, kwargs))).provider_response()
+
+    def copy(self, **kwargs):
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+        copied = super().copy(**kwargs)
+        copied._engine_spec = DummyEngine(copied)
+        copied._async_engine_spec = AsyncDummyEngine(copied._engine_spec)
+        return copied
 
     def get_convo(self, index):
         """Get the prompt + answer from the ith message."""

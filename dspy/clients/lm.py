@@ -55,6 +55,8 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
+        engine: Any = "auto",
+        async_engine: Any = None,
         **kwargs,
     ):
         """Create a new language model instance for use with DSPy modules and programs.
@@ -73,7 +75,11 @@ class LM(BaseLM):
             num_retries: The number of times to retry a request if it fails transiently due to
                 network error, rate limiting, etc. Requests are retried with exponential
                 backoff.
-            provider: The provider to use. If not specified, the provider will be inferred from the model.
+            engine: 'auto' prefers lm15 for representable requests; 'litellm' preserves the compatibility backend;
+                'lm15' refuses unsupported mappings rather than selecting LiteLLM. A custom engine implements
+                complete(Request) -> Response and optionally stream(Request). Engines are borrowed.
+            async_engine: Async counterpart when supplying a custom engine object.
+            provider: The training/launch provider. This does not select the inference engine.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
             rollout_id: Optional integer used to differentiate cache entries for otherwise
@@ -82,6 +88,19 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
+        if isinstance(engine, str):
+            if engine not in {"auto", "lm15", "litellm"}:
+                raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
+            if async_engine is not None:
+                raise ValueError("async_engine is only used with a custom engine object")
+        elif not callable(getattr(engine, "complete", None)):
+            raise TypeError("A custom engine must implement complete(Request) -> Response")
+        if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
+            raise ValueError("num_retries must be a nonnegative integer")
+        self._engine_spec = engine
+        self._async_engine_spec = async_engine
+        self._engine_store = {}
+        self._engine_lock = threading.RLock()
         super().__init__(
             model=model,
             model_type=model_type,
@@ -168,184 +187,88 @@ class LM(BaseLM):
 
         return wrap_error(exc, model=self.model, provider=self._provider_name)
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
-        """Call the configured LM synchronously.
+    def forward(self, prompt=None, messages=None, **kwargs):
+        """Compatibility forward entry point; public calls also record history."""
+        from dspy.clients.execution import execute, prepare
 
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
+        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
 
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        from dspy.clients.execution import aexecute, prepare
 
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
+        return (await aexecute(self, prepare(self, prompt, messages, kwargs, asynchronous=True, direct=True))).provider_response()
+
+    @property
+    def engine(self):
+        """Configured engine selection ('auto', 'lm15', 'litellm', or an engine object)."""
+        return self._engine_spec
+
+    def close(self):
+        """Close owned synchronous engine pools after active calls have finished.
+
+        Custom engines are borrowed. Async pools must be closed with aclose().
+        Copies share owned pools; closing one releases those shared resources.
         """
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
+        with self._engine_lock:
+            keys = [key for key in self._engine_store if key[0] is None]
+            engines = [self._engine_store.pop(key) for key in keys]
+        from contextlib import ExitStack
 
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
+        with ExitStack() as cleanup:
+            for engine in engines:
+                cleanup.callback(engine.close)
 
-        if self.model_type == "chat":
-            completion = litellm_completion
-        elif self.model_type == "text":
-            completion = litellm_text_completion
-        elif self.model_type == "responses":
-            completion = litellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
+    async def aclose(self):
+        """Close this event loop's owned pools and the synchronous pools."""
+        import asyncio
+        from contextlib import AsyncExitStack
 
+        loop = asyncio.get_running_loop()
+        with self._engine_lock:
+            keys = [key for key in self._engine_store if key[0] is loop]
+            engines = [self._engine_store.pop(key) for key in keys]
         try:
-            results = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=litellm_cache_args,
-            )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
+            async with AsyncExitStack() as cleanup:
+                for engine in engines:
+                    cleanup.push_async_callback(engine.aclose)
+        finally:
+            self.close()
 
-        self._check_truncation(results)
+    def __copy__(self):
+        import types
 
-        return results
+        copied = object.__new__(type(self))
+        copied.__dict__.update(self.__dict__)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, types.MemberDescriptorType) and hasattr(self, name):
+                    setattr(copied, name, getattr(self, name))
+        return copied
 
-    async def aforward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs,
-    ):
-        """Call the configured LM asynchronously.
+    def copy(self, **kwargs):
+        spec = kwargs.pop("engine", self._engine_spec)
+        async_spec = kwargs.pop("async_engine", self._async_engine_spec)
+        if isinstance(spec, str) and spec not in {"auto", "lm15", "litellm"}:
+            raise ValueError("Unknown engine selection")
+        if not isinstance(spec, str) and not callable(getattr(spec, "complete", None)):
+            raise TypeError("Custom engines must implement complete(Request)")
+        copied = super().copy(**kwargs)
+        copied._engine_spec = spec
+        copied._async_engine_spec = async_spec
+        return copied
 
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state.pop("_engine_lock", None)
+        state.pop("_engine_store", None)
+        return state
 
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
-
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
-        """
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
-
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
-
-        if self.model_type == "chat":
-            completion = alitellm_completion
-        elif self.model_type == "text":
-            completion = alitellm_text_completion
-        elif self.model_type == "responses":
-            completion = alitellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
-
-        try:
-            results = await completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=litellm_cache_args,
-            )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
-
-        self._check_truncation(results)
-
-        return results
-
-    def _typed_completion(self, request, controls, *, asynchronous):
-        from dspy.clients.lm15_boundary import request_kwargs
-
-        if self.model_type == "text":
-            raise LMUnsupportedFeatureError(
-                "Explicit lm15.Request calls require model_type='chat' or 'responses'. "
-                "Text-completion models remain available through ordinary prompt/messages calls.",
-                model=self.model,
-            )
-        data = request_kwargs(request, self.model_type)
-        # Only client configuration is inherited. Generation parameters are
-        # entirely owned by the explicit Request, including absent values.
-        client_keys = {
-            "api_key", "api_base", "base_url", "headers", "extra_headers", "timeout",
-            "azure_ad_token_provider", "api_version", "organization", "project",
-        }
-        data = {**{key: val for key, val in self.kwargs.items() if key in client_keys}, **data}
-        data["model"] = self.model
-        if controls.get("rollout_id") is not None:
-            data["rollout_id"] = controls["rollout_id"]
-        self._warn_zero_temp_rollout(request.config.temperature, controls.get("rollout_id"))
-        if self.model_type == "chat":
-            data["n"] = 1
-            fn = alitellm_completion if asynchronous else litellm_completion
-        else:
-            fn = alitellm_responses_completion if asynchronous else litellm_responses_completion
-        fn, cache_args = self._get_cached_completion_fn(fn, controls.get("cache", self.cache))
-        return fn, {"request": data, "num_retries": self.num_retries, "cache": cache_args}
-
-    def _forward_request(self, request, **controls):
-        try:
-            fn, kwargs = self._typed_completion(request, controls, asynchronous=False)
-            response = fn(**kwargs)
-            self._check_typed_truncation(response, request)
-            return response
-        except LMError:
-            raise
-        except Exception as exc:
-            raise self._wrap_litellm_exception(exc) from exc
-
-    async def _aforward_request(self, request, **controls):
-        try:
-            fn, kwargs = self._typed_completion(request, controls, asynchronous=True)
-            response = await fn(**kwargs)
-            self._check_typed_truncation(response, request)
-            return response
-        except LMError:
-            raise
-        except Exception as exc:
-            raise self._wrap_litellm_exception(exc) from exc
-
-    def _check_typed_truncation(self, response, request):
-        from dspy.clients.legacy_outputs import value
-
-        truncated = any(value(choice, "finish_reason") == "length" for choice in value(response, "choices", []) or [])
-        if self.model_type == "responses":
-            truncated = value(value(response, "incomplete_details", {}) or {}, "reason") == "max_output_tokens"
-        if truncated:
-            logger.warning(
-                "LM response was truncated at the request's token limit (%s). "
-                "Inspect history or increase Request.config.max_tokens.", request.config.max_tokens,
-            )
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._engine_spec = getattr(self, "_engine_spec", "auto")
+        self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        self._engine_lock = threading.RLock()
+        self._engine_store = {}
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
@@ -433,7 +356,11 @@ class LM(BaseLM):
             A dictionary that can be passed to `BaseLM.load_state` to
             reconstruct this `LM`. The state excludes API keys.
         """
+        if not isinstance(self._engine_spec, str):
+            raise TypeError("Custom engine objects require custom dump_state/load_state methods; they cannot be stored in JSON LM state.")
         state = super().dump_state()
+        if self._engine_spec != "auto":
+            state["engine"] = self._engine_spec
         state.update(
             {
                 "finetuning_model": self.finetuning_model,
@@ -460,9 +387,11 @@ class LM(BaseLM):
         return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
 
     def _check_truncation(self, results):
-        if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
+        from dspy.clients.legacy_outputs import value
+
+        if self.model_type != "responses" and any(value(c, "finish_reason") == "length" for c in value(results, "choices", []) or []):
             logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs.get('max_tokens', self.kwargs.get('max_completion_tokens'))}. "
                 "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
                 "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
                 f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
@@ -491,19 +420,32 @@ def _get_stream_completion_fn(
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
         response = await _get_litellm().acompletion(
+            num_retries=0,
             cache=cache_kwargs,
             stream=True,
             headers=headers,
             **request,
         )
         chunks = []
-        async for chunk in response:
-            if caller_predict_id:
-                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
-                chunk.predict_id = caller_predict_id
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return _get_litellm().stream_chunk_builder(chunks)
+        try:
+            async for chunk in response:
+                if caller_predict_id:
+                    chunk.predict_id = caller_predict_id
+                chunks.append(chunk)
+                progress = dspy.settings.get("_lm_stream_progress")
+                if progress is not None:
+                    progress["emitted"] = True
+                await stream.send(chunk)
+            return _get_litellm().stream_chunk_builder(chunks)
+        finally:
+            import inspect
+
+            close = getattr(response, "aclose", None) or getattr(response, "close", None)
+            if close is not None:
+                with anyio.CancelScope(shield=True):
+                    result = close()
+                    if inspect.isawaitable(result):
+                        await result
 
     def sync_stream_completion():
         return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))

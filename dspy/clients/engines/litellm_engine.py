@@ -88,7 +88,7 @@ class _ChatStream:
 
 class _LiteLLMConfig:
     def __init__(self, *, model_type="chat", **client_options):
-        if model_type not in {"chat", "responses"}:
+        if model_type not in {"chat", "responses", "text"}:
             raise LMUnsupportedFeatureError(
                 "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
             )
@@ -108,6 +108,8 @@ class _LiteLLMConfig:
         validate_request(request)
         if self._closed:
             raise RuntimeError("Engine is closed")
+        if self.model_type == "text":
+            raise LMUnsupportedFeatureError("Text-completion models accept ordinary prompt/messages calls, not typed requests.")
         if streaming and self.model_type != "chat":
             raise LMUnsupportedFeatureError(
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
@@ -129,6 +131,17 @@ class _LiteLLMConfig:
 
 class LiteLLMEngine(_LiteLLMConfig):
     """One synchronous attempt. LiteLLM's process-global clients are borrowed."""
+
+    def complete_legacy(self, lm, request, **context):
+        """Carry ordinary provider-specific inputs without a lossy typed conversion."""
+        from dspy.clients import lm as lm_module
+        from dspy.clients.call_result import CallResult
+
+        fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
+              "responses": lm_module.litellm_responses_completion}[self.model_type]
+        raw = fn(request=request, num_retries=0)
+        lm._check_truncation(raw)
+        return CallResult.legacy(lm, raw, kwargs=request)
 
     def complete(self, request: Request):
         data = self._arguments(request)
@@ -166,6 +179,16 @@ class LiteLLMEngine(_LiteLLMConfig):
 
 class AsyncLiteLLMEngine(_LiteLLMConfig):
     """Async equivalent; cancellation propagates without retrying."""
+
+    async def complete_legacy(self, lm, request, **context):
+        from dspy.clients import lm as lm_module
+        from dspy.clients.call_result import CallResult
+
+        fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
+              "responses": lm_module.alitellm_responses_completion}[self.model_type]
+        raw = await fn(request=request, num_retries=0)
+        lm._check_truncation(raw)
+        return CallResult.legacy(lm, raw, kwargs=request)
 
     async def complete(self, request: Request):
         data = self._arguments(request)

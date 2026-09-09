@@ -34,6 +34,36 @@ def request_kwargs(request: Request, model_type: str) -> dict:
     return data
 
 
+def snapshot_request(request: Request) -> Request:
+    """Read local media once so the cache key describes the bytes actually sent."""
+    import base64
+    from dataclasses import replace
+
+    def snapshot(part):
+        path = getattr(part, "path", None)
+        if path is not None:
+            return replace(part, path=None, data=base64.b64encode(path.read_bytes()).decode("ascii"))
+        if part.type == "tool_result":
+            content = tuple(snapshot(item) for item in part.content)
+            if any(left is not right for left, right in zip(content, part.content)):
+                return replace(part, content=content)
+        return part
+
+    messages = []
+    for message in request.messages:
+        parts = tuple(snapshot(part) for part in message.parts)
+        messages.append(replace(message, parts=parts) if any(left is not right for left, right in zip(parts, message.parts))
+                        else message)
+    system = request.system
+    if isinstance(system, tuple):
+        frozen = tuple(snapshot(part) for part in system)
+        if any(left is not right for left, right in zip(frozen, system)):
+            system = frozen
+    if system is request.system and all(left is right for left, right in zip(messages, request.messages)):
+        return request
+    return replace(request, messages=tuple(messages), system=system)
+
+
 def history_messages(request: Request) -> list[dict]:
     """A display snapshot; never read local files while recording history."""
     messages = []
