@@ -58,12 +58,7 @@ The lowercase part-factory helpers (`text`, `image`, `tool_call`, ...) live in
 level invite collisions with user code.
 """
 
-from importlib.metadata import PackageNotFoundError, version as _version
-
-try:
-    __version__ = _version("lm15")
-except PackageNotFoundError:  # running from a source checkout
-    __version__ = "0.0.0"
+from ._version import __version__
 
 # ── Canonical types ──────────────────────────────────────────────────
 from .batch import AsyncBatchJob, BatchJob
