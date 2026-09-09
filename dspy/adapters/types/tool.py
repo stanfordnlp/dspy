@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import inspect
+import threading
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
 import anyio
@@ -213,10 +214,26 @@ class Tool(Type):
             result = self.func(**parsed_kwargs)
         else:
             call = functools.partial(self.func, **parsed_kwargs)
-            worker_task = asyncio.create_task(anyio.to_thread.run_sync(call, limiter=get_limiter()))
+            start_lock = threading.Lock()
+            started = False
+            cancelled = False
+
+            def run_if_not_cancelled():
+                nonlocal started
+                with start_lock:
+                    if cancelled:
+                        return None
+                    started = True
+                return call()
+
+            worker_task = asyncio.create_task(anyio.to_thread.run_sync(run_if_not_cancelled, limiter=get_limiter()))
             try:
                 result = await asyncio.shield(worker_task)
             except asyncio.CancelledError:
+                with start_lock:
+                    cancelled = True
+                    if not started:
+                        worker_task.cancel()
                 # Python cannot stop a running thread. Wait for it to finish so its limiter
                 # token is not released while the underlying function is still running.
                 while not worker_task.done():

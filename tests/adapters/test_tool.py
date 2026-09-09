@@ -486,6 +486,40 @@ async def test_async_tool_cancellation_retains_worker_limit_until_sync_function_
 
 
 @pytest.mark.asyncio
+async def test_cancelled_queued_tool_never_executes():
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def work(number: int):
+        calls.append(number)
+        if number == 1:
+            started.set()
+            release.wait(timeout=5)
+        return number
+
+    tool = Tool(work)
+    with dspy.context(async_max_workers=1):
+        first = asyncio.create_task(tool.acall(number=1))
+        queued = None
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            queued = asyncio.create_task(tool.acall(number=2))
+            await asyncio.sleep(0.05)
+            queued.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(queued, timeout=1)
+            assert calls == [1]
+        finally:
+            release.set()
+            await first
+            if queued is not None:
+                await asyncio.gather(queued, return_exceptions=True)
+        assert await tool.acall(number=3) == 3
+        assert calls == [1, 3]
+
+
+@pytest.mark.asyncio
 async def test_async_sync_tools_respect_async_worker_limit():
     first_started = threading.Event()
     second_started = threading.Event()
