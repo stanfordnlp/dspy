@@ -1,0 +1,6 @@
+# Written by scripts/update_vendored_lm15.py. Do not edit files in this directory by hand.
+source=https://github.com/cmpnd-ai/lm15-python.git
+ref=33a5c525b507c63747d6795a9ee8e4eb7c720295
+commit=33a5c525b507c63747d6795a9ee8e4eb7c720295
+updated=2026-09-08
+digest=6ddf37175ab9cec5e94a47cce3c2c38b11989640aee7d4fa96e22e1447472832
