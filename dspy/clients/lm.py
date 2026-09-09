@@ -12,11 +12,10 @@ from anyio.streams.memory import MemoryObjectSendStream
 import dspy
 from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
 from dspy.clients.cache import request_cache
+from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.openai_format import to_openai_responses_request
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
-from dspy.core.types import LMRequest
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import (
     ContextWindowExceededError,
@@ -57,8 +56,6 @@ class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
-
-    forward_contract = "legacy"
 
     def __init__(
         self,
@@ -186,6 +183,31 @@ class LM(BaseLM):
         """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions."""
         if isinstance(exc, LMError):
             return exc
+
+        from dspy import lm15
+
+        if isinstance(exc, lm15.LM15Error):
+            mappings = (
+                (lm15.ContextLengthError, ContextWindowExceededError),
+                (lm15.AuthError, LMAuthError),
+                (lm15.BillingError, LMBillingError),
+                (lm15.RateLimitError, LMRateLimitError),
+                (lm15.UnsupportedModelError, LMUnsupportedModelError),
+                (lm15.InvalidRequestError, LMInvalidRequestError),
+                (lm15.TimeoutError, LMTimeoutError),
+                (lm15.ServerError, LMServerError),
+                (lm15.CapabilityError, LMUnsupportedFeatureError),
+                (lm15.NotConfiguredError, LMNotConfiguredError),
+                (lm15.ConfigurationError, LMConfigurationError),
+                (lm15.TransportError, LMTransportError),
+                (lm15.ProviderError, LMProviderError),
+            )
+            error_class = next((target for source, target in mappings if isinstance(exc, source)), LMUnexpectedError)
+            return error_class(
+                message=exc.message, model=self.model, provider=exc.provider,
+                provider_code=exc.provider_code, status=exc.status,
+                request_id=exc.request_id, retry_after=exc.retry_after,
+            )
 
         status = _exception_status(exc)
         provider = getattr(exc, "llm_provider", None) or self._provider_name
@@ -321,6 +343,69 @@ class LM(BaseLM):
         self._check_truncation(results)
 
         return results
+
+    def _typed_completion(self, request, controls, *, asynchronous):
+        from dspy.clients.lm15_boundary import request_kwargs
+
+        if self.model_type == "text":
+            raise LMUnsupportedFeatureError(
+                "Explicit lm15.Request calls require model_type='chat' or 'responses'. "
+                "Text-completion models remain available through ordinary prompt/messages calls.",
+                model=self.model,
+            )
+        data = request_kwargs(request, self.model_type)
+        # Only client configuration is inherited. Generation parameters are
+        # entirely owned by the explicit Request, including absent values.
+        client_keys = {
+            "api_key", "api_base", "base_url", "headers", "extra_headers", "timeout",
+            "azure_ad_token_provider", "api_version", "organization", "project",
+        }
+        data = {**{key: val for key, val in self.kwargs.items() if key in client_keys}, **data}
+        data["model"] = self.model
+        if controls.get("rollout_id") is not None:
+            data["rollout_id"] = controls["rollout_id"]
+        self._warn_zero_temp_rollout(request.config.temperature, controls.get("rollout_id"))
+        if self.model_type == "chat":
+            data["n"] = 1
+            fn = alitellm_completion if asynchronous else litellm_completion
+        else:
+            fn = alitellm_responses_completion if asynchronous else litellm_responses_completion
+        fn, cache_args = self._get_cached_completion_fn(fn, controls.get("cache", self.cache))
+        return fn, {"request": data, "num_retries": self.num_retries, "cache": cache_args}
+
+    def _forward_request(self, request, **controls):
+        try:
+            fn, kwargs = self._typed_completion(request, controls, asynchronous=False)
+            response = fn(**kwargs)
+            self._check_typed_truncation(response, request)
+            return response
+        except LMError:
+            raise
+        except Exception as exc:
+            raise self._wrap_litellm_exception(exc) from exc
+
+    async def _aforward_request(self, request, **controls):
+        try:
+            fn, kwargs = self._typed_completion(request, controls, asynchronous=True)
+            response = await fn(**kwargs)
+            self._check_typed_truncation(response, request)
+            return response
+        except LMError:
+            raise
+        except Exception as exc:
+            raise self._wrap_litellm_exception(exc) from exc
+
+    def _check_typed_truncation(self, response, request):
+        from dspy.clients.legacy_outputs import value
+
+        truncated = any(value(choice, "finish_reason") == "length" for choice in value(response, "choices", []) or [])
+        if self.model_type == "responses":
+            truncated = value(value(response, "incomplete_details", {}) or {}, "reason") == "max_output_tokens"
+        if truncated:
+            logger.warning(
+                "LM response was truncated at the request's token limit (%s). "
+                "Inspect history or increase Request.config.max_tokens.", request.config.max_tokens,
+            )
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
@@ -619,92 +704,12 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """Convert legacy chat-shaped LM kwargs into Responses API kwargs.
-
-    This is the legacy door into the normalized Responses mapper. Inputs the
-    old pass-through converter forwarded verbatim — Responses-native shapes and
-    provider-SDK dumps — are tolerated here and only here; the typed path stays
-    strict.
-    """
-    request = dict(request)
-    model = request.pop("model")
-    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
-    tools = list(request.pop("tools", None) or [])
-
-    # Reasoning models use `max_completion_tokens` in the chat path. The
-    # normalized Responses mapper expects the shared `max_tokens` name and emits
-    # `max_output_tokens`.
-    if "max_completion_tokens" in request and "max_tokens" not in request:
-        request["max_tokens"] = request.pop("max_completion_tokens")
-
-    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
-    # compatibility shim: requesting reasoning effort also asks OpenAI for an
-    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
-    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
-    # is discarded rather than merged.
-    if "reasoning_effort" in request:
-        effort = request.pop("reasoning_effort")
-        if request.get("reasoning") is None:
-            request["reasoning"] = {"effort": effort, "summary": "auto"}
-
-    # Hosted Responses tools (web_search, file_search, code_interpreter, mcp, ...)
-    # have no normalized LMToolSpec representation; send them through unchanged.
-    function_tools = [tool for tool in tools if not _is_hosted_responses_tool(tool)]
-
-    # tool_choice dicts that aren't the chat-nested function form are already
-    # Responses-native (flat function, hosted, allowed_tools, ...); send them
-    # through unchanged.
-    responses_native_tool_choice = None
-    if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
-        responses_native_tool_choice = request.pop("tool_choice")
-
-    lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
-    # The old converter never validated reasoning/temperature combinations
-    # client-side; keep the provider as the authority on this door.
-    data = to_openai_responses_request(lm_request, enforce_reasoning_temperature=False)
-    if tools:
-        normalized_function_tools = iter(data.pop("tools", []))
-        data["tools"] = [
-            tool if _is_hosted_responses_tool(tool) else next(normalized_function_tools) for tool in tools
-        ]
-    if responses_native_tool_choice is not None:
-        data["tool_choice"] = responses_native_tool_choice
-    return data
-
-
-def _is_hosted_responses_tool(tool: Any) -> bool:
-    return isinstance(tool, dict) and "function" not in tool and tool.get("type") not in (None, "function")
-
-
-def _sanitize_legacy_message(message: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one legacy message the old converter would have passed through.
-
-    Strips provider-SDK output fields that are not message inputs and rewrites
-    Responses-native content blocks into their chat forms so the mapper can
-    re-emit them with role-correct direction.
-    """
-    if not isinstance(message, dict):
-        return message
-    message_keys = {"role", "content", "name", "metadata", "tool_calls", "tool_call_id"}
-    cleaned = {key: value for key, value in message.items() if key in message_keys}
-    content = cleaned.get("content")
-    if isinstance(content, list):
-        cleaned["content"] = [_normalize_legacy_content_block(block) for block in content]
-    return cleaned
-
-
-def _normalize_legacy_content_block(block: Any) -> Any:
-    if not isinstance(block, dict):
-        return block
-    block_type = block.get("type")
-    if block_type in ("input_text", "output_text"):
-        return {"type": "text", "text": block.get("text", "")}
-    if block_type == "input_image" and isinstance(block.get("image_url"), str):
-        return {"type": "image_url", "image_url": {"url": block["image_url"]}}
-    if block_type == "input_file":
-        file = {key: block[key] for key in ("file_data", "file_id", "filename") if block.get(key) is not None}
-        return {"type": "file", "file": file}
-    return block
+    """Translate ordinary calls without the retired experimental types."""
+    if "input" in request:
+        data = dict(request)
+        data.pop("messages", None)
+        return data
+    return chat_to_responses(request)
 
 
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
