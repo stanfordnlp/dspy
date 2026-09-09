@@ -6,6 +6,7 @@ from typing import Any
 
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.base_lm import BaseLM
+from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.lazy_import import require
 
@@ -131,12 +132,11 @@ class DummyLM(BaseLM):
     def forward(self, prompt=None, messages=None, **kwargs):
         from dspy.clients.execution import execute, prepare
 
-        return execute(self, prepare(self, prompt, messages, kwargs)).provider_response()
+        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
-        from dspy.clients.execution import aexecute, prepare
-
-        return (await aexecute(self, prepare(self, prompt, messages, kwargs))).provider_response()
+        # Preserve the historical subclass extension point on async calls.
+        return self.forward(prompt=prompt, messages=messages, **kwargs)
 
     def copy(self, **kwargs):
         from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine

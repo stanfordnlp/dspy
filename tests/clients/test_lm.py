@@ -514,7 +514,7 @@ def test_base_lm_typed_forward_contract_rejects_non_lm_response_at_call_time():
         def forward(self, request):
             return ["not typed"]
 
-    with pytest.raises(TypeError, match="forward_contract='typed_lm'"):
+    with pytest.raises(TypeError, match="typed_lm contract was removed"):
         CustomLM("custom-model")("Query")
 
 

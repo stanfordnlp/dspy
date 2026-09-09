@@ -102,6 +102,9 @@ def chat_to_responses(request: dict[str, Any]) -> dict[str, Any]:
             {"type": "function", **{key: val for key, val in tool.items() if key not in {"type", "function"}}, **tool["function"]}
             if "function" in tool else tool for tool in data["tools"]
         ]
+        for tool in data["tools"]:
+            if tool.get("type") == "function" and tool.get("description") is None:
+                tool.pop("description", None)
     choice = data.get("tool_choice")
     if isinstance(choice, dict) and "function" in choice:
         data["tool_choice"] = {"type": "function", "name": choice["function"]["name"]}

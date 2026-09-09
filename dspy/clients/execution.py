@@ -57,10 +57,16 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
     managed = hasattr(lm, "_engine_spec")
     if managed and not direct:
         from dspy.clients.lm import LM
+        from dspy.utils.dummies import DummyLM
 
-        if isinstance(lm, LM):
+        base = DummyLM if isinstance(lm, DummyLM) else LM if isinstance(lm, LM) else None
+        if base is not None:
             method = "aforward" if asynchronous else "forward"
-            managed = getattr(type(lm), method) is getattr(LM, method)
+            managed = method not in vars(lm) and getattr(type(lm), method) is getattr(base, method)
+            if base is DummyLM and asynchronous:
+                # DummyLM's inherited aforward delegates to forward, including
+                # a subclass's override. Do not bypass that override either.
+                managed = managed and "forward" not in vars(lm) and type(lm).forward is DummyLM.forward
     if not managed and not getattr(lm, "_warned_legacy_engine", False):
         import warnings
 
@@ -128,6 +134,10 @@ def _engine(lm, call, asynchronous):
         backend = lm._async_engine_spec if asynchronous else spec
         if backend is None:
             raise LMUnsupportedFeatureError("This custom engine has no async counterpart; pass async_engine=.")
+        # Built-in scripted engines can consume ordinary inputs without a
+        # provider-wire decoder. Only that explicit input method opts in.
+        if call.request is None and callable(getattr(backend, "complete_legacy", None)):
+            return backend, None, None
         return backend, _canonical(call), None
     clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
     clients.update({key: val for key, val in call.legacy.items() if key in CLIENT_KEYS})

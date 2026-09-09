@@ -213,11 +213,11 @@ async def test_old_disk_cache_hits_before_native_routing(case_index, monkeypatch
 @pytest.mark.asyncio
 async def test_native_streaming_reaches_existing_listener(monkeypatch):
     payloads = [{"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]}
-                for text in ("[[ ## answer ## ]]\\n", "native", "\\n\\n[[ ## completed ## ]]")]
+                for text in ("[[ ## answer ## ]]\n", "native", "\n\n[[ ## completed ## ]]")]
     payloads.append({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                      "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
-    chunks = [f"data: {json.dumps(payload)}\\n\\n".encode() for payload in payloads]
-    chunks.append(b"data: [DONE]\\n\\n")
+    chunks = [f"data: {json.dumps(payload)}\n\n".encode() for payload in payloads]
+    chunks.append(b"data: [DONE]\n\n")
     transport = native_transport(monkeypatch, [FakeResponse(status=200, body=b"", chunks=chunks)])
     lm = dspy.LM("openai/gpt-4o-mini")
     predict = dspy.Predict("question -> answer")

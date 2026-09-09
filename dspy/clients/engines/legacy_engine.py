@@ -20,7 +20,7 @@ class _LegacyConfig:
 
         if not isinstance(lm, BaseLM):
             raise TypeError("LegacyEngine requires a BaseLM instance")
-        if type(lm) is LM:
+        if type(lm) is LM and not {"forward", "aforward"}.intersection(vars(lm)):
             raise TypeError("Use LiteLLMEngine for the built-in LM, not a nested LegacyEngine")
         if getattr(type(lm), "forward_contract", "legacy") != "legacy":
             raise TypeError("The removed DSPy 3.3 typed_lm contract is not a legacy plugin")

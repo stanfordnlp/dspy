@@ -324,18 +324,20 @@ class BaseLM:
         Returns:
             List of processed outputs
         """
-        outputs = []
-        for c in response.choices:
-            output = {}
-            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+        from dspy.clients.legacy_outputs import value
 
-            if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
-                output["reasoning_content"] = c.message.reasoning_content
+        outputs = []
+        for c in value(response, "choices", []) or []:
+            message = value(c, "message")
+            output = {"text": value(message, "content") if message is not None else value(c, "text")}
+
+            if reasoning := value(message, "reasoning_content"):
+                output["reasoning_content"] = reasoning
 
             if merged_kwargs.get("logprobs"):
-                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
-            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                output["tool_calls"] = c.message.tool_calls
+                output["logprobs"] = value(c, "logprobs")
+            if calls := value(message, "tool_calls"):
+                output["tool_calls"] = calls
 
             # Extract citations from LiteLLM response if available
             citations = self._extract_citations_from_response(c)
@@ -361,9 +363,12 @@ class BaseLM:
         """
         try:
             # Check for citations in LiteLLM provider_specific_fields
-            citations_data = choice.message.provider_specific_fields.get("citations")
+            from dspy.clients.legacy_outputs import value
+
+            fields = value(value(choice, "message"), "provider_specific_fields", {}) or {}
+            citations_data = fields.get("citations")
             if isinstance(citations_data, list):
-                return [citation for citations in citations_data for citation in citations]
+                return [citation for group in citations_data for citation in (group if isinstance(group, list) else [group])]
         except Exception:
             return None
 
