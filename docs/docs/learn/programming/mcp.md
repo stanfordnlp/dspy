@@ -84,20 +84,48 @@ asyncio.run(main())
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio. This example works with both SDK versions:
+The most common way to use MCP is with a local server process communicating via stdio. This complete ReActV2 example works with both SDK versions.
+
+Save the following as `mcp_server.py`:
+
+```python
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:
+    from mcp.server import MCPServer
+
+server = MCPServer("arithmetic")
+
+@server.tool()
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+if __name__ == "__main__":
+    server.run()
+```
+
+Save the client below as `agent.py` alongside it. Set `OPENAI_API_KEY` in your environment and run `python agent.py`. The client starts and stops the MCP server automatically. Native function calling requires a model that supports tools.
 
 ```python
 import asyncio
+import sys
+from pathlib import Path
+
 import dspy
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+dspy.configure(
+    lm=dspy.LM("openai/gpt-4.1-mini"),
+    adapter=dspy.ChatAdapter(use_native_function_calling=True),
+)
+
 async def main():
     # Configure the stdio server
     server_params = StdioServerParameters(
-        command="python",                    # Command to run
-        args=["path/to/your/mcp_server.py"], # Server script path
-        env=None,                            # Optional environment variables
+        command=sys.executable,
+        args=[str(Path(__file__).with_name("mcp_server.py"))],
     )
 
     # Connect to the server
@@ -115,13 +143,13 @@ async def main():
                 for tool in response.tools
             ]
 
-            # Create a ReAct agent with the tools
+            # Create a ReActV2 agent with the tools
             class QuestionAnswer(dspy.Signature):
                 """Answer questions using available tools."""
                 question: str = dspy.InputField()
-                answer: str = dspy.OutputField()
+                answer: int = dspy.OutputField()
 
-            react_agent = dspy.ReAct(
+            react_agent = dspy.ReActV2(
                 signature=QuestionAnswer,
                 tools=dspy_tools,
                 max_iters=5
@@ -129,13 +157,25 @@ async def main():
 
             # Use the agent
             result = await react_agent.acall(
-                question="What is 25 + 17?"
+                question="Use the add tool to calculate 25 + 17."
             )
-            print(result.answer)
+            print(result.answer, result.termination_reason)  # Expected: 42 submit
 
 # Run the async function
 asyncio.run(main())
 ```
+
+Keep the agent call inside the open MCP session: converted tools use that session to execute requests. MCP tools are asynchronous, so use `await react_agent.acall(...)`. ReActV2 executes tools sequentially, including when the model requests several tools in a turn. Ordinary synchronous tools still run inline through `Tool.acall()`; use async tools for blocking I/O.
+
+If the final forced-submit attempt cannot produce valid outputs, ReActV2 raises instead of returning an incomplete prediction. Parse and context-window errors propagate; missing or invalid submissions raise `ValueError`. `dspy.Evaluate` handles these through its normal error budget; use `max_errors=1` to stop evaluation on the first error.
+
+For a deterministic end-to-end check without an API key, run this from the DSPy repository with the development and MCP dependencies installed:
+
+```bash
+pytest tests/utils/test_mcp.py::test_react_v2_native_mcp_end_to_end --extra -q
+```
+
+This test uses a scripted native-tool-calling LM and a real stdio MCP server. It verifies tool discovery, an MCP error followed by a successful addition, replay of results with their tool-call IDs, and a final typed answer of `42`.
 
 ## Tool Conversion
 
