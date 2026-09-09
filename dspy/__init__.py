@@ -1,3 +1,4 @@
+from dspy import lm15 as lm15
 from dspy.predict import *
 from dspy.primitives import *
 from dspy.retrievers import *
