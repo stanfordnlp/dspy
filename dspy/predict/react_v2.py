@@ -26,6 +26,12 @@ if TYPE_CHECKING:
 
 @experimental
 class ReActV2(Module):
+    """A tool-calling agent whose unsuccessful outputs are all ``None``.
+
+    Check ``termination_reason`` for ``submit`` or ``forced_submit`` before using
+    outputs as successful results. Failed submit arguments remain in ``history``.
+    """
+
     def __init__(self, signature: type[Signature], tools: list[Callable | Tool], max_iters: int = 20):
         super().__init__()
         self.signature = ensure_signature(signature)
@@ -197,11 +203,11 @@ class ReActV2(Module):
             tool_calls = _ensure_tool_call_ids(_coerce_tool_calls(getattr(pred, "tool_calls", None)), turn_index)
         except (AdapterParseError, ValueError, ContextWindowExceededError) as err:
             logger.warning("Forced submit failed: %s", format_error_for_lm(err, traceback_frames=5))
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._failed_prediction(history, break_reason)
 
         submit_calls = ToolCalls(tool_calls=[call for call in tool_calls.tool_calls if call.name == "submit"])
         if not submit_calls.tool_calls:
-            return Prediction(history=history, termination_reason=break_reason or "failed")
+            return self._failed_prediction(history, break_reason)
 
         tool_call_results, final_outputs = self._execute_tool_calls(submit_calls)
         event = self._history_event(pending_inputs, pred, submit_calls, tool_call_results)
@@ -212,7 +218,14 @@ class ReActV2(Module):
         if final_outputs is not None:
             return Prediction(**final_outputs, history=history, termination_reason="forced_submit")
 
-        return Prediction(history=history, termination_reason=break_reason or "failed")
+        return self._failed_prediction(history, break_reason)
+
+    def _failed_prediction(self, history: dspy.History, break_reason: str) -> Prediction:
+        return Prediction(
+            **dict.fromkeys(self.signature.output_fields),
+            history=history,
+            termination_reason=break_reason or "failed",
+        )
 
 
 def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
