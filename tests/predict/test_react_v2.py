@@ -337,7 +337,7 @@ def test_react_v2_rejects_reserved_output_field_names(reserved):
 
 @pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])
 @pytest.mark.parametrize("forced_result", ["no_submit", "missing_field", "parse_error", "context_window_exceeded"])
-def test_react_v2_failed_termination_preserves_output_fields(mocker, break_reason, forced_result):
+def test_react_v2_failed_termination_raises(mocker, break_reason, forced_result):
     react = dspy.ReActV2("question -> answer: str, count: int", tools=[], max_iters=1)
     empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
     incomplete = dspy.Prediction(
@@ -353,34 +353,38 @@ def test_react_v2_failed_termination_preserves_output_fields(mocker, break_reaso
     }
     mocker.patch.object(react.react, "forward", side_effect=[outcomes[break_reason], outcomes[forced_result]])
 
-    pred = react(question="cats")
+    history = dspy.History(messages=[])
+    error_type = ContextWindowExceededError if forced_result == "context_window_exceeded" else ValueError
+    with pytest.raises(error_type) as exc:
+        react(question="cats", history=history)
 
-    assert pred.answer is None
-    assert pred.count is None
-    assert pred.termination_reason == break_reason
-    assert isinstance(pred.history, dspy.History)
+    if forced_result in {"parse_error", "context_window_exceeded"}:
+        assert exc.value is outcomes[forced_result]
+    else:
+        assert f"failed to produce final outputs after {break_reason}" in str(exc.value)
+    if forced_result == "no_submit":
+        assert "no submit call" in str(exc.value)
     if forced_result == "missing_field":
-        event = pred.history.messages[-1]
+        assert "Missing required final output field(s): count" in str(exc.value)
+        event = history.messages[-1]
         assert event["tool_calls"].tool_calls[0].args == {"answer": "partial"}
         assert event["tool_calls"].tool_call_results.tool_call_results[0].is_error is True
 
 
-def test_react_v2_failed_outputs_are_accessible_to_evaluate():
+def test_react_v2_evaluate_reports_submission_failure(caplog):
     lm = dspy.utils.DummyLM([{"next_thought": "No answer.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 2)
-    observed = []
 
     def metric(example, pred, trace=None):
-        observed.append((pred.answer, pred.termination_reason))
-        return pred.answer == example.answer
+        pytest.fail("A failed submission must not reach the metric")
 
     evaluate = dspy.Evaluate(
         devset=[dspy.Example(question="cats", answer="felines").with_inputs("question")],
         metric=metric,
         num_threads=1,
+        max_errors=1,
         display_progress=False,
     )
     with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
-        result = evaluate(dspy.ReActV2("question -> answer", tools=[]))
-
-    assert observed == [(None, "empty_tool_calls")]
-    assert result.score == 0.0
+        with pytest.raises(Exception, match="Execution cancelled due to errors"):
+            evaluate(dspy.ReActV2("question -> answer", tools=[]))
+    assert "failed to produce final outputs after empty_tool_calls: no submit call" in caplog.text
