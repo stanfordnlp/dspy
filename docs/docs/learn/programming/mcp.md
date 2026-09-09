@@ -84,7 +84,7 @@ asyncio.run(main())
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio. This complete ReActV2 example works with both SDK versions.
+The most common way to use MCP is with a local server process communicating via stdio. This example connects ReActV2 to an arithmetic server and works with both SDK versions.
 
 Save the following as `mcp_server.py`:
 
@@ -159,23 +159,13 @@ async def main():
             result = await react_agent.acall(
                 question="Use the add tool to calculate 25 + 17."
             )
-            print(result.answer, result.termination_reason)  # Expected: 42 submit
+            print(result.answer)
 
 # Run the async function
 asyncio.run(main())
 ```
 
-Keep the agent call inside the open MCP session: converted tools use that session to execute requests. MCP tools are asynchronous, so use `await react_agent.acall(...)`. ReActV2 executes tools sequentially, including when the model requests several tools in a turn. Ordinary synchronous tools still run inline through `Tool.acall()`; use async tools for blocking I/O.
-
-If the final forced-submit attempt cannot produce valid outputs, ReActV2 raises instead of returning an incomplete prediction. Parse and context-window errors propagate; missing or invalid submissions raise `ValueError`. `dspy.Evaluate` handles these through its normal error budget; use `max_errors=1` to stop evaluation on the first error.
-
-For a deterministic end-to-end check without an API key, run this from the DSPy repository with the development and MCP dependencies installed:
-
-```bash
-pytest tests/utils/test_mcp.py::test_react_v2_native_mcp_end_to_end --extra -q
-```
-
-This test uses a scripted native-tool-calling LM and a real stdio MCP server. It verifies tool discovery, an MCP error followed by a successful addition, replay of results with their tool-call IDs, and a final typed answer of `42`.
+Keep the agent call inside the open MCP session: converted tools use that session to execute requests. MCP tools are asynchronous, so use `await react_agent.acall(...)`.
 
 ## Tool Conversion
 
