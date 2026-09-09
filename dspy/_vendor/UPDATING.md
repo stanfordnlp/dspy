@@ -24,3 +24,17 @@ package split commit. `lm15-LICENSE` preserves the source repository's license.
 Both live outside the subtree to keep its contents faithful to upstream.
 The full upstream package is imported, including any non-Python files tracked
 there. Packaging determines which files ship to users.
+
+Merge subtree import/update PRs with a merge commit, not squash or rebase.
+The subtree merge and squash-parent records must survive so the next update
+can find the previous imported version.
+
+The `Verify bundled lm15` workflow builds a source distribution, builds a wheel
+from it, and tests a fresh installation outside the checkout. It checks public
+exports, request/response conversion, pickle round trips, and license/provenance
+files. No provider keys or network LM calls are needed.
+
+`dspy.lm15` re-exports lm15's public top-level names; it does not alias lm15's
+whole submodule tree. Use `from dspy.lm15 import Request`, not
+`from dspy.lm15.types import Request`. Existing DSPy LM behavior is unchanged
+by the vendor import.
