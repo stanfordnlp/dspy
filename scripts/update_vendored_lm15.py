@@ -46,6 +46,7 @@ def main() -> int:
         git("clone", "--no-checkout", args.source, str(checkout))
         git("fetch", "origin", args.ref, cwd=checkout)
         source_commit = git("rev-parse", "FETCH_HEAD", cwd=checkout)
+        git("checkout", "--detach", source_commit, cwd=checkout)
         contract = git("show", f"{source_commit}:CONTRACT_PIN", cwd=checkout)
         version_source = ast.parse(git("show", f"{source_commit}:lm15/_version.py", cwd=checkout))
         version = next(
