@@ -2,6 +2,8 @@
 
 import importlib
 import pickle
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -44,7 +46,29 @@ def test_vendored_lm15_carries_provenance_and_license():
     assert (pkg / "py.typed").is_file()
     marker = dict(line.split("=", 1) for line in (pkg.parent / "lm15-provenance.txt").read_text().splitlines())
     assert marker["source"] == "https://github.com/cmpnd-ai/lm15-python.git"
+    assert marker["version"] == lm15.__version__ != "0.0.0"
     for key in ("commit", "contract", "split"):
         assert len(marker[key]) == 40
         assert all(char in "0123456789abcdef" for char in marker[key])
     assert "MIT" in (pkg.parent / "lm15-LICENSE").read_text()
+
+
+def test_version_ignores_an_unrelated_installed_distribution(tmp_path):
+    metadata = tmp_path / "lm15-7.8.9.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: lm15\nVersion: 7.8.9\n")
+    code = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from importlib.metadata import version
+assert version("lm15") == "7.8.9"
+import dspy.lm15
+from dspy._vendor import lm15
+from dspy._vendor.lm15 import vet
+from pathlib import Path
+record = Path(lm15.__file__).parent.parent / "lm15-provenance.txt"
+expected = dict(line.split("=", 1) for line in record.read_text().splitlines())["version"]
+assert dspy.lm15.__version__ == lm15.__version__ == vet.IMPL_VERSION == expected
+assert expected != "7.8.9"
+"""
+    subprocess.run([sys.executable, "-c", code, str(tmp_path)], check=True)

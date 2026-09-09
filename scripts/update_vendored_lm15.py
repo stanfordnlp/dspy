@@ -9,6 +9,7 @@ creates local commits, but never pushes. --source overrides the source URL.
 from __future__ import annotations
 
 import argparse
+import ast
 import subprocess
 import tempfile
 from pathlib import Path
@@ -46,6 +47,15 @@ def main() -> int:
         git("fetch", "origin", args.ref, cwd=checkout)
         source_commit = git("rev-parse", "FETCH_HEAD", cwd=checkout)
         contract = git("show", f"{source_commit}:CONTRACT_PIN", cwd=checkout)
+        version_source = ast.parse(git("show", f"{source_commit}:lm15/_version.py", cwd=checkout))
+        version = next(
+            ast.literal_eval(node.value)
+            for node in version_source.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+        )
+        if not isinstance(version, str) or not version or "\n" in version:
+            parser.error("Source package must declare a nonempty, single-line version string.")
         license_text = git("show", f"{source_commit}:LICENSE", cwd=checkout)
         git("cat-file", "-e", f"{source_commit}:lm15/__init__.py", cwd=checkout)
         split = git("subtree", "split", "--prefix=lm15", source_commit, cwd=checkout)
@@ -56,7 +66,9 @@ def main() -> int:
             fields = dict(
                 line.split("=", 1) for line in RECORD.read_text().splitlines() if "=" in line
             )
-            if fields.get("split") == split and fields.get("commit") == source_commit:
+            if (fields.get("split"), fields.get("commit"), fields.get("version"), fields.get("contract")) == (
+                split, source_commit, version, contract
+            ):
                 print("lm15 is already at this source commit.")
                 return 0
         elif (REPO_ROOT / PREFIX).exists():
@@ -81,7 +93,7 @@ def main() -> int:
             git("subtree", "merge" if initialized else "add", f"--prefix={PREFIX}",
                 "--squash", "-m", message, split)
             RECORD.write_text(
-                f"source={args.source}\ncommit={source_commit}\ncontract={contract}\nsplit={split}\n"
+                f"source={args.source}\nversion={version}\ncommit={source_commit}\ncontract={contract}\nsplit={split}\n"
             )
             LICENSE.write_text(license_text + "\n")
             git("add", str(RECORD), str(LICENSE))

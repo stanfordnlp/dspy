@@ -19,8 +19,9 @@ adding the subtree. Review the resulting diff before pushing. If a merge
 conflicts, inspect Git's status and resolve or abort the merge before retrying;
 the tool does not discard conflicts automatically.
 
-`lm15-provenance.txt` records the source URL, Python commit, contract pin and
-package split commit. `lm15-LICENSE` preserves the source repository's license.
+`lm15-provenance.txt` records the source URL, package version, Python commit,
+contract pin and package split commit. The commit identifies the exact snapshot;
+several snapshots can share the same package version. `lm15-LICENSE` preserves the source repository's license.
 Both live outside the subtree to keep its contents faithful to upstream.
 The full upstream package is imported, including any non-Python files tracked
 there. Packaging determines which files ship to users.
