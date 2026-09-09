@@ -8,6 +8,7 @@ from pathlib import Path
 
 import litellm
 import pytest
+from pydantic import BaseModel
 
 import dspy
 from dspy.clients.cache import Cache
@@ -20,7 +21,15 @@ CASES = MANIFEST["cases"]
 
 
 def plain(value):
-    return json.loads(json.dumps(value, default=lambda obj: obj.model_dump(mode="json")))
+    # Read fields, not SDK serializers: older pickled LiteLLM models can carry
+    # deferred Pydantic serializers even though their public fields are usable.
+    if isinstance(value, BaseModel):
+        value = dict(value)
+    if isinstance(value, dict):
+        return {key: plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain(item) for item in value]
+    return value
 
 
 class Trace(BaseCallback):
