@@ -374,9 +374,9 @@ class RLM(Module):
                 "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
             )
             .append(
-                "repl_history",  # TODO: Replace with "history"
-                dspy.InputField(desc="Previous REPL code executions and their outputs"),  # TODO: Remove description
-                type_=REPLHistory,  # TODO: Replace with dspy.History
+                "history",
+                dspy.InputField(),
+                type_=dspy.History,
             )
             .append(
                 "iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str
@@ -384,7 +384,7 @@ class RLM(Module):
             .append(
                 "reasoning",
                 dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."),
-                type_=dspy.Reasoning,  # Should this be `dspy.Reasoning` or just `str`?
+                type_=dspy.Reasoning,
             )
             .append(
                 "code",
@@ -412,9 +412,7 @@ class RLM(Module):
             {**self.signature.output_fields},
             full_extract_instructions,
         )
-        extract_sig = extract_sig.prepend(
-            "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
-        )
+        extract_sig = extract_sig.prepend("history", dspy.InputField(), type_=dspy.History)
         extract_sig = extract_sig.prepend(
             "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
         )
@@ -582,7 +580,7 @@ class RLM(Module):
     def _extract_fallback(
         self,
         variables: list[REPLVariable],
-        history: REPLHistory,
+        history: dspy.History,
         output_field_names: list[str],
     ) -> Prediction:
         """Use extract module to get final output when max iterations reached."""
@@ -591,11 +589,11 @@ class RLM(Module):
         variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
             variables_info=variables_info,
-            repl_history=history,
+            history=history,
         )
 
         return Prediction(
-            trajectory=[e.model_dump() for e in history],
+            history=history,
             final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
@@ -647,9 +645,11 @@ class RLM(Module):
         pred: Prediction,
         code: str,
         result: Any,
-        history: REPLHistory,
+        history: dspy.History,
+        iteration: int,
+        inputs: dict[str, Any],
         output_field_names: list[str],
-    ) -> Prediction | REPLHistory:
+    ) -> Prediction | dspy.History:
         """Process interpreter result, returning Prediction if final, else updated history.
 
         This shared helper reduces duplication between sync and async execution paths.
@@ -664,22 +664,38 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+
+        def _repl_entry_event(*, reasoning: str = "", code: str, output: str) -> dict[str, Any]:
+            event = dict(inputs if iteration == 0 else {})  # Add input fields only on first iteration of new turn
+            repl_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
+            event["repl_entry"] = repl_entry
+            return event
+
+        def _history_with_event(event: dict[str, Any], history: dspy.History) -> dspy.History:
+            if event:
+                history.messages.append(event)
+            return history
+
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=code, output=output)
+            return _history_with_event(_repl_entry_event(reasoning=pred.reasoning, code=code, output=output), history)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=code, output=error)
+                return _history_with_event(
+                    _repl_entry_event(reasoning=pred.reasoning, code=code, output=error), history
+                )
 
-            final_history = history.append(reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}")
+            final_event = _repl_entry_event(reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}")
+            final_event.update(parsed_outputs if parsed_outputs else {})  # Add output fields to history event
+
             return Prediction(
                 **parsed_outputs,
-                trajectory=[e.model_dump() for e in final_history],
+                history=_history_with_event(final_event, history),
                 final_reasoning=pred.reasoning,
             )
 
@@ -692,7 +708,8 @@ class RLM(Module):
         output = self._format_output(output)
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
-        return history.append(reasoning=pred.reasoning, code=code, output=output)
+
+        return _history_with_event(_repl_entry_event(reasoning=pred.reasoning, code=code, output=output), history)
 
     def _execute_code(
         self,
@@ -710,16 +727,17 @@ class RLM(Module):
         self,
         repl: CodeInterpreter,
         variables: list[REPLVariable],
-        history: REPLHistory,
+        history: dspy.History,
         iteration: int,
-        input_args: dict[str, Any],
+        inputs: dict[str, Any],
+        regular_args: dict[str, Any],
         output_field_names: list[str],
-    ) -> Prediction | REPLHistory:
+    ) -> Prediction | dspy.History:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
         action = self.generate_action(
             variables_info=variables_info,
-            repl_history=history,
+            history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
         )
         if self.verbose:
@@ -732,9 +750,9 @@ class RLM(Module):
         except SyntaxError as e:
             code = action.code
             result = f"[Error] {format_error_for_lm(e)}"
-            return self._process_execution_result(action, code, result, history, output_field_names)
-        result = self._execute_code(repl, code, input_args)
-        return self._process_execution_result(action, code, result, history, output_field_names)
+            return self._process_execution_result(action, code, result, history, iteration, inputs, output_field_names)
+        result = self._execute_code(repl, code, regular_args)
+        return self._process_execution_result(action, code, result, history, iteration, inputs, output_field_names)
 
     # =========================================================================
     # Public Interface
@@ -760,17 +778,26 @@ class RLM(Module):
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
-        variables = self._build_variables(**input_args)
 
         history = _coerce_history(input_args.pop("history", None))
+
+        variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
+            inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+
             for iteration in range(self.max_iters):
-                result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                result: Prediction | dspy.History = self._execute_iteration(
+                    repl,
+                    variables,
+                    history,
+                    iteration,
+                    inputs=inputs,
+                    regular_args=regular_args,
+                    output_field_names=output_field_names,
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -782,7 +809,7 @@ class RLM(Module):
     async def _aextract_fallback(
         self,
         variables: list[REPLVariable],
-        history: REPLHistory,
+        history: dspy.History,
         output_field_names: list[str],
     ) -> Prediction:
         """Async version: Use extract module when max iterations reached."""
@@ -791,11 +818,11 @@ class RLM(Module):
         variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
             variables_info=variables_info,
-            repl_history=history,
+            history=history,
         )
 
         return Prediction(
-            trajectory=[e.model_dump() for e in history],
+            history=history,
             final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
@@ -804,11 +831,12 @@ class RLM(Module):
         self,
         repl: CodeInterpreter,
         variables: list[REPLVariable],
-        history: REPLHistory,
+        history: dspy.History,
         iteration: int,
-        input_args: dict[str, Any],
+        inputs: dict[str, Any],
+        regular_args: dict[str, Any],
         output_field_names: list[str],
-    ) -> Prediction | REPLHistory:
+    ) -> Prediction | dspy.History:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
@@ -826,9 +854,9 @@ class RLM(Module):
         except SyntaxError as e:
             code = pred.code
             result = f"[Error] {format_error_for_lm(e)}"
-            return self._process_execution_result(pred, code, result, history, output_field_names)
-        result = self._execute_code(repl, code, input_args)
-        return self._process_execution_result(pred, code, result, history, output_field_names)
+            return self._process_execution_result(pred, code, result, history, iteration, inputs, output_field_names)
+        result = self._execute_code(repl, code, regular_args)
+        return self._process_execution_result(pred, code, result, history, iteration, inputs, output_field_names)
 
     async def aforward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
@@ -850,15 +878,26 @@ class RLM(Module):
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
+
+        history = _coerce_history(input_args.pop("history", None))
+
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
+            inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
+
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl,
+                    variables,
+                    history,
+                    iteration,
+                    inputs=inputs,
+                    regular_args=regular_args,
+                    output_field_names=output_field_names,
                 )
                 if isinstance(result, Prediction):
                     return result
