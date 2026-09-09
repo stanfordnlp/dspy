@@ -219,10 +219,17 @@ class Tool(Type):
             except asyncio.CancelledError:
                 # Python cannot stop a running thread. Wait for it to finish so its limiter
                 # token is not released while the underlying function is still running.
-                try:
-                    await asyncio.shield(worker_task)
-                except BaseException:
-                    pass
+                while not worker_task.done():
+                    try:
+                        await asyncio.shield(worker_task)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                if not worker_task.cancelled() and worker_task.exception() is None:
+                    abandoned_result = worker_task.result()
+                    if inspect.iscoroutine(abandoned_result):
+                        abandoned_result.close()
                 raise
 
         if inspect.isawaitable(result):

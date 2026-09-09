@@ -471,6 +471,9 @@ async def test_async_tool_cancellation_retains_worker_limit_until_sync_function_
         second_task = asyncio.create_task(tool.acall(call_number=2))
         await asyncio.sleep(0.05)
 
+        first_task.cancel()
+        await asyncio.sleep(0)
+
         try:
             assert not first_task.done()
             assert not second_started.is_set()
