@@ -37,7 +37,8 @@ class CodeAct(ReAct, ProgramOfThought):
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
-                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. Defaults to
+                ``dspy.PythonInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces this default.
         Examples:
             ```python
             from dspy.predict import CodeAct

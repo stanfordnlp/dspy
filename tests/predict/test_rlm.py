@@ -15,7 +15,12 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    resolve_interpreter_factory,
+)
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -229,7 +234,10 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
         assert rlm.sub_lm is None
+        # PythonInterpreter is the public default; the resolver lets the configured factory
+        # override it on each forward.
         assert rlm._interpreter_factory is PythonInterpreter
+        assert resolve_interpreter_factory(rlm._interpreter_factory) is PythonInterpreter
 
         # Test custom values
         mock_lm = dspy.LM("openai/gpt-4o-mini")

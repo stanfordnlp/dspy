@@ -34,7 +34,7 @@ The reflection model authors code, and code can be wrong. A candidate that doesn
 
 ### 7. Generated code always runs through an interpreter
 
-`interpreter_factory` defaults to `dspy.PythonInterpreter` (Deno/Pyodide) and must be a *zero-argument factory* — a bare instance or `None` is rejected. With the default, everything stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. Custom factories define their own trust boundary: `LocalInterpreter` separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority. The factory creates a fresh interpreter for each session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
+`Flex` takes its interpreter from `interpreter_factory`, else from `dspy.settings.interpreter_factory`, else from `dspy.PythonInterpreter` (Deno/Pyodide). Each of those must be a *zero-argument factory* — a bare instance or `None` is rejected. With the default, everything stays in the sandbox except provided-tool calls, predictor construction, and predictor calls, which bridge back to the host. Custom factories define their own trust boundary: `LocalInterpreter` separates process memory and stdout but retains the host user's filesystem, environment, credentials, network, and process authority. The factory creates a fresh interpreter for each session; a forward owns an outer session and nested code-executing modules may request separate sessions. Source portability between custom interpreters is not guaranteed. `max_predictor_calls` caps how many predictor calls the generated code can make in one `forward`.
 
 ### 8. The declared output types are enforced at the sandbox boundary
 
@@ -42,7 +42,7 @@ Everything the generated code returns crosses back as JSON, so a field declared 
 
 ### 9. The code is state; the interpreter is a runtime dependency
 
-A saved `Flex` is `{"module_src": ..., "lm": ...}` — the code, plus any LM set directly on the module. The internal predictors are not saved: they are derived from the code, and each `forward` reconstructs them from the bound source. The interpreter is a live runtime resource and is not serialized; `save(path, save_program=True)` cloudpickles the program with the bridge excluded, and loading rebuilds it. Reconstructing with `dspy.Flex(signature)` restores the default sandbox, so you only re-supply the `interpreter_factory` before `load` if you optimized with a custom one.
+A saved `Flex` is `{"module_src": ..., "lm": ...}` — the code, plus any LM set directly on the module. The internal predictors are not saved: they are derived from the code, and each `forward` reconstructs them from the bound source. The interpreter is a live runtime resource and is not serialized; `save(path, save_program=True)` cloudpickles the program with the bridge excluded, and loading rebuilds it. Reconstructing with `dspy.Flex(signature)` restores the configured sandbox, so you only re-supply the `interpreter_factory` before `load` if you optimized with one passed to the constructor.
 
 ### 10. Flex is experimental and the interface is in flux
 
@@ -53,7 +53,7 @@ The class carries the `@experimental` decorator. Treat the API and serialization
 ### Defining and running a Flex
 
 **`dspy.Flex(signature, *, tools=None, interpreter_factory=PythonInterpreter, max_predictor_calls=100)`**
-Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Validates `interpreter_factory` (a zero-arg factory, defaulting to `dspy.PythonInterpreter`), and sets up the sandbox bridge.
+Parses the signature and binds the baseline source — a single `dspy.Predict` over the signature, or a `dspy.RLM` when `tools` are given. Validates `interpreter_factory` as a zero-arg factory and sets up the sandbox bridge. `dspy.configure(interpreter_factory=...)` replaces the default. A factory passed to `Flex` wins, unless it is `PythonInterpreter`.
 
 **`__call__(**inputs)` / `forward(**inputs)`**
 Runs the currently bound source inside the interpreter, bridging predictor calls back to the host. Returns a `dspy.Prediction` over the signature's output fields, and accepts keyword inputs only.
@@ -78,7 +78,7 @@ Add `program_trace=None` as a sixth parameter to your metric and GEPA passes the
 Plain functions or `dspy.Tool` instances, referenced by name in the generated code, so each name must be a valid Python identifier. Providing tools makes the baseline a `dspy.RLM` and tells the code proposer they are in scope — it can wire them into `dspy.RLM`/`dspy.ReAct`, call them directly, or supplement them with its own inline helpers.
 
 **`interpreter_factory=...`**
-Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). Must be a zero-argument callable returning a fresh `CodeInterpreter` for each interpreter session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source, standard-library portability, or a particular security boundary between different interpreters.
+Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). `dspy.configure(interpreter_factory=...)` replaces that default on each interpreter session, including for a `Flex` built before the call. Must be a zero-argument callable returning a fresh `CodeInterpreter` for each interpreter session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source, standard-library portability, or a particular security boundary between different interpreters.
 
 **`max_predictor_calls`**
 The maximum number of predictor calls the generated code can make in one `forward`. It guards against runaway loops. `None` removes the limit.
@@ -109,7 +109,7 @@ Anything outside this surface fails when the candidate runs, and GEPA scores it 
 ### Saving and loading
 
 **`save(path)` / `load(path)` / `dump_state()` / `load_state(state)`**
-`module_src` travels in the serialized state (along with any LM set on the module), so loading restores the optimized code; the predictors are rebuilt from it on each `forward`. The interpreter is not serialized; reconstructing with `dspy.Flex(signature)` restores the default sandbox, so re-supply it in the constructor before `load` only if you used a custom `interpreter_factory`.
+`module_src` travels in the serialized state (along with any LM set on the module), so loading restores the optimized code; the predictors are rebuilt from it on each `forward`. The interpreter is not serialized; reconstructing with `dspy.Flex(signature)` restores the configured sandbox, so re-supply it in the constructor before `load` only if you passed a custom `interpreter_factory` there.
 
 ## Cross-links
 
