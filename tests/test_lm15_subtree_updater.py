@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/update_vendored_lm15.py"
 
 
@@ -30,7 +32,8 @@ def commit(path):
     return git(path, "rev-parse", "HEAD")
 
 
-def test_pinned_import_update_and_noop(tmp_path, monkeypatch):
+@pytest.mark.parametrize("merge_style", ["merge", "squash", "squash-with-trailers"])
+def test_pinned_import_update_and_noop(tmp_path, monkeypatch, merge_style):
     # Tests create commits in disposable repositories only. Disable inherited
     # signing/hooks and identity overrides from developer or CI configuration.
     for key in list(os.environ):
@@ -55,6 +58,8 @@ def test_pinned_import_update_and_noop(tmp_path, monkeypatch):
     (source / "lm15/__init__.py").write_text('SNAPSHOT = "new"\n')
     (source / "CONTRACT_PIN").write_text("2" * 40 + "\n")
     new = commit(source)
+    (source / "lm15/__init__.py").write_text('SNAPSHOT = "third"\n')
+    third = commit(source)
 
     (target / "scripts").mkdir()
     shutil.copyfile(SCRIPT, target / "scripts/update_vendored_lm15.py")
@@ -63,10 +68,31 @@ def test_pinned_import_update_and_noop(tmp_path, monkeypatch):
     def update(ref):
         return run(target, sys.executable, "scripts/update_vendored_lm15.py", ref, "--source", str(source))
 
+    def squash_into_fresh_clone(repository, branch, round_number):
+        record = dict(line.split("=", 1) for line in (
+            repository / "dspy/_vendor/lm15-provenance.txt"
+        ).read_text().splitlines())
+        # GitHub can preserve original commit messages in its squash body.
+        message = "Squashed vendor PR"
+        if merge_style == "squash-with-trailers":
+            message += "\n\n" + git(repository, "log", "main..HEAD", "--format=%B")
+        git(repository, "checkout", "main")
+        git(repository, "merge", "--squash", branch)
+        git(repository, "commit", "-m", message)
+        fresh = tmp_path / f"fresh-{round_number}"
+        git(tmp_path, "clone", "--no-local", "--single-branch", "--branch", "main", str(repository), str(fresh))
+        assert run(fresh, "git", "cat-file", "-e", record["split"], check=False).returncode != 0
+        return fresh
+
     # Import an older pin while the source's default branch points elsewhere.
+    if merge_style != "merge":
+        git(target, "checkout", "-b", "import-one")
     update(old)
     assert git(target, "rev-parse", "HEAD:dspy/_vendor/lm15") == git(source, "rev-parse", f"{old}:lm15")
     assert (target / "dspy/_vendor/lm15/__init__.py").read_text() == 'SNAPSHOT = "old"\n'
+    if merge_style != "merge":
+        target = squash_into_fresh_clone(target, "import-one", 1)
+        git(target, "checkout", "-b", "update-two")
     update(new)
     assert git(target, "rev-parse", "HEAD:dspy/_vendor/lm15") == git(source, "rev-parse", f"{new}:lm15")
     record = dict(line.split("=", 1) for line in (target / "dspy/_vendor/lm15-provenance.txt").read_text().splitlines())
@@ -74,7 +100,21 @@ def test_pinned_import_update_and_noop(tmp_path, monkeypatch):
     assert record["contract"] == "2" * 40
     assert record["version"] == "1.0.0a1"
     assert (target / "dspy/_vendor/lm15-LICENSE").read_text() == "MIT test license\n"
+    if merge_style != "merge":
+        target = squash_into_fresh_clone(target, "update-two", 2)
+    update(third)
+    assert git(target, "rev-parse", "HEAD:dspy/_vendor/lm15") == git(source, "rev-parse", f"{third}:lm15")
     before = git(target, "rev-parse", "HEAD")
-    assert "already at this source commit" in update(new).stdout
+    assert "already at this source commit" in update(third).stdout
     assert git(target, "rev-parse", "HEAD") == before
     assert git(target, "status", "--porcelain") == ""
+
+    # A committed hand edit must not be silently blessed or overwritten, even
+    # on a same-version update. Test rejection before any bookkeeping commit.
+    (target / "dspy/_vendor/lm15/__init__.py").write_text("LOCAL_EDIT = True\n")
+    edited = commit(target)
+    result = run(target, sys.executable, "scripts/update_vendored_lm15.py", third,
+                 "--source", str(source), check=False)
+    assert result.returncode != 0 and "differ from the recorded source" in result.stderr
+    assert git(target, "rev-parse", "HEAD") == edited
+    assert (target / "dspy/_vendor/lm15/__init__.py").read_text() == "LOCAL_EDIT = True\n"

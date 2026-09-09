@@ -26,9 +26,16 @@ Both live outside the subtree to keep its contents faithful to upstream.
 The full upstream package is imported, including any non-Python files tracked
 there. Packaging determines which files ship to users.
 
-Merge subtree import/update PRs with a merge commit, not squash or rebase.
-The subtree merge and squash-parent records must survive so the next update
-can find the previous imported version.
+Use DSPy's normal **squash-and-merge** workflow for import/update PRs.
+The updater does not require subtree commits or their messages to survive.
+It fetches the previously recorded Python commit, reproduces its package split,
+and verifies that the existing vendor tree matches it. It then reconnects a
+package-root merge base before running the subtree merge. These extra local
+bookkeeping commits can be discarded by the next squash merge too.
+
+The recorded source commit must remain available in the source repository.
+If that commit cannot be fetched, or vendor files have been edited locally,
+the updater stops rather than guessing a merge base or overwriting changes.
 
 The `Verify bundled lm15` workflow builds a source distribution, builds a wheel
 from it, and tests a fresh installation outside the checkout. It checks public
