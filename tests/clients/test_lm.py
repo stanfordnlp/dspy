@@ -338,6 +338,33 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
     assert exc_info.value.__cause__ is None
 
 
+def test_lm_rejects_stream_kwarg_at_construction():
+    with pytest.raises(dspy.LMConfigurationError, match="stream"):
+        dspy.LM(model="openai/gpt-4o-mini", stream=True)
+    # stream=False is harmless and must still be accepted
+    dspy.LM(model="openai/gpt-4o-mini", stream=False)
+
+
+def test_lm_rejects_stream_kwarg_on_call_before_cache_access():
+    # Regression test for #10345: a raw `stream=True` previously cached
+    # LiteLLM's live CustomStreamWrapper, so the first call crashed and every
+    # subsequent identical (cache hit) call failed while deep-copying it.
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=True)
+    with mock.patch.object(lm, "_get_cached_completion_fn") as mocked_get_cached:
+        with pytest.raises(dspy.LMConfigurationError, match="stream"):
+            lm("query", stream=True)
+    mocked_get_cached.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_lm_rejects_stream_kwarg_on_async_call_before_cache_access():
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=True)
+    with mock.patch.object(lm, "_get_cached_completion_fn") as mocked_get_cached:
+        with pytest.raises(dspy.LMConfigurationError, match="stream"):
+            await lm.acall("query", stream=True)
+    mocked_get_cached.assert_not_called()
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
