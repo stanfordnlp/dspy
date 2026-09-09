@@ -20,6 +20,7 @@ from dspy.clients.openai_format import (
 )
 from dspy.core.types import LMMessage, LMRequest, LMResponse
 from dspy.experimental import Citations
+from dspy.primitives.repl_types import REPLEntry
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
+_REPL_OUTPUT_SIGNATURE = Signature({"repl_output": (str, InputField())})
 
 
 class Adapter:
@@ -706,6 +708,15 @@ class Adapter:
                 content = self.format_user_message_content(_TOOL_CALL_RESULTS_SIGNATURE, result_input)
                 messages.append({"role": "user", "content": content})
 
+            # Check for REPLEntry inside message
+            repl_entry_field_name, repl_entry = _repl_entry_from_message(message)
+            if repl_entry_field_name and repl_entry:
+                content = self.format_user_message_content(
+                    _REPL_OUTPUT_SIGNATURE,
+                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+                )
+                messages.append({"role": "user", "content": content})
+
         # Remove the history field from the inputs
         del inputs[history_field_name]
 
@@ -776,3 +787,10 @@ def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dic
             "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False),
         },
     }
+
+
+def _repl_entry_from_message(message: dict[str, Any]) -> tuple[str | None, REPLEntry | None]:
+    for name, value in message.items():
+        if isinstance(value, REPLEntry):
+            return name, REPLEntry.model_validate(value)
+    return None, None

@@ -120,7 +120,7 @@ class _IntermediateExecution:
 @dataclass
 class _FinalExecution:
     repl_entry: REPLEntry
-    parsed_outputs: dict[str, Any]
+    final_outputs: dict[str, Any]
 
 
 @dataclass
@@ -667,15 +667,6 @@ class RLM(Module):
 
         return parsed_outputs, None
 
-    def _repl_entry_event(self, *, inputs: dict[str, Any], iteration: int, repl_entry: REPLEntry) -> dict[str, Any]:
-        event = dict(inputs if iteration == 0 else {})  # Add input fields only on first iteration of new turn
-        event["repl_entry"] = repl_entry
-        return event
-
-    def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
-        if event:
-            history.messages.append(event)
-
     def _process_execution_result(
         self,
         pred: Prediction,
@@ -684,7 +675,7 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> _IntermediateExecution | _FinalExecution | _FinalExecutionWithError:
         """Process interpreter result, returning:
-            - `_IntermediateExecution` if SUBMIT was not called at all
+            - `_IntermediateExecution` if SUBMIT was not called at all or an exception was caught
             - `_FinalExecution` if SUBMIT was called successfully
             - `_FinalExecutionWithError` if SUBMIT was called unsuccesfully
 
@@ -698,7 +689,7 @@ class RLM(Module):
             output_field_names: List of expected output field names
 
         Returns:
-            - `_IntermediateExecution` if SUBMIT was not called at all
+            - `_IntermediateExecution` if SUBMIT was not called at all or an exception was caught
             - `_FinalExecution` if SUBMIT was called successfully
             - `_FinalExecutionWithError` if SUBMIT was unsuccesfully
         """
@@ -706,7 +697,11 @@ class RLM(Module):
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return _IntermediateExecution(repl_entry=REPLEntry(reasoning=pred.reasoning, code=code, output=output))
+            return _IntermediateExecution(
+                repl_entry=REPLEntry(
+                    reasoning=pred.reasoning, code=code, output=output, max_output_chars=self.max_output_chars
+                )
+            )
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
@@ -714,12 +709,19 @@ class RLM(Module):
 
             if error:
                 return _FinalExecutionWithError(
-                    repl_entry=REPLEntry(reasoning=pred.reasoning, code=code, output=error),
+                    repl_entry=REPLEntry(
+                        reasoning=pred.reasoning, code=code, output=error, max_output_chars=self.max_output_chars
+                    ),
                 )
 
             return _FinalExecution(
-                repl_entry=REPLEntry(reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"),
-                parsed_outputs=parsed_outputs if parsed_outputs else {},
+                repl_entry=REPLEntry(
+                    reasoning=pred.reasoning,
+                    code=code,
+                    output=f"FINAL: {parsed_outputs}",
+                    max_output_chars=self.max_output_chars,
+                ),
+                final_outputs=parsed_outputs if parsed_outputs else {},
             )
 
         # Format non-final result as output
@@ -732,7 +734,11 @@ class RLM(Module):
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
 
-        return _IntermediateExecution(repl_entry=REPLEntry(reasoning=pred.reasoning, code=code, output=output))
+        return _IntermediateExecution(
+            repl_entry=REPLEntry(
+                reasoning=pred.reasoning, code=code, output=output, max_output_chars=self.max_output_chars
+            )
+        )
 
     def _execute_code(
         self,
@@ -829,10 +835,10 @@ class RLM(Module):
                         final_event = self._repl_entry_event(
                             inputs=inputs, iteration=iteration, repl_entry=result.repl_entry
                         )
-                        final_event.update(result.parsed_outputs)  # Add output fields to history event
+                        final_event.update(result.final_outputs)  # Add output fields to history event
                         self._append_history_with_event(history, final_event)
                         return Prediction(
-                            **result.parsed_outputs, history=history, final_reasoning=result.repl_entry.reasoning
+                            **result.final_outputs, history=history, final_reasoning=result.repl_entry.reasoning
                         )
                     case _IntermediateExecution() | _FinalExecutionWithError():
                         repl_entry = result.repl_entry
@@ -948,9 +954,9 @@ class RLM(Module):
                         final_event = self._repl_entry_event(
                             inputs=inputs, iteration=iteration, repl_entry=result.repl_entry
                         )
-                        final_event.update(result.parsed_outputs)  # Add output fields to history event
+                        final_event.update(result.final_outputs)  # Add output fields to history event
                         self._append_history_with_event(history, final_event)
-                        return Prediction(**result.parsed_outputs, history=history)
+                        return Prediction(**result.final_outputs, history=history)
                     case _IntermediateExecution() | _FinalExecutionWithError():
                         repl_entry = result.repl_entry
                         event = self._repl_entry_event(inputs=inputs, iteration=iteration, repl_entry=repl_entry)
@@ -963,6 +969,15 @@ class RLM(Module):
 
             # Max iterations reached - use extract fallback
             return await self._aextract_fallback(variables, history, repl_history, output_field_names)
+
+    def _repl_entry_event(self, *, inputs: dict[str, Any], iteration: int, repl_entry: REPLEntry) -> dict[str, Any]:
+        event = dict(inputs if iteration == 0 else {})  # Add input fields only on first iteration of new turn
+        event["repl_entry"] = repl_entry
+        return event
+
+    def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
+        if event:
+            history.messages.append(event)
 
 
 def _coerce_history(history: Any) -> dspy.History:

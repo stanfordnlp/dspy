@@ -107,6 +107,8 @@ class REPLEntry(pydantic.BaseModel):
     code: str
     output: str
 
+    max_output_chars: int
+
     model_config = pydantic.ConfigDict(frozen=True)
 
     @staticmethod
@@ -120,11 +122,11 @@ class REPLEntry(pydantic.BaseModel):
             output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
         return f"Output ({raw_len:,} chars):\n{output}"
 
-    def format(self, index: int, max_output_chars: int = 10_000) -> str:
+    def format(self, index: int) -> str:
         """Format this entry for inclusion in prompts."""
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         code_block = f"```python\n{self.code}\n```"
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, max_output_chars)}"
+        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, self.max_output_chars)}"
 
 
 class REPLHistory(pydantic.BaseModel):
@@ -141,7 +143,7 @@ class REPLHistory(pydantic.BaseModel):
     def format(self) -> str:
         if not self.entries:
             return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i, max_output_chars=self.max_output_chars) for i, entry in enumerate(self.entries))
+        return "\n".join(entry.format(index=i) for i, entry in enumerate(self.entries))
 
     @pydantic.model_serializer()
     def serialize_model(self) -> str:
@@ -149,7 +151,7 @@ class REPLHistory(pydantic.BaseModel):
 
     def append(self, *, reasoning: str = "", code: str, output: str) -> REPLHistory:
         """Return a new REPLHistory with the entry appended."""
-        new_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
+        new_entry = REPLEntry(reasoning=reasoning, code=code, output=output, max_output_chars=self.max_output_chars)
         return REPLHistory(entries=list(self.entries) + [new_entry], max_output_chars=self.max_output_chars)
 
     def __len__(self) -> int:
