@@ -1,5 +1,6 @@
 import base64
 
+import pydantic
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -72,6 +73,20 @@ def test_image_validation_rejects_download_without_host_io(monkeypatch):
 
     with pytest.raises((TypeError, ValidationError), match="only valid with a positional image source"):
         TypeAdapter(dspy.Image).validate_python({"url": "http://169.254.169.254/latest/meta-data", "download": True})
+
+
+def test_image_validation_accepts_bare_data_uri():
+    """Pydantic validation should match direct Image construction for data URIs."""
+    image_uri = "data:image/png;base64,AA=="
+
+    image = TypeAdapter(dspy.Image).validate_python(image_uri)
+
+    assert image.url == image_uri
+
+    class Wrapped(pydantic.BaseModel):
+        image: dspy.Image
+
+    assert Wrapped.model_validate({"image": image_uri}).image.url == image_uri
 
 
 def test_image_validation_rejects_download_with_source_keyword_without_host_io(monkeypatch):

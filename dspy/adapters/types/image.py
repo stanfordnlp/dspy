@@ -104,6 +104,20 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, values: Any) -> Any:
+        """Normalize in-memory image values on every Pydantic validation path."""
+        if isinstance(values, cls):
+            return {"url": values.url}
+        if isinstance(values, dict):
+            if "url" not in values:
+                raise ValueError("Value of `dspy.Image` must contain a `url` key")
+            values = values.copy()
+            values["url"] = encode_image(values["url"])
+            return values
+        return {"url": encode_image(values)}
+
     @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
         try:
