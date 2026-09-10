@@ -147,20 +147,36 @@ class LM(BaseLM):
 
     @property
     def supports_function_calling(self) -> bool:
-        return _get_litellm().supports_function_calling(model=self.model)
+        if self._engine_spec == "litellm":
+            return _get_litellm().supports_function_calling(model=self.model)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).function_calling
 
     @property
     def supports_reasoning(self) -> bool:
-        return _get_litellm().supports_reasoning(self.model)
+        if self._engine_spec == "litellm":
+            return _get_litellm().supports_reasoning(self.model)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).reasoning
 
     @property
     def supports_response_schema(self) -> bool:
-        return _get_litellm().supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+        if self._engine_spec == "litellm":
+            return _get_litellm().supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).response_schema
 
     @property
     def supported_params(self) -> set[str]:
-        params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
-        return set(params) if params else set()
+        if self._engine_spec == "litellm":
+            params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
+            return set(params) if params else set()
+        from dspy.clients.capabilities import capabilities
+
+        return set(capabilities(self).params)
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:

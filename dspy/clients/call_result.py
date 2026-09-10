@@ -97,6 +97,7 @@ class CallResult:
     raw: Any = None
     response_model: str | None = None
     cache_hit: bool = False
+    cost_details: dict = field(default_factory=dict)
 
     @classmethod
     def native(cls, response, *, model_type="chat", logprobs=False, provider=None):
@@ -124,6 +125,7 @@ class CallResult:
         return {"_dspy_format": CACHE_FORMAT,
                 "responses": [response_to_dict(r, include_provider_data=True) for r in self.responses],
                 "outputs": plain(self.outputs), "usage": plain(self.usage), "cost": self.cost,
+                "cost_details": plain(self.cost_details),
                 "raw": None if self.responses else plain(self.raw), "response_model": self.response_model}
 
     @classmethod
@@ -131,7 +133,7 @@ class CallResult:
         responses = tuple(response_from_dict(r) for r in record["responses"])
         return cls(responses, attributes(record["outputs"]), {}, record["cost"],
                    responses[0] if len(responses) == 1 else attributes(record.get("raw")),
-                   record["response_model"], True)
+                   record["response_model"], True, record.get("cost_details", {}))
 
     def provider_response(self):
         if self.raw is not None:
@@ -162,4 +164,5 @@ def combine(results, *, model_type):
                       tracker.get_total_tokens().get("combined", {}),
                       sum(costs) if costs and all(c is not None for c in costs) else None,
                       raw=results[0].raw if len(results) == 1 else None,
-                      response_model=results[0].response_model if results else None)
+                      response_model=results[0].response_model if results else None,
+                      cost_details={"candidates": [r.cost_details for r in results]} if any(r.cost_details for r in results) else {})

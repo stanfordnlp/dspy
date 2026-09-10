@@ -233,12 +233,22 @@ def _delay(exc, attempt):
     return max(float(hint), 0.0) if hint is not None else min(2 ** attempt, 60)
 
 
-def _result(lm, response, call, provider):
+def _result(lm, response, call, provider, request=None):
     if not isinstance(response, Response):
         raise TypeError(f"Engine.complete must return dspy.lm15.Response, got {type(response).__name__}")
     result = CallResult.native(response, model_type=lm.model_type,
                                logprobs=(call.request.config.logprobs is not None if call.request else bool(call.legacy.get("logprobs"))),
                                provider=provider)
+    from dspy.clients.costs import estimate_cost
+
+    wire_model = request.model if request is not None else lm.model
+    if provider is not None:
+        from dspy.clients.capabilities import resolve
+
+        wire_model = resolve(lm).model
+    result.cost, result.cost_details = estimate_cost(
+        response, provider=provider, requested_model=wire_model, request=request,
+    )
     if response.finish_reason == "length":
         import logging
 
@@ -271,7 +281,7 @@ def execute(lm, call):
                         finally:
                             emitted = progress["emitted"]
                 elif stream is None:
-                    result = _result(lm, backend.complete(request), call, provider)
+                    result = _result(lm, backend.complete(request), call, provider, request)
                 else:
                     accumulator = StreamAccumulator(request)
                     bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
@@ -286,7 +296,7 @@ def execute(lm, call):
                         close = getattr(source, "close", None)
                         if close:
                             close()
-                    result = _result(lm, accumulator.response(), call, provider)
+                    result = _result(lm, accumulator.response(), call, provider, request)
                 results.append(result)
                 break
             except Exception as exc:
@@ -328,7 +338,7 @@ async def aexecute(lm, call):
                         finally:
                             emitted = progress["emitted"]
                 elif stream is None:
-                    result = _result(lm, await backend.complete(request), call, provider)
+                    result = _result(lm, await backend.complete(request), call, provider, request)
                 else:
                     accumulator = StreamAccumulator(request)
                     bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
@@ -344,7 +354,7 @@ async def aexecute(lm, call):
                         if close:
                             with anyio.CancelScope(shield=True):
                                 await close()
-                    result = _result(lm, accumulator.response(), call, provider)
+                    result = _result(lm, accumulator.response(), call, provider, request)
                 results.append(result)
                 break
             except Exception as exc:
@@ -378,6 +388,8 @@ def finalize(lm, call, result):
                  "outputs": result.outputs, "usage": result.usage, "cost": result.cost,
                  "timestamp": datetime.datetime.now().isoformat(), "uuid": str(uuid.uuid4()),
                  "model": lm.model, "response_model": result.response_model, "model_type": lm.model_type}
+        if result.cost_details:
+            entry["cost_details"] = result.cost_details
         if call.request:
             entry["request"] = call.request
         lm.update_history(entry)
