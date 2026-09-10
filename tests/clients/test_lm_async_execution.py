@@ -41,6 +41,8 @@ def endpoint(monkeypatch):
                 if state.get("recover"):
                     state["status"] = 200
             entered.set()
+            if state.get("release") is not None:
+                state["release"].wait()
             time.sleep(state["delay"])
             answer = "A" if "alpha" in json.dumps(data) else "B"
             body = {"model": "fake", "choices": [{"index": 0, "message": {"role": "assistant",
@@ -73,10 +75,14 @@ def endpoint(monkeypatch):
     http = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     worker = threading.Thread(target=http.serve_forever, daemon=True)
     worker.start()
-    yield f"http://127.0.0.1:{http.server_port}/v1", state, entered
-    http.shutdown()
-    http.server_close()
-    worker.join()
+    try:
+        yield f"http://127.0.0.1:{http.server_port}/v1", state, entered
+    finally:
+        if state.get("release") is not None:
+            state["release"].set()
+        http.shutdown()
+        http.server_close()
+        worker.join()
 
 
 def native_lm(endpoint, **kwargs):
@@ -125,7 +131,9 @@ async def test_native_async_program_streaming(endpoint):
 @pytest.mark.asyncio
 async def test_http_cancellation_releases_pool_without_history(endpoint):
     lm = native_lm(endpoint)
-    endpoint[1]["delay"] = 0.3
+    # Hold the response until after cancellation: a fixed delay races with
+    # thread scheduling under the parallel Python-version matrix.
+    endpoint[1]["release"] = threading.Event()
     task = asyncio.create_task(lm.acall("alpha"))
     try:
         assert await asyncio.to_thread(endpoint[2].wait, 5)
