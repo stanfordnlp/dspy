@@ -18,6 +18,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.capabilities import with_capability_planning
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError, LMError
@@ -65,6 +66,7 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
+    @with_capability_planning
     def __call__(
         self,
         lm: BaseLM,
@@ -92,6 +94,7 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
+    @with_capability_planning
     async def acall(
         self,
         lm: BaseLM,
@@ -100,9 +103,6 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        from dspy.clients.capabilities import prepare_async
-
-        await prepare_async(lm)
         result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
         if result:
             return await result

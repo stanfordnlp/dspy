@@ -12,6 +12,7 @@ from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
@@ -194,6 +195,7 @@ class Adapter:
 
         return values
 
+    @with_capability_planning
     def __call__(
         self,
         lm: BaseLM,
@@ -225,6 +227,7 @@ class Adapter:
         outputs = lm(messages=messages, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
+    @with_capability_planning
     async def acall(
         self,
         lm: BaseLM,
@@ -233,9 +236,6 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        from dspy.clients.capabilities import prepare_async
-
-        await prepare_async(lm)
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:

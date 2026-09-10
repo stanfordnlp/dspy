@@ -11,6 +11,7 @@ import pydantic
 
 from dspy._vendor.lm15.result import StreamAccumulator
 from dspy._vendor.lm15.serde import request_to_dict
+from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
 from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine
 from dspy.clients.engines.errors import wrap_error
 from dspy.clients.engines.legacy_engine import AsyncLegacyEngine, LegacyEngine
@@ -19,12 +20,9 @@ from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.dsp.utils.settings import settings
 from dspy.lm15 import CacheConfig, LM15Error, Request, Response, RouterConfig, request_from_openai_chat
-from dspy.utils.exceptions import LMError, LMUnsupportedFeatureError, is_retryable_lm_error
+from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
-CLIENT_KEYS = {"api_key", "api_base", "base_url", "headers", "extra_headers", "timeout", "api_version",
-               "azure_ad_token_provider", "organization", "project", "extra_query", "custom_llm_provider"}
-NATIVE_CLIENT_KEYS = {"api_key", "api_base", "base_url"}
 
 
 @dataclass
@@ -161,36 +159,8 @@ def _engine(lm, call, asynchronous):
         if call.request is None and call.legacy.get("prompt_cache") is None and callable(getattr(backend, "complete_legacy", None)):
             return backend, None, None
         return backend, _canonical(call), None
-    clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
-    clients.update({key: val for key, val in call.legacy.items() if key in CLIENT_KEYS})
-    native = spec != "litellm" and lm.model_type != "text"
-    resolution = None
-    if native:
-        try:
-            # No credential loading or network during selection.
-            probe = LM15Engine(RouterConfig(env={}), model_type=lm.model_type)
-            resolution = probe.resolve(lm.model)
-            import os
-
-            # Preserve legacy environment-configured gateways rather than
-            # accidentally sending the same credentials to a public endpoint.
-            env_prefix = lm.model.split("/", 1)[0].upper()
-            if spec == "auto" and any(os.getenv(name) for name in (f"{env_prefix}_API_BASE", f"{env_prefix}_BASE_URL")):
-                native = False
-            if spec == "auto" and resolution.provider == "xai" and "api_key" not in clients and os.getenv("XAI_API_KEY"):
-                clients["api_key"] = os.environ["XAI_API_KEY"]
-            if (set(clients) - NATIVE_CLIENT_KEYS) or (resolution.provider.startswith("azure") and
-                                                       any(key in clients for key in ("api_base", "base_url"))):
-                native = False
-        except LMError as exc:
-            if spec == "lm15":
-                raise
-            from dspy.lm15 import UnknownModelError
-
-            if isinstance(exc.__cause__, UnknownModelError) or isinstance(exc, LMUnsupportedFeatureError):
-                native = False
-            else:
-                raise
+    selection = select_backend(lm, call.legacy)
+    native, resolution, clients = selection.native, selection.resolution, selection.clients
     canonical = call.request
     if native:
         try:
@@ -201,8 +171,6 @@ def _engine(lm, call, asynchronous):
             # This is a representational refusal BEFORE execution. Preserve the
             # original body on the compatibility backend, never retry elsewhere.
             native = False
-    if spec == "lm15" and not native:
-        raise LMUnsupportedFeatureError("The requested client settings require the LiteLLM compatibility engine.")
     if not native:
         if call.legacy.get("prompt_cache") is not None:
             raise LMUnsupportedFeatureError(

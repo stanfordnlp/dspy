@@ -5,8 +5,14 @@ A serializer's ability to send a field alone is not evidence a model honours it.
 Public booleans preserve BaseLM's existing unknown-as-false convention.
 """
 
+import asyncio
+import inspect
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from functools import wraps
 
+from dspy.clients.backend_selection import select_backend
 from dspy.clients.model_metadata import model_info
 
 
@@ -25,25 +31,88 @@ def resolve(lm):
     return LM15Engine(RouterConfig(env={}), model_type=lm.model_type).resolve(lm.model)
 
 
-async def prepare_async(lm):
-    """Prepare native model metadata before synchronous adapter planning.
+@dataclass(repr=False)
+class _PlanningScope:
+    lm: object
+    options: dict
+    value: Capabilities | None = None
 
-    No provider clients or credentials are initialized. Legacy/custom engines
-    keep their own capability contract; they are not made thread-safe here.
-    """
-    if getattr(lm, "_engine_spec", None) not in ("auto", "lm15") or lm.model_type == "text":
+
+_planning = ContextVar("dspy_lm_capability_planning", default=None)
+
+
+@contextmanager
+def planning_scope(lm, options):
+    current = _planning.get()
+    if current is not None and current.lm is lm and current.options is options:
+        yield
         return
-    from dspy.clients.model_metadata import apreload
-    from dspy.utils.exceptions import LMError
-
+    token = _planning.set(_PlanningScope(lm, options))
     try:
-        resolve(lm)
-    except LMError:
+        yield
+    finally:
+        _planning.reset(token)
+
+
+def with_capability_planning(fn):
+    """Scope adapter capability reads to this call's client settings.
+
+    Do not copy or mutate the LM: callbacks and custom hooks retain its identity.
+    Nested JSON/base-adapter calls reuse the same task-local planning scope.
+    """
+    if inspect.iscoroutinefunction(fn):
+        @wraps(fn)
+        async def async_wrapper(self, lm, lm_kwargs, *args, **kwargs):
+            with planning_scope(lm, lm_kwargs):
+                await prepare_async(lm)
+                return await fn(self, lm, lm_kwargs, *args, **kwargs)
+        return async_wrapper
+
+    @wraps(fn)
+    def wrapper(self, lm, lm_kwargs, *args, **kwargs):
+        with planning_scope(lm, lm_kwargs):
+            return fn(self, lm, lm_kwargs, *args, **kwargs)
+    return wrapper
+
+
+async def prepare_async(lm):
+    """Resolve built-in capability hints off-loop, including LiteLLM lookup.
+
+    Native calls still never import LiteLLM. Custom/legacy LM capability hooks
+    keep their own contract and are not moved to worker threads.
+    """
+    scope = _planning.get()
+    if scope is not None and scope.lm is lm and scope.value is not None:
         return
-    await apreload()
+    if isinstance(getattr(lm, "_engine_spec", None), str):
+        await asyncio.to_thread(capabilities, lm)
 
 
 def capabilities(lm):
+    scope = _planning.get()
+    if scope is not None and scope.lm is lm:
+        if scope.value is None:
+            scope.value = _capabilities(lm, scope.options)
+        return scope.value
+    return _capabilities(lm)
+
+
+def _litellm_capabilities(lm, selection):
+    from dspy.clients.lm import _get_litellm
+
+    litellm = _get_litellm()
+    provider = selection.clients.get("custom_llm_provider")
+    kwargs = {"custom_llm_provider": provider} if provider is not None else {}
+    params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider or lm._provider_name)
+    return Capabilities(
+        bool(litellm.supports_function_calling(model=lm.model, **kwargs)),
+        bool(litellm.supports_reasoning(lm.model, **kwargs)),
+        bool(litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider or lm._provider_name)),
+        frozenset(params or ()),
+    )
+
+
+def _capabilities(lm, options=None):
     spec = lm.engine
     if not isinstance(spec, str):
         # A custom engine can declare the same hints as BaseLM. Missing
@@ -54,14 +123,10 @@ def capabilities(lm):
             bool(getattr(spec, "supports_response_schema", False)),
             frozenset(getattr(spec, "supported_params", ()) or ()),
         )
-    if lm.model_type == "text":
-        return Capabilities()
-    from dspy.utils.exceptions import LMError
-
-    try:
-        route = resolve(lm)
-    except LMError:
-        return Capabilities()
+    selection = select_backend(lm, options)
+    if not selection.native:
+        return _litellm_capabilities(lm, selection)
+    route = selection.resolution
     from dspy._vendor.lm15.compat import (
         AnthropicCompat,
         OpenAIChatCompat,
