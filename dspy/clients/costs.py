@@ -23,7 +23,9 @@ def estimate_cost(response, *, provider, requested_model, request=None):
 def _estimate_cost(response, *, provider, requested_model, request=None):
     from dspy.lm15 import BuiltinTool
 
-    unknown = lambda reason: (None, {"kind": "unknown", "reason": reason})
+    def unknown(reason):
+        return None, {"kind": "unknown", "reason": reason}
+
     if provider is None:
         return unknown("custom engine has no pricing provider")
     if any(part.type in {"image", "audio", "video", "document", "binary"} for part in response.message.parts):

@@ -36,7 +36,7 @@ def test_unknown_and_custom_capabilities():
 
     class Engine:
         supports_function_calling = True
-        supported_params = {"tools"}
+        supported_params = frozenset({"tools"})
 
         def complete(self, request):
             raise AssertionError("No generation during capability lookup")

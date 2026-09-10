@@ -724,22 +724,18 @@ def test_exponential_backoff_retry():
         mock_response.status_code = 429
         raise RateLimitError(response=mock_response, message="message", body="error")
 
-    original_retrying = tenacity.Retrying
-
-    def immediate_retrying(*args, **kwargs):
-        kwargs["sleep"] = retry_delays.append
-        return original_retrying(*args, **kwargs)
-
     lm = dspy.LM(engine="litellm", model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
     with (
-        mock.patch("dspy.clients.execution.time.sleep", side_effect=retry_delays.append),
-        mock.patch("tenacity.Retrying", side_effect=immediate_retrying),
-        mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create),
+        # Replace this module's reference, not the process-wide time.sleep:
+        # background SDK threads may also sleep while the request runs.
+        mock.patch("dspy.clients.execution.time", mock.Mock(sleep=retry_delays.append)),
+        mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create) as completion,
     ):
         with pytest.raises(dspy.LMRateLimitError):
             lm("question")
 
     assert retry_delays == [1, 2, 4]
+    assert completion.call_count == 4
 
 
 def test_logprobs_included_when_requested():

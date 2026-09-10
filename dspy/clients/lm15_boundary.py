@@ -45,21 +45,21 @@ def snapshot_request(request: Request) -> Request:
             return replace(part, path=None, data=base64.b64encode(path.read_bytes()).decode("ascii"))
         if part.type == "tool_result":
             content = tuple(snapshot(item) for item in part.content)
-            if any(left is not right for left, right in zip(content, part.content)):
+            if any(left is not right for left, right in zip(content, part.content, strict=True)):
                 return replace(part, content=content)
         return part
 
     messages = []
     for message in request.messages:
         parts = tuple(snapshot(part) for part in message.parts)
-        messages.append(replace(message, parts=parts) if any(left is not right for left, right in zip(parts, message.parts))
+        messages.append(replace(message, parts=parts) if any(left is not right for left, right in zip(parts, message.parts, strict=True))
                         else message)
     system = request.system
     if isinstance(system, tuple):
         frozen = tuple(snapshot(part) for part in system)
-        if any(left is not right for left, right in zip(frozen, system)):
+        if any(left is not right for left, right in zip(frozen, system, strict=True)):
             system = frozen
-    if system is request.system and all(left is right for left, right in zip(messages, request.messages)):
+    if system is request.system and all(left is right for left, right in zip(messages, request.messages, strict=True)):
         return request
     return replace(request, messages=tuple(messages), system=system)
 
