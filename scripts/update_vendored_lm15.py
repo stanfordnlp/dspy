@@ -46,6 +46,7 @@ def main() -> int:
         git("clone", "--no-checkout", args.source, str(checkout))
         git("fetch", "origin", args.ref, cwd=checkout)
         source_commit = git("rev-parse", "FETCH_HEAD", cwd=checkout)
+        git("checkout", "--detach", source_commit, cwd=checkout)
         contract = git("show", f"{source_commit}:CONTRACT_PIN", cwd=checkout)
         version_source = ast.parse(git("show", f"{source_commit}:lm15/_version.py", cwd=checkout))
         version = next(
@@ -66,6 +67,20 @@ def main() -> int:
             fields = dict(
                 line.split("=", 1) for line in RECORD.read_text().splitlines() if "=" in line
             )
+            # A GitHub squash can remove every subtree parent and trailer.
+            # Recover the old package from its source pin, not DSPy's history.
+            for key in ("commit", "split"):
+                value = fields.get(key, "")
+                if len(value) != 40 or any(char not in "0123456789abcdef" for char in value):
+                    parser.error(f"Invalid {key} in {RECORD.name}; refusing to update.")
+            git("fetch", "origin", fields["commit"], cwd=checkout)
+            old_split = git("subtree", "split", "--prefix=lm15", fields["commit"], cwd=checkout)
+            if old_split != fields["split"]:
+                parser.error("Recorded split does not match the pinned source; refusing to update.")
+            git("fetch", str(checkout), old_split)
+            old_tree = git("rev-parse", f"{old_split}^{{tree}}")
+            if git("rev-parse", f"HEAD:{PREFIX}") != old_tree:
+                parser.error("Vendored files differ from the recorded source; move edits upstream first.")
             if (fields.get("split"), fields.get("commit"), fields.get("version"), fields.get("contract")) == (
                 split, source_commit, version, contract
             ):
@@ -90,6 +105,21 @@ def main() -> int:
             f"Contract: {contract}\nPackage split: {split}"
         )
         try:
+            if initialized:
+                # Reconstruct a genuine package-root squash parent. A metadata-
+                # only commit with DSPy's root tree would be the wrong merge base.
+                anchor = git(
+                    "commit-tree", old_tree, "-m",
+                    f"Restore lm15 subtree base from source pin\n\n"
+                    f"git-subtree-dir: {PREFIX}\ngit-subtree-split: {old_split}",
+                )
+                mainline = git("rev-parse", "HEAD")
+                git(
+                    "merge", "--strategy=ours", "--no-ff", "--allow-unrelated-histories",
+                    "-m", f"Reconnect lm15 subtree history without changing files\n\n"
+                    f"git-subtree-dir: {PREFIX}\ngit-subtree-mainline: {mainline}\n"
+                    f"git-subtree-split: {old_split}", anchor,
+                )
             git("subtree", "merge" if initialized else "add", f"--prefix={PREFIX}",
                 "--squash", "-m", message, split)
             RECORD.write_text(

@@ -23,18 +23,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: '3.12'
       - name: Build source distribution and wheel
-        run: |
-          python -m pip install build
-          # With no format flags, build creates the wheel from the sdist.
-          python -m build
+        # By default, uv builds the wheel from the source distribution.
+        run: uv build
       - name: Test the installed wheel outside the checkout
         run: |
-          python -m venv "$RUNNER_TEMP/lm15-wheel-venv"
-          "$RUNNER_TEMP/lm15-wheel-venv/bin/python" -m pip install dist/*.whl pytest
+          uv venv --python 3.12 "$RUNNER_TEMP/lm15-wheel-venv"
+          uv pip install --python "$RUNNER_TEMP/lm15-wheel-venv/bin/python" dist/*.whl pytest
           mkdir "$RUNNER_TEMP/lm15-wheel-tests"
           cp tests/test_vendored_lm15.py "$RUNNER_TEMP/lm15-wheel-tests/"
           cd "$RUNNER_TEMP/lm15-wheel-tests"
