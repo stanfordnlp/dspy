@@ -380,9 +380,7 @@ class BaseProviderLM:
         req = self.build_request(request, stream=False)
         resp = self._send(req)
         if resp.status >= 400:
-            error = self.normalize_error(resp.status, resp.text())
-            _attach_retry_after(error, resp.headers)
-            raise error
+            raise self._http_error(resp)
         return self.parse_response(request, resp)
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
@@ -427,6 +425,12 @@ class BaseProviderLM:
                 )
         except NetworkTransportError as exc:
             raise LM15TransportError(str(exc)) from exc
+
+    def _http_error(self, response: HttpResponse) -> ProviderError:
+        """Normalize an HTTP failure without losing its retry hint."""
+        error = self.normalize_error(response.status, response.text())
+        _attach_retry_after(error, response.headers)
+        return error
 
     def normalize_error(self, status: int, body: str) -> ProviderError:
         return self._with_login_hint(map_http_error(
@@ -531,7 +535,7 @@ class BaseProviderLM:
         self._require("images")
         resp = self._send(self._image_generate_request(request))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._image_generation_from_response(request, resp)
 
     def speech_generate(self, request: SpeechGenerationRequest) -> SpeechGenerationResponse:
@@ -541,7 +545,7 @@ class BaseProviderLM:
         self._require("speech")
         resp = self._send(self._speech_generate_request(request))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._speech_generation_from_response(request, resp)
 
     # ─── Video generation (job-shaped on every wire: Sora / Veo / grok) ─────
@@ -584,14 +588,14 @@ class BaseProviderLM:
         self._require("video")
         resp = self._send(self._video_submit_request(request))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._video_job_from_body(resp.text())
 
     def video_status(self, video_id: str) -> VideoJobInfo:
         self._require("video")
         resp = self._send(self._video_status_request(video_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._video_job_from_body(resp.text(), video_id)
 
     def video_result(self, video_id: str) -> VideoPart:
@@ -602,7 +606,7 @@ class BaseProviderLM:
         self._require("video")
         resp = self._send(self._video_status_request(video_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         job = self._video_job_from_body(resp.text(), video_id)
         if job.status not in VIDEO_TERMINAL_STATUSES:
             raise ValueError(
@@ -615,7 +619,7 @@ class BaseProviderLM:
         if fetch is not None:
             fetched = self._send(fetch)
             if fetched.status >= 400:
-                raise self.normalize_error(fetched.status, fetched.text())
+                raise self._http_error(fetched)
         return self._video_part(status_body, fetched)
 
     def video_list(self, limit: int = 20, model: str | None = None) -> "tuple[VideoJobInfo, ...]":
@@ -625,7 +629,7 @@ class BaseProviderLM:
         self._require("video")
         resp = self._send(self._video_list_request(limit, model))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._video_jobs_from_list_body(resp.text())
 
     # Ergonomic verbs (ticket handles) ---------------------------------------
@@ -671,7 +675,7 @@ class BaseProviderLM:
         self._require("models")
         resp = self._send(self._models_request())
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._models_from_body(resp.text())
 
     # ─── Batch jobs (third execution mode: complete / stream / batch) ───────
@@ -722,18 +726,18 @@ class BaseProviderLM:
         if upload_req is not None:
             resp = self._send(upload_req)
             if resp.status >= 400:
-                raise self.normalize_error(resp.status, resp.text())
+                raise self._http_error(resp)
             upload_body = resp.json()
         resp = self._send(self._batch_submit_request(request, upload_body))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._batch_job_from_body(resp.text())
 
     def batch_status(self, batch_id: str) -> BatchJobInfo:
         self._require("batches")
         resp = self._send(self._batch_status_request(batch_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._batch_job_from_body(resp.text())
 
     def batch_results(self, batch_id: str) -> "tuple[BatchEntry, ...]":
@@ -741,7 +745,7 @@ class BaseProviderLM:
         self._require("batches")
         resp = self._send(self._batch_status_request(batch_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         job = self._batch_job_from_body(resp.text())
         if job.status not in BATCH_TERMINAL_STATUSES:
             raise ValueError(
@@ -753,7 +757,7 @@ class BaseProviderLM:
         for fetch in self._batch_result_fetches(status_body):
             fetched = self._send(fetch)
             if fetched.status >= 400:
-                raise self.normalize_error(fetched.status, fetched.text())
+                raise self._http_error(fetched)
             texts.append(fetched.text())
         return self._batch_entries(status_body, tuple(texts))
 
@@ -762,7 +766,7 @@ class BaseProviderLM:
         self._require("batches")
         resp = self._send(self._batch_cancel_request(batch_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._batch_job_from_body(resp.text())
 
     def batch_list(self, limit: int = 20) -> "tuple[BatchJobInfo, ...]":
@@ -774,7 +778,7 @@ class BaseProviderLM:
         self._require("batches")
         resp = self._send(self._batch_list_request(limit))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._batch_jobs_from_list_body(resp.text())
 
     def batch(self, requests: "BatchRequest | Sequence[Request]", *, model: str | None = None,
@@ -846,21 +850,21 @@ class BaseProviderLM:
         self._check_cache_prefix(prefix, ttl_seconds)
         resp = self._send(self._cache_create_request(prefix, ttl_seconds, label))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._cache_info_from_body(resp.text())
 
     def cache_get(self, cache_id: str) -> CacheInfo:
         self._require("caches")
         resp = self._send(self._cache_get_request(cache_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._cache_info_from_body(resp.text())
 
     def cache_list(self, limit: int = 20, cursor: str | None = None) -> CachePage:
         self._require("caches")
         resp = self._send(self._cache_list_request(limit, cursor))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._cache_page_from_list_body(resp.text())
 
     def cache_delete(self, cache_id: str) -> None:
@@ -868,7 +872,7 @@ class BaseProviderLM:
         self._require("caches")
         resp = self._send(self._cache_delete_request(cache_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
 
     def cache_update(self, cache_id: str, *, ttl_seconds: int) -> CacheInfo:
         self._require("caches")
@@ -876,7 +880,7 @@ class BaseProviderLM:
             raise ValueError("ttl_seconds must be a positive int")
         resp = self._send(self._cache_update_request(cache_id, ttl_seconds))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._cache_info_from_body(resp.text())
 
     def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None) -> CachedPrefix:
@@ -935,14 +939,14 @@ class BaseProviderLM:
         self._require("files")
         resp = self._send(self._file_upload_request(request))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._file_info_from_body(resp.text())
 
     def file_get(self, file_id: str) -> FileInfo:
         self._require("files")
         resp = self._send(self._file_get_request(file_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._file_info_from_body(resp.text())
 
     def file_list(self, limit: int = 20, cursor: str | None = None) -> FilePage:
@@ -955,7 +959,7 @@ class BaseProviderLM:
         self._require("files")
         resp = self._send(self._file_list_request(limit, cursor))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return self._file_page_from_list_body(resp.text())
 
     def file_delete(self, file_id: str) -> None:
@@ -965,7 +969,7 @@ class BaseProviderLM:
         self._require("files")
         resp = self._send(self._file_delete_request(file_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
 
     def file_download(self, file_id: str) -> bytes:
         """Download a file's content, when THIS file supports download.
@@ -977,7 +981,7 @@ class BaseProviderLM:
         self._require("files")
         resp = self._send(self._file_download_request(file_id))
         if resp.status >= 400:
-            raise self.normalize_error(resp.status, resp.text())
+            raise self._http_error(resp)
         return resp.body
 
     def file_wait_ready(self, file_id: str, poll_every: float = 2.0, timeout: float | None = None) -> FileInfo:
