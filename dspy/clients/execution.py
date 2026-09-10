@@ -3,7 +3,7 @@
 import asyncio
 import copy
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import anyio
@@ -18,7 +18,7 @@ from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngin
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import LM15Error, Request, Response, RouterConfig, request_from_openai_chat
+from dspy.lm15 import CacheConfig, LM15Error, Request, Response, RouterConfig, request_from_openai_chat
 from dspy.utils.exceptions import LMError, LMUnsupportedFeatureError, is_retryable_lm_error
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
@@ -44,7 +44,13 @@ class PreparedCall:
                     "request": request_to_dict(self.request), "rollout_id": self.kwargs.get("rollout_id")}
         suffix = {"chat": "completion", "text": "text_completion", "responses": "responses_completion"}[lm.model_type]
         name = ("alitellm_" if asynchronous else "litellm_") + suffix
-        return {**self.legacy, "_fn_identifier": f"dspy.clients.lm.{name}"}
+        key = {**self.legacy, "_fn_identifier": f"dspy.clients.lm.{name}"}
+        prompt_cache = key.pop("prompt_cache", None)
+        if prompt_cache is not None:
+            from dspy._vendor.lm15.serde import cache_config_to_dict
+
+            key["prompt_cache"] = cache_config_to_dict(prompt_cache)
+        return key
 
 
 def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
@@ -95,6 +101,12 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
         return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
     merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
+    prompt_cache = merged.get("prompt_cache")
+    if prompt_cache is not None:
+        if not isinstance(prompt_cache, CacheConfig):
+            raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
+        if not managed or getattr(lm, "_engine_spec", None) == "litellm" or lm.model_type == "text":
+            raise LMUnsupportedFeatureError("prompt_cache requires native lm15 or a canonical custom engine.")
     if merged.get("rollout_id") is None:
         merged.pop("rollout_id", None)
     if hasattr(lm, "_warn_zero_temp_rollout"):
@@ -116,7 +128,7 @@ def _canonical(call, *, compat=None):
     if call.request is not None:
         return call.request
     body = {key: val for key, val in call.legacy.items()
-            if key not in CLIENT_KEYS | {"n", "rollout_id", "num_generations"} and val is not None}
+            if key not in CLIENT_KEYS | {"n", "rollout_id", "num_generations", "prompt_cache"} and val is not None}
     format_ = body.get("response_format")
     if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
         from dspy.clients.legacy_requests import _close_object_schemas
@@ -126,7 +138,13 @@ def _canonical(call, *, compat=None):
         body["response_format"] = {"type": "json_schema", "json_schema": {
             "name": format_.__name__, "schema": _close_object_schemas(format_.model_json_schema()), "strict": True,
         }}
-    return request_from_openai_chat(body, compat=compat)
+    request = request_from_openai_chat(body, compat=compat)
+    prompt_cache = call.legacy.get("prompt_cache")
+    if prompt_cache is not None:
+        if request.config.cache is not None:
+            raise LMUnsupportedFeatureError("Do not combine prompt_cache with provider-shaped prompt-cache options.")
+        request = replace(request, config=replace(request.config, cache=prompt_cache))
+    return request
 
 
 def _engine(lm, call, asynchronous):
@@ -140,7 +158,7 @@ def _engine(lm, call, asynchronous):
             raise LMUnsupportedFeatureError("This custom engine has no async counterpart; pass async_engine=.")
         # Built-in scripted engines can consume ordinary inputs without a
         # provider-wire decoder. Only that explicit input method opts in.
-        if call.request is None and callable(getattr(backend, "complete_legacy", None)):
+        if call.request is None and call.legacy.get("prompt_cache") is None and callable(getattr(backend, "complete_legacy", None)):
             return backend, None, None
         return backend, _canonical(call), None
     clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
@@ -178,7 +196,7 @@ def _engine(lm, call, asynchronous):
         try:
             canonical = _canonical(call, compat=resolution.compat)
         except (LM15Error, TypeError, ValueError) as exc:
-            if spec == "lm15" or call.request is not None:
+            if spec == "lm15" or call.request is not None or call.legacy.get("prompt_cache") is not None:
                 raise LMUnsupportedFeatureError(str(exc), model=lm.model) from exc
             # This is a representational refusal BEFORE execution. Preserve the
             # original body on the compatibility backend, never retry elsewhere.
@@ -186,6 +204,13 @@ def _engine(lm, call, asynchronous):
     if spec == "lm15" and not native:
         raise LMUnsupportedFeatureError("The requested client settings require the LiteLLM compatibility engine.")
     if not native:
+        if call.legacy.get("prompt_cache") is not None:
+            raise LMUnsupportedFeatureError(
+                "This request requires LiteLLM, which has no prompt_cache bridge. "
+                "Use native-compatible inputs/settings or omit prompt_cache."
+            )
+        # None disables the bridge; it is never a provider keyword.
+        call.legacy.pop("prompt_cache", None)
         cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
         return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
     # Long-lived sync pools and a separate async pool per event loop. Copies

@@ -16,6 +16,7 @@ from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.lm15 import CacheConfig
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import LMConfigurationError, LMError, LMUnsupportedFeatureError
 
@@ -57,6 +58,7 @@ class LM(BaseLM):
         use_developer_role: bool = False,
         engine: Any = "auto",
         async_engine: Any = None,
+        prompt_cache: CacheConfig | None = None,
         **kwargs,
     ):
         """Create a new language model instance for use with DSPy modules and programs.
@@ -79,6 +81,10 @@ class LM(BaseLM):
                 'lm15' refuses unsupported mappings rather than selecting LiteLLM. A custom engine implements
                 complete(Request) -> Response and optionally stream(Request). Engines are borrowed.
             async_engine: Async counterpart when supplying a custom engine object.
+            prompt_cache: Optional lm15 CacheConfig for provider-side prompt caching on ordinary calls.
+                Separate from DSPy's response cache. Requires native lm15 or a canonical custom engine;
+                may incur cache-write/storage charges. A call-time value overrides this default, and None
+                removes it. Explicit Request calls use only Request.config.cache. No cache resource is created.
             provider: The training/launch provider. This does not select the inference engine.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
@@ -97,6 +103,10 @@ class LM(BaseLM):
             raise TypeError("A custom engine must implement complete(Request) -> Response")
         if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
             raise ValueError("num_retries must be a nonnegative integer")
+        if prompt_cache is not None:
+            if not isinstance(prompt_cache, CacheConfig):
+                raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
+            kwargs["prompt_cache"] = prompt_cache
         self._engine_spec = engine
         self._async_engine_spec = async_engine
         self._engine_store = {}
@@ -265,6 +275,8 @@ class LM(BaseLM):
         return copied
 
     def copy(self, **kwargs):
+        if kwargs.get("prompt_cache") is not None and not isinstance(kwargs["prompt_cache"], CacheConfig):
+            raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
         spec = kwargs.pop("engine", self._engine_spec)
         async_spec = kwargs.pop("async_engine", self._async_engine_spec)
         if isinstance(spec, str) and spec not in {"auto", "lm15", "litellm"}:
@@ -378,6 +390,10 @@ class LM(BaseLM):
         if not isinstance(self._engine_spec, str):
             raise TypeError("Custom engine objects require custom dump_state/load_state methods; they cannot be stored in JSON LM state.")
         state = super().dump_state()
+        if state.get("prompt_cache") is not None:
+            from dspy._vendor.lm15.serde import cache_config_to_dict
+
+            state["prompt_cache"] = cache_config_to_dict(state["prompt_cache"])
         if self._engine_spec != "auto":
             state["engine"] = self._engine_spec
         state.update(
@@ -396,6 +412,10 @@ class LM(BaseLM):
     @classmethod
     def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False):
         state = dict(state)
+        if isinstance(state.get("prompt_cache"), dict):
+            from dspy._vendor.lm15.serde import cache_config_from_dict
+
+            state["prompt_cache"] = cache_config_from_dict(state["prompt_cache"])
 
         model = state.get("model")
         if isinstance(model, str) and _is_openai_reasoning_model(model) and "max_completion_tokens" in state:
