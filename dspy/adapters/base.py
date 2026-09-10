@@ -413,6 +413,9 @@ class Adapter:
         """
         inputs_copy = dict(inputs)
 
+        signature_without_history = None
+        conversation_history: list[dict[str, Any]] = []
+
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
         history_field_name = self._get_history_field_name(signature)
@@ -426,10 +429,14 @@ class Adapter:
             )
 
         messages = []
-        system_message = self.format_system_message(signature)
+
+        # We do not want the system message acknowledging the "history" input field (if present) in the system message
+        system_message = self.format_system_message(
+            signature_without_history if signature_without_history else signature
+        )
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
-        if history_field_name:
+        if history_field_name and signature_without_history:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
             messages.extend(conversation_history)
@@ -603,13 +610,13 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
-    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
@@ -619,7 +626,7 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
                 return name

@@ -204,9 +204,7 @@ class RLM(Module):
     # Names owned by RLM rather than the user-provided signature or tools.
     _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
     _RESERVED_INPUT_NAMES = frozenset({"history"})
-    _RESERVED_RESULT_NAMES = frozenset(
-        {"history", "trajectory", "final_reasoning"}
-    )  # TODO: Remove "trajectory" output field
+    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""

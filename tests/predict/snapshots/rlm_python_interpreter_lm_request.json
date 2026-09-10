@@ -19,7 +19,7 @@
         {
           "type": "text",
           "metadata": {},
-          "text": "[[ ## variables_info ## ]]\n«query: str»\n\n[[ ## repl_history ## ]]\nYou have not interacted with the REPL environment yet.\n\n[[ ## iteration ## ]]\n1/20\n\nRespond with the corresponding output fields, starting with the field `[[ ## reasoning ## ]]`, then `[[ ## code ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."
+          "text": "[[ ## variables_info ## ]]\n«query: str»\n\n[[ ## repl_history ## ]]\nYou have not interacted with the REPL environment yet.\n\n[[ ## iteration ## ]]\n1/20\n\nRespond with the corresponding output fields, starting with the field `[[ ## reasoning ## ]]` (must be formatted as a valid Python str), then `[[ ## code ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."
         }
       ],
       "name": null,
