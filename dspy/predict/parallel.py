@@ -17,6 +17,10 @@ class Parallel:
         disable_progress_bar: bool = False,
         timeout: int = 120,
         straggler_limit: int = 3,
+        *,
+        batch_mode: bool = False,
+        batch_timeout: float = 86400,
+        batch_poll_interval: float = 30,
     ):
         """
         A utility class for parallel, multi-threaded execution of (module, example) pairs.
@@ -30,6 +34,10 @@ class Parallel:
             return_failed_examples (bool): Whether to return failed examples. Defaults to False.
             provide_traceback (Optional[bool]): Whether to provide traceback. Defaults to None.
             disable_progress_bar (bool): Whether to disable progress bar. Defaults to False.
+            batch_mode (bool): Use provider Batch APIs for synchronous dspy.LM calls.
+                See Module.batch for supported providers and limitations.
+            batch_timeout (float): Maximum wait in seconds per remote batch.
+            batch_poll_interval (float): Seconds between remote batch status checks.
 
         Example:
             ```python
@@ -67,6 +75,9 @@ class Parallel:
         self.disable_progress_bar = disable_progress_bar
         self.timeout = timeout
         self.straggler_limit = straggler_limit
+        self.batch_mode = batch_mode
+        self.batch_timeout = batch_timeout
+        self.batch_poll_interval = batch_poll_interval
 
         self.error_count = 0
         self.error_lock = threading.Lock()
@@ -82,7 +93,7 @@ class Parallel:
             max_errors=self.max_errors,
             provide_traceback=self.provide_traceback,
             disable_progress_bar=self.disable_progress_bar,
-            timeout=self.timeout,
+            timeout=0 if self.batch_mode else self.timeout,
             straggler_limit=self.straggler_limit,
         )
 
@@ -108,7 +119,16 @@ class Parallel:
             return result
 
         # Execute the processing function over the execution pairs
-        results = executor.execute(process_pair, exec_pairs)
+        if self.batch_mode:
+            from dspy.utils.batch import BatchCoordinator
+
+            if settings.get("batch_coordinator") is not None:
+                raise ValueError("Nested provider batch execution is not supported")
+            with BatchCoordinator(executor.cancel_jobs, self.batch_timeout, self.batch_poll_interval) as coordinator:
+                with settings.context(batch_coordinator=coordinator):
+                    results = executor.execute(process_pair, exec_pairs)
+        else:
+            results = executor.execute(process_pair, exec_pairs)
 
         # Populate failed examples and exceptions from the executor
         if self.return_failed_examples:

@@ -236,6 +236,82 @@ hop = Hop()
 print(hop(claim="Stephen Curry is the best 3 pointer shooter ever in the human history"))
 ```
 
+## How do I use provider Batch APIs?
+
+`Module.batch` normally runs examples concurrently using regular LM requests.
+Opt into **provider-side batch processing** with the keyword-only `batch_mode=True`:
+
+```python
+import dspy
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+program = dspy.Predict("question -> answer")
+examples = [
+    dspy.Example(question="What is the capital of France?").with_inputs("question"),
+    dspy.Example(question="What is the capital of Japan?").with_inputs("question"),
+]
+
+# This submits billable remote jobs and blocks until the program finishes.
+results = program.batch(
+    examples,
+    batch_mode=True,
+    num_threads=32,
+    batch_timeout=86400,
+    batch_poll_interval=30,
+)
+```
+
+The initial implementation supports **synchronous `dspy.LM` calls to OpenAI chat
+models** through the OpenAI Files and Batches APIs. Check that your model and
+account support the [OpenAI Batch API](https://platform.openai.com/docs/guides/batch).
+Text, Responses, streaming, and asynchronous LM calls are rejected in batch mode.
+Custom `BaseLM` implementations are not intercepted. `Evaluate` has no batch-mode
+option. Nested `batch_mode=True` invocations are not supported.
+
+Multi-step programs work without requiring every example to make the same number
+of LM calls. Each active worker queues its next call; ready calls are collected
+over a short window and submitted together. Finished examples do not hold other
+examples back. `num_threads` bounds concurrent examples, **not** the total dataset
+size; increase it to allow larger remote batches. A batch may contain fewer calls
+than workers, and different models or connection settings require separate jobs.
+This implementation is blocking and in-memory, not a durable job queue: it cannot
+resume a program after the process exits. Local tools still execute normally.
+
+Per-call generation settings, prompt/messages, tools, structured output schemas,
+and connection overrides are preserved. Generation parameters must be supported
+by OpenAI's chat endpoint; LiteLLM-specific routing/translation options are not
+supported. DSPy's normal cache, LM history, callbacks, and token usage tracking
+remain active. Cache hits need no remote batch. Provider batch discounts are not
+estimated in DSPy's history.
+
+`max_errors`, `return_failed_examples`, progress, and traceback controls retain
+their normal meaning. Results remain in input order with `None` at failed positions.
+Missing responses become errors; duplicate or unknown response IDs fail the affected
+remote batch rather than guessing which example a result belongs to. Available
+results from expired or remotely cancelled jobs are returned, with errors for
+unfinished requests.
+
+**Latency and cancellation:** each remote job uses OpenAI's `24h` completion
+window. A multi-step program may require several such jobs. `batch_timeout` is
+the wait limit **per remote job**, not a whole-program deadline. Status polling
+uses `batch_poll_interval`; each HTTP operation has a timeout capped at 60 seconds
+(or a smaller per-call `timeout`). In-flight HTTP operations and cleanup can extend
+the wait beyond `batch_timeout`. The usual `Module.batch(timeout=...)` straggler
+resubmission is disabled in batch mode to avoid duplicate paid work.
+
+Ctrl-C or reaching `max_errors` releases local LM waiters and requests cancellation
+of active remote jobs. Python cannot forcibly stop arbitrary local tool code.
+Remote cancellation is best-effort, may take minutes, and does not undo charges.
+Batch submission is not automatically retried: if the server accepts a job but
+its response is lost, the job may still run. DSPy logs job/input-file IDs for
+manual inspection. Completed input/output/error files are deleted best-effort;
+files associated with uncertain or still-active jobs are retained. Inspect those
+jobs and remove retained files in OpenAI after confirming their status.
+
+The same keyword options are available on `dspy.Parallel` for heterogeneous
+`(module, example)` pairs. Existing positional calls such as
+`program.batch(examples, 8)` continue to mean eight threads, not provider batching.
+
 ## How do I track LM usage?
 
 !!! note "Version Requirement"

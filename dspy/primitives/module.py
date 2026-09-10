@@ -277,6 +277,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
         disable_progress_bar: bool = False,
         timeout: int = 120,
         straggler_limit: int = 3,
+        *,
+        batch_mode: bool = False,
+        batch_timeout: float = 86400,
+        batch_poll_interval: float = 30,
     ) -> list[Example] | tuple[list[Example], list[Example], list[Exception]]:
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
@@ -291,6 +295,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
             disable_progress_bar: Whether to display the progress bar.
             timeout: Seconds before a straggler task is resubmitted. Set to 0 to disable.
             straggler_limit: Only check for stragglers when this many or fewer tasks remain.
+            batch_mode: Use provider Batch APIs for synchronous dspy.LM calls. Initially
+                supports OpenAI chat models only. Disables straggler resubmission.
+            batch_timeout: Maximum wait in seconds per remote batch (not per program).
+            batch_poll_interval: Seconds between remote batch status checks.
 
         Returns:
             List of results, and optionally failed examples and exceptions.
@@ -307,6 +315,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
             disable_progress_bar=disable_progress_bar,
             timeout=timeout,
             straggler_limit=straggler_limit,
+            batch_mode=batch_mode,
+            batch_timeout=batch_timeout,
+            batch_poll_interval=batch_poll_interval,
         )
 
         # Execute the forward method of Parallel
