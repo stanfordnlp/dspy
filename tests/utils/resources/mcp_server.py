@@ -1,3 +1,6 @@
+import asyncio
+from pathlib import Path
+
 from pydantic import BaseModel
 
 try:
@@ -46,6 +49,15 @@ def get_account_name(account: Account):
 def current_datetime() -> str:
     """Get the current datetime"""
     return "2025-07-23T09:10:10.0+00:00"
+
+
+@mcp.tool()
+async def wait_for_release(started: str, release: str) -> str:
+    """Signal that a request is in flight, then wait for the test to release it."""
+    Path(started).touch()
+    while not Path(release).exists():
+        await asyncio.sleep(0.01)
+    return "released"
 
 
 if __name__ == "__main__":
