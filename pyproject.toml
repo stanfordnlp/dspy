@@ -78,6 +78,8 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+"dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
+"dspy._vendor.lm15" = ["py.typed"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -125,6 +127,7 @@ filterwarnings = [
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
+  "dspy/_vendor/**",  # vendored lm15, linted in its own repository
   "tests/reliability/*.py",
 ]
 
