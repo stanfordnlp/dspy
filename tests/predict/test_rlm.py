@@ -221,10 +221,20 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="Input fields conflict with user tools: \\['lookup'\\]"):
             RLM("lookup -> answer", tools=[lookup])
 
-    @pytest.mark.parametrize("output_name", ["history", "final_reasoning"])
+    @pytest.mark.parametrize("output_name", ["history", "final_reasoning", "repl_trajectory"])
     def test_output_names_cannot_shadow_result_metadata(self, output_name):
         with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
             RLM(f"context -> {output_name}")
+
+    @pytest.mark.parametrize("input_name", ["history"])
+    def test_input_names_cannot_shadow_reserved_inputs(self, input_name):
+        # Single input
+        with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
+            RLM(f"{input_name} -> answer")
+
+        # Multiple inputs
+        with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
+            RLM(f"{input_name}, question -> answer")
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -1534,6 +1544,7 @@ class TestRLMWithDummyLM:
 
             assert result.answer == 20
             assert len(result.history.messages) == 2
+            assert len(result.repl_trajectory) == 2
 
     def test_with_input_variables_e2e(self, pooled_interpreter):
         """Test RLM with input variables passed to sandbox."""
@@ -1641,6 +1652,7 @@ class TestRLMWithDummyLM:
 
             assert result.answer == 20
             assert len(result.history.messages) == 2
+            assert len(result.repl_trajectory) == 2
 
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
