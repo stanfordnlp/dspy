@@ -430,10 +430,7 @@ class Adapter:
 
         messages = []
 
-        # We do not want the system message acknowledging the "history" input field (if present) in the system message
-        system_message = self.format_system_message(
-            signature_without_history if signature_without_history else signature
-        )
+        system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name and signature_without_history:
