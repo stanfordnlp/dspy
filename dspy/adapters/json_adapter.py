@@ -100,6 +100,9 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        from dspy.clients.capabilities import prepare_async
+
+        await prepare_async(lm)
         result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
         if result:
             return await result

@@ -25,6 +25,24 @@ def resolve(lm):
     return LM15Engine(RouterConfig(env={}), model_type=lm.model_type).resolve(lm.model)
 
 
+async def prepare_async(lm):
+    """Prepare native model metadata before synchronous adapter planning.
+
+    No provider clients or credentials are initialized. Legacy/custom engines
+    keep their own capability contract; they are not made thread-safe here.
+    """
+    if getattr(lm, "_engine_spec", None) not in ("auto", "lm15") or lm.model_type == "text":
+        return
+    from dspy.clients.model_metadata import apreload
+    from dspy.utils.exceptions import LMError
+
+    try:
+        resolve(lm)
+    except LMError:
+        return
+    await apreload()
+
+
 def capabilities(lm):
     spec = lm.engine
     if not isinstance(spec, str):

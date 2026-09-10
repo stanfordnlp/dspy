@@ -237,12 +237,26 @@ def _delay(exc, attempt):
     return max(float(hint), 0.0) if hint is not None else min(2 ** attempt, 60)
 
 
-def _result(lm, response, call, provider, request=None):
+def _result(lm, response, call, provider, request=None, *, estimate=True):
     if not isinstance(response, Response):
         raise TypeError(f"Engine.complete must return dspy.lm15.Response, got {type(response).__name__}")
     result = CallResult.native(response, model_type=lm.model_type,
                                logprobs=(call.request.config.logprobs is not None if call.request else bool(call.legacy.get("logprobs"))),
                                provider=provider)
+    if estimate:
+        _price_result(lm, result, response, provider, request)
+    if response.finish_reason == "length":
+        import logging
+
+        logging.getLogger("dspy.clients.lm").warning("LM response was truncated; increase max_tokens or inspect history.")
+    return result
+
+
+def _price_result(lm, result, response, provider, request):
+    """Advisory pricing only: safe to finish in a worker after cancellation.
+
+    Never update usage, history, or the response cache from this worker.
+    """
     from dspy.clients.costs import estimate_cost
 
     wire_model = request.model if request is not None else lm.model
@@ -253,11 +267,6 @@ def _result(lm, response, call, provider, request=None):
     result.cost, result.cost_details = estimate_cost(
         response, provider=provider, requested_model=wire_model, request=request,
     )
-    if response.finish_reason == "length":
-        import logging
-
-        logging.getLogger("dspy.clients.lm").warning("LM response was truncated; increase max_tokens or inspect history.")
-    return result
 
 
 def execute(lm, call):
@@ -322,59 +331,85 @@ def execute(lm, call):
 
 
 async def aexecute(lm, call):
-    if result := _cached(lm, call, True):
-        return result
+    if call.cache:
+        if result := await asyncio.to_thread(_cached, lm, call, True):
+            return result
     backend, request, provider = _engine(lm, call, True)
     stream = settings.send_stream
     results = []
     count = call.n if request is not None else 1
-    for _ in range(count):
-        emitted = False
-        retries = lm.num_retries if call.managed else 0
-        for attempt in range(retries + 1):
-            try:
-                if request is None:
-                    progress = {"emitted": False}
-                    with settings.context(_lm_stream_progress=progress):
+    try:
+        for _ in range(count):
+            emitted = False
+            recorded = False
+            retries = lm.num_retries if call.managed else 0
+            for attempt in range(retries + 1):
+                try:
+                    if request is None:
+                        progress = {"emitted": False}
+                        with settings.context(_lm_stream_progress=progress):
+                            try:
+                                result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
+                                                                       messages=call.messages, call_kwargs=call.kwargs)
+                            finally:
+                                emitted = progress["emitted"]
+                    elif stream is None:
+                        response = await backend.complete(request)
+                        result = _result(lm, response, call, provider, request, estimate=False)
+                    else:
+                        accumulator = StreamAccumulator(request)
+                        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
+                        source = backend.stream(request)
                         try:
-                            result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
-                                                                   messages=call.messages, call_kwargs=call.kwargs)
+                            async for event in source:
+                                accumulator.push(event)
+                                if event.type == "end" and not recorded:
+                                    # The provider completed, even if delivering
+                                    # the final chunk or closing is cancelled.
+                                    response = accumulator.response()
+                                    result = _result(lm, response, call, provider, request, estimate=False)
+                                    results.append(result)
+                                    recorded = True
+                                if chunk := bridge.chunk(event):
+                                    emitted = True
+                                    await stream.send(chunk)
                         finally:
-                            emitted = progress["emitted"]
-                elif stream is None:
-                    result = _result(lm, await backend.complete(request), call, provider, request)
-                else:
-                    accumulator = StreamAccumulator(request)
-                    bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
-                    source = backend.stream(request)
-                    try:
-                        async for event in source:
-                            accumulator.push(event)
-                            if chunk := bridge.chunk(event):
-                                emitted = True
-                                await stream.send(chunk)
-                    finally:
-                        close = getattr(source, "aclose", None)
-                        if close:
-                            with anyio.CancelScope(shield=True):
-                                await close()
-                    result = _result(lm, accumulator.response(), call, provider, request)
+                            close = getattr(source, "aclose", None)
+                            if close:
+                                with anyio.CancelScope(shield=True):
+                                    await close()
+                        if not recorded:
+                            response = accumulator.response()
+                            result = _result(lm, response, call, provider, request, estimate=False)
+                    break
+                except Exception as exc:
+                    error = wrap_error(exc, model=lm.model, provider=provider) if call.managed else exc
+                    if not recorded and not emitted and attempt < retries and is_retryable_lm_error(error):
+                        await asyncio.sleep(_delay(error, attempt))
+                        continue
+                    if error is exc:
+                        raise
+                    raise error from exc
+            # Record completion BEFORE any further await, including pricing.
+            # Pricing/caching failures must not retry a completed generation.
+            if not recorded:
                 results.append(result)
-                break
-            except Exception as exc:
-                error = wrap_error(exc, model=lm.model, provider=provider) if call.managed else exc
-                if not emitted and attempt < retries and is_retryable_lm_error(error):
-                    await asyncio.sleep(_delay(error, attempt))
-                    continue
-                if settings.usage_tracker:
-                    for completed in results:
-                        settings.usage_tracker.add_usage(lm.model, completed.usage)
-                if error is exc:
-                    raise
-                raise error from exc
-    result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
-    _store(lm, call, result, True)
-    return result
+            if request is not None:
+                await asyncio.to_thread(_price_result, lm, result, response, provider, request)
+        result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
+        if call.cache:
+            # Only whole successful calls reach storage. If cancelled here,
+            # the worker may finish writing that complete (never partial) call.
+            await asyncio.to_thread(_store, lm, call, result, True)
+        return result
+    except BaseException:
+        # Also covers cancellation during backoff, pricing or cache storage.
+        # Do not translate/retry cancellation or fabricate usage for unfinished
+        # candidates. Successful calls are accounted by finalize(), not here.
+        if settings.usage_tracker:
+            for completed in results:
+                settings.usage_tracker.add_usage(lm.model, completed.usage)
+        raise
 
 
 def finalize(lm, call, result):

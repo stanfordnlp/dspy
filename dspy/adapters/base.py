@@ -233,6 +233,9 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        from dspy.clients.capabilities import prepare_async
+
+        await prepare_async(lm)
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:

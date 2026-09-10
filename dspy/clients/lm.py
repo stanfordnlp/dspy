@@ -210,9 +210,12 @@ class LM(BaseLM):
         return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
+        import asyncio
+
         from dspy.clients.execution import aexecute, prepare
 
-        return (await aexecute(self, prepare(self, prompt, messages, kwargs, asynchronous=True, direct=True))).provider_response()
+        call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True, direct=True)
+        return (await aexecute(self, call)).provider_response()
 
     @property
     def engine(self):

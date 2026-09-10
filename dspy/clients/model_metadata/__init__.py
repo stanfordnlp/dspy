@@ -33,8 +33,20 @@ def _count(data):
     return sum(key not in _RESERVED and isinstance(value, dict) for key, value in data.items())
 
 
+async def apreload():
+    """Load once without blocking an event loop (including lock contention)."""
+    if _data is None:
+        import asyncio
+
+        await asyncio.to_thread(_load)
+
+
 def _load():
     global _data, _source
+    # The map is published only after it is fully built. Normal reads need
+    # neither a network call nor a blocking lock after initialization.
+    if _data is not None:
+        return _data
     with _lock:
         if _data is not None:
             return _data

@@ -164,9 +164,13 @@ class BaseLM:
     @with_callbacks
     async def acall(self, prompt=None, *, messages=None, **kwargs):
         """Async equivalent of __call__, with the same execution ownership."""
+        import asyncio
+
         from dspy.clients.execution import aexecute, finalize, prepare
 
-        call = prepare(self, prompt, messages, kwargs, asynchronous=True)
+        # Canonical media snapshots may read local files. Context variables
+        # propagate to the worker; callbacks/finalization stay on the caller.
+        call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True)
         return finalize(self, call, await aexecute(self, call))
 
     def forward(self, prompt=None, messages=None, **kwargs):
