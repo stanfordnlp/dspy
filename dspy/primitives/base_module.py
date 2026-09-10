@@ -217,7 +217,11 @@ class BaseModule:
             # cloudpickle's global registry to its prior state without clobbering
             # any modules the caller had already registered by value themselves.
             already_registered = cloudpickle.list_registry_pickle_by_value()
-            registered_by_us = [module for module in modules_to_serialize if module.__name__ not in already_registered]
+            # Dedupe by identity: passing the same module twice would make the
+            # second unregister_pickle_by_value in the finally block raise ValueError.
+            registered_by_us = list(dict.fromkeys(
+                module for module in modules_to_serialize if module.__name__ not in already_registered
+            ))
             try:
                 for module in registered_by_us:
                     cloudpickle.register_pickle_by_value(module)

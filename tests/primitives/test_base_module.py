@@ -219,6 +219,28 @@ def test_save_with_extra_modules_does_not_leak_pickle_by_value_registry(tmp_path
         cloudpickle.unregister_pickle_by_value(some_module)
 
 
+def test_save_with_duplicate_modules_does_not_raise(tmp_path):
+    """Passing the same module twice in `modules_to_serialize` must not raise.
+
+    Regression test: `registered_by_us` used to be a plain list, so a duplicated
+    module was registered twice but the first `unregister_pickle_by_value` in the
+    `finally` block removed the entry, making the second unregister raise
+    `ValueError` — on the success path that blocked the `metadata.json` write.
+    """
+    import json as some_module
+
+    import cloudpickle
+
+    program = dspy.Predict(dspy.Signature("q -> a"))
+    program.save(
+        tmp_path / "prog",
+        save_program=True,
+        modules_to_serialize=[some_module, some_module],
+    )
+    assert some_module.__name__ not in cloudpickle.list_registry_pickle_by_value()
+    assert (tmp_path / "prog" / "metadata.json").exists()
+
+
 def test_load_with_version_mismatch(tmp_path):
     from dspy.primitives.base_module import logger
 
