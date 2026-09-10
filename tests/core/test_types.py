@@ -133,6 +133,29 @@ def test_image_content_requires_mapping_with_url():
         LMMessage(role="user", content=[{"type": "image_url", "image_url": {}}])
 
 
+@pytest.mark.parametrize(
+    ("image_url", "expected_detail"),
+    [
+        ({"url": "https://example.com/chart.png", "detail": "high"}, "high"),
+        ({"url": "data:image/png;base64,YWJj", "detail": "low"}, "low"),
+        ({"url": "https://example.com/plain.png"}, None),
+        ({"url": "https://example.com/plain.png", "detail": "original"}, None),
+    ],
+)
+def test_image_content_preserves_supported_detail(image_url, expected_detail):
+    from dspy.clients.openai_format import to_openai_chat_request
+
+    message = LMMessage(role="user", content=[{"type": "image_url", "image_url": image_url}])
+    assert message.parts[0].detail == expected_detail
+
+    wire = to_openai_chat_request(LMRequest(model="model", messages=[message]))["messages"][0]["content"]
+    history_content = _history_entry(message).messages[0]["content"][0]
+    assert history_content == wire[0]
+    assert wire[0]["image_url"].get("detail") == expected_detail
+    assert ("detail" in wire[0]["image_url"]) is (expected_detail is not None)
+    assert LMMessage(role="user", content=[history_content]).parts[0].detail == expected_detail
+
+
 def test_video_data_round_trips_through_history_messages():
     message = User(LMVideoPart(data="YWJj", media_type="video/mp4"))
     content = _history_entry(message).messages[0]["content"][0]

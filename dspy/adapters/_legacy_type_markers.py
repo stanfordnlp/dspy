@@ -9,7 +9,16 @@ from typing import Any
 import json_repair
 
 from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
-from dspy.core.types import LMAudioPart, LMBinaryPart, LMDocumentPart, LMImagePart, LMMessage, LMPart, LMTextPart
+from dspy.core.types import (
+    LMAudioPart,
+    LMBinaryPart,
+    LMDocumentPart,
+    LMImagePart,
+    LMMessage,
+    LMPart,
+    LMTextPart,
+    _normalize_image_detail,
+)
 
 
 def _expand_legacy_custom_type_markers_in_chat_message(message: dict[str, Any]) -> dict[str, Any]:
@@ -103,11 +112,13 @@ def _legacy_content_block_to_lm_part(block: Any) -> LMPart:
         return LMTextPart(text=block.get("text", ""))
     if block_type == "image_url":
         image_url = block.get("image_url", {})
+        detail = image_url.get("detail") if isinstance(image_url, dict) else None
+        detail = _normalize_image_detail(detail)
         source = image_url.get("url") if isinstance(image_url, dict) else image_url
         if isinstance(source, str) and source.startswith("data:") and "," in source:
             media_type, data = _split_data_uri(source)
-            return LMImagePart(data=data, media_type=media_type)
-        return LMImagePart(url=source or "")
+            return LMImagePart(data=data, media_type=media_type, detail=detail)
+        return LMImagePart(url=source or "", detail=detail)
     if block_type == "input_audio":
         audio = block.get("input_audio", {})
         return LMAudioPart(data=audio.get("data", ""), media_type=f"audio/{audio.get('format', 'wav')}")

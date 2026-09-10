@@ -1,6 +1,8 @@
 import pydantic
+import pytest
 
 import dspy
+from dspy.adapters._legacy_type_markers import _legacy_content_block_to_lm_part
 
 
 def test_basic_extract_custom_type_from_annotation():
@@ -49,3 +51,18 @@ def test_extract_custom_type_from_annotation_with_nested_type():
         EventIdentifier,
         Event,
     ]
+
+
+@pytest.mark.parametrize(
+    ("image_url", "expected_detail"),
+    [
+        ({"url": "https://example.com/chart.png", "detail": "high"}, "high"),
+        ({"url": "data:image/png;base64,YWJj", "detail": "low"}, "low"),
+        ({"url": "https://example.com/plain.png"}, None),
+        ({"url": "https://example.com/plain.png", "detail": "original"}, None),
+    ],
+)
+def test_legacy_image_marker_preserves_supported_detail(image_url, expected_detail):
+    block = {"type": "image_url", "image_url": image_url}
+
+    assert _legacy_content_block_to_lm_part(block).detail == expected_detail
