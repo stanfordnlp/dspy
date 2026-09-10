@@ -2,6 +2,7 @@ import pytest
 
 import dspy
 from dspy.dsp.utils.utils import dotdict
+from dspy.utils.exceptions import ContextWindowExceededError
 
 
 class ReasoningDummyLM(dspy.utils.DummyLM):
@@ -332,3 +333,58 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
 def test_react_v2_rejects_reserved_output_field_names(reserved):
     with pytest.raises(ValueError, match=reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
+
+
+@pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])
+@pytest.mark.parametrize("forced_result", ["no_submit", "missing_field", "parse_error", "context_window_exceeded"])
+def test_react_v2_failed_termination_raises(mocker, break_reason, forced_result):
+    react = dspy.ReActV2("question -> answer: str, count: int", tools=[], max_iters=1)
+    empty = dspy.Prediction(tool_calls=dspy.ToolCalls(tool_calls=[]))
+    incomplete = dspy.Prediction(
+        tool_calls=dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "partial"}}])
+    )
+    outcomes = {
+        "max_iters": incomplete,
+        "empty_tool_calls": empty,
+        "no_submit": empty,
+        "missing_field": incomplete,
+        "parse_error": ValueError("invalid tool calls"),
+        "context_window_exceeded": ContextWindowExceededError(message="too long"),
+    }
+    mocker.patch.object(react.react, "forward", side_effect=[outcomes[break_reason], outcomes[forced_result]])
+
+    history = dspy.History(messages=[])
+    error_type = ContextWindowExceededError if forced_result == "context_window_exceeded" else ValueError
+    with pytest.raises(error_type) as exc:
+        react(question="cats", history=history)
+
+    if forced_result in {"parse_error", "context_window_exceeded"}:
+        assert exc.value is outcomes[forced_result]
+    else:
+        assert f"failed to produce final outputs after {break_reason}" in str(exc.value)
+    if forced_result == "no_submit":
+        assert "no submit call" in str(exc.value)
+    if forced_result == "missing_field":
+        assert "Missing required final output field(s): count" in str(exc.value)
+        event = history.messages[-1]
+        assert event["tool_calls"].tool_calls[0].args == {"answer": "partial"}
+        assert event["tool_calls"].tool_call_results.tool_call_results[0].is_error is True
+
+
+def test_react_v2_evaluate_reports_submission_failure(caplog):
+    lm = dspy.utils.DummyLM([{"next_thought": "No answer.", "tool_calls": dspy.ToolCalls(tool_calls=[])}] * 2)
+
+    def metric(example, pred, trace=None):
+        pytest.fail("A failed submission must not reach the metric")
+
+    evaluate = dspy.Evaluate(
+        devset=[dspy.Example(question="cats", answer="felines").with_inputs("question")],
+        metric=metric,
+        num_threads=1,
+        max_errors=1,
+        display_progress=False,
+    )
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        with pytest.raises(Exception, match="Execution cancelled due to errors"):
+            evaluate(dspy.ReActV2("question -> answer", tools=[]))
+    assert "failed to produce final outputs after empty_tool_calls: no submit call" in caplog.text
