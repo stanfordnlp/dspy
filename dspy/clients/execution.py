@@ -119,8 +119,12 @@ def _canonical(call, *, compat=None):
             if key not in CLIENT_KEYS | {"n", "rollout_id", "num_generations"} and val is not None}
     format_ = body.get("response_format")
     if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
+        from dspy.clients.legacy_requests import _close_object_schemas
+
+        # Match the legacy Responses path's preparation of generated schemas.
+        # Raw caller-supplied schemas remain unchanged.
         body["response_format"] = {"type": "json_schema", "json_schema": {
-            "name": format_.__name__, "schema": format_.model_json_schema(), "strict": True,
+            "name": format_.__name__, "schema": _close_object_schemas(format_.model_json_schema()), "strict": True,
         }}
     return request_from_openai_chat(body, compat=compat)
 
