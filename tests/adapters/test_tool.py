@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -8,6 +9,7 @@ import dspy
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
 from dspy.clients.openai_format import to_openai_chat_request
 from dspy.core.types import LMMessage, LMRequest, LMToolResultPart
+from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback
 
 
 # Test fixtures
@@ -373,6 +375,178 @@ async def test_async_tool_with_kwargs():
 
     result = await tool.acall(x=1, y=2, z=3)
     assert result == {"y": 2, "z": 3}
+
+
+@pytest.mark.asyncio
+async def test_async_tool_offloads_sync_function_without_blocking_event_loop():
+    release = threading.Event()
+
+    def blocking_tool() -> str:
+        release.wait(timeout=1)
+        return "done"
+
+    task = asyncio.create_task(Tool(blocking_tool).acall())
+    await asyncio.sleep(0)
+
+    try:
+        assert not task.done()
+    finally:
+        release.set()
+
+    assert await task == "done"
+
+
+@pytest.mark.asyncio
+async def test_async_tool_propagates_context_and_callbacks_to_sync_function():
+    class RecordingCallback(BaseCallback):
+        def __init__(self):
+            self.start_call_id = None
+            self.output = None
+
+        def on_tool_start(self, call_id, instance, inputs):
+            self.start_call_id = call_id
+
+        def on_tool_end(self, call_id, outputs, exception):
+            self.output = outputs
+
+    callback = RecordingCallback()
+    event_loop_thread_id = threading.get_ident()
+
+    def read_context() -> tuple[int, str | None, int]:
+        return dspy.settings.branch_idx, ACTIVE_CALL_ID.get(), threading.get_ident()
+
+    with dspy.context(branch_idx=7, callbacks=[callback]):
+        result = await Tool(read_context).acall()
+
+    assert result[:2] == (7, callback.start_call_id)
+    assert result[2] != event_loop_thread_id
+    assert callback.output == result
+
+
+@pytest.mark.asyncio
+async def test_async_tool_awaits_result_from_sync_function():
+    def returns_awaitable(x: int):
+        async def finish():
+            await asyncio.sleep(0)
+            return x * 2
+
+        return finish()
+
+    assert await Tool(returns_awaitable).acall(x=21) == 42
+
+
+@pytest.mark.asyncio
+async def test_async_tool_propagates_sync_function_exception():
+    expected_error = RuntimeError("tool failed")
+
+    def fail():
+        raise expected_error
+
+    with pytest.raises(RuntimeError, match="tool failed") as exc_info:
+        await Tool(fail).acall()
+
+    assert exc_info.value is expected_error
+
+
+@pytest.mark.asyncio
+async def test_async_tool_cancellation_retains_worker_limit_until_sync_function_finishes():
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
+
+    def blocking_tool(call_number: int):
+        if call_number == 1:
+            first_started.set()
+            release_first.wait(timeout=1)
+        else:
+            second_started.set()
+        return call_number
+
+    tool = Tool(blocking_tool)
+    with dspy.context(async_max_workers=1):
+        first_task = asyncio.create_task(tool.acall(call_number=1))
+        assert await asyncio.wait_for(asyncio.to_thread(first_started.wait, 1), timeout=2)
+
+        first_task.cancel()
+        second_task = asyncio.create_task(tool.acall(call_number=2))
+        await asyncio.sleep(0.05)
+
+        first_task.cancel()
+        await asyncio.sleep(0)
+
+        try:
+            assert not first_task.done()
+            assert not second_started.is_set()
+        finally:
+            release_first.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await first_task
+        assert await second_task == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_queued_tool_never_executes():
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def work(number: int):
+        calls.append(number)
+        if number == 1:
+            started.set()
+            release.wait(timeout=5)
+        return number
+
+    tool = Tool(work)
+    with dspy.context(async_max_workers=1):
+        first = asyncio.create_task(tool.acall(number=1))
+        queued = None
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            queued = asyncio.create_task(tool.acall(number=2))
+            await asyncio.sleep(0.05)
+            queued.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(queued, timeout=1)
+            assert calls == [1]
+        finally:
+            release.set()
+            await first
+            if queued is not None:
+                await asyncio.gather(queued, return_exceptions=True)
+        assert await tool.acall(number=3) == 3
+        assert calls == [1, 3]
+
+
+@pytest.mark.asyncio
+async def test_async_sync_tools_respect_async_worker_limit():
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+
+    def blocking_tool(call_number: int):
+        if call_number == 1:
+            first_started.set()
+            release_first.wait(timeout=1)
+        else:
+            second_started.set()
+        return call_number
+
+    tool = Tool(blocking_tool)
+    with dspy.context(async_max_workers=1):
+        first_task = asyncio.create_task(tool.acall(call_number=1))
+        assert await asyncio.wait_for(asyncio.to_thread(first_started.wait, 1), timeout=2)
+
+        second_task = asyncio.create_task(tool.acall(call_number=2))
+        await asyncio.sleep(0.05)
+
+        try:
+            assert not second_started.is_set()
+        finally:
+            release_first.set()
+
+        assert await asyncio.gather(first_task, second_task) == [1, 2]
 
 
 @pytest.mark.asyncio

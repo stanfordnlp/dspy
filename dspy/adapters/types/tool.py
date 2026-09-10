@@ -1,7 +1,10 @@
 import asyncio
+import functools
 import inspect
+import threading
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, get_type_hints
 
+import anyio
 import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
@@ -9,6 +12,7 @@ from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
 from dspy.dsp.utils.settings import settings
+from dspy.utils.asyncify import get_limiter
 from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
@@ -202,12 +206,52 @@ class Tool(Type):
     @with_callbacks
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = self.func(**parsed_kwargs)
-        if asyncio.iscoroutine(result):
-            return await result
+
+        is_async_callable = inspect.iscoroutinefunction(self.func) or (
+            not inspect.isroutine(self.func) and inspect.iscoroutinefunction(self.func.__call__)
+        )
+        if is_async_callable:
+            result = self.func(**parsed_kwargs)
         else:
-            # We should allow calling a sync tool in the async path.
-            return result
+            call = functools.partial(self.func, **parsed_kwargs)
+            start_lock = threading.Lock()
+            started = False
+            cancelled = False
+
+            def run_if_not_cancelled():
+                nonlocal started
+                with start_lock:
+                    if cancelled:
+                        return None
+                    started = True
+                return call()
+
+            worker_task = asyncio.create_task(anyio.to_thread.run_sync(run_if_not_cancelled, limiter=get_limiter()))
+            try:
+                result = await asyncio.shield(worker_task)
+            except asyncio.CancelledError:
+                with start_lock:
+                    cancelled = True
+                    if not started:
+                        worker_task.cancel()
+                # Python cannot stop a running thread. Wait for it to finish so its limiter
+                # token is not released while the underlying function is still running.
+                while not worker_task.done():
+                    try:
+                        await asyncio.shield(worker_task)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                if not worker_task.cancelled() and worker_task.exception() is None:
+                    abandoned_result = worker_task.result()
+                    if inspect.iscoroutine(abandoned_result):
+                        abandoned_result.close()
+                raise
+
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     @classmethod
     def from_mcp_tool(
