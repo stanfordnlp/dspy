@@ -120,7 +120,7 @@ class REPLEntry(pydantic.BaseModel):
             tail_chars = max_output_chars - head_chars if max_output_chars > 0 else head_chars
             omitted = raw_len - max_output_chars
             output = output[:head_chars] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-tail_chars:]
-        return f"Output ({raw_len:,} chars):\n{output}"
+        return output
 
     def format(self, index: int) -> str:
         """Format this entry for inclusion in prompts."""

@@ -709,8 +709,6 @@ class TestREPLTypes:
         assert "a" * 50 in formatted
         assert "b" * 50 in formatted
         assert "100 characters omitted" in formatted
-        # True original length shown in header
-        assert "200 chars" in formatted
 
     @pytest.mark.parametrize(
         ("limit", "head", "tail"),
@@ -719,7 +717,7 @@ class TestREPLTypes:
     def test_repl_entry_truncation_limits(self, limit, head, tail):
         formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
 
-        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+        assert formatted == f"{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
 
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
