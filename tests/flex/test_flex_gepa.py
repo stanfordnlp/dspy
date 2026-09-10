@@ -407,6 +407,102 @@ def test_code_proposer_bad_proposal_keeps_original() -> None:
     assert out == {"self": original}
 
 
+# --- adapter: a custom code proposer overrides the built-in one ---------------
+
+
+def test_custom_code_proposer_overrides_builtin_and_receives_contract() -> None:
+    captured = {}
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        captured.update(
+            candidate=candidate,
+            reflective_dataset=reflective_dataset,
+            components_to_update=components_to_update,
+            task_descriptions=task_descriptions,
+            context_blurbs=context_blurbs,
+        )
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=DummyLM([]),  # empty: any call through the built-in proposer would fail
+        custom_code_proposer=code_proposer,
+    )
+    candidate = {"self": student.module_src}
+    reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
+
+    out = adapter.propose_new_texts(candidate, reflective, ["self"])
+
+    assert out == {"self": SIMPLE_MODULE}
+    assert captured["components_to_update"] == ["self"]
+    assert captured["candidate"] == candidate
+    assert captured["reflective_dataset"] == reflective
+    assert "self" in captured["task_descriptions"]
+    assert "self" in captured["context_blurbs"]
+
+
+def test_custom_code_proposer_runs_in_reflection_lm_context() -> None:
+    seen = {}
+    reflection = DummyLM([])
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        seen["lm"] = dspy.settings.lm
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=reflection,
+        custom_code_proposer=code_proposer,
+    )
+    adapter.propose_new_texts({"self": student.module_src}, {"self": []}, ["self"])
+    assert seen["lm"] is reflection
+
+
+def test_no_skip_warning_when_custom_code_proposer_handles_code(caplog) -> None:
+    """The 'custom instruction_proposer skips code components' warning exists because those
+    components would otherwise fall through to the built-in code proposer silently. With a
+    custom code proposer installed, nothing is skipped, so the warning must not fire."""
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.flex = dspy.Flex(Echo)
+            self.sibling = dspy.Predict("x -> y")
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    def instruction_proposer(*, candidate, reflective_dataset, components_to_update):
+        return dict.fromkeys(components_to_update, "new instruction")
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    prog = Prog()
+    adapter = DspyAdapter(
+        student_module=prog,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=DummyLM([]),
+        custom_instruction_proposer=instruction_proposer,
+        custom_code_proposer=code_proposer,
+    )
+    candidate = {"flex": prog.flex.module_src, "sibling": "old instruction"}
+    reflective = {"flex": [], "sibling": []}
+
+    with caplog.at_level("WARNING"):
+        out = adapter.propose_new_texts(candidate, reflective, ["flex", "sibling"])
+
+    assert out == {"flex": SIMPLE_MODULE, "sibling": "new instruction"}
+    assert not any("code component" in r.message for r in caplog.records)
+
+
 # --- GEPA.compile: seed mixes code + instruction components ------------------
 
 
@@ -446,6 +542,25 @@ def test_gepa_seed_mixes_code_and_instruction_components(monkeypatch) -> None:
     assert "sibling" in seed  # the non-flex predictor's instruction
     # The Flex's internal predictors are NOT separate instruction components.
     assert not any(k.startswith("flex.") for k in seed)
+
+
+def test_gepa_compile_threads_code_proposer_to_adapter(monkeypatch) -> None:
+    captured = {}
+
+    def fake_optimize(**kwargs):
+        captured["adapter"] = kwargs["adapter"]
+        return _FakeResult(best_candidate=kwargs["seed_candidate"])
+
+    monkeypatch.setattr("gepa.optimize", fake_optimize)
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    optimizer = dspy.GEPA(metric=_metric, reflection_lm=DummyLM([]), max_metric_calls=10, code_proposer=code_proposer)
+    ex = dspy.Example(q="x", a="y").with_inputs("q")
+    optimizer.compile(dspy.Flex(Echo), trainset=[ex], valset=[ex])
+
+    assert captured["adapter"].custom_code_proposer is code_proposer
 
 
 # --- DspyGEPAResult.to_dict: candidates keep their code components -----------

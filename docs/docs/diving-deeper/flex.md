@@ -16,7 +16,7 @@ You construct `Flex` from any `dspy.Signature`, and it's immediately runnable. W
 
 ### 3. GEPA discovers `Flex` by type and optimizes code instead of text
 
-When GEPA compiles a program, it enumerates the `Flex` submodules and splits its work: each `Flex` becomes a **code component**, every other predictor stays an **instruction component**. Code components are seeded with their current `module_src` and evolved by a dedicated code proposer; instruction components are seeded with their current instructions and evolved by GEPA's usual instruction proposer. A custom `instruction_proposer` replaces the instruction proposer only; code components stay on the code proposer.
+When GEPA compiles a program, it enumerates the `Flex` submodules and splits its work: each `Flex` becomes a **code component**, every other predictor stays an **instruction component**. Code components are seeded with their current `module_src` and evolved by a dedicated code proposer; instruction components are seeded with their current instructions and evolved by GEPA's usual instruction proposer. Each side has its own override: a custom `instruction_proposer` replaces the instruction proposer, a custom `code_proposer` replaces the code proposer, and whichever you leave unset keeps its default.
 
 ### 4. The code proposer reflects on whole-program behavior
 
