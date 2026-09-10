@@ -178,3 +178,74 @@ def test_capture_crashes_does_not_capture_lm_errors():
         Flaky(), dataset=[example], num_threads=1, capture_crashes=True, raise_on_error=False
     )
     assert data == []  # handled by the evaluator as an error, never repainted as a FailedPrediction
+
+
+def test_bootstrap_trace_data_partial_parse_gets_fractional_format_reward():
+    """A partial parse earns fractional format credit, and a 0.0 reward survives (#10362).
+
+    One of two output fields parsing used to crash with ``TypeError: unsupported
+    operand type(s) for /: 'list' and 'list'`` (``present / expected`` on lists),
+    and a legitimate ``format_reward`` of exactly ``0.0`` was rescored to
+    ``format_failure_score`` by the ``or`` fallback in ``wrapped_metric``. With
+    ``failure_score=1`` and ``format_failure_score=-1``, one field out of two
+    parsing lands exactly on ``0.0``, pinning both fixes at once.
+    """
+
+    class TwoFieldSignature(dspy.Signature):
+        """Convert a string number to an integer and explain."""
+
+        text: str = dspy.InputField()
+        number: int = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    program = dspy.Predict(TwoFieldSignature)
+
+    dataset = [
+        Example(text="one", number=1, explanation="the word one").with_inputs("text"),
+        Example(text="two", number=2, explanation="the word two").with_inputs("text"),
+    ]
+
+    def exact_match_metric(example, prediction, trace=None):
+        return example.number == prediction.number
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+
+    complete_response = ModelResponse(
+        choices=[Choices(message=Message(content='```json\n{"number": 1, "explanation": "the word one"}\n```'))],
+        model="openai/gpt-4o-mini",
+    )
+    # Valid JSON that parses only one of the two output fields, for both
+    # structured-output mode and the JSON-mode fallback retry.
+    partial_response = ModelResponse(
+        choices=[Choices(message=Message(content='```json\n{"number": 2}\n```'))],
+        model="openai/gpt-4o-mini",
+    )
+
+    def completion_side_effect(*args, **kwargs):
+        call_count = completion_side_effect.call_count
+        completion_side_effect.call_count += 1
+        if call_count == 0:
+            return complete_response
+        return partial_response
+
+    completion_side_effect.call_count = 0
+
+    with mock.patch("litellm.completion", side_effect=completion_side_effect):
+        results = bootstrap_trace_data(
+            program=program,
+            dataset=dataset,
+            metric=exact_match_metric,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+            failure_score=1,
+            format_failure_score=-1,
+        )
+
+    failed = [result for result in results if isinstance(result["prediction"], FailedPrediction)]
+    assert len(failed) == 1, f"Expected 1 failed prediction, got {len(failed)}"
+
+    # One of two expected fields parsed: -1 + (1 - -1) * (1/2) == 0.0 exactly.
+    assert failed[0]["prediction"].format_reward == 0.0
+    # The 0.0 must reach the recorded score instead of falling back to -1.
+    assert failed[0]["score"] == 0.0
