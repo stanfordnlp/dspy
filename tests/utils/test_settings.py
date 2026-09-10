@@ -140,14 +140,18 @@ async def test_dspy_context_with_async_task_group():
         assert results[2].answer == "Paris"
         assert results[3].answer == "Paris"
 
-        # Verify mock was called correctly
+        # Concurrent calls can arrive in any order. Check the association,
+        # not just model counts, so leaked task-local settings still fail.
         assert mock_completion.call_count == 4
-        # France question uses gpt-4o-mini
-        assert mock_completion.call_args_list[0].kwargs["model"] == "openai/gpt-4o-mini"
-        assert mock_completion.call_args_list[1].kwargs["model"] == "openai/gpt-4o-mini"
-        # Germany question uses gpt-4o
-        assert mock_completion.call_args_list[2].kwargs["model"] == "openai/gpt-4o"
-        assert mock_completion.call_args_list[3].kwargs["model"] == "openai/gpt-4o"
+        seen = {"France": 0, "Germany": 0}
+        for call in mock_completion.call_args_list:
+            content = call.kwargs["messages"][-1]["content"]
+            country = "France" if "France" in content else "Germany"
+            assert country in content
+            expected = "openai/gpt-4o-mini" if country == "France" else "openai/gpt-4o"
+            assert call.kwargs["model"] == expected
+            seen[country] += 1
+        assert seen == {"France": 2, "Germany": 2}
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4.1"
