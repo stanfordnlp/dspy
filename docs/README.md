@@ -76,5 +76,38 @@ This guide is for contributors looking to make changes to the documentation in t
 
 ## LLMs.txt
 
-The build process generates an `/llms.txt` file for LLM consumption using [mkdocs-llmstxt](https://github.com/pawamoy/mkdocs-llmstxt). Configure sections in `mkdocs.yml` under the `llmstxt` plugin.
+The build process generates an `/llms.txt` file for LLM consumption using [mkdocs-llmstxt](https://github.com/pawamoy/mkdocs-llmstxt). Configure sections in `mkdocs.yml` under the `llmstxt` plugin. The plugin also writes every page as `<page>/index.md`, which is what the agentic search below indexes.
+
+## "Ask AI" (toast-1)
+
+The published pages are indexed in a Mixedbread store (`dspy-docs`) and the
+Python sources under `dspy/` in `dspy-code`. `scripts/sync_search_index.py`
+keeps both stores in step with the repo (incremental, sha256-keyed); CI runs
+it after `mkdocs build` on pushes to `main` that touch `docs/` or `dspy/`
+(`.github/workflows/docs-search-sync.yml`), using the `MXBAI_API_KEY`
+repository secret. To re-index by hand:
+
+```bash
+pip install mixedbread
+python3 docs/scripts/sync_search_index.py --site docs/site   # after `mkdocs build`
+```
+
+`docs/js/toast-chat.js` adds the "Ask AI" panel to every page. Its backend is
+the Vercel Edge Function in `api/chat.js`, which ships with the site (this
+directory is mirrored into the Vercel project) and runs on the same origin.
+Set `MXBAI_API_KEY` and `OPENROUTER_API_KEY` in the Vercel project's
+environment variables and it is live; the browser never sees the keys. By
+default it runs the pipeline that won the docs-harness A/B (toast-1 agentic
+search, whole-page reading of the top results, an answerer model); `MODE=toast`
+lets toast-1 answer on its own with `api/system_prompt.txt`.
+
+To preview the chat locally, put the two keys in `docs/api/.env.local`
+(gitignored) and run the dev server next to `mkdocs serve`:
+
+```bash
+node docs/api/dev.mjs        # serves the function on http://localhost:8787
+```
+
+To route the widget at an external proxy instead, set
+`extra.toast_chat_endpoint` in `mkdocs.yml`.
 
