@@ -2946,3 +2946,31 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+def test_field_markers_false_single_output_field():
+    """field_markers=False should produce marker-free prompts and parse correctly for single-output signatures."""
+    adapter = dspy.ChatAdapter(field_markers=False)
+
+    class SimpleSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages = adapter.format(SimpleSignature, [], {"question": "What is 2+2?"})
+    full_text = " ".join(m["content"] for m in messages)
+    assert "[[ ##" not in full_text  # no markers anywhere in the prompt
+
+    parsed = adapter.parse(SimpleSignature, "4")
+    assert parsed == {"answer": "4"}
+
+
+def test_field_markers_false_multi_output_field_raises():
+    """field_markers=False should raise a clear error for signatures with more than one output field."""
+    adapter = dspy.ChatAdapter(field_markers=False)
+
+    class MultiOutputSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    with pytest.raises(ValueError, match="single output field"):
+        adapter._validate_field_markers(MultiOutputSignature)
