@@ -9,6 +9,7 @@ Test organization:
 import base64
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -54,7 +55,7 @@ def make_mock_predictor(responses: list[dict], async_mode: bool = False):
 
 
 @contextmanager
-def dummy_lm_context(responses: list[dict]):
+def dummy_lm_context(responses: list[dict[str, Any]]):
     """Context manager for DummyLM setup."""
     import dspy
     from dspy.utils.dummies import DummyLM
@@ -1666,6 +1667,98 @@ class TestRLMWithDummyLM:
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+
+@pytest.mark.deno
+class TestRLMHistoryWithDummyLM:
+    """End-to-end tests of RLM History using DummyLM with RLM and PythonInterpreter.
+
+    Note: These tests let RLM create its own PythonInterpreter.
+    """
+
+    def test_history_records_inputs_and_outputs_once(self, pooled_interpreter):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = rlm.forward(pooled_interpreter, query="Double ten, then add 5")
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert sum("query" in event for event in history_events) == 1
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert history_events[-1]["answer"] == 25
+
+        repl_entries = [event["repl_entry"] for event in history_events]
+        assert len(repl_entries) == 3
+        assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
+
+    def test_accepts_serialized_history(self, pooled_interpreter):
+
+        old_history = {"messages": [{"query": "Double ten"}]}
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = rlm.forward(pooled_interpreter, query="Double twenty", history=old_history)
+
+        assert result.answer == 40
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert history_events[0] == {"query": "Double ten"}
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[1]["repl_entry"].reasoning == "First explore the data"
+        assert history_events[1]["repl_entry"].code == "x = 20\nprint(f'x = {x}')"
+        assert history_events[1]["repl_entry"].output == "x = 20\n"
+
+        assert sum("query" in event for event in history_events) == 2
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten"
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[-1]["answer"] == 40
+
+    @pytest.mark.asyncio
+    async def test_async_history_records_inputs_and_outputs_once(self, pooled_interpreter):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = await rlm.aforward(pooled_interpreter, query="Double ten, then add 5")
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert sum("query" in event for event in history_events) == 1
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert history_events[-1]["answer"] == 25
+
+        repl_entries = [event["repl_entry"] for event in history_events]
+        assert len(repl_entries) == 3
+        assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
 
 
 # ============================================================================

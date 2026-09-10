@@ -482,12 +482,13 @@ class RLM(Module):
             raise TypeError(
                 "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
+        input_args_without_reserved = {k: v for k, v in input_args.items() if k not in self._RESERVED_INPUT_NAMES}
         input_names = set(self.signature.input_fields)
-        unexpected = set(input_args) - input_names
+        unexpected = set(input_args_without_reserved) - input_names
         if unexpected:
             raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
 
-        missing = input_names - set(input_args)
+        missing = input_names - set(input_args_without_reserved)
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 

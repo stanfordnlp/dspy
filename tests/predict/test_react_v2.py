@@ -26,15 +26,11 @@ def test_react_v2_text_mock_lm_loop_records_inputs_once():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -58,15 +54,11 @@ def test_react_v2_continuation_omits_missing_original_inputs():
         [
             {
                 "next_thought": "I should look this up.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "lookup", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "lookup", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -94,9 +86,7 @@ def test_react_v2_text_mode_accepts_top_level_tool_arguments():
             },
             {
                 "next_thought": "I can answer now.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "found cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "found cats"}}]),
             },
         ]
     )
@@ -131,15 +121,11 @@ def test_react_v2_unknown_tool_observation_can_continue():
         [
             {
                 "next_thought": "Try a missing tool.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "missing_tool", "args": {"query": "cats"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "missing_tool", "args": {"query": "cats"}}]),
             },
             {
                 "next_thought": "Recover with a final answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             },
         ]
     )
@@ -159,9 +145,7 @@ def test_react_v2_accepts_serialized_history_input():
         [
             {
                 "next_thought": "I can answer.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "done"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "done"}}]),
             }
         ]
     )
@@ -172,6 +156,7 @@ def test_react_v2_accepts_serialized_history_input():
     assert pred.answer == "done"
     assert pred.history.messages[0] == {"question": "old"}
     assert all(event for event in pred.history.messages)
+    assert len(pred.history.messages) == 2
 
 
 def test_react_v2_forced_submit_on_empty_tool_calls():
@@ -180,9 +165,7 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
             {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
             {
                 "next_thought": "Forced final.",
-                "tool_calls": dspy.ToolCalls.from_dict_list(
-                    [{"name": "submit", "args": {"answer": "forced"}}]
-                ),
+                "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "submit", "args": {"answer": "forced"}}]),
             },
         ]
     )
@@ -313,17 +296,12 @@ def test_react_v2_native_parallel_tool_calls_are_requested_and_replayed():
         "call_provider_2",
     ]
     assert [
-        result.call_id
-        for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
+        result.call_id for result in pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     ] == [
         "call_provider_1",
         "call_provider_2",
     ]
-    assert [
-        message["tool_call_id"]
-        for message in lm.calls[1]["messages"]
-        if message["role"] == "tool"
-    ] == [
+    assert [message["tool_call_id"] for message in lm.calls[1]["messages"] if message["role"] == "tool"] == [
         "call_provider_1",
         "call_provider_2",
     ]
