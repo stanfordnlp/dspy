@@ -111,6 +111,15 @@ class REPLEntry(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
+    @pydantic.field_validator("reasoning", mode="before")
+    @classmethod
+    def _coerce_reasoning(cls, value: Any) -> str:
+        # The RLM's internal action signature types `reasoning` as `dspy.Reasoning`, so predictions carry a Reasoning
+        # object rather than a plain str. Store its text so history entries stay plain strings.
+        if value is None:
+            return ""
+        return str(value)
+
     @staticmethod
     def format_output(output: str, max_output_chars: int = 10_000) -> str:
         """Format output with head+tail truncation, preserving true length in header."""

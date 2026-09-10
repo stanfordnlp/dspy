@@ -691,6 +691,16 @@ class TestREPLTypes:
         codes = [e.code for e in h]
         assert codes == ["x = 1", "x = 2"]
 
+    def test_repl_entry_coerces_reasoning_to_str(self):
+        import dspy
+
+        entry = REPLEntry(reasoning=dspy.Reasoning(content="think"), code="x = 1", output="", max_output_chars=100)
+        assert entry.reasoning == "think"
+        assert isinstance(entry.reasoning, str)
+
+        entry = REPLEntry(reasoning=None, code="x = 1", output="", max_output_chars=100)
+        assert entry.reasoning == ""
+
     def test_repl_entry_format(self):
         """Test REPLEntry formatting."""
         entry = REPLEntry(reasoning="test reason", code="print(1)", output="1", max_output_chars=100)
@@ -1012,7 +1022,7 @@ class TestRLMDynamicSignature:
         assert "`summary`" in instructions
         assert "`answer`" in instructions
 
-        # `history` should NOT be in the instructions
+        # `history` input field should NOT be in the instructions
         assert "`history`" not in instructions
 
     def test_extract_signature_structure(self):
@@ -1508,6 +1518,8 @@ class TestRLMWithDummyLM:
 
             assert result.answer == 5
             assert isinstance(result.answer, int)
+            assert result.final_reasoning == "I need to compute 2 + 3"
+            assert isinstance(result.final_reasoning, str)
 
     def test_multi_turn_computation_e2e(self, pooled_interpreter):
         """Test RLM with multiple turns before SUBMIT."""
@@ -1521,7 +1533,7 @@ class TestRLMWithDummyLM:
             result = rlm.forward(pooled_interpreter, query="Double ten")
 
             assert result.answer == 20
-            assert len(result.history) == 2
+            assert len(result.history.messages) == 2
 
     def test_with_input_variables_e2e(self, pooled_interpreter):
         """Test RLM with input variables passed to sandbox."""
@@ -1628,7 +1640,7 @@ class TestRLMWithDummyLM:
             result = await rlm.aforward(query="Double ten")
 
             assert result.answer == 20
-            assert len(result.history) == 2
+            assert len(result.history.messages) == 2
 
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
