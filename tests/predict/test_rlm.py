@@ -1547,6 +1547,18 @@ class TestRLMWithDummyLM:
             assert len(result.history.messages) == 2
             assert len(result.repl_trajectory) == 2
 
+            # Make sure history and repl_trajectory agree
+            history_repl_entries = [message["repl_entry"] for message in result.history.messages]
+            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert all(
+                (
+                    hist_entry.reasoning == traj_entry["reasoning"]
+                    and hist_entry.code == traj_entry["code"]
+                    and hist_entry.output == traj_entry["output"]
+                )
+                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            )
+
     def test_with_input_variables_e2e(self, pooled_interpreter):
         """Test RLM with input variables passed to sandbox."""
         with dummy_lm_context(
@@ -1655,6 +1667,18 @@ class TestRLMWithDummyLM:
             assert len(result.history.messages) == 2
             assert len(result.repl_trajectory) == 2
 
+            # Make sure history and repl_trajectory agree
+            history_repl_entries = [message["repl_entry"] for message in result.history.messages]
+            assert len(history_repl_entries) == len(result.repl_trajectory)
+            assert all(
+                (
+                    hist_entry.reasoning == traj_entry["reasoning"]
+                    and hist_entry.code == traj_entry["code"]
+                    and hist_entry.output == traj_entry["output"]
+                )
+                for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
+            )
+
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
@@ -1733,6 +1757,66 @@ class TestRLMHistoryWithDummyLM:
         assert history_events[1]["query"] == "Double twenty"
         assert history_events[-1]["answer"] == 40
 
+    def test_repl_trajectory_resets_but_not_history(self, pooled_interpreter):
+
+        rlm = RLM("query -> answer: int", max_iters=5)
+
+        history = dspy.History(messages=[])
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            first_result = rlm.forward(pooled_interpreter, query="Double ten, then add 5", history=history)
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            second_result = rlm.forward(pooled_interpreter, query="Double twenty", history=history)
+
+        assert first_result.answer == 25
+        assert second_result.answer == 40
+
+        assert len(history.messages) == 5  # History builds from one call to the next
+
+        # Each call's resulting history is reference to the same passed-in dspy.History object
+        assert all(history == result_hist for result_hist in [first_result.history, second_result.history])
+
+        assert sum("query" in msg for msg in history.messages) == 2
+        assert sum("answer" in msg for msg in history.messages) == 2
+
+        assert history.messages[0]["query"] == "Double ten, then add 5"
+        assert history.messages[3]["query"] == "Double twenty"
+        assert history.messages[2]["answer"] == 25
+        assert history.messages[4]["answer"] == 40
+
+        first_traj = first_result.repl_trajectory
+        second_traj = second_result.repl_trajectory
+
+        assert len(first_traj) == 3
+        assert len(second_traj) == 2
+
+        assert first_traj != second_traj
+
+        # The history's repl entries should be equal to the combined repl trajectories
+        combined_trajs = first_traj + second_traj
+        history_entries = [msg["repl_entry"] for msg in history.messages]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
+
     @pytest.mark.asyncio
     async def test_async_history_records_inputs_and_outputs_once(self, pooled_interpreter):
         with dummy_lm_context(
@@ -1759,6 +1843,99 @@ class TestRLMHistoryWithDummyLM:
         repl_entries = [event["repl_entry"] for event in history_events]
         assert len(repl_entries) == 3
         assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
+
+    @pytest.mark.asyncio
+    async def test_async_accepts_serialized_history(self, pooled_interpreter):
+
+        old_history = {"messages": [{"query": "Double ten"}]}
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=5)
+            result = await rlm.aforward(pooled_interpreter, query="Double twenty", history=old_history)
+
+        assert result.answer == 40
+        assert isinstance(result.answer, int)
+
+        history_events = result.history.messages
+        assert history_events[0] == {"query": "Double ten"}
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[1]["repl_entry"].reasoning == "First explore the data"
+        assert history_events[1]["repl_entry"].code == "x = 20\nprint(f'x = {x}')"
+        assert history_events[1]["repl_entry"].output == "x = 20\n"
+
+        assert sum("query" in event for event in history_events) == 2
+        assert sum("answer" in event for event in history_events) == 1
+
+        assert len(history_events) == 3
+        assert history_events[0]["query"] == "Double ten"
+        assert history_events[1]["query"] == "Double twenty"
+        assert history_events[-1]["answer"] == 40
+
+    @pytest.mark.asyncio
+    async def test_async_repl_trajectory_resets_but_not_history(self, pooled_interpreter):
+
+        rlm = RLM("query -> answer: int", max_iters=5)
+
+        history = dspy.History(messages=[])
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"reasoning": "Now add five and return", "code": "z = y + 5\nSUBMIT(z)"},
+            ]
+        ):
+            first_result = await rlm.aforward(pooled_interpreter, query="Double ten, then add 5", history=history)
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
+            second_result = await rlm.aforward(pooled_interpreter, query="Double twenty", history=history)
+
+        assert first_result.answer == 25
+        assert second_result.answer == 40
+
+        assert len(history.messages) == 5  # History builds from one call to the next
+
+        # Each call's resulting history is reference to the same passed-in dspy.History object
+        assert all(history == result_hist for result_hist in [first_result.history, second_result.history])
+
+        assert sum("query" in msg for msg in history.messages) == 2
+        assert sum("answer" in msg for msg in history.messages) == 2
+
+        assert history.messages[0]["query"] == "Double ten, then add 5"
+        assert history.messages[3]["query"] == "Double twenty"
+        assert history.messages[2]["answer"] == 25
+        assert history.messages[4]["answer"] == 40
+
+        first_traj = first_result.repl_trajectory
+        second_traj = second_result.repl_trajectory
+
+        assert len(first_traj) == 3
+        assert len(second_traj) == 2
+
+        assert first_traj != second_traj
+
+        # The history's repl entries should be equal to the combined repl trajectories
+        combined_trajs = first_traj + second_traj
+        history_entries = [msg["repl_entry"] for msg in history.messages]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
 
 
 # ============================================================================
