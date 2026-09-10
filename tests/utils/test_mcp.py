@@ -301,3 +301,83 @@ async def test_react_v2_native_mcp_end_to_end():
     results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
     assert results[1].value == "42"
+
+
+@pytest.mark.asyncio
+@pytest.mark.extra
+async def test_react_v2_mcp_cancellation_preserves_session(tmp_path):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    started, release = tmp_path / "started", tmp_path / "release"
+    executed = []
+
+    def later() -> str:
+        executed.append("later")
+        return "unexpected"
+
+    async def wait_until_started():
+        while not started.exists():
+            await asyncio.sleep(0.01)
+
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Wait.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "wait_for_release", "args": {"started": str(started), "release": str(release)}},
+                        {"name": "later", "args": {}},
+                        {"name": "submit", "args": {"answer": 999}},
+                    ]
+                ),
+            },
+            {
+                "next_thought": "Add.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "add", "args": {"a": 23, "b": -6}},
+                    ]
+                ),
+            },
+            {
+                "next_thought": "Done.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [
+                        {"name": "submit", "args": {"answer": 17}},
+                    ]
+                ),
+            },
+        ]
+    )
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(Path(__file__).parent / "resources" / "mcp_server.py")],
+    )
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=5)
+            tools = [Tool.from_mcp_tool(session, tool) for tool in (await session.list_tools()).tools]
+            agent = dspy.ReActV2("question -> answer: int", tools=[*tools, later])
+            with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+                task = asyncio.create_task(agent.acall(question="Wait for release"))
+                try:
+                    # Cancel only after the remote tool has actually started.
+                    await asyncio.wait_for(wait_until_started(), timeout=5)
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await asyncio.wait_for(task, timeout=5)
+                    assert executed == []
+                    assert len(lm.history) == 1  # No continuation or forced-submit request.
+
+                    # The agent borrows the session: cancellation must not close it.
+                    pred = await asyncio.wait_for(agent.acall(question="What is 23 minus 6?"), timeout=5)
+                    assert (pred.answer, pred.termination_reason) == (17, "submit")
+                    result = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results[0]
+                    assert result.value == "17"
+                    assert result.is_error is False
+                finally:
+                    # Local cancellation need not stop remote work. Release it explicitly.
+                    release.touch()
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
