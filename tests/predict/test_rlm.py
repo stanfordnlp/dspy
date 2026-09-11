@@ -1899,6 +1899,24 @@ class TestRLMHistoryWithDummyLM:
         assert history_events[-1]["answer"] == 40
 
     @pytest.mark.asyncio
+    async def test_async_input_history_is_not_mutated(self, pooled_interpreter):
+        """RLM treats the passed-in history as read-only and returns a new one on the Prediction."""
+        seed = {"query": "earlier", "answer": 1}
+        history = dspy.History(messages=[dict(seed)])
+
+        with dummy_lm_context([{"reasoning": "r", "code": "SUBMIT(2)"}]):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = await rlm.aforward(pooled_interpreter, query="now", history=history)
+
+        assert result.answer == 2
+        assert history.messages == [seed]
+        assert result.history is not history
+        assert len(result.history.messages) == 2
+        assert result.history.messages[0] == seed
+        assert result.history.messages[1]["query"] == "now"
+        assert result.history.messages[1]["answer"] == 2
+
+    @pytest.mark.asyncio
     async def test_async_repl_trajectory_resets_but_not_history(self, pooled_interpreter):
 
         rlm = RLM("query -> answer: int", max_iters=5)
@@ -2273,6 +2291,169 @@ class TestApplyHistoryProcessor:
         result = _apply_history_processor(lambda h: {"messages": h.messages[:1]}, history)
         assert isinstance(result, dspy.History)
         assert len(result.messages) == 1
+
+
+@pytest.mark.deno
+class TestHistoryProcessorHook:
+    """End-to-end tests for history processing in RLM with DummyLM and a PythonInterpreter.
+
+    Note: These tests let RLM create its own PythonInterpreter.
+    """
+
+    @staticmethod
+    def _double_twenty_responses() -> list[dict[str, Any]]:
+        return [
+            {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+        ]
+
+    def test_processor_passed_to_forward_supersedes_module_processor(self, pooled_interpreter):
+        module_called = False
+        forward_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        def forward_hook(h):
+            nonlocal forward_called
+            forward_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = rlm.forward(
+                pooled_interpreter,
+                forward_hook,
+                query="Double twenty",
+            )
+
+        assert not module_called
+        assert forward_called
+
+    def test_module_processor_used_as_default_when_set(self, pooled_interpreter):
+        module_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert module_called
+
+    def test_none_processor_is_byte_identical(self, pooled_interpreter):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = rlm.forward(pooled_interpreter, query="Double twenty")
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=None)
+            with_hook = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    def test_identity_processor_is_byte_identical(self, pooled_interpreter):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = rlm.forward(pooled_interpreter, query="Double twenty")
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=lambda h: h)
+            with_hook = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    @pytest.mark.asyncio
+    async def test_async_processor_passed_to_forward_supersedes_module_processor(self, pooled_interpreter):
+        module_called = False
+        forward_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        def forward_hook(h):
+            nonlocal forward_called
+            forward_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = await rlm.aforward(
+                pooled_interpreter,
+                forward_hook,
+                query="Double twenty",
+            )
+
+        assert not module_called
+        assert forward_called
+
+    @pytest.mark.deno
+    async def test_async_module_processor_used_as_default_when_set(self, pooled_interpreter):
+        module_called = False
+
+        def module_hook(h):
+            nonlocal module_called
+            module_called = True
+            return h
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
+            _ = await rlm.aforward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert module_called
+
+    @pytest.mark.asyncio
+    async def test_async_none_processor_is_byte_identical(self, pooled_interpreter):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = await rlm.aforward(pooled_interpreter, query="Double twenty")
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=None)
+            with_hook = await rlm.aforward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    @pytest.mark.asyncio
+    async def test_async_identity_processor_is_byte_identical(self, pooled_interpreter):
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_no_hook:
+            rlm = RLM("query -> answer: int", max_iters=5)
+            no_hook = await rlm.aforward(pooled_interpreter, query="Double twenty")
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()) as lm_with_hook:
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=lambda h: h)
+            with_hook = await rlm.aforward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert no_hook.answer == with_hook.answer
+        assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
 
 
 if __name__ == "__main__":
