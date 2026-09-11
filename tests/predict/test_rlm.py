@@ -1748,6 +1748,7 @@ class TestRLMHistoryWithDummyLM:
         repl_entries = [event["repl_entry"] for event in history_events]
         assert len(repl_entries) == 3
         assert all(isinstance(entry, REPLEntry) for entry in repl_entries)
+        assert repl_entries[-1].output == "FINAL: {'answer': 25}"
 
     def test_accepts_serialized_history(self, pooled_interpreter):
 
