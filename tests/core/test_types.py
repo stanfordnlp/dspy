@@ -133,6 +133,55 @@ def test_image_content_requires_mapping_with_url():
         LMMessage(role="user", content=[{"type": "image_url", "image_url": {}}])
 
 
+def test_image_content_block_preserves_detail_to_openai_and_history():
+    from dspy.clients.openai_format import to_openai_chat_request
+
+    message = LMMessage(
+        role="user",
+        content=[{"type": "image_url", "image_url": {"url": "https://example.com/chart.png", "detail": "high"}}],
+    )
+    image = message.parts[0]
+    assert isinstance(image, LMImagePart)
+    assert image.detail == "high"
+
+    # The provider payload must keep detail so it actually reaches the model.
+    wire = to_openai_chat_request(LMRequest(model="model", messages=[message]))["messages"][0]["content"]
+    assert wire == [{"type": "image_url", "image_url": {"url": "https://example.com/chart.png", "detail": "high"}}]
+
+    # History round-trips detail losslessly.
+    content = _history_entry(message).messages[0]["content"][0]
+    round_tripped = LMMessage(role="user", content=[content]).parts[0]
+    assert content == {"type": "image_url", "image_url": {"url": "https://example.com/chart.png", "detail": "high"}}
+    assert isinstance(round_tripped, LMImagePart)
+    assert round_tripped.detail == "high"
+
+
+def test_image_content_block_without_detail_omits_key():
+    from dspy.clients.openai_format import to_openai_chat_request
+
+    message = LMMessage(
+        role="user",
+        content=[{"type": "image_url", "image_url": {"url": "https://example.com/plain.png"}}],
+    )
+    assert message.parts[0].detail is None
+
+    wire = to_openai_chat_request(LMRequest(model="model", messages=[message]))["messages"][0]["content"]
+    assert wire == [{"type": "image_url", "image_url": {"url": "https://example.com/plain.png"}}]
+    assert "detail" not in wire[0]["image_url"]
+
+
+def test_data_uri_image_preserves_detail():
+    message = LMMessage(
+        role="user",
+        content=[{"type": "image_url", "image_url": {"url": "data:image/png;base64,YWJj", "detail": "low"}}],
+    )
+    image = message.parts[0]
+    assert isinstance(image, LMImagePart)
+    assert image.data == "YWJj"
+    assert image.media_type == "image/png"
+    assert image.detail == "low"
+
+
 def test_video_data_round_trips_through_history_messages():
     message = User(LMVideoPart(data="YWJj", media_type="video/mp4"))
     content = _history_entry(message).messages[0]["content"][0]

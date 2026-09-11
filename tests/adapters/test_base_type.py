@@ -49,3 +49,29 @@ def test_extract_custom_type_from_annotation_with_nested_type():
         EventIdentifier,
         Event,
     ]
+
+
+def test_legacy_image_marker_preserves_detail():
+    from dspy.adapters._legacy_type_markers import _legacy_content_block_to_lm_part
+    from dspy.core.types import LMImagePart
+
+    url_part = _legacy_content_block_to_lm_part(
+        {"type": "image_url", "image_url": {"url": "https://example.com/chart.png", "detail": "high"}}
+    )
+    assert isinstance(url_part, LMImagePart)
+    assert url_part.url == "https://example.com/chart.png"
+    assert url_part.detail == "high"
+
+    data_part = _legacy_content_block_to_lm_part(
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,YWJj", "detail": "low"}}
+    )
+    assert isinstance(data_part, LMImagePart)
+    assert data_part.data == "YWJj"
+    assert data_part.media_type == "image/png"
+    assert data_part.detail == "low"
+
+    no_detail_part = _legacy_content_block_to_lm_part(
+        {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}}
+    )
+    assert isinstance(no_detail_part, LMImagePart)
+    assert no_detail_part.detail is None
