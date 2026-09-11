@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from typing import Any, get_origin
@@ -305,7 +306,8 @@ def _get_structured_outputs_response_format(
 
     enforce_required(schema)
 
-    # Override the model's JSON schema generation to return our precomputed schema.
-    pydantic_model.model_json_schema = lambda *args, **kwargs: schema
+    # Return a copy so LiteLLM/OpenAI strict conversion cannot mutate the cached schema
+    # and change DSPy's request cache key on the next identical call.
+    pydantic_model.model_json_schema = lambda *args, **kwargs: copy.deepcopy(schema)
 
     return pydantic_model
