@@ -2,6 +2,7 @@ import copy as copy_module
 import datetime
 import importlib
 import inspect
+import time
 import uuid
 import warnings
 from typing import Any, Literal, TextIO
@@ -283,7 +284,7 @@ class BaseLM:
         """Set of supported OpenAI-style parameter names for the model."""
         return set()
 
-    def _process_lm_response(self, response, prompt, messages, **kwargs):
+    def _process_lm_response(self, response, prompt, messages, duration=None, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
 
         if self.model_type == "responses":
@@ -291,8 +292,9 @@ class BaseLM:
         else:
             outputs = self._process_completion(response, merged_kwargs)
 
+        cost = getattr(response, "_hidden_params", {}).get("response_cost")
         if not getattr(response, "cache_hit", False) and settings.usage_tracker:
-            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
+            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}), cost=cost)
 
         if settings.disable_history:
             return outputs
@@ -306,7 +308,8 @@ class BaseLM:
             "response": response,
             "outputs": outputs,
             "usage": dict(getattr(response, "usage", {}) or {}),
-            "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
+            "cost": cost,
+            "duration": duration,
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
             "model": self.model,
@@ -364,8 +367,12 @@ class BaseLM:
             return self._legacy_call_direct(*items, prompt=prompt, messages=messages, **kwargs)
 
         if forward_contract == "typed_lm":
+            start = time.perf_counter()
             response = self.forward(normalized_request)
-            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+            duration = time.perf_counter() - start
+            response = self._finalize_lm_response(
+                normalized_request, self._validate_typed_lm_response(response), duration=duration
+            )
         else:
             response = self._legacy_forward_as_lm_response(normalized_request)
         if return_typed_response:
@@ -397,8 +404,12 @@ class BaseLM:
             return await self._legacy_acall_direct(*items, prompt=prompt, messages=messages, **kwargs)
 
         if forward_contract == "typed_lm":
+            start = time.perf_counter()
             response = await self.aforward(normalized_request)
-            response = self._finalize_lm_response(normalized_request, self._validate_typed_lm_response(response))
+            duration = time.perf_counter() - start
+            response = self._finalize_lm_response(
+                normalized_request, self._validate_typed_lm_response(response), duration=duration
+            )
         else:
             response = await self._legacy_aforward_as_lm_response(normalized_request)
         if return_typed_response:
@@ -438,13 +449,15 @@ class BaseLM:
     ) -> list[dict[str, Any] | str]:
         """Execute the pre-typed synchronous call path and return legacy outputs."""
         prompt = self._legacy_prompt_from_items(items, prompt=prompt)
+        start = time.perf_counter()
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        duration = time.perf_counter() - start
         if isinstance(response, LMResponse):
             raise TypeError(
                 f"{type(self).__name__}.forward() returned dspy.LMResponse on the legacy direct path. "
                 "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
             )
-        return self._process_lm_response(response, prompt, messages, **kwargs)
+        return self._process_lm_response(response, prompt, messages, duration=duration, **kwargs)
 
     async def _legacy_acall_direct(
         self,
@@ -455,13 +468,15 @@ class BaseLM:
     ) -> list[dict[str, Any] | str]:
         """Execute the pre-typed asynchronous call path and return legacy outputs."""
         prompt = self._legacy_prompt_from_items(items, prompt=prompt)
+        start = time.perf_counter()
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
+        duration = time.perf_counter() - start
         if isinstance(response, LMResponse):
             raise TypeError(
                 f"{type(self).__name__}.aforward() returned dspy.LMResponse on the legacy direct path. "
                 "Set forward_contract='typed_lm' or pass an LMRequest/use dspy.context(experimental=True)."
             )
-        return self._process_lm_response(response, prompt, messages, **kwargs)
+        return self._process_lm_response(response, prompt, messages, duration=duration, **kwargs)
 
     def _legacy_prompt_from_items(self, items: tuple[Any, ...], *, prompt: str | None) -> str | None:
         """Validate and extract the one positional prompt accepted by legacy calls."""
@@ -514,14 +529,16 @@ class BaseLM:
         prompt = self._prompt_from_lm_request(request)
         if prompt is not None:
             messages = None
+        start = time.perf_counter()
         response = self.forward(prompt=prompt, messages=messages, **data)
+        duration = time.perf_counter() - start
         typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
         if typed_response is not None:
-            return self._finalize_lm_response(request, typed_response)
+            return self._finalize_lm_response(request, typed_response, duration=duration)
         with settings.context(disable_history=True, usage_tracker=None):
             outputs = self._process_lm_response(response, prompt, messages, **data)
         lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
-        return self._finalize_lm_response(request, lm_response)
+        return self._finalize_lm_response(request, lm_response, duration=duration)
 
     async def _legacy_aforward_as_lm_response(self, request: LMRequest) -> LMResponse:
         """Async variant of `_legacy_forward_as_lm_response()`."""
@@ -530,14 +547,16 @@ class BaseLM:
         prompt = self._prompt_from_lm_request(request)
         if prompt is not None:
             messages = None
+        start = time.perf_counter()
         response = await self.aforward(prompt=prompt, messages=messages, **data)
+        duration = time.perf_counter() - start
         typed_response = self._validate_legacy_lm_response(response, stacklevel=4)
         if typed_response is not None:
-            return self._finalize_lm_response(request, typed_response)
+            return self._finalize_lm_response(request, typed_response, duration=duration)
         with settings.context(disable_history=True, usage_tracker=None):
             outputs = self._process_lm_response(response, prompt, messages, **data)
         lm_response = self._legacy_outputs_to_lm_response(outputs, request=request, provider_response=response)
-        return self._finalize_lm_response(request, lm_response)
+        return self._finalize_lm_response(request, lm_response, duration=duration)
 
     def _legacy_outputs_to_lm_response(
         self,
@@ -585,17 +604,18 @@ class BaseLM:
         part = message.parts[0]
         return part.text if getattr(part, "type", None) == "text" else None
 
-    def _finalize_lm_response(self, request: LMRequest, response: LMResponse) -> LMResponse:
+    def _finalize_lm_response(
+        self, request: LMRequest, response: LMResponse, duration: float | None = None
+    ) -> LMResponse:
         """Record usage and typed history for a normalized LM response."""
         if not getattr(response, "cache_hit", False) and settings.usage_tracker:
-            usage = response.usage_as_dict()
-            if usage:
-                settings.usage_tracker.add_usage(self.model, usage)
+            settings.usage_tracker.add_usage(self.model, response.usage_as_dict(), cost=response.cost)
 
         if not settings.disable_history:
             entry = LMHistoryEntry(
                 request=request,
                 response=response,
+                duration=duration,
                 timestamp=datetime.datetime.now().isoformat(),
                 uuid=str(uuid.uuid4()),
                 model_type=getattr(self, "model_type", None),

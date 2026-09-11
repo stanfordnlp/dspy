@@ -930,6 +930,8 @@ class LMHistoryEntry(BaseModel, Mapping[str, Any]):
 
     Store the canonical request and response, then derive legacy convenience
     fields such as `outputs`, `usage`, `messages`, and `kwargs` on demand.
+    `duration` is elapsed wall-clock time spent in the provider-facing LM call;
+    it does not include request preparation or response post-processing.
     Because this class implements `Mapping`, existing history code can keep
     using `entry["messages"]`, `entry.get("prompt")`, `entry.items()`, and
     `dict(entry)`.
@@ -937,6 +939,7 @@ class LMHistoryEntry(BaseModel, Mapping[str, Any]):
 
     request: LMRequest
     response: LMResponse
+    duration: float | None = None
     timestamp: str
     uuid: str
     model_type: str | None = None

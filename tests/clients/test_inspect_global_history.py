@@ -92,6 +92,22 @@ def test_inspect_history_renders_output_tool_calls_without_text():
     assert 'search: {"query": "dogs"}' in text
 
 
+def test_inspect_history_renders_duration():
+    out = StringIO()
+    history = [
+        {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "outputs": ["Hello"],
+            "timestamp": "now",
+            "duration": 0.25,
+        }
+    ]
+
+    pretty_print_history(history, n=1, file=out)
+
+    assert "[now] (0.250s)" in out.getvalue()
+
+
 def test_inspect_history_with_n(capsys):
     """Test that inspect_history works with n
     Random failures in this test most likely mean you are printing messages somewhere
