@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -94,14 +95,14 @@ def resolve_credential(credential: Credential) -> str:
 
 def _retry_after_seconds(value: str | None) -> float | None:
     """Parse an HTTP Retry-After header: delta-seconds or an HTTP-date."""
-    if not value:
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
         seconds = float(value)
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         pass
     else:
-        return seconds if seconds >= 0 else None
+        return seconds if math.isfinite(seconds) and seconds >= 0 else None
     from datetime import datetime, timezone
     from email.utils import parsedate_to_datetime
 
@@ -119,9 +120,11 @@ def _retry_after_seconds(value: str | None) -> float | None:
 def _attach_retry_after(error: ProviderError, headers: "list[tuple[str, str]] | None") -> None:
     """Populate error.retry_after from a Retry-After header.
 
-    A provider-body-derived value (set by the adapter's normalize_error)
-    always wins; the header only fills the gap."""
-    if getattr(error, "retry_after", None) is not None:
+    A valid provider-body-derived value wins; an invalid hint must never
+    become an infinite wait or replace the provider failure with a timer error."""
+    hint = _retry_after_seconds(getattr(error, "retry_after", None))
+    error.retry_after = hint
+    if hint is not None:
         return
     value = None
     for key, val in headers or []:
@@ -131,6 +134,18 @@ def _attach_retry_after(error: ProviderError, headers: "list[tuple[str, str]] | 
     seconds = _retry_after_seconds(value)
     if seconds is not None:
         error.retry_after = seconds
+
+
+def _attach_error_metadata(error: ProviderError, headers: "list[tuple[str, str]] | None") -> None:
+    """Fill HTTP diagnostics absent from the body; never invent absent fields."""
+    _attach_retry_after(error, headers)
+    if error.request_id is not None:
+        return
+    values = {key.lower(): value for key, value in headers or []}
+    for name in ("x-request-id", "request-id", "x-amzn-requestid", "x-amz-request-id", "x-ms-request-id"):
+        if values.get(name):
+            error.request_id = values[name]
+            break
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +416,7 @@ class BaseProviderLM:
                     error = self.normalize_error(
                         resp.status, body.decode("utf-8", errors="replace")
                     )
-                    _attach_retry_after(error, resp.headers)
+                    _attach_error_metadata(error, resp.headers)
                     raise error
                 lines = resp.iter_lines() if hasattr(resp, "iter_lines") else _iter_lines(resp)
                 for raw in parse_sse(lines):
@@ -429,7 +444,7 @@ class BaseProviderLM:
     def _http_error(self, response: HttpResponse) -> ProviderError:
         """Normalize an HTTP failure without losing its retry hint."""
         error = self.normalize_error(response.status, response.text())
-        _attach_retry_after(error, response.headers)
+        _attach_error_metadata(error, response.headers)
         return error
 
     def normalize_error(self, status: int, body: str) -> ProviderError:
