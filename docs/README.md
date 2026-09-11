@@ -98,8 +98,13 @@ directory is mirrored into the Vercel project) and runs on the same origin.
 Set `MXBAI_API_KEY` and `OPENROUTER_API_KEY` in the Vercel project's
 environment variables and it is live; the browser never sees the keys. By
 default it runs the pipeline that won the docs-harness A/B (toast-1 agentic
-search, whole-page reading of the top results, an answerer model); `MODE=toast`
-lets toast-1 answer on its own with `api/system_prompt.txt`.
+search, whole-page reading of the top results, an answerer model).
+`ANSWERER_MODEL` picks who writes the answer: `anthropic/claude-sonnet-5`
+via OpenRouter (default; holdout score 0.78) or `toast-1` via the same
+Mixedbread key (0.66 with its GEPA-tuned answerer prompt; no second key or
+vendor, and ahead of the previous widget's 0.54). `MODE=toast` lets toast-1 answer on its own with
+`api/system_prompt.txt` (0.58; the prompt was optimized with RATCHET, the
+DSRs optimizer, and verified on the same holdout).
 
 To preview the chat locally, put the two keys in `docs/api/.env.local`
 (gitignored) and run the dev server next to `mkdocs serve`:

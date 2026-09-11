@@ -16,11 +16,13 @@
 //
 // Environment variables (Vercel project settings):
 //   MXBAI_API_KEY        required
-//   OPENROUTER_API_KEY   required for MODE=pages (the answerer model)
+//   OPENROUTER_API_KEY   only when ANSWERER_MODEL is an OpenRouter model
 //   MODE                 "pages" (default) or "toast"
 //   STORES               default "dspy-docs,dspy-code"
 //   DOCS_SITE            default "https://dspy.ai"
-//   ANSWERER_MODEL       default "anthropic/claude-sonnet-5"
+//   ANSWERER_MODEL       model that composes the answer in pages mode:
+//                        "toast-1" (Mixedbread, no second key) or an
+//                        OpenRouter id such as "anthropic/claude-sonnet-5"
 //   PAGES                default 3
 //   MAX_TOKENS           default 4000
 //   SYSTEM_PROMPT_URL    MODE=toast only; default is docs/api/system_prompt.txt on main
@@ -33,8 +35,64 @@ Answer the user's question using ONLY the retrieved documentation and source exc
 
 Style: concise Markdown; lead with the direct answer; keep exact DSPy names, parameters, and defaults as written in the excerpts; a short code example only when it helps; cite the documentation page(s) you used by their path (for example \`diving-deeper/react\`). No preamble, no restating the question.`;
 
+// Answerer prompt used when ANSWERER_MODEL is toast-1. Evolved with GEPA
+// against the docs-QA judge (toast-1 as the student), memorized training
+// facts removed; holdout 0.586 -> 0.664 versus the generic prompt above.
+const ANSWERER_SYSTEM_TOAST = `You are the DSPy documentation assistant. DSPy is the Python framework for programming, rather than prompting, language models.
+
+## Input format
+
+You will receive:
+
+- \`## Retrieved excerpts\`: DSPy documentation pages and/or source excerpts, each under a header such as \`### page: api/utils/load\` or \`### source: dspy/utils/saving.py\`.
+- \`## Question\`: the user's documentation question.
+
+## Core requirements
+
+Answer using ONLY the retrieved excerpts supplied in the current input. Do not use outside knowledge or fill gaps by inference. If the supplied material does not establish a requested detail, say plainly that the provided DSPy docs do not cover it.
+
+Lead with the direct answer. Use concise Markdown and exact DSPy names, parameters, field names, defaults, filenames, exception types, message text, and execution order as written in the excerpts. Do not restate the question or add a preamble.
+
+Treat every clause of a multi-part question as a required item. Before answering, make an internal checklist of all requested details and verify that each is covered. Include relevant qualifiers that define the behavior, even if the question does not repeat them—for example:
+
+- which saving/loading mode or configuration the behavior applies to;
+- prerequisites or intended usage;
+- exact files, fields, and return types;
+- ordering and classification rules;
+- exception types and meaningful details of their messages;
+- fallback values and whether all output fields are populated;
+- whether placeholders or prefixes are conditional rather than universal.
+
+Distinguish clearly between what the excerpts state and what they do not state. Do not turn an implementation observation into a broader guarantee unless the supplied material supports it.
+
+## Citations
+
+Cite the documentation page path(s) actually used, using the exact identifiers from the excerpt headers, such as:
+
+- \`api/utils/load\`
+- \`api/adapters/JSONAdapter\`
+- \`tutorials/gepa_papillon\`
+
+Prefer the most directly relevant page. Do not replace a supplied documentation-path citation with an internal Python filename unless that source filename itself was supplied as an excerpt. Additional citations are acceptable only when they materially support the answer.
+
+## Code
+
+Include a short code excerpt only when it materially clarifies control flow, classification, ordering, or return behavior. Keep it focused and do not let code substitute for answering the question in prose.
+
+## Final quality check
+
+Before responding, verify:
+
+1. Every part of the question is answered.
+2. No unsupported facts were added.
+3. Conditions, exceptions, ordering, and fallback behavior are explicit.
+4. Exact DSPy terminology and literals are preserved.
+5. Citations use supplied documentation page paths.
+6. The answer is concise and contains no irrelevant background.`;
+
 const DEFAULT_SYSTEM_PROMPT_URL =
   "https://raw.githubusercontent.com/stanfordnlp/dspy/main/docs/api/system_prompt.txt";
+const DEFAULT_ANSWERER = "anthropic/claude-sonnet-5"; // set after the A/B, see README
 const PAGE_CHARS = 30000;
 const CHUNK_CHARS = 2500;
 
@@ -132,26 +190,45 @@ async function pagesMode(messages) {
   const context = [...pages, ...rest].join("\n\n") || "(no results)";
 
   const history = messages.slice(0, -1);
-  const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env("OPENROUTER_API_KEY")}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": site,
-      "X-Title": "dspy-docs-chat",
-    },
-    body: JSON.stringify({
-      model: env("ANSWERER_MODEL", "anthropic/claude-sonnet-5"),
-      stream: true,
-      max_tokens: Number(env("MAX_TOKENS", 4000)),
-      temperature: 0,
-      messages: [
-        { role: "system", content: ANSWERER_SYSTEM },
-        ...history,
-        { role: "user", content: `## Retrieved excerpts\n\n${context}\n\n## Question\n\n${question}` },
-      ],
-    }),
-  });
+  const answerer = env("ANSWERER_MODEL", DEFAULT_ANSWERER);
+  const chat = [
+    { role: "system", content: answerer.startsWith("toast") ? ANSWERER_SYSTEM_TOAST : ANSWERER_SYSTEM },
+    ...history,
+    { role: "user", content: `## Retrieved excerpts\n\n${context}\n\n## Question\n\n${question}` },
+  ];
+  // toast-1 as the answerer: same Mixedbread key, no hosted tools (it only
+  // sees the pages above); anything else goes to OpenRouter
+  const upstream = answerer.startsWith("toast")
+    ? await fetch("https://api.mixedbread.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env("MXBAI_API_KEY")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: answerer,
+          stream: true,
+          max_tokens: Number(env("MAX_TOKENS", 4000)),
+          temperature: 0,
+          messages: chat,
+        }),
+      })
+    : await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env("OPENROUTER_API_KEY")}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": site,
+          "X-Title": "dspy-docs-chat",
+        },
+        body: JSON.stringify({
+          model: answerer,
+          stream: true,
+          max_tokens: Number(env("MAX_TOKENS", 4000)),
+          temperature: 0,
+          messages: chat,
+        }),
+      });
   if (!upstream.ok) return upstream;
 
   // prepend a synthetic event so the widget can show what was searched/read
