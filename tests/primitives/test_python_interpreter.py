@@ -440,11 +440,60 @@ def test_deno_command_dict_raises_type_error():
 
 def test_custom_deno_command_is_unchanged():
     command = ["custom-deno", "run", "custom-runner.js", "argument"]
+    read_paths = ["/tmp/readable"]
 
-    interpreter = PythonInterpreter(deno_command=command)
+    interpreter = PythonInterpreter(command, read_paths)
 
     assert interpreter.deno_command == command
     assert interpreter.deno_command is not command
+    assert interpreter.enable_read_paths == read_paths
+
+
+def test_packages_require_default_deno_command():
+    with pytest.raises(ValueError, match="default Deno command"):
+        PythonInterpreter(deno_command=["custom-deno", "run"], packages=["Pillow"])
+
+
+@pytest.mark.parametrize("packages", ["Pillow", [""], [1]])
+def test_packages_must_be_non_empty_strings(packages):
+    with pytest.raises(TypeError, match="list of non-empty strings"):
+        PythonInterpreter(packages=packages)
+
+
+def test_preloads_pyodide_package():
+    with PythonInterpreter(packages=["Pillow"]) as interpreter:
+        result = interpreter.execute("from PIL import Image; print(Image.new('RGB', (2, 3), 'red').size)")
+        with pytest.raises(CodeInterpreterError, match="PythonError"):
+            interpreter.execute("import js; await js.fetch('https://cdn.jsdelivr.net')")
+
+    assert result == "(2, 3)\n"
+
+
+def test_package_cache_write_permission_is_revoked():
+    with PythonInterpreter(packages=["Pillow"]) as interpreter:
+        interpreter.start()
+        cache_probe = os.path.join(interpreter._deno_dir, "dspy-package-write-probe")
+        with pytest.raises(CodeInterpreterError, match="PythonError"):
+            interpreter.execute(f"import js; await js.Deno.writeTextFile({cache_probe!r}, 'forbidden')")
+
+    assert not os.path.exists(cache_probe)
+
+
+def test_preload_packages_merges_before_start():
+    interpreter = PythonInterpreter(packages=["micropip"])
+
+    interpreter.preload_packages(["Pillow", "micropip"])
+
+    assert interpreter.packages == ["micropip", "Pillow"]
+    assert '--dspy-packages=["micropip","Pillow"]' in interpreter.deno_command
+
+
+def test_preload_packages_rejects_started_interpreter():
+    with PythonInterpreter(packages=["micropip"]) as interpreter:
+        interpreter.start()
+        interpreter.preload_packages(["micropip"])
+        with pytest.raises(CodeInterpreterError, match=r"configure packages=\['micropip', 'Pillow'\]"):
+            interpreter.preload_packages(["Pillow"])
 
 
 def test_rejects_mounts_with_the_same_guest_basename(tmp_path):
@@ -561,10 +610,13 @@ def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_pat
 def test_default_command_revokes_shared_cache_after_startup(monkeypatch, tmp_path):
     shared_cache = tmp_path / "deno"
     monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(shared_cache)))
-    interpreter = PythonInterpreter()
+    interpreter = PythonInterpreter(packages=["Pillow"])
 
     assert str(shared_cache) in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
     assert f"--dspy-deno-dir={shared_cache}" in interpreter.deno_command
+    assert '--dspy-packages=["Pillow"]' in interpreter.deno_command
+    assert "--dspy-revoke-package-cache-write" in interpreter.deno_command
+    assert "--dspy-revoke-package-net=cdn.jsdelivr.net" in interpreter.deno_command
 
 
 def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):

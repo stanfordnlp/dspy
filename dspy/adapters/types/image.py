@@ -11,6 +11,7 @@ import pydantic
 import requests
 
 from dspy.adapters.types.base_type import Type
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 
 try:
     from PIL import Image as PILImage
@@ -24,7 +25,7 @@ except ImportError:
 _UNSET = object()
 
 
-class Image(Type):
+class Image(Type, SandboxSerializable):
     url: str
 
     model_config = pydantic.ConfigDict(
@@ -33,6 +34,13 @@ class Image(Type):
         validate_assignment=True,
         extra="forbid",
     )
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _validate_source(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return {"url": encode_image(value)}
+        return value
 
     def __init__(self, source: Any = None, /, *, download: Any = _UNSET, verify: Any = _UNSET, **data):
         """Create an Image.
@@ -161,6 +169,77 @@ class Image(Type):
             image_type = self.url.split(";")[0].split("/")[-1]
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
         return f"Image(url='{self.url}')"
+
+    def sandbox_setup(self) -> str:
+        return """\
+import base64
+import io
+from PIL import Image as PILImage
+import cv2
+import numpy as np
+
+class DSPyImage(str):
+    @property
+    def url(self):
+        return str(self)
+
+    def _bytes(self):
+        if not self.startswith("data:"):
+            raise ValueError("Image conversion requires an embedded image; construct it with dspy.Image.from_url() first")
+        _, encoded = self.split(",", 1)
+        return base64.b64decode(encoded)
+
+    def to_pil(self):
+        image = PILImage.open(io.BytesIO(self._bytes()))
+        image.load()
+        return image
+
+    def to_cv2(self, flags=cv2.IMREAD_UNCHANGED):
+        image = cv2.imdecode(np.frombuffer(self._bytes(), dtype=np.uint8), flags)
+        if image is None:
+            raise ValueError("OpenCV could not decode the image")
+        return image
+
+    @classmethod
+    def from_pil(cls, image, format="PNG"):
+        buffer = io.BytesIO()
+        image.save(buffer, format=format)
+        mime_type = "image/jpeg" if format.upper() in ("JPG", "JPEG") else f"image/{format.lower()}"
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return cls(f"data:{mime_type};base64,{encoded}")
+
+    @classmethod
+    def from_cv2(cls, image, format="PNG"):
+        extension = ".jpg" if format.upper() in ("JPG", "JPEG") else f".{format.lower()}"
+        success, encoded_image = cv2.imencode(extension, image)
+        if not success:
+            raise ValueError("OpenCV could not encode the image")
+        mime_type = "image/jpeg" if extension == ".jpg" else f"image/{format.lower()}"
+        encoded = base64.b64encode(encoded_image.tobytes()).decode("ascii")
+        return cls(f"data:{mime_type};base64,{encoded}")
+"""
+
+    def sandbox_packages(self) -> list[str]:
+        return ["Pillow", "opencv-python"]
+
+    def to_sandbox(self) -> bytes:
+        return self.url.encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = DSPyImage({data_expr})"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        if self.url.startswith("data:"):
+            media_type = self.url.partition(";")[0].removeprefix("data:")
+            source = f"embedded {media_type} image ({len(self.url):,} encoded characters)"
+        else:
+            source = f"image URL: {self.url}"
+        preview = (
+            f"{source}. In the sandbox this is a string-compatible DSPyImage. "
+            "Pass it to llm_query(..., images=[image]). Pillow, OpenCV (`cv2`), and NumPy (`np`) are available; "
+            "use image.to_pil()/DSPyImage.from_pil(...) or image.to_cv2()/DSPyImage.from_cv2(...) to edit it."
+        )
+        return preview[:max_chars]
 
 
 def is_url(string: str) -> bool:

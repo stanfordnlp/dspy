@@ -52,7 +52,7 @@ RLM operates in an iterative REPL loop:
 1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
 2. The LLM writes **Python code** to explore the data (print samples, search, filter)
 3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
-4. The LLM can call `llm_query(prompt)` to run **sub-LLM calls** for semantic analysis on snippets
+4. The LLM can call `llm_query(prompt, images=None)` or `llm_query_batched(prompts, images=None)` to run **sub-LLM calls** over text and optional images
 5. When done, the LLM calls `SUBMIT(output)` to return the final answer
 
 #### What the LLM sees (step-by-step trace):
@@ -119,8 +119,8 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
-| `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
+| `llm_query(prompt, images=None)` | Query a sub-LLM with text and an optional image or image list |
+| `llm_query_batched(prompts, images=None)` | Query prompts concurrently, optionally with one image entry per prompt |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
 | Standard library | `re`, `json`, `collections`, `math`, etc. |
@@ -199,7 +199,7 @@ rlm = dspy.RLM(
 )
 ```
 
-RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency. A started `PythonInterpreter` has a fixed package set, so configure packages needed by later calls when constructing it, for example `PythonInterpreter(packages=["Pillow"])`.
 
 If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
 which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
@@ -208,10 +208,13 @@ metadata; anonymous factories without it continue to use the generic action prom
 
 ### Custom Sandbox-Serializable Inputs
 
-For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, lets interpreters with dynamic provisioning preload packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. Package provisioning is an optional interpreter capability; `sandbox_setup()` is the portable contract and must import required dependencies so missing packages fail during input injection.
 
 ```python
 class DataFrame(dspy.SandboxSerializable):
+    def sandbox_packages(self) -> list[str]:
+        return ["pandas", "pyarrow"]
+
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport base64\nimport io"
 

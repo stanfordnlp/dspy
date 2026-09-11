@@ -8,6 +8,7 @@ Test organization:
 
 import base64
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -294,6 +295,99 @@ class TestRLMInitialization:
             result = tools["llm_query"]("test prompt")
 
         assert result == "[[ ## answer ## ]]\ntyped answer"
+
+    def test_llm_query_sends_images_as_multimodal_content(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["a red square"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+        image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+
+        assert tools["llm_query"]("What is this?", images=[image]) == "a red square"
+
+        messages = lm.call_args.kwargs["messages"]
+        assert messages == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is this?"},
+                    {"type": "image_url", "image_url": {"url": image.url}},
+                ],
+            }
+        ]
+
+    def test_llm_query_accepts_one_sandbox_image_string(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["caption"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        assert tools["llm_query"]("Caption this", images="https://example.com/image.png") == "caption"
+        content = lm.call_args.kwargs["messages"][0]["content"]
+        assert content[1]["image_url"]["url"] == "https://example.com/image.png"
+
+    def test_llm_query_rejects_images_for_text_lm(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["valid text response"])
+        lm.model_type = "text"
+        tools = RLM("context -> answer", sub_lm=lm, max_llm_calls=1)._make_llm_tools()
+
+        with pytest.raises(ValueError, match="model_type='text' does not support images"):
+            tools["llm_query"]("Caption this", images="https://example.com/image.png")
+        assert tools["llm_query"]("Answer this") == "valid text response"
+        lm.assert_called_once()
+
+    def test_llm_query_batched_rejection_does_not_consume_budget(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["valid text response"])
+        lm.model_type = "text"
+        tools = RLM("context -> answer", sub_lm=lm, max_llm_calls=1)._make_llm_tools()
+
+        with pytest.raises(ValueError, match="model_type='text' does not support images"):
+            tools["llm_query_batched"](["Caption this"], images=["https://example.com/image.png"])
+        assert tools["llm_query"]("Answer this") == "valid text response"
+        lm.assert_called_once()
+
+    def test_llm_query_batched_supports_images_per_prompt(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["result"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+        first_image = dspy.Image("data:image/png;base64,Zmlyc3Q=")
+        second_image = dspy.Image("https://example.com/second.png")
+
+        results = tools["llm_query_batched"](
+            ["inspect first", "text only", "compare two"],
+            images=[first_image, None, [first_image, second_image]],
+        )
+
+        assert results == ["result", "result", "result"]
+        calls_by_prompt = {}
+        for call in lm.call_args_list:
+            if call.kwargs:
+                content = call.kwargs["messages"][0]["content"]
+                calls_by_prompt[content[0]["text"]] = content[1:]
+            else:
+                calls_by_prompt[call.args[0]] = []
+        assert calls_by_prompt == {
+            "inspect first": [first_image.format()[0]],
+            "text only": [],
+            "compare two": [first_image.format()[0], second_image.format()[0]],
+        }
+
+    def test_llm_query_batched_requires_images_per_prompt(self):
+        from unittest.mock import MagicMock
+
+        lm = MagicMock(return_value=["result"])
+        tools = RLM("context -> answer", sub_lm=lm)._make_llm_tools()
+
+        with pytest.raises(ValueError, match=r"same length as prompts \(1 != 2\)"):
+            tools["llm_query_batched"](["one", "two"], images=[None])
+        with pytest.raises(TypeError, match="one image entry per prompt"):
+            tools["llm_query_batched"](["one"], images=dspy.Image("https://example.com/image.png"))
+        lm.assert_not_called()
 
     def test_llm_query_rejects_unsupported_response_shape(self):
         from unittest.mock import MagicMock
@@ -965,6 +1059,10 @@ class TestRLMDynamicSignature:
         assert "`question`" in instructions
         assert "`summary`" in instructions
         assert "`answer`" in instructions
+        assert "llm_query(..., images=[...])" in instructions
+        assert "Printing or displaying an image encoding does not let you see it" in instructions
+        assert "Do not assume other packages such as numpy" in instructions
+        assert "image.to_pil()" in instructions
 
     def test_extract_signature_structure(self):
         """Test extract signature has required fields for all outputs."""
@@ -1648,6 +1746,41 @@ class TestBuildVariablesWithSerializable:
 class TestPrepareSerializableVars:
     """Tests for _prepare_serializable_vars with MockInterpreter."""
 
+    def test_preloads_deduplicated_serializable_packages(self):
+        class PackageSerializable(_StubSerializable):
+            def sandbox_packages(self) -> list[str]:
+                return ["package-a", "package-b"]
+
+        mock = MockInterpreter()
+        loaded = []
+        mock.preload_packages = loaded.extend
+        rlm = RLM("first, second -> answer")
+
+        rlm._preload_sandbox_packages(
+            {"first": PackageSerializable(), "second": PackageSerializable()},
+            mock,
+        )
+
+        assert loaded == ["package-a", "package-b"]
+
+    def test_package_declarations_are_optional_for_custom_interpreters(self):
+        class PackageSerializable(_StubSerializable):
+            def sandbox_packages(self) -> list[str]:
+                return ["package-a"]
+
+        RLM("data -> answer")._preload_sandbox_packages({"data": PackageSerializable()}, MockInterpreter())
+
+    @pytest.mark.parametrize("packages", ["package-a", [""], [None]])
+    def test_rejects_invalid_sandbox_package_declarations(self, packages):
+        class InvalidPackageSerializable(_StubSerializable):
+            def sandbox_packages(self):
+                return packages
+
+        with pytest.raises(TypeError, match="must return a list of non-empty strings"):
+            RLM("data -> answer")._preload_sandbox_packages(
+                {"data": InvalidPackageSerializable()}, MockInterpreter()
+            )
+
     def test_separates_serializable_from_regular(self):
         """Serializable values are injected; regular values are returned."""
         mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
@@ -1778,6 +1911,93 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+@pytest.mark.deno
+def test_image_batch_round_trips_from_sandbox_to_multimodal_llm():
+    class ImageEchoLM:
+        def __call__(self, *, messages):
+            content = messages[0]["content"]
+            return [f"{content[0]['text']}:{content[1]['image_url']['url']}"]
+
+    image = dspy.Image("data:image/png;base64,aW1hZ2U=")
+    rlm = RLM("image -> answer", sub_lm=ImageEchoLM(), max_iters=1)
+    rlm.generate_action = make_mock_predictor([
+        {
+            "reasoning": "Query both forms",
+            "code": 'answers = llm_query_batched(["first", "second"], images=[image, [image]])\nSUBMIT("|".join(answers))',
+        }
+    ])
+
+    result = rlm(image=image)
+
+    assert "first:data:image/png;base64,aW1hZ2U=" in result.answer
+    assert "second:data:image/png;base64,aW1hZ2U=" in result.answer
+
+
+@pytest.mark.deno
+def test_image_round_trips_through_typed_rlm_output():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image as PILImage
+
+    class EditImage(dspy.Signature):
+        source: dspy.Image = dspy.InputField()
+        edited: dspy.Image = dspy.OutputField()
+
+    source = dspy.Image(PILImage.new("RGB", (3, 2), "red"))
+    rlm = RLM(EditImage, max_iters=2)
+    rlm.generate_action = make_mock_predictor([
+        {
+            "reasoning": "Edit the image",
+            "code": "print(source.to_pil().size)\nedited = cv2.rotate(source.to_cv2(), cv2.ROTATE_90_CLOCKWISE)\nprint(edited.shape)",
+        },
+        {"reasoning": "Return the edited image", "code": "SUBMIT(DSPyImage.from_cv2(edited))"},
+    ])
+
+    result = rlm(source=source)
+
+    assert isinstance(result.edited, dspy.Image)
+    edited = PILImage.open(BytesIO(base64.b64decode(result.edited.url.split(",", 1)[1])))
+    assert edited.size == (2, 3)
+    assert result.trajectory[0]["output"].startswith("(3, 2)\n")
+
+
+@pytest.mark.deno
+def test_reused_interpreter_reports_late_image_package_requirement():
+    rlm = RLM("value -> answer", max_iters=1)
+    rlm.generate_action = make_mock_predictor([
+        {"reasoning": "Return", "code": 'SUBMIT("done")'},
+    ])
+
+    with PythonInterpreter() as interpreter:
+        assert rlm(interpreter, value="text").answer == "done"
+        previous_llm_query = interpreter.tools["llm_query"]
+        with pytest.raises(
+            CodeInterpreterError,
+            match=r"Create a fresh interpreter or configure packages=\['Pillow', 'opencv-python'\]",
+        ):
+            rlm(interpreter, value=dspy.Image("data:image/png;base64,aW1hZ2U="))
+        assert interpreter.tools["llm_query"] is previous_llm_query
+
+
+@pytest.mark.deno
+def test_preconfigured_interpreter_reuse_supports_later_image():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image as PILImage
+
+    rlm = RLM("value -> answer", max_iters=2)
+    rlm.generate_action = make_mock_predictor([
+        {"reasoning": "Return", "code": 'SUBMIT("text")'},
+        {"reasoning": "Inspect", "code": "print(value.to_pil().size)"},
+        {"reasoning": "Return", "code": 'SUBMIT("image")'},
+    ])
+
+    with PythonInterpreter(packages=["Pillow", "opencv-python"]) as interpreter:
+        assert rlm(interpreter, value="text").answer == "text"
+        result = rlm(interpreter, value=dspy.Image(PILImage.new("RGB", (2, 3), "red")))
+
+    assert result.answer == "image"
+    assert result.trajectory[0]["output"] == "(2, 3)\n"
 
 
 if __name__ == "__main__":
