@@ -108,6 +108,8 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
         return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
     merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
+    if hasattr(lm, "_raise_if_unsupported_stream_kwarg"):
+        lm._raise_if_unsupported_stream_kwarg(merged, model=lm.model, provider=lm._provider_name)
     prompt_cache = merged.get("prompt_cache")
     if prompt_cache is not None:
         if not isinstance(prompt_cache, CacheConfig):

@@ -154,6 +154,11 @@ class LM(BaseLM):
 
         if initial_kwargs.get("rollout_id") is None:
             initial_kwargs.pop("rollout_id", None)
+        self._raise_if_unsupported_stream_kwarg(
+            initial_kwargs,
+            model=self.model,
+            provider=self._provider_name,
+        )
         return initial_kwargs
 
     @property
@@ -194,6 +199,26 @@ class LM(BaseLM):
                 stacklevel=3,
             )
             self._warned_zero_temp_rollout = True
+
+    @staticmethod
+    def _raise_if_unsupported_stream_kwarg(kwargs: dict[str, Any], *, model: str, provider: str) -> None:
+        """Reject a user-supplied `stream=True` before any cache or provider access.
+
+        LiteLLM returns a live `CustomStreamWrapper` for raw `stream=True`,
+        where DSPy's completion paths require a completed response; caching it before
+        validation made every subsequent identical request fail during cache
+        retrieval. DSPy's supported streaming paths inject `stream=True`
+        internally via `dspy.streamify`/`settings.send_stream` and never go
+        through this kwarg.
+        """
+        if kwargs.get("stream"):
+            raise LMConfigurationError(
+                "`stream=True` is not supported as a direct `dspy.LM` kwarg. "
+                "Use `dspy.streamify(...)` or configure a stream listener "
+                "(e.g. `dspy.settings.send_stream`) for streaming.",
+                model=model,
+                provider=provider,
+            )
 
     def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
