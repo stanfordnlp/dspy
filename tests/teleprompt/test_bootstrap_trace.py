@@ -155,3 +155,35 @@ def test_capture_crashes_does_not_capture_lm_errors():
         Flaky(), dataset=[example], num_threads=1, capture_crashes=True, raise_on_error=False
     )
     assert data == []  # handled by the evaluator as an error, never repainted as a FailedPrediction
+
+
+def test_bootstrap_trace_partial_credit_and_zero_reward():
+    class TwoFieldSignature(dspy.Signature):
+        text: str = dspy.InputField()
+        number: int = dspy.OutputField()
+        explanation: str = dspy.OutputField()
+
+    program = dspy.Predict(TwoFieldSignature)
+    dataset = [Example(text="one", number=1, explanation="e").with_inputs("text")]
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+
+    partial_response = ModelResponse(
+        choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
+        model="openai/gpt-4o-mini",
+    )
+    with mock.patch("litellm.completion", return_value=partial_response):
+        results = bootstrap_trace_data(
+            program=program,
+            dataset=dataset,
+            metric=lambda example, prediction, trace=None: True,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+            failure_score=1,
+            format_failure_score=-1,
+        )
+
+    assert len(results) == 1
+    assert isinstance(results[0]["prediction"], FailedPrediction)
+    assert results[0]["score"] == 0.0
