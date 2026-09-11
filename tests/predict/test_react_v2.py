@@ -337,6 +337,12 @@ def test_react_v2_rejects_reserved_output_field_names(reserved):
         dspy.ReActV2(f"question -> answer, {reserved}: str", tools=[])
 
 
+@pytest.mark.parametrize("reserved", ["history", "tools"])
+def test_react_v2_rejects_reserved_input_field_names(reserved):
+    with pytest.raises(ValueError, match=reserved):
+        dspy.ReActV2(f"{reserved}, question -> answer", tools=[])
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_async", [False, True])
 @pytest.mark.parametrize("break_reason", ["max_iters", "empty_tool_calls", "parse_error", "context_window_exceeded"])
