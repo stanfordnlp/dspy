@@ -1,3 +1,5 @@
+import threading
+
 from dspy import lm15 as lm15
 from dspy.predict import *
 from dspy.primitives import *
@@ -41,7 +43,6 @@ from dspy.utils.usage_tracker import track_usage
 
 from dspy.dsp.utils.settings import settings
 from dspy.dsp.colbertv2 import ColBERTv2
-from dspy.clients import DSPY_CACHE
 from dspy.__metadata__ import __name__, __version__, __description__, __url__, __author__, __author_email__
 
 configure_dspy_loggers(__name__)
@@ -53,4 +54,16 @@ context = settings.context
 
 BootstrapRS = BootstrapFewShotWithRandomSearch
 
-cache = DSPY_CACHE
+_cache_lock = threading.Lock()
+
+
+def __getattr__(name):
+    """Defer building the cache until it's read, so that configure_cache can fully disable caching if desired."""
+    if name == "cache":
+        from dspy.clients import _get_dspy_cache
+
+        with _cache_lock:
+            if "cache" not in globals():
+                globals()["cache"] = _get_dspy_cache()
+            return globals()["cache"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
