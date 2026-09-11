@@ -65,5 +65,5 @@ def __getattr__(name):
         with _cache_lock:
             if "cache" not in globals():
                 globals()["cache"] = _get_dspy_cache()
-        return globals()["cache"]
+            return globals()["cache"]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

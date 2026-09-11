@@ -51,8 +51,10 @@ def configure_cache(
 
     import dspy
 
-    # Update the reference to point to the new cache
-    dspy.cache = DSPY_CACHE
+    # Hold the lock the lazy build holds, or a concurrent first read of `dspy.cache` overwrites this cache
+    # with the default one it was already building.
+    with dspy._cache_lock:
+        dspy.cache = DSPY_CACHE
 
 
 
