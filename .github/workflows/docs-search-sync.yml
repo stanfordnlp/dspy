@@ -1,0 +1,41 @@
+name: Docs Search Sync
+
+# Re-index the published docs and the Python sources into the Mixedbread
+# stores behind the docs "Ask AI" widget (docs/api/chat.js).
+# Sync is incremental (sha256-keyed), so unchanged files are skipped.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "dspy/**"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    name: Sync docs to Mixedbread stores
+    if: github.repository == 'stanfordnlp/dspy'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Build the docs (rendered Markdown pages via mkdocs-llmstxt)
+        run: |
+          cd docs
+          pip install -r requirements.txt
+          mkdocs build
+      - name: Sync stores
+        run: |
+          pip install mixedbread
+          python3 docs/scripts/sync_search_index.py --site docs/site
+        env:
+          MXBAI_API_KEY: ${{ secrets.MXBAI_API_KEY }}
