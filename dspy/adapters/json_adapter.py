@@ -85,6 +85,9 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except DeprecationWarning:
+            # Respect warnings-as-errors without retrying in another format.
+            raise
         except LMError:
             # Provider/backend failures should propagate; the fallback below is only for local structured-output
             # setup/schema failures where retrying in JSON mode is appropriate.
@@ -113,6 +116,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        except DeprecationWarning:
+            raise
         except LMError:
             # Provider/backend failures should propagate; the fallback below is only for local structured-output
             # setup/schema failures where retrying in JSON mode is appropriate.

@@ -11,6 +11,7 @@ from dspy.adapters.types import History, Type
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
+from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
@@ -224,7 +225,9 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
-        outputs = lm(messages=messages, **lm_kwargs)
+        # TODO(3.5): build Request and parse Response directly; remove this marker.
+        with adapter_message_call(lm, messages):
+            outputs = lm(messages=messages, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     @with_capability_planning
@@ -240,7 +243,9 @@ class Adapter:
         messages = self.format(processed_signature, demos, inputs)
         if lm_kwargs.get("parallel_tool_calls") is not None:
             lm_kwargs.setdefault("tool_choice", "auto")
-        outputs = await lm.acall(messages=messages, **lm_kwargs)
+        # TODO(3.5): share the canonical request/response boundary with __call__.
+        with adapter_message_call(lm, messages):
+            outputs = await lm.acall(messages=messages, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     def format(

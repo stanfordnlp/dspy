@@ -5,6 +5,7 @@ import inspect
 import uuid
 from typing import Any, TextIO
 
+from dspy.clients._deprecation import warn_legacy_lm, warn_openai_messages
 from dspy.clients.legacy_outputs import responses_outputs
 from dspy.dsp.utils import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -51,6 +52,15 @@ class BaseLM:
     and optionally aforward with the same arguments. Ordinary calls return
     lists of strings or dictionaries. The built-in LM also accepts explicit
     dspy.lm15.Request calls. The experimental setting does not change outputs.
+
+    Implementing custom LMs through forward()/aforward() is deprecated. The old
+    subclass interface remains supported throughout DSPy 3.4 and is scheduled
+    for removal in 3.5. Implement an engine with complete(Request) -> Response
+    and pass it to dspy.LM(engine=...) instead. LegacyEngine and AsyncLegacyEngine
+    are transition wrappers for 3.4 only and are also scheduled for removal in 3.5.
+    OpenAI-style messages= dictionaries are deprecated too: use lm15.Request
+    and Message objects instead. lm("hello") remains a list-returning convenience.
+    See the [migration guide](https://dspy.ai/community/normalized-lm-api-migration/#custom-engines-and-legacy-plugins).
 
     Persistent custom state belongs in dump_state/load_state. Runtime clients
     are shared by copy(), while DSPy history, callbacks and kwargs are isolated.
@@ -159,6 +169,9 @@ class BaseLM:
         from dspy.clients.execution import execute, finalize, prepare
 
         call = prepare(self, prompt, messages, kwargs)
+        if not call.managed:
+            warn_legacy_lm()
+        warn_openai_messages(self, messages)
         return finalize(self, call, execute(self, call))
 
     @with_callbacks
@@ -171,6 +184,9 @@ class BaseLM:
         # Canonical media snapshots may read local files. Context variables
         # propagate to the worker; callbacks/finalization stay on the caller.
         call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True)
+        if not call.managed:
+            warn_legacy_lm()
+        warn_openai_messages(self, messages)
         return finalize(self, call, await aexecute(self, call))
 
     def forward(self, prompt=None, messages=None, **kwargs):

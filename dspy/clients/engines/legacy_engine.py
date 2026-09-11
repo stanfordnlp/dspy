@@ -1,5 +1,6 @@
 """Adapt a legacy custom LM without invoking BaseLM's public-call bookkeeping."""
 
+from dspy.clients._deprecation import warn_legacy_engine
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.errors import wrap_error
 from dspy.clients.lm15_boundary import request_kwargs, response_value
@@ -14,7 +15,7 @@ class _LegacyConfig:
     may perform their own; this wrapper cannot disable undocumented behavior.
     """
 
-    def __init__(self, lm):
+    def __init__(self, lm, *, _implicit=False):
         from dspy.clients.base_lm import BaseLM
         from dspy.clients.lm import LM
 
@@ -24,6 +25,9 @@ class _LegacyConfig:
             raise TypeError("Use LiteLLMEngine for the built-in LM, not a nested LegacyEngine")
         if getattr(type(lm), "forward_contract", "legacy") != "legacy":
             raise TypeError("The removed DSPy 3.3 typed_lm contract is not a legacy plugin")
+        if not _implicit:
+            # Automatic wrapping already warns at the public LM call boundary.
+            warn_legacy_engine()
         self.lm = lm
         self._closed = False
 
@@ -56,6 +60,12 @@ class _LegacyConfig:
 
 
 class LegacyEngine(_LegacyConfig):
+    """Deprecated 3.4 transition wrapper, scheduled for removal in DSPy 3.5.
+
+    Migrate the underlying implementation to complete(Request) -> Response.
+    Wrapping it explicitly does not extend the legacy interface's lifetime.
+    """
+
     def complete_legacy(self, lm, request, *, prompt=None, messages=None, call_kwargs=None):
         from dspy.clients.call_result import CallResult
 
@@ -85,6 +95,8 @@ class LegacyEngine(_LegacyConfig):
 
 
 class AsyncLegacyEngine(_LegacyConfig):
+    """Deprecated async transition wrapper, scheduled for removal in DSPy 3.5."""
+
     async def complete_legacy(self, lm, request, *, prompt=None, messages=None, call_kwargs=None):
         from dspy.clients.call_result import CallResult
 

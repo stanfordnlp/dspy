@@ -11,6 +11,7 @@ import pydantic
 
 from dspy._vendor.lm15.result import StreamAccumulator
 from dspy._vendor.lm15.serde import request_to_dict
+from dspy.clients._deprecation import warn_legacy_shortcut
 from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
 from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine
 from dspy.clients.engines.errors import wrap_error
@@ -71,15 +72,6 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
                 # DummyLM's inherited aforward delegates to forward, including
                 # a subclass's override. Do not bypass that override either.
                 managed = managed and "forward" not in vars(lm) and type(lm).forward is DummyLM.forward
-    if not managed and not getattr(lm, "_warned_legacy_engine", False):
-        import warnings
-
-        warnings.warn(
-            "Legacy BaseLM.forward plugins remain supported in DSPy 3.4. "
-            "For the planned 3.5 migration, implement complete(Request) -> Response "
-            "and pass it to dspy.LM(engine=...).", FutureWarning, stacklevel=4,
-        )
-        lm._warned_legacy_engine = True
     if getattr(type(lm), "forward_contract", "legacy") != "legacy":
         raise TypeError("The DSPy 3.3 typed_lm contract was removed; implement an lm15 engine instead.")
     if request is not None:
@@ -147,16 +139,29 @@ def _canonical(call, *, compat=None):
 
 def _engine(lm, call, asynchronous):
     if not call.managed:
-        backend = AsyncLegacyEngine(lm) if asynchronous else LegacyEngine(lm)
+        backend = AsyncLegacyEngine(lm, _implicit=True) if asynchronous else LegacyEngine(lm, _implicit=True)
         return backend, _canonical(call) if call.request else None, None
     spec = lm._engine_spec
     if not isinstance(spec, str):
         backend = lm._async_engine_spec if asynchronous else spec
         if backend is None:
             raise LMUnsupportedFeatureError("This custom engine has no async counterpart; pass async_engine=.")
-        # Built-in scripted engines can consume ordinary inputs without a
-        # provider-wire decoder. Only that explicit input method opts in.
-        if call.request is None and call.legacy.get("prompt_cache") is None and callable(getattr(backend, "complete_legacy", None)):
+        # TODO(3.5): remove the legacy shortcut after moving DummyLM and all
+        # adapter execution to canonical requests/responses. Do not warn users
+        # about DSPy's own temporary implementation, or repeat wrapper warnings.
+        legacy_complete = getattr(backend, "complete_legacy", None)
+        if call.request is None and call.legacy.get("prompt_cache") is None and callable(legacy_complete):
+            from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+            builtin_methods = (
+                DummyEngine.complete_legacy, AsyncDummyEngine.complete_legacy,
+                LiteLLMEngine.complete_legacy, AsyncLiteLLMEngine.complete_legacy,
+            )
+            implementation = getattr(legacy_complete, "__func__", legacy_complete)
+            if not isinstance(backend, (LegacyEngine, AsyncLegacyEngine)) and not any(
+                implementation is method for method in builtin_methods
+            ):
+                warn_legacy_shortcut()
             return backend, None, None
         return backend, _canonical(call), None
     selection = select_backend(lm, call.legacy)

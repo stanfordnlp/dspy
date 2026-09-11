@@ -4,6 +4,36 @@ DSPy's LM layer now uses the lm15 objects bundled inside DSPy. Import them from
 `dspy.lm15`; no separate installation is needed. They are the original lm15
 classes, not DSPy wrappers or subclasses.
 
+## The 3.5 cutoff
+
+**3.4 is the transition release; 3.5 removes the old LM integration interfaces.**
+
+| Interface | DSPy 3.4 | DSPy 3.5 |
+| --- | --- | --- |
+| `lm("Hello")` | List-returning convenience | Kept as a convenience over the canonical engine path |
+| `lm(Request(...))` / `await lm.acall(Request(...))` | Returns an lm15 `Response` | The adapter and integration contract |
+| OpenAI-style `lm(messages=[{"role": ..., "content": ...}])` | Deprecated; use an explicit lm15 request | Removed |
+| Custom `BaseLM.forward()` / `aforward()` implementations | Deprecated; migrate to an engine | Removed as an integration interface |
+| `LegacyEngine` / `AsyncLegacyEngine` wrappers | Deprecated transition tools | Removed |
+| Custom-engine `complete_legacy()` shortcuts | Deprecated | Removed |
+
+In 3.5, DSPy's adapters will build lm15 requests and consume lm15 responses directly,
+not use the list-returning convenience path. Provider-wire dictionaries belong
+inside engines. LiteLLM itself is **not** deprecated: a LiteLLM engine must follow
+that same request/response contract.
+
+These changes do not happen silently in 3.4. Deprecated interfaces still execute;
+`DeprecationWarning` announces the cutoff and links to the replacement. Python may
+hide these warnings by default. To review them during development, use:
+
+```sh
+python -W default::DeprecationWarning your_program.py
+```
+
+Normal DSPy program calls do not warn merely because built-in adapters still use
+an internal dictionary boundary in 3.4. That implementation is DSPy's migration
+responsibility. Using a legacy custom LM still warns, including through a program.
+
 ## Ordinary programs
 
 Keep using ordinary calls and DSPy modules:
@@ -13,11 +43,12 @@ import dspy
 
 lm = dspy.LM("openai/gpt-4o-mini")
 outputs = lm("Hello")
-outputs = lm(messages=[{"role": "user", "content": "Hello"}])
 ```
 
 Ordinary calls return lists of strings or dictionaries. `experimental=True` no
 longer changes that return type; it still controls other experimental features.
+For multi-turn calls, use [explicit requests](#explicit-requests) rather than
+OpenAI-style message dictionaries.
 
 Engine selection:
 
@@ -62,6 +93,24 @@ Native response counters stay provider-verbatim in `Response.usage`; DSPy's
 legacy prompt/completion counters are derived separately. A native cost estimate
 is **unknown**, not zero, when no reliable pricing is available. Existing cached
 SDK responses retain their historical cost metadata.
+
+## Migrating OpenAI-style messages
+
+The public `messages=` argument is deprecated, including provider SDK message
+objects as well as dictionaries. This does not deprecate `Request.messages`, which
+holds canonical lm15 `Message` objects. For example, this form still runs in 3.4:
+
+```python
+outputs = lm(messages=[
+    {"role": "system", "content": "Be concise."},
+    {"role": "user", "content": "What is DSPy?"},
+])
+```
+
+Use the explicit request below instead. Put system instructions in `Request.system`,
+conversation turns in lm15 `Message` objects, and generation options in `Config`.
+The result is a `Response`, not a list: read `response.text`, `response.message`, or
+`response.tool_calls` as appropriate. Async calls use the same types.
 
 ## Explicit requests
 
@@ -112,12 +161,28 @@ an async iterator for async calls. DSPy does not silently run a sync backend on 
 async path. Engines must not add another DSPy cache or retry loop. Custom engines
 are caller-owned and are not closed by DSPy.
 
-Existing custom `BaseLM.forward(prompt=None, messages=None, **kwargs)` and
-`aforward` implementations are wrapped by legacy engines. Ordinary plugin inputs
-and outputs remain supported. A warning points authors toward the **planned 3.5
-migration**; it is not a removal deadline. DSPy does not add caching or retries
-around these plugins because they may already own those behaviors. A legacy
-plugin's private streaming implementation remains its responsibility.
+Implementing custom LMs through `BaseLM.forward(prompt=None, messages=None, **kwargs)`
+or `aforward` is **deprecated**. Implement an engine instead, as shown above and in
+the [custom-engine tutorial](../tutorials/custom_lm_engines/index.md). The old subclass
+interface remains supported throughout DSPy **3.4** and is scheduled for removal in
+**3.5**, along with both legacy-engine wrappers and `complete_legacy()` shortcuts.
+
+Calls through that old interface emit a `DeprecationWarning`, subject to Python's
+normal warning filters. Existing plugins are still automatically wrapped by legacy
+engines in 3.4, preserving ordinary inputs and outputs. DSPy does not add caching or
+retries around automatically wrapped plugins because they may already own those
+behaviors. A legacy plugin's private streaming implementation remains its responsibility.
+
+The explicit `LegacyEngine` and `AsyncLegacyEngine` wrappers from
+`dspy.clients.engines` are **3.4 transition tools only**, not a permanent escape
+hatch. Constructing either wrapper emits a deprecation warning; both are scheduled
+for removal in 3.5. Migrate the underlying implementation, rather than only wrapping
+it. During the transition, when a plugin already handles caching or retries, disable
+those on the outer `dspy.LM` with `cache=False, num_retries=0` to avoid a second layer.
+
+Custom engines must implement `complete(Request) -> Response`, plus their declared
+async/streaming counterparts. If DSPy selects a custom engine's `complete_legacy()`
+shortcut for an ordinary call, it warns. That shortcut will not exist in 3.5.
 
 An existing `forward_contract="legacy"` declaration is harmless. The experimental
 `forward_contract="typed_lm"` contract is removed and rejected explicitly.
@@ -166,9 +231,15 @@ Old pickled objects containing the removed classes are not automatically migrate
 Load and export them in their original environment first. This is separate from
 ordinary provider-response caches and ordinary saved-program configuration.
 
-Custom adapters should call `lm(messages=messages, **lm_kwargs)` and parse the
-returned list, not depend on the removed private conversion methods or
-`dspy.clients.openai_format`.
+Custom adapters should migrate to `lm(request)` / `await lm.acall(request)` and
+parse the returned lm15 `Response`. In 3.5 this is the internal contract throughout
+DSPy: adapters must not pass OpenAI-style dictionaries or use the list-returning
+prompt convenience. Existing 3.4 adapters can continue running during migration,
+but must not depend on the removed `dspy.clients.openai_format` module.
+
+The full built-in adapter migration is scheduled for 3.5; the 3.4 implementation
+still renders dictionary messages and parses list outputs. The temporary internal
+warning marker is not a public API for custom adapters to use.
 
 DSPy's signature types (`Image`, `Audio`, `File`, `Tool`, `ToolCalls`, `History`,
 `Reasoning`, etc.) and error classes are not removed.

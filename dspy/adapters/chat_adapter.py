@@ -84,6 +84,9 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except DeprecationWarning:
+            # An intentional warnings-as-errors policy is not a parse failure.
+            raise
         except Exception as e:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
@@ -104,6 +107,8 @@ class ChatAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        except DeprecationWarning:
+            raise
         except Exception as e:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter

@@ -10,6 +10,9 @@ class MyEngine:
 
 DSPy formats the program's inputs, converts them to an lm15 request, calls your engine, and parses the answer into a `Prediction`. You do not need to subclass `BaseLM` or return an OpenAI SDK object.
 
+!!! warning "DSPy 3.5 cutoff"
+    Custom `BaseLM.forward()`/`aforward()` integrations, `LegacyEngine`/`AsyncLegacyEngine`, and `complete_legacy()` shortcuts are deprecated in 3.4 and scheduled for removal in 3.5. Implement the request/response engine contract shown here; a legacy wrapper does not extend the migration deadline. OpenAI-style `lm(messages=[...])` calls are also being removed. `lm("hello")` remains a list-returning convenience; adapters use `lm(Request(...))` and consume `Response` directly. See the [migration guide](../../community/normalized-lm-api-migration.md).
+
 This tutorial wraps the [Pi CLI](https://pi.dev) as a custom engine. Pi keeps its normal system prompt and tools, so a DSPy program can ask it to inspect a repository. The entire agent run, including tool calls, becomes one DSPy LM response.
 
 ## Prerequisites

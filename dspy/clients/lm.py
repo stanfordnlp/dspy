@@ -40,6 +40,12 @@ def _is_openai_reasoning_model(model: str) -> bool:
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
+
+    Use lm("hello") for a list-returning convenience call, or pass an explicit
+    dspy.lm15.Request to receive a dspy.lm15.Response. OpenAI-style messages=
+    dictionaries are deprecated and scheduled for removal in DSPy 3.5. Adapters
+    and custom engines must migrate to the canonical request/response contract.
+    See https://dspy.ai/community/normalized-lm-api-migration/.
     """
 
     def __init__(

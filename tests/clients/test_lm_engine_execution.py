@@ -166,10 +166,11 @@ async def test_legacy_plugin_sync_async_preserve_forward_inputs():
             return self.forward(**kwargs)
 
     plugin = Plugin("custom")
-    with pytest.warns(FutureWarning, match="3.5"):
+    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
         assert plugin("hello") == ["ok"]
     assert plugin.received == ("hello", None, {})
-    assert await plugin.acall("hello") == ["ok"]
+    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
+        assert await plugin.acall("hello") == ["ok"]
     assert len(plugin.history) == 2
 
 

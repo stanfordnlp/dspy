@@ -3,6 +3,10 @@
 Engines consume one canonical request and produce one response. They do not
 own DSPy's cache, retries, candidate fan-out, history or callbacks. A stream
 raises on failure and emits one final end event only on successful completion.
+
+DSPy 3.5 uses this contract throughout adapters and engines. Legacy forward()
+plugins, LegacyEngine/AsyncLegacyEngine, and complete_legacy() shortcuts are
+3.4 transition interfaces, deprecated for removal in 3.5.
 """
 
 from collections.abc import AsyncIterator, Iterator
