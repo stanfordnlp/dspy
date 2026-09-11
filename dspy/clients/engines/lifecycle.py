@@ -3,7 +3,9 @@
 import inspect
 from contextlib import asynccontextmanager, contextmanager
 
-import anyio
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 
 def _secondary(primary, cleanup):
