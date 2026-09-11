@@ -45,10 +45,14 @@ def _recover_marker_wrapped_value(value: Any, field_name: str) -> Any:
     sections: dict[str, list[str]] = {}
     current = preamble
     for line in value.splitlines():
-        match = field_header_pattern.match(line.strip())
+        # Match and slice the same string: `match.end()` is an offset into the
+        # stripped line, so slicing the raw one drops part of an indented marker
+        # into the recovered value.
+        stripped = line.strip()
+        match = field_header_pattern.match(stripped)
         if match:
             current = sections.setdefault(match.group(1), [])
-            remaining = line[match.end() :].strip()
+            remaining = stripped[match.end() :].strip()
             if remaining:
                 current.append(remaining)
             continue

@@ -28,6 +28,16 @@ def test_react_v2_submit_recovers_value_wrapped_in_its_own_marker():
     assert react.tools["submit"](answer=submitted) == {"answer": "Paris"}
 
 
+def test_react_v2_submit_recovers_value_from_an_indented_marker_line():
+    """An indented marker must not leave its own closing bracket in the value."""
+    react = dspy.ReActV2("question -> answer", tools=[])
+
+    assert react.tools["submit"](answer="  [[ ## answer ## ]] Paris") == {"answer": "Paris"}
+    assert react.tools["submit"](answer="\t[[ ## answer ## ]]\n  Paris\n[[ ## completed ## ]]") == {
+        "answer": "Paris"
+    }
+
+
 def test_react_v2_submit_recovers_value_emitted_before_a_marker():
     react = dspy.ReActV2("question -> answer", tools=[])
 
