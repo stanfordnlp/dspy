@@ -588,6 +588,8 @@
       body: JSON.stringify({ messages: history }),
     })
       .then(function (resp) {
+        if (resp.status === 429) throw new Error("too many questions in a short time. Please wait a minute and try again.");
+        if (resp.status === 403) throw new Error("this page is not allowed to use the docs chat.");
         if (!resp.ok) throw new Error("proxy returned " + resp.status);
         var reader = resp.body.getReader();
         var dec = new TextDecoder();

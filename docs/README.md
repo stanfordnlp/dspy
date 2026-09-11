@@ -92,6 +92,10 @@ pip install mixedbread
 python3 docs/scripts/sync_search_index.py --site docs/site   # after `mkdocs build`
 ```
 
+A file that is missing locally is deleted from the store, so the script
+refuses to run when the `--site` path does not exist or no files were found
+(that would empty the store); `--allow-empty` overrides that on purpose.
+
 `docs/js/toast-chat.js` adds the "Ask AI" panel to every page. Its backend is
 the Vercel Edge Function in `api/chat.js`, which ships with the site (this
 directory is mirrored into the Vercel project) and runs on the same origin.
@@ -105,6 +109,19 @@ Mixedbread key (0.66 with its GEPA-tuned answerer prompt; no second key or
 vendor, and ahead of the previous widget's 0.54). `MODE=toast` lets toast-1 answer on its own with
 `api/system_prompt.txt` (0.58; the prompt was optimized with RATCHET, the
 DSRs optimizer, and verified on the same holdout).
+
+The endpoint is public (the widget sends no credential), so the function
+bounds what it will spend: request bodies are size-limited, browser requests
+must come from the site's own origin (plus `DOCS_SITE`, localhost previews and
+anything in `ALLOWED_ORIGINS`), and each client IP gets `RATE_LIMIT_IP`
+requests per minute (default 10) under a `RATE_LIMIT_GLOBAL` budget per hour
+(default 300); over-limit calls get a 429 with `Retry-After`. Out of the box
+the counters live in each edge isolate's memory, which is best effort. To make
+them global across regions, attach Upstash Redis from the Vercel Marketplace
+(it sets `UPSTASH_REDIS_REST_URL`/`_TOKEN`, which the function picks up; the
+older `KV_REST_API_*` pair works too). Two more layers live outside this repo
+and are worth setting: a spend limit on the OpenRouter key, and a Vercel
+Firewall rate-limit rule on `/api/chat` as the outer edge.
 
 To preview the chat locally, put the two keys in `docs/api/.env.local`
 (gitignored) and run the dev server next to `mkdocs serve`:

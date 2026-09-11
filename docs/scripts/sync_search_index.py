@@ -21,6 +21,11 @@ exist locally are removed from the store. Pages come from a local
 ``mkdocs build`` output (``docs/site``) when present, otherwise from the live
 site's ``llms.txt`` page list. CI runs ``mkdocs build`` then this script on every
 push to ``main`` that touches ``docs/`` or ``dspy/``.
+
+Because a missing file is a deletion, an empty local set would wipe the store.
+The script therefore exits before touching a store when an explicit ``--site``
+path does not exist or when no files were found for a store; pass
+``--allow-empty`` to delete everything on purpose.
 """
 
 from __future__ import annotations
@@ -133,7 +138,11 @@ def docs_pages(site: str | None) -> dict[str, bytes]:
             site = LIVE_SITE
     if site.startswith(("http://", "https://")):
         return live_site_pages(site)
-    return local_site_pages(Path(site))
+    site_dir = Path(site)
+    if not site_dir.is_dir():
+        sys.exit(f"--site {site} is not a directory; run `mkdocs build` in docs/ first "
+                 "or pass the site URL")
+    return local_site_pages(site_dir)
 
 
 def code_files() -> dict[str, bytes]:
@@ -161,7 +170,12 @@ def store_files(mxbai, store):
         after = page.data[-1].id
 
 
-def sync_store(mxbai, store: str, local: dict[str, bytes], dry_run: bool) -> None:
+def sync_store(mxbai, store: str, local: dict[str, bytes], dry_run: bool,
+               allow_empty: bool = False) -> None:
+    if not local and not allow_empty:
+        # every remote file would count as stale and be deleted
+        sys.exit(f"{store}: no local files found; refusing to sync because that would "
+                 "delete every file in the store (pass --allow-empty to do that on purpose)")
     try:
         mxbai.stores.retrieve(store)
     except Exception:
@@ -218,13 +232,15 @@ def main():
                         help="mkdocs build dir or site URL (default: docs/site, else https://dspy.ai)")
     parser.add_argument("--store", choices=STORES, default=None, help="sync only one store")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="proceed when no local files were found, deleting every file in the store")
     args = parser.parse_args()
 
     mxbai = client()
     if args.store in (None, DOCS_STORE):
-        sync_store(mxbai, DOCS_STORE, docs_pages(args.site), args.dry_run)
+        sync_store(mxbai, DOCS_STORE, docs_pages(args.site), args.dry_run, args.allow_empty)
     if args.store in (None, CODE_STORE):
-        sync_store(mxbai, CODE_STORE, code_files(), args.dry_run)
+        sync_store(mxbai, CODE_STORE, code_files(), args.dry_run, args.allow_empty)
 
 
 if __name__ == "__main__":

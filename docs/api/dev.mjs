@@ -4,6 +4,9 @@
 // (gitignored, KEY=value lines). Needs Node 18+.
 //
 //     node docs/api/dev.mjs
+//
+// The function's rate limits apply locally too (every request comes from
+// 127.0.0.1); set RATE_LIMIT_IP=0 in .env.local when hammering it from evals.
 
 import http from "node:http";
 import { readFileSync } from "node:fs";
@@ -38,7 +41,7 @@ http
     for await (const c of req) chunks.push(c);
     const request = new Request(`http://localhost:${port}${req.url}`, {
       method: req.method,
-      headers: req.headers,
+      headers: { ...req.headers, "x-real-ip": req.socket.remoteAddress || "unknown" },
       body: req.method === "POST" ? Buffer.concat(chunks) : undefined,
     });
     let response;

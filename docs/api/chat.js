@@ -26,6 +26,16 @@
 //   PAGES                default 3
 //   MAX_TOKENS           default 4000
 //   SYSTEM_PROMPT_URL    MODE=toast only; default is docs/api/system_prompt.txt on main
+//   ALLOWED_ORIGINS      extra browser origins allowed to call the endpoint,
+//                        comma-separated ("*" disables the check). The site's
+//                        own origin, DOCS_SITE and localhost previews always are.
+//   RATE_LIMIT_IP        requests per minute per client IP (default 10; 0 = off)
+//   RATE_LIMIT_GLOBAL    requests per hour across all clients (default 300; 0 = off)
+//   UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN (or the KV_REST_API_URL +
+//                        KV_REST_API_TOKEN pair the Vercel Marketplace sets):
+//                        optional Redis REST endpoint that makes the rate limits
+//                        global across edge regions. Without it every edge
+//                        isolate counts in its own memory (best effort).
 
 export const config = { runtime: "edge" };
 
@@ -101,6 +111,111 @@ const env = (name, fallback) => {
   return v === undefined || v === "" ? fallback : v;
 };
 const stores = () => env("STORES", "dspy-docs,dspy-code").split(",").map((s) => s.trim());
+
+// ── abuse controls ───────────────────────────────────────────────────────
+//
+// The endpoint is public: the widget calls it from the docs pages with no
+// credential, so what bounds spend on the paid providers behind it is
+//   * the body limits in the handler (input size, history length, MAX_TOKENS),
+//   * an origin check: a browser request must come from the docs site itself,
+//     DOCS_SITE, a localhost preview, or ALLOWED_ORIGINS. Browsers set Origin
+//     and a web page cannot forge it, so this stops other sites embedding the
+//     widget. It is not authentication (a script can omit or spoof it), hence
+//   * per-client and global rate limits keyed on the client IP that Vercel
+//     sets (x-real-ip / x-forwarded-for are overwritten at its edge and cannot
+//     be spoofed). Counters live in Redis when a REST endpoint is configured,
+//     making the limits global; otherwise in the memory of each edge isolate,
+//     which still caps what any one isolate can spend.
+
+function corsHeaders(request) {
+  // null: Origin present and not allowed. {}: no Origin (not a browser page).
+  const origin = request.headers.get("Origin");
+  if (!origin) return {};
+  const allowed = env("ALLOWED_ORIGINS", "").split(",").map((s) => s.trim()).filter(Boolean);
+  let ok = allowed.includes("*") || allowed.includes(origin);
+  if (!ok) {
+    let host = null;
+    try {
+      host = new URL(origin).host;
+    } catch {
+      return null; // "null" (sandboxed/file: pages) or malformed
+    }
+    const own = [new URL(request.url).host, request.headers.get("x-forwarded-host"), request.headers.get("host")];
+    ok =
+      own.includes(host) ||
+      origin === env("DOCS_SITE", "https://dspy.ai").replace(/\/$/, "") ||
+      /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host); // mkdocs serve previews
+  }
+  return ok ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : null;
+}
+
+function clientIp(request) {
+  const h = request.headers;
+  return h.get("x-real-ip") || (h.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+}
+
+const limits = () => [
+  { scope: "ip", n: Number(env("RATE_LIMIT_IP", 10)), window: 60 },
+  { scope: "global", n: Number(env("RATE_LIMIT_GLOBAL", 300)), window: 3600 },
+];
+
+function redisConfig() {
+  const url = env("UPSTASH_REDIS_REST_URL", env("KV_REST_API_URL"));
+  const token = env("UPSTASH_REDIS_REST_TOKEN", env("KV_REST_API_TOKEN"));
+  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+}
+
+// Upstash / Vercel KV REST pipeline: INCR the window-scoped key, expire it
+// once the window is over. Returns the count after this request.
+async function bumpRedis({ url, token }, key, windowSec) {
+  const r = await fetch(`${url}/pipeline`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify([["INCR", key], ["EXPIRE", key, windowSec * 2]]),
+  });
+  if (!r.ok) throw new Error(`redis ${r.status}`);
+  const [incr] = await r.json();
+  if (!incr || incr.error) throw new Error(incr?.error || "redis: bad reply");
+  return Number(incr.result);
+}
+
+// Per-isolate fallback. Keys carry the window index, so a stale entry is just
+// garbage; prune it once the map grows instead of resetting live counts.
+const buckets = new Map();
+function bumpMemory(key, expiresAt, now) {
+  if (buckets.size > 10_000) {
+    for (const [k, v] of buckets) if (v.expiresAt <= now) buckets.delete(k);
+  }
+  const b = buckets.get(key) || { n: 0, expiresAt };
+  b.n += 1;
+  buckets.set(key, b);
+  return b.n;
+}
+
+// Seconds the client should wait, or 0 when the request may proceed. Fixed
+// windows; the per-IP limit is checked first so a blocked client does not
+// eat into the global budget.
+async function rateLimited(ip) {
+  const now = Date.now();
+  const redis = redisConfig();
+  for (const limit of limits()) {
+    if (!(limit.n > 0)) continue;
+    const idx = Math.floor(now / 1000 / limit.window);
+    const key = `rl:${limit.scope}:${limit.scope === "ip" ? ip : "all"}:${idx}`;
+    const resetAt = (idx + 1) * limit.window * 1000;
+    let n;
+    if (redis) {
+      try {
+        n = await bumpRedis(redis, key, limit.window);
+      } catch (e) {
+        console.error(`rate limit store unavailable, counting in isolate memory: ${e.message}`);
+      }
+    }
+    if (n === undefined) n = bumpMemory(key, resetAt, now);
+    if (n > limit.n) return Math.max(1, Math.ceil((resetAt - now) / 1000));
+  }
+  return 0;
+}
 
 // ── mode: toast (toast-1 answers with the hosted store tools) ────────────
 
@@ -259,13 +374,16 @@ async function pagesMode(messages) {
 // ── handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(request) {
+  const cors = corsHeaders(request);
+  if (cors === null) return new Response("origin not allowed", { status: 403 });
   if (request.method === "OPTIONS") {
     return new Response(null, {
-      headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
+      status: 204,
+      headers: { ...cors, "Access-Control-Allow-Methods": "POST, OPTIONS",
                  "Access-Control-Allow-Headers": "Content-Type" },
     });
   }
-  if (request.method !== "POST") return new Response("POST only", { status: 405 });
+  if (request.method !== "POST") return new Response("POST only", { status: 405, headers: cors });
   if (!env("MXBAI_API_KEY")) return new Response("MXBAI_API_KEY is not configured", { status: 500 });
 
   let messages;
@@ -276,23 +394,31 @@ export default async function handler(request) {
     if (!Array.isArray(messages) || !messages.length) throw new Error();
     if (messages.some((m) => typeof m.content !== "string" || m.content.length > 4_000)) throw new Error();
   } catch {
-    return new Response("body must be {messages: [...]} within size limits", { status: 400 });
+    return new Response("body must be {messages: [...]} within size limits", { status: 400, headers: cors });
   }
   // keep history bounded; roles/content only, drop anything else
   messages = messages.slice(-12).map(({ role, content }) => ({ role, content }));
+
+  const retryAfter = await rateLimited(clientIp(request));
+  if (retryAfter) {
+    return new Response("too many requests, try again shortly", {
+      status: 429,
+      headers: { ...cors, "Retry-After": String(retryAfter) },
+    });
+  }
 
   const mode = env("MODE", "pages").toLowerCase();
   let upstream;
   try {
     upstream = mode === "toast" ? await toastMode(messages) : await pagesMode(messages);
   } catch (e) {
-    return new Response(`chat backend error: ${e.message}`, { status: 502 });
+    return new Response(`chat backend error: ${e.message}`, { status: 502, headers: cors });
   }
   if (!upstream.ok) {
     const detail = await upstream.text();
-    return new Response(`upstream ${upstream.status}: ${detail.slice(0, 300)}`, { status: 502 });
+    return new Response(`upstream ${upstream.status}: ${detail.slice(0, 300)}`, { status: 502, headers: cors });
   }
   return new Response(upstream.body, {
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store" },
+    headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-store" },
   });
 }
