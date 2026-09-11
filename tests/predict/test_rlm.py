@@ -7,6 +7,7 @@ Test organization:
 """
 
 import base64
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -2237,7 +2238,7 @@ class TestApplyHistoryProcessor:
         # Processor operated on a copy; caller's history is unchanged
         assert len(history.messages) == 2
 
-    def test_raise_after_partial_mutation_does_not_leak(self):
+    def test_raise_after_partial_mutation_does_not_leak(self, caplog):
         history = self._history()
 
         def mutate_then_raise(h: dspy.History) -> None:
@@ -2245,10 +2246,17 @@ class TestApplyHistoryProcessor:
             h.messages.append({"query": "corrupt"})
             raise RuntimeError("boom")
 
-        with pytest.raises(RuntimeError, match="boom"):
-            _apply_history_processor(mutate_then_raise, history)
+        with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
+            result = _apply_history_processor(mutate_then_raise, history)
 
+        # Exception is swallowed, the unprocessed original is returned, and nothing leaked into it
+        assert result is history
         assert [m["query"] for m in history.messages] == ["a", "b"]
+
+        errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(errors) == 1
+        assert "history_processor raised" in errors[0].getMessage()
+        assert "boom" in errors[0].getMessage()
 
     def test_nested_mutation_is_isolated(self):
         history = self._history()

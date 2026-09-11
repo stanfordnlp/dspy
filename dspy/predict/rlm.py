@@ -175,7 +175,7 @@ class RLM(Module):
             history_processor: Optional callable applied to the conversation history before each iteration
                 (e.g. to truncate or summarize it). It receives a deep copy of the current `dspy.History`
                 and may either return a new history or edit the copy in place and return `None`.
-                Exceptions propagate to the caller.
+                If it raises, the error is logged and the iteration proceeds with the unprocessed history.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
@@ -1040,15 +1040,23 @@ def _apply_history_processor(
     """Run `processor` over a copy of `history` and return the result.
 
     The processor receives its own deep copy, so an in-place edit followed by a raise cannot leave the caller's
-    history partially modified. We treat `None` as meaning the copy was modified in-place; exceptions propagate.
+    history partially modified. We treat `None` as meaning the copy was modified in-place;
+    exceptions are caught and logged as an error and unprocessed history is returned.
     """
     if processor is None:
         return history
 
     candidate = history.model_copy(deep=True)
-    processed = processor(candidate)
-    if processed is None:
-        return candidate
+    try:
+        processed = processor(candidate)
+        if processed is None:
+            return candidate
+    except Exception as err:
+        logger.error(
+            "history_processor raised; continuing with unprocessed history: %s",
+            format_error_for_lm(err, traceback_frames=5),
+        )
+        return history
     return _coerce_history(processed)
 
 
