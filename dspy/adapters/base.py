@@ -704,6 +704,7 @@ class Adapter:
             if repl_entry_field_name and repl_entry:
                 # Format assistant message with code and reasoning (if present)
                 # Fish code and (potentially) reasoning out of REPLEntry
+                # Reasoning won't be in the signature if LM supports native reasoning
                 repl_entry_dict = repl_entry.model_dump()
                 assistant_values: dict[str, Any] = {}
                 for name in signature.output_fields.keys():
