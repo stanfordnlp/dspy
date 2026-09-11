@@ -69,7 +69,7 @@ jobs:
         run: |
           source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
           (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
@@ -129,7 +129,7 @@ jobs:
         run: |
           source test_before_pypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          pip install dist/*.whl pytest pytest-asyncio pytest-mock
           pytest tests/metadata/test_metadata.py tests/predict
           (cd "$RUNNER_TEMP" && python -c 'import dspy; assert dspy.PythonInterpreter().execute("6 * 7") == 42')
           deactivate
