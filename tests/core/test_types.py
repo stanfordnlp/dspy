@@ -6,6 +6,7 @@ import pytest
 from dspy.core.types import (
     LMAudioPart,
     LMBinaryPart,
+    LMCompactionPart,
     LMConfig,
     LMDocumentPart,
     LMHistoryEntry,
@@ -448,6 +449,66 @@ def test_output_to_value_preserves_redacted_thinking_part():
     output = LMOutput(parts=[thinking])
 
     assert output.to_value() == [thinking]
+
+
+@pytest.mark.parametrize(
+    "compaction",
+    [
+        LMCompactionPart(
+            provider_name="openai",
+            provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+        ),
+        LMCompactionPart(
+            provider_name="anthropic",
+            content="Conversation summary.",
+            provider_data={"type": "compaction", "content": "Conversation summary."},
+        ),
+    ],
+)
+def test_response_serialization_preserves_native_compaction_state(compaction):
+    response = LMResponse(model="model", outputs=[LMOutput(parts=[compaction])])
+
+    restored = LMResponse.model_validate(response.model_dump())
+
+    assert restored.compactions == [compaction]
+
+
+@pytest.mark.parametrize(
+    "compaction",
+    [
+        LMCompactionPart(
+            provider_name="openai",
+            provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+        ),
+        LMCompactionPart(
+            provider_name="anthropic",
+            content="Conversation summary.",
+            provider_data={"type": "compaction", "content": "Conversation summary."},
+        ),
+    ],
+)
+def test_response_legacy_outputs_omit_provider_compaction_state(compaction):
+    response = LMResponse(outputs=[LMOutput(parts=[compaction, LMTextPart(text="answer")])])
+
+    assert response.to_outputs() == ["answer"]
+
+
+def test_provider_compaction_round_trips_through_history_messages():
+    compaction = LMCompactionPart(
+        provider_name="openai",
+        provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+    )
+    content = _history_entry(LMMessage(role="assistant", parts=[compaction])).messages[0]["content"][0]
+
+    restored = LMMessage(role="assistant", content=[content]).parts[0]
+
+    assert content == {
+        "type": "compaction",
+        "id": "cmp_1",
+        "encrypted_content": "opaque",
+        "provider_name": "openai",
+    }
+    assert restored == compaction
 
 
 def test_stream_event_indices_must_be_non_negative():

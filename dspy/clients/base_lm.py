@@ -566,7 +566,8 @@ class BaseLM:
 
     def _legacy_forward_kwargs(self, request: LMRequest) -> dict[str, Any]:
         """Convert a normalized request into kwargs for legacy `forward()` implementations."""
-        data = to_openai_chat_request(request)
+        # The legacy Responses path re-normalizes these chat-shaped kwargs in LM.forward.
+        data = to_openai_chat_request(request, _allow_responses_compaction=self.model_type == "responses")
         data.pop("model", None)
         if request.config.cache is not None:
             if request.config.cache.enabled is not None:

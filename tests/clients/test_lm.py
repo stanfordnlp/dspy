@@ -16,6 +16,7 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
+from dspy.core.types import LMCompactionPart, LMOutput, LMResponse
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -2172,3 +2173,143 @@ def test_responses_to_lm_response_normalizes_mixed_text_reasoning_and_tool_calls
     assert output.tool_calls[0].provider_data["raw_arguments"] == '{"city": "Paris",}'
     assert "arguments_parse_error" in output.tool_calls[0].provider_data
     assert lm_response.usage.total_tokens == 2
+
+
+def test_typed_lm_replays_openai_native_compaction_state():
+    first_provider_response = make_response(
+        [
+            {"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+            ResponseOutputMessage(
+                id="msg_1",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "First answer.", "annotations": []}],
+            ),
+        ]
+    )
+    second_provider_response = make_response(
+        [
+            ResponseOutputMessage(
+                id="msg_2",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[{"type": "output_text", "text": "Second answer.", "annotations": []}],
+            )
+        ]
+    )
+
+    with mock.patch(
+        "litellm.responses", autospec=True, side_effect=[first_provider_response, second_provider_response]
+    ) as responses:
+        lm = dspy.LM(
+            "openai/gpt-5.3-codex",
+            model_type="responses",
+            cache=False,
+            context_management=[{"type": "compaction", "compact_threshold": 200_000}],
+        )
+        with dspy.context(experimental=True):
+            first = lm(dspy.User("Start the task."))
+            second = lm(dspy.User("Start the task."), first, dspy.User("Continue."))
+
+    assert first.compactions[0].content is None
+    assert first.compactions[0].provider_name == "openai"
+    assert first.compactions[0].provider_data["encrypted_content"] == "opaque"
+    assert second.text == "Second answer."
+    assert responses.call_args_list[1].kwargs["input"] == [
+        {"role": "user", "content": [{"type": "input_text", "text": "Start the task."}]},
+        {"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+        {"role": "assistant", "content": [{"type": "output_text", "text": "First answer."}]},
+        {"role": "user", "content": [{"type": "input_text", "text": "Continue."}]},
+    ]
+    assert responses.call_args_list[1].kwargs["context_management"] == [
+        {"type": "compaction", "compact_threshold": 200_000}
+    ]
+
+
+def test_typed_lm_replays_anthropic_native_compaction_block():
+    first_provider_response = ModelResponse(
+        model="claude-opus-4-6",
+        choices=[
+            Choices(
+                index=0,
+                finish_reason="stop",
+                message=Message(
+                    content="First answer.",
+                    provider_specific_fields={
+                        "compaction_blocks": [{"type": "compaction", "content": "Conversation summary."}]
+                    },
+                ),
+            )
+        ],
+    )
+    second_provider_response = ModelResponse(
+        model="claude-opus-4-6",
+        choices=[Choices(index=0, finish_reason="stop", message=Message(content="Second answer."))],
+    )
+
+    with mock.patch(
+        "litellm.completion", autospec=True, side_effect=[first_provider_response, second_provider_response]
+    ) as completion:
+        lm = dspy.LM(
+            "anthropic/claude-opus-4-6",
+            cache=False,
+            context_management=[{"type": "compaction", "compact_threshold": 150_000}],
+        )
+        with dspy.context(experimental=True):
+            first = lm(dspy.User("Start the task."))
+            second = lm(dspy.User("Start the task."), first, dspy.User("Continue."))
+
+    assert first.compactions[0].content == "Conversation summary."
+    assert first.compactions[0].provider_name == "anthropic"
+    assert second.text == "Second answer."
+    assert completion.call_args_list[1].kwargs["messages"] == [
+        {"role": "user", "content": "Start the task."},
+        {
+            "role": "assistant",
+            "content": "First answer.",
+            "provider_specific_fields": {
+                "compaction_blocks": [{"type": "compaction", "content": "Conversation summary."}]
+            },
+        },
+        {"role": "user", "content": "Continue."},
+    ]
+    assert completion.call_args_list[1].kwargs["context_management"] == [
+        {"type": "compaction", "compact_threshold": 150_000}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("model", "model_type", "transport", "compaction"),
+    [
+        (
+            "openai/gpt-5.3-codex",
+            "responses",
+            "litellm.responses",
+            LMCompactionPart(
+                provider_name="anthropic",
+                content="Conversation summary.",
+                provider_data={"type": "compaction", "content": "Conversation summary."},
+            ),
+        ),
+        (
+            "anthropic/claude-opus-4-6",
+            "chat",
+            "litellm.completion",
+            LMCompactionPart(
+                provider_name="openai",
+                provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+            ),
+        ),
+    ],
+)
+def test_typed_lm_rejects_compaction_from_another_provider(model, model_type, transport, compaction):
+    response = LMResponse(outputs=[LMOutput(parts=[compaction])])
+    lm = dspy.LM(model, model_type=model_type, cache=False)
+
+    with mock.patch(transport, autospec=True) as completion:
+        with dspy.context(experimental=True), pytest.raises(ValueError, match="cannot be sent"):
+            lm(dspy.User("Start the task."), response, dspy.User("Continue."))
+
+    completion.assert_not_called()

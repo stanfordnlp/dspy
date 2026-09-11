@@ -18,7 +18,7 @@ from dspy.clients.openai_format import (
     lm_response_from_legacy_outputs,
     to_openai_chat_request,
 )
-from dspy.core.types import LMMessage, LMRequest, LMResponse
+from dspy.core.types import LMCompactionPart, LMMessage, LMRequest, LMResponse
 from dspy.experimental import Citations
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
@@ -233,7 +233,7 @@ class Adapter:
         entry point directly. The OpenAI-shaped compatibility kwargs should live
         only inside concrete LM backends.
         """
-        data = self._legacy_call_kwargs(request)
+        data = self._legacy_call_kwargs(lm, request)
         outputs = lm(messages=data.pop("messages"), **data)
         return self._normalize_legacy_outputs(outputs, request)
 
@@ -243,16 +243,19 @@ class Adapter:
         TODO(language-models): Same transitional boundary as `_call_lm()`; this
         should eventually call a normalized async LM method directly.
         """
-        data = self._legacy_call_kwargs(request)
+        data = self._legacy_call_kwargs(lm, request)
         outputs = await lm.acall(messages=data.pop("messages"), **data)
         return self._normalize_legacy_outputs(outputs, request)
 
-    def _legacy_call_kwargs(self, request: LMRequest) -> dict[str, Any]:
+    def _legacy_call_kwargs(self, lm: BaseLM, request: LMRequest) -> dict[str, Any]:
         # TODO(language-models): Current `BaseLM` expects OpenAI/LiteLLM-shaped
         # chat kwargs. We intentionally use `dspy.clients.openai_format` here so
         # the conversion code lives in the future LM/client layer, not in
         # adapters. Remove this adapter helper once `BaseLM` accepts `LMRequest`.
-        data = to_openai_chat_request(request)
+        data = to_openai_chat_request(
+            request,
+            _allow_responses_compaction=lm.model_type == "responses",
+        )
         data.pop("model", None)
         # TODO(language-models): `cache` and `rollout_id` are DSPy BaseLM
         # execution controls, not provider request fields. The future
@@ -641,12 +644,22 @@ class Adapter:
         Returns:
             A list of multiturn messages as expected by the LM.
         """
-        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+        history = inputs.get(history_field_name)
+        conversation_history = history.messages if history is not None else None
 
         if conversation_history is None:
             return []
 
         messages = []
+        if isinstance(history.compaction, str):
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Here is a summary of the conversation to date:\n\n{history.compaction}",
+                }
+            )
+        elif isinstance(history.compaction, LMCompactionPart):
+            messages.append({"role": "assistant", "content": [history.compaction]})
         for message in conversation_history:
             tool_call_field_name, tool_calls = _tool_calls_from_message(message)
             tool_call_results = (

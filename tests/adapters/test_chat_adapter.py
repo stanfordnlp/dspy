@@ -8,6 +8,7 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
+from dspy.core.types import LMCompactionPart
 from dspy.experimental import Citations, Document
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
@@ -383,6 +384,142 @@ def test_chat_adapter_format_exact_messages_with_history():
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_chat_adapter_formats_text_compaction_before_recent_history_messages():
+    class HistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        compaction="The user established that 1+1 is 2.",
+        messages=[{"question": "What is 2+2?", "answer": "4"}],
+    )
+    lm = dspy.utils.DummyLM([{"answer": "6"}])
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
+        prediction = dspy.Predict(HistorySignature)(history=history, question="What is 3+3?")
+
+    messages = lm.history[0]["messages"]
+    assert prediction.answer == "6"
+    assert messages[1] == {
+        "role": "user",
+        "content": "Here is a summary of the conversation to date:\n\nThe user established that 1+1 is 2.",
+    }
+    assert [message["role"] for message in messages[2:]] == ["user", "assistant", "user"]
+    assert "What is 2+2?" in messages[2]["content"]
+    assert "What is 3+3?" in messages[4]["content"]
+
+
+@pytest.mark.parametrize(
+    "compaction",
+    [
+        "Earlier conversation summary.",
+        LMCompactionPart(
+            provider_name="openai",
+            provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+        ),
+    ],
+)
+def test_compacted_history_round_trip_preserves_compaction_and_recent_messages(compaction):
+    history = dspy.History(
+        compaction=compaction,
+        messages=[{"question": "Recent question", "answer": "Recent answer"}],
+    )
+
+    restored = dspy.History.model_validate(history.model_dump())
+
+    assert restored == history
+    assert dspy.History(messages=[]).model_dump() == {"messages": []}
+
+
+@pytest.mark.parametrize(
+    ("lm", "compaction", "expected_message"),
+    [
+        (
+            dspy.LM("openai/gpt-5.3-codex", model_type="responses"),
+            LMCompactionPart(
+                provider_name="openai",
+                provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+            ),
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "compaction",
+                        "id": "cmp_1",
+                        "encrypted_content": "opaque",
+                        "provider_name": "openai",
+                    }
+                ],
+            },
+        ),
+        (
+            dspy.LM("anthropic/claude-opus-4-6"),
+            LMCompactionPart(
+                provider_name="anthropic",
+                content="Earlier conversation summary.",
+                provider_data={"type": "compaction", "content": "Earlier conversation summary."},
+            ),
+            {
+                "role": "assistant",
+                "content": None,
+                "provider_specific_fields": {
+                    "compaction_blocks": [
+                        {"type": "compaction", "content": "Earlier conversation summary."}
+                    ]
+                },
+            },
+        ),
+    ],
+)
+def test_chat_adapter_replays_provider_compaction_before_recent_history(lm, compaction, expected_message):
+    class HistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        compaction=compaction,
+        messages=[{"question": "What is 2+2?", "answer": "4"}],
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        HistorySignature,
+        [],
+        {"history": history, "question": "What is 3+3?"},
+        lm=lm,
+    )
+
+    assert messages[1] == expected_message
+    assert [message["role"] for message in messages[2:]] == ["user", "assistant", "user"]
+    assert lm_kwargs == {}
+
+
+def test_chat_adapter_rejects_history_compaction_from_another_provider():
+    class HistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        compaction=LMCompactionPart(
+            provider_name="openai",
+            provider_data={"type": "compaction", "id": "cmp_1", "encrypted_content": "opaque"},
+        ),
+        messages=[],
+    )
+
+    with pytest.raises(ValueError, match="cannot be sent"):
+        format_messages_and_lm_kwargs(
+            dspy.ChatAdapter(),
+            HistorySignature,
+            [],
+            {"history": history, "question": "Continue."},
+            lm=dspy.LM("anthropic/claude-opus-4-6"),
+        )
 
 
 def test_chat_adapter_format_exact_messages_with_list_value_for_string_input():
