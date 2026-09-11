@@ -37,7 +37,7 @@ class Flex(Module, Parameter):
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
         interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
-            sandbox session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
+            interpreter session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
         max_predictor_calls: Maximum number of predictor calls the optimizer-authored code can
             make per ``forward`. ``None`` removes the limit.
     """
