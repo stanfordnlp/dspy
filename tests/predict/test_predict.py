@@ -333,7 +333,7 @@ def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -357,7 +357,7 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -379,7 +379,7 @@ def test_load_allows_serialized_endpoint_override_with_opt_in(tmp_path, endpoint
 def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_override_key):
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
@@ -397,7 +397,7 @@ def test_load_state_ignores_serialized_endpoint_override_by_default(endpoint_ove
 def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_override_key):
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"][endpoint_override_key] = override_url
 
@@ -413,7 +413,7 @@ def test_load_state_allows_serialized_endpoint_override_with_opt_in(endpoint_ove
 def test_load_state_ignores_serialized_model_list_endpoint_override_by_default():
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     saved_state = copy.deepcopy(original_predict.dump_state())
     saved_state["lm"]["model_list"] = [
         {
@@ -440,7 +440,7 @@ def test_load_prevents_serialized_endpoint_override_reaching_litellm(tmp_path, e
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -470,7 +470,7 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -518,7 +518,7 @@ def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp
     env_api_key = "sk-live-test-secret"
 
     original_predict = dspy.Predict("q->a")
-    original_predict.lm = dspy.LM(model="openai/gpt-4o-mini", model_type="text")
+    original_predict.lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", model_type="text")
     original_predict.save(file_path)
 
     with open(file_path, "rb") as f:
@@ -795,7 +795,7 @@ def test_call_predict_with_chat_history(adapter_type):
 
 def test_lm_usage():
     program = Predict("question -> answer")
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True)
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
@@ -816,7 +816,7 @@ def test_lm_usage_with_parallel():
         time.sleep(0.5)
         return program(question=question)
 
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True)
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
@@ -848,7 +848,7 @@ async def test_lm_usage_with_async():
 
     program.aforward = types.MethodType(patched_aforward, program)
 
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True):
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True):
         with patch(
             "litellm.acompletion",
             return_value=ModelResponse(
@@ -962,7 +962,7 @@ async def test_async_predict():
 
 def test_predicted_outputs_piped_from_predict_to_lm_call():
     program = Predict("question -> answer")
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm"))
 
     with patch("litellm.completion") as mock_completion:
         program(

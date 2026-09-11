@@ -73,7 +73,7 @@ def test_chat_adapter_quotes_literals_as_expected(
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         program(input_text=input_value)
@@ -2335,7 +2335,7 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -2371,7 +2371,7 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -2603,7 +2603,7 @@ def test_chat_adapter_with_code():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],
@@ -2680,7 +2680,7 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
             adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2705,7 +2705,7 @@ def test_chat_adapter_fallback_preserves_native_function_calling_flag():
             choices=[Choices(message=Message(content="nonsense"))],
             model="openai/gpt-4o-mini",
         )
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__", new=fake_json_adapter_call):
             result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2724,7 +2724,7 @@ def test_chat_adapter_respects_use_json_adapter_fallback_flag():
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
             with pytest.raises(dspy.utils.exceptions.AdapterParseError):
@@ -2744,7 +2744,7 @@ async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
             await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2770,7 +2770,7 @@ async def test_chat_adapter_async_fallback_preserves_native_function_calling_fla
             choices=[Choices(message=Message(content="nonsense"))],
             model="openai/gpt-4o-mini",
         )
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
         with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall", new=fake_json_adapter_acall):
             result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
@@ -2816,7 +2816,7 @@ def test_chat_adapter_toolcalls_native_function_calling():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2842,7 +2842,7 @@ def test_chat_adapter_toolcalls_native_function_calling():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2878,7 +2878,7 @@ def test_chat_adapter_toolcalls_vague_match():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2901,7 +2901,7 @@ def test_chat_adapter_toolcalls_vague_match():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -2933,7 +2933,7 @@ def test_chat_adapter_native_reasoning():
             model="anthropic/claude-3-7-sonnet-20250219",
         )
         modified_signature = adapter._call_preprocess(
-            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
@@ -2941,7 +2941,7 @@ def test_chat_adapter_native_reasoning():
         assert "reasoning" not in modified_signature.output_fields
 
         result = adapter(
-            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             [],
@@ -2974,7 +2974,7 @@ def test_chat_adapter_parses_float_with_underscores():
             model="openai/gpt-4o-mini",
         )
 
-        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
         result = adapter(lm, {}, MySignature, [], {"question": "What is the score?"})
 
         # The underscore-separated float should be parsed as a normal float
@@ -3018,7 +3018,7 @@ def test_null_content_raises_adapter_parse_error():
     the adapter should raise AdapterParseError instead of silently returning None fields."""
     from dspy.utils.exceptions import AdapterParseError
 
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
     response = ModelResponse(
         choices=[Choices(message=Message(content=None))],
         model="openai/gpt-4o-mini",
@@ -3035,7 +3035,7 @@ def test_empty_string_content_raises_adapter_parse_error():
     """Same as above but with empty string content."""
     from dspy.utils.exceptions import AdapterParseError
 
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
     response = ModelResponse(
         choices=[Choices(message=Message(content=""))],
         model="openai/gpt-4o-mini",
@@ -3122,7 +3122,7 @@ def test_responses_model_native_tool_calling_round_trips_tool_only_output():
     )
 
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
-    lm = dspy.LM("openai/dspy-test-model", model_type="responses", cache=False)
+    lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
 
     with (
         mock.patch("litellm.supports_function_calling", return_value=True),

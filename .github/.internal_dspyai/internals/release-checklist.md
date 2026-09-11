@@ -1,5 +1,11 @@
 # Release Checklist
 
+* [ ] For DSPy 3.4, announce the [3.5 LM-interface cutoff](https://dspy.ai/community/normalized-lm-api-migration/#the-35-cutoff) in the release notes: legacy `forward()`/`aforward()` integrations, both legacy-engine wrappers, custom `complete_legacy()` shortcuts, and OpenAI-style `messages=` calls are deprecated. Include the request/response migration examples and clarify that `lm("hello")` stays supported.
+* [ ] Before releasing DSPy 3.5, verify that the deprecated LM interfaces and temporary adapter-message warning marker are removed, all adapters and engines use lm15 requests/responses, and examples/tests no longer rely on the old interfaces.
+
+* [ ] Before tagging, refresh the bundled model capability/pricing metadata from a selected **released** LiteLLM version. From the repository root, run `python scripts/update_model_metadata.py VERSION` (replace `VERSION` with the release you reviewed; the script's default is pinned, not "latest"). This downloads metadata and license files without importing LiteLLM or making model calls.
+    * Review and commit `dspy/clients/model_metadata/snapshot.json.gz`, `provenance.json`, and `LICENSE` before creating the release tag. Check the recorded version and source hashes; do not regenerate these files during the release build itself.
+    * Run `LITELLM_LOCAL_MODEL_COST_MAP=True python -m pytest tests/clients/test_native_metadata.py` against the updated snapshot. Review changed capabilities/prices rather than adjusting expectations just to make the tests pass.
 * [ ] On `main` Create a git tag with pattern X.Y.Z where X, Y, and Z follow the [semver pattern](https://semver.org/). Then push the tag to the origin git repo (github).
     * ```bash
       git tag X.Y.Z

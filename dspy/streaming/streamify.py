@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def _is_litellm_model_response_stream(value: Any) -> bool:
+    from dspy.clients.engines.streaming import EngineChunk
+
+    if isinstance(value, EngineChunk):
+        return True
     cls = type(value)
     return cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")
 

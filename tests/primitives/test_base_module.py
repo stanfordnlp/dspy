@@ -357,7 +357,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
         ]
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
         ):
             results = await asyncio.gather(*coroutines)
 
@@ -404,7 +404,7 @@ def test_module_history():
             ],
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
         program(question="What is the capital of France?")
 
@@ -452,7 +452,7 @@ def test_module_history_with_concurrency():
             choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
 
         parallelizer = dspy.Parallel()
@@ -486,7 +486,7 @@ async def test_module_history_async():
             model="openai/gpt-4o-mini",
         )
         program = MyProgram()
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
             await program.acall(question="What is the capital of France?")
 
             # Second call only call the submodule.
@@ -503,7 +503,7 @@ async def test_module_history_async():
         assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
-            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
 
@@ -513,7 +513,7 @@ async def test_module_history_async():
         assert len(program.cot.predict.history) == 2
 
         with dspy.context(
-            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
         # History is recorded again when history is enabled.

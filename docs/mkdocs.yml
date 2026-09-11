@@ -73,6 +73,7 @@ nav:
         - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
+            - Custom LM Engines: tutorials/custom_lm_engines/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
             - Cache: tutorials/cache/index.md
@@ -177,6 +178,7 @@ nav:
             - api/tools/index.md
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
+            - LocalInterpreter: api/tools/LocalInterpreter.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
             - api/utils/index.md

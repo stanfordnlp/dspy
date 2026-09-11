@@ -118,7 +118,7 @@ class XMLAdapter(ChatAdapter):
                     except pydantic.ValidationError:
                         fields[name] = adapter.validate_python(value, by_name=True)
                     break
-                except Exception as e:
+                except ValueError as e:
                     error = e
             else:
                 raise AdapterParseError(

@@ -317,7 +317,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=MagicMock(return_value="untyped response"))._make_llm_tools()
 
-        with pytest.raises(TypeError, match="Sub-LM must return dspy.LMResponse or a non-empty list"):
+        with pytest.raises(TypeError, match="Sub-LM must return dspy.lm15.Response or a non-empty list"):
             tools["llm_query"]("test prompt")
 
     def test_llm_query_reports_textless_response_type(self):
@@ -466,14 +466,12 @@ class TestRLMInterpreterLifecycle:
             pass
 
         class CapturingLM(dspy.BaseLM):
-            forward_contract = "typed_lm"
-
             def __init__(self):
                 super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
-                self.request = None
+                self.messages = None
 
-            def forward(self, request):
-                self.request = request
+            def forward(self, prompt=None, messages=None, **kwargs):
+                self.messages = messages
                 raise StopLMCall
 
         lm = CapturingLM()
@@ -487,10 +485,13 @@ class TestRLMInterpreterLifecycle:
                 iteration="1/20",
             )
 
-        request = lm.request.model_dump_json(indent=2).encode()
-        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        import json
 
-        assert request == snapshot.read_bytes().removesuffix(b"\n")
+        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        recorded = json.loads(snapshot.read_text())
+        expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
+                    for message in recorded["messages"]]
+        assert lm.messages == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])

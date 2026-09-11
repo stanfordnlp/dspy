@@ -1,4 +1,4 @@
-"""Core typed request/response objects used by DSPy internals."""
+"""The experimental LM vocabulary moved to :mod:`dspy.lm15`.
 
-from dspy.core.types import *
-from dspy.core.types import __all__ as __all__
+No old type aliases are provided: the new objects have different semantics.
+"""
