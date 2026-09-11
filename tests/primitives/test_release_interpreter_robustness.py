@@ -26,9 +26,13 @@ def test_host_tool_failures_match_deno(interpreter_type, error_type):
                 interpreter.execute("fail()")
             assert str(interpreter.execute("6 * 7")).strip() == "42"
         else:
+            # Python 3.10's asyncio.run replaces task cancellation with an empty CancelledError.
+            with pytest.raises(error_type) as expected:
+                asyncio.run(fail())
             with pytest.raises(error_type) as caught:
                 interpreter.execute("fail()")
-            assert caught.value is error
+            assert type(caught.value) is type(expected.value)
+            assert caught.value.args == expected.value.args
             if interpreter_type is dspy.LocalInterpreter:
                 assert interpreter._process is None
                 with pytest.raises(CodeInterpreterError, match="shut down"):
@@ -44,7 +48,7 @@ def test_cancelled_host_tool_wakes_execution_without_timeout():
     interpreter = dspy.LocalInterpreter(tools={"fail": fail})
     with ThreadPoolExecutor(max_workers=1) as executor:
         try:
-            with pytest.raises(asyncio.CancelledError, match="host tool stopped"):
+            with pytest.raises(asyncio.CancelledError):
                 executor.submit(interpreter.execute, "fail()").result(timeout=5)
         finally:
             interpreter.shutdown()
