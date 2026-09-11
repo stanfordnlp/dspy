@@ -338,6 +338,48 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
     assert exc_info.value.__cause__ is None
 
 
+def test_lm_rejects_raw_streaming_at_construction():
+    with pytest.raises(dspy.LMUnsupportedFeatureError) as exc_info:
+        dspy.LM("openai/gpt-4o-mini", stream=True)
+
+    assert exc_info.value.code == "unsupported_feature"
+    assert exc_info.value.features == ["stream"]
+    assert exc_info.value.model == "openai/gpt-4o-mini"
+    assert exc_info.value.provider == "openai"
+    assert "dspy.streamify" in str(exc_info.value)
+
+    dspy.LM("openai/gpt-4o-mini", stream=False)
+
+
+def test_lm_rejects_raw_streaming_before_sync_cache_or_provider_access():
+    lm = dspy.LM("openai/gpt-4o-mini", cache=True)
+
+    with (
+        mock.patch.object(lm, "_get_cached_completion_fn") as cached_completion,
+        mock.patch("dspy.clients.lm.litellm_completion") as provider_completion,
+        pytest.raises(dspy.LMUnsupportedFeatureError, match=r"dspy\.streamify"),
+    ):
+        lm("question", stream=True)
+
+    cached_completion.assert_not_called()
+    provider_completion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_lm_rejects_raw_streaming_before_async_cache_or_provider_access():
+    lm = dspy.LM("openai/gpt-4o-mini", cache=True)
+
+    with (
+        mock.patch.object(lm, "_get_cached_completion_fn") as cached_completion,
+        mock.patch("dspy.clients.lm.alitellm_completion") as provider_completion,
+        pytest.raises(dspy.LMUnsupportedFeatureError, match=r"dspy\.streamify"),
+    ):
+        await lm.acall("question", stream=True)
+
+    cached_completion.assert_not_called()
+    provider_completion.assert_not_called()
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:

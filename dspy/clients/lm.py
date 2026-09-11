@@ -136,6 +136,7 @@ class LM(BaseLM):
 
         if initial_kwargs.get("rollout_id") is None:
             initial_kwargs.pop("rollout_id", None)
+        self._reject_raw_streaming(initial_kwargs)
         return initial_kwargs
 
     @property
@@ -169,6 +170,17 @@ class LM(BaseLM):
                 stacklevel=3,
             )
             self._warned_zero_temp_rollout = True
+
+    def _reject_raw_streaming(self, kwargs: dict[str, Any]) -> None:
+        """Reject direct provider streaming; DSPy streams through `dspy.streamify()`."""
+        if kwargs.get("stream"):
+            raise LMUnsupportedFeatureError(
+                "`stream=True` is not supported as a direct `dspy.LM` argument. "
+                "Use `dspy.streamify(...)` for streaming.",
+                model=self.model,
+                provider=self._provider_name,
+                features=["stream"],
+            )
 
     def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
@@ -237,6 +249,7 @@ class LM(BaseLM):
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
+        self._reject_raw_streaming(kwargs)
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
@@ -295,6 +308,7 @@ class LM(BaseLM):
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
+        self._reject_raw_streaming(kwargs)
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
