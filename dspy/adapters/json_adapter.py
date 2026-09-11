@@ -188,7 +188,7 @@ class JSONAdapter(ChatAdapter):
         # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
             if k in signature.output_fields:
-                fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                fields[k] = parse_value(v, signature.output_fields[k].annotation, signature.output_fields[k])
 
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():

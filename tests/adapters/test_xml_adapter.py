@@ -85,6 +85,43 @@ def test_xml_adapter_parse_raises_on_type_error():
     assert "Failed to parse field" in str(e.value)
 
 
+def test_xml_adapter_parse_enforces_field_constraints():
+    # The by-name fallback used to retry with the bare annotation, silently
+    # accepting values the constrained primary path had just rejected (#7925).
+    class TestSignature(dspy.Signature):
+        score: int = dspy.OutputField(ge=1, le=5)
+
+    adapter = XMLAdapter()
+
+    assert adapter.parse(TestSignature, "<score>3</score>") == {"score": 3}
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        adapter.parse(TestSignature, "<score>9</score>")
+    assert "Failed to parse field" in str(e.value)
+
+
+def test_xml_adapter_by_name_fallback_keeps_field_constraints():
+    # Aliased models are what the by-name fallback exists for: parse_value validates
+    # without by_name, fails on the alias-only model, and the fallback retries with
+    # by_name=True. The retry must keep the FieldInfo constraints attached (#7925).
+    class Item(pydantic.BaseModel):
+        item_name: str = pydantic.Field(alias="item name")
+
+    class TestSignature(dspy.Signature):
+        items: list[Item] = dspy.OutputField(min_length=2)
+
+    adapter = XMLAdapter()
+    two = "<items><item_name>a</item_name></items><items><item_name>b</item_name></items>"
+    assert adapter.parse(TestSignature, two) == {
+        "items": [Item(**{"item name": "a"}), Item(**{"item name": "b"})]
+    }
+
+    one = "<items><item_name>a</item_name></items>"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+        adapter.parse(TestSignature, one)
+    assert "Failed to parse field" in str(e.value)
+
+
 def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     class TestSignature(dspy.Signature):
         counts: dict[str, list[int]] = dspy.OutputField()

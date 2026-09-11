@@ -316,7 +316,7 @@ class BridgeRuntime:
                 if out[name] is None:
                     out[name] = TypeAdapter(field.annotation).validate_python(None)
                 else:
-                    out[name] = parse_value(out[name], field.annotation)
+                    out[name] = parse_value(out[name], field.annotation, field)
             except Exception as e:
                 raise CodeInterpreterError(
                     f"Sandboxed forward returned {out[name]!r} for output field {name!r}, which is "
