@@ -1,7 +1,19 @@
 import logging
 import random
+import sys
 import types
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+
+try:
+    # typing.is_typeddict does not recognise classes built with
+    # typing_extensions.TypedDict, and an unrecognised one falls through to the
+    # isinstance check, which raises "TypedDict does not support instance and
+    # class checks". typing_extensions.is_typeddict recognises both flavours. It
+    # ships with pydantic, which is a hard dependency, but the import is guarded
+    # so a missing typing_extensions degrades instead of breaking imports.
+    from typing_extensions import is_typeddict
+except ImportError:
+    from typing import is_typeddict
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
@@ -321,6 +333,25 @@ def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     return _check_type(value, expected)
 
 
+def _resolvable_member_hints(typed_dict: type) -> dict[str, Any]:
+    """Resolve the members of a TypedDict that can be resolved, and skip the rest.
+
+    get_type_hints is all or nothing: a single member naming a type that is not
+    importable from the definition site raises, and the annotations of every other
+    member are lost with it. Each member is resolved on its own here so an
+    unresolvable one costs only its own check.
+    """
+    namespace = getattr(sys.modules.get(typed_dict.__module__), "__dict__", {})
+    hints: dict[str, Any] = {}
+    for key, annotation in getattr(typed_dict, "__annotations__", {}).items():
+        holder = type("_Member", (), {"__annotations__": {key: annotation}})
+        try:
+            hints[key] = get_type_hints(holder, namespace)[key]
+        except Exception:
+            continue
+    return hints
+
+
 def _check_type(value: Any, expected: type) -> bool:
     """Stdlib replacement for typeguard.check_type."""
     if expected is Any:
@@ -328,6 +359,26 @@ def _check_type(value: Any, expected: type) -> bool:
 
     origin = get_origin(expected)
     args = get_args(expected)
+
+    # TypedDict: typing forbids isinstance checks against it, so validate the
+    # shape directly: required keys must be present, no unknown keys, and each
+    # declared member checked against its own annotation.
+    if is_typeddict(expected):
+        if not isinstance(value, dict):
+            return False
+        if not expected.__required_keys__ <= value.keys():
+            return False
+        if not value.keys() <= expected.__annotations__.keys():
+            return False
+        try:
+            hints = get_type_hints(expected)
+        except (NameError, TypeError):
+            # One member with an unresolvable forward reference makes get_type_hints
+            # raise for the whole TypedDict. Resolving member by member keeps the
+            # rest checkable, so a sibling with the wrong value type is still
+            # reported instead of the unresolvable member excusing the payload.
+            hints = _resolvable_member_hints(expected)
+        return all(_check_type(item, hints[key]) for key, item in value.items() if key in hints)
 
     # Union / Optional (X | None)
     if origin is Union or origin is types.UnionType:
