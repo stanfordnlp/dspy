@@ -468,6 +468,7 @@ _CLASS_TO_CODE: dict[type[LM15Error], str] = {
     AmbiguousModelError: "ambiguous_model",
     TransportError: "transport",
     LockTimeoutError: "lock_timeout",
+    StreamAssemblyError: "stream_assembly",
     ProviderError: "provider",
 }
 

@@ -46,7 +46,7 @@ from ..types import (
     StreamEvent,
 )
 from .anthropic import AnthropicLM
-from .base import BaseProviderLM, Credential, HttpResponse, _attach_retry_after
+from .base import BaseProviderLM, Credential, HttpResponse, _attach_error_metadata
 from .claude_code import DEFAULT_CLAUDE_CODE_VERSION, ClaudeCodeLM
 from .gemini import GeminiLM
 from .openai import OpenAILM
@@ -168,7 +168,7 @@ class AsyncBaseProviderLM:
                     error = self._inner.normalize_error(
                         resp.status, body.decode("utf-8", errors="replace")
                     )
-                    _attach_retry_after(error, resp.headers)
+                    _attach_error_metadata(error, resp.headers)
                     raise error
                 async for raw in aparse_sse(_aiter_lines(resp)):
                     for event in self._inner.parse_stream_events(request, raw):

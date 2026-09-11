@@ -50,10 +50,11 @@ class DSPyError(Exception):
 class LMError(DSPyError):
     """Base class for language model errors.
 
-    Catch this class to handle any failure raised while configuring or calling
-    an LM. Concrete subclasses identify whether the failure came from local
-    configuration, transport, provider authentication, rate limits, invalid
-    requests, unsupported features, or provider server errors.
+    Catch this class for failures at DSPy's engine and capability boundaries.
+    Concrete subclasses identify local configuration, transport, authentication,
+    rate limits, invalid requests, unsupported features, and provider failures.
+    Invalid Python API arguments still raise TypeError/ValueError; missing
+    dependencies raise ImportError. Cancellation and warning policies propagate.
     """
 
     default_code = "lm_error"
@@ -67,6 +68,17 @@ class LMTransportError(LMError):
     """
 
     default_code = "transport"
+
+
+class LMLockTimeoutError(LMError):
+    """Local credential-lock contention, not a provider or authentication failure."""
+
+    default_code = "lock_timeout"
+
+    def __init__(self, message: str = "", *, path: str = "", lock_path: str = "", **kwargs: Any):
+        self.path = path
+        self.lock_path = lock_path
+        super().__init__(message, **kwargs)
 
 
 class LMConfigurationError(LMError):
@@ -122,14 +134,29 @@ class LMProviderError(LMError):
 class LMUnexpectedError(LMError):
     """An unexpected failure occurred at the LM provider boundary.
 
-    DSPy raises this when an exception is raised while calling the LM backend,
-    but the exception does not match a known provider error class and does not
-    include an HTTP status code. This keeps adapter fallback behavior from
-    treating unknown LM-boundary failures as parse failures while avoiding
-    over-classifying them as provider response errors.
+    DSPy raises this for an unclassified engine failure and preserves its
+    original exception as the cause. Only the owning engine interprets SDK
+    errors: arbitrary message text or status-like attributes do not make a
+    custom engine failure retryable. This is not a provider-response error or
+    a model-output parsing error.
     """
 
     default_code = "unexpected"
+
+
+class LMStreamAssemblyError(LMUnexpectedError):
+    """An incomplete or invalid stream cannot be accepted as a successful response.
+
+    ``partial`` carries salvageable content when available. It is not a success
+    and must not be cached. Unknown usage remains unknown.
+    """
+
+    default_code = "stream_assembly"
+
+    def __init__(self, message: str = "", *, partial=None, part_index: int | None = None, **kwargs: Any):
+        self.partial = partial
+        self.part_index = part_index
+        super().__init__(message, **kwargs)
 
 
 class LMAuthError(LMProviderError):
@@ -163,10 +190,10 @@ class LMInvalidRequestError(LMProviderError):
 class ContextWindowExceededError(LMInvalidRequestError):
     """Raised when the prompt exceeds the model's context window.
 
-    Any LM subclass should raise this error, or a subclass of it, when the
-    request fails because the input is too long for the model. Adapters and
-    some modules rely on catching this specific type to decide whether a
-    fallback retry is appropriate.
+    Custom engines raise dspy.lm15.ContextLengthError; DSPy projects it to
+    this public type. Legacy 3.4 LM subclasses may still raise this error
+    directly. Modules such as ReAct catch it to shorten an overlong history;
+    it does not trigger a generation retry or adapter-format fallback.
 
     Args:
         model: The model identifier that rejected the request.
@@ -205,16 +232,17 @@ class LMServerError(LMProviderError):
     default_code = "server"
 
 
-_RETRYABLE_LM_ERRORS = (LMRateLimitError, LMTimeoutError, LMServerError, LMTransportError)
+_RETRYABLE_LM_ERRORS = (LMRateLimitError, LMTimeoutError, LMServerError, LMTransportError, LMLockTimeoutError)
 
 
 def is_retryable_lm_error(error: Exception) -> bool:
     """Return whether an LM error is generally safe to retry.
 
-    DSPy's built-in `LM` delegates provider retries to LiteLLM, but callers and
-    higher-level orchestration code can use this helper to classify wrapped LM
-    failures after provider retries are exhausted. Retryability is advisory:
-    callers should still respect provider policy and `retry_after` when present.
+    DSPy owns retries; managed engines perform one attempt. This classification
+    describes transient failures, not proof that the provider did no work.
+    Never replay after visible stream output or a completed generation, and
+    respect provider policy and valid `retry_after` hints. Network retries can
+    still repeat a request already processed or billed by the provider.
 
     Args:
         error: The exception to classify.

@@ -232,7 +232,7 @@ def parse_value(value, annotation):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
                 return TypeAdapter(annotation).validate_python(value)
-            except Exception:
+            except pydantic.ValidationError:
                 raise e
         raise
 

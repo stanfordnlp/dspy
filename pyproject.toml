@@ -78,6 +78,7 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+"dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
 "dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
 "dspy._vendor.lm15" = ["py.typed"]
 

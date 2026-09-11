@@ -9,8 +9,8 @@ Mirror of _sync.py but async end-to-end.  Key differences:
 - Cancellation correctness: if the caller's task is cancelled mid-stream,
   we must close the writer (not return it to the pool), then re-raise
   CancelledError without awaiting anything that could itself be cancelled.
-- Timeouts use `asyncio.wait_for`.  We avoid `asyncio.timeout` (3.11+) to
-  stay Python 3.10-compatible.
+- Timeouts use a cancellation-safe wait helper, including on Python 3.10/3.11
+  where asyncio.wait_for can swallow simultaneous caller cancellation.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from ._http11 import (
 )
 from ._proxy import ProxyRoute, connect_payload, proxy_route_for, route_origin
 from ._ssl import make_ssl_context
+from ._timeouts import wait_for
 from ._types import AsyncTransportResponse, TransportRequest
 from ._url import ParsedURL, parse_url
 
@@ -115,7 +116,7 @@ class _AsyncConnectionPool:
             await self._slot.acquire()
             return
         try:
-            await asyncio.wait_for(self._slot.acquire(), timeout=timeout)
+            await wait_for(self._slot.acquire(), timeout=timeout, cancel_result=lambda _: self._slot.release())
         except asyncio.TimeoutError:
             raise TransportError("timed out waiting for connection pool slot")
 
@@ -294,7 +295,7 @@ class StdlibAsyncTransport:
                             return
                     while not decoder.complete:
                         try:
-                            data = await asyncio.wait_for(
+                            data = await wait_for(
                                 conn.reader.read(_READ_CHUNK),
                                 timeout=read_timeout,
                             )
@@ -363,11 +364,12 @@ class StdlibAsyncTransport:
             # gained start_tls only in 3.11).
             tunnel = await self._connect_tunnel(parsed, proxy, timeout=connect_timeout)
             try:
-                reader, writer = await asyncio.wait_for(
+                reader, writer = await wait_for(
                     asyncio.open_connection(
                         sock=tunnel, ssl=ctx, server_hostname=parsed.host
                     ),
                     timeout=connect_timeout,
+                    cancel_result=lambda pair: pair[1].close(),
                 )
             except asyncio.TimeoutError as exc:
                 tunnel.close()
@@ -383,7 +385,7 @@ class StdlibAsyncTransport:
         connect_host = proxy.host if proxy is not None else parsed.host
         connect_port = proxy.port if proxy is not None else parsed.port
         try:
-            reader, writer = await asyncio.wait_for(
+            reader, writer = await wait_for(
                 asyncio.open_connection(
                     host=connect_host,
                     port=connect_port,
@@ -391,6 +393,7 @@ class StdlibAsyncTransport:
                     server_hostname=parsed.host if ctx else None,
                 ),
                 timeout=connect_timeout,
+                cancel_result=lambda pair: pair[1].close(),
             )
         except asyncio.TimeoutError as exc:
             raise ConnectTimeout(
@@ -419,11 +422,12 @@ class StdlibAsyncTransport:
         """Open a raw socket to the proxy and CONNECT it to the TLS target."""
         loop = asyncio.get_running_loop()
         try:
-            sock = await asyncio.wait_for(
+            sock = await wait_for(
                 asyncio.to_thread(
                     socket.create_connection, (proxy.host, proxy.port), timeout
                 ),
                 timeout=timeout,
+                cancel_result=lambda sock: sock.close(),
             )
         except asyncio.TimeoutError as exc:
             raise ConnectTimeout(
@@ -439,12 +443,12 @@ class StdlibAsyncTransport:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             except OSError:
                 pass
-            await asyncio.wait_for(
+            await wait_for(
                 loop.sock_sendall(sock, connect_payload(parsed, proxy)), timeout=timeout
             )
             parser = ResponseHeadParser()
             while not parser.complete:
-                data = await asyncio.wait_for(
+                data = await wait_for(
                     loop.sock_recv(sock, _READ_CHUNK), timeout=timeout
                 )
                 if not data:
@@ -504,7 +508,7 @@ class StdlibAsyncTransport:
             conn.writer.write(head)
             if body_length is not None and body:
                 conn.writer.write(body)
-            await asyncio.wait_for(conn.writer.drain(), timeout=write_timeout)
+            await wait_for(conn.writer.drain(), timeout=write_timeout)
         except asyncio.TimeoutError as exc:
             raise WriteTimeout(f"write timed out: {exc}") from exc
         except (BrokenPipeError, ConnectionResetError):
@@ -518,7 +522,7 @@ class StdlibAsyncTransport:
         parser = ResponseHeadParser()
         while not parser.complete:
             try:
-                data = await asyncio.wait_for(
+                data = await wait_for(
                     conn.reader.read(_READ_CHUNK), timeout=read_timeout
                 )
             except asyncio.TimeoutError as exc:

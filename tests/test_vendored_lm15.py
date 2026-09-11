@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def test_public_exports_are_the_vendored_objects():
     import dspy
@@ -51,6 +53,30 @@ def test_vendored_lm15_carries_provenance_and_license():
         assert len(marker[key]) == 40
         assert all(char in "0123456789abcdef" for char in marker[key])
     assert "MIT" in (pkg.parent / "lm15-LICENSE").read_text()
+
+
+def test_engine_error_boundaries_and_stream_guard_ship_in_wheel():
+    import dspy
+    from dspy.clients.engines.stream_guard import checked_stream
+    from dspy.lm15 import StreamAssemblyError, StreamDeltaEvent, StreamStartEvent, TextDelta
+
+    class BrokenEngine:
+        calls = 0
+
+        def complete(self, request):
+            self.calls += 1
+            raise RuntimeError("network invariant failed")
+
+    engine = BrokenEngine()
+    lm = dspy.LM("custom", engine=engine, cache=False, num_retries=3)
+    with pytest.raises(dspy.LMUnexpectedError) as caught:
+        lm("hello")
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert engine.calls == 1
+    assert issubclass(dspy.LMLockTimeoutError, dspy.LMError)
+    assert issubclass(dspy.LMStreamAssemblyError, dspy.LMUnexpectedError)
+    with pytest.raises(StreamAssemblyError, match="without a completion event"):
+        list(checked_stream(iter([StreamStartEvent(), StreamDeltaEvent(TextDelta("partial"))])))
 
 
 def test_version_ignores_an_unrelated_installed_distribution(tmp_path):
