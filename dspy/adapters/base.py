@@ -307,9 +307,7 @@ class Adapter:
             # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
-                signature_without_history,
-                history_field_name,
-                inputs_copy,
+                signature_without_history, history_field_name, inputs_copy
             )
 
         messages = []
@@ -588,11 +586,16 @@ class Adapter:
             if repl_entry_field_name and repl_entry:
                 # Format assistant message with code and reasoning (if present)
                 # Fish code and (potentially) reasoning out of REPLEntry
-                # Reasoning won't be in the signature if LM supports native reasoning
-                repl_entry_dict = repl_entry.model_dump()
                 assistant_values: dict[str, Any] = {}
-                for name in signature.output_fields.keys():
-                    assistant_values[name] = repl_entry_dict[name]
+                assistant_values["code"] = repl_entry.code
+
+                # If the signature's outputs don't contain a reasoning field then we don't include the reasoning in the message
+                # If LM supports native reasoning, then the signature won't have any dspy.Reasoning field
+                if any(
+                    isinstance(field.annotation, type) and issubclass(field.annotation, Reasoning)
+                    for field in signature.output_fields.values()
+                ):
+                    assistant_values["reasoning"] = repl_entry.reasoning
                 assistant_content = self.format_assistant_message_content(signature, assistant_values)
                 if assistant_content:
                     messages.append({"role": "assistant", "content": assistant_content})

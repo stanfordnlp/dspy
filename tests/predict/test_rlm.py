@@ -489,8 +489,10 @@ class TestRLMInterpreterLifecycle:
 
         snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
         recorded = json.loads(snapshot.read_text())
-        expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
-                    for message in recorded["messages"]]
+        expected = [
+            {"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
+            for message in recorded["messages"]
+        ]
         assert lm.messages == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
@@ -2380,6 +2382,61 @@ class TestHistoryProcessorHook:
         assert no_hook.answer == with_hook.answer
         assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
 
+    def test_history_processor_invoked_per_iteration_with_ratchet_adoption(self, pooled_interpreter):
+        received = []
+        returned = []
+
+        def process(history):
+            received.append(history)
+            fresh = dspy.History(messages=list(history.messages))
+            returned.append(fresh)
+            return fresh
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert result.answer == 40
+        assert len(received) == 2
+        assert received[0].messages == []
+
+        # The second call sees the object the first call returned
+        assert received[1] == returned[0]
+        assert len(received[1].messages) == 1
+
+        # The resulting history is the one the module appends to and returns
+        assert result.history is returned[1]
+
+    def test_history_processor_runs_before_extract_fallback(self, pooled_interpreter):
+        calls = []
+
+        def process(history):
+            calls.append(len(history.messages))
+            return history
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"answer": "40"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=process)
+            result = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Extract forced final output"
+
+        # Processor called once for loop iteration (empty history) and once for extract fallback
+        # (history holds the single iteration event; the extracted output is appended afterwards)
+        assert calls == [0, 1]
+        assert len(result.history.messages) == 2
+
     @pytest.mark.asyncio
     async def test_async_processor_passed_to_forward_supersedes_module_processor(self, pooled_interpreter):
         module_called = False
@@ -2407,6 +2464,7 @@ class TestHistoryProcessorHook:
         assert forward_called
 
     @pytest.mark.deno
+    @pytest.mark.asyncio
     async def test_async_module_processor_used_as_default_when_set(self, pooled_interpreter):
         module_called = False
 
@@ -2455,6 +2513,35 @@ class TestHistoryProcessorHook:
 
         assert no_hook.answer == with_hook.answer
         assert [call["messages"] for call in lm_no_hook.history] == [call["messages"] for call in lm_with_hook.history]
+
+    @pytest.mark.asyncio
+    async def test_async_history_processor_invoked_per_iteration_with_ratchet_adoption(self, pooled_interpreter):
+        received = []
+        returned = []
+
+        def process(history):
+            received.append(history)
+            fresh = dspy.History(messages=list(history.messages))
+            returned.append(fresh)
+            return fresh
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = await rlm.aforward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert result.answer == 40
+        assert len(received) == 2
+        assert received[0].messages == []
+
+        # The second call sees the object the first call returned
+        assert received[1] == returned[0]
+        assert len(received[1].messages) == 1
+
+        # The resulting history is the one the module appends to and returns
+        assert result.history is returned[1]
 
 
 if __name__ == "__main__":
