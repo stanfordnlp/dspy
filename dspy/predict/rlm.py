@@ -280,14 +280,14 @@ class RLM(Module):
                     "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
                 )
             response = target_lm(prompt)
-            if isinstance(response, dspy.LMResponse):
+            if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
                 first_output = response[0]
                 text = first_output.get("text") if isinstance(first_output, dict) else first_output
             else:
                 raise TypeError(
-                    "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
+                    "Sub-LM must return dspy.lm15.Response or a non-empty list of text outputs, "
                     f"got {type(response).__name__}."
                 )
 

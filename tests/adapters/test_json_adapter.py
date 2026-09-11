@@ -737,7 +737,7 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     program = dspy.Predict(TestSignature)
 
     # Configure DSPy to use an OpenAI LM that supports structured outputs
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
     with mock.patch("litellm.completion") as mock_completion:
         program(input1="Test input")
 
@@ -768,7 +768,7 @@ def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model()
     program = dspy.Predict(TestSignature)
 
     # Configure DSPy to use a model from a fake provider that doesn't support structured outputs
-    dspy.configure(lm=dspy.LM(model="fakeprovider/fakemodel", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="fakeprovider/fakemodel", cache=False), adapter=dspy.JSONAdapter())
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content=("{'output1': 'Test output', 'output2': True}")))],
@@ -795,7 +795,7 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
         output3: OutputField3 = dspy.OutputField(desc="Nested output field")
         output4_unannotated = dspy.OutputField(desc="Unannotated output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion"):
         program(input1="Test input")
@@ -841,7 +841,7 @@ def test_json_adapter_on_pydantic_model():
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
@@ -919,7 +919,7 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
             ],
             model="openai/gpt-4o",
         )
-        lm = dspy.LM(model="openai/gpt-4o-mini")
+        lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
         with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
             adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
 
@@ -1122,7 +1122,7 @@ def test_json_adapter_with_tool():
     assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
 
     with mock.patch("litellm.completion") as mock_completion:
-        lm = dspy.LM(model="openai/gpt-4o-mini")
+        lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
         adapter(lm, {}, MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
 
     mock_completion.assert_called_once()
@@ -1200,7 +1200,7 @@ def test_json_adapter_with_code():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],
@@ -1264,7 +1264,7 @@ async def test_json_adapter_on_pydantic_model_async():
             model="openai/gpt-4o",
         )
 
-        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(
                 user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
             )
@@ -1325,7 +1325,7 @@ def test_json_adapter_does_not_fallback_to_json_mode_on_structured_output_lm_err
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -1344,7 +1344,7 @@ def test_json_adapter_json_mode_no_structured_outputs():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
 
     with (
@@ -1388,7 +1388,7 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
         mock_get_supported_openai_params.return_value = ["response_format"]
         mock_supports_response_schema.return_value = False
 
-        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(question="Dummy question!")
 
         assert mock_acompletion.call_count == 1
@@ -1409,7 +1409,7 @@ async def test_json_adapter_does_not_fallback_to_json_mode_on_structured_output_
     with mock.patch("litellm.acompletion") as mock_acompletion:
         mock_acompletion.side_effect = RuntimeError("Structured output failed!")
 
-        with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             with pytest.raises(dspy.LMUnexpectedError, match="Structured output failed"):
                 await program.acall(question="Dummy question!")
 
@@ -1425,7 +1425,7 @@ def test_error_message_on_json_adapter_failure():
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = RuntimeError("RuntimeError!")
@@ -1451,7 +1451,7 @@ async def test_error_message_on_json_adapter_failure_async():
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.acompletion") as mock_acompletion:
-        with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             mock_acompletion.side_effect = RuntimeError("RuntimeError!")
             with pytest.raises(dspy.LMUnexpectedError) as error:
                 await program.acall(question="Dummy question!")
@@ -1502,7 +1502,7 @@ def test_json_adapter_toolcalls_native_function_calling():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -1528,7 +1528,7 @@ def test_json_adapter_toolcalls_native_function_calling():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             MySignature,
             [],
@@ -1559,7 +1559,7 @@ def test_json_adapter_toolcalls_no_native_function_calling():
                 model="openai/gpt-4o-mini",
             )
             adapter = dspy.JSONAdapter(use_native_function_calling=False)
-            lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+            lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False)
             adapter(lm, {}, MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
 
         # _get_structured_outputs_response_format is not called because without using native function calling,
@@ -1591,7 +1591,7 @@ def test_json_adapter_native_reasoning():
             model="anthropic/claude-3-7-sonnet-20250219",
         )
         modified_signature = adapter._call_preprocess(
-            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
@@ -1599,7 +1599,7 @@ def test_json_adapter_native_reasoning():
         assert "reasoning" not in modified_signature.output_fields
 
         result = adapter(
-            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
             {},
             MySignature,
             [],
@@ -1648,7 +1648,7 @@ def test_json_adapter_with_responses_api():
         user=None,
     )
 
-    lm = dspy.LM(model="openai/gpt-4o", model_type="responses", cache=False)
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o", model_type="responses", cache=False)
     dspy.configure(lm=lm, adapter=dspy.JSONAdapter())
 
     program = dspy.Predict(TestSignature)

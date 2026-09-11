@@ -144,7 +144,13 @@ class ParallelExecutor:
                 def handler(sig, frame):
                     self.cancel_jobs.set()
                     logger.warning("SIGINT received. Cancelling.")
-                    orig_handler(sig, frame)
+                    if callable(orig_handler):
+                        orig_handler(sig, frame)
+                    else:
+                        # SIG_DFL and SIG_IGN are enum sentinels, not functions.
+                        # While evaluation owns SIGINT it means cancellation;
+                        # restore the original disposition on leaving this scope.
+                        signal.default_int_handler(sig, frame)
 
                 signal.signal(signal.SIGINT, handler)
                 try:

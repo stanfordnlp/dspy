@@ -40,7 +40,7 @@ def test_lm_litellm_use_raises_helpful_error_without_litellm(monkeypatch):
     _hide_litellm(monkeypatch)
 
     with pytest.raises(ImportError) as exc_info:
-        _ = dspy.LM("openai/gpt-4o-mini").supports_function_calling
+        _ = dspy.LM("openai/gpt-4o-mini", engine="litellm").supports_function_calling
 
     msg = str(exc_info.value)
     assert "[litellm]" in msg

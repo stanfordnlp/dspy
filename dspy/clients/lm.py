@@ -10,31 +10,17 @@ import anyio.from_thread
 from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
-from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
+from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
+from dspy.clients.call_context import completed_legacy, stream_emitted
+from dspy.clients.engines.lifecycle import aclosing_stream
+from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.openai_format import to_openai_responses_request
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
-from dspy.core.types import LMRequest
+from dspy.lm15 import CacheConfig
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import (
-    ContextWindowExceededError,
-    LMAuthError,
-    LMBillingError,
-    LMConfigurationError,
-    LMError,
-    LMInvalidRequestError,
-    LMNotConfiguredError,
-    LMProviderError,
-    LMRateLimitError,
-    LMServerError,
-    LMTimeoutError,
-    LMTransportError,
-    LMUnexpectedError,
-    LMUnsupportedFeatureError,
-    LMUnsupportedModelError,
-)
+from dspy.utils.exceptions import LMConfigurationError, LMError, LMUnsupportedFeatureError
 
 from .base_lm import BaseLM
 
@@ -56,9 +42,13 @@ def _is_openai_reasoning_model(model: str) -> bool:
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
-    """
 
-    forward_contract = "legacy"
+    Use lm("hello") for a list-returning convenience call, or pass an explicit
+    dspy.lm15.Request to receive a dspy.lm15.Response. OpenAI-style messages=
+    dictionaries are deprecated and scheduled for removal in DSPy 3.5. Adapters
+    and custom engines must migrate to the canonical request/response contract.
+    See https://dspy.ai/community/normalized-lm-api-migration/.
+    """
 
     def __init__(
         self,
@@ -74,6 +64,9 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
+        engine: Any = "auto",
+        async_engine: Any = None,
+        prompt_cache: CacheConfig | None = None,
         **kwargs,
     ):
         """Create a new language model instance for use with DSPy modules and programs.
@@ -92,7 +85,15 @@ class LM(BaseLM):
             num_retries: The number of times to retry a request if it fails transiently due to
                 network error, rate limiting, etc. Requests are retried with exponential
                 backoff.
-            provider: The provider to use. If not specified, the provider will be inferred from the model.
+            engine: 'auto' prefers lm15 for representable requests; 'litellm' preserves the compatibility backend;
+                'lm15' refuses unsupported mappings rather than selecting LiteLLM. A custom engine implements
+                complete(Request) -> Response and optionally stream(Request). Engines are borrowed.
+            async_engine: Async counterpart when supplying a custom engine object.
+            prompt_cache: Optional lm15 CacheConfig for provider-side prompt caching on ordinary calls.
+                Separate from DSPy's response cache. Requires native lm15 or a canonical custom engine;
+                may incur cache-write/storage charges. A call-time value overrides this default, and None
+                removes it. Explicit Request calls use only Request.config.cache. No cache resource is created.
+            provider: The training/launch provider. This does not select the inference engine.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
             rollout_id: Optional integer used to differentiate cache entries for otherwise
@@ -101,6 +102,23 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
+        if isinstance(engine, str):
+            if engine not in {"auto", "lm15", "litellm"}:
+                raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
+            if async_engine is not None:
+                raise ValueError("async_engine is only used with a custom engine object")
+        elif not callable(getattr(engine, "complete", None)):
+            raise TypeError("A custom engine must implement complete(Request) -> Response")
+        if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
+            raise ValueError("num_retries must be a nonnegative integer")
+        if prompt_cache is not None:
+            if not isinstance(prompt_cache, CacheConfig):
+                raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
+            kwargs["prompt_cache"] = prompt_cache
+        self._engine_spec = engine
+        self._async_engine_spec = async_engine
+        self._engine_store = {}
+        self._engine_lock = threading.RLock()
         super().__init__(
             model=model,
             model_type=model_type,
@@ -152,20 +170,27 @@ class LM(BaseLM):
 
     @property
     def supports_function_calling(self) -> bool:
-        return _get_litellm().supports_function_calling(model=self.model)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).function_calling
 
     @property
     def supports_reasoning(self) -> bool:
-        return _get_litellm().supports_reasoning(self.model)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).reasoning
 
     @property
     def supports_response_schema(self) -> bool:
-        return _get_litellm().supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+        from dspy.clients.capabilities import capabilities
+
+        return capabilities(self).response_schema
 
     @property
     def supported_params(self) -> set[str]:
-        params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
-        return set(params) if params else set()
+        from dspy.clients.capabilities import capabilities
+
+        return set(capabilities(self).params)
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
@@ -180,7 +205,7 @@ class LM(BaseLM):
         """Reject a user-supplied `stream=True` before any cache or provider access.
 
         LiteLLM returns a live `CustomStreamWrapper` for raw `stream=True`,
-        which DSPy's `LM.forward` cannot consume; caching that object before
+        where DSPy's completion paths require a completed response; caching it before
         validation made every subsequent identical request fail during cache
         retrieval. DSPy's supported streaming paths inject `stream=True`
         internally via `dspy.streamify`/`settings.send_stream` and never go
@@ -208,154 +233,99 @@ class LM(BaseLM):
         return completion_fn, litellm_cache_args
 
     def _wrap_litellm_exception(self, exc: Exception) -> LMError:
-        """Convert exceptions raised at the LiteLLM boundary into DSPy LM exceptions."""
-        if isinstance(exc, LMError):
-            return exc
+        from dspy.clients.engines.litellm_errors import to_lm15_error
+        from dspy.clients.errors import wrap_error
 
-        status = _exception_status(exc)
-        provider = getattr(exc, "llm_provider", None) or self._provider_name
-        model = getattr(exc, "model", None) or self.model
-        message = _exception_message(exc)
-        metadata = {
-            "model": model,
-            "provider": provider,
-            "provider_code": _exception_provider_code(exc),
-            "status": status,
-            "request_id": _exception_request_id(exc),
-            "retry_after": _exception_retry_after(exc),
-        }
+        canonical = to_lm15_error(exc, model=self.model, provider=self._provider_name)
+        return wrap_error(canonical, model=self.model, provider=self._provider_name)
 
-        if is_litellm_context_window_error(exc):
-            return ContextWindowExceededError(message=message or "Context window exceeded", **metadata)
+    def forward(self, prompt=None, messages=None, **kwargs):
+        """Compatibility forward entry point; public calls also record history."""
+        from dspy.clients.execution import execute, prepare
 
-        exc_cls = _lm_error_class_from_litellm_exception(exc) or _lm_error_class_from_status(status)
-        return exc_cls(message, **metadata)
+        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
-        """Call the configured LM synchronously.
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        import asyncio
 
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
+        from dspy.clients.execution import aexecute, prepare
 
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
+        call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True, direct=True)
+        return (await aexecute(self, call)).provider_response()
 
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
+    @property
+    def engine(self):
+        """Configured engine selection ('auto', 'lm15', 'litellm', or an engine object)."""
+        return self._engine_spec
+
+    def close(self):
+        """Close owned synchronous engine pools after active calls have finished.
+
+        Custom engines are borrowed. Async pools must be closed with aclose().
+        Copies share owned pools; closing one releases those shared resources.
         """
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
+        with self._engine_lock:
+            keys = [key for key in self._engine_store if key[0] is None]
+            engines = [self._engine_store.pop(key) for key in keys]
+        from contextlib import ExitStack
 
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._raise_if_unsupported_stream_kwarg(
-            kwargs,
-            model=self.model,
-            provider=self._provider_name,
-        )
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
+        with ExitStack() as cleanup:
+            for engine in engines:
+                cleanup.callback(engine.close)
 
-        if self.model_type == "chat":
-            completion = litellm_completion
-        elif self.model_type == "text":
-            completion = litellm_text_completion
-        elif self.model_type == "responses":
-            completion = litellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
+    async def aclose(self):
+        """Close this event loop's owned pools and the synchronous pools."""
+        import asyncio
+        from contextlib import AsyncExitStack
 
+        loop = asyncio.get_running_loop()
+        with self._engine_lock:
+            keys = [key for key in self._engine_store if key[0] is loop]
+            engines = [self._engine_store.pop(key) for key in keys]
         try:
-            results = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=litellm_cache_args,
-            )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
+            async with AsyncExitStack() as cleanup:
+                for engine in engines:
+                    cleanup.push_async_callback(engine.aclose)
+        finally:
+            self.close()
 
-        self._check_truncation(results)
+    def __copy__(self):
+        import types
 
-        return results
+        copied = object.__new__(type(self))
+        copied.__dict__.update(self.__dict__)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, types.MemberDescriptorType) and hasattr(self, name):
+                    setattr(copied, name, getattr(self, name))
+        return copied
 
-    async def aforward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs,
-    ):
-        """Call the configured LM asynchronously.
+    def copy(self, **kwargs):
+        if kwargs.get("prompt_cache") is not None and not isinstance(kwargs["prompt_cache"], CacheConfig):
+            raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
+        spec = kwargs.pop("engine", self._engine_spec)
+        async_spec = kwargs.pop("async_engine", self._async_engine_spec)
+        if isinstance(spec, str) and spec not in {"auto", "lm15", "litellm"}:
+            raise ValueError("Unknown engine selection")
+        if not isinstance(spec, str) and not callable(getattr(spec, "complete", None)):
+            raise TypeError("Custom engines must implement complete(Request)")
+        copied = super().copy(**kwargs)
+        copied._engine_spec = spec
+        copied._async_engine_spec = async_spec
+        return copied
 
-        LiteLLM/provider exceptions are wrapped in DSPy's structured LM error
-        hierarchy before they are re-raised.
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state.pop("_engine_lock", None)
+        state.pop("_engine_store", None)
+        return state
 
-        Args:
-            prompt: Optional prompt text. Ignored when `messages` is provided.
-            messages: Optional chat messages to send to the LM.
-            **kwargs: Per-call LM parameters that override defaults from `LM(...)`.
-
-        Raises:
-            dspy.LMError: Base class for wrapped LM configuration, transport,
-                provider, and unsupported-feature failures. Notable subclasses
-                include `dspy.ContextWindowExceededError` for context-window
-                failures, which adapters use to avoid inappropriate fallback
-                retries when the prompt is too long.
-        """
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
-
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._raise_if_unsupported_stream_kwarg(
-            kwargs,
-            model=self.model,
-            provider=self._provider_name,
-        )
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
-
-        if self.model_type == "chat":
-            completion = alitellm_completion
-        elif self.model_type == "text":
-            completion = alitellm_text_completion
-        elif self.model_type == "responses":
-            completion = alitellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
-
-        try:
-            results = await completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=litellm_cache_args,
-            )
-        except Exception as e:
-            if isinstance(e, LMError):
-                raise
-            raise self._wrap_litellm_exception(e) from e
-
-        self._check_truncation(results)
-
-        return results
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._engine_spec = getattr(self, "_engine_spec", "auto")
+        self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        self._engine_lock = threading.RLock()
+        self._engine_store = {}
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
@@ -443,7 +413,15 @@ class LM(BaseLM):
             A dictionary that can be passed to `BaseLM.load_state` to
             reconstruct this `LM`. The state excludes API keys.
         """
+        if not isinstance(self._engine_spec, str):
+            raise TypeError("Custom engine objects require custom dump_state/load_state methods; they cannot be stored in JSON LM state.")
         state = super().dump_state()
+        if state.get("prompt_cache") is not None:
+            from dspy._vendor.lm15.serde import cache_config_to_dict
+
+            state["prompt_cache"] = cache_config_to_dict(state["prompt_cache"])
+        if self._engine_spec != "auto":
+            state["engine"] = self._engine_spec
         state.update(
             {
                 "finetuning_model": self.finetuning_model,
@@ -460,6 +438,10 @@ class LM(BaseLM):
     @classmethod
     def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False):
         state = dict(state)
+        if isinstance(state.get("prompt_cache"), dict):
+            from dspy._vendor.lm15.serde import cache_config_from_dict
+
+            state["prompt_cache"] = cache_config_from_dict(state["prompt_cache"])
 
         model = state.get("model")
         if isinstance(model, str) and _is_openai_reasoning_model(model) and "max_completion_tokens" in state:
@@ -470,9 +452,11 @@ class LM(BaseLM):
         return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
 
     def _check_truncation(self, results):
-        if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
+        from dspy.clients.legacy_outputs import value
+
+        if self.model_type != "responses" and any(value(c, "finish_reason") == "length" for c in value(results, "choices", []) or []):
             logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs.get('max_tokens', self.kwargs.get('max_completion_tokens'))}. "
                 "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
                 "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
                 f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
@@ -501,19 +485,23 @@ def _get_stream_completion_fn(
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
         response = await _get_litellm().acompletion(
+            num_retries=0,
             cache=cache_kwargs,
             stream=True,
             headers=headers,
             **request,
         )
         chunks = []
-        async for chunk in response:
-            if caller_predict_id:
-                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
-                chunk.predict_id = caller_predict_id
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return _get_litellm().stream_chunk_builder(chunks)
+        async with aclosing_stream(response):
+            async for chunk in response:
+                if caller_predict_id:
+                    chunk.predict_id = caller_predict_id
+                chunks.append(chunk)
+                stream_emitted()
+                await stream.send(chunk)
+            raw = _get_litellm().stream_chunk_builder(chunks)
+            completed_legacy(raw)
+            return raw
 
     def sync_stream_completion():
         return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
@@ -654,92 +642,12 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """Convert legacy chat-shaped LM kwargs into Responses API kwargs.
-
-    This is the legacy door into the normalized Responses mapper. Inputs the
-    old pass-through converter forwarded verbatim — Responses-native shapes and
-    provider-SDK dumps — are tolerated here and only here; the typed path stays
-    strict.
-    """
-    request = dict(request)
-    model = request.pop("model")
-    messages = [_sanitize_legacy_message(message) for message in request.pop("messages", [])]
-    tools = list(request.pop("tools", None) or [])
-
-    # Reasoning models use `max_completion_tokens` in the chat path. The
-    # normalized Responses mapper expects the shared `max_tokens` name and emits
-    # `max_output_tokens`.
-    if "max_completion_tokens" in request and "max_tokens" not in request:
-        request["max_tokens"] = request.pop("max_completion_tokens")
-
-    # Preserve the legacy `reasoning_effort=...` Responses behavior from this LM
-    # compatibility shim: requesting reasoning effort also asks OpenAI for an
-    # automatic reasoning summary, which DSPy can expose as `reasoning_content`.
-    # An explicit per-call `reasoning` dict wins verbatim; the effort shorthand
-    # is discarded rather than merged.
-    if "reasoning_effort" in request:
-        effort = request.pop("reasoning_effort")
-        if request.get("reasoning") is None:
-            request["reasoning"] = {"effort": effort, "summary": "auto"}
-
-    # Hosted Responses tools (web_search, file_search, code_interpreter, mcp, ...)
-    # have no normalized LMToolSpec representation; send them through unchanged.
-    function_tools = [tool for tool in tools if not _is_hosted_responses_tool(tool)]
-
-    # tool_choice dicts that aren't the chat-nested function form are already
-    # Responses-native (flat function, hosted, allowed_tools, ...); send them
-    # through unchanged.
-    responses_native_tool_choice = None
-    if isinstance(request.get("tool_choice"), dict) and "function" not in request["tool_choice"]:
-        responses_native_tool_choice = request.pop("tool_choice")
-
-    lm_request = LMRequest.from_call(model=model, messages=messages, tools=function_tools or None, **request)
-    # The old converter never validated reasoning/temperature combinations
-    # client-side; keep the provider as the authority on this door.
-    data = to_openai_responses_request(lm_request, enforce_reasoning_temperature=False)
-    if tools:
-        normalized_function_tools = iter(data.pop("tools", []))
-        data["tools"] = [
-            tool if _is_hosted_responses_tool(tool) else next(normalized_function_tools) for tool in tools
-        ]
-    if responses_native_tool_choice is not None:
-        data["tool_choice"] = responses_native_tool_choice
-    return data
-
-
-def _is_hosted_responses_tool(tool: Any) -> bool:
-    return isinstance(tool, dict) and "function" not in tool and tool.get("type") not in (None, "function")
-
-
-def _sanitize_legacy_message(message: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one legacy message the old converter would have passed through.
-
-    Strips provider-SDK output fields that are not message inputs and rewrites
-    Responses-native content blocks into their chat forms so the mapper can
-    re-emit them with role-correct direction.
-    """
-    if not isinstance(message, dict):
-        return message
-    message_keys = {"role", "content", "name", "metadata", "tool_calls", "tool_call_id"}
-    cleaned = {key: value for key, value in message.items() if key in message_keys}
-    content = cleaned.get("content")
-    if isinstance(content, list):
-        cleaned["content"] = [_normalize_legacy_content_block(block) for block in content]
-    return cleaned
-
-
-def _normalize_legacy_content_block(block: Any) -> Any:
-    if not isinstance(block, dict):
-        return block
-    block_type = block.get("type")
-    if block_type in ("input_text", "output_text"):
-        return {"type": "text", "text": block.get("text", "")}
-    if block_type == "input_image" and isinstance(block.get("image_url"), str):
-        return {"type": "image_url", "image_url": {"url": block["image_url"]}}
-    if block_type == "input_file":
-        file = {key: block[key] for key in ("file_data", "file_id", "filename") if block.get(key) is not None}
-        return {"type": "file", "file": file}
-    return block
+    """Translate ordinary calls without the retired experimental types."""
+    if "input" in request:
+        data = dict(request)
+        data.pop("messages", None)
+        return data
+    return chat_to_responses(request)
 
 
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
@@ -749,129 +657,3 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         **headers,
     }
 
-#--------
-# Errors
-#--------
-
-def _safe_litellm_exception_class(name: str) -> type[Exception] | None:
-    cls = getattr(_get_litellm(), name, None)
-    return cls if isinstance(cls, type) and issubclass(cls, Exception) else None
-
-
-def _lm_error_class_from_litellm_exception(exc: Exception) -> type[LMError] | None:
-    message = _exception_message(exc).lower()
-    class_name = type(exc).__name__.lower()
-    if _exception_status(exc) is None and any(
-        phrase in message for phrase in ("api key", "apikey", "credentials", "environment variable")
-    ):
-        return LMNotConfiguredError
-    if "timeout" in class_name or "timed out" in message or "timeout" in message:
-        return LMTimeoutError
-    if "connection" in class_name or "network" in message or "connection" in message:
-        return LMTransportError
-
-    mappings = [
-        ("AuthenticationError", LMAuthError),
-        ("RateLimitError", LMRateLimitError),
-        ("NotFoundError", LMUnsupportedModelError),
-        ("UnsupportedParamsError", LMUnsupportedFeatureError),
-        ("UnprocessableEntityError", LMInvalidRequestError),
-        ("ContentPolicyViolationError", LMInvalidRequestError),
-        ("BadRequestError", LMInvalidRequestError),
-        ("InvalidRequestError", LMInvalidRequestError),
-        ("InternalServerError", LMServerError),
-        ("ServiceUnavailableError", LMServerError),
-        ("APIConnectionError", LMTransportError),
-        ("APIResponseValidationError", LMProviderError),
-        ("BudgetExceededError", LMBillingError),
-        ("RouterRateLimitError", LMRateLimitError),
-    ]
-    for litellm_name, dspy_cls in mappings:
-        litellm_cls = _safe_litellm_exception_class(litellm_name)
-        if litellm_cls is not None and isinstance(exc, litellm_cls):
-            return dspy_cls
-    return None
-
-
-def _lm_error_class_from_status(status: int | None) -> type[LMError]:
-    if status in (401, 403):
-        return LMAuthError
-    if status == 402:
-        return LMBillingError
-    if status == 404:
-        return LMUnsupportedModelError
-    if status == 408:
-        return LMTimeoutError
-    if status == 429:
-        return LMRateLimitError
-    if status is not None and 400 <= status < 500:
-        return LMInvalidRequestError
-    if status is not None and status >= 500:
-        return LMServerError
-    return LMUnexpectedError if status is None else LMProviderError
-
-
-# Best-effort LiteLLM/provider exception metadata extraction.
-#
-# LiteLLM exception metadata is not exposed as a single stable typed shape across providers, exception classes, and
-# LiteLLM versions. Keep the defensive getattr-based extraction localized here so the rest of DSPy sees structured
-# DSPyError metadata.
-def _exception_status(exc: Exception) -> int | None:
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        response = getattr(exc, "response", None)
-        status = getattr(response, "status_code", None)
-    try:
-        return int(status) if status is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _exception_message(exc: Exception) -> str:
-    message = getattr(exc, "message", None)
-    if message is None:
-        message = str(exc)
-    return str(message)
-
-
-def _exception_headers(exc: Exception):
-    response = getattr(exc, "response", None)
-    return getattr(response, "headers", None) or getattr(exc, "headers", None) or {}
-
-
-def _exception_header(exc: Exception, name: str) -> str | None:
-    headers = _exception_headers(exc)
-    if not headers:
-        return None
-    try:
-        return headers.get(name) or headers.get(name.lower())
-    except AttributeError:
-        return None
-
-
-def _exception_request_id(exc: Exception) -> str | None:
-    return (
-        _exception_header(exc, "x-request-id")
-        or _exception_header(exc, "request-id")
-        or _exception_header(exc, "x-amzn-requestid")
-        or _exception_header(exc, "x-ms-request-id")
-    )
-
-
-def _exception_retry_after(exc: Exception) -> float | None:
-    retry_after = _exception_header(exc, "retry-after")
-    try:
-        return float(retry_after) if retry_after is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _exception_provider_code(exc: Exception) -> str | None:
-    body = getattr(exc, "body", None)
-    if isinstance(body, dict):
-        error = body.get("error")
-        if isinstance(error, dict) and error.get("code") is not None:
-            return str(error["code"])
-        if body.get("code") is not None:
-            return str(body["code"])
-    return None

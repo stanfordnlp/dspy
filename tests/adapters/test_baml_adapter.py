@@ -457,7 +457,7 @@ def test_baml_adapter_with_code():
         )
 
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGenSignature,
             [],
@@ -553,7 +553,7 @@ async def test_baml_adapter_async_functionality():
 
         adapter = BAMLAdapter()
         result = await adapter.acall(
-            dspy.LM(model="openai/gpt-4o", cache=False), {}, TestSignature, [], {"question": "Extract patient info"}
+            dspy.LM(engine="litellm", model="openai/gpt-4o", cache=False), {}, TestSignature, [], {"question": "Extract patient info"}
         )
 
         assert result[0]["patient"].name == "John Doe"

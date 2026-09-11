@@ -19,8 +19,8 @@ from dspy.clients.disk_serialization import (
     _restricted_load,
     restricted_disk,
 )
-from dspy.clients.openai_format import completion_to_lm_response, responses_to_lm_response
-from dspy.core.types import LMRequest
+from dspy.clients.lm15_boundary import response_value
+from dspy.lm15 import Message, Request
 
 
 class AllowedPydanticModel(pydantic.BaseModel):
@@ -99,11 +99,11 @@ def _assert_cached_tool_call_normalizes(directory):
     assert type(type(tool_call).__pydantic_serializer__).__name__ == "MockValSer"
     assert type(type(tool_call.function).__pydantic_serializer__).__name__ == "MockValSer"
 
-    lm_response = completion_to_lm_response(response, LMRequest(model="dummy", messages=[]))
-    part = lm_response.outputs[0].tool_calls[0]
+    lm_response = response_value(response, "chat", Request(model="dummy", messages=(Message.user("-"),)))
+    part = lm_response.tool_calls[0]
     assert part.name == "get_weather"
-    assert part.args == {"city": "SF"}
-    assert part.provider_data["function"]["name"] == "get_weather"
+    assert part.input == {"city": "SF"}
+    assert lm_response.provider_data["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "get_weather"
     assert lm_response.usage.total_tokens == 3
 
 
@@ -148,11 +148,11 @@ def _assert_cached_responses_function_call_normalizes(directory):
     function_call = response.output[0]
     assert type(type(function_call).__pydantic_serializer__).__name__ == "MockValSer"
 
-    lm_response = responses_to_lm_response(response, LMRequest(model="dummy", messages=[]))
-    part = lm_response.outputs[0].tool_calls[0]
+    lm_response = response_value(response, "responses", Request(model="dummy", messages=(Message.user("-"),)))
+    part = lm_response.tool_calls[0]
     assert part.name == "get_weather"
-    assert part.args == {"city": "SF"}
-    assert part.provider_data["call_id"] == "call_1"
+    assert part.input == {"city": "SF"}
+    assert lm_response.provider_data["output"][0]["call_id"] == "call_1"
     assert lm_response.usage.total_tokens == 3
 
 
