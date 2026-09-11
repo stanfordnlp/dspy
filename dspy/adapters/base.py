@@ -699,6 +699,27 @@ class Adapter:
                         )
                 continue
 
+            # Check for REPLEntry inside message
+            repl_entry_field_name, repl_entry = _repl_entry_from_message(message)
+            if repl_entry_field_name and repl_entry:
+                # Format assistant message with code and reasoning (if present)
+                # Fish code and (potentially) reasoning out of REPLEntry
+                repl_entry_dict = repl_entry.model_dump()
+                assistant_values: dict[str, Any] = {}
+                for name in signature.output_fields.keys():
+                    assistant_values[name] = repl_entry_dict[name]
+                assistant_content = self.format_assistant_message_content(signature, assistant_values)
+                if assistant_content:
+                    messages.append({"role": "assistant", "content": assistant_content})
+
+                # Format user message with repl output
+                content = self.format_user_message_content(
+                    _REPL_OUTPUT_SIGNATURE,
+                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+                )
+                messages.append({"role": "user", "content": content})
+                continue
+
             assistant_values = message
             if tool_call_field_name is not None and tool_call_results is not None:
                 assistant_values = dict(message)
@@ -710,15 +731,6 @@ class Adapter:
             if tool_call_results is not None:
                 result_input = {"tool_call_results": tool_call_results}
                 content = self.format_user_message_content(_TOOL_CALL_RESULTS_SIGNATURE, result_input)
-                messages.append({"role": "user", "content": content})
-
-            # Check for REPLEntry inside message
-            repl_entry_field_name, repl_entry = _repl_entry_from_message(message)
-            if repl_entry_field_name and repl_entry:
-                content = self.format_user_message_content(
-                    _REPL_OUTPUT_SIGNATURE,
-                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
-                )
                 messages.append({"role": "user", "content": content})
 
         # Remove the history field from the inputs
