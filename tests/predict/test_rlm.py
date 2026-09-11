@@ -15,7 +15,7 @@ import pytest
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import RLM, _strip_code_fences
+from dspy.predict.rlm import RLM, _apply_history_processor, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -1757,6 +1757,23 @@ class TestRLMHistoryWithDummyLM:
         assert history_events[1]["query"] == "Double twenty"
         assert history_events[-1]["answer"] == 40
 
+    def test_input_history_is_not_mutated(self, pooled_interpreter):
+        """RLM treats the passed-in history as read-only and returns a new one on the Prediction."""
+        seed = {"query": "earlier", "answer": 1}
+        history = dspy.History(messages=[dict(seed)])
+
+        with dummy_lm_context([{"reasoning": "r", "code": "SUBMIT(2)"}]):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = rlm.forward(pooled_interpreter, query="now", history=history)
+
+        assert result.answer == 2
+        assert history.messages == [seed]
+        assert result.history is not history
+        assert len(result.history.messages) == 2
+        assert result.history.messages[0] == seed
+        assert result.history.messages[1]["query"] == "now"
+        assert result.history.messages[1]["answer"] == 2
+
     def test_repl_trajectory_resets_but_not_history(self, pooled_interpreter):
 
         rlm = RLM("query -> answer: int", max_iters=5)
@@ -1778,15 +1795,19 @@ class TestRLMHistoryWithDummyLM:
                 {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
-            second_result = rlm.forward(pooled_interpreter, query="Double twenty", history=history)
+            second_result = rlm.forward(pooled_interpreter, query="Double twenty", history=first_result.history)
 
         assert first_result.answer == 25
         assert second_result.answer == 40
 
-        assert len(history.messages) == 5  # History builds from one call to the next
+        # The passed-in history is input only and is never mutated; `result.history` is the continuation.
+        assert len(history.messages) == 0
+        assert len(first_result.history.messages) == 3
+        assert len(second_result.history.messages) == 5
+        assert first_result.history is not history
+        assert second_result.history is not first_result.history
 
-        # Each call's resulting history is reference to the same passed-in dspy.History object
-        assert all(history == result_hist for result_hist in [first_result.history, second_result.history])
+        history = second_result.history
 
         assert sum("query" in msg for msg in history.messages) == 2
         assert sum("answer" in msg for msg in history.messages) == 2
@@ -1898,15 +1919,19 @@ class TestRLMHistoryWithDummyLM:
                 {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
             ]
         ):
-            second_result = await rlm.aforward(pooled_interpreter, query="Double twenty", history=history)
+            second_result = await rlm.aforward(pooled_interpreter, query="Double twenty", history=first_result.history)
 
         assert first_result.answer == 25
         assert second_result.answer == 40
 
-        assert len(history.messages) == 5  # History builds from one call to the next
+        # The passed-in history is input only and is never mutated; `result.history` is the continuation.
+        assert len(history.messages) == 0
+        assert len(first_result.history.messages) == 3
+        assert len(second_result.history.messages) == 5
+        assert first_result.history is not history
+        assert second_result.history is not first_result.history
 
-        # Each call's resulting history is reference to the same passed-in dspy.History object
-        assert all(history == result_hist for result_hist in [first_result.history, second_result.history])
+        history = second_result.history
 
         assert sum("query" in msg for msg in history.messages) == 2
         assert sum("answer" in msg for msg in history.messages) == 2
@@ -2175,6 +2200,71 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+class TestApplyHistoryProcessor:
+    """Unit tests for `_apply_history_processor` isolation and return semantics."""
+
+    @staticmethod
+    def _history() -> dspy.History:
+        return dspy.History(messages=[{"query": "a", "code": "x = 1"}, {"query": "b", "code": "x = 2"}])
+
+    def test_none_processor_returns_same_object(self):
+        history = self._history()
+        assert _apply_history_processor(None, history) is history
+
+    def test_returned_history_is_adopted(self):
+        history = self._history()
+
+        def keep_last(h: dspy.History) -> dspy.History:
+            return dspy.History(messages=h.messages[-1:])
+
+        result = _apply_history_processor(keep_last, history)
+        assert len(result.messages) == 1
+        assert result.messages[0]["query"] == "b"
+        # Original untouched
+        assert len(history.messages) == 2
+
+    def test_none_return_means_in_place_edit(self):
+        history = self._history()
+
+        def pop_first(h: dspy.History) -> None:
+            h.messages.pop(0)
+
+        result = _apply_history_processor(pop_first, history)
+        assert len(result.messages) == 1
+        assert result.messages[0]["query"] == "b"
+        # Processor operated on a copy; caller's history is unchanged
+        assert len(history.messages) == 2
+
+    def test_raise_after_partial_mutation_does_not_leak(self):
+        history = self._history()
+
+        def mutate_then_raise(h: dspy.History) -> None:
+            h.messages.clear()
+            h.messages.append({"query": "corrupt"})
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _apply_history_processor(mutate_then_raise, history)
+
+        assert [m["query"] for m in history.messages] == ["a", "b"]
+
+    def test_nested_mutation_is_isolated(self):
+        history = self._history()
+
+        def edit_nested(h: dspy.History) -> None:
+            h.messages[0]["code"] = "changed"
+
+        result = _apply_history_processor(edit_nested, history)
+        assert result.messages[0]["code"] == "changed"
+        assert history.messages[0]["code"] == "x = 1"
+
+    def test_non_history_return_is_coerced(self):
+        history = self._history()
+        result = _apply_history_processor(lambda h: {"messages": h.messages[:1]}, history)
+        assert isinstance(result, dspy.History)
+        assert len(result.messages) == 1
 
 
 if __name__ == "__main__":

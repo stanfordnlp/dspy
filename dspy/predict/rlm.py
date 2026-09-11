@@ -172,6 +172,10 @@ class RLM(Module):
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
+            history_processor: Optional callable applied to the conversation history before each iteration
+                (e.g. to truncate or summarize it). It receives a deep copy of the current `dspy.History`
+                and may either return a new history or edit the copy in place and return `None`.
+                Exceptions propagate to the caller.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
@@ -802,10 +806,13 @@ class RLM(Module):
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
                 this RLM instance.
-            **input_args: Input values matching the signature's input fields.
+            **input_args: Input values matching the signature's input fields. An optional `history`
+                (`dspy.History`) is treated as read-only input; it is never mutated.
 
         Returns:
-            Prediction with output field(s) from the signature, along with `history` and `final_reasoning`
+            Prediction with output field(s) from the signature, along with `history` and `final_reasoning`.
+            `history` is a new `dspy.History` containing the input history plus one event per REPL
+            iteration; pass it back as `history=` to continue the conversation.
 
         Raises:
             ValueError: If required input fields are missing
@@ -818,7 +825,9 @@ class RLM(Module):
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
 
-        history = _coerce_history(input_args.pop("history", None))
+        # The caller's history is input only; RLM appends iteration events to a private copy that is returned
+        # as `result.history`.
+        history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
 
         variables = self._build_variables(**input_args)
 
@@ -943,10 +952,13 @@ class RLM(Module):
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
                 this RLM instance.
-            **input_args: Input values matching the signature's input fields.
+            **input_args: Input values matching the signature's input fields. An optional `history`
+                (`dspy.History`) is treated as read-only input; it is never mutated.
 
         Returns:
-            Prediction with output field(s) from the signature and 'trajectory' for debugging
+            Prediction with output field(s) from the signature, along with `history` and `final_reasoning`.
+            `history` is a new `dspy.History` containing the input history plus one event per REPL
+            iteration; pass it back as `history=` to continue the conversation.
 
         Raises:
             ValueError: If required input fields are missing
@@ -959,7 +971,9 @@ class RLM(Module):
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
 
-        history = _coerce_history(input_args.pop("history", None))
+        # The caller's history is input only; RLM appends iteration events to a private copy that is returned
+        # as `result.history`.
+        history = _coerce_history(input_args.pop("history", None)).model_copy(deep=True)
 
         variables = self._build_variables(**input_args)
 
@@ -1023,20 +1037,19 @@ class RLM(Module):
 def _apply_history_processor(
     processor: Callable[[dspy.History], dspy.History | None] | None, history: dspy.History
 ) -> dspy.History:
+    """Run `processor` over a copy of `history` and return the result.
+
+    The processor receives its own deep copy, so an in-place edit followed by a raise cannot leave the caller's
+    history partially modified. We treat `None` as meaning the copy was modified in-place; exceptions propagate.
+    """
     if processor is None:
         return history
-    try:
-        processed = processor(history)
-        if processed is None:
-            logger.warning("history_processor returned None; continuing with unprocessed history.")
-            return history
-        return _coerce_history(processed)
-    except Exception as err:
-        logger.warning(
-            "history_processor raised; continuing with unprocessed history: %s",
-            format_error_for_lm(err, traceback_frames=5),
-        )
-        return history
+
+    candidate = history.model_copy(deep=True)
+    processed = processor(candidate)
+    if processed is None:
+        return candidate
+    return _coerce_history(processed)
 
 
 def _coerce_history(history: Any) -> dspy.History:
