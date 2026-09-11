@@ -20,13 +20,99 @@ def test_react_v2_submit_tool_returns_original_output_fields():
     assert "tool_call_results" not in react.react.signature.input_fields
 
 
-def test_react_v2_instructions_warn_against_markers_in_tool_arguments():
+def test_react_v2_submit_recovers_value_wrapped_in_its_own_marker():
     react = dspy.ReActV2("question -> answer", tools=[])
 
-    instructions = react.react.signature.instructions
-    assert "tool call" in instructions
-    assert "markers" in instructions
-    assert "submit" in instructions
+    submitted = "[[ ## answer ## ]]\nParis\n[[ ## completed ## ]]"
+
+    assert react.tools["submit"](answer=submitted) == {"answer": "Paris"}
+
+
+def test_react_v2_submit_recovers_value_emitted_before_a_marker():
+    react = dspy.ReActV2("question -> answer", tools=[])
+
+    assert react.tools["submit"](answer="Paris\n\n[[ ## completed ## ]]") == {"answer": "Paris"}
+
+
+def test_react_v2_submit_rejects_scaffold_with_no_value_in_it():
+    """The reported failure: the marker scaffold arrives carrying planning text only."""
+    react = dspy.ReActV2("question -> answer", tools=[])
+
+    leaked = "[[ ## next_thought ## ]]\nPreparing the answer...\n[[ ## completed ## ]]"
+
+    with pytest.raises(ValueError) as err:
+        react.tools["submit"](answer=leaked)
+
+    message = str(err.value)
+    assert "next_thought" in message
+    assert "answer" in message
+
+
+def test_react_v2_submit_leaves_ordinary_values_untouched():
+    react = dspy.ReActV2("question -> answer", tools=[])
+
+    assert react.tools["submit"](answer="Paris") == {"answer": "Paris"}
+    assert react.tools["submit"](answer="the [[ bracket ]] stays") == {"answer": "the [[ bracket ]] stays"}
+
+
+def test_react_v2_submit_leaves_non_string_values_untouched():
+    react = dspy.ReActV2("question -> count: int", tools=[])
+
+    assert react.tools["submit"](count=42) == {"count": 42}
+
+
+def test_react_v2_end_to_end_recovers_marker_wrapped_answer():
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "I can answer now.",
+                "tool_calls": {
+                    "tool_calls": [
+                        {
+                            "name": "submit",
+                            "arguments": {"answer": "[[ ## answer ## ]]\n42\n[[ ## completed ## ]]"},
+                        }
+                    ]
+                },
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="what is it")
+
+    assert pred.answer == "42"
+    assert pred.termination_reason == "submit"
+
+
+def test_react_v2_end_to_end_retries_after_a_leaked_scaffold():
+    """A scaffold with no value is reported back as a tool error, so the model can retry."""
+    lm = dspy.utils.DummyLM(
+        [
+            {
+                "next_thought": "Submitting.",
+                "tool_calls": {
+                    "tool_calls": [
+                        {
+                            "name": "submit",
+                            "arguments": {
+                                "answer": "[[ ## next_thought ## ]]\nPreparing...\n[[ ## completed ## ]]"
+                            },
+                        }
+                    ]
+                },
+            },
+            {
+                "next_thought": "Retrying with a plain value.",
+                "tool_calls": {"tool_calls": [{"name": "submit", "arguments": {"answer": "42"}}]},
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm, adapter=dspy.ChatAdapter(use_native_function_calling=False)):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="what is it")
+
+    assert pred.answer == "42"
 
 
 def test_react_v2_text_mock_lm_loop_records_inputs_once():
