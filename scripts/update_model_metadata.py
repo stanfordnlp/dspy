@@ -2,6 +2,8 @@
 
 Run: python scripts/update_model_metadata.py [version]
 The runtime loader fetches the current upstream map; this snapshot is its fallback.
+Refresh and review it before tagging a release; see
+.github/.internal_dspyai/internals/release-checklist.md.
 """
 
 import gzip

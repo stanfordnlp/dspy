@@ -19,6 +19,20 @@ Sync and async keys differ in 3.3. On a cache hit the usage tracker stays empty,
 while history retains the response's original cost metadata; the fixtures
 capture that observed behavior, not a new billing policy.
 
+## Why these fixtures remain
+
+These protect **historical cache compatibility**, not the removed experimental
+3.3 request/response types. `test_lm_migration_compatibility.py` checks the recorded
+outputs, cache keys, usage, and history. `test_old_disk_cache_hits_before_native_routing`
+in `test_lm_engine_execution.py` also reads all six archives with the default engine
+selection and forbids engine construction on a cache hit.
+
+Keep the archives, manifest, and generator while maintaining that compatibility
+promise. Replacing their contents with lm15 responses would stop testing whether
+actual old cache files can be read. The generator is the reproducible record of
+how they were made, not a script to run during the 3.5 interface migration. Removing
+legacy LM interfaces does not by itself justify dropping old-cache coverage.
+
 ## Regeneration (deliberate, never automatic during tests)
 
 1. Create a clean checkout at the exact commit above.
@@ -40,10 +54,9 @@ processing, usage accounting and history recording execute unchanged.
 ## Scope
 
 These are migration tripwires, not a snapshot of every private method. The
-primary checks exercise public calls; only the synthetic backend seam should
-need adapting when an engine is introduced. No backend has been added here.
-The key check intentionally inspects the cache: exact old-key compatibility
-is itself the requirement.
+primary checks exercise public calls. Adapt the synthetic backend seam as engine
+integration evolves, not the recorded expectations. The key check intentionally
+inspects the cache: exact old-key compatibility is itself the requirement.
 
 The six archives occupy about 140 KiB. We keep full closed cache directories
 rather than invent a portable pickle wrapper, to test the actual old disk

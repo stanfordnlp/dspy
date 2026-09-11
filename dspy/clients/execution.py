@@ -275,6 +275,11 @@ def execute(lm, call):
     results = []
     # LiteLLM and legacy plugins keep native n behavior when using ordinary
     # inputs. Canonical engines have one candidate per attempt.
+    # TODO(candidate-parallelism): bound concurrent canonical requests while
+    # respecting engine concurrency guarantees, output order, per-candidate
+    # retries/cancellation accounting, and whole-call caching. Define candidate
+    # identity for listeners before multiplexing streams. Concurrency reduces
+    # latency, not the input-token charges for separate requests.
     count = call.n if request is not None else 1
     for _ in range(count):
         emitted = False
@@ -335,6 +340,8 @@ async def aexecute(lm, call):
     backend, request, provider = _engine(lm, call, True)
     stream = settings.send_stream
     results = []
+    # TODO(candidate-parallelism): apply the same guarantees as execute() above;
+    # cancellation must account for every completed candidate exactly once.
     count = call.n if request is not None else 1
     try:
         for _ in range(count):

@@ -74,7 +74,9 @@ cache rewrite is required. Explicit typed calls have a separate cache namespace.
 Native `n` answers use `n` separate requests in sequence; LiteLLM compatibility
 calls retain the backend's native `n` behavior. Separate requests can take longer
 and bill input tokens more than once. A failed candidate does not restart earlier
-successful candidates, and incomplete sets are not cached.
+successful candidates, and incomplete sets are not cached. Bounded parallel
+execution is a follow-up tracked beside the candidate loops; it can reduce latency,
+but does not remove the input-token charges for separate requests.
 
 `num_retries` counts additional attempts, with exponential delays of 1, 2, 4…
 seconds, capped at 60 seconds unless the provider specifies `retry_after`.
@@ -87,6 +89,12 @@ assembled into an lm15 response and adapted to listener-facing chunks without
 mixing reasoning into answer text. LiteLLM's ordinary streaming chunks retain
 their original shape. Custom chunk consumers should not assume every native
 chunk is a LiteLLM class; its common fields remain available.
+
+`streamify` is the **program-level** API: it selects predictor fields, emits tool
+and module status messages, and delivers the final `Prediction`. lm15 events describe
+**one model call**, so they do not replace those responsibilities. The 3.5 migration
+will move the internal LM boundary to canonical requests/responses and events; it
+does not call for removing `streamify` or replacing its program-level role.
 
 Token usage is recorded once per public call, and cache hits add no billed usage.
 Native response counters stay provider-verbatim in `Response.usage`; DSPy's
