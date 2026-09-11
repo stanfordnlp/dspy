@@ -31,6 +31,7 @@ Every DSPy module will use these defaults unless you override them with
 | `allow_tool_async_sync_conversion` | `False` | Let async tools run in synchronous code. See [Async](../../tutorials/async/index.md). |
 | `provide_traceback` | `False` | Include Python tracebacks in error logs. |
 | `warn_on_type_mismatch` | `True` | Warn when a module input type does not match the signature. |
+| `interpreter_factory` | `None` | Replaces the default `dspy.PythonInterpreter` factory for code-executing modules ([`dspy.RLM`](../modules/RLM.md), [`dspy.Flex`](../modules/Flex.md), `dspy.ProgramOfThought`, `dspy.CodeAct`). A module's own factory wins, unless it is `PythonInterpreter`. Modules fall back to [`dspy.PythonInterpreter`](../../diving-deeper/rlm.md) when nothing is configured. |
 
 ## Examples
 

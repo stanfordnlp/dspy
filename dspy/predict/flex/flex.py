@@ -26,8 +26,9 @@ class Flex(Module, Parameter):
     plus plain Python instead of only tuning instructions.
 
     The optimizer-authored code runs inside an interpreter. ``Flex`` never
-    runs it in the host Python process. ``interpreter_factory`` defaults to ``dspy.PythonInterpreter``
-    (Deno/Pyodide) and must be a zero-argument callable returning a new ``CodeInterpreter``.
+    runs it in the host Python process. ``interpreter_factory`` defaults to
+    ``dspy.PythonInterpreter`` (Deno/Pyodide) and must be a zero-argument callable returning a new
+    ``CodeInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces that default.
     Flex may validate or lower source and install its guest shim before execution; a custom
     interpreter therefore defines the Python and standard-library subset available to that source.
     The optimizer-authored glue runs isolated; only provided-tool calls, predictor construction,
@@ -38,6 +39,7 @@ class Flex(Module, Parameter):
         tools: ``dspy.Tool`` instances or named callables.
         interpreter_factory: Zero-argument callable returning a fresh ``CodeInterpreter`` for each
             interpreter session. Defaults to ``dspy.PythonInterpreter`` (sandbox, requires Deno).
+            ``dspy.configure(interpreter_factory=...)`` replaces the default.
         max_predictor_calls: Maximum number of predictor calls the optimizer-authored code can
             make per ``forward`. ``None`` removes the limit.
     """
