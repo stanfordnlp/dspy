@@ -126,23 +126,36 @@ class Cache:
             with self._lock:
                 response = self.memory_cache.get(key)
             if response is not None:
-                return self._prepare_cached_response(response)
+                try:
+                    return self._prepare_cached_response(response)
+                except Exception as e:
+                    logger.debug("Failed to prepare memory cache entry %s: %s", key, e)
+                    with self._lock:
+                        if self.memory_cache.get(key) is response:
+                            self.memory_cache.pop(key, None)
 
         if self.enable_disk_cache:
             try:
                 response = self.disk_cache.get(key)
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
-                self.disk_cache.delete(key)
+                self._evict_unreadable_disk_entry(key)
                 return None
 
             if response is None:
                 return None
 
+            try:
+                prepared_response = self._prepare_cached_response(response)
+            except Exception as e:
+                logger.debug("Failed to prepare disk cache entry %s: %s", key, e)
+                self._evict_unreadable_disk_entry(key)
+                return None
+
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
-            return self._prepare_cached_response(response)
+            return prepared_response
 
         return None
 
@@ -156,6 +169,25 @@ class Cache:
             # directly on the instance dict.
             object.__setattr__(response, "cache_hit", True)
         return response
+
+    def _evict_unreadable_disk_entry(self, key: str) -> None:
+        try:
+            with self.disk_cache.transact():
+                try:
+                    current_response = self.disk_cache.get(key)
+                except DeserializationError:
+                    self.disk_cache.delete(key)
+                    return
+
+                if current_response is None:
+                    return
+
+                try:
+                    self._prepare_cached_response(current_response)
+                except Exception:
+                    self.disk_cache.delete(key)
+        except Exception as e:
+            logger.debug("Failed to evict unreadable disk cache entry %s: %s", key, e)
 
     def put(
         self,
@@ -176,15 +208,23 @@ class Cache:
             logger.debug("Failed to generate cache key for request: %s", request)
             return
 
+        # Store a private snapshot so callers cannot mutate the cached value.
+        # If creating the snapshot fails, treat the value as uncacheable.
+        try:
+            value_to_cache = copy.deepcopy(value)
+        except Exception as e:
+            logger.debug("Failed to copy value for cache: %s", e)
+            return
+
         if enable_memory_cache:
             with self._lock:
-                self.memory_cache[key] = value
+                self.memory_cache[key] = value_to_cache
 
         if self.enable_disk_cache:
             try:
-                self.disk_cache.set(key, value)
+                self.disk_cache.set(key, value_to_cache)
             except Exception as e:
-                logger.debug("Failed to put value in disk cache: %s, %s", value, e)
+                logger.debug("Failed to put value in disk cache: %s", e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
