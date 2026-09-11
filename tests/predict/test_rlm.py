@@ -294,6 +294,12 @@ class TestRLMInitialization:
         with pytest.raises(TypeError, match="first positional argument"):
             rlm(query="test", interpreter=MockInterpreter())
 
+    def test_keyword_history_processor_override_has_clear_error(self):
+        rlm = RLM("query -> answer")
+
+        with pytest.raises(TypeError, match="second positional argument"):
+            rlm(query="test", history_processor=lambda h: h)
+
     def test_llm_query_returns_legacy_response_text(self):
         from dspy.utils.dummies import DummyLM
 
@@ -1704,6 +1710,19 @@ class TestRLMHistoryWithDummyLM:
     Note: These tests let RLM create its own PythonInterpreter.
     """
 
+    @staticmethod
+    def _history_aligns_with_repl_trajectory(
+        history_repl_entries: list[REPLEntry], repl_trajectory: list[dict[str, Any]]
+    ) -> bool:
+        return all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, repl_trajectory, strict=True)
+        )
+
     def test_history_records_inputs_and_outputs_once(self, pooled_interpreter):
         with dummy_lm_context(
             [
@@ -1840,6 +1859,45 @@ class TestRLMHistoryWithDummyLM:
                 and hist_entry.output == traj_entry["output"]
             )
             for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
+
+    def test_history_records_extract_fallback(self, pooled_interpreter):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"answer": "25"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            result = rlm.forward(pooled_interpreter, query="Double ten, then add 5")
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+        assert result.final_reasoning == "Extract forced final output"
+
+        history_events = result.history.messages
+
+        assert len(history_events) == 3  # Two repl iterations plus 1 fallback
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert isinstance(history_events[0]["repl_entry"], REPLEntry)
+        assert isinstance(history_events[1]["repl_entry"], REPLEntry)
+
+        # Extract fallback history event just contains the output fields
+        final_event = history_events[-1]
+        assert final_event == {"answer": 25}
+
+        assert len(result.repl_trajectory) == 2
+
+        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if "repl_entry" in msg]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
         )
 
     @pytest.mark.asyncio
@@ -1982,6 +2040,46 @@ class TestRLMHistoryWithDummyLM:
                 and hist_entry.output == traj_entry["output"]
             )
             for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_history_records_extract_fallback(self, pooled_interpreter):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Compute double 10", "code": "y = x * 2\nprint(y)"},
+                {"answer": "25"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=2)
+            result = await rlm.aforward(pooled_interpreter, query="Double ten, then add 5")
+
+        assert result.answer == 25
+        assert isinstance(result.answer, int)
+        assert result.final_reasoning == "Extract forced final output"
+
+        history_events = result.history.messages
+
+        assert len(history_events) == 3  # Two repl iterations plus 1 fallback
+        assert history_events[0]["query"] == "Double ten, then add 5"
+        assert isinstance(history_events[0]["repl_entry"], REPLEntry)
+        assert isinstance(history_events[1]["repl_entry"], REPLEntry)
+
+        # Extract fallback history event just contains the output fields
+        final_event = history_events[-1]
+        assert final_event == {"answer": 25}
+
+        assert len(result.repl_trajectory) == 2
+
+        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if "repl_entry" in msg]
+
+        assert all(
+            (
+                hist_entry.reasoning == traj_entry["reasoning"]
+                and hist_entry.code == traj_entry["code"]
+                and hist_entry.output == traj_entry["output"]
+            )
+            for hist_entry, traj_entry in zip(history_repl_entries, result.repl_trajectory, strict=True)
         )
 
 
@@ -2310,30 +2408,30 @@ class TestHistoryProcessorHook:
             {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]
 
-    def test_processor_passed_to_forward_supersedes_module_processor(self, pooled_interpreter):
+    def test_per_call_processor_overrides_module_processor(self, pooled_interpreter):
         module_called = False
-        forward_called = False
+        per_call_called = False
 
         def module_hook(h):
             nonlocal module_called
             module_called = True
             return h
 
-        def forward_hook(h):
-            nonlocal forward_called
-            forward_called = True
+        def per_call_hook(h):
+            nonlocal per_call_called
+            per_call_called = True
             return h
 
         with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
             rlm = RLM("query -> answer: int", max_iters=5, history_processor=module_hook)
             _ = rlm.forward(
                 pooled_interpreter,
-                forward_hook,
+                per_call_hook,
                 query="Double twenty",
             )
 
         assert not module_called
-        assert forward_called
+        assert per_call_called
 
     def test_module_processor_used_as_default_when_set(self, pooled_interpreter):
         module_called = False
@@ -2437,6 +2535,72 @@ class TestHistoryProcessorHook:
         assert calls == [0, 1]
         assert len(result.history.messages) == 2
 
+    def test_raising_history_processor_degrades_to_unprocessed_history(self, pooled_interpreter, caplog):
+        def process(history):
+            raise RuntimeError("Compaction error")
+
+        dspy_logger = logging.getLogger("dspy")
+        original_propagate = dspy_logger.propagate
+        dspy_logger.propagate = True
+
+        try:
+            with caplog.at_level(logging.ERROR, logger="dspy.predict.rlm"):
+                with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+                    rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+                    result = rlm.forward(
+                        pooled_interpreter,
+                        query="Double twenty",
+                    )
+        finally:
+            dspy_logger.propagate = original_propagate
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Now compute and return"
+
+        assert len(result.history.messages) == 2
+
+        assert "history_processor raised" in caplog.text
+
+    def test_in_place_history_processor(self, pooled_interpreter):
+        count = 0
+
+        # Mutates in-place, no return
+        def process(history):
+            nonlocal count
+            history.messages.append({f"appended_{count}": f"value_{count}"})
+            count += 1
+
+        with dummy_lm_context(TestHistoryProcessorHook._double_twenty_responses()):
+            rlm = RLM("query -> answer: int", max_iters=5, history_processor=process)
+            result = rlm.forward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Now compute and return"
+        assert len(result.history.messages) == 4  # Two iteration messages plus two appended in-place
+        assert result.history.messages[0]["appended_0"] == "value_0"
+        assert result.history.messages[1]["query"] == "Double twenty"
+        assert result.history.messages[2]["appended_1"] == "value_1"
+        assert result.history.messages[3]["answer"] == 40
+
+    def test_module_history_processor_is_discoverable_for_optimization(self, pooled_interpreter):
+
+        class Summarizer(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.summarize = dspy.Predict("text -> summary")
+
+            def forward(self, history):
+                return history
+
+        rlm = RLM("query -> answer: int", max_iters=5, history_processor=Summarizer())
+
+        predictor_names = [name for name, _ in rlm.named_predictors()]
+
+        assert any("history_processor" in name for name in predictor_names)
+
     @pytest.mark.asyncio
     async def test_async_processor_passed_to_forward_supersedes_module_processor(self, pooled_interpreter):
         module_called = False
@@ -2463,7 +2627,6 @@ class TestHistoryProcessorHook:
         assert not module_called
         assert forward_called
 
-    @pytest.mark.deno
     @pytest.mark.asyncio
     async def test_async_module_processor_used_as_default_when_set(self, pooled_interpreter):
         module_called = False
@@ -2542,6 +2705,34 @@ class TestHistoryProcessorHook:
 
         # The resulting history is the one the module appends to and returns
         assert result.history is returned[1]
+
+    @pytest.mark.asyncio
+    async def test_async_history_processor_runs_before_extract_fallback(self, pooled_interpreter):
+        calls = []
+
+        def process(history):
+            calls.append(len(history.messages))
+            return history
+
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 20\nprint(f'x = {x}')"},
+                {"answer": "40"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1, history_processor=process)
+            result = await rlm.aforward(
+                pooled_interpreter,
+                query="Double twenty",
+            )
+
+        assert result.answer == 40
+        assert result.final_reasoning == "Extract forced final output"
+
+        # Processor called once for loop iteration (empty history) and once for extract fallback
+        # (history holds the single iteration event; the extracted output is appended afterwards)
+        assert calls == [0, 1]
+        assert len(result.history.messages) == 2
 
 
 if __name__ == "__main__":

@@ -985,7 +985,7 @@ class RLM(Module):
 
             for iteration in range(self.max_iters):
                 history = _apply_history_processor(history_processor, history)
-                repl_entry, final_outputs = self._execute_iteration(
+                repl_entry, final_outputs = await self._aexecute_iteration(
                     repl,
                     variables,
                     history,
