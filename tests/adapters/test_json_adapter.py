@@ -1,5 +1,6 @@
 import enum
-from typing import Literal
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
 from unittest import mock
 
 import pydantic
@@ -7,6 +8,7 @@ import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 from openai.types.responses import ResponseOutputMessage
+from typing_extensions import TypedDict
 
 import dspy
 from tests.adapters.conftest import format_messages_and_lm_kwargs
@@ -757,6 +759,143 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format is not None
     assert issubclass(response_format, pydantic.BaseModel)
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
+
+
+@dataclass
+class _DataclassOutput:
+    metadata: dict[str, Any]
+
+
+class _PydanticOutput(pydantic.BaseModel):
+    metadata: dict[str, Any]
+
+
+class _TypedDictOutput(TypedDict):
+    metadata: dict[str, Any]
+
+
+class _ExtraAllowedOutput(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow")
+    value: str
+
+
+_PropertyNamesMap = Annotated[
+    dict[str, Any],
+    pydantic.WithJsonSchema({"type": "object", "properties": {}, "propertyNames": {"pattern": "^x"}}),
+]
+
+
+class _PropertyNamesOutput(pydantic.BaseModel):
+    data: _PropertyNamesMap
+
+
+_UnevaluatedPropertiesMap = Annotated[
+    dict[str, Any],
+    pydantic.WithJsonSchema(
+        {
+            "type": "object",
+            "properties": {"fixed": {"type": "string"}},
+            "additionalProperties": False,
+            "unevaluatedProperties": {"type": "string"},
+        }
+    ),
+]
+
+
+class _UnevaluatedPropertiesOutput(pydantic.BaseModel):
+    data: _UnevaluatedPropertiesMap
+
+
+_ImplicitObjectMap = Annotated[
+    dict[str, Any],
+    pydantic.WithJsonSchema({"additionalProperties": {"type": "string"}}),
+]
+
+
+class _ImplicitObjectOutput(pydantic.BaseModel):
+    data: _ImplicitObjectMap
+
+
+_NullableObjectMap = Annotated[
+    dict[str, Any] | None,
+    pydantic.WithJsonSchema(
+        {
+            "type": ["object", "null"],
+            "properties": {},
+            "additionalProperties": {"type": "string"},
+        }
+    ),
+]
+
+
+class _NullableObjectOutput(pydantic.BaseModel):
+    data: _NullableObjectMap
+
+
+class _FixedTypedDictOutput(TypedDict):
+    value: str
+
+
+class _ObjectShapedTypedDict(TypedDict):
+    type: str
+
+
+class _FixedDefaultOutput(pydantic.BaseModel):
+    value: _ObjectShapedTypedDict = {"type": "object"}
+
+
+class _FixedExampleOutput(pydantic.BaseModel):
+    value: str = pydantic.Field(json_schema_extra={"examples": [{"type": "object"}]})
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        list[dict[str, Any]],
+        _DataclassOutput,
+        _PydanticOutput,
+        _TypedDictOutput,
+        _ExtraAllowedOutput,
+        _PropertyNamesOutput,
+        _UnevaluatedPropertiesOutput,
+        _ImplicitObjectOutput,
+        _NullableObjectOutput,
+    ],
+    ids=[
+        "list",
+        "dataclass",
+        "pydantic",
+        "typed-dict",
+        "extra-allowed",
+        "property-names",
+        "unevaluated",
+        "implicit-object",
+        "nullable-object",
+    ],
+)
+def test_json_adapter_uses_json_mode_for_nested_open_mapping(annotation):
+    signature = dspy.Signature({"output": (annotation, dspy.OutputField())})
+    lm = mock.Mock(supported_params={"response_format"}, supports_response_schema=True)
+    lm_kwargs = {}
+    expected = [{"output": "value"}]
+
+    with mock.patch("dspy.adapters.json_adapter.ChatAdapter.__call__", return_value=expected):
+        result = dspy.JSONAdapter()(lm, lm_kwargs, signature, [], {})
+
+    assert result == expected
+    assert lm_kwargs["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.parametrize("annotation", [_FixedTypedDictOutput, _FixedDefaultOutput, _FixedExampleOutput])
+def test_json_adapter_keeps_structured_output_for_fixed_schema(annotation):
+    signature = dspy.Signature({"output": (annotation, dspy.OutputField())})
+    lm = mock.Mock(supported_params={"response_format"}, supports_response_schema=True)
+    lm_kwargs = {}
+
+    with mock.patch("dspy.adapters.json_adapter.ChatAdapter.__call__", return_value=[]) as call:
+        dspy.JSONAdapter()(lm, lm_kwargs, signature, [], {})
+
+    assert issubclass(call.call_args.args[1]["response_format"], pydantic.BaseModel)
 
 
 def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model():
