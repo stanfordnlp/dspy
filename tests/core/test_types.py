@@ -395,6 +395,65 @@ def test_usage_normalizes_existing_user_visible_token_aliases():
     assert canonical_usage.total_tokens == 3
 
 
+def test_usage_from_response_promotes_openai_cache_token_details():
+    from dspy.clients.openai_format import usage_from_response
+
+    usage = usage_from_response(
+        {
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "prompt_tokens_details": {
+                    "cached_tokens": 64,
+                    "cache_write_tokens": 16,
+                },
+            }
+        }
+    )
+
+    assert usage.cache_read_tokens == 64
+    assert usage.cache_write_tokens == 16
+    assert usage.prompt_tokens_details == {
+        "cached_tokens": 64,
+        "cache_write_tokens": 16,
+    }
+
+
+def test_usage_from_response_promotes_anthropic_cache_token_details():
+    from dspy.clients.openai_format import usage_from_response
+
+    usage = usage_from_response(
+        {
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 60,
+                "cache_creation_input_tokens": 12,
+            }
+        }
+    )
+
+    assert usage.cache_read_tokens == 60
+    assert usage.cache_write_tokens == 12
+
+
+def test_usage_from_response_promotes_top_level_cache_creation_tokens():
+    from dspy.clients.openai_format import usage_from_response
+
+    usage = usage_from_response(
+        {
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 1,
+                "cache_creation_tokens": 7,
+            }
+        }
+    )
+
+    assert usage.cache_write_tokens == 7
+
+
 def test_default_config_does_not_serialize_empty_stop_sequences():
     request = LMRequest.from_call(model="model", prompt="hi")
     entry = LMHistoryEntry(
