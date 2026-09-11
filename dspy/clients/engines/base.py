@@ -2,7 +2,11 @@
 
 Engines consume one canonical request and produce one response. They do not
 own DSPy's cache, retries, candidate fan-out, history or callbacks. A stream
-raises on failure and emits one final end event only on successful completion.
+emits one leading start event and one final end event only on successful completion.
+Expected failures raise dspy.lm15 errors. Canonical StreamErrorEvents are also
+accepted as terminal failures by DSPy's shared stream guard, never as Responses.
+SDK-specific errors are translated by the owning engine; engines do not import
+DSPy's public error hierarchy or implement a second retry loop.
 
 DSPy 3.5 uses this contract throughout adapters and engines. Legacy forward()
 plugins, LegacyEngine/AsyncLegacyEngine, and complete_legacy() shortcuts are

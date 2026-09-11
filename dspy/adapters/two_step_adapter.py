@@ -10,7 +10,7 @@ from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
-from dspy.utils.exceptions import AdapterParseError, LMError
+from dspy.utils.exceptions import AdapterParseError
 
 """
 NOTE/TODO/FIXME:
@@ -102,9 +102,7 @@ class TwoStepAdapter(Adapter):
             )
             return parsed_result[0]
 
-        except (LMError, DeprecationWarning):
-            raise
-        except Exception as e:
+        except AdapterParseError as e:
             raise AdapterParseError(
                 adapter_name="TwoStepAdapter",
                 signature=signature,
@@ -152,9 +150,7 @@ class TwoStepAdapter(Adapter):
                 )
                 value = value[0]
 
-            except (LMError, DeprecationWarning):
-                raise
-            except Exception as e:
+            except AdapterParseError as e:
                 raise AdapterParseError(
                     adapter_name="TwoStepAdapter",
                     signature=signature,

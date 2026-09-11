@@ -16,6 +16,8 @@ def estimate_cost(response, *, provider, requested_model, request=None):
     """
     try:
         return _estimate_cost(response, provider=provider, requested_model=requested_model, request=request)
+    except Warning:
+        raise
     except Exception:
         return None, {"kind": "unknown", "reason": "pricing metadata could not be interpreted"}
 

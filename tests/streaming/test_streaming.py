@@ -56,7 +56,9 @@ async def test_streaming_response_yields_expected_response_chunks(litellm_test_s
         api_key="fakekey",
         cache=False,
     )
-    with dspy.context(lm=lm):
+    # The server fixture speaks JSON. This encoding test must not depend on
+    # replaying a response with another adapter after its chunks were emitted.
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()

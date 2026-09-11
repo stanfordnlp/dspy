@@ -9,8 +9,7 @@ import os
 from dataclasses import dataclass, field
 
 from dspy.clients.engines.lm15_engine import LM15Engine
-from dspy.lm15 import RouterConfig, UnknownModelError
-from dspy.utils.exceptions import LMError, LMUnsupportedFeatureError
+from dspy.lm15 import RouterConfig, UnknownModelError, UnsupportedFeatureError
 
 CLIENT_KEYS = {"api_key", "api_base", "base_url", "headers", "extra_headers", "timeout", "api_version",
                "azure_ad_token_provider", "organization", "project", "extra_query", "custom_llm_provider"}
@@ -46,13 +45,10 @@ def select_backend(lm, options=None):
             if (set(clients) - NATIVE_CLIENT_KEYS) or (resolution.provider.startswith("azure") and
                                                        any(key in clients for key in ("api_base", "base_url"))):
                 native = False
-        except LMError as exc:
+        except (UnknownModelError, UnsupportedFeatureError):
             if spec == "lm15":
                 raise
-            if isinstance(exc.__cause__, UnknownModelError) or isinstance(exc, LMUnsupportedFeatureError):
-                native = False
-            else:
-                raise
+            native = False
     if spec == "lm15" and not native:
-        raise LMUnsupportedFeatureError("The requested client settings require the LiteLLM compatibility engine.")
+        raise UnsupportedFeatureError("The requested client settings require the LiteLLM compatibility engine.")
     return BackendSelection(native, resolution, clients)

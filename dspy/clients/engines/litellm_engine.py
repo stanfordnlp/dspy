@@ -1,17 +1,26 @@
 """LiteLLM behind the same single-response interface as native lm15 engines."""
 
-import inspect
 import json
 from dataclasses import replace
 
 from dspy._vendor.lm15.sse import SSEEvent
 from dspy.clients._litellm import get_litellm
+from dspy.clients.call_context import completed_legacy
 from dspy.clients.engines.base import validate_request
-from dspy.clients.engines.errors import wrap_error
+from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
+from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.legacy_outputs import plain
 from dspy.clients.lm15_boundary import request_kwargs, response_value
-from dspy.lm15 import OpenAIChatLM, Request, StreamEndEvent, StreamStartEvent
-from dspy.utils.exceptions import LMError, LMProviderError, LMUnsupportedFeatureError
+from dspy.lm15 import (
+    ConfigurationError,
+    OpenAIChatLM,
+    ProviderError,
+    Request,
+    StreamAssemblyError,
+    StreamEndEvent,
+    StreamStartEvent,
+    UnsupportedFeatureError,
+)
 
 
 class _ChatStream:
@@ -29,7 +38,7 @@ class _ChatStream:
         body = plain(chunk)
         choices = body.get("choices") or []
         if len(choices) > 1 or any(choice.get("index", 0) != 0 for choice in choices):
-            raise LMProviderError("A single-response engine received multiple streaming candidates.")
+            raise ProviderError("A single-response engine received multiple streaming candidates.")
         for choice in choices:
             delta = choice.get("delta") or {}
             supported = {"role", "content", "reasoning_content", "reasoning", "tool_calls", "provider_specific_fields"}
@@ -38,9 +47,8 @@ class _ChatStream:
             unknown.extend(f"provider_specific_fields.{key}" for key, val in extras.items()
                            if key != "citation" and val not in (None, "", [], {}))
             if unknown:
-                raise LMUnsupportedFeatureError(
+                raise UnsupportedFeatureError(
                     f"LiteLLM streaming fields have no implemented lm15 event mapping: {sorted(unknown)}",
-                    model=self.request.model,
                 )
         self.chunks.append(chunk)
         if not self.started:
@@ -72,13 +80,13 @@ class _ChatStream:
                 title = citation.get("document_title") or citation.get("title")
                 url = citation.get("url")
                 if not any((text, title, url)):
-                    raise LMUnsupportedFeatureError("This citation chunk has no lm15 text, title or URL representation.")
+                    raise UnsupportedFeatureError("This citation chunk has no lm15 text, title or URL representation.")
                 index = self.indices.setdefault(("citation", len(self.chunks)), len(self.indices))
                 yield StreamDeltaEvent(CitationDelta(text=text, title=title, url=url, part_index=index))
 
     def finish(self, litellm):
         if not self.terminal:
-            raise LMProviderError("LiteLLM stream ended without a completion reason; no successful end event emitted.")
+            raise StreamAssemblyError("LiteLLM stream ended without a completion reason; no successful end event emitted.")
         raw = litellm.stream_chunk_builder(self.chunks)
         response = response_value(raw, "chat", self.request)
         return StreamEndEvent(
@@ -89,7 +97,7 @@ class _ChatStream:
 class _LiteLLMConfig:
     def __init__(self, *, model_type="chat", **client_options):
         if model_type not in {"chat", "responses", "text"}:
-            raise LMUnsupportedFeatureError(
+            raise UnsupportedFeatureError(
                 "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
             )
         allowed = {
@@ -107,13 +115,13 @@ class _LiteLLMConfig:
     def _arguments(self, request, *, streaming=False):
         validate_request(request)
         if self._closed:
-            raise RuntimeError("Engine is closed")
+            raise ConfigurationError("Engine is closed")
         if self.model_type == "text":
-            raise LMUnsupportedFeatureError("Text-completion models accept ordinary prompt/messages calls, not typed requests.")
+            raise UnsupportedFeatureError("Text-completion models accept ordinary prompt/messages calls, not typed requests.")
         if streaming and self.model_type != "chat":
-            raise LMUnsupportedFeatureError(
+            raise UnsupportedFeatureError(
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
-                "Use the native Responses engine for Responses streaming.", model=request.model,
+                "Use the native Responses engine for Responses streaming.",
             )
         data = request_kwargs(request, self.model_type)
         data.update(self.client_options)
@@ -139,39 +147,36 @@ class LiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
               "responses": lm_module.litellm_responses_completion}[self.model_type]
-        raw = fn(request=request, num_retries=0)
+        with litellm_errors(model=lm.model):
+            raw = fn(request=request, num_retries=0)
+        completed_legacy(raw)
         lm._check_truncation(raw)
         return CallResult.legacy(lm, raw, kwargs=request)
 
     def complete(self, request: Request):
         data = self._arguments(request)
-        try:
-            litellm = get_litellm(feature="LiteLLM engine")
-            fn = litellm.responses if self.model_type == "responses" else litellm.completion
-            return response_value(fn(**data), self.model_type, request)
-        except LMError:
-            raise
-        except Exception as exc:
-            raise wrap_error(exc, model=request.model) from exc
+        litellm = get_litellm(feature="LiteLLM engine")
+        fn = litellm.responses if self.model_type == "responses" else litellm.completion
+        with litellm_errors(model=request.model):
+            raw = fn(**data)
+        return response_value(raw, self.model_type, request)
 
     def stream(self, request: Request):
         data = self._arguments(request, streaming=True)
-        source = None
-        try:
-            litellm = get_litellm(feature="LiteLLM engine streaming")
+        litellm = get_litellm(feature="LiteLLM engine streaming")
+        with litellm_errors(model=request.model):
             source = litellm.completion(**data)
-            codec = _ChatStream(request)
-            for chunk in source:
+        codec = _ChatStream(request)
+        with closing_stream(source):
+            iterator = iter(source)
+            while True:
+                with litellm_errors(model=request.model):
+                    try:
+                        chunk = next(iterator)
+                    except StopIteration:
+                        break
                 yield from codec.feed(chunk)
             yield codec.finish(litellm)
-        except LMError:
-            raise
-        except Exception as exc:
-            raise wrap_error(exc, model=request.model) from exc
-        finally:
-            close = getattr(source, "close", None)
-            if close is not None:
-                close()
 
     def close(self):
         self._closed = True
@@ -186,42 +191,37 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
               "responses": lm_module.alitellm_responses_completion}[self.model_type]
-        raw = await fn(request=request, num_retries=0)
+        with litellm_errors(model=lm.model):
+            raw = await fn(request=request, num_retries=0)
+        completed_legacy(raw)
         lm._check_truncation(raw)
         return CallResult.legacy(lm, raw, kwargs=request)
 
     async def complete(self, request: Request):
         data = self._arguments(request)
-        try:
-            litellm = get_litellm(feature="LiteLLM engine")
-            fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
-            return response_value(await fn(**data), self.model_type, request)
-        except LMError:
-            raise
-        except Exception as exc:
-            raise wrap_error(exc, model=request.model) from exc
+        litellm = get_litellm(feature="LiteLLM engine")
+        fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
+        with litellm_errors(model=request.model):
+            raw = await fn(**data)
+        return response_value(raw, self.model_type, request)
 
     async def stream(self, request: Request):
         data = self._arguments(request, streaming=True)
-        source = None
-        try:
-            litellm = get_litellm(feature="LiteLLM engine streaming")
+        litellm = get_litellm(feature="LiteLLM engine streaming")
+        with litellm_errors(model=request.model):
             source = await litellm.acompletion(**data)
-            codec = _ChatStream(request)
-            async for chunk in source:
+        codec = _ChatStream(request)
+        async with aclosing_stream(source):
+            iterator = source.__aiter__()
+            while True:
+                with litellm_errors(model=request.model):
+                    try:
+                        chunk = await iterator.__anext__()
+                    except StopAsyncIteration:
+                        break
                 for event in codec.feed(chunk):
                     yield event
             yield codec.finish(litellm)
-        except LMError:
-            raise
-        except Exception as exc:
-            raise wrap_error(exc, model=request.model) from exc
-        finally:
-            close = getattr(source, "aclose", None) or getattr(source, "close", None)
-            if close is not None:
-                result = close()
-                if inspect.isawaitable(result):
-                    await result
 
     async def aclose(self):
         self._closed = True

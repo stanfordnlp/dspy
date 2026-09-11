@@ -146,6 +146,62 @@ ordinary calls for `n` answers. To continue a conversation, add `response.messag
 to the next request's messages. LiteLLM typed streaming currently supports Chat
 Completions only; the native Responses engine supports Responses streaming.
 
+## Errors and retry ownership
+
+**Engines report failures; DSPy owns retry and fallback policy.** New engines raise
+specific errors from `dspy.lm15`, the same bundled vocabulary as their requests and
+responses. Use these imports, not a separately installed lm15 package whose Python
+classes have different identities.
+
+```python
+from dspy.lm15 import RateLimitError
+
+# In an engine, after recognizing the backend's actual rate-limit response:
+raise RateLimitError("Provider rate limit", provider="my-backend", retry_after=2.0)
+```
+
+Do not return an error dictionary or a fake successful `Response`. LiteLLM engines
+translate their SDK's exception classes and documented provider codes into lm15
+errors. Native engines propagate lm15 errors. Arbitrary custom exceptions are not
+classified by words such as "network" or "timeout".
+
+At its owned engine/capability boundaries, DSPy translates canonical errors into its
+existing public error family. Applications can keep catching `dspy.LMError`,
+`dspy.LMAuthError`, `dspy.ContextWindowExceededError`, and their siblings. These
+public error names are **not** part of the 3.5 interface removal. Already-public
+DSPy errors, including those from legacy plugins, are preserved by identity.
+
+- `LMLockTimeoutError` identifies local credential-lock contention, not a provider
+  timeout or bad credential. It is transient and eligible for managed retries.
+- `LMStreamAssemblyError` identifies an incomplete or invalid stream. It is not
+  automatically retried; `partial` may hold salvageable content, not a successful
+  result. Unknown usage stays unknown.
+- Unknown engine failures become `LMUnexpectedError`, with the original exception
+  as `__cause__`. The canonical cause retains its exact lm15 code and SDK cause;
+  the public error retains useful request IDs, provider codes, retry hints, routing
+  diagnostics, and partial responses where available.
+- Wrong Python API arguments still raise `TypeError`/`ValueError` before execution.
+  Missing dependencies retain `ImportError`. Cancellation, keyboard interrupts,
+  and warnings promoted to errors are not converted into retryable LM failures.
+
+Only an engine attempt is retryable. Pricing, cache writes, history, and callbacks
+must not cause a completed generation to run again. Reported usage for completed
+candidates is retained when later work fails. Invalid or non-finite retry hints use
+normal backoff; valid provider hints are honored, including HTTP-date headers.
+A network retry can still repeat a request the provider already processed or billed:
+this is **not an exactly-once guarantee**. Use `num_retries=0` when replay is unsafe.
+
+All engine streams pass through the same guard: one leading start, a final end,
+and no events after completion. Raised errors and canonical `StreamErrorEvent`s
+both fail the call. Incomplete results are never cached as success. Cleanup errors
+do not replace an active failure or cancellation; secondary diagnostics are kept in
+`cleanup_errors` where the exception supports them.
+
+Adapter fallback is separate from generation retry. `ChatAdapter` may make one
+additional JSON-format call for an `AdapterParseError`, but never after visible
+stream output. Unexpected parser bugs and engine/setup failures propagate. JSON
+schema fallback is decided **before** the model call, not after a failed execution.
+
 ## Custom engines and legacy plugins
 
 New custom backends implement the small engine interface:

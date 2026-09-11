@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -12,15 +13,28 @@ import pydantic
 from dspy._vendor.lm15.result import StreamAccumulator
 from dspy._vendor.lm15.serde import request_to_dict
 from dspy.clients._deprecation import warn_legacy_shortcut
+from dspy.clients._http import finite_seconds
 from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
-from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine
-from dspy.clients.engines.errors import wrap_error
+from dspy.clients.call_context import stream_emitted
+from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_dict
 from dspy.clients.engines.legacy_engine import AsyncLegacyEngine, LegacyEngine
+from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
+from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
+from dspy.clients.errors import error_boundary
+from dspy.clients.legacy_outputs import plain, value
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import CacheConfig, LM15Error, Request, Response, RouterConfig, request_from_openai_chat
+from dspy.lm15 import (
+    CacheConfig,
+    LM15Error,
+    Request,
+    Response,
+    RouterConfig,
+    StreamAssemblyError,
+    request_from_openai_chat,
+)
 from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
@@ -81,6 +95,9 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
             raise TypeError("Do not combine a Request with prompt/messages")
         if request.model != lm.model:
             raise ValueError("Request.model must match LM.model")
+        from dspy.clients.engines.base import validate_request
+
+        validate_request(request)
         extra = set(kwargs) - {"cache", "rollout_id"}
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
@@ -138,6 +155,13 @@ def _canonical(call, *, compat=None):
 
 
 def _engine(lm, call, asynchronous):
+    # Setup is outside the retry loop. Canonical routing/conversion refusals
+    # still need the same public error projection as engine-call failures.
+    with error_boundary(lm.model):
+        return _select_engine(lm, call, asynchronous)
+
+
+def _select_engine(lm, call, asynchronous):
     if not call.managed:
         backend = AsyncLegacyEngine(lm, _implicit=True) if asynchronous else LegacyEngine(lm, _implicit=True)
         return backend, _canonical(call) if call.request else None, None
@@ -231,13 +255,14 @@ def _store(lm, call, result, asynchronous):
 
 
 def _delay(exc, attempt):
-    hint = getattr(exc, "retry_after", None)
-    return max(float(hint), 0.0) if hint is not None else min(2 ** attempt, 60)
+    hint = finite_seconds(getattr(exc, "retry_after", None))
+    return hint if hint is not None else min(2 ** min(attempt, 6), 60)
 
 
 def _result(lm, response, call, provider, request=None, *, estimate=True):
     if not isinstance(response, Response):
-        raise TypeError(f"Engine.complete must return dspy.lm15.Response, got {type(response).__name__}")
+        actual = f"{type(response).__module__}.{type(response).__qualname__}"
+        raise TypeError(f"Engine.complete must return dspy.lm15.Response, got {actual}")
     result = CallResult.native(response, model_type=lm.model_type,
                                logprobs=(call.request.config.logprobs is not None if call.request else bool(call.legacy.get("logprobs"))),
                                provider=provider)
@@ -257,80 +282,226 @@ def _price_result(lm, result, response, provider, request):
     """
     from dspy.clients.costs import estimate_cost
 
-    wire_model = request.model if request is not None else lm.model
-    if provider is not None:
-        from dspy.clients.capabilities import resolve
+    try:
+        wire_model = request.model if request is not None else lm.model
+        if provider is not None:
+            from dspy.clients.capabilities import resolve
 
-        wire_model = resolve(lm).model
-    result.cost, result.cost_details = estimate_cost(
-        response, provider=provider, requested_model=wire_model, request=request,
-    )
+            wire_model = resolve(lm).model
+        result.cost, result.cost_details = estimate_cost(
+            response, provider=provider, requested_model=wire_model, request=request,
+        )
+    except Warning:
+        raise
+    except Exception:
+        result.cost = None
+        result.cost_details = {"kind": "unknown", "reason": "pricing metadata could not be interpreted"}
+
+
+@dataclass
+class _Attempt:
+    emitted: bool = False
+    completed: bool = False
+    recorded: bool = False
+    response: Response | None = None
+    result: CallResult | None = None
+
+
+def _retain_response_usage(state, results, response, provider):
+    if isinstance(response, Response) and not state.recorded:
+        # Record billing before output conversion, final delivery or cleanup.
+        # If conversion fails this placeholder is accounted, never returned.
+        results.append(CallResult(usage=usage_dict(response, provider)))
+        state.recorded = True
+
+
+def _accept_response(lm, call, state, results, response, provider, request):
+    state.completed = True
+    state.response = response
+    _retain_response_usage(state, results, response, provider)
+    state.result = _result(lm, response, call, provider, request, estimate=False)
+    results[-1] = state.result
+
+
+def _accept_end(lm, call, state, results, accumulator, provider, request):
+    state.completed = True
+    try:
+        response = accumulator.response()
+    except StreamAssemblyError as exc:
+        _retain_response_usage(state, results, exc.partial, provider)
+        raise
+    _accept_response(lm, call, state, results, response, provider, request)
+
+
+def _partial(accumulator):
+    try:
+        present = any((accumulator.started_model, accumulator.started_id, accumulator.text_parts,
+                       accumulator.thinking_parts, accumulator.tool_call_meta, accumulator.image_parts,
+                       accumulator.audio_chunks, accumulator.citation_parts, accumulator.message_continuation))
+        return accumulator.response() if present else None
+    except StreamAssemblyError as exc:
+        return exc.partial
+    except Exception:
+        # Salvaging diagnostics must never replace the primary error.
+        return None
+
+
+def _legacy_done(state, results, progress):
+    state.emitted = progress.get("emitted", False)
+    state.completed = state.completed or progress.get("completed", False)
+    if state.result is not None:
+        results.append(state.result)
+        state.recorded = True
+    elif state.completed and "raw" in progress:
+        # A completed compatibility response can outlive a failed SDK close or
+        # output conversion. Extract only reported usage, not invented outputs.
+        try:
+            usage = plain(dict(value(progress["raw"], "usage", {}) or {}))
+        except Exception:
+            usage = {}
+        results.append(CallResult(usage=usage))
+        state.recorded = True
+
+
+def _accept_legacy(state, result):
+    state.completed = True
+    if not isinstance(result, CallResult):
+        raise TypeError("Engine.complete_legacy must return a CallResult")
+    state.result = result
+
+
+def _account_failed_call(lm, results, primary):
+    if settings.usage_tracker:
+        for result in results:
+            try:
+                settings.usage_tracker.add_usage(lm.model, result.usage)
+            except Exception as secondary:
+                # A custom tracker must not replace an engine error or cancel.
+                try:
+                    primary.usage_errors = (*getattr(primary, "usage_errors", ()), secondary)
+                    if hasattr(primary, "add_note"):
+                        primary.add_note(f"Usage accounting also failed ({type(secondary).__name__}); see usage_errors.")
+                except Exception:
+                    pass
+
+
+def _retryable(state, exc, attempt, retries):
+    return not state.completed and not state.emitted and attempt < retries and is_retryable_lm_error(exc)
+
+
+def _attempt(lm, call, backend, request, provider, state, results):
+    stream = settings.send_stream
+    if request is None:
+        progress = {"emitted": False}
+        try:
+            with settings.context(_lm_stream_progress=progress):
+                result = backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
+                                                 messages=call.messages, call_kwargs=call.kwargs)
+                _accept_legacy(state, result)
+        finally:
+            _legacy_done(state, results, progress)
+    elif stream is None:
+        try:
+            response = backend.complete(request)
+        except StreamAssemblyError as exc:
+            _retain_response_usage(state, results, exc.partial, provider)
+            raise
+        _accept_response(lm, call, state, results, response, provider, request)
+    else:
+        accumulator = StreamAccumulator(request)
+        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
+        events = checked_stream(backend.stream(request), provider=provider)
+        try:
+            with closing_stream(events):
+                for event in events:
+                    accumulator.push(event)
+                    if event.type == "end":
+                        _accept_end(lm, call, state, results, accumulator, provider, request)
+                    if chunk := bridge.chunk(event):
+                        state.emitted = True
+                        stream_emitted()
+                        anyio.from_thread.run(stream.send, chunk)
+        except StreamAssemblyError as exc:
+            if exc.partial is None:
+                exc.partial = _partial(accumulator)
+            raise
 
 
 def execute(lm, call):
     if result := _cached(lm, call, False):
         return result
     backend, request, provider = _engine(lm, call, False)
-    stream = settings.send_stream
     results = []
-    # LiteLLM and legacy plugins keep native n behavior when using ordinary
-    # inputs. Canonical engines have one candidate per attempt.
+    # Ordinary compatibility calls keep backend-native n; canonical engines
+    # produce one candidate per attempt.
     # TODO(candidate-parallelism): bound concurrent canonical requests while
     # respecting engine concurrency guarantees, output order, per-candidate
     # retries/cancellation accounting, and whole-call caching. Define candidate
     # identity for listeners before multiplexing streams. Concurrency reduces
     # latency, not the input-token charges for separate requests.
     count = call.n if request is not None else 1
-    for _ in range(count):
-        emitted = False
-        retries = lm.num_retries if call.managed else 0
-        for attempt in range(retries + 1):
-            try:
-                if request is None:
-                    # The compatibility streaming driver sets this flag before
-                    # sending any chunk; a partial stream must never be replayed.
-                    progress = {"emitted": False}
-                    with settings.context(_lm_stream_progress=progress):
-                        try:
-                            result = backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
-                                                             messages=call.messages, call_kwargs=call.kwargs)
-                        finally:
-                            emitted = progress["emitted"]
-                elif stream is None:
-                    result = _result(lm, backend.complete(request), call, provider, request)
-                else:
-                    accumulator = StreamAccumulator(request)
-                    bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
-                    source = backend.stream(request)
-                    try:
-                        for event in source:
-                            accumulator.push(event)
-                            if chunk := bridge.chunk(event):
-                                emitted = True
-                                anyio.from_thread.run(stream.send, chunk)
-                    finally:
-                        close = getattr(source, "close", None)
-                        if close:
-                            close()
-                    result = _result(lm, accumulator.response(), call, provider, request)
-                results.append(result)
-                break
-            except Exception as exc:
-                error = wrap_error(exc, model=lm.model, provider=provider) if call.managed else exc
-                if not emitted and attempt < retries and is_retryable_lm_error(error):
-                    time.sleep(_delay(error, attempt))
-                    continue
-                # Earlier candidates really consumed tokens, even if a later
-                # candidate fails. Do not cache a partially completed n call.
-                if settings.usage_tracker:
-                    for completed in results:
-                        settings.usage_tracker.add_usage(lm.model, completed.usage)
-                if error is exc:
-                    raise
-                raise error from exc
-    result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
-    _store(lm, call, result, False)
-    return result
+    retries = lm.num_retries if call.managed else 0
+    try:
+        for _ in range(count):
+            for attempt in range(retries + 1):
+                state = _Attempt()
+                try:
+                    boundary = error_boundary(lm.model, provider=provider, unexpected=True) if call.managed else nullcontext()
+                    with boundary:
+                        _attempt(lm, call, backend, request, provider, state, results)
+                    break
+                except Exception as exc:
+                    if not _retryable(state, exc, attempt, retries):
+                        raise
+                    time.sleep(_delay(exc, attempt))
+            # Completion is irreversible. Advisory pricing and storage never
+            # run inside the retry region, even if custom code raises here.
+            if request is not None:
+                _price_result(lm, state.result, state.response, provider, request)
+        result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
+        _store(lm, call, result, False)
+        return result
+    except BaseException as exc:
+        _account_failed_call(lm, results, exc)
+        raise
+
+
+async def _aattempt(lm, call, backend, request, provider, state, results):
+    stream = settings.send_stream
+    if request is None:
+        progress = {"emitted": False}
+        try:
+            with settings.context(_lm_stream_progress=progress):
+                result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
+                                                       messages=call.messages, call_kwargs=call.kwargs)
+                _accept_legacy(state, result)
+        finally:
+            _legacy_done(state, results, progress)
+    elif stream is None:
+        try:
+            response = await backend.complete(request)
+        except StreamAssemblyError as exc:
+            _retain_response_usage(state, results, exc.partial, provider)
+            raise
+        _accept_response(lm, call, state, results, response, provider, request)
+    else:
+        accumulator = StreamAccumulator(request)
+        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
+        events = achecked_stream(backend.stream(request), provider=provider)
+        try:
+            async with aclosing_stream(events):
+                async for event in events:
+                    accumulator.push(event)
+                    if event.type == "end":
+                        _accept_end(lm, call, state, results, accumulator, provider, request)
+                    if chunk := bridge.chunk(event):
+                        state.emitted = True
+                        stream_emitted()
+                        await stream.send(chunk)
+        except StreamAssemblyError as exc:
+            if exc.partial is None:
+                exc.partial = _partial(accumulator)
+            raise
 
 
 async def aexecute(lm, call):
@@ -338,82 +509,34 @@ async def aexecute(lm, call):
         if result := await asyncio.to_thread(_cached, lm, call, True):
             return result
     backend, request, provider = _engine(lm, call, True)
-    stream = settings.send_stream
     results = []
     # TODO(candidate-parallelism): apply the same guarantees as execute() above;
     # cancellation must account for every completed candidate exactly once.
     count = call.n if request is not None else 1
+    retries = lm.num_retries if call.managed else 0
     try:
         for _ in range(count):
-            emitted = False
-            recorded = False
-            retries = lm.num_retries if call.managed else 0
             for attempt in range(retries + 1):
+                state = _Attempt()
                 try:
-                    if request is None:
-                        progress = {"emitted": False}
-                        with settings.context(_lm_stream_progress=progress):
-                            try:
-                                result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
-                                                                       messages=call.messages, call_kwargs=call.kwargs)
-                            finally:
-                                emitted = progress["emitted"]
-                    elif stream is None:
-                        response = await backend.complete(request)
-                        result = _result(lm, response, call, provider, request, estimate=False)
-                    else:
-                        accumulator = StreamAccumulator(request)
-                        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
-                        source = backend.stream(request)
-                        try:
-                            async for event in source:
-                                accumulator.push(event)
-                                if event.type == "end" and not recorded:
-                                    # The provider completed, even if delivering
-                                    # the final chunk or closing is cancelled.
-                                    response = accumulator.response()
-                                    result = _result(lm, response, call, provider, request, estimate=False)
-                                    results.append(result)
-                                    recorded = True
-                                if chunk := bridge.chunk(event):
-                                    emitted = True
-                                    await stream.send(chunk)
-                        finally:
-                            close = getattr(source, "aclose", None)
-                            if close:
-                                with anyio.CancelScope(shield=True):
-                                    await close()
-                        if not recorded:
-                            response = accumulator.response()
-                            result = _result(lm, response, call, provider, request, estimate=False)
+                    boundary = error_boundary(lm.model, provider=provider, unexpected=True) if call.managed else nullcontext()
+                    with boundary:
+                        await _aattempt(lm, call, backend, request, provider, state, results)
                     break
                 except Exception as exc:
-                    error = wrap_error(exc, model=lm.model, provider=provider) if call.managed else exc
-                    if not recorded and not emitted and attempt < retries and is_retryable_lm_error(error):
-                        await asyncio.sleep(_delay(error, attempt))
-                        continue
-                    if error is exc:
+                    if not _retryable(state, exc, attempt, retries):
                         raise
-                    raise error from exc
-            # Record completion BEFORE any further await, including pricing.
-            # Pricing/caching failures must not retry a completed generation.
-            if not recorded:
-                results.append(result)
+                    await asyncio.sleep(_delay(exc, attempt))
             if request is not None:
-                await asyncio.to_thread(_price_result, lm, result, response, provider, request)
+                await asyncio.to_thread(_price_result, lm, state.result, state.response, provider, request)
         result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
         if call.cache:
-            # Only whole successful calls reach storage. If cancelled here,
-            # the worker may finish writing that complete (never partial) call.
+            # Cancellation may leave this worker writing a complete result,
+            # never a partial one. Usage still belongs to this public call.
             await asyncio.to_thread(_store, lm, call, result, True)
         return result
-    except BaseException:
-        # Also covers cancellation during backoff, pricing or cache storage.
-        # Do not translate/retry cancellation or fabricate usage for unfinished
-        # candidates. Successful calls are accounted by finalize(), not here.
-        if settings.usage_tracker:
-            for completed in results:
-                settings.usage_tracker.add_usage(lm.model, completed.usage)
+    except BaseException as exc:
+        _account_failed_call(lm, results, exc)
         raise
 
 

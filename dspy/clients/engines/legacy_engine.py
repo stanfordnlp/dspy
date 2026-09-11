@@ -2,7 +2,7 @@
 
 from dspy.clients._deprecation import warn_legacy_engine
 from dspy.clients.engines.base import validate_request
-from dspy.clients.engines.errors import wrap_error
+from dspy.clients.errors import wrap_error
 from dspy.clients.lm15_boundary import request_kwargs, response_value
 from dspy.lm15 import Request, Response
 from dspy.utils.exceptions import LMError, LMUnsupportedFeatureError

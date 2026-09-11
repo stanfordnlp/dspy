@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from functools import wraps
 
 from dspy.clients.backend_selection import select_backend
+from dspy.clients.engines.litellm_errors import litellm_errors
+from dspy.clients.errors import error_boundary
 from dspy.clients.model_metadata import model_info
 
 
@@ -89,12 +91,13 @@ async def prepare_async(lm):
 
 
 def capabilities(lm):
-    scope = _planning.get()
-    if scope is not None and scope.lm is lm:
-        if scope.value is None:
-            scope.value = _capabilities(lm, scope.options)
-        return scope.value
-    return _capabilities(lm)
+    with error_boundary(lm.model, unexpected=True):
+        scope = _planning.get()
+        if scope is not None and scope.lm is lm:
+            if scope.value is None:
+                scope.value = _capabilities(lm, scope.options)
+            return scope.value
+        return _capabilities(lm)
 
 
 def _litellm_capabilities(lm, selection):
@@ -103,13 +106,14 @@ def _litellm_capabilities(lm, selection):
     litellm = _get_litellm()
     provider = selection.clients.get("custom_llm_provider")
     kwargs = {"custom_llm_provider": provider} if provider is not None else {}
-    params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider or lm._provider_name)
-    return Capabilities(
-        bool(litellm.supports_function_calling(model=lm.model, **kwargs)),
-        bool(litellm.supports_reasoning(lm.model, **kwargs)),
-        bool(litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider or lm._provider_name)),
-        frozenset(params or ()),
-    )
+    with litellm_errors(model=lm.model, provider=provider or lm._provider_name):
+        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider or lm._provider_name)
+        return Capabilities(
+            bool(litellm.supports_function_calling(model=lm.model, **kwargs)),
+            bool(litellm.supports_reasoning(lm.model, **kwargs)),
+            bool(litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider or lm._provider_name)),
+            frozenset(params or ()),
+        )
 
 
 def _capabilities(lm, options=None):

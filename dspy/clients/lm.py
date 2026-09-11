@@ -12,6 +12,8 @@ from anyio.streams.memory import MemoryObjectSendStream
 import dspy
 from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
+from dspy.clients.call_context import completed_legacy, stream_emitted
+from dspy.clients.engines.lifecycle import aclosing_stream
 from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -206,9 +208,11 @@ class LM(BaseLM):
         return completion_fn, litellm_cache_args
 
     def _wrap_litellm_exception(self, exc: Exception) -> LMError:
-        from dspy.clients.engines.errors import wrap_error
+        from dspy.clients.engines.litellm_errors import to_lm15_error
+        from dspy.clients.errors import wrap_error
 
-        return wrap_error(exc, model=self.model, provider=self._provider_name)
+        canonical = to_lm15_error(exc, model=self.model, provider=self._provider_name)
+        return wrap_error(canonical, model=self.model, provider=self._provider_name)
 
     def forward(self, prompt=None, messages=None, **kwargs):
         """Compatibility forward entry point; public calls also record history."""
@@ -463,25 +467,16 @@ def _get_stream_completion_fn(
             **request,
         )
         chunks = []
-        try:
+        async with aclosing_stream(response):
             async for chunk in response:
                 if caller_predict_id:
                     chunk.predict_id = caller_predict_id
                 chunks.append(chunk)
-                progress = dspy.settings.get("_lm_stream_progress")
-                if progress is not None:
-                    progress["emitted"] = True
+                stream_emitted()
                 await stream.send(chunk)
-            return _get_litellm().stream_chunk_builder(chunks)
-        finally:
-            import inspect
-
-            close = getattr(response, "aclose", None) or getattr(response, "close", None)
-            if close is not None:
-                with anyio.CancelScope(shield=True):
-                    result = close()
-                    if inspect.isawaitable(result):
-                        await result
+            raw = _get_litellm().stream_chunk_builder(chunks)
+            completed_legacy(raw)
+            return raw
 
     def sync_stream_completion():
         return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
