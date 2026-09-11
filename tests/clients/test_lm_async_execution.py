@@ -335,22 +335,37 @@ async def test_cancellation_accounts_completed_candidates_once(phase, streaming,
 
     engine = Candidates(phase)
     lm = dspy.LM("custom", engine=object_engine(), async_engine=engine, cache=phase == "cache", num_retries=3)
-    worker_entered, release = threading.Event(), threading.Event()
+    worker_entered, release, worker_finished = threading.Event(), threading.Event(), threading.Event()
     worker_threads = []
     loop_thread = threading.get_ident()
 
     def block(*args):
         worker_threads.append(threading.get_ident())
         worker_entered.set()
-        release.wait(5)
+        try:
+            if not release.wait(10):
+                raise TimeoutError("Test did not release the pricing/cache worker")
+        finally:
+            worker_finished.set()
+
+    def instrument(name, observer):
+        original = getattr(execution, name)
+
+        def scoped(owner, *args, **kwargs):
+            # Assert this LM's behavior, not activity from unrelated callers.
+            if owner is lm:
+                return observer(owner, *args, **kwargs)
+            return original(owner, *args, **kwargs)
+
+        monkeypatch.setattr(execution, name, scoped)
 
     if phase == "pricing":
-        monkeypatch.setattr(execution, "_price_result", block)
+        instrument("_price_result", block)
     if phase == "cache":
-        monkeypatch.setattr(execution, "_store", block)
+        instrument("_store", block)
     calls_stored = []
     if phase != "cache":
-        monkeypatch.setattr(execution, "_store", lambda *args: calls_stored.append(args))
+        instrument("_store", lambda *args: calls_stored.append(args))
     errors = []
 
     class Trace(BaseCallback):
@@ -384,6 +399,8 @@ async def test_cancellation_accounts_completed_candidates_once(phase, streaming,
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            if worker_entered.is_set():
+                assert await asyncio.to_thread(worker_finished.wait, 10)
 
 
 @pytest.mark.asyncio
