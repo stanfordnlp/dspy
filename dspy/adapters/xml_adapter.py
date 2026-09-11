@@ -30,8 +30,11 @@ class XMLAdapter(ChatAdapter):
                 output.append(self._value_to_xml(serialized, field.name))
                 continue
             formatted = format_field_value(field_info=field.info, value=value)
-            if is_output and field.info.annotation is str:
-                formatted = formatted.replace("&", "&amp;").replace("<", "&lt;")
+            if is_output and not isinstance(serialized, (dict, list)):
+                # Textual output values (str, Optional[str], enums, dates, ...) are re-parsed as
+                # XML character data, where `]]>` is illegal (XML 1.0 §2.5), so escape just that
+                # sequence to keep the emission parseable by this adapter's own XML parser.
+                formatted = formatted.replace("&", "&amp;").replace("<", "&lt;").replace("]]>", "]]&gt;")
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
@@ -150,7 +153,9 @@ class XMLAdapter(ChatAdapter):
                 )
             return f"<{tag}{attrs}>{''.join(children)}</{tag}>"
         return (
-            f"<{tag}{attrs}>{str(value).replace('&', '&amp;').replace('<', '&lt;')}</{tag}>"
+            # `]]>` is illegal in XML character data (XML 1.0 §2.5), so escape just that
+            # sequence to keep the output parseable by this adapter's own XML parser.
+            f"<{tag}{attrs}>{str(value).replace('&', '&amp;').replace('<', '&lt;').replace(']]>', ']]&gt;')}</{tag}>"
             if value is not None
             else f"<{tag}{attrs} />"
         )
@@ -184,9 +189,16 @@ class XMLAdapter(ChatAdapter):
     @classmethod
     def _elements_to_value(cls, elements: list[ET.Element], schema: dict, definitions: dict) -> Any:
         schema = definitions.get(schema.get("$ref", "").rsplit("/", 1)[-1], schema)
+        if schema.get("type") == "null" and not list(elements[0]) and not (elements[0].text or "").strip():
+            return None
         if choices := schema.get("anyOf"):
             if {"type": "null"} in choices and not list(elements[0]) and not (elements[0].text or "").strip():
-                return None
+                # An empty element is ambiguous between "no value" and "empty container". Format
+                # never encodes None as an empty element (it emits literal `None` text), so decode
+                # empty elements as empty containers when a non-null choice is an array or
+                # free-form object, and as None otherwise (scalars, models, TypedDicts).
+                if not any(cls._is_container_choice(choice, definitions) for choice in choices):
+                    return None
             choices = [choice for choice in choices if choice.get("type") != "null"]
             schema = choices[0]
             if list(elements[0]):
@@ -216,6 +228,17 @@ class XMLAdapter(ChatAdapter):
             name: cls._elements_to_value(items, properties.get(name, child_schema), definitions)
             for name, items in children.items()
         }
+
+    @staticmethod
+    def _is_container_choice(choice: dict, definitions: dict) -> bool:
+        if choice.get("type") == "null":
+            return False
+        resolved = definitions.get(choice.get("$ref", "").rsplit("/", 1)[-1], choice)
+        if resolved.get("type") == "array":
+            return True
+        # Free-form objects (e.g. `dict[str, int]`) have no `properties`; models and
+        # TypedDicts do, and keep decoding empty elements as None.
+        return resolved.get("type") == "object" and "properties" not in resolved
 
     @staticmethod
     def _group_children(element: ET.Element) -> dict[str, list[ET.Element]]:
