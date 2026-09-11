@@ -89,7 +89,7 @@ class Tokens:
             uncased: lower cases text
             filter_fn: user function that takes in an ngram list and returns
               True or False to keep or not keep the ngram
-            as_string: return the ngram as a string vs list
+            as_strings: return the ngram as a string vs list
         """
 
         def _skip(gram):
