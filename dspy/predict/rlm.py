@@ -159,6 +159,7 @@ class RLM(Module):
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
         verbose: bool = False,
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
@@ -182,6 +183,7 @@ class RLM(Module):
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
+        self.history_processor = history_processor
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
@@ -482,6 +484,10 @@ class RLM(Module):
             raise TypeError(
                 "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
             )
+        if "history_processor" in input_args and "history_processor" not in self.signature.input_fields:
+            raise TypeError(
+                "To use a history_processor, pass it as the second positional argument when calling this module."
+            )
         input_args_without_reserved = {k: v for k, v in input_args.items() if k not in self._RESERVED_INPUT_NAMES}
         input_names = set(self.signature.input_fields)
         unexpected = set(input_args_without_reserved) - input_names
@@ -607,9 +613,12 @@ class RLM(Module):
         history: dspy.History,
         repl_history: REPLHistory,
         output_field_names: list[str],
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
         """Use extract module to get final output when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final output")
+
+        history = _apply_history_processor(history_processor, history)
 
         variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
@@ -618,10 +627,16 @@ class RLM(Module):
             repl_history=repl_history,
         )
 
+        final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
+
+        # Update history with extracted final outputs
+        history.messages.append(final_outputs)
+
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            **{name: getattr(extract_pred, name) for name in output_field_names},
+            repl_trajectory=[e.model_dump() for e in repl_history.entries],
+            **final_outputs,
         )
 
     def _process_final_output(
@@ -774,7 +789,13 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def forward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
+    def forward(
+        self,
+        interpreter: CodeInterpreter | None = None,
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
+        /,
+        **input_args,
+    ) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
@@ -792,6 +813,8 @@ class RLM(Module):
         """
         self._validate_inputs(input_args)
 
+        history_processor = history_processor if history_processor else self.history_processor
+
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
 
@@ -806,6 +829,8 @@ class RLM(Module):
             inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
             for iteration in range(self.max_iters):
+                history = _apply_history_processor(history_processor, history)
+
                 repl_entry, final_outputs = self._execute_iteration(
                     repl,
                     variables,
@@ -833,7 +858,13 @@ class RLM(Module):
                     )
 
             # Max iterations reached - use extract fallback
-            return self._extract_fallback(variables, history, repl_history, output_field_names)
+            return self._extract_fallback(
+                variables,
+                history,
+                repl_history,
+                output_field_names,
+                history_processor,
+            )
 
     async def _aextract_fallback(
         self,
@@ -841,9 +872,12 @@ class RLM(Module):
         history: dspy.History,
         repl_history: REPLHistory,
         output_field_names: list[str],
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
         """Async version: Use extract module when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final output")
+
+        history = _apply_history_processor(history_processor, history)
 
         variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
@@ -852,10 +886,16 @@ class RLM(Module):
             repl_history=repl_history,
         )
 
+        final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
+
+        # Update history with extracted final outputs
+        history.messages.append(final_outputs)
+
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            **{name: getattr(extract_pred, name) for name in output_field_names},
+            repl_trajectory=[e.model_dump() for e in repl_history.entries],
+            **final_outputs,
         )
 
     async def _aexecute_iteration(
@@ -890,7 +930,13 @@ class RLM(Module):
         result = self._execute_code(repl, code, regular_args)
         return self._process_execution_result(pred, code, result, output_field_names)
 
-    async def aforward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
+    async def aforward(
+        self,
+        interpreter: CodeInterpreter | None = None,
+        history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
+        /,
+        **input_args,
+    ) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
@@ -908,6 +954,8 @@ class RLM(Module):
         """
         self._validate_inputs(input_args)
 
+        history_processor = history_processor if history_processor else self.history_processor
+
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
 
@@ -922,6 +970,7 @@ class RLM(Module):
             inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
             for iteration in range(self.max_iters):
+                history = _apply_history_processor(history_processor, history)
                 repl_entry, final_outputs = self._execute_iteration(
                     repl,
                     variables,
@@ -949,7 +998,9 @@ class RLM(Module):
                     )
 
             # Max iterations reached - use extract fallback
-            return await self._aextract_fallback(variables, history, repl_history, output_field_names)
+            return await self._aextract_fallback(
+                variables, history, repl_history, output_field_names, history_processor
+            )
 
     def _repl_entry_event(self, *, inputs: dict[str, Any], iteration: int, repl_entry: REPLEntry) -> dict[str, Any]:
         event = dict(inputs if iteration == 0 else {})  # Add input fields only on first iteration of new turn
@@ -967,6 +1018,25 @@ class RLM(Module):
                 f"does not equal REPLEntry max_output_chars ({entry.max_output_chars:, } chars)"
             )
         return repl_history.append(reasoning=entry.reasoning, code=entry.code, output=entry.output)
+
+
+def _apply_history_processor(
+    processor: Callable[[dspy.History], dspy.History | None] | None, history: dspy.History
+) -> dspy.History:
+    if processor is None:
+        return history
+    try:
+        processed = processor(history)
+        if processed is None:
+            logger.warning("history_processor returned None; continuing with unprocessed history.")
+            return history
+        return _coerce_history(processed)
+    except Exception as err:
+        logger.warning(
+            "history_processor raised; continuing with unprocessed history: %s",
+            format_error_for_lm(err, traceback_frames=5),
+        )
+        return history
 
 
 def _coerce_history(history: Any) -> dspy.History:
