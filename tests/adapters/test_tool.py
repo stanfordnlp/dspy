@@ -709,6 +709,90 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
     }
 
 
+def test_tool_from_function_with_recursive_pydantic_model():
+    class TreeNode(BaseModel):
+        name: str
+        children: list["TreeNode"] = []
+
+    TreeNode.model_rebuild()
+
+    def organize(tree: TreeNode) -> str:
+        """Summarize a tree."""
+        return "ok"
+
+    tool = Tool(organize)
+
+    assert "$defs" not in str(tool.args["tree"])
+    assert tool.args["tree"]["type"] == "object"
+    assert tool.args["tree"]["properties"]["name"]["type"] == "string"
+    # The cyclic reference is replaced with the "accept anything" schema.
+    assert tool.args["tree"]["properties"]["children"]["items"] == {}
+
+
+def test_tool_convert_input_schema_to_tool_args_recursive_schema():
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "$defs": {
+                "TreeNode": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "children": {"type": "array", "items": {"$ref": "#/$defs/TreeNode"}},
+                    },
+                }
+            },
+            "properties": {"tree": {"$ref": "#/$defs/TreeNode"}},
+            "required": ["tree"],
+        }
+    )
+    assert args["tree"]["type"] == "object"
+    assert args["tree"]["properties"]["name"]["type"] == "string"
+    assert args["tree"]["properties"]["children"]["items"] == {}
+    assert arg_types == {"tree": dict}
+    assert arg_desc == {"tree": "No description provided. (Required)"}
+
+
+def test_tool_convert_input_schema_to_tool_args_legacy_definitions_ref():
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "properties": {"node": {"$ref": "#/definitions/Node"}},
+            "required": ["node"],
+            "definitions": {"Node": {"type": "object", "properties": {"name": {"type": "string"}}}},
+        }
+    )
+    assert args["node"] == {"type": "object", "properties": {"name": {"type": "string"}}}
+    assert arg_types == {"node": dict}
+    assert arg_desc == {"node": "No description provided. (Required)"}
+
+
+def test_tool_convert_input_schema_to_tool_args_local_pointer_ref():
+    args, arg_types, _ = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer"},
+                "y": {"type": "object", "properties": {"z": {"$ref": "#/properties/x"}}},
+            },
+        }
+    )
+    assert args["x"] == {"type": "integer"}
+    assert args["y"]["properties"]["z"] == {"type": "integer"}
+    assert arg_types == {"x": int, "y": dict}
+
+
+def test_tool_convert_input_schema_to_tool_args_unresolvable_ref():
+    # Unresolvable references are left as-is instead of raising.
+    args, arg_types, _ = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "$defs": {"Other": {"type": "string"}},
+            "properties": {"node": {"$ref": "#/definitions/Missing"}},
+        }
+    )
+    assert args["node"] == {"$ref": "#/definitions/Missing"}
+    assert arg_types == {"node": Any}
 
 
 def test_tool_call_execute():
