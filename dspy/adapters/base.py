@@ -16,7 +16,7 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
 from dspy.primitives.repl_types import REPLEntry, split_repl_event
-from dspy.signatures.field import InputField
+from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -621,11 +621,12 @@ class Adapter:
                 continue
 
             # An event with none of the signature's fields cannot be rendered as a normal turn. RLM's extract
-            # fallback produces such an event (only the final output fields); render them as user context.
+            # fallback produces such an event: only the final output fields, which the model produced via the
+            # extract `Predict` call, so replay them as an assistant turn.
             if not any(name in message for name in (*signature.input_fields, *signature.output_fields)):
                 extra_fields = {name: value for name, value in repl_outputs.items() if name != tool_call_field_name}
                 if extra_fields:
-                    messages.append({"role": "user", "content": self._format_extra_fields(extra_fields)})
+                    messages.append({"role": "assistant", "content": self._format_extra_output_fields(extra_fields)})
                 continue
 
             assistant_values = message
@@ -650,6 +651,11 @@ class Adapter:
         """Format fields that are not declared on the signature as if they were `str` input fields."""
         extra_signature = Signature({name: (str, InputField()) for name in values})
         return self.format_user_message_content(extra_signature, values)
+
+    def _format_extra_output_fields(self, values: dict[str, Any]) -> str:
+        """Format fields that are not declared on the signature as if they were `str` output fields."""
+        extra_signature = Signature({name: (str, OutputField()) for name in values})
+        return self.format_assistant_message_content(extra_signature, values)
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.

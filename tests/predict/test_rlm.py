@@ -1892,7 +1892,7 @@ class TestRLMHistoryWithDummyLM:
         assert "None" not in "".join(m["content"] for m in messages)
 
     def test_reused_history_renders_extract_fallback_answer(self, pooled_interpreter):
-        """The extract-fallback event (output fields only) renders as user context, not an empty assistant turn."""
+        """The extract-fallback event (output fields only) replays as an assistant turn carrying those outputs."""
         with dummy_lm_context(
             [
                 {"reasoning": "explore", "code": "x = 1\nprint(x)"},
@@ -1905,8 +1905,9 @@ class TestRLMHistoryWithDummyLM:
         messages = dspy.ChatAdapter().format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
-        assert [m["role"] for m in messages] == ["user", "assistant", "user", "user"]
+        assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
         assert "[[ ## query ## ]]\nWhat is seven?" in messages[0]["content"]
+        # The extracted answer was produced by the model, so it replays as an assistant turn
         assert "[[ ## answer ## ]]\n7" in messages[3]["content"]
         assert "None" not in "".join(m["content"] for m in messages)
 
