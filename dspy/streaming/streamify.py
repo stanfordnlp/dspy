@@ -185,41 +185,52 @@ def streamify(
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
 
-            async for value in receive_stream:
-                if _is_litellm_model_response_stream(value):
-                    if len(predict_id_to_listener) == 0:
-                        # No listeners are configured, yield the chunk directly for backwards compatibility.
+            try:
+                async for value in receive_stream:
+                    if _is_litellm_model_response_stream(value):
+                        if len(predict_id_to_listener) == 0:
+                            # No listeners are configured, yield the chunk directly for backwards compatibility.
+                            yield value
+                        else:
+                            # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
+                            # determine if we should yield a value to the user.
+                            for listener in predict_id_to_listener[value.predict_id]:
+                                # In some special cases such as Citation API, it is possible that multiple listeners
+                                # return values at the same time due to the chunk buffer of the listener.
+                                if output := listener.receive(value):
+                                    yield output
+                    elif isinstance(value, StatusMessage):
                         yield value
-                    else:
-                        # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
-                        # determine if we should yield a value to the user.
-                        for listener in predict_id_to_listener[value.predict_id]:
-                            # In some special cases such as Citation API, it is possible that multiple listeners
-                            # return values at the same time due to the chunk buffer of the listener.
-                            if output := listener.receive(value):
-                                yield output
-                elif isinstance(value, StatusMessage):
-                    yield value
-                elif isinstance(value, Prediction):
-                    # Flush remaining buffered tokens before yielding the Prediction instance
-                    for listener in stream_listeners:
-                        if final_chunk := listener.finalize():
-                            yield final_chunk
+                    elif isinstance(value, Prediction):
+                        # Flush remaining buffered tokens before yielding the Prediction instance
+                        for listener in stream_listeners:
+                            if final_chunk := listener.finalize():
+                                yield final_chunk
 
-                    if include_final_prediction_in_output_stream:
+                        if include_final_prediction_in_output_stream:
+                            yield value
+                        elif (
+                            len(stream_listeners) == 0
+                            or any(listener.cache_hit for listener in stream_listeners)
+                            or not any(listener.stream_start for listener in stream_listeners)
+                        ):
+                            yield value
+                        return
+                    else:
+                        # This wildcard case allows for customized streaming behavior.
+                        # It is useful when a users have a custom LM which returns stream chunks in a custom format.
+                        # We let those chunks pass through to the user to handle them as needed.
                         yield value
-                    elif (
-                        len(stream_listeners) == 0
-                        or any(listener.cache_hit for listener in stream_listeners)
-                        or not any(listener.stream_start for listener in stream_listeners)
-                    ):
-                        yield value
-                    return
-                else:
-                    # This wildcard case allows for customized streaming behavior.
-                    # It is useful when a users have a custom LM which returns stream chunks in a custom format.
-                    # We let those chunks pass through to the user to handle them as needed.
-                    yield value
+            except GeneratorExit:
+                # aclose() on a partially consumed stream delivers GeneratorExit
+                # at a suspended yield. Cancel the producer's scope and leave by
+                # returning: letting GeneratorExit unwind through the task group
+                # made anyio collect it as an "unhandled error in a TaskGroup"
+                # and re-raise it wrapped in a BaseExceptionGroup (#10380).
+                # Exiting the generator normally satisfies aclose() per PEP 525,
+                # and the cancelled scope tears the producer task down.
+                tg.cancel_scope.cancel()
+                return
 
     if async_streaming:
         return async_streamer
