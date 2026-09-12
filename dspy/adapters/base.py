@@ -15,7 +15,7 @@ from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
-from dspy.primitives.repl_types import REPLEntry, split_repl_event
+from dspy.primitives.repl_types import REPLEntry, is_repl_event, split_repl_event
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -548,8 +548,17 @@ class Adapter:
             # rendered here as plain context rather than through the signature-driven path.
             # Handled before the generic rendering below so outer fields are kept even when they share a name with
             # an inner action field (e.g. an RLM whose signature has its own `code` or `reasoning`).
-            repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
-            if repl_entry is not None:
+            if is_repl_event(message):
+                repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+                if repl_entry is None:
+                    # Extract-fallback event: only the final output fields, which the model produced via the
+                    # extract `Predict` call, so replay them as an assistant turn.
+                    if repl_outputs:
+                        messages.append(
+                            {"role": "assistant", "content": self._format_untyped_assistant_fields(repl_outputs)}
+                        )
+                    continue
+
                 if repl_inputs:
                     messages.append({"role": "user", "content": self._format_untyped_user_fields(repl_inputs)})
 
@@ -617,17 +626,6 @@ class Adapter:
                         messages.append(
                             {"role": "tool", "tool_call_id": result.call_id, "name": result.name, "content": content}
                         )
-                continue
-
-            # An event with none of the signature's fields cannot be rendered as a normal turn. RLM's extract
-            # fallback produces such an event: only the final output fields, which the model produced via the
-            # extract `Predict` call, so replay them as an assistant turn.
-            if not any(name in message for name in (*signature.input_fields, *signature.output_fields)):
-                fallback_outputs = {name: value for name, value in repl_outputs.items() if name != tool_call_field_name}
-                if fallback_outputs:
-                    messages.append(
-                        {"role": "assistant", "content": self._format_untyped_assistant_fields(fallback_outputs)}
-                    )
                 continue
 
             assistant_values = message

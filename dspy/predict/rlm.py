@@ -39,7 +39,7 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable, build_repl_event
+from dspy.primitives.repl_types import REPL_ENTRY_KEY, REPLEntry, REPLHistory, REPLVariable, build_repl_event
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -209,8 +209,11 @@ class RLM(Module):
 
     # Names owned by RLM rather than the user-provided signature or tools.
     _RESERVED_SANDBOX_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
-    _RESERVED_INPUT_NAMES = frozenset({"history"})
-    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "repl_trajectory"})
+    # Names that would collide with keys RLM writes onto conversation-history events or the returned Prediction.
+    _RESERVED_INPUT_NAMES = frozenset({"history", REPL_ENTRY_KEY})
+    _RESERVED_RESULT_NAMES = frozenset({"history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY})
+    # Call-time arguments accepted in addition to the signature's input fields.
+    _CALL_TIME_ARGS = frozenset({"history"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -492,13 +495,12 @@ class RLM(Module):
             raise TypeError(
                 "To use a history_processor, pass it as the second positional argument when calling this module."
             )
-        input_args_without_reserved = {k: v for k, v in input_args.items() if k not in self._RESERVED_INPUT_NAMES}
         input_names = set(self.signature.input_fields)
-        unexpected = set(input_args_without_reserved) - input_names
+        unexpected = set(input_args) - input_names - self._CALL_TIME_ARGS
         if unexpected:
             raise ValueError(f"Unexpected inputs not declared in the signature: {sorted(unexpected)}")
 
-        missing = input_names - set(input_args_without_reserved)
+        missing = input_names - set(input_args)
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
@@ -634,7 +636,7 @@ class RLM(Module):
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
 
         # Update history with extracted final outputs
-        history.messages.append(final_outputs)
+        history.messages.append(build_repl_event(None, None, final_outputs))
 
         return Prediction(
             history=history,
@@ -898,7 +900,7 @@ class RLM(Module):
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
 
         # Update history with extracted final outputs
-        history.messages.append(final_outputs)
+        history.messages.append(build_repl_event(None, None, final_outputs))
 
         return Prediction(
             history=history,

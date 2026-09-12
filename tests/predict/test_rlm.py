@@ -20,7 +20,15 @@ from dspy.predict.rlm import RLM, _apply_history_processor, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable, build_repl_event, split_repl_event
+from dspy.primitives.repl_types import (
+    REPL_ENTRY_KEY,
+    REPLEntry,
+    REPLHistory,
+    REPLVariable,
+    build_repl_event,
+    is_repl_event,
+    split_repl_event,
+)
 from dspy.primitives.sandbox_serializable import SandboxSerializable
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
@@ -223,12 +231,12 @@ class TestRLMInitialization:
         with pytest.raises(ValueError, match="Input fields conflict with user tools: \\['lookup'\\]"):
             RLM("lookup -> answer", tools=[lookup])
 
-    @pytest.mark.parametrize("output_name", ["history", "final_reasoning", "repl_trajectory"])
+    @pytest.mark.parametrize("output_name", ["history", "final_reasoning", "repl_trajectory", REPL_ENTRY_KEY])
     def test_output_names_cannot_shadow_result_metadata(self, output_name):
         with pytest.raises(ValueError, match=f"Output fields conflict with RLM result metadata: \\['{output_name}'\\]"):
             RLM(f"context -> {output_name}")
 
-    @pytest.mark.parametrize("input_name", ["history"])
+    @pytest.mark.parametrize("input_name", ["history", REPL_ENTRY_KEY])
     def test_input_names_cannot_shadow_reserved_inputs(self, input_name):
         # Single input
         with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
@@ -237,6 +245,13 @@ class TestRLMInitialization:
         # Multiple inputs
         with pytest.raises(ValueError, match=f"Input fields conflict with reserved names: \\['{input_name}'\\]"):
             RLM(f"{input_name}, question -> answer")
+
+    def test_reserved_event_key_is_rejected_at_call_time(self):
+        rlm = RLM("question -> answer")
+        with pytest.raises(
+            ValueError, match=f"Unexpected inputs not declared in the signature: \\['{REPL_ENTRY_KEY}'\\]"
+        ):
+            rlm(question="q", **{REPL_ENTRY_KEY: "x"})
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -1911,6 +1926,29 @@ class TestRLMHistoryWithDummyLM:
         # Outer output `reasoning` is retained after the REPL output
         assert "[[ ## reasoning ## ]]\nouter reasoning out" in messages[2]["content"]
 
+    def test_reused_history_extract_fallback_with_outer_field_named_reasoning(self, pooled_interpreter):
+        """A fallback event whose outer output is named like an inner action field still replays intact."""
+        with dummy_lm_context(
+            [
+                {"reasoning": "inner reasoning", "code": "x = 1\nprint(x)"},
+                {"reasoning": "the extracted answer"},  # extract call fills the outer `reasoning` output
+            ]
+        ):
+            rlm = RLM("query -> reasoning: str", max_iters=1)
+            result = rlm.forward(pooled_interpreter, query="What is seven?")
+
+        assert result.reasoning == "the extracted answer"
+
+        messages = dspy.ChatAdapter().format_conversation_history(
+            rlm.generate_action.signature, "history", {"history": result.history}
+        )
+        assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
+        assert "[[ ## reasoning ## ]]\ninner reasoning" in messages[1]["content"]
+        # Fallback replays the completed outer output, not an action with `code: None`
+        assert "[[ ## reasoning ## ]]\nthe extracted answer" in messages[3]["content"]
+        assert "code" not in messages[3]["content"]
+        assert "None" not in "".join(m["content"] for m in messages)
+
     def test_reused_history_renders_extract_fallback_answer(self, pooled_interpreter):
         """The extract-fallback event (output fields only) replays as an assistant turn carrying those outputs."""
         with dummy_lm_context(
@@ -1953,13 +1991,13 @@ class TestRLMHistoryWithDummyLM:
         assert isinstance(history_events[0]["repl_entry"], REPLEntry)
         assert isinstance(history_events[1]["repl_entry"], REPLEntry)
 
-        # Extract fallback history event just contains the output fields
+        # Extract fallback history event has no REPL entry and just contains the output fields
         final_event = history_events[-1]
-        assert final_event == {"answer": 25}
+        assert final_event == {"repl_entry": None, "answer": 25}
 
         assert len(result.repl_trajectory) == 2
 
-        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if "repl_entry" in msg]
+        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if msg["repl_entry"] is not None]
 
         assert all(
             (
@@ -2135,13 +2173,13 @@ class TestRLMHistoryWithDummyLM:
         assert isinstance(history_events[0]["repl_entry"], REPLEntry)
         assert isinstance(history_events[1]["repl_entry"], REPLEntry)
 
-        # Extract fallback history event just contains the output fields
+        # Extract fallback history event has no REPL entry and just contains the output fields
         final_event = history_events[-1]
-        assert final_event == {"answer": 25}
+        assert final_event == {"repl_entry": None, "answer": 25}
 
         assert len(result.repl_trajectory) == 2
 
-        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if "repl_entry" in msg]
+        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if msg["repl_entry"] is not None]
 
         assert all(
             (
@@ -2422,12 +2460,22 @@ class TestREPLEventContract:
         assert inputs == {} and outputs == {}
         assert repl_entry is not None
 
-    def test_event_without_entry_is_all_outputs(self):
-        # Extract-fallback event: only the final output fields
-        inputs, repl_entry, outputs = split_repl_event({"answer": 7})
+    def test_fallback_event_has_none_entry_and_only_outputs(self):
+        # Extract-fallback event: no REPL entry, only the final output fields
+        event = build_repl_event(None, None, {"answer": 7})
+        assert event == {"repl_entry": None, "answer": 7}
+        assert is_repl_event(event)
+
+        inputs, repl_entry, outputs = split_repl_event(event)
         assert inputs == {}
         assert repl_entry is None
         assert outputs == {"answer": 7}
+
+    def test_non_repl_event_is_recognized_and_rejected(self):
+        message = {"question": "q", "answer": "a"}
+        assert not is_repl_event(message)
+        with pytest.raises(ValueError, match="Not an RLM history event"):
+            split_repl_event(message)
 
 
 class TestApplyHistoryProcessor:
