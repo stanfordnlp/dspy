@@ -1850,7 +1850,7 @@ def test_chat_adapter_repl_history_replay_non_reasoning_lm():
                 "repl_entry": REPLEntry(
                     reasoning="First explore the data",
                     code="x = 10\nprint(f'x = {x}')",
-                    output="x = 20",
+                    output="x = 10",
                     max_output_chars=100,
                 ),
             }
@@ -1873,7 +1873,7 @@ def test_chat_adapter_repl_history_replay_non_reasoning_lm():
     }
     assert messages[3] == {
         "role": "user",
-        "content": "[[ ## repl_output ## ]]\nx = 20",
+        "content": "[[ ## repl_output ## ]]\nx = 10",
     }
     assert messages[4]["role"] == "user"
     assert "INFO_2" in messages[4]["content"]
@@ -1900,7 +1900,7 @@ def test_chat_adapter_repl_history_replay_reasoning_lm():
                 "repl_entry": REPLEntry(
                     reasoning="First explore the data",
                     code="x = 10\nprint(f'x = {x}')",
-                    output="x = 20\n",
+                    output="x = 10\n",
                     max_output_chars=100,
                 ),
             }
@@ -1923,7 +1923,7 @@ def test_chat_adapter_repl_history_replay_reasoning_lm():
     }
     assert messages[3] == {
         "role": "user",
-        "content": "[[ ## repl_output ## ]]\nx = 20",
+        "content": "[[ ## repl_output ## ]]\nx = 10",
     }
     assert messages[4]["role"] == "user"
     assert "INFO_2" in messages[4]["content"]
@@ -1950,7 +1950,7 @@ def test_chat_adapter_repl_history_replay_with_output_truncation():
                 "repl_entry": REPLEntry(
                     reasoning="First explore the data",
                     code="x = 10\nprint(f'x = {x}')",
-                    output="x = 20\n",
+                    output="x = 10\n",
                     max_output_chars=4,
                 ),
             }
@@ -2933,7 +2933,9 @@ def test_chat_adapter_native_reasoning():
             model="anthropic/claude-3-7-sonnet-20250219",
         )
         modified_signature = adapter._call_preprocess(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(
+                engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False
+            ),
             {},
             MySignature,
             {"question": "What is the capital of France?"},
@@ -2941,7 +2943,9 @@ def test_chat_adapter_native_reasoning():
         assert "reasoning" not in modified_signature.output_fields
 
         result = adapter(
-            dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            dspy.LM(
+                engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False
+            ),
             {},
             MySignature,
             [],
