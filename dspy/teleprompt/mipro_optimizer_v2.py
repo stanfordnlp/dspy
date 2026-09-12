@@ -350,54 +350,6 @@ class MIPROv2(Teleprompter):
             f"\nvalset size: {len(valset)}\n"
         )
 
-    def _estimate_lm_calls(
-        self,
-        program: Any,
-        num_trials: int,
-        minibatch: bool,
-        minibatch_size: int,
-        minibatch_full_eval_steps: int,
-        valset: list,
-        program_aware_proposer: bool,
-        num_instruct_candidates: int,
-    ) -> tuple[str, str]:
-        num_predictors = len(program.predictors())
-
-        # Estimate prompt model calls
-        estimated_prompt_model_calls = (
-            10  # Data summarizer calls
-            + num_instruct_candidates * num_predictors  # Candidate generation
-            + (num_predictors + 1 if program_aware_proposer else 0)  # Program-aware proposer
-        )
-        prompt_model_line = (
-            f"{YELLOW}- Prompt Generation: {BLUE}{BOLD}10{ENDC}{YELLOW} data summarizer calls + "
-            f"{BLUE}{BOLD}{num_instruct_candidates}{ENDC}{YELLOW} * "
-            f"{BLUE}{BOLD}{num_predictors}{ENDC}{YELLOW} lm calls in program "
-            f"+ ({BLUE}{BOLD}{num_predictors + 1}{ENDC}{YELLOW}) lm calls in program-aware proposer "
-            f"= {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}"
-        )
-
-        # Estimate task model calls
-        if not minibatch:
-            estimated_task_model_calls = len(valset) * num_trials
-            task_model_line = (
-                f"{YELLOW}- Program Evaluation: {BLUE}{BOLD}{len(valset)}{ENDC}{YELLOW} examples in val set * "
-                f"{BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches = "
-                f"{BLUE}{BOLD}{estimated_task_model_calls}{ENDC}{YELLOW} LM program calls{ENDC}"
-            )
-        else:
-            full_eval_steps = num_trials // minibatch_full_eval_steps + 1
-            estimated_task_model_calls = minibatch_size * num_trials + len(valset) * full_eval_steps
-            task_model_line = (
-                f"{YELLOW}- Program Evaluation: {BLUE}{BOLD}{minibatch_size}{ENDC}{YELLOW} examples in minibatch * "
-                f"{BLUE}{BOLD}{num_trials}{ENDC}{YELLOW} batches + "
-                f"{BLUE}{BOLD}{len(valset)}{ENDC}{YELLOW} examples in val set * "
-                f"{BLUE}{BOLD}{full_eval_steps}{ENDC}{YELLOW} full evals = "
-                f"{BLUE}{BOLD}{estimated_task_model_calls}{ENDC}{YELLOW} LM Program calls{ENDC}"
-            )
-
-        return prompt_model_line, task_model_line
-
     def _bootstrap_fewshot_examples(
         self,
         program: Any,
