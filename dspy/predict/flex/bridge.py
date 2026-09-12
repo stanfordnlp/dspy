@@ -35,7 +35,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
@@ -177,6 +177,20 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
+def _validate_inputs(signature: Any, inputs: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild inputs that crossed the sandbox as dicts/lists into the types the bridged signature
+    declares (a `Place` dict becomes a `Place`); a value the annotation rejects is left as-is for
+    the predictor to report, since the signature is optimizer-authored."""
+    out = dict(inputs)
+    for name, field in signature.input_fields.items():
+        if isinstance(out.get(name), (dict, list)):
+            try:
+                out[name] = TypeAdapter(field.annotation).validate_python(out[name])
+            except ValidationError:
+                pass
+    return out
+
+
 class _Invocation:
     """Per-forward bridge state: the predictors this forward constructed (keyed by the sandbox
     attribute name), its predictor-call budget, and the original custom-type objects to restore
@@ -186,6 +200,7 @@ class _Invocation:
         self._runtime = runtime
         self._originals = originals
         self._predictors: dict[str, Any] = {}
+        self._signatures: dict[str, Any] = {}  # the resolved signature each predictor was built over
         self._calls = 0
         self._lm_error: tuple[LMError, str] | None = None
 
@@ -196,7 +211,9 @@ class _Invocation:
                 f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
-        self._predictors[attr_name] = self._runtime._build_predictor(kind, signature, kwargs)
+        self._predictors[attr_name], self._signatures[attr_name] = self._runtime._build_predictor(
+            kind, signature, kwargs
+        )
         return attr_name
 
     def call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -212,6 +229,7 @@ class _Invocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        restored = _validate_inputs(self._signatures[handle], restored)
         try:
             return prediction_to_fields(predictor(**restored))
         except LMError as e:
@@ -263,9 +281,10 @@ class BridgeRuntime:
             )
             interp.execute(SHIM_SETUP)
             interp.execute(self._module_src)  # defines the class in the sandbox
+            # Inputs arrive as JSON; the shim's records give model-typed values attribute access.
             code = (
                 f"{_INSTANCE_VAR} = {self._class_name}()\n"
-                f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**{_INPUTS_VAR})\n"
+                f"{_OUT_VAR} = {_INSTANCE_VAR}.forward(**_dspy_hydrate({_INPUTS_VAR}))\n"
                 f"import json as {_JSON_VAR}\n"
                 f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
             )
@@ -352,7 +371,8 @@ class BridgeRuntime:
     def _sub_interpreter_factory(self) -> Any:
         return self._factory
 
-    def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
+    def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> tuple[Any, Any]:
+        """Build the host predictor; returns it with the resolved signature it was built over."""
         cls = getattr(dspy, kind)
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
         # A code-executing sub-predictor should run its inner code in the backend chosen for Flex, so
@@ -362,4 +382,5 @@ class BridgeRuntime:
             factory = self._sub_interpreter_factory()
             if factory is not None:
                 extra["interpreter_factory"] = factory
-        return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)
+        resolved = _resolve_signature(signature, self._flex._flex_ctx.custom_types())
+        return cls(resolved, **extra), resolved

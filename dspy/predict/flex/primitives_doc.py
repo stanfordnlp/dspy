@@ -33,6 +33,10 @@ class SolveModule(dspy.Module):
         return dspy.Prediction(total_cents=int(e.qty) * int(e.unit_price_cents))
 ```
 
+Values arrive as JSON. An input typed as a pydantic model or dataclass, and each field of
+a predictor's result, is a dict-like record: both `place.name` and `place["name"]` work,
+and the record can be passed to a predictor or returned in `dspy.Prediction` as-is.
+
 `dspy` is already in scope — do NOT add `import` statements at module scope (import
 stdlib modules like `re` *inside* `forward` if you need them). Python and standard-library
 availability is defined by this Flex's configured interpreter; candidates are evaluated in that
