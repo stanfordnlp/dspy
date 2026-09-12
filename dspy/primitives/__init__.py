@@ -1,5 +1,11 @@
 from dspy.primitives.base_module import BaseModule
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreter, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreter,
+    CodeInterpreterError,
+    FinalOutput,
+    InterpreterCapability,
+)
 from dspy.primitives.example import Example
 from dspy.primitives.local_interpreter import LocalInterpreter
 from dspy.primitives.module import Module
@@ -17,6 +23,7 @@ __all__ = [
     "CodeInterpreterError",
     "LocalInterpreter",
     "Module",
+    "InterpreterCapability",
     "Prediction",
     "PythonInterpreter",
     "SandboxSerializable",
