@@ -33,6 +33,39 @@ def test_evaluate_initialization():
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
     assert not ev.display_progress
+    # Straggler controls default to the previous hard-coded ParallelExecutor values.
+    assert ev.timeout == 120
+    assert ev.straggler_limit == 3
+
+
+def test_evaluate_forwards_straggler_controls_to_executor():
+    """`timeout` and `straggler_limit` set on Evaluate must reach the ParallelExecutor,
+    so long-running evals can disable straggler resubmission (timeout=0)."""
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+    program = Predict("question -> answer")
+
+    captured = {}
+
+    class FakeExecutor:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        def execute(self, function, data):
+            return [function(example) for example in data]
+
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        timeout=0,
+        straggler_limit=5,
+    )
+    with patch("dspy.evaluate.evaluate.ParallelExecutor", FakeExecutor):
+        ev(program)
+
+    assert captured["timeout"] == 0
+    assert captured["straggler_limit"] == 5
 
 
 def test_evaluate_call():
