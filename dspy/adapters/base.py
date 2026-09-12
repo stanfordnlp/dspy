@@ -589,8 +589,11 @@ class Adapter:
                 assistant_values: dict[str, Any] = {}
                 assistant_values["code"] = repl_entry.code
 
-                # If the signature's outputs don't contain a reasoning field then we don't include the reasoning in the message
-                # If LM supports native reasoning, then the signature won't have any dspy.Reasoning field
+                # If the LM supports native reasoning, then we don't want to put the reasoning in the assistant message content.
+                # We don't have access to the LM here, so we check if the signature's outputs has a dspy.Reasoning field as a proxy.
+                # All dspy.Reasoning fields are removed from the signature when the LM supports native reasoning,
+                # so if there exists a dspy.Reasoning output field, we know we have a non-reasoning LM
+                # and therefore include the repl entry's reasoning content in the assistant message content
                 if any(
                     isinstance(field.annotation, type) and issubclass(field.annotation, Reasoning)
                     for field in signature.output_fields.values()
