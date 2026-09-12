@@ -50,9 +50,9 @@ In adhering to this structure, your objective is:
     Write a classical haiku given the provided inputs.
 ```
 
-Signature docstrings and field descriptions are optional, but they are handy levers when field names don’t provide sufficient context for a task. However, resist the urge to restate what the signature already says or write prescriptive tutorials. Expansive rules, watch-outs, and guidance are what optimizers are for (more on that later). 
+Signature docstrings and field descriptions are optional, but they are handy when field names don’t provide enough context. State requirements that are genuinely part of the task, but resist restating the signature or adding model-specific coaxing such as prompting tricks and long tutorials. Optimizers can adapt instructions to a model and learn from the long tail; they should not have to guess requirements you already know.
 
-Though it’s worth noting: field descriptions are not touched by the optimizers, so mind your naming. A poorly chosen field name can’t be adjusted by optimizers.
+Field descriptions are not changed by optimizers, so name and describe the contract carefully. A poorly chosen field name cannot be optimized away.
 
 ## Tightening signature fields with richer types
 

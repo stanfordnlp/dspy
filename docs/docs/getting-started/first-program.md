@@ -11,7 +11,9 @@ result = haiku_generator(subject="computer science")
 print(result.haiku)
 ```
 
-The first line specifies our `Signature`. Signature is a core concept in DSPy, and it’s how we define our task. Similar to function signatures in programming, a DSPy Signature describes the inputs a function accepts and the outputs it returns. 
+The first line specifies our `Signature`. A DSPy Signature defines the boundary of a task, much like a function signature describes the inputs a function accepts and the outputs it returns.
+
+The difference is that the implementation inside this boundary can use language-model judgment. We deliberately isolate that fuzzy transformation here; the surrounding Python remains normal, exact software. A signature does not discover our intent—we still choose and name the contract.
 
 The simplest way to define a DSPy Signature is with a string of the form `"inputs -> outputs"`. In our case, we want to provide a `subject` and get back a `haiku`.
 
