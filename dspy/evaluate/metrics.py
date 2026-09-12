@@ -84,18 +84,19 @@ def HotPotF1(prediction, answers_list):  # noqa: N802
     return max(hotpot_f1_score(prediction, ans) for ans in answers_list)
 
 
-def normalize_text(s):
+def normalize_text(s, remove_articles=True):
     """Normalize text for string and token comparisons.
 
     Steps:
         1) Unicode NFD normalization
         2) lowercasing
         3) punctuation removal
-        4) English article removal ("a", "an", "the")
+        4) Optional English article removal ("a", "an", "the")
         5) whitespace collapse
 
     Args:
         s (str): Input string.
+        remove_articles (bool): Whether to remove English articles.
 
     Returns:
         str: Normalized string.
@@ -107,7 +108,7 @@ def normalize_text(s):
     """
     s = unicodedata.normalize("NFD", s)
 
-    def remove_articles(text):
+    def _remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
 
     def white_space_fix(text):
@@ -120,7 +121,10 @@ def normalize_text(s):
     def lower(text):
         return text.lower()
 
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
+    normalized = remove_punc(lower(s))
+    if remove_articles:
+        normalized = _remove_articles(normalized)
+    return white_space_fix(normalized)
 
 
 def em_score(prediction, ground_truth):
