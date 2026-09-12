@@ -130,6 +130,72 @@ def test_reflection_lm_gets_structured_images():
     assert not images_in_history.has_text_serialized_images, "Reflection LM received serialized images in prompts"
 
 
+def test_reflection_lm_gets_structured_images_list():
+    """
+    Verify reflection LM receives structured image messages when input is list[dspy.Image],
+    not serialized text. Regression test for list[Type] being stringified in make_reflective_dataset.
+    """
+    student = dspy.Predict("images: list[dspy.Image] -> label: str")
+    images = [
+        dspy.Image("https://example.com/test1.jpg"),
+        dspy.Image("https://example.com/test2.jpg"),
+    ]
+    example = dspy.Example(images=images, label="dog").with_inputs("images")
+
+    reflection_lm = DummyLM(
+        [
+            {"improved_instruction": "Better instruction"},
+            {"improved_instruction": "Enhanced visual analysis instruction"},
+            {"improved_instruction": "Focus on key features"},
+            {"improved_instruction": "Analyze visual patterns systematically"},
+            {"improved_instruction": "Consider distinctive visual elements"},
+            {"improved_instruction": "Enhance recognition accuracy"},
+            {"improved_instruction": "Improve classification methodology"},
+        ]
+    )
+    lm = DummyLM(
+        [
+            {"label": "cat"},
+            {"label": "dog"},
+            {"label": "animal"},
+            {"label": "pet"},
+            {"label": "feline"},
+            {"label": "canine"},
+            {"label": "mammal"},
+            {"label": "creature"},
+            {"label": "species"},
+            {"label": "domestic"},
+            {"label": "wild"},
+            {"label": "carnivore"},
+            {"label": "herbivore"},
+            {"label": "quadruped"},
+            {"label": "vertebrate"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    gepa = dspy.GEPA(
+        metric=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.3,
+        max_metric_calls=2,
+        reflection_lm=reflection_lm,
+        instruction_proposer=instruction_proposal.MultiModalInstructionProposer(),
+    )
+
+    gepa.compile(student, trainset=[example], valset=[example])
+
+    assert len(lm.history) > 0, "LM should have been called"
+    assert len(reflection_lm.history) > 0, "Reflection LM should have been called"
+
+    images_in_history = check_images_in_history(reflection_lm.history)
+
+    assert images_in_history.has_structured_images, (
+        "Reflection LM should have received structured images from list[dspy.Image] input"
+    )
+    assert not images_in_history.has_text_serialized_images, (
+        "Reflection LM should not receive serialized images when input is list[dspy.Image]"
+    )
+
+
 def test_custom_proposer_without_reflection_lm():
     """Test that custom instruction proposers can work without reflection_lm when using updated GEPA core."""
 
