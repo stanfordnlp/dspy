@@ -197,3 +197,42 @@ async def test_acall_caching_true_overrides_instance_false(cache):
         await embedding.acall(inputs, caching=True)
         await embedding.acall(inputs, caching=True)
         assert mock_litellm.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_callable_embedding():
+    embeddings = {
+        "hello": [0.1, 0.2, 0.3],
+        "world": [0.4, 0.5, 0.6],
+        "test": [0.7, 0.8, 0.9],
+    }
+    calls = []
+
+    async def async_embedding_fn(texts):
+        calls.append(texts)
+        return [embeddings[text] for text in texts]
+
+    embedder = Embedder(async_embedding_fn, caching=False)
+
+    result = await embedder.acall(["hello", "world", "test"], batch_size=2)
+
+    assert calls == [["hello", "world"], ["test"]]
+    np.testing.assert_allclose(result, [embeddings["hello"], embeddings["world"], embeddings["test"]])
+
+
+@pytest.mark.asyncio
+async def test_async_callable_embedding_with_caching(cache):
+    call_count = 0
+
+    async def async_embedding_fn(texts):
+        nonlocal call_count
+        call_count += 1
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    embedder = Embedder(async_embedding_fn, caching=True)
+
+    first = await embedder.acall(["hello"])
+    second = await embedder.acall(["hello"])
+
+    assert call_count == 1
+    np.testing.assert_allclose(first, second)
