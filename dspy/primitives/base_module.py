@@ -200,7 +200,10 @@ class BaseModule:
         path = Path(path)
 
         if save_program:
-            if path.suffix:
+            # Only block when the path looks like one of the state-only formats
+            # (.json / .pkl). Arbitrary directory names with dots ("model.v1",
+            # "dspy.2") are valid filesystem paths and must be accepted.
+            if path.suffix in (".json", ".pkl"):
                 raise ValueError(
                     f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}"
                 )
