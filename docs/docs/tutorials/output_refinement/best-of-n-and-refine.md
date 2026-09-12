@@ -148,3 +148,5 @@ print(result.summary)
 ## Migration from `dspy.Suggest` and `dspy.Assert`
 
 `BestOfN` and `Refine` are the replacements for `dspy.Suggest` and `dspy.Assert` as of DSPy 2.6.
+
+`Refine` is not a drop-in rename for `dspy.Assert`: it needs the same scoring controls used above, including a `reward_fn` that returns a numeric score and a `threshold` that defines when a prediction is acceptable. When migrating an `Assert` rule, encode that rule in `reward_fn`, choose a passing threshold, and wrap the module with `dspy.Refine(...)`.
