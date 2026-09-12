@@ -39,15 +39,41 @@ def configure_cache(
         safe_types: Additional types to allow when restrict_pickle is True.
     """
 
-    DSPY_CACHE = Cache(
-        enable_disk_cache,
-        enable_memory_cache,
-        disk_cache_dir,
-        disk_size_limit_bytes,
-        memory_max_entries,
-        restrict_pickle=restrict_pickle,
-        safe_types=safe_types,
-    )
+    # Cache only validates these once disk caching is actually attempted, but we need them
+    # to raise here regardless of enable_disk_cache so a config mistake can't get silently
+    # swallowed by the disk-cache-init fallback below and turned into a memory-only cache.
+    if restrict_pickle:
+        for t in safe_types or []:
+            if not isinstance(t, type):
+                raise TypeError(f"safe_types entries must be types, got {t!r}")
+    if disk_size_limit_bytes is not None and not isinstance(disk_size_limit_bytes, int):
+        raise TypeError(f"disk_size_limit_bytes must be None or an int, got {disk_size_limit_bytes!r}")
+
+    try:
+        DSPY_CACHE = Cache(
+            enable_disk_cache,
+            enable_memory_cache,
+            disk_cache_dir,
+            disk_size_limit_bytes,
+            memory_max_entries,
+            restrict_pickle=restrict_pickle,
+            safe_types=safe_types,
+        )
+    except Exception as e:
+        if not enable_disk_cache:
+            raise
+        # Same fallback used when the cache is first created at import time: a corrupted
+        # or unwritable disk cache directory shouldn't leave the process without a cache.
+        logger.warning("Failed to initialize disk cache, falling back to memory-only cache: %s", e)
+        DSPY_CACHE = Cache(
+            False,
+            enable_memory_cache,
+            disk_cache_dir,
+            disk_size_limit_bytes,
+            memory_max_entries,
+            restrict_pickle=restrict_pickle,
+            safe_types=safe_types,
+        )
 
     import dspy
 
