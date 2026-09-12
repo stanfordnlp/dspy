@@ -936,6 +936,40 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     )
 
 
+def test_extract_json_object_handles_braces_inside_string_values():
+    from dspy.adapters.json_adapter import _extract_json_object
+
+    # Braces inside string values must be ignored when locating the outer object.
+    text = 'Here is the result:\n{\n  "reasoning": "ok",\n  "snippet": "if (user) { print(\'x\') }"\n}'
+    extracted = _extract_json_object(text)
+    assert extracted is not None
+    assert extracted.strip().endswith("}")
+    assert '"snippet": "if (user) { print(\'x\') }"' in extracted
+
+    # No object present.
+    assert _extract_json_object("no json here") is None
+
+    # Nested objects resolve to the outermost balanced braces.
+    nested = '{"a": {"b": 1}}'
+    assert _extract_json_object(nested) == nested
+
+
+def test_json_adapter_parse_fallback_handles_braces_inside_string_values():
+    # Regression test for #8759: when the top-level response is not a JSON object
+    # (here a JSON array, so json_repair.loads returns a list and the object
+    # extraction fallback runs), curly braces inside string values must not break
+    # extraction.
+    class FindIssue(dspy.Signature):
+        reasoning: str = dspy.OutputField()
+        snippet: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    completion = '["preamble", {"reasoning": "ok", "snippet": "if (user) { print(\'x\') }"}]'
+    result = adapter.parse(FindIssue, completion)
+    assert result["reasoning"] == "ok"
+    assert result["snippet"] == "if (user) { print('x') }"
+
+
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
