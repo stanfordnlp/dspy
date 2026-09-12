@@ -1891,6 +1891,26 @@ class TestRLMHistoryWithDummyLM:
         # Nothing leaked a bogus assistant turn
         assert "None" not in "".join(m["content"] for m in messages)
 
+    def test_reused_history_keeps_outer_fields_named_like_inner_fields(self, pooled_interpreter):
+        """Outer RLM fields named `code`/`reasoning` must not be confused with the action signature's own."""
+        with dummy_lm_context([{"reasoning": "inner reasoning", "code": "SUBMIT(reasoning='outer reasoning out')"}]):
+            rlm = RLM("code: str -> reasoning: str", max_iters=2)
+            result = rlm.forward(pooled_interpreter, code="print('outer code in')")
+
+        assert result.reasoning == "outer reasoning out"
+
+        messages = dspy.ChatAdapter().format_conversation_history(
+            rlm.generate_action.signature, "history", {"history": result.history}
+        )
+        assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+        # Outer input `code` is retained as user context
+        assert "[[ ## code ## ]]\nprint('outer code in')" in messages[0]["content"]
+        # Assistant turn carries the *inner* reasoning/code from the REPL entry
+        assert "[[ ## reasoning ## ]]\ninner reasoning" in messages[1]["content"]
+        assert "SUBMIT(reasoning='outer reasoning out')" in messages[1]["content"]
+        # Outer output `reasoning` is retained after the REPL output
+        assert "[[ ## reasoning ## ]]\nouter reasoning out" in messages[2]["content"]
+
     def test_reused_history_renders_extract_fallback_answer(self, pooled_interpreter):
         """The extract-fallback event (output fields only) replays as an assistant turn carrying those outputs."""
         with dummy_lm_context(

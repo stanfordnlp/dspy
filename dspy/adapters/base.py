@@ -543,6 +543,44 @@ class Adapter:
                 else None
             )
 
+            # RLM history events (see `build_repl_event`) carry the RLM's own input/output fields (e.g. `query`,
+            # `answer`) around a REPLEntry. Those fields are not part of the inner action signature, so they are
+            # rendered here as plain context rather than through the signature-driven path.
+            # Handled before the generic rendering below so outer fields are kept even when they share a name with
+            # an inner action field (e.g. an RLM whose signature has its own `code` or `reasoning`).
+            repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+            if repl_entry is not None:
+                if repl_inputs:
+                    messages.append({"role": "user", "content": self._format_untyped_user_fields(repl_inputs)})
+
+                # Format assistant message with code and reasoning (if present)
+                # Fish code and (potentially) reasoning out of REPLEntry
+                assistant_values: dict[str, Any] = {}
+                assistant_values["code"] = repl_entry.code
+
+                # If the LM supports native reasoning, then we don't want to put the reasoning in the assistant message content.
+                # We don't have access to the LM here, so we check if the signature's outputs has a dspy.Reasoning field as a proxy.
+                # All dspy.Reasoning fields are removed from the signature when the LM supports native reasoning,
+                # so if there exists a dspy.Reasoning output field, we know we have a non-reasoning LM
+                # and therefore include the repl entry's reasoning content in the assistant message content
+                if any(
+                    isinstance(field.annotation, type) and issubclass(field.annotation, Reasoning)
+                    for field in signature.output_fields.values()
+                ):
+                    assistant_values["reasoning"] = repl_entry.reasoning
+                assistant_content = self.format_assistant_message_content(signature, assistant_values)
+                if assistant_content:
+                    messages.append({"role": "assistant", "content": assistant_content})
+
+                # Format user message with repl output, followed by any RLM output fields recorded on this event
+                repl_output_values = {
+                    "repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars),
+                    **repl_outputs,
+                }
+                content = self._format_untyped_user_fields(repl_output_values)
+                messages.append({"role": "user", "content": content})
+                continue
+
             user_content = self.format_user_message_content(signature, message)
             if user_content:
                 messages.append({"role": "user", "content": user_content})
@@ -581,52 +619,15 @@ class Adapter:
                         )
                 continue
 
-            # RLM history events (see `build_repl_event`) carry the RLM's own input/output fields (e.g. `query`,
-            # `answer`) around a REPLEntry. Those fields are not part of the inner action signature, so they are
-            # rendered here as plain context rather than through the signature-driven path.
-            repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
-            if repl_entry is not None:
-                known = set(signature.input_fields) | set(signature.output_fields)
-                extra_inputs = {k: v for k, v in repl_inputs.items() if k not in known}
-                extra_outputs = {k: v for k, v in repl_outputs.items() if k not in known}
-                if extra_inputs:
-                    messages.append({"role": "user", "content": self._format_extra_fields(extra_inputs)})
-
-                # Format assistant message with code and reasoning (if present)
-                # Fish code and (potentially) reasoning out of REPLEntry
-                assistant_values: dict[str, Any] = {}
-                assistant_values["code"] = repl_entry.code
-
-                # If the LM supports native reasoning, then we don't want to put the reasoning in the assistant message content.
-                # We don't have access to the LM here, so we check if the signature's outputs has a dspy.Reasoning field as a proxy.
-                # All dspy.Reasoning fields are removed from the signature when the LM supports native reasoning,
-                # so if there exists a dspy.Reasoning output field, we know we have a non-reasoning LM
-                # and therefore include the repl entry's reasoning content in the assistant message content
-                if any(
-                    isinstance(field.annotation, type) and issubclass(field.annotation, Reasoning)
-                    for field in signature.output_fields.values()
-                ):
-                    assistant_values["reasoning"] = repl_entry.reasoning
-                assistant_content = self.format_assistant_message_content(signature, assistant_values)
-                if assistant_content:
-                    messages.append({"role": "assistant", "content": assistant_content})
-
-                # Format user message with repl output, followed by any RLM output fields recorded on this event
-                repl_output_values = {
-                    "repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars),
-                    **extra_outputs,
-                }
-                content = self._format_extra_fields(repl_output_values)
-                messages.append({"role": "user", "content": content})
-                continue
-
             # An event with none of the signature's fields cannot be rendered as a normal turn. RLM's extract
             # fallback produces such an event: only the final output fields, which the model produced via the
             # extract `Predict` call, so replay them as an assistant turn.
             if not any(name in message for name in (*signature.input_fields, *signature.output_fields)):
-                extra_fields = {name: value for name, value in repl_outputs.items() if name != tool_call_field_name}
-                if extra_fields:
-                    messages.append({"role": "assistant", "content": self._format_extra_output_fields(extra_fields)})
+                fallback_outputs = {name: value for name, value in repl_outputs.items() if name != tool_call_field_name}
+                if fallback_outputs:
+                    messages.append(
+                        {"role": "assistant", "content": self._format_untyped_assistant_fields(fallback_outputs)}
+                    )
                 continue
 
             assistant_values = message
@@ -647,15 +648,15 @@ class Adapter:
 
         return messages
 
-    def _format_extra_fields(self, values: dict[str, Any]) -> str:
-        """Format fields that are not declared on the signature as if they were `str` input fields."""
-        extra_signature = Signature({name: (str, InputField()) for name in values})
-        return self.format_user_message_content(extra_signature, values)
+    def _format_untyped_user_fields(self, values: dict[str, Any]) -> str:
+        """Format arbitrary fields as user-message content, treating each as a `str` input field."""
+        untyped_signature = Signature({name: (str, InputField()) for name in values})
+        return self.format_user_message_content(untyped_signature, values)
 
-    def _format_extra_output_fields(self, values: dict[str, Any]) -> str:
-        """Format fields that are not declared on the signature as if they were `str` output fields."""
-        extra_signature = Signature({name: (str, OutputField()) for name in values})
-        return self.format_assistant_message_content(extra_signature, values)
+    def _format_untyped_assistant_fields(self, values: dict[str, Any]) -> str:
+        """Format arbitrary fields as assistant-message content, treating each as a `str` output field."""
+        untyped_signature = Signature({name: (str, OutputField()) for name in values})
+        return self.format_assistant_message_content(untyped_signature, values)
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.
