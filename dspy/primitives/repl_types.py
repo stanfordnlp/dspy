@@ -138,6 +138,45 @@ class REPLEntry(pydantic.BaseModel):
         return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n{code_block}\n{self.format_output(self.output, self.max_output_chars)}"
 
 
+REPL_ENTRY_KEY = "repl_entry"
+
+
+def build_repl_event(
+    inputs: dict[str, Any] | None,
+    repl_entry: REPLEntry,
+    outputs: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one RLM conversation-history event.
+
+    This is the single definition of the event layout that `split_repl_event` reads back: the RLM's own input fields
+    (only on the first iteration of a turn) come first, then the REPL entry under `REPL_ENTRY_KEY`, then the RLM's
+    output fields (only on the final iteration). Key order is what lets a reader that does not know the RLM's outer
+    signature tell inputs from outputs.
+    """
+    event: dict[str, Any] = dict(inputs or {})
+    event[REPL_ENTRY_KEY] = repl_entry
+    event.update(outputs or {})
+    return event
+
+
+def split_repl_event(message: dict[str, Any]) -> tuple[dict[str, Any], REPLEntry | None, dict[str, Any]]:
+    """Split a conversation-history event built by `build_repl_event` into (inputs, repl_entry, outputs).
+
+    Keys before the REPL entry are inputs and keys after it are outputs. If the message carries no REPL entry
+    (e.g. the extract-fallback event, which holds only output fields), everything is returned as outputs.
+    """
+    names = list(message)
+    entry_index = next((i for i, name in enumerate(names) if isinstance(message[name], REPLEntry)), None)
+
+    if entry_index is None:
+        return {}, None, dict(message)
+
+    repl_entry = message[names[entry_index]]
+    inputs = {name: message[name] for name in names[:entry_index]}
+    outputs = {name: message[name] for name in names[entry_index + 1 :]}
+    return inputs, repl_entry, outputs
+
+
 class REPLHistory(pydantic.BaseModel):
     """Container for REPL interaction history.
 

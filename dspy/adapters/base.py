@@ -15,7 +15,7 @@ from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
-from dspy.primitives.repl_types import REPLEntry
+from dspy.primitives.repl_types import REPLEntry, split_repl_event
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -581,9 +581,17 @@ class Adapter:
                         )
                 continue
 
-            # Check for REPLEntry inside message
-            repl_entry_field_name, repl_entry = _repl_entry_from_message(message)
-            if repl_entry_field_name and repl_entry:
+            # RLM history events (see `build_repl_event`) carry the RLM's own input/output fields (e.g. `query`,
+            # `answer`) around a REPLEntry. Those fields are not part of the inner action signature, so they are
+            # rendered here as plain context rather than through the signature-driven path.
+            repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+            if repl_entry is not None:
+                known = set(signature.input_fields) | set(signature.output_fields)
+                extra_inputs = {k: v for k, v in repl_inputs.items() if k not in known}
+                extra_outputs = {k: v for k, v in repl_outputs.items() if k not in known}
+                if extra_inputs:
+                    messages.append({"role": "user", "content": self._format_extra_fields(extra_inputs)})
+
                 # Format assistant message with code and reasoning (if present)
                 # Fish code and (potentially) reasoning out of REPLEntry
                 assistant_values: dict[str, Any] = {}
@@ -603,12 +611,21 @@ class Adapter:
                 if assistant_content:
                     messages.append({"role": "assistant", "content": assistant_content})
 
-                # Format user message with repl output
-                content = self.format_user_message_content(
-                    _REPL_OUTPUT_SIGNATURE,
-                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
-                )
+                # Format user message with repl output, followed by any RLM output fields recorded on this event
+                repl_output_values = {
+                    "repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars),
+                    **extra_outputs,
+                }
+                content = self._format_extra_fields(repl_output_values)
                 messages.append({"role": "user", "content": content})
+                continue
+
+            # An event with none of the signature's fields cannot be rendered as a normal turn. RLM's extract
+            # fallback produces such an event (only the final output fields); render them as user context.
+            if not any(name in message for name in (*signature.input_fields, *signature.output_fields)):
+                extra_fields = {name: value for name, value in repl_outputs.items() if name != tool_call_field_name}
+                if extra_fields:
+                    messages.append({"role": "user", "content": self._format_extra_fields(extra_fields)})
                 continue
 
             assistant_values = message
@@ -628,6 +645,11 @@ class Adapter:
         del inputs[history_field_name]
 
         return messages
+
+    def _format_extra_fields(self, values: dict[str, Any]) -> str:
+        """Format fields that are not declared on the signature as if they were `str` input fields."""
+        extra_signature = Signature({name: (str, InputField()) for name in values})
+        return self.format_user_message_content(extra_signature, values)
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.
@@ -694,10 +716,3 @@ def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dic
             "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False),
         },
     }
-
-
-def _repl_entry_from_message(message: dict[str, Any]) -> tuple[str | None, REPLEntry | None]:
-    for name, value in message.items():
-        if isinstance(value, REPLEntry):
-            return name, REPLEntry.model_validate(value)
-    return None, None

@@ -39,7 +39,7 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable, build_repl_event
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -1017,9 +1017,9 @@ class RLM(Module):
             )
 
     def _repl_entry_event(self, *, inputs: dict[str, Any], iteration: int, repl_entry: REPLEntry) -> dict[str, Any]:
-        event = dict(inputs if iteration == 0 else {})  # Add input fields only on first iteration of new turn
-        event["repl_entry"] = repl_entry
-        return event
+        # Input fields are recorded only on the first iteration of a turn; final outputs are added to the last
+        # event by the caller via `dict.update`, which keeps them after the REPL entry as `split_repl_event` expects.
+        return build_repl_event(inputs if iteration == 0 else None, repl_entry)
 
     def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
         if event:

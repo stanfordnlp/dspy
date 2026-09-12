@@ -20,7 +20,7 @@ from dspy.predict.rlm import RLM, _apply_history_processor, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable, build_repl_event, split_repl_event
 from dspy.primitives.sandbox_serializable import SandboxSerializable
 from tests.mock_interpreter import MockInterpreter, MockInterpreterFactory
 
@@ -1862,6 +1862,54 @@ class TestRLMHistoryWithDummyLM:
             for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
         )
 
+    def test_reused_history_renders_prior_query_and_answer(self, pooled_interpreter):
+        """A prior turn's RLM inputs/outputs must reach the model when its history is reused."""
+        with dummy_lm_context(
+            [
+                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
+                {"reasoning": "done", "code": "SUBMIT(7)"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=3)
+            result = rlm.forward(pooled_interpreter, query="What is seven?")
+
+        messages = dspy.ChatAdapter().format_conversation_history(
+            rlm.generate_action.signature, "history", {"history": result.history}
+        )
+        roles = [m["role"] for m in messages]
+        assert roles == ["user", "assistant", "user", "assistant", "user"]
+
+        # Prior query is rendered as user context before the trajectory
+        assert "[[ ## query ## ]]\nWhat is seven?" in messages[0]["content"]
+        # Trajectory itself is unchanged
+        assert "[[ ## code ## ]]\nx = 1\nprint(x)" in messages[1]["content"]
+        assert "[[ ## repl_output ## ]]\n1" in messages[2]["content"]
+        assert "SUBMIT(7)" in messages[3]["content"]
+        # Prior answer follows the final REPL output in the same user message
+        assert "[[ ## repl_output ## ]]" in messages[4]["content"]
+        assert "[[ ## answer ## ]]\n7" in messages[4]["content"]
+        # Nothing leaked a bogus assistant turn
+        assert "None" not in "".join(m["content"] for m in messages)
+
+    def test_reused_history_renders_extract_fallback_answer(self, pooled_interpreter):
+        """The extract-fallback event (output fields only) renders as user context, not an empty assistant turn."""
+        with dummy_lm_context(
+            [
+                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
+                {"answer": "7"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1)
+            result = rlm.forward(pooled_interpreter, query="What is seven?")
+
+        messages = dspy.ChatAdapter().format_conversation_history(
+            rlm.generate_action.signature, "history", {"history": result.history}
+        )
+        assert [m["role"] for m in messages] == ["user", "assistant", "user", "user"]
+        assert "[[ ## query ## ]]\nWhat is seven?" in messages[0]["content"]
+        assert "[[ ## answer ## ]]\n7" in messages[3]["content"]
+        assert "None" not in "".join(m["content"] for m in messages)
+
     def test_history_records_extract_fallback(self, pooled_interpreter):
         with dummy_lm_context(
             [
@@ -2321,6 +2369,44 @@ class TestLargeSerializableRoundTrip:
 
         assert str(len(large_text)) in result
         assert "abc123" in result
+
+
+class TestREPLEventContract:
+    """`build_repl_event` and `split_repl_event` are the single definition of RLM's history event layout."""
+
+    @staticmethod
+    def _entry() -> REPLEntry:
+        return REPLEntry(reasoning="r", code="x = 1", output="1", max_output_chars=100)
+
+    def test_round_trip_inputs_entry_outputs(self):
+        entry = self._entry()
+        event = build_repl_event({"query": "q"}, entry, {"answer": 7})
+        assert list(event) == ["query", "repl_entry", "answer"]
+
+        inputs, repl_entry, outputs = split_repl_event(event)
+        assert inputs == {"query": "q"}
+        assert repl_entry is entry
+        assert outputs == {"answer": 7}
+
+    def test_outputs_added_later_via_update_are_still_outputs(self):
+        # RLM adds final outputs to the last event with dict.update after the fact
+        event = build_repl_event({"query": "q"}, self._entry())
+        event.update({"answer": 7})
+        inputs, _, outputs = split_repl_event(event)
+        assert inputs == {"query": "q"}
+        assert outputs == {"answer": 7}
+
+    def test_intermediate_event_has_no_inputs_or_outputs(self):
+        inputs, repl_entry, outputs = split_repl_event(build_repl_event(None, self._entry()))
+        assert inputs == {} and outputs == {}
+        assert repl_entry is not None
+
+    def test_event_without_entry_is_all_outputs(self):
+        # Extract-fallback event: only the final output fields
+        inputs, repl_entry, outputs = split_repl_event({"answer": 7})
+        assert inputs == {}
+        assert repl_entry is None
+        assert outputs == {"answer": 7}
 
 
 class TestApplyHistoryProcessor:
