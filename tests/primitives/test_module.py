@@ -169,6 +169,38 @@ def test_complex_module_set_attribute_by_name():
     assert root.sub_module.nested_tuple[1][1].test_attrib is True
 
 
+@pytest.mark.asyncio
+async def test_acall_falls_back_to_sync_forward():
+    class SyncOnly(dspy.Module):
+        def forward(self, x):
+            return x * 2
+
+    assert await SyncOnly().acall(x=3) == 6
+
+
+@pytest.mark.asyncio
+async def test_acall_fallback_sees_context_overrides():
+    class ReadsLM(dspy.Module):
+        def forward(self):
+            return dspy.settings.lm
+
+    lm = DummyLM([{"answer": "n/a"}])
+    with dspy.context(lm=lm):
+        assert await ReadsLM().acall() is lm
+
+
+@pytest.mark.asyncio
+async def test_acall_prefers_defined_aforward():
+    class Both(dspy.Module):
+        def forward(self, x):
+            return "sync"
+
+        async def aforward(self, x):
+            return "async"
+
+    assert await Both().acall(x=1) == "async"
+
+
 class DuplicateModule(Module):
     def __init__(self):
         super().__init__()
