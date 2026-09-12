@@ -21,7 +21,9 @@ from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import (
+    EXTRACT_FALLBACK,
     REPL_ENTRY_KEY,
+    ExtractFallbackMarker,
     REPLEntry,
     REPLHistory,
     REPLVariable,
@@ -1993,11 +1995,13 @@ class TestRLMHistoryWithDummyLM:
 
         # Extract fallback history event has no REPL entry and just contains the output fields
         final_event = history_events[-1]
-        assert final_event == {"repl_entry": None, "answer": 25}
+        assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
 
         assert len(result.repl_trajectory) == 2
 
-        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if msg["repl_entry"] is not None]
+        history_repl_entries = [
+            msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
+        ]
 
         assert all(
             (
@@ -2175,11 +2179,13 @@ class TestRLMHistoryWithDummyLM:
 
         # Extract fallback history event has no REPL entry and just contains the output fields
         final_event = history_events[-1]
-        assert final_event == {"repl_entry": None, "answer": 25}
+        assert final_event == {"repl_entry": EXTRACT_FALLBACK, "answer": 25}
 
         assert len(result.repl_trajectory) == 2
 
-        history_repl_entries = [msg["repl_entry"] for msg in result.history.messages if msg["repl_entry"] is not None]
+        history_repl_entries = [
+            msg["repl_entry"] for msg in result.history.messages if isinstance(msg["repl_entry"], REPLEntry)
+        ]
 
         assert all(
             (
@@ -2460,19 +2466,27 @@ class TestREPLEventContract:
         assert inputs == {} and outputs == {}
         assert repl_entry is not None
 
-    def test_fallback_event_has_none_entry_and_only_outputs(self):
-        # Extract-fallback event: no REPL entry, only the final output fields
-        event = build_repl_event(None, None, {"answer": 7})
-        assert event == {"repl_entry": None, "answer": 7}
+    def test_fallback_event_has_marker_entry_and_only_outputs(self):
+        # Extract-fallback event: no REPL execution, only the final output fields
+        event = build_repl_event(None, EXTRACT_FALLBACK, {"answer": 7})
+        assert event == {"repl_entry": EXTRACT_FALLBACK, "answer": 7}
         assert is_repl_event(event)
 
         inputs, repl_entry, outputs = split_repl_event(event)
         assert inputs == {}
-        assert repl_entry is None
+        assert isinstance(repl_entry, ExtractFallbackMarker)
         assert outputs == {"answer": 7}
 
-    def test_non_repl_event_is_recognized_and_rejected(self):
-        message = {"question": "q", "answer": "a"}
+    @pytest.mark.parametrize(
+        "message",
+        [
+            {"question": "q", "answer": "a"},
+            {"question": "q", "repl_entry": "application data", "answer": "a"},
+            {"question": "q", "repl_entry": {"code": "serialized"}, "answer": "a"},
+            {"question": "q", "repl_entry": None, "answer": "a"},
+        ],
+    )
+    def test_non_repl_event_is_recognized_and_rejected(self, message):
         assert not is_repl_event(message)
         with pytest.raises(ValueError, match="Not an RLM history event"):
             split_repl_event(message)

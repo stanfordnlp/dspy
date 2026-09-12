@@ -141,9 +141,20 @@ class REPLEntry(pydantic.BaseModel):
 REPL_ENTRY_KEY = "repl_entry"
 
 
+class ExtractFallbackMarker(pydantic.BaseModel):
+    """Stored under `REPL_ENTRY_KEY` on the extract-fallback event, which records final outputs without any REPL
+    execution. A distinct type (rather than `None`) keeps RLM events distinguishable from application messages that
+    happen to carry a field with the same name."""
+
+    model_config = pydantic.ConfigDict(frozen=True)
+
+
+EXTRACT_FALLBACK = ExtractFallbackMarker()
+
+
 def build_repl_event(
     inputs: dict[str, Any] | None,
-    repl_entry: REPLEntry | None,
+    repl_entry: REPLEntry | ExtractFallbackMarker,
     outputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build one RLM conversation-history event.
@@ -153,8 +164,7 @@ def build_repl_event(
     output fields (only on the final iteration). Key order is what lets a reader that does not know the RLM's outer
     signature tell inputs from outputs.
 
-    The `REPL_ENTRY_KEY` key is always present so an event can be recognized as an RLM event by key alone; it is
-    `None` for the extract-fallback event, which records only the final output fields produced by the extract call.
+    `repl_entry` is a `REPLEntry` for an executed iteration, or `EXTRACT_FALLBACK` for the extract-fallback event.
     """
     event: dict[str, Any] = dict(inputs or {})
     event[REPL_ENTRY_KEY] = repl_entry
@@ -163,28 +173,34 @@ def build_repl_event(
 
 
 def is_repl_event(message: dict[str, Any]) -> bool:
-    """Whether `message` was built by `build_repl_event`."""
-    return REPL_ENTRY_KEY in message
+    """Whether `message` was built by `build_repl_event`.
+
+    Checks the value type, not just the key, so an ordinary history message that stores application data under
+    `REPL_ENTRY_KEY` is not mistaken for an RLM event.
+    """
+    return isinstance(message.get(REPL_ENTRY_KEY), (REPLEntry, ExtractFallbackMarker))
 
 
-def split_repl_event(message: dict[str, Any]) -> tuple[dict[str, Any], REPLEntry | None, dict[str, Any]]:
+def split_repl_event(
+    message: dict[str, Any],
+) -> tuple[dict[str, Any], REPLEntry | ExtractFallbackMarker, dict[str, Any]]:
     """Split a conversation-history event built by `build_repl_event` into (inputs, repl_entry, outputs).
 
-    Keys before `REPL_ENTRY_KEY` are inputs and keys after it are outputs. `repl_entry` is `None` for the
-    extract-fallback event.
+    Keys before `REPL_ENTRY_KEY` are inputs and keys after it are outputs.
 
     Raises:
-        ValueError: If `message` does not carry `REPL_ENTRY_KEY` (check with `is_repl_event` first).
+        ValueError: If `message` is not an RLM event (check with `is_repl_event` first).
     """
+    if not is_repl_event(message):
+        raise ValueError(
+            f"Not an RLM history event: `{REPL_ENTRY_KEY}` missing or not a REPLEntry. Keys: {list(message)}"
+        )
     names = list(message)
-    if REPL_ENTRY_KEY not in message:
-        raise ValueError(f"Not an RLM history event: missing `{REPL_ENTRY_KEY}` key. Keys: {names}")
     entry_index = names.index(REPL_ENTRY_KEY)
 
-    repl_entry = message[REPL_ENTRY_KEY]
     inputs = {name: message[name] for name in names[:entry_index]}
     outputs = {name: message[name] for name in names[entry_index + 1 :]}
-    return inputs, repl_entry, outputs
+    return inputs, message[REPL_ENTRY_KEY], outputs
 
 
 class REPLHistory(pydantic.BaseModel):

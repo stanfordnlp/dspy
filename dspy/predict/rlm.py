@@ -39,7 +39,14 @@ from dspy.primitives.code_interpreter import (
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPL_ENTRY_KEY, REPLEntry, REPLHistory, REPLVariable, build_repl_event
+from dspy.primitives.repl_types import (
+    EXTRACT_FALLBACK,
+    REPL_ENTRY_KEY,
+    REPLEntry,
+    REPLHistory,
+    REPLVariable,
+    build_repl_event,
+)
 from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
@@ -636,7 +643,7 @@ class RLM(Module):
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
 
         # Update history with extracted final outputs
-        history.messages.append(build_repl_event(None, None, final_outputs))
+        history.messages.append(build_repl_event(None, EXTRACT_FALLBACK, final_outputs))
 
         return Prediction(
             history=history,
@@ -900,7 +907,7 @@ class RLM(Module):
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
 
         # Update history with extracted final outputs
-        history.messages.append(build_repl_event(None, None, final_outputs))
+        history.messages.append(build_repl_event(None, EXTRACT_FALLBACK, final_outputs))
 
         return Prediction(
             history=history,

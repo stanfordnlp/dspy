@@ -15,7 +15,7 @@ from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
-from dspy.primitives.repl_types import REPLEntry, is_repl_event, split_repl_event
+from dspy.primitives.repl_types import ExtractFallbackMarker, REPLEntry, is_repl_event, split_repl_event
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -550,7 +550,7 @@ class Adapter:
             # an inner action field (e.g. an RLM whose signature has its own `code` or `reasoning`).
             if is_repl_event(message):
                 repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
-                if repl_entry is None:
+                if isinstance(repl_entry, ExtractFallbackMarker):
                     # Extract-fallback event: only the final output fields, which the model produced via the
                     # extract `Predict` call, so replay them as an assistant turn.
                     if repl_outputs:
