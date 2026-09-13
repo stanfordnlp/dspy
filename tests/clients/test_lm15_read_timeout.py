@@ -14,7 +14,7 @@ from dspy._vendor.lm15.transports import StdlibTransport
 from dspy._vendor.lm15.transports._async import StdlibAsyncTransport
 from dspy.clients.backend_selection import select_backend
 from dspy.clients.engines import AsyncLM15Engine, LiteLLMEngine, LM15Engine
-from dspy.clients.engines.lm15_engine import read_timeout_seconds
+from dspy.clients.engines.lm15_engine import UNSET, read_timeout_seconds
 from dspy.clients.execution import _engine, prepare
 from dspy.lm15 import Message, Request, RouterConfig
 
@@ -39,10 +39,10 @@ def test_completion_requests_defer_to_the_transport_read_timeout(dialect):
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
-def test_streaming_requests_keep_their_per_chunk_read_timeout(dialect):
+def test_streaming_requests_defer_to_the_transport_read_timeout(dialect):
     provider = provider_for(dialect, FakeTransport())
     wire = provider.build_request(request_for(dialect), stream=True)
-    assert wire.read_timeout == 120.0
+    assert wire.read_timeout is None
 
 
 @pytest.mark.parametrize("transport_cls", [StdlibTransport, StdlibAsyncTransport])
@@ -88,8 +88,9 @@ def chat_server():
         server.server_close()
 
 
-def test_router_transport_read_timeout_governs_completion_header_wait(chat_server):
-    transport = _RecordingTransport(read_timeout=900)
+@pytest.mark.parametrize("read_timeout", [900, None])
+def test_router_transport_read_timeout_governs_completion_header_wait(chat_server, read_timeout):
+    transport = _RecordingTransport(read_timeout=read_timeout)
     config = RouterConfig(env={}, api_keys={"openai-chat": "fake"}, base_urls={"openai-chat": chat_server},
                           transport=transport)
     provider = LMRouter(config).lm("openai-chat:gpt-5")
@@ -98,7 +99,7 @@ def test_router_transport_read_timeout_governs_completion_header_wait(chat_serve
     finally:
         transport.close()
     assert response.message.text == "hi"
-    assert transport.header_waits == [900]
+    assert transport.header_waits == [read_timeout]
 
 
 @pytest.fixture
@@ -128,6 +129,31 @@ def test_lm_httpx_timeout_uses_its_read_component(no_gateway_env):
         assert backend.config.transport._read_timeout == 450.0
     finally:
         backend.close()
+
+
+def test_lm_httpx_timeout_without_read_bound_waits_without_limit(no_gateway_env):
+    httpx = pytest.importorskip("httpx")
+    lm = dspy.LM("openai/gpt-5", api_key="fake", timeout=httpx.Timeout(None))
+    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+    try:
+        assert backend.config.transport is not None
+        assert backend.config.transport._read_timeout is None
+    finally:
+        backend.close()
+
+
+def test_equal_httpx_timeouts_share_one_engine(no_gateway_env):
+    httpx = pytest.importorskip("httpx")
+    lm = dspy.LM("openai/gpt-5", api_key="fake")
+    backends = []
+    for _ in range(2):
+        call = prepare(lm, "hello", None, {"timeout": httpx.Timeout(10, read=450)})
+        backends.append(_engine(lm, call, False)[0])
+    try:
+        assert backends[0] is backends[1]
+        assert len(lm._engine_store) == 1
+    finally:
+        backends[0].close()
 
 
 def test_lm_without_timeout_keeps_the_router_default_transport(no_gateway_env):
@@ -161,11 +187,11 @@ def test_async_lm_timeout_configures_an_async_transport(no_gateway_env):
     asyncio.run(build())
 
 
-@pytest.mark.parametrize("timeout", [0, -5, "600", True])
+@pytest.mark.parametrize("timeout", [0, -5, "600", True, float("nan"), float("inf")])
 def test_read_timeout_seconds_rejects_unusable_values(timeout):
     with pytest.raises((TypeError, ValueError)):
         read_timeout_seconds(timeout)
 
 
 def test_read_timeout_seconds_keeps_the_default_for_none():
-    assert read_timeout_seconds(None) is None
+    assert read_timeout_seconds(None) is UNSET

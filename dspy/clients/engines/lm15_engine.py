@@ -1,5 +1,6 @@
 """Native lm15 routing, with canonical errors and no retry policy."""
 
+import math
 import threading
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AsyncExitStack, ExitStack
@@ -33,21 +34,27 @@ def _model_string(model: str, model_type: str) -> str:
     return model
 
 
+# No timeout setting. Distinct from None, which asks the transport for an
+# unbounded wait.
+UNSET = object()
+
+
 def read_timeout_seconds(timeout):
-    """Seconds to wait for response headers, from an LM ``timeout`` setting.
+    """Seconds to wait for each read, from an LM ``timeout`` setting.
 
     Accepts a number of seconds or an ``httpx.Timeout``, whose ``read``
-    component is the equivalent bound. ``None`` keeps the engine default.
+    component is the equivalent bound. No setting returns ``UNSET``; an
+    ``httpx.Timeout`` with ``read=None`` returns ``None``, an unbounded wait.
     """
     if timeout is None:
-        return None
+        return UNSET
     read = getattr(timeout, "read", timeout)
     if read is None:
         return None
     if isinstance(read, bool) or not isinstance(read, (int, float)):
         raise TypeError(f"timeout must be a number of seconds or an httpx.Timeout, not {type(timeout).__name__}")
-    if read <= 0:
-        raise ValueError("timeout must be positive")
+    if not math.isfinite(read) or read <= 0:
+        raise ValueError("timeout must be a positive finite number of seconds")
     return float(read)
 
 
@@ -60,7 +67,7 @@ class _Routing:
         # A caller-supplied transport keeps its own timeouts. Otherwise the
         # engine owns one transport, shared by every provider it builds.
         self._owned_transport = None
-        if read_timeout is not None and self.config.transport is None:
+        if read_timeout is not UNSET and self.config.transport is None:
             self._owned_transport = transport_cls(read_timeout=read_timeout)
             self.config = replace(self.config, transport=self._owned_transport)
         self._closed = False
@@ -103,7 +110,7 @@ class _Routing:
 class LM15Engine(_Routing):
     """One synchronous native attempt. Close after its active calls finish."""
 
-    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=None):
+    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=UNSET):
         self._init_routing(config, model_type, read_timeout, StdlibTransport)
         self.router = LMRouter(self.config)
 
@@ -134,7 +141,7 @@ class LM15Engine(_Routing):
 class AsyncLM15Engine(_Routing):
     """One async attempt; owned pools are confined to their event loop."""
 
-    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=None):
+    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=UNSET):
         self._init_routing(config, model_type, read_timeout, StdlibAsyncTransport)
         self.router = AsyncLMRouter(self.config)
 

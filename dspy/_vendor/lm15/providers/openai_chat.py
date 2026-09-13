@@ -63,7 +63,6 @@ from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, defau
 from .common import (
     COMPLETION_READ_TIMEOUT,
     MEDIA_KINDS,
-    STREAM_READ_TIMEOUT,
     check_tool_result_media,
     media_data_uri,
     tool_result_error_text,
@@ -1496,7 +1495,7 @@ class OpenAIChatLM(BaseProviderLM):
             model=request.model,
             headers=self._headers(),
             payload=self._payload(request, stream=stream),
-            read_timeout=STREAM_READ_TIMEOUT if stream else COMPLETION_READ_TIMEOUT,
+            read_timeout=COMPLETION_READ_TIMEOUT,
         )
 
     # ─── Response parsing ───────────────────────────────────────────
