@@ -352,6 +352,7 @@ plugins:
 
 hooks:
     - hooks/fetch_stats.py
+    - hooks/notebook_copy_button.py
 
 extra:
     social:
