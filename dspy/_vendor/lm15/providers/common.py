@@ -26,6 +26,16 @@ from ..types import (
 
 JsonPayload = dict[str, Any] | list[Any]
 
+# Completion requests wait for response headers with the transport's own
+# read timeout (``TransportRequest.read_timeout=None``), so a caller's
+# ``RouterConfig(transport=StdlibTransport(read_timeout=...))`` governs the
+# time-to-first-byte.  The transports default to 600 seconds, matching the
+# LiteLLM request timeout, because reasoning models with large prompts
+# routinely take more than a minute before the first byte.  Streaming reads
+# are bounded per chunk instead.
+COMPLETION_READ_TIMEOUT: float | None = None
+STREAM_READ_TIMEOUT = 120.0
+
 
 # The FileReadiness fold for every OpenAI-shaped file object (api.openai.com,
 # Azure OpenAI v1, Meta): spec/vocabularies.md FileReadiness, ratified

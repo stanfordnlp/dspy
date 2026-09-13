@@ -69,7 +69,7 @@ from .base import (
     batch_entry_request,
     default_transport,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, anthropic_source, check_tool_result_media, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import COMPLETION_READ_TIMEOUT, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, STREAM_READ_TIMEOUT, anthropic_source, check_tool_result_media, iso_utc, model_infos_from_entries, multipart_form_body, parts_to_text, path_id, unnamed_tool_call_error
 
 # Canonical builtin tool name → Anthropic tool format
 _ANTHROPIC_BUILTIN_MAP: dict[str, str] = {
@@ -764,7 +764,7 @@ class AnthropicLM(BaseProviderLM):
             endpoint="messages",
             stream=stream,
             model=request.model,
-            read_timeout=120.0 if stream else 60.0,
+            read_timeout=STREAM_READ_TIMEOUT if stream else COMPLETION_READ_TIMEOUT,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

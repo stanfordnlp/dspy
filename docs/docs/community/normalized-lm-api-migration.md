@@ -61,7 +61,9 @@ Engine selection:
 Authentication failures, timeouts and provider errors never cause a switch to
 another backend. Native capability errors also raise rather than dropping the
 requested feature. Text completions and client settings not implemented by the
-native integration remain on LiteLLM.
+native integration remain on LiteLLM. The `timeout` setting, in seconds or as an
+`httpx.Timeout`, stays native. It bounds the wait for response headers, and the
+native default is 600 seconds, the same as LiteLLM.
 
 ### Caching, retries, usage and streaming
 

@@ -42,7 +42,9 @@ from ._url import ParsedURL, parse_url
 
 
 _DEFAULT_CONNECT_TIMEOUT = 10.0
-_DEFAULT_READ_TIMEOUT = 60.0
+# Only completion requests leave read_timeout unset; the other endpoints
+# carry their own value.  600 matches the LiteLLM request timeout.
+_DEFAULT_READ_TIMEOUT = 600.0
 _DEFAULT_WRITE_TIMEOUT = 60.0
 _READ_CHUNK = 64 * 1024
 

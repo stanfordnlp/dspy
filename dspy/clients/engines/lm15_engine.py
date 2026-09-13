@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack, ExitStack
 from dataclasses import replace
 
 from dspy._vendor.lm15.router import LITELLM_PROVIDER_PREFIXES
+from dspy._vendor.lm15.transports import StdlibAsyncTransport, StdlibTransport
 from dspy._vendor.lm15.types import StreamEvent
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
@@ -32,12 +33,36 @@ def _model_string(model: str, model_type: str) -> str:
     return model
 
 
+def read_timeout_seconds(timeout):
+    """Seconds to wait for response headers, from an LM ``timeout`` setting.
+
+    Accepts a number of seconds or an ``httpx.Timeout``, whose ``read``
+    component is the equivalent bound. ``None`` keeps the engine default.
+    """
+    if timeout is None:
+        return None
+    read = getattr(timeout, "read", timeout)
+    if read is None:
+        return None
+    if isinstance(read, bool) or not isinstance(read, (int, float)):
+        raise TypeError(f"timeout must be a number of seconds or an httpx.Timeout, not {type(timeout).__name__}")
+    if read <= 0:
+        raise ValueError("timeout must be positive")
+    return float(read)
+
+
 class _Routing:
-    def _init_routing(self, config, model_type):
+    def _init_routing(self, config, model_type, read_timeout, transport_cls):
         if model_type not in {"chat", "responses"}:
             raise UnsupportedFeatureError("lm15 engines support chat and Responses APIs, not text completions.")
         self.model_type = model_type
         self.config = config if config is not None else RouterConfig()
+        # A caller-supplied transport keeps its own timeouts. Otherwise the
+        # engine owns one transport, shared by every provider it builds.
+        self._owned_transport = None
+        if read_timeout is not None and self.config.transport is None:
+            self._owned_transport = transport_cls(read_timeout=read_timeout)
+            self.config = replace(self.config, transport=self._owned_transport)
         self._closed = False
         self._lock = threading.RLock()
         self._providers = {}
@@ -78,8 +103,8 @@ class _Routing:
 class LM15Engine(_Routing):
     """One synchronous native attempt. Close after its active calls finish."""
 
-    def __init__(self, config: RouterConfig | None = None, *, model_type="chat"):
-        self._init_routing(config, model_type)
+    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=None):
+        self._init_routing(config, model_type, read_timeout, StdlibTransport)
         self.router = LMRouter(self.config)
 
     def complete(self, request: Request) -> Response:
@@ -98,7 +123,9 @@ class LM15Engine(_Routing):
             providers = list(self._providers.values())
             self._providers.clear()
         self.router._lms.clear()
-        if self.config.transport is None:
+        if self._owned_transport is not None:
+            self._owned_transport.close()
+        elif self.config.transport is None:
             with ExitStack() as cleanup:
                 for provider in providers:
                     cleanup.callback(provider.close)
@@ -107,8 +134,8 @@ class LM15Engine(_Routing):
 class AsyncLM15Engine(_Routing):
     """One async attempt; owned pools are confined to their event loop."""
 
-    def __init__(self, config: RouterConfig | None = None, *, model_type="chat"):
-        self._init_routing(config, model_type)
+    def __init__(self, config: RouterConfig | None = None, *, model_type="chat", read_timeout=None):
+        self._init_routing(config, model_type, read_timeout, StdlibAsyncTransport)
         self.router = AsyncLMRouter(self.config)
 
     async def complete(self, request: Request) -> Response:
@@ -133,7 +160,9 @@ class AsyncLM15Engine(_Routing):
             providers = list(self._providers.values())
             self._providers.clear()
         self.router._lms.clear()
-        if self.config.transport is None:
+        if self._owned_transport is not None:
+            await self._owned_transport.aclose()
+        elif self.config.transport is None:
             async with AsyncExitStack() as cleanup:
                 for provider in providers:
                     cleanup.push_async_callback(provider.aclose)
