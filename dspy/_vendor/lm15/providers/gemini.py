@@ -104,7 +104,7 @@ from .base import (
     default_transport,
     resolve_credential,
 )
-from .common import EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, iso_utc, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, unnamed_tool_call_error
+from .common import COMPLETION_READ_TIMEOUT, EFFORT_THINKING_BUDGETS, MEDIA_KINDS, build_url, iso_utc, model_infos_from_entries, multipart_related_body, parts_to_text, path_id, unnamed_tool_call_error
 
 # Canonical builtin tool name → Gemini tool key
 _GEMINI_BUILTIN_MAP: dict[str, str] = {
@@ -848,7 +848,7 @@ class GeminiLM(BaseProviderLM):
             headers=self._auth_headers({"Content-Type": "application/json"}),
             params=params,
             payload=self._payload(request),
-            read_timeout=120.0 if stream else 60.0,
+            read_timeout=COMPLETION_READ_TIMEOUT,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

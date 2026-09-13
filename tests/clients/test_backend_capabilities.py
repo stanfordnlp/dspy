@@ -43,7 +43,6 @@ def conflicting_metadata(monkeypatch):
 @pytest.mark.parametrize("model,options", [
     ("openai/gpt-4o", {"custom_llm_provider": "alternate"}),
     ("openai/gpt-4o", {"headers": {"x-test": "yes"}}),
-    ("openai/gpt-4o", {"timeout": 10}),
     ("azure/gpt-4o", {"api_base": "https://example.invalid"}),
     ("unmapped/model", {}),
     ("openai/gpt-4o", {"model_type": "text"}),

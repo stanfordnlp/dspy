@@ -13,7 +13,7 @@ from dspy.lm15 import RouterConfig, UnknownModelError, UnsupportedFeatureError
 
 CLIENT_KEYS = {"api_key", "api_base", "base_url", "headers", "extra_headers", "timeout", "api_version",
                "azure_ad_token_provider", "organization", "project", "extra_query", "custom_llm_provider"}
-NATIVE_CLIENT_KEYS = {"api_key", "api_base", "base_url"}
+NATIVE_CLIENT_KEYS = {"api_key", "api_base", "base_url", "timeout"}
 
 
 @dataclass(frozen=True)

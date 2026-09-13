@@ -20,7 +20,7 @@ from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_di
 from dspy.clients.engines.legacy_engine import AsyncLegacyEngine, LegacyEngine
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
-from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
+from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine, read_timeout_seconds
 from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.clients.errors import error_boundary
@@ -213,8 +213,10 @@ def _select_engine(lm, call, asynchronous):
     # Long-lived sync pools and a separate async pool per event loop. Copies
     # share the store; a copy with changed client settings gets a distinct key.
     loop = asyncio.get_running_loop() if asynchronous else None
+    read_timeout = read_timeout_seconds(clients.get("timeout"))
+    settings = {**clients, "timeout": read_timeout} if "timeout" in clients else clients
     key = (loop, lm.model, lm.model_type, tuple(sorted((k, v if isinstance(v, (str, int, float, type(None))) else id(v))
-                                                   for k, v in clients.items())))
+                                                   for k, v in settings.items())))
     with lm._engine_lock:
         backend = lm._engine_store.get(key)
         if backend is None:
@@ -223,7 +225,7 @@ def _select_engine(lm, call, asynchronous):
             url = clients.get("api_base") or clients.get("base_url")
             config = RouterConfig(api_keys=api_keys, base_urls={provider: url} if url else None)
             cls = AsyncLM15Engine if asynchronous else LM15Engine
-            backend = cls(config, model_type=lm.model_type)
+            backend = cls(config, model_type=lm.model_type, read_timeout=read_timeout)
             lm._engine_store[key] = backend
     return backend, canonical, resolution.provider
 
