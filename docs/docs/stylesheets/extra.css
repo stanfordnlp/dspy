@@ -527,3 +527,122 @@ h2.doc-heading {
 [data-md-color-scheme="default"] .highlight .p       { color: #24292f; }              /* punctuation */
 [data-md-color-scheme="default"] .highlight .bp      { color: #6639ba; }              /* self */
 [data-md-color-scheme="default"] .highlight .n       { color: #1f2328; }              /* default identifier */
+
+/* ---- "Copy page" split-button (overrides/partials/actions.html) ---- */
+.md-copy-page {
+    float: right;
+    position: relative;
+    display: flex;
+    margin: 0.4rem 0 0.4rem 0.4rem;
+    font-size: 0.7rem;
+}
+
+.md-copy-page__button,
+.md-copy-page__chevron {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--md-default-fg-color--lightest);
+    background: var(--md-default-bg-color);
+    color: var(--md-default-fg-color--light);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.4;
+}
+
+.md-copy-page__button:hover,
+.md-copy-page__chevron:hover {
+    color: var(--md-accent-fg-color);
+    border-color: var(--md-accent-fg-color);
+}
+
+.md-copy-page__button {
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px 0 0 4px;
+    border-right: none;
+}
+
+.md-copy-page__button svg {
+    width: 14px;
+    height: 14px;
+    fill: currentcolor;
+}
+
+.md-copy-page__chevron {
+    padding: 0.3rem 0.4rem;
+    border-radius: 0 4px 4px 0;
+}
+
+.md-copy-page__chevron svg {
+    width: 12px;
+    height: 12px;
+    fill: currentcolor;
+}
+
+.md-copy-page__menu {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    right: 0;
+    z-index: 10;
+    min-width: 280px;
+    padding: 0.4rem;
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 6px;
+    background: var(--md-default-bg-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.md-copy-page__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.5rem;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--md-default-fg-color);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.md-copy-page__item:hover {
+    background: var(--md-code-bg-color);
+}
+
+.md-copy-page__item svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 0.1rem;
+    fill: var(--md-default-fg-color--light);
+}
+
+.md-copy-page__item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.md-copy-page__item-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--md-default-fg-color);
+}
+
+.md-copy-page__item-title svg {
+    width: 12px;
+    height: 12px;
+    margin-top: 0;
+}
+
+.md-copy-page__item-desc {
+    font-size: 0.7rem;
+    color: var(--md-default-fg-color--light);
+}
