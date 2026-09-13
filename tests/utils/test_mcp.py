@@ -32,12 +32,21 @@ def make_call_tool_result(field_style, texts=(), structured=_UNSET, is_error=Fal
 
 
 @pytest.mark.extra
+def test_convert_mcp_tool_result_defaults_to_structured():
+    camel_result = make_call_tool_result("camel", texts=["fallback"], structured={"result": "data"})
+    snake_result = make_call_tool_result("snake", texts=["fallback"], structured={"result": "data"})
+
+    assert _convert_mcp_tool_result(camel_result) == {"result": "data"}
+    assert _convert_mcp_tool_result(snake_result) == {"result": "data"}
+
+
+@pytest.mark.extra
 def test_convert_mcp_tool_result_supports_both_field_styles_without_changing_results():
     camel_result = make_call_tool_result("camel", texts=["hi"], structured={"result": "ignored"})
     snake_result = make_call_tool_result("snake", texts=["a", "b"], structured={"result": "ignored"})
 
-    assert _convert_mcp_tool_result(camel_result) == "hi"
-    assert _convert_mcp_tool_result(snake_result) == ["a", "b"]
+    assert _convert_mcp_tool_result(camel_result, result_mode="text") == "hi"
+    assert _convert_mcp_tool_result(snake_result, result_mode="text") == ["a", "b"]
 
 
 @pytest.mark.extra
@@ -129,10 +138,10 @@ async def test_convert_mcp_tool_with_v2_client():
     async with Client(server) as client:
         response = await client.list_tools()
         increment_tool = Tool.from_mcp_tool(client, response.tools[0])
-        structured_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="structured")
+        text_increment_tool = Tool.from_mcp_tool(client, response.tools[0], result_mode="text")
 
-        assert await increment_tool.acall(value=1) == "2"
-        assert await structured_increment_tool.acall(value=1) == {"result": 2}
+        assert await increment_tool.acall(value=1) == {"result": 2}
+        assert await text_increment_tool.acall(value=1) == "2"
 
 
 @pytest.mark.asyncio
