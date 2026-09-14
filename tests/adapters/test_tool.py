@@ -5,7 +5,13 @@ import pytest
 from pydantic import BaseModel, TypeAdapter
 
 import dspy
-from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls, convert_input_schema_to_tool_args
+from dspy.adapters.types.tool import (
+    Tool,
+    ToolCallResults,
+    ToolCalls,
+    _resolve_json_schema_reference,
+    convert_input_schema_to_tool_args,
+)
 from dspy.clients.lm15_boundary import request_kwargs
 from dspy.lm15 import Message, Request, ToolResultPart, tool_result
 
@@ -774,3 +780,81 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+
+def test_resolve_json_schema_reference_recursive():
+    schema = {
+        "$defs": {
+            "TreeNode": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "integer"},
+                    "children": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/TreeNode"},
+                    },
+                },
+            }
+        },
+        "type": "object",
+        "properties": {
+            "root": {"$ref": "#/$defs/TreeNode"},
+        },
+    }
+
+    resolved = _resolve_json_schema_reference(schema)
+    assert resolved["type"] == "object"
+    assert "root" in resolved["properties"]
+    assert resolved["properties"]["root"]["type"] == "object"
+    assert "TreeNode" in resolved["$defs"]
+
+
+def test_resolve_json_schema_reference_definitions_key():
+    schema = {
+        "definitions": {
+            "Item": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                },
+            }
+        },
+        "type": "object",
+        "properties": {
+            "item": {"$ref": "#/definitions/Item"},
+        },
+    }
+
+    resolved = _resolve_json_schema_reference(schema)
+    assert resolved["type"] == "object"
+    assert resolved["properties"]["item"]["properties"]["name"]["type"] == "string"
+    assert "definitions" not in resolved
+
+
+def test_convert_input_schema_to_tool_args_recursive():
+    schema = {
+        "$defs": {
+            "Comment": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "replies": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/Comment"},
+                    },
+                },
+                "required": ["text"],
+            }
+        },
+        "type": "object",
+        "properties": {
+            "comment": {"$ref": "#/$defs/Comment"},
+        },
+        "required": ["comment"],
+    }
+
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema)
+    assert "comment" in args
+    assert arg_types["comment"] == dict
+    assert "(Required)" in arg_desc["comment"]
+
