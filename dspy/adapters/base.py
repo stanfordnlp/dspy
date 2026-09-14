@@ -115,15 +115,6 @@ class Adapter:
                 signature = signature.delete(tool_call_output_field_name)
                 signature = signature.delete(tool_call_input_field_name)
             elif tool_call_output_field_name:
-                # The signature declares a ToolCalls field, so the adapter owns tool-wiring for
-                # this call - but the LM isn't marked as supporting function calling, so `tools`
-                # never gets added above. Drop any `tool_choice`/`parallel_tool_calls` a caller
-                # already passed in (e.g. ReActV2's forced-submit `config`), since sending
-                # `tool_choice` without `tools` is rejected by OpenAI and OpenAI-compatible
-                # gateways. Signatures with no ToolCalls field at all are left untouched here -
-                # the adapter never managed their tool kwargs to begin with, so a caller passing
-                # native `tools`/`tool_choice` directly (outside the ToolCalls mechanism) keeps
-                # working as before.
                 for key in ("tools", "tool_choice", "parallel_tool_calls"):
                     lm_kwargs.pop(key, None)
 
