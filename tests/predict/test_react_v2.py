@@ -200,15 +200,6 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
 
 
 def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
-    """Regression test for #10397.
-
-    Forced submit always requests `tool_choice` to force a final `submit`
-    call, even with `use_native_function_calling=True` and an LM that isn't
-    marked as supporting function calling (e.g. a model missing from DSPy's
-    capability catalog). The adapter must not forward that `tool_choice` to
-    the LM without `tools`, or OpenAI and OpenAI-compatible gateways reject
-    the request with a 400.
-    """
     adapter = dspy.JSONAdapter(use_native_function_calling=True)
     lm = dspy.utils.DummyLM(
         [
