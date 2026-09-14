@@ -2,6 +2,7 @@ import pydantic
 import pytest
 
 from dspy.experimental import Document
+from dspy.lm15 import DocumentPart, TextPart
 
 
 def test_document_validate_input():
@@ -45,27 +46,17 @@ def test_document_format():
 
     formatted = doc.format()
 
-    assert isinstance(formatted, list)
-    assert len(formatted) == 1
-
-    doc_block = formatted[0]
-    assert doc_block["type"] == "document"
-    assert doc_block["source"]["type"] == "text"
-    assert doc_block["source"]["media_type"] == "text/plain"
-    assert doc_block["source"]["data"] == "The sky is blue."
-    assert doc_block["title"] == "Color Facts"
-    assert doc_block["citations"]["enabled"] is True
+    # Plain text is read by the model as text, framed by its title.
+    assert formatted == [TextPart("Title: Color Facts\n"), TextPart("The sky is blue.")]
 
 
 def test_document_format_pdf_uses_base64_source():
     doc = Document(
-        data="base64pdfdata",
+        data="cGRm",
         media_type="application/pdf",
     )
 
-    doc_block = doc.format()[0]
+    [doc_part] = doc.format()
 
-    # PDF documents must use a base64 source, not a text source.
-    assert doc_block["source"]["type"] == "base64"
-    assert doc_block["source"]["media_type"] == "application/pdf"
-    assert doc_block["source"]["data"] == "base64pdfdata"
+    # PDF documents become one inline document part.
+    assert doc_part == DocumentPart(data="cGRm", media_type="application/pdf")

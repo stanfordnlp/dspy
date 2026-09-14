@@ -451,16 +451,16 @@ class TestRLMInterpreterLifecycle:
         class StopLMCall(BaseException):
             pass
 
-        class CapturingLM(dspy.BaseLM):
+        class CapturingEngine:
             def __init__(self):
-                super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
-                self.messages = None
+                self.request = None
 
-            def forward(self, prompt=None, messages=None, **kwargs):
-                self.messages = messages
+            def complete(self, request):
+                self.request = request
                 raise StopLMCall
 
-        lm = CapturingLM()
+        engine = CapturingEngine()
+        lm = dspy.LM("snapshot-model", engine=engine, temperature=0.0, max_tokens=1000, cache=False)
         rlm = RLM("query -> answer", interpreter_factory=PythonInterpreter)
 
         with pytest.raises(StopLMCall), dspy.context(lm=lm, adapter=dspy.ChatAdapter()):
@@ -476,7 +476,10 @@ class TestRLMInterpreterLifecycle:
         recorded = json.loads(snapshot.read_text())
         expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
                     for message in recorded["messages"]]
-        assert lm.messages == expected
+        sent = [{"role": "system", "content": engine.request.system}] + [
+            {"role": message.role, "content": message.text} for message in engine.request.messages
+        ]
+        assert sent == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])

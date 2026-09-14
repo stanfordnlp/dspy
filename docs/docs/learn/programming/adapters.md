@@ -48,12 +48,12 @@ The flow works as follows:
 
 1. The user calls their DSPy agent, typically a `dspy.Module` with inputs.
 2. The inner `dspy.Predict` is invoked to obtain the LM response.
-3. `dspy.Predict` calls **Adapter.format()**, which converts its signature, inputs, and demos into multi-turn messages sent to the `dspy.LM`. `dspy.LM` is a thin wrapper around `litellm`, which communicates with the LM endpoint.
-4. The LM receives the messages and generates a response.
-5. **Adapter.parse()** converts the LM response into structured DSPy outputs, as specified in the signature.
+3. `dspy.Predict` calls **Adapter.format()**, which converts its signature, inputs, and demos into a `Prompt`: the system instructions plus multi-turn `dspy.lm15` messages. The adapter turns that into one lm15 `Request` and sends it to the `dspy.LM`, whose engine talks to the LM endpoint.
+4. The LM receives the request and returns an lm15 `Response`.
+5. **Adapter.parse()** converts the response text into structured DSPy outputs, as specified in the signature.
 6. The caller of `dspy.Predict` receives the parsed outputs.
 
-You can explicitly call `Adapter.format()` to view the messages sent to the LM.
+You can explicitly call `Adapter.format()` to view the prompt sent to the LM.
 
 ```python
 # Simplified flow example
@@ -62,16 +62,33 @@ inputs = {"question": "What is 2+2?"}
 demos = [{"question": "What is 1+1?", "answer": "2"}]
 
 adapter = dspy.ChatAdapter()
-print(adapter.format(signature, demos, inputs))
+prompt = adapter.format(signature, demos, inputs)
+print(prompt.system)
+for message in prompt.messages:
+    print(message.role, repr(message.text))
 ```
 
 The output should resemble:
 
 ```
-{'role': 'system', 'content': 'Your input fields are:\n1. `question` (str):\nYour output fields are:\n1. `answer` (str):\nAll interactions will be structured in the following way, with the appropriate values filled in.\n\n[[ ## question ## ]]\n{question}\n\n[[ ## answer ## ]]\n{answer}\n\n[[ ## completed ## ]]\nIn adhering to this structure, your objective is: \n        Given the fields `question`, produce the fields `answer`.'}
-{'role': 'user', 'content': '[[ ## question ## ]]\nWhat is 1+1?'}
-{'role': 'assistant', 'content': '[[ ## answer ## ]]\n2\n\n[[ ## completed ## ]]\n'}
-{'role': 'user', 'content': '[[ ## question ## ]]\nWhat is 2+2?\n\nRespond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.'}
+Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answer ## ]]
+{answer}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is: 
+        Given the fields `question`, produce the fields `answer`.
+user '[[ ## question ## ]]\nWhat is 1+1?'
+assistant '[[ ## answer ## ]]\n2\n\n[[ ## completed ## ]]\n'
+user '[[ ## question ## ]]\nWhat is 2+2?\n\nRespond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.'
 ```
 
 You can also only fetch the system message by calling `adapter.format_system_message(signature)`.

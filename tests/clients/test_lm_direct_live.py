@@ -7,7 +7,7 @@ import pydantic
 import pytest
 
 import dspy
-from dspy.lm15 import Config, Message, Request, Response, ToolCallPart
+from dspy.lm15 import Config, ImagePart, Message, Request, Response, ToolCallPart
 
 
 def _require_env(*keys):
@@ -121,33 +121,24 @@ def _first_tool_call(outputs):
 
 @pytest.mark.llm_call
 def test_probe_history_roles_and_text_content_forms(responses_lm):
-    outputs = responses_lm(
-        messages=[
-            {"role": "developer", "content": "Answer with one word."},
-            {"role": "user", "content": [{"type": "text", "text": "Say apple."}]},
-            {"role": "assistant", "content": "apple"},
-            {"role": "user", "content": "Now say banana."},
-            {"role": "assistant", "content": [{"type": "text", "text": "banana"}]},
-            {"role": "user", "content": [{"type": "text", "text": "Now say cherry."}]},
-        ]
-    )
-    assert outputs
+    response = responses_lm(Request(model=responses_lm.model, messages=(
+        Message.developer("Answer with one word."),
+        Message.user("Say apple."),
+        Message.assistant("apple"),
+        Message.user("Now say banana."),
+        Message.assistant("banana"),
+        Message.user("Now say cherry."),
+    )))
+    assert _text(response)
 
 
 @pytest.mark.llm_call
 def test_probe_image_content(responses_lm):
-    outputs = responses_lm(
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "One word: what color dominates this image?"},
-                    {"type": "image_url", "image_url": {"url": TINY_PNG_URI}},
-                ],
-            }
-        ]
-    )
-    assert outputs
+    response = responses_lm(Request(model=responses_lm.model, messages=(Message.user([
+        "One word: what color dominates this image?",
+        ImagePart(data=TINY_PNG_URI.split(",", 1)[1], media_type="image/png"),
+    ]),)))
+    assert _text(response)
 
 
 @pytest.mark.llm_call
@@ -213,22 +204,13 @@ def test_probe_tool_round_trip_ids_are_referenceable(responses_lm):
         tools=[WEATHER_TOOL_CHAT],
         tool_choice={"type": "function", "function": {"name": "get_weather"}},
     )
-    name, _, call_id = _first_tool_call(outputs)
-    tool_calls = outputs[0]["tool_calls"]
+    name, args, call_id = _first_tool_call(outputs)
 
-    followup = responses_lm(
-        messages=[
-            {"role": "user", "content": "What is the weather in Berlin? Use the tool."},
-            {
-                "role": "assistant",
-                "content": None,
-                # Replay the Responses-shaped output exactly as DSPy returned it.
-                "tool_calls": tool_calls,
-            },
-            {"role": "tool", "tool_call_id": call_id, "name": name, "content": "It is 22C and sunny."},
-        ],
-        tools=[WEATHER_TOOL_CHAT],
-    )
-    final = followup[0]
-    text = final["text"] if isinstance(final, dict) else final
+    # Replay the call with the id DSPy returned, then the tool result.
+    followup = responses_lm(Request(model=responses_lm.model, messages=(
+        Message.user("What is the weather in Berlin? Use the tool."),
+        Message.assistant(ToolCallPart(id=call_id, name=name, input=args)),
+        Message.tool(call_id, "It is 22C and sunny."),
+    )))
+    text = _text(followup)
     assert text and "22" in text

@@ -51,8 +51,9 @@ def test_tool_observation_preserves_custom_type():
     sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in inputs]
     assert sigs_with_obs, "Expected ReAct to format a trajectory containing observation_0"
 
+    # History records lm15 part dictionaries; both images reach the user message as image parts.
     observation_content = lm.history[1]["messages"][1]["content"]
-    assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image_url") == 2
+    assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image") == 2
 
 
 def test_tool_calling_with_pydantic_args():
