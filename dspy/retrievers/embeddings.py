@@ -94,9 +94,8 @@ class Embeddings:
 
     def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray | None):
         if candidate_indices is None:
-            scores = np.einsum(
-                "qd,kd->qk", q_embeds, np.ascontiguousarray(self.corpus_embeddings), order="C"
-            )
+            self.corpus_embeddings = np.ascontiguousarray(self.corpus_embeddings)
+            scores = np.einsum("qd,kd->qk", q_embeds, self.corpus_embeddings, order="C")
         else:
             candidate_embeddings = self.corpus_embeddings[candidate_indices]
             scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
