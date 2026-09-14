@@ -63,7 +63,6 @@ class Embeddings:
         q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
 
         pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
-        pids = np.tile(np.arange(len(self.corpus)), (len(queries), 1)) if pids is None else pids
 
         return self._rerank_and_predict(q_embeds, pids)
 
@@ -93,12 +92,21 @@ class Embeddings:
     def _faiss_search(self, query_embeddings: np.ndarray, num_candidates: int):
         return self.index.search(query_embeddings, num_candidates)[1]
 
-    def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray):
-        candidate_embeddings = self.corpus_embeddings[candidate_indices]
-        scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
+    def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray | None):
+        if candidate_indices is None:
+            scores = np.einsum(
+                "qd,kd->qk", q_embeds, np.ascontiguousarray(self.corpus_embeddings), order="C"
+            )
+        else:
+            candidate_embeddings = self.corpus_embeddings[candidate_indices]
+            scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
 
         top_k_indices = np.argsort(-scores, axis=1)[:, : self.k]
-        top_indices = candidate_indices[np.arange(len(q_embeds))[:, None], top_k_indices]
+        top_indices = (
+            top_k_indices
+            if candidate_indices is None
+            else candidate_indices[np.arange(len(q_embeds))[:, None], top_k_indices]
+        )
         top_scores = scores[np.arange(len(q_embeds))[:, None], top_k_indices]
 
         results = []
