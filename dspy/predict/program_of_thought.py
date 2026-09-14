@@ -52,7 +52,8 @@ class ProgramOfThought(Module):
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
-                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. Defaults to
+                ``dspy.PythonInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces this default.
         """
         super().__init__()
         warnings.warn(

@@ -34,6 +34,7 @@ from dspy.primitives.code_interpreter import (
     _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
+    resolve_interpreter_factory,
 )
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -120,12 +121,13 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but
-    ``interpreter_factory`` can create another CodeInterpreter implementation,
-    such as an adapter for a remote sandbox. RLM updates the interpreter's
-    mutable ``tools`` dictionary with invocation-scoped tools before execution.
-    A caller-owned interpreter may be reused sequentially with the same RLM
-    instance, but must not be shared by overlapping invocations.
+    ``interpreter_factory`` defaults to ``PythonInterpreter`` (Deno/Pyodide/WASM), and
+    ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
+    accepts an adapter for a remote sandbox.
+    RLM updates the interpreter's mutable ``tools`` dictionary with
+    invocation-scoped tools before execution. A caller-owned interpreter may be
+    reused sequentially with the same RLM instance, but must not be shared by
+    overlapping invocations.
 
     Examples:
         ```python
@@ -162,7 +164,10 @@ class RLM(Module):
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
-                an ``execution_instructions`` string describing its runtime for the action prompt.
+                an ``execution_instructions`` string describing its runtime for the action prompt. RLM applies the
+                active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
+                without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
+                ``dspy.configure(interpreter_factory=...)`` replaces the default.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -178,6 +183,7 @@ class RLM(Module):
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
+        self._action_signature = action_sig
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
 
@@ -351,10 +357,13 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
-        execution_instructions = getattr(self._interpreter_factory, "execution_instructions", "")
-        if not isinstance(execution_instructions, str):
-            raise TypeError("interpreter_factory.execution_instructions must be a string")
-        interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+        # Seed with the factory active at construction; each action call refreshes this
+        # fragment, so a later dspy.context() can select a different runtime.
+        factory = resolve_interpreter_factory(self._interpreter_factory)
+        execution_instructions = self._get_execution_instructions(factory)
+        self._initial_execution_instructions = execution_instructions
+        self._initial_interpreter_rules = self._format_interpreter_rules(execution_instructions)
+        interpreter_rules = self._initial_interpreter_rules
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
@@ -387,6 +396,42 @@ class RLM(Module):
         extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
+
+    @staticmethod
+    def _format_interpreter_rules(execution_instructions: str) -> str:
+        return f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+
+    @staticmethod
+    def _get_execution_instructions(factory: Callable[[], CodeInterpreter]) -> str:
+        execution_instructions = getattr(factory, "execution_instructions", "")
+        if not isinstance(execution_instructions, str):
+            raise TypeError("interpreter_factory.execution_instructions must be a string")
+        return execution_instructions
+
+    def _action_signature_for_current_factory(self) -> type[Signature]:
+        """Return an action signature whose runtime guidance matches the active interpreter."""
+        factory = resolve_interpreter_factory(self._interpreter_factory)
+        execution_instructions = self._get_execution_instructions(factory)
+        # getattr, because generate_action may have been replaced by a predictor that
+        # carries no signature of its own.
+        current_signature = getattr(self.generate_action, "signature", self._action_signature)
+
+        # Same runtime as at construction: no derived signature per iteration, and an
+        # optimizer's revised instructions stay untouched.
+        if execution_instructions == self._initial_execution_instructions:
+            return current_signature
+
+        # Replace only DSPy's own fragment, so an override cannot stack on stale guidance.
+        current_instructions = current_signature.instructions
+        current_rules = self._format_interpreter_rules(execution_instructions)
+        if self._initial_interpreter_rules and self._initial_interpreter_rules in current_instructions:
+            instructions = current_instructions.replace(self._initial_interpreter_rules, current_rules, 1)
+        elif current_rules:
+            # An optimizer dropped that fragment, so append the active guidance once instead.
+            instructions = current_instructions + current_rules
+        else:
+            instructions = current_instructions
+        return current_signature.with_instructions(instructions)
 
     # =========================================================================
     # Input/Output Processing
@@ -674,7 +719,10 @@ class RLM(Module):
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
+        # A per-call signature, not a mutation of generate_action.signature, keeps a
+        # dspy.context override local to this invocation.
         action = self.generate_action(
+            signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -768,6 +816,7 @@ class RLM(Module):
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
+            signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
