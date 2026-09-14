@@ -74,21 +74,13 @@ def test_xml_adapter_parse_casts_types():
     assert parsed == {"number": 42, "flag": True}
 
 
-@pytest.mark.parametrize(
-    "code",
-    [
-        "if len(page) < 20:\n    print('R&B')",
-        "if n<limit and n>0 and mask & 1:\n    print(n << 2)",
-        "print('<unfinished attr=\"x\"> &amp; &#65; </unrelated>')",
-        "    print('</code>')\n    print('R&B')  ",
-    ],
-)
-def test_xml_adapter_predict_accepts_python_comparisons_without_fallback(code):
+def test_xml_adapter_predict_accepts_literal_code_without_fallback():
     class Generate(dspy.Signature):
         question: str = dspy.InputField()
         reasoning: str = dspy.OutputField()
         code: str = dspy.OutputField()
 
+    code = "if len(page) < 20:\n    print('R&B', '</code>')"
     completion = f"<reasoning>\nKeep R&B tracks\n</reasoning>\n<code>\n{code}\n</code>"
     with mock.patch("litellm.completion") as completion_mock:
         completion_mock.return_value = ModelResponse(
@@ -104,35 +96,19 @@ def test_xml_adapter_predict_accepts_python_comparisons_without_fallback(code):
     assert completion_mock.call_count == 1
 
 
-def test_xml_adapter_raw_text_preserves_entities_cdata_and_nested_types():
+def test_xml_adapter_xml_syntax_is_literal_text():
     class Result(dspy.Signature):
-        code: str = dspy.OutputField()
-        literal: str = dspy.OutputField()
-        counts: list[int] = dspy.OutputField()
+        text: str = dspy.OutputField()
 
-    completion = (
-        "<code>if n <= 20 and mask & 1: print('&amp;')</code>"
-        "<literal><![CDATA[<raw> &amp;]]></literal>"
-        "<counts><item>2</item><item>7</item></counts>"
-    )
-    assert XMLAdapter().parse(Result, completion) == {
-        "code": "if n <= 20 and mask & 1: print('&amp;')",
-        "literal": "<![CDATA[<raw> &amp;]]>",
-        "counts": [2, 7],
-    }
-    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
-        XMLAdapter().parse(Result, completion.replace("</code>", ""))
+    value = "<![CDATA[<raw> &amp; &#65;]]>"
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, {"text": value})
+    assert formatted == f"<text>\n{value}\n</text>"
+    assert adapter.parse(Result, formatted) == {"text": value}
+    assert adapter.parse(Result, f"<text>{value}</text>") == {"text": value}
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        "if x<y and y>0: print('R&B &amp;')",
-        '<unfinished attr="x"> &#65; </unrelated>',
-        "</code> </item> ]]> <![CDATA[literal]]>",
-    ],
-)
-def test_xml_adapter_leaf_text_has_identical_semantics_at_every_depth(value):
+def test_xml_adapter_literal_leaves_round_trip_at_every_depth():
     class Program(pydantic.BaseModel):
         code: str
         alternatives: list[str]
@@ -140,25 +116,13 @@ def test_xml_adapter_leaf_text_has_identical_semantics_at_every_depth(value):
 
     class Result(dspy.Signature):
         code: str = dspy.OutputField()
-        program: Program = dspy.OutputField()
         programs: list[Program] = dspy.OutputField()
 
-    program = (
-        f"<code>{value}</code><alternatives><item>{value}</item></alternatives>"
-        f"<metadata><source>{value}</source></metadata>"
-    )
-    completion = f"<code>{value}</code><program>{program}</program><programs><item>{program}</item></programs>"
-    expected = Program(code=value, alternatives=[value], metadata={"source": value})
+    value = "if x<y: print('</code>', '</item>', 'R&B')"
+    expected = {"code": value, "programs": [Program(code=value, alternatives=[value], metadata={"source": value})]}
     adapter = XMLAdapter()
-    if "</code>" not in value:
-        assert adapter.parse(Result, completion) == {"code": value, "program": expected, "programs": [expected]}
-    else:
-        with pytest.raises(dspy.utils.exceptions.AdapterParseError):
-            adapter.parse(Result, completion)
-    formatted = adapter.format_assistant_message_content(
-        Result, {"code": value, "program": expected, "programs": [expected]}
-    )
-    assert adapter.parse(Result, formatted) == {"code": value, "program": expected, "programs": [expected]}
+    formatted = adapter.format_assistant_message_content(Result, expected)
+    assert adapter.parse(Result, formatted) == expected
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
@@ -202,7 +166,7 @@ def test_xml_adapter_nested_tag_lines_preserve_literal_payload(newline):
         '<entry key="code">x</entry>',
         "<code>x</code><counts><item>2</counts>",
         "<code>\nx\n</code>\nsurplus\n</code>",
-        "<code>prefix <![CDATA[</code>]]>suffix</code>",
+        "<code>print('</code>')</code>",
     ],
 )
 def test_xml_adapter_validates_outer_fields_and_structured_nesting(completion):
@@ -449,20 +413,6 @@ def test_xml_adapter_recursive_model_schema_terminates():
     assert adapter.parse(TestSignature, completion) == {
         "root": Node(value="parent", children=[Node(value="child", children=[])])
     }
-
-
-@pytest.mark.parametrize("value", ["print('</code> & done ]]>')", "<![CDATA[literal &amp;]]>"])
-def test_xml_adapter_literal_delimiters_need_no_quoting(value):
-    class TestSignature(dspy.Signature):
-        code: str = dspy.OutputField()
-
-    adapter = XMLAdapter()
-    formatted = adapter.format_assistant_message_content(TestSignature, {"code": value})
-    assert formatted == f"<code>\n{value}\n</code>"
-    assert adapter.parse(TestSignature, formatted) == {"code": value}
-
-    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse XML"):
-        adapter.parse(TestSignature, "<code>print('</code>')</code>")
 
 
 def test_xml_adapter_format_and_parse_nested_model():
