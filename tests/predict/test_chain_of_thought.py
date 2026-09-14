@@ -6,6 +6,7 @@ from litellm.utils import Choices, Message, ModelResponse
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
+from tests.test_utils.engines import litellm_response
 
 
 def test_initialization_with_string_signature():
@@ -34,7 +35,7 @@ def test_chain_of_thought_with_native_reasoning():
     lm = dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
 
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
                 Choices(
@@ -63,7 +64,7 @@ def test_chain_of_thought_with_manual_reasoning():
     lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     dspy.settings.configure(lm=lm)
 
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
                 Choices(

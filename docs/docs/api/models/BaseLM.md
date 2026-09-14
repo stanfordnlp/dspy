@@ -7,10 +7,10 @@
         members:
             - __call__
             - acall
-            - aforward
+            - agenerate
             - copy
             - dump_state
-            - forward
+            - generate
             - inspect_history
             - load_state
             - update_history

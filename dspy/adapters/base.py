@@ -5,8 +5,8 @@ from typing import Any, get_origin
 
 from dspy._vendor.lm15.types import tool_result
 from dspy.adapters.types import History, Type
-from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.base_type import parts_from_text
+from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json

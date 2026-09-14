@@ -7,11 +7,11 @@
         members:
             - __call__
             - acall
-            - aforward
+            - agenerate
             - copy
             - dump_state
             - finetune
-            - forward
+            - generate
             - infer_provider
             - inspect_history
             - kill

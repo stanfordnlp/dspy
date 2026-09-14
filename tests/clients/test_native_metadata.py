@@ -19,7 +19,7 @@ def local_metadata(monkeypatch):
 
 
 def test_snapshot_capabilities_do_not_import_litellm():
-    with patch("dspy.clients.lm._get_litellm", side_effect=AssertionError("LiteLLM accessed")):
+    with patch("dspy.clients._litellm.get_litellm", side_effect=AssertionError("LiteLLM accessed")):
         lm = dspy.LM("openai/gpt-4o", engine="lm15")
         assert lm.supports_function_calling
         assert lm.supports_response_schema
