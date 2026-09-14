@@ -5,7 +5,13 @@ import subprocess
 
 import pytest
 
-from docs.scripts.build_docs import patched_config, release_version, remove_source_maps, scope_root_relative_urls
+from docs.scripts.build_docs import (
+    patched_config,
+    release_version,
+    remove_source_maps,
+    scope_root_relative_urls,
+    validate_release_site,
+)
 from docs.scripts.publish_versioned_docs import publish_site, require_current_renderer, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
@@ -64,6 +70,27 @@ def test_release_config_enables_mike_and_scopes_urls(tmp_path):
         assert "alias: true" in text
     finally:
         result.unlink()
+
+
+def test_release_validation_accepts_zensical_minified_metadata(tmp_path, monkeypatch):
+    site = tmp_path / "site"
+    (site / "api").mkdir(parents=True)
+    (site / "assets" / "images" / "social-zensical").mkdir(parents=True)
+    (site / "index.html").write_text(
+        "<html><head>"
+        "<link rel=canonical href=https://dspy.ai/3.4.0b1/>"
+        "<meta property=og:image content=https://dspy.ai/card.png>"
+        "</head></html>"
+    )
+    (site / "api" / "index.html").write_text("API")
+    (site / "search.json").write_text("{}")
+    (site / "llms.txt").write_text("DSPy")
+    (site / "assets" / "images" / "social-zensical" / "card.png").write_bytes(b"png")
+    config = tmp_path / "mkdocs.yml"
+    config.write_text("site_name: DSPy\n")
+    monkeypatch.setattr("docs.scripts.build_docs.importlib.metadata.version", lambda package: "3.4.0b1")
+
+    validate_release_site(site, config, "3.4.0b1")
 
 
 def test_production_build_removes_source_maps(tmp_path):

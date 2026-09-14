@@ -15,9 +15,9 @@ import tempfile
 from pathlib import Path
 
 if __package__:
-    from .zensical_build import build_zensical_site
+    from .zensical_build import HeadParser, build_zensical_site
 else:  # Direct script execution from the deployed docs repository.
-    from zensical_build import build_zensical_site
+    from zensical_build import HeadParser, build_zensical_site
 
 
 RELEASE_VERSION = re.compile(
@@ -142,8 +142,10 @@ def validate_release_site(site: Path, config: Path, version: str) -> None:
         raise RuntimeError(f"release site is missing required output: {', '.join(missing)}")
 
     home = (site / "index.html").read_text()
-    canonical = f'<link rel="canonical" href="https://dspy.ai/{version}/">'
-    if canonical not in home:
+    metadata = HeadParser()
+    metadata.feed(home)
+    canonical = f"https://dspy.ai/{version}/"
+    if metadata.metadata.get("canonical") != canonical:
         raise RuntimeError(f"release home page is missing canonical URL {canonical}")
 
     docs_dir = config.parent / "docs"
@@ -160,7 +162,7 @@ def validate_release_site(site: Path, config: Path, version: str) -> None:
         raise RuntimeError(f"notebooks were not rendered: {', '.join(missing_notebooks)}")
 
     cards = site / "assets" / "images" / "social-zensical"
-    if not cards.exists() or not any(cards.rglob("*.png")) or 'property="og:image"' not in home:
+    if not cards.exists() or not any(cards.rglob("*.png")) or "og:image" not in metadata.metadata:
         raise RuntimeError("social cards or Open Graph metadata were not generated")
 
     try:
