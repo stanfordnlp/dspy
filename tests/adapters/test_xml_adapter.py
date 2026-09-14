@@ -199,6 +199,7 @@ def test_xml_adapter_nested_tag_lines_preserve_literal_payload(newline):
         "<code>x</code></code>",
         "<code>x</code><code>y</code>",
         "<code>x</code><unknown>y</unknown>",
+        '<entry key="code">x</entry>',
         "<code>x</code><counts><item>2</counts>",
         "<code>\nx\n</code>\nsurplus\n</code>",
         "<code>prefix <![CDATA[</code>]]>suffix</code>",
@@ -266,6 +267,9 @@ def test_xml_adapter_structured_union_uses_structural_tag_lines():
     assert adapter.parse(Result, adapter.format_assistant_message_content(Result, {"person": body})) == {"person": body}
     assert adapter.parse(Result, "<person><name>Ada</name><age>36</age></person>") == {
         "person": Person(name="Ada", age=36)
+    }
+    assert adapter.parse(Result, "<person>\n<name>\n<unfinished>\n</name>\n<age>\n36\n</age>\n</person>") == {
+        "person": Person(name="<unfinished>", age=36)
     }
 
 
