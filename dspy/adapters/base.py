@@ -116,6 +116,9 @@ class Adapter:
 
                 signature = signature.delete(tool_call_output_field_name)
                 signature = signature.delete(tool_call_input_field_name)
+            elif tool_call_output_field_name:
+                for key in ("tools", "tool_choice", "parallel_tool_calls"):
+                    lm_kwargs.pop(key, None)
 
         # TODO(adapters-plan): Built-in/native response planning should move out
         # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning

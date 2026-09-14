@@ -1180,6 +1180,73 @@ def test_chat_adapter_nonnative_strips_native_tool_kwargs():
     assert "parallel_tool_calls" not in lm_kwargs
 
 
+def test_chat_adapter_native_preserves_caller_tools_on_ordinary_signature():
+    """An ordinary signature (no `dspy.ToolCalls` output field) never has its tool
+    wiring managed by the adapter, with or without native function calling - so a
+    caller passing native `tools`/`tool_choice` directly (outside the ToolCalls
+    mechanism, e.g. via `config=`) must keep reaching the LM untouched. Regression
+    test for a #10397 fix that briefly over-stripped this case too."""
+
+    class OrdinarySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        OrdinarySignature,
+        [],
+        {"question": "Q?"},
+        lm_kwargs={
+            "tools": [{"type": "function", "function": {"name": "search"}}],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+        },
+        # Default DummyLM: supports_function_calling is False - shouldn't matter here,
+        # since this signature never opts into the ToolCalls mechanism at all.
+    )
+
+    assert lm_kwargs["tools"] == [{"type": "function", "function": {"name": "search"}}]
+    assert lm_kwargs["tool_choice"] == "auto"
+    assert lm_kwargs["parallel_tool_calls"] is True
+
+
+def test_chat_adapter_native_strips_tool_choice_when_lm_lacks_function_calling():
+    """Regression test for #10397.
+
+    ReActV2's forced-submit path always sets `tool_choice` (to force a final
+    `submit` call), regardless of whether the LM is marked as supporting
+    native function calling. When it isn't (e.g. a model missing from DSPy's
+    capability catalog), the adapter never adds `tools` - so a `tool_choice`
+    the caller already passed in must be dropped too, or OpenAI and
+    OpenAI-compatible gateways reject the request with a 400.
+    """
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm_kwargs={
+            "tool_choice": {"type": "function", "function": {"name": "submit"}},
+            "parallel_tool_calls": True,
+        },
+        # Default DummyLM: supports_function_calling is False, matching a model
+        # missing from DSPy's catalog - the exact condition that triggers #10397.
+    )
+
+    assert "tools" not in lm_kwargs
+    assert "tool_choice" not in lm_kwargs
+    assert "parallel_tool_calls" not in lm_kwargs
+
+
 def test_chat_adapter_format_exact_messages_with_reasoning_and_code_outputs():
     python_code = dspy.Code["python"]
 

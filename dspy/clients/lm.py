@@ -4,10 +4,7 @@ import os
 import re
 import threading
 import warnings
-from typing import Any, Literal, cast
-
-import anyio.from_thread
-from anyio.streams.memory import MemoryObjectSendStream
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import dspy
 from dspy.clients._litellm import get_litellm
@@ -21,8 +18,14 @@ from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.lm15 import CacheConfig
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import LMConfigurationError, LMError, LMUnsupportedFeatureError
+from dspy.utils.lazy_import import require
 
 from .base_lm import BaseLM
+
+anyio = require("anyio")
+
+if TYPE_CHECKING:
+    from anyio.streams.memory import MemoryObjectSendStream
 
 logger = logging.getLogger(__name__)
 
@@ -452,7 +455,7 @@ def _get_stream_completion_fn(
         return None
 
     # The stream is already opened, and will be closed by the caller.
-    stream = cast(MemoryObjectSendStream, stream)
+    stream = cast("MemoryObjectSendStream", stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
 
     if dspy.settings.track_usage:
