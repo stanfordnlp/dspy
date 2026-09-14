@@ -21,6 +21,7 @@ DEFAULT_CONFIG = dotdict(
     callbacks=[],
     async_max_workers=8,
     send_stream=None,
+    stream_token=None,
     disable_history=False,
     track_usage=False,
     usage_tracker=None,

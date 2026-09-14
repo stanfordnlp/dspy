@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Gene
 
 import orjson
 from anyio import create_memory_object_stream, create_task_group
+from anyio.lowlevel import current_token
 from anyio.streams.memory import MemoryObjectSendStream
 
 from dspy.dsp.utils.settings import settings
@@ -175,7 +176,12 @@ def streamify(
         callbacks.append(status_streaming_callback)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+        with settings.context(
+            send_stream=stream,
+            stream_token=current_token(),
+            callbacks=callbacks,
+            stream_listeners=stream_listeners,
+        ):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)

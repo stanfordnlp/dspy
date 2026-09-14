@@ -46,8 +46,8 @@ def sync_send_to_stream(stream, message):
             future = executor.submit(run_in_new_loop)
             return future.result()
     except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return anyio.from_thread.run(_send)
+        # Worker threads need the token captured by streamify to access its event loop.
+        return anyio.from_thread.run(_send, token=settings.stream_token)
 
 
 class StatusMessageProvider:

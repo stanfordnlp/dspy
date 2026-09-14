@@ -138,6 +138,28 @@ async def test_custom_status_streaming():
 
 
 @pytest.mark.anyio
+async def test_parallel_status_streaming():
+    class StatusProvider(StatusMessageProvider):
+        def module_start_status_message(self, instance, inputs):
+            if isinstance(instance, dspy.Predict):
+                return "predict started"
+
+    class ParallelProgram(dspy.Module):
+        def __init__(self):
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question):
+            pairs = [(self.predict, {"question": f"{question} {index}"}) for index in range(2)]
+            return dspy.Prediction(results=dspy.Parallel(num_threads=2, disable_progress_bar=True)(pairs))
+
+    with dspy.context(lm=dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])):
+        output = dspy.streamify(ParallelProgram(), status_message_provider=StatusProvider())(question="sky")
+        messages = [value async for value in output if isinstance(value, StatusMessage)]
+
+    assert [message.message for message in messages] == ["predict started", "predict started"]
+
+
+@pytest.mark.anyio
 async def test_concurrent_status_message_providers():
     class MyProgram(dspy.Module):
         def __init__(self):
