@@ -1049,6 +1049,43 @@ def test_chat_adapter_nonnative_strips_native_tool_kwargs():
     assert "parallel_tool_calls" not in lm_kwargs
 
 
+def test_chat_adapter_native_strips_tool_choice_when_lm_lacks_function_calling():
+    """Regression test for #10397.
+
+    ReActV2's forced-submit path always sets `tool_choice` (to force a final
+    `submit` call), regardless of whether the LM is marked as supporting
+    native function calling. When it isn't (e.g. a model missing from DSPy's
+    capability catalog), the adapter never adds `tools` - so a `tool_choice`
+    the caller already passed in must be dropped too, or OpenAI and
+    OpenAI-compatible gateways reject the request with a 400.
+    """
+
+    def search(query: str) -> str:
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    _, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm_kwargs={
+            "tool_choice": {"type": "function", "function": {"name": "submit"}},
+            "parallel_tool_calls": True,
+        },
+        # Default DummyLM: supports_function_calling is False, matching a model
+        # missing from DSPy's catalog - the exact condition that triggers #10397.
+    )
+
+    assert "tools" not in lm_kwargs
+    assert "tool_choice" not in lm_kwargs
+    assert "parallel_tool_calls" not in lm_kwargs
+
+
 def test_chat_adapter_format_exact_messages_with_reasoning_and_code_outputs():
     python_code = dspy.Code["python"]
 

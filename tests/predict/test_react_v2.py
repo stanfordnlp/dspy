@@ -199,6 +199,40 @@ def test_react_v2_forced_submit_on_empty_tool_calls():
     assert lm.history[1]["kwargs"].get("reasoning_effort") is None
 
 
+def test_react_v2_forced_submit_with_native_flag_but_unsupported_lm():
+    """Regression test for #10397.
+
+    Forced submit always requests `tool_choice` to force a final `submit`
+    call, even with `use_native_function_calling=True` and an LM that isn't
+    marked as supporting function calling (e.g. a model missing from DSPy's
+    capability catalog). The adapter must not forward that `tool_choice` to
+    the LM without `tools`, or OpenAI and OpenAI-compatible gateways reject
+    the request with a 400.
+    """
+    adapter = dspy.JSONAdapter(use_native_function_calling=True)
+    lm = dspy.utils.DummyLM(
+        [
+            {"next_thought": "No action.", "tool_calls": dspy.ToolCalls(tool_calls=[])},
+            {
+                "next_thought": "Forced final.",
+                "tool_calls": dspy.ToolCalls.from_dict_list(
+                    [{"name": "submit", "args": {"answer": "forced"}}]
+                ),
+            },
+        ],
+        adapter=adapter,
+    )
+    assert lm.supports_function_calling is False
+
+    with dspy.context(lm=lm, adapter=adapter):
+        pred = dspy.ReActV2("question -> answer", tools=[])(question="cats")
+
+    assert pred.answer == "forced"
+    assert pred.termination_reason == "forced_submit"
+    assert "tool_choice" not in lm.history[1]["kwargs"]
+    assert "tools" not in lm.history[1]["kwargs"]
+
+
 class NativeToolLM(dspy.BaseLM):
     def __init__(self):
         super().__init__("native-tool-lm", "chat", 0.0, 1000, True)
