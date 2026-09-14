@@ -2,10 +2,12 @@ name: Update DSPy Docs
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "docs/**"
+    tags:
+      - "*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
   pull_request:
     paths:
       - "docs/**"
@@ -30,7 +32,7 @@ jobs:
           mkdocs build
 
   update-docs-subtree:
-    if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
+    if: github.event_name != 'pull_request' && github.repository == 'stanfordnlp/dspy'
     runs-on: ubuntu-latest
     permissions:
       contents: read
