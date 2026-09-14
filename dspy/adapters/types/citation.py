@@ -3,6 +3,7 @@ from typing import Any, Optional
 import pydantic
 
 from dspy.adapters.types.base_type import Type
+from dspy.lm15 import CitationPart, Response
 from dspy.utils.annotation import experimental
 
 
@@ -53,37 +54,29 @@ class Citations(Type):
     """
 
     class Citation(Type):
-        """Individual citation with character location information."""
+        """One citation: the quoted text plus whatever the source reported.
+
+        Native citations arrive as lm15 `CitationPart`s carrying text, title
+        and URL. Character offsets and document indexes are optional because
+        not every provider reports them.
+        """
 
         type: str = "char_location"
         cited_text: str
-        document_index: int
+        document_index: int | None = None
         document_title: str | None = None
-        start_char_index: int
-        end_char_index: int
+        url: str | None = None
+        start_char_index: int | None = None
+        end_char_index: int | None = None
         supported_text: str | None = None
 
         def format(self) -> dict[str, Any]:
-            """Format citation as dictionary for LM consumption.
+            """The citation as a JSON object, the shape the model is asked to write."""
+            return {key: value for key, value in self.__dict__.items() if value is not None}
 
-            Returns:
-                A dictionary in the format expected by citation APIs.
-            """
-            citation_dict = {
-                "type": self.type,
-                "cited_text": self.cited_text,
-                "document_index": self.document_index,
-                "start_char_index": self.start_char_index,
-                "end_char_index": self.end_char_index,
-            }
-
-            if self.document_title:
-                citation_dict["document_title"] = self.document_title
-
-            if self.supported_text:
-                citation_dict["supported_text"] = self.supported_text
-
-            return citation_dict
+        @classmethod
+        def from_part(cls, part: CitationPart) -> "Citations.Citation":
+            return cls(cited_text=part.text or part.title or part.url or "", document_title=part.title, url=part.url)
 
     citations: list[Citation]
 
@@ -124,9 +117,11 @@ class Citations(Type):
             "Include the exact text being cited and information about its source."
         )
 
-    def format(self) -> list[dict[str, Any]]:
-        """Format citations as a list of dictionaries."""
-        return [citation.format() for citation in self.citations]
+    def format(self) -> str:
+        """Citations as a JSON list, the shape `parse_value` reads back."""
+        import json
+
+        return json.dumps([citation.format() for citation in self.citations], ensure_ascii=False)
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -168,9 +163,11 @@ class Citations(Type):
         return self.citations[index]
 
     @classmethod
-    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> bool:
-        if lm.model.startswith("anthropic/"):
-            return signature.delete(field_name)
+    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs):
+        # Native citations need a provider-side opt-in on document parts, which
+        # lm15's DocumentPart cannot express yet. The field therefore stays in
+        # the prompt and is parsed from the answer; citation parts a provider
+        # returns anyway are still read in `parse_lm_response`.
         return signature
 
     @classmethod
@@ -190,32 +187,24 @@ class Citations(Type):
             A Citations object if the chunk contains citation data, None otherwise.
         """
         try:
-            # Check if the chunk has citation data in provider_specific_fields
+            # Listener chunks carry a streamed lm15 citation part under provider_specific_fields.
             if hasattr(chunk, "choices") and chunk.choices:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, "provider_specific_fields") and delta.provider_specific_fields:
                     citation_data = delta.provider_specific_fields.get("citation")
                     if citation_data:
-                        return cls.from_dict_list([citation_data])
+                        part = CitationPart(
+                            text=citation_data.get("text"), title=citation_data.get("title"), url=citation_data.get("url"),
+                        )
+                        return cls(citations=[cls.Citation.from_part(part)])
         except Exception:
             pass
         return None
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Citations"]:
-        """Parse a LM response into Citations.
-
-        Args:
-            response: A LM response that may contain citation data.
-
-        Returns:
-            A Citations object if citation data is found, None otherwise.
-        """
-        if isinstance(response, dict):
-            # Check if the response contains citations in the expected format
-            if "citations" in response:
-                citations_data = response["citations"]
-                if isinstance(citations_data, list):
-                    return cls.from_dict_list(citations_data)
-
-        return None
+    def parse_lm_response(cls, response: Response) -> Optional["Citations"]:
+        """Read the citation parts of an lm15 `Response` into Citations."""
+        parts = response.citations
+        if not parts:
+            return None
+        return cls(citations=[cls.Citation.from_part(part) for part in parts])
