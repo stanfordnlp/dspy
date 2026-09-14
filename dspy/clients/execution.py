@@ -7,7 +7,6 @@ from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from typing import Any
 
-import anyio
 import pydantic
 
 from dspy._vendor.lm15.result import StreamAccumulator
@@ -36,6 +35,9 @@ from dspy.lm15 import (
     request_from_openai_chat,
 )
 from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
 
