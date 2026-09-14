@@ -7,6 +7,15 @@
 {% endblock %}
 
 {% block extrahead %}
+{% if config.extra.toast_chat_endpoint %}
+<script>
+  // Ask AI widget backend override (see docs/README.md). Local previews
+  // keep targeting the dev server on localhost.
+  if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    window.TOAST_CHAT_ENDPOINT = {{ config.extra.toast_chat_endpoint | tojson }};
+  }
+</script>
+{% endif %}
 <style>
   /* Announcement banner — restyled to fit the home-page aesthetic:
      quiet warm band, single rust accent, thin rule. Sans text; mono only for code.

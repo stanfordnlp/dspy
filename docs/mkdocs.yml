@@ -354,6 +354,10 @@ hooks:
     - hooks/fetch_stats.py
 
 extra:
+    # Ask AI backend. Empty = the Vercel Edge Function shipped with the site
+    # (api/chat.js, same origin). Set a URL only to use an external proxy.
+    # Local `mkdocs serve` ignores this and targets `node docs/api/dev.mjs`.
+    toast_chat_endpoint: ""
     social:
         - icon: fontawesome/brands/github
           link: https://github.com/stanfordnlp/dspy
@@ -361,7 +365,10 @@ extra:
           link: https://discord.gg/XCGy2WDCQB
 
 extra_javascript:
-    - "js/runllm-widget.js"
+    # "Ask AI" panel backed by Mixedbread toast-1 (see toast-chat-worker/README.md).
+    # Replaces the RunLLM widget so the page has a single Ask-AI button; restore
+    # "js/runllm-widget.js" here to switch back.
+    - "js/toast-chat.js"
     - "js/tutorial-nav.js"
     - "js/hero-interactive.js"
 
