@@ -17,8 +17,6 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _apply_history_processor, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.predict.rlm import RLM, _strip_code_fences
 from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreterError,
