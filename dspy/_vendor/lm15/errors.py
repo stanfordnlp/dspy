@@ -112,16 +112,31 @@ class LockTimeoutError(LM15Error):
 class StreamAssemblyError(LM15Error):
     """A stream could not be assembled into a Response without inventing a fact.
 
-    Raised by the accumulator (MAP-9) when a tool call's fragments never
-    carried a name: an unnamed call is not actionable (MAP-1), and guessing
-    a name from the request dispatches the wrong function silently.  This is
-    an adapter defect, not model behaviour — every shipped dialect names a
-    call on its first fragment — so the message points at the adapter.
+    Three defects raise it (MAP-9 and MAP-3, contract change
+    2026-09-11-stream-completion):
+
+    - a tool call's fragments never carried a name (MAP-9): an unnamed call
+      is not actionable (MAP-1), and guessing a name from the request
+      dispatches the wrong function silently;
+    - the stream ended without an end event: the finish reason and usage
+      never arrived, and reporting the text as a finished turn would invent
+      both;
+    - an event arrived after the end event (MAP-3): it has no place in the
+      Response, and dropping it would be silent loss.
+
+    All three are adapter or source defects, not model behaviour — every
+    shipped dialect names a call on its first fragment and ends exactly
+    once — so the message points at the adapter.
 
     ``partial`` is everything that did assemble (text, thinking, other
-    parts, usage, finish reason) with the unnamed call(s) left out, so a
+    parts, usage, finish reason) with the offending material left out, so a
     caller that wants to salvage the turn can; ``part_index`` is the first
-    offending part.
+    offending part (MAP-9 only).
+
+    What does NOT raise it: a failure after the end event that is not an
+    event — the source raising while it drains, or its ``close()`` raising.
+    The Response is complete; it is returned, and the failure is reported
+    as a :class:`StreamCleanupWarning`.
     """
 
     default_code = "stream_assembly"
@@ -139,6 +154,19 @@ class StreamAssemblyError(LM15Error):
         self.part_index = part_index
 
 
+class StreamCleanupWarning(RuntimeWarning):
+    """A stream's source failed after the Response was already complete.
+
+    Emitted (``warnings.warn``) when, after the end event has been yielded,
+    the source raises while draining or its ``close()``/``aclose()`` raises.
+    The provider finished the turn and billed it; the Response is returned
+    unchanged.  The failure is about the connection's afterlife, not the
+    answer, so it is never raised from ``response`` — a caller who wants it
+    programmatically reads ``ResponseStream.cleanup_errors``, and a caller
+    who wants it fatal runs with ``-W error::lm15.errors.StreamCleanupWarning``.
+    """
+
+
 class ConfigurationError(LM15Error):
     """Local SDK or provider-adapter configuration failure."""
 
@@ -146,9 +174,20 @@ class ConfigurationError(LM15Error):
 
 
 class CapabilityError(LM15Error):
-    """Requested capability is not supported by this provider adapter."""
+    """Requested capability is not supported by this provider adapter.
+
+    ``feature`` (MAP-13, 2026-09-14) is the config path of what was
+    refused — ``config.top_k``, ``config.reasoning.thinking_budget``,
+    ``messages[0].parts[1]``, ``tools[2]`` — so the caller's own policy
+    layer can drop it and retry without parsing the message.  Absent
+    when the refusal is not about one addressable field.
+    """
 
     default_code = "unsupported_feature"
+
+    def __init__(self, message: str = "", *, feature: str | None = None, **kwargs) -> None:
+        self.feature = feature
+        super().__init__(message, **kwargs)
 
 
 class ProviderError(LM15Error):
@@ -209,9 +248,9 @@ class AuthError(ProviderError):
             )
             if self.env_keys:
                 keys = " or ".join(f"{key}=..." for key in self.env_keys)
-                guidance += f"    - Set the provider API key in your environment: {keys}\n"
+                guidance += f"    - Pass the key explicitly (api_key, or RouterConfig api_keys), or on a host with an environment set {keys}\n"
             else:
-                guidance += "    - Set the provider API key in your environment\n"
+                guidance += "    - Pass the key explicitly (api_key, or RouterConfig api_keys)\n"
             if provider_name:
                 guidance += f"    - Verify your {provider_name} account/project has access\n"
 
@@ -323,7 +362,7 @@ class NotConfiguredError(ConfigurationError):
             guidance = "\n\n  To fix:\n"
             if self.env_keys:
                 keys = " or ".join(f"{key}=..." for key in self.env_keys)
-                guidance += f"    - Set the provider API key in your environment: {keys}\n"
+                guidance += f"    - Pass the key explicitly (api_key, or RouterConfig api_keys), or on a host with an environment set {keys}\n"
             if provider_name:
                 guidance += f"    - Configure credentials for {provider_name}\n"
 

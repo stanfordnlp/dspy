@@ -21,6 +21,7 @@ from typing import Any, Callable, Iterator, Literal, get_args, get_origin
 
 from . import types as lm15_types
 from . import serde
+from .adaptation import adaptation_to_dict
 from .errors import AmbiguousModelError, LM15Error, StreamAssemblyError, UnknownModelError, canonical_error_code
 from .providers import HttpResponse
 from .providers.base import BaseProviderLM
@@ -254,10 +255,19 @@ def _base_url(msg: JsonObject) -> str | None:
 
 
 def op_build_request(msg: JsonObject) -> JsonObject:
+    """The wire request, plus ``adaptations`` (MAP-13) when the build
+    recorded any: what the wire got that differs from what was asked.
+    ``reason`` is the adapter's own wording and is not part of the reply
+    (ports word their own, as with error messages)."""
     lm = _adapter(msg)
     request = serde.request_from_dict(msg["canonical_request"])
-    transport_req = lm.build_request(request, stream=bool(msg.get("stream", False)))
-    return normalize_transport_request(transport_req)
+    transport_req, adaptations = lm._build(request, stream=bool(msg.get("stream", False)))
+    out = normalize_transport_request(transport_req)
+    if adaptations:
+        out["adaptations"] = [
+            {k: v for k, v in adaptation_to_dict(a).items() if k != "reason"} for a in adaptations
+        ]
+    return out
 
 
 def op_ingest_openai_chat(msg: JsonObject) -> JsonObject:
@@ -822,6 +832,11 @@ def _error_reply(req_id: Any, exc: BaseException) -> JsonObject:
     error: JsonObject = {"type": type(exc).__name__, "message": str(exc)}
     if isinstance(exc, LM15Error) and exc.code is not None:
         error["code"] = exc.code
+    feature = getattr(exc, "feature", None)
+    if isinstance(feature, str) and feature:
+        # MAP-13: the config path a refusal is about, so a policy layer
+        # can act on it; pinned by cases as expect_lm15.raises.feature.
+        error["feature"] = feature
     if isinstance(exc, StreamAssemblyError) and exc.partial is not None:
         error["partial_response"] = _response_result(exc.partial)["canonical_response"]
     if isinstance(exc, (UnknownModelError, AmbiguousModelError)):

@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable, Deque
 
+from .errors import TransportError
 from .types import (
     ErrorDetail,
     LiveClientAudioEvent,
@@ -73,9 +74,9 @@ def require_websocket_async_connect():
 # Plain session iteration is the primary surface for that. `turn()` and
 # `Turn` serve the half-duplex idiom (send, then listen until the turn
 # ends) — the shape every scripted recipe and turn-based voice app has.
-# They are per-language ergonomics like BatchJob, not canonical wire
-# types: ports choose their own idiom; the transcript harness pins the
-# event stream, not this sugar.
+# Their shared behavior is specified in the contract's
+# 2026-09-11-shared-handles-and-profile-migration decision. They remain
+# provisional collectors, not new canonical wire types.
 
 _TURN_TERMINAL = frozenset({"turn_end", "interrupted", "error"})
 
@@ -135,7 +136,9 @@ def _materialize_turn(events: tuple[LiveServerEvent, ...]) -> Turn:
         if event.type == "text":
             text_parts.append(event.text)
         elif event.type == "audio":
-            audio.extend(base64.b64decode(event.data))
+            if audio_media_type is not None and event.media_type is not None and audio_media_type != event.media_type:
+                raise ValueError("a Turn cannot concatenate different audio media types; consume raw events")
+            audio.extend(base64.b64decode(event.data, validate=True))
             if audio_media_type is None and event.media_type is not None:
                 audio_media_type = event.media_type
         elif event.type == "tool_call":
@@ -149,7 +152,7 @@ def _materialize_turn(events: tuple[LiveServerEvent, ...]) -> Turn:
             usage = _sum_usage(usage, event.usage)
         elif event.type == "error":
             error = event.error
-    ended_by = events[-1].type if events and events[-1].type in (_TURN_TERMINAL | {"tool_call"}) else "error"
+    ended_by = events[-1].type if events and events[-1].type in (_TURN_TERMINAL | {"tool_call"}) else "incomplete"
     return Turn(
         ended_by=ended_by,
         text="".join(text_parts),
@@ -162,66 +165,111 @@ def _materialize_turn(events: tuple[LiveServerEvent, ...]) -> Turn:
     )
 
 
-class TurnView:
-    """Iterator over one turn's server events.
-
-    Ends itself after yielding the terminal event (``turn_end`` /
-    ``interrupted`` / ``error``) — the same self-ending idiom as
-    ``stream()``. Tool calls are yielded mid-iteration (you hold the
-    session, so you can answer and keep iterating); ``result()`` cannot
-    answer for you, so it returns at a ``tool_call`` instead of
-    deadlocking against a model that is waiting for your result.
-    """
-
+class _TurnState:
     def __init__(self, session: Any) -> None:
         self._session = session
         self._done = False
+        self._events: list[LiveServerEvent] = []
+        self._failure: Exception | None = None
+        self._result: Turn | None = None
+        self._reading = False
+
+    def snapshot(self) -> Turn:
+        """Collected data so far; incomplete is not a successful turn."""
+        return _materialize_turn(tuple(self._events))
+
+    def close(self) -> None:
+        """Stop this view, not the underlying live session."""
+        if self._reading:
+            raise RuntimeError("stop the active turn reader before closing its view")
+        self._done = True
+
+    def _accept(self, event: LiveServerEvent | None) -> LiveServerEvent:
+        if event is None:
+            raise TransportError("live session closed before the turn reached a boundary")
+        self._events.append(event)
+        if event.type in _TURN_TERMINAL:
+            self._done = True
+        return event
+
+    def _seal(self) -> Turn:
+        if self._failure is not None:
+            raise self._failure
+        result = self.snapshot()
+        if result.ended_by == "incomplete":
+            raise TransportError("turn view closed before the turn reached a boundary; inspect snapshot()")
+        self._done = True
+        self._result = result
+        return result
+
+
+class TurnView(_TurnState):
+    """One buffered half-duplex view. Iteration stops on terminal events;
+    result also stops at a tool call. Already-yielded events stay in the result.
+    Use raw session iteration when buffering is not wanted.
+    """
 
     def __iter__(self):
         return self
 
     def __next__(self) -> LiveServerEvent:
+        if self._reading:
+            raise RuntimeError("turn view already has an active reader")
+        if self._failure is not None:
+            raise self._failure
         if self._done:
             raise StopIteration
-        event = self._session.recv()
-        if event.type in _TURN_TERMINAL:
-            self._done = True
-        return event
+        self._reading = True
+        try:
+            return self._accept(self._session.recv())
+        except Exception as exc:
+            self._failure = exc
+            raise
+        finally:
+            self._reading = False
 
     def result(self) -> Turn:
-        events: list[LiveServerEvent] = []
-        for event in self:
-            events.append(event)
-            if event.type == "tool_call":
-                break
-        return _materialize_turn(tuple(events))
+        if self._result is not None:
+            return self._result
+        # A tool call just yielded by manual iteration must not be read past
+        # by result(): the application may still owe the model an answer.
+        if not self._events or self._events[-1].type != "tool_call":
+            for event in self:
+                if event.type == "tool_call":
+                    break
+        return self._seal()
 
 
-class AsyncTurnView:
-    """Async twin of :class:`TurnView`."""
-
-    def __init__(self, session: Any) -> None:
-        self._session = session
-        self._done = False
+class AsyncTurnView(_TurnState):
+    """Native async twin; task cancellation propagates without inventing a turn."""
 
     def __aiter__(self):
         return self
 
     async def __anext__(self) -> LiveServerEvent:
+        if self._reading:
+            raise RuntimeError("turn view already has an active reader")
+        if self._failure is not None:
+            raise self._failure
         if self._done:
             raise StopAsyncIteration
-        event = await self._session.recv()
-        if event.type in _TURN_TERMINAL:
-            self._done = True
-        return event
+        self._reading = True
+        try:
+            return self._accept(await self._session.recv())
+        except Exception as exc:
+            self._failure = exc
+            raise
+        finally:
+            self._reading = False
 
     async def result(self) -> Turn:
-        events: list[LiveServerEvent] = []
-        async for event in self:
-            events.append(event)
-            if event.type == "tool_call":
-                break
-        return _materialize_turn(tuple(events))
+        if self._result is not None:
+            return self._result
+        if not self._events or self._events[-1].type != "tool_call":
+            async for event in self:
+                if event.type == "tool_call":
+                    break
+        return self._seal()
 
 
 class WebSocketLiveSession:

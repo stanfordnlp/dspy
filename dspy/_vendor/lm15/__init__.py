@@ -148,6 +148,7 @@ from .features import AccessPolicy, EndpointSupport
 from .errors import (
     LM15Error,
     StreamAssemblyError,
+    StreamCleanupWarning,
     TransportError,
     LockTimeoutError,
     ConfigurationError,
@@ -211,6 +212,12 @@ from .router import (
     UnknownModelError,
 )
 
+# ── Connection budget (lm15.transports) ───────────────────────────────
+from .transports import Timeouts
+
+# ── MAP-13 adaptations (lm15.adaptation) ──────────────────────────────
+from .adaptation import Adaptation, AdaptationPolicy
+
 # ── Tool derivation (lm15.tools) ─────────────────────────────────────
 from .tools import (
     DerivedParam,
@@ -251,7 +258,7 @@ __all__ = [
     "Role", "PartType", "FinishReason", "ReasoningEffort", "ErrorCode",
     "StreamEventType", "ROLE_VALUES", "FINISH_REASONS", "ERROR_CODES",
     # errors (the catchable taxonomy + the retry predicate)
-    "LM15Error", "TransportError", "LockTimeoutError", "StreamAssemblyError", "ConfigurationError", "CapabilityError",
+    "LM15Error", "TransportError", "LockTimeoutError", "StreamAssemblyError", "StreamCleanupWarning", "ConfigurationError", "CapabilityError",
     "ProviderError", "AuthError", "BillingError", "RateLimitError",
     "InvalidRequestError", "ContextLengthError", "TimeoutError",
     "ServerError", "UnsupportedModelError", "UnsupportedFeatureError",
@@ -272,6 +279,8 @@ __all__ = [
     "ModelInfo", "ModelRegistry",
     # router (lm15.router; the rule/preset tables live there too)
     "LMRouter", "AsyncLMRouter", "RouterConfig", "Resolution",
+    "Timeouts",
+    "Adaptation", "AdaptationPolicy",
     "UnknownModelError",
     "AmbiguousModelError", "MissingCredentialError",
     # tool derivation (lm15.tools)

@@ -36,7 +36,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from .errors import LockTimeoutError
+from .errors import LockTimeoutError, NotConfiguredError
 
 _DEFAULT_LOCK_TIMEOUT_S = 60.0
 _LOCK_POLL_INTERVAL_S = 0.05
@@ -57,7 +57,17 @@ def _lock_dir() -> Path:
     if override:
         return Path(override).expanduser()
     cache_home = os.environ.get("XDG_CACHE_HOME")
-    base = Path(cache_home).expanduser() if cache_home else Path("~/.cache").expanduser()
+    if cache_home:
+        return Path(cache_home).expanduser() / "lm15" / "locks"
+    try:
+        base = Path("~/.cache").expanduser()
+    except RuntimeError as exc:  # no home directory: a WASI guest, some containers
+        raise NotConfiguredError(
+            "No home directory to keep the credential lock in, so lm15 cannot "
+            "serialize credential refreshes against other processes. Reading "
+            "credentials still works; refreshing them from here does not.",
+            credential_hint="Set LM15_LOCK_DIR (or XDG_CACHE_HOME), or pass an explicit credential instead of a stored login",
+        ) from exc
     return base / "lm15" / "locks"
 
 
@@ -73,8 +83,20 @@ def lock_path_for(path: Path) -> Path:
     return _lock_dir() / f"{digest}.lock"
 
 
-if os.name == "posix":
+# Chosen by which primitive the platform actually has, not by `os.name`: WASI reports
+# "posix" and ships no fcntl, so a name test picks an implementation that cannot import.
+try:
     import fcntl
+except ImportError:  # pragma: no cover - Windows, and POSIX-ish builds without fcntl
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - every non-Windows platform
+    msvcrt = None
+
+
+if fcntl is not None:
 
     def _try_lock(fd: int) -> bool:
         try:
@@ -86,8 +108,7 @@ if os.name == "posix":
     def _unlock(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_UN)
 
-else:  # pragma: no cover - exercised only on Windows
-    import msvcrt
+elif msvcrt is not None:  # pragma: no cover - exercised only on Windows
 
     def _try_lock(fd: int) -> bool:
         try:
@@ -101,6 +122,21 @@ else:  # pragma: no cover - exercised only on Windows
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         except OSError:
             pass
+
+else:  # pragma: no cover - platforms with neither primitive, such as WASI
+
+    # NotConfiguredError, as in lm15-ts (`stores.ts`): a fact about this host's setup,
+    # not about a provider (CapabilityError) and not a timeout (LockTimeoutError).
+    def _try_lock(fd: int) -> bool:
+        raise NotConfiguredError(
+            "This platform provides no advisory file locking (neither fcntl nor msvcrt), "
+            "so lm15 cannot serialize credential refreshes against other processes. "
+            "Reading credentials still works; refreshing them from here does not.",
+            credential_hint="Pass an explicit credential instead of a stored login",
+        )
+
+    def _unlock(fd: int) -> None:
+        return None
 
 
 @contextmanager
