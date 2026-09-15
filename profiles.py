@@ -257,6 +257,22 @@ def resolve_openai_responses_compat(
     return resolve_openai_responses_compat_partial(partial)
 
 
+def _redacted_url(url: str) -> str:
+    """The URL with its userinfo and query dropped: a gateway address can
+    carry a token in either, and a warning is not the place to print it
+    (greptile on dspy#10409)."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "<url>"
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
 def _default_openai_responses_compat_for_base_url(base_url: str) -> OpenAIResponsesCompat:
     lower = base_url.lower()
     guessed: str | None = None
@@ -266,7 +282,7 @@ def _default_openai_responses_compat_for_base_url(base_url: str) -> OpenAIRespon
         guessed = "meta"
     if guessed is not None:
         warnings.warn(
-            f"OpenAILM guessed compat={guessed!r} from base_url {base_url!r}; that guess is deprecated "
+            f"OpenAILM guessed compat={guessed!r} from base_url {_redacted_url(base_url)!r}; that guess is deprecated "
             f"and will be removed in lm15 1.0.0 — pass compat={guessed!r} explicitly (it also supplies "
             "the address)",
             DeprecationWarning,

@@ -222,12 +222,15 @@ def _cache_breakpoint_index(request: Request, cache_control: str) -> int | None:
     return None
 
 
-def _has_explicit_breakpoint(request: Request, cache_control: str) -> bool:
+def _has_explicit_breakpoint(request: Request, cache_control: str, *, breakpoint_index: int | None = None) -> bool:
     """True when this request places a prompt_cache_breakpoint (prefix="stable"
-    or prefix_until_index) — the cases where explicit mode belongs with it."""
+    or prefix_until_index) — the cases where explicit mode belongs with it.
+    ``breakpoint_index`` is the build's one computation of the index (it
+    records an adaptation when the mark moves; computing it twice recorded
+    it twice — greptile on dspy#10409)."""
     # prefix="stable" places its mark on the system prompt; with no system
     # there is no mark, and explicit mode with no mark would cache nothing.
-    return _cache_breakpoint_index(request, cache_control) is not None or (
+    return breakpoint_index is not None or (
         _cache_stable_prefix(request, cache_control) and bool(request.system)
     )
 
@@ -241,7 +244,7 @@ def _cache_stable_prefix(request: Request, cache_control: str) -> bool:
     )
 
 
-def _cache_common_payload(request: Request, payload: dict, cache_control: str, provider: str) -> None:
+def _cache_common_payload(request: Request, payload: dict, cache_control: str, provider: str, *, breakpoint_index: int | None = None) -> None:
     """Shared MAP-6 fields for both OpenAI dialects: off switch, key, retention.
 
     ``cache_control="openai_implicit"`` forwards the key and the retention
@@ -282,7 +285,7 @@ def _cache_common_payload(request: Request, payload: dict, cache_control: str, p
         # prompt_cache_retention: "24h"; every pinned 5.6 body already
         # echoes 24h as its default. Sending it is honest and harmless.
         payload["prompt_cache_retention"] = "24h"
-    if openai_model_has_cache_options(request.model) and _has_explicit_breakpoint(request, cache_control):
+    if openai_model_has_cache_options(request.model) and _has_explicit_breakpoint(request, cache_control, breakpoint_index=breakpoint_index):
         # A placed breakpoint means "cache up to here". Without explicit
         # mode the 5.6 class also writes the volatile suffix at 1.25x on
         # every warm call (pinned: openai.prompt_cache_breakpoint wrote 18
@@ -858,12 +861,13 @@ class OpenAILM(BaseProviderLM):
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
         compat = self._compat(request)
+        breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
             "model": request.model,
             "input": self._build_input(
                 request.messages,
                 compat,
-                breakpoint_index=_cache_breakpoint_index(request, compat.cache_control),
+                breakpoint_index=breakpoint_index,
             ),
             "stream": stream,
         }
@@ -998,7 +1002,7 @@ class OpenAILM(BaseProviderLM):
                     payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         # Prompt caching (MAP-6): off switch, key, retention, resource.
-        _cache_common_payload(request, payload, compat.cache_control, self.provider)
+        _cache_common_payload(request, payload, compat.cache_control, self.provider, breakpoint_index=breakpoint_index)
 
         if compat.routing is not None:
             payload["provider"] = compat.routing

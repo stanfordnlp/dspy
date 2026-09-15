@@ -1166,7 +1166,7 @@ class OpenAIChatLM(BaseProviderLM):
 
     # ─── Request serialization ──────────────────────────────────────
 
-    def _build_messages(self, request: Request, compat: ResolvedOpenAIChatCompat) -> list[dict[str, Any]]:
+    def _build_messages(self, request: Request, compat: ResolvedOpenAIChatCompat, *, breakpoint_index: int | None = None) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
         if request.system:
             system_text = request.system if isinstance(request.system, str) else parts_to_text(request.system)
@@ -1179,7 +1179,6 @@ class OpenAIChatLM(BaseProviderLM):
             else:
                 messages.append({"role": compat.instruction_role, "content": system_text})
 
-        breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)
         for msg_index, msg in enumerate(request.messages):
             if msg_index == breakpoint_index and msg.role in ("assistant", "tool"):
                 raise _breakpoint_unsupported(self.provider, msg_index, msg.role)
@@ -1324,9 +1323,10 @@ class OpenAIChatLM(BaseProviderLM):
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
         compat = self._compat_for(request.model)
+        breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
             "model": request.model,
-            "messages": self._build_messages(request, compat),
+            "messages": self._build_messages(request, compat, breakpoint_index=breakpoint_index),
         }
         if stream:
             payload["stream"] = True
@@ -1509,7 +1509,7 @@ class OpenAIChatLM(BaseProviderLM):
                     payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         # Prompt caching (MAP-6): off switch, key, retention, resource.
-        _cache_common_payload(request, payload, compat.cache_control, self.provider)
+        _cache_common_payload(request, payload, compat.cache_control, self.provider, breakpoint_index=breakpoint_index)
 
         if compat.routing is not None:
             payload["provider"] = compat.routing
