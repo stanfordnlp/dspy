@@ -12,6 +12,7 @@ from dspy.utils.exceptions import (
     ContextWindowExceededError,
     LMAuthError,
     LMBillingError,
+    LMCollectionLimitError,
     LMConfigurationError,
     LMError,
     LMInvalidRequestError,
@@ -40,6 +41,7 @@ ERROR_MAPPING = (
     (lm15.TimeoutError, LMTimeoutError),
     (lm15.LockTimeoutError, LMLockTimeoutError),
     (lm15.StreamAssemblyError, LMStreamAssemblyError),
+    (lm15.CollectionLimitError, LMCollectionLimitError),
     (lm15.ServerError, LMServerError),
     (lm15.CapabilityError, LMUnsupportedFeatureError),
     (lm15.NotConfiguredError, LMNotConfiguredError),
@@ -75,6 +77,11 @@ def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Ex
     # The message is preserved verbatim (the contract pins it) except for the
     # one local case whose remedy names a RouterConfig: a missing key.
     message = _dspy_remedy(exc.message) if isinstance(exc, lm15.NotConfiguredError) else exc.message
+    details = {}
+    if isinstance(exc, lm15.CapabilityError):
+        details["feature"] = exc.feature
+    if isinstance(exc, lm15.CollectionLimitError):
+        details["source"] = exc
     wrapped = target(
         message=message,
         model=getattr(exc, "model", None) or model,
@@ -83,11 +90,14 @@ def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Ex
         status=exc.status,
         request_id=exc.request_id,
         retry_after=exc.retry_after,
+        **details,
     )
     for name in (
         "partial", "part_index", "env_keys", "credential_hint", "path", "lock_path",
         "providers", "candidates", "rules_tried", "catalog_searched", "cleanup_errors",
     ):
+        if name == "partial" and isinstance(exc, lm15.CollectionLimitError):
+            continue  # Even hasattr() would evaluate its lazy partial property.
         if hasattr(exc, name):
             setattr(wrapped, name, getattr(exc, name))
     return wrapped

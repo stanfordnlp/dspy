@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 
+from dspy._vendor.lm15.result import apply_client_side_stop
 from dspy._vendor.lm15.sse import SSEEvent
 from dspy.clients._litellm import get_litellm
 from dspy.clients.call_context import completed_legacy
@@ -12,6 +13,7 @@ from dspy.clients.engines.litellm_errors import litellm_errors
 from dspy.clients.legacy_outputs import plain
 from dspy.clients.lm15_boundary import request_kwargs, response_value
 from dspy.lm15 import (
+    Adaptation,
     ConfigurationError,
     OpenAIChatLM,
     ProviderError,
@@ -123,7 +125,13 @@ class _LiteLLMConfig:
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
                 "Use the native Responses engine for Responses streaming.",
             )
-        data = request_kwargs(request, self.model_type)
+        # This engine receives a completed Responses reply, not lm15's
+        # provider stream. Own the stop operation explicitly: remove it
+        # only here, paired with _response's shared lm15 text cutter.
+        wire_request = request
+        if self.model_type == "responses" and request.config.stop:
+            wire_request = replace(request, config=replace(request.config, stop=()))
+        data = request_kwargs(wire_request, self.model_type)
         data.update(self.client_options)
         data.update(model=request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
         if self.model_type == "chat":
@@ -132,6 +140,19 @@ class _LiteLLMConfig:
             data["stream"] = True
             data["stream_options"] = {"include_usage": True}
         return data
+
+    def _response(self, raw, request):
+        response = response_value(raw, self.model_type, request)
+        if self.model_type == "responses" and request.config.stop:
+            response = apply_client_side_stop(response, request.config.stop)
+            note = Adaptation(
+                field="config.stop", action="client_side",
+                asked=list(request.config.stop), applied=list(request.config.stop),
+                reason="The Responses API has no stop field; DSPy trims the completed LiteLLM reply. "
+                       "Full provider usage is retained; generation is not stopped early.",
+            )
+            response = replace(response, adaptations=(*response.adaptations, note))
+        return response
 
     def __repr__(self):
         return f"{type(self).__name__}(model_type={self.model_type!r})"
@@ -159,7 +180,7 @@ class LiteLLMEngine(_LiteLLMConfig):
         fn = litellm.responses if self.model_type == "responses" else litellm.completion
         with litellm_errors(model=request.model):
             raw = fn(**data)
-        return response_value(raw, self.model_type, request)
+        return self._response(raw, request)
 
     def stream(self, request: Request):
         data = self._arguments(request, streaming=True)
@@ -203,7 +224,7 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
         fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
         with litellm_errors(model=request.model):
             raw = await fn(**data)
-        return response_value(raw, self.model_type, request)
+        return self._response(raw, request)
 
     async def stream(self, request: Request):
         data = self._arguments(request, streaming=True)

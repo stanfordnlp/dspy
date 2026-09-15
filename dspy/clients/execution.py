@@ -199,6 +199,8 @@ def _select_engine(lm, call, asynchronous):
             canonical = _canonical(call, compat=resolution.compat)
         except (LM15Error, TypeError, ValueError) as exc:
             if spec == "lm15" or call.request is not None or call.legacy.get("prompt_cache") is not None:
+                if isinstance(exc, UnsupportedFeatureError):
+                    raise  # The outer boundary preserves its feature and other diagnostics.
                 raise LMUnsupportedFeatureError(str(exc), model=lm.model) from exc
             # This is a representational refusal BEFORE execution. Preserve the
             # original body on the compatibility backend, never retry elsewhere.
