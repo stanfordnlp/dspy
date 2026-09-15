@@ -856,7 +856,6 @@ class GeminiLM(BaseProviderLM):
             headers=self._auth_headers({"Content-Type": "application/json"}),
             params=params,
             payload=self._payload(request),
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

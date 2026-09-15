@@ -1549,7 +1549,6 @@ class OpenAIChatLM(BaseProviderLM):
             model=request.model,
             headers=self._headers(),
             payload=self._payload(request, stream=stream),
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

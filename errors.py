@@ -109,6 +109,41 @@ class LockTimeoutError(LM15Error):
         super().__init__(message, **kwargs)
 
 
+class CollectionLimitError(LM15Error):
+    """A local turn collector reached its budget, not a provider failure.
+
+    Non-retryable. ``partial_events`` preserves the accepted events without
+    copying their payloads. ``partial`` materializes them on demand as an
+    incomplete Turn. A byte-limit failure also exposes ``rejected_event``:
+    it was received but not yielded or added to the collection. Process it
+    before resuming raw session reads if that content is needed.
+    """
+
+    default_code = "collection_limit"
+
+    def __init__(
+        self, message: str = "", *, limit: str | None = None,
+        maximum: int | None = None, retained_bytes: int = 0,
+        partial_events: tuple = (), rejected_event=None, **kwargs,
+    ) -> None:
+        self.limit = limit
+        self.maximum = maximum
+        self.retained_bytes = retained_bytes
+        self.partial_events = tuple(partial_events)
+        self.retained_events = len(self.partial_events)
+        self.rejected_event = rejected_event
+        super().__init__(message, **kwargs)
+
+    @property
+    def partial(self):
+        # Lazy: allocating combined text/audio while handling a collection
+        # limit would amplify memory pressure. Raw events are always available.
+        from dataclasses import replace
+        from .live import _materialize_turn
+
+        return replace(_materialize_turn(self.partial_events), ended_by="incomplete")
+
+
 class StreamAssemblyError(LM15Error):
     """A stream could not be assembled into a Response without inventing a fact.
 
@@ -508,6 +543,7 @@ _CLASS_TO_CODE: dict[type[LM15Error], str] = {
     TransportError: "transport",
     LockTimeoutError: "lock_timeout",
     StreamAssemblyError: "stream_assembly",
+    CollectionLimitError: "collection_limit",
     ProviderError: "provider",
 }
 

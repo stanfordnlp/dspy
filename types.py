@@ -99,6 +99,7 @@ ErrorCode = Literal[
     "transport",
     "lock_timeout",
     "stream_assembly",
+    "collection_limit",
     "provider",
 ]
 ERROR_CODES = frozenset(get_args(ErrorCode))
@@ -1260,13 +1261,19 @@ class TextDelta:
     ``logprobs`` carries the token logprobs for exactly the tokens in this
     fragment, when the request asked for them (``Config.logprobs``) and the
     provider streams them per chunk (verified live for OpenAI Responses,
-    2026-09-01).  Materialization concatenates fragment logprobs in arrival
-    order into ``Response.logprobs``.
+    2026-09-01). Materialization concatenates fragment logprobs in arrival
+    order into ``Response.logprobs``. ``logprobs_complete=False`` means
+    local text editing left some retained text without its original score
+    (for example, a stop inside a token). Scores always describe original,
+    whole provider tokens. True does not promise the provider supplied any.
     """
 
     text: str
     part_index: int = 0
     logprobs: tuple[TokenLogprob, ...] = ()
+    # False when local text editing removed scores that cannot describe
+    # the retained text. True does not promise the provider supplied scores.
+    logprobs_complete: bool = field(default=True, kw_only=True)
     type: Literal["text"] = field(default="text", init=False)
 
     def __post_init__(self) -> None:
@@ -1274,6 +1281,7 @@ class TextDelta:
         _validate_part_index(self.part_index)
         _validate_text(self.text, field_name="TextDelta.text")
         _validate_logprobs_field(self, "logprobs", allow_none=False)
+        _validate_bool(self.logprobs_complete, field_name="TextDelta.logprobs_complete")
 
 
 @dataclass(frozen=True, slots=True)
@@ -2124,6 +2132,11 @@ class Response:
     ``Response`` keeps only minimal convenience properties.  Use
     ``response.message.first(...)`` and ``response.message.parts_of(...)``
     for variant-specific content access.
+
+    ``logprobs_complete=False`` means local text editing could not preserve
+    scores for all retained text. Remaining scores describe whole original
+    tokens only; never infer a probability for the unscored text. True is
+    the default and does not promise the provider supplied scores at all.
     """
 
     id: str | None
@@ -2142,6 +2155,8 @@ class Response:
     # dropped hint, a clamped dial, a client-side stop).  Empty when the
     # request went out exactly as written.  Never printed; data.
     adaptations: tuple[Adaptation, ...] = ()
+    # Same meaning as TextDelta.logprobs_complete; preserved in canonical JSON.
+    logprobs_complete: bool = field(default=True, kw_only=True)
 
     def __post_init__(self) -> None:
         _validate_optional_text(self.id, field_name="Response.id", allow_empty=False)
@@ -2157,6 +2172,7 @@ class Response:
         _validate_logprobs_field(self, "logprobs", allow_none=True)
         _validate_json_field(self, "provider_data")
         _validate_adaptations(self, "Response.adaptations")
+        _validate_bool(self.logprobs_complete, field_name="Response.logprobs_complete")
 
     def __repr__(self) -> str:
         display_text = self.text
@@ -2172,6 +2188,8 @@ class Response:
             fields.append(("citations", repr(citations)))
         if self.logprobs is not None:
             fields.append(("logprobs", f"<{len(self.logprobs)} tokens>"))
+        if not self.logprobs_complete:
+            fields.append(("logprobs_complete", "False"))
         if self.adaptations:
             fields.append(("adaptations", repr([f"{a.field}:{a.action}" for a in self.adaptations])))
         if self.id is not None:
