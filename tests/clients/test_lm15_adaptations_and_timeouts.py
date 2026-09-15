@@ -234,3 +234,22 @@ def test_plan_reads_no_stored_login(monkeypatch):
     lm = dspy.LM("anthropic/claude-sonnet-4-5", cache=False)
     backend, _, _ = _engine(lm, prepare(lm, "hello", None, {"seed": 7}), False)
     assert isinstance(backend, LM15Engine)  # selected without a key, without a login
+
+
+def test_stop_word_spanning_two_text_parts_is_honoured(monkeypatch):
+    import dspy.clients.execution as execution
+    from dspy.lm15 import RouterConfig
+
+    frames = [
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"r","model":"gpt-5"}}\n\n',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"m","role":"assistant","content":[]}}\n\n',
+        'event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "alpha S"}) + "\n\n",
+        'event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 1, "delta": "TOP beta"}) + "\n\n",
+        'event: response.completed\ndata: {"type":"response.completed","response":{"id":"r","model":"gpt-5","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":9}}}\n\n',
+    ]
+    transport = FakeTransport([FakeResponse(status=200, body="".join(frames).encode())])
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
+        **{**{k: v for k, v in kwargs.items() if k != "timeouts"}, "api_keys": {"openai": "fake"}, "transport": transport},
+    ))
+    lm = dspy.LM("openai/gpt-5", model_type="responses", cache=False)
+    assert lm("hello", stop=["STOP"])[0]["text"] == "alpha "
