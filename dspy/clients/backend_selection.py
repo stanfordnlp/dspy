@@ -13,7 +13,10 @@ from dspy.lm15 import RouterConfig, UnknownModelError, UnsupportedFeatureError
 
 CLIENT_KEYS = {"api_key", "api_base", "base_url", "headers", "extra_headers", "timeout", "api_version",
                "azure_ad_token_provider", "organization", "project", "extra_query", "custom_llm_provider"}
-NATIVE_CLIENT_KEYS = {"api_key", "api_base", "base_url"}
+# timeout: since lm15 1.0.0rc2 the native engine takes it as RouterConfig
+# timeouts (a number of seconds, or an httpx.Timeout); before, its presence
+# sent the call to LiteLLM.
+NATIVE_CLIENT_KEYS = {"api_key", "api_base", "base_url", "timeout"}
 
 
 @dataclass(frozen=True)

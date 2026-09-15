@@ -59,9 +59,23 @@ Engine selection:
 - `engine="litellm"`: explicitly use the compatibility backend.
 
 Authentication failures, timeouts and provider errors never cause a switch to
-another backend. Native capability errors also raise rather than dropping the
-requested feature. Text completions and client settings not implemented by the
-native integration remain on LiteLLM.
+another backend. Text completions and client settings not implemented by the
+native integration remain on LiteLLM. The `timeout` setting, a number of seconds
+or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
+reply (headers first, then each streamed chunk), the send, and a free
+connection; the native default is 600 seconds, the same as LiteLLM's.
+
+A setting the native route cannot carry exactly as written is **adapted and
+recorded**, not dropped and not refused (lm15 MAP-13): `seed` on Anthropic is
+left out, `temperature=1.5` on Anthropic becomes `1.0`, a thinking-summary
+level the wire lacks becomes `auto`. Each history entry carries the record
+under `"adaptations"` (`field`, `action`, `asked`, `applied`, `reason`); the
+lm15 `Response` in the entry carries the same. Nothing is printed. What lm15
+still refuses — an image inside a tool result on the Chat Completions wire, a
+stored cache object that does not exist on the provider, `n > 1` — is known
+before any request is sent, and under `engine="auto"` such a call goes to
+LiteLLM without a failed native attempt first; under `engine="lm15"` it raises,
+naming the field in `error.feature`.
 
 ### Caching, retries, usage and streaming
 

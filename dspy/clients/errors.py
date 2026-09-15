@@ -4,6 +4,7 @@ Engines speak dspy.lm15 errors. Only DSPy-owned boundaries translate them into
 public DSPy errors; SDK-specific interpretation belongs to the owning engine.
 """
 
+import re
 from contextlib import contextmanager
 
 from dspy import lm15
@@ -49,6 +50,15 @@ ERROR_MAPPING = (
 )
 
 
+_ROUTER_CONFIG_KEYS = re.compile(r"pass RouterConfig\(api_keys=\{'[^']+': \"\.\.\.\"\}\)")
+
+
+def _dspy_remedy(message: str) -> str:
+    """Say the remedy in DSPy's terms: a DSPy user cannot pass a RouterConfig."""
+    message = _ROUTER_CONFIG_KEYS.sub('pass api_key="..." to dspy.LM(...)', message)
+    return message.replace("(api_key, or RouterConfig api_keys)", "(api_key= on dspy.LM)")
+
+
 def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Exception:
     """Project a canonical failure without guessing from arbitrary attributes/text.
 
@@ -62,8 +72,11 @@ def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Ex
     if not isinstance(exc, lm15.LM15Error):
         return LMUnexpectedError(str(exc), model=model, provider=provider)
     target = next((target for source, target in ERROR_MAPPING if isinstance(exc, source)), LMUnexpectedError)
+    # The message is preserved verbatim (the contract pins it) except for the
+    # one local case whose remedy names a RouterConfig: a missing key.
+    message = _dspy_remedy(exc.message) if isinstance(exc, lm15.NotConfiguredError) else exc.message
     wrapped = target(
-        message=exc.message,
+        message=message,
         model=getattr(exc, "model", None) or model,
         provider=exc.provider or provider,
         provider_code=exc.provider_code,

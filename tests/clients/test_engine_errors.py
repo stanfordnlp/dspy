@@ -282,7 +282,7 @@ async def test_custom_request_refusal_is_projected_before_adapter_fallback(async
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False)
     adapter = dspy.ChatAdapter()
     monkeypatch.setattr(adapter, "_make_json_adapter_fallback", lambda: pytest.fail("Setup failures are not parse failures"))
-    args = (lm, {"prediction": {"type": "content", "content": "x"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
+    args = (lm, {"audio": {"voice": "alloy", "format": "wav"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
     with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
         if asynchronous:
             await adapter.acall(*args)

@@ -1,8 +1,8 @@
 """Native lm15 routing, with canonical errors and no retry policy."""
 
+import math
 import threading
 from collections.abc import AsyncIterator, Iterator
-from contextlib import AsyncExitStack, ExitStack
 from dataclasses import replace
 
 from dspy._vendor.lm15.router import LITELLM_PROVIDER_PREFIXES
@@ -17,8 +17,35 @@ from dspy.lm15 import (
     Request,
     Response,
     RouterConfig,
+    Timeouts,
     UnsupportedFeatureError,
 )
+
+
+def timeouts_for(timeout) -> Timeouts | None:
+    """lm15 ``Timeouts`` from an LM ``timeout`` setting, or None for lm15's own defaults.
+
+    A number of seconds bounds every wait the way LiteLLM's ``timeout`` did:
+    the next byte (read), the send (write), and a free connection (pool).
+    Connecting keeps lm15's short default. An ``httpx.Timeout`` maps each of
+    its components; a component left ``None`` keeps lm15's default, since
+    lm15 bounds every wait and has no "forever".
+    """
+    if timeout is None:
+        return None
+    parts = {name: getattr(timeout, name, None) for name in ("connect", "read", "write", "pool")}
+    if not any(hasattr(timeout, name) for name in ("connect", "read", "write", "pool")):
+        parts = {"connect": None, "read": timeout, "write": timeout, "pool": timeout}
+    kwargs = {}
+    for name, value in parts.items():
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"timeout must be a number of seconds or an httpx.Timeout, not {type(timeout).__name__}")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("timeout must be a positive finite number of seconds")
+        kwargs[name] = float(value)
+    return Timeouts(**kwargs) if kwargs else None
 
 
 def _model_string(model: str, model_type: str) -> str:
@@ -61,8 +88,8 @@ class _Routing:
         with self._lock:
             if self._closed:
                 raise ConfigurationError("Engine is closed")
-            # Serialize lazy construction so parallel first calls do not leak
-            # duplicate owned transports. Borrowed transports stay caller-owned.
+            # Serialize lazy construction so parallel first calls do not race
+            # the router's one shared transport. Borrowed transports stay caller-owned.
             provider = self._providers.get(resolution.provider)
             if provider is None:
                 provider = self.router.lm(f"{resolution.provider}:{resolution.model}")
@@ -73,6 +100,21 @@ class _Routing:
                 f"{resolution.provider} does not support {surface}.", provider=resolution.provider,
             )
         return provider, replace(request, model=resolution.model)
+
+    def plan(self, request: Request):
+        """What this request WOULD adapt on its route (lm15 MAP-13), with no network.
+
+        Offline like ``resolve``: no credential is read or invoked, so a
+        model with no key configured still plans. Raises the refusal the
+        call would raise, so engine selection can fall back before any I/O
+        instead of after a failed attempt.
+        """
+        validate_request(request)
+        resolution = self.resolve(request.model)
+        with self._lock:
+            if self._closed:
+                raise ConfigurationError("Engine is closed")
+        return self.router.plan(replace(request, model=f"{resolution.provider}:{resolution.model}"))
 
 
 class LM15Engine(_Routing):
@@ -95,13 +137,13 @@ class LM15Engine(_Routing):
     def close(self):
         with self._lock:
             self._closed = True
-            providers = list(self._providers.values())
             self._providers.clear()
-        self.router._lms.clear()
+        # The router owns the one transport its providers share (lm15 rc2);
+        # a caller-supplied transport stays the caller's to close.
         if self.config.transport is None:
-            with ExitStack() as cleanup:
-                for provider in providers:
-                    cleanup.callback(provider.close)
+            self.router.close()
+        else:
+            self.router._lms.clear()
 
 
 class AsyncLM15Engine(_Routing):
@@ -130,10 +172,8 @@ class AsyncLM15Engine(_Routing):
     async def aclose(self):
         with self._lock:
             self._closed = True
-            providers = list(self._providers.values())
             self._providers.clear()
-        self.router._lms.clear()
         if self.config.transport is None:
-            async with AsyncExitStack() as cleanup:
-                for provider in providers:
-                    cleanup.push_async_callback(provider.aclose)
+            await self.router.aclose()
+        else:
+            self.router._lms.clear()
