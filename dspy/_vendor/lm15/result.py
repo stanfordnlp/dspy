@@ -927,13 +927,12 @@ async def _acoalesce_stream(events: AsyncIterator[StreamEvent], *, model: str | 
 # ─── MAP-13 client-side stop ─────────────────────────────────────────
 #
 # A wire with no stop field (OpenAI Responses) gets the sequence applied
-# here: the visible text is cut at the first occurrence and the finish
-# reason becomes "stop".  On the complete path the model ran on and every
-# token was billed (the adaptation note says so).  On the stream path the
-# source is closed at the cut, which ends generation on providers that
-# honour a disconnect; the end event then carries no usage (the provider
-# never sent it) — stated in the note, and the price of not paying for
-# text the caller asked not to receive.
+# here: the visible text is cut at the first occurrence, the finish reason
+# becomes "stop", and the source is closed at the cut.  Whether the
+# provider then stops generating (and billing) on a closed connection is
+# the provider's behaviour, not a promise lm15 can make; what lm15 does
+# promise is that the end event carries no usage after a cut (the final
+# frame was never read) — "not reported", never estimated.
 
 
 def _first_stop(text: str, stop: tuple[str, ...]) -> tuple[int, str] | None:
@@ -994,7 +993,10 @@ class _StopCutter:
             self.pending[part_index] = ""
             self.cut = True
             return buf[: hit[0]]
-        keep = buf[len(buf) - self.hold:] if self.hold else ""
+        # Withhold the last hold characters — ALL of buf when it is shorter
+        # than that (a negative slice start here once released "S" of "ST"
+        # and missed "ST"+"OP"; found in review of dspy#10409).
+        keep = buf[max(0, len(buf) - self.hold):] if self.hold else ""
         emit = buf[: len(buf) - len(keep)]
         self.pending[part_index] = keep
         return emit

@@ -17,7 +17,9 @@ The policy (``AdaptationPolicy``) is set on the LM (``adaptations=``) and
 on ``RouterConfig``:
 
 - ``"note"`` (default): adapt and record.
-- ``"silent"``: adapt and record nothing.
+- ``"silent"``: adapt exactly as ``"note"`` does; the response carries no
+  record.  The policy never changes what goes to the wire or what lm15
+  does after it.
 - ``"refuse"``: every DEVIATION — ``dropped``, ``clamped``, ``substituted``,
   ``client_side`` — is an ``UnsupportedFeatureError`` before the wire (the
   pre-2026-09-14 behaviour), carrying ``feature`` = the config path so a
@@ -147,8 +149,13 @@ def adapt(
             provider=who,
             feature=field,
         )
-    if policy == "silent" or scope is None:
+    if scope is None:
         return
+    # Every policy records into the scope: the adapter's own behaviour
+    # (a client-side stop, a narrowed tool list) is read from these
+    # records, so "silent" must not empty them — it hides them on the
+    # response instead (BaseProviderLM._build).  A policy that changed
+    # behaviour would be a second, invisible setting.
     scope.records.append(Adaptation(field=field, action=action, reason=reason, asked=asked, applied=applied))
 
 
