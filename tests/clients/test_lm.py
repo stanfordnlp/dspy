@@ -338,6 +338,49 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
     assert exc_info.value.__cause__ is None
 
 
+def test_lm_rejects_stream_kwarg_at_construction():
+    with pytest.raises(dspy.LMConfigurationError, match="stream"):
+        dspy.LM(model="openai/gpt-4o-mini", stream=True)
+    # stream=False is harmless and must still be accepted
+    dspy.LM(model="openai/gpt-4o-mini", stream=False)
+
+
+@pytest.mark.parametrize("method", ["__call__", "forward"])
+@pytest.mark.parametrize("engine", ["auto", "litellm"])
+def test_lm_rejects_stream_kwarg_on_call_before_cache_access(method, engine):
+    # Regression test for #10345: a raw `stream=True` previously cached
+    # LiteLLM's live CustomStreamWrapper, so the first call crashed and every
+    # subsequent identical (cache hit) call failed while deep-copying it.
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=True, engine=engine)
+    with (
+        mock.patch.object(dspy.cache, "get") as cache_get,
+        mock.patch.object(dspy.cache, "put") as cache_put,
+        mock.patch("dspy.clients.execution._engine") as select_engine,
+    ):
+        with pytest.raises(dspy.LMConfigurationError, match="stream"):
+            getattr(lm, method)("query", stream=True)
+    cache_get.assert_not_called()
+    cache_put.assert_not_called()
+    select_engine.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["acall", "aforward"])
+@pytest.mark.parametrize("engine", ["auto", "litellm"])
+async def test_lm_rejects_stream_kwarg_on_async_call_before_cache_access(method, engine):
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=True, engine=engine)
+    with (
+        mock.patch.object(dspy.cache, "get") as cache_get,
+        mock.patch.object(dspy.cache, "put") as cache_put,
+        mock.patch("dspy.clients.execution._engine") as select_engine,
+    ):
+        with pytest.raises(dspy.LMConfigurationError, match="stream"):
+            await getattr(lm, method)("query", stream=True)
+    cache_get.assert_not_called()
+    cache_put.assert_not_called()
+    select_engine.assert_not_called()
+
+
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
