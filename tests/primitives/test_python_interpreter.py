@@ -493,7 +493,10 @@ def test_rejects_alias_basename_colliding_with_another_file(tmp_path):
     alias = tmp_path / "alias" / "shared.txt"
     second.parent.mkdir()
     alias.parent.mkdir()
-    alias.symlink_to(first)
+    try:
+        alias.symlink_to(first)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
 
     with pytest.raises(CodeInterpreterError, match="unique basenames"):
         PythonInterpreter(deno_command=["deno"], enable_read_paths=[first, alias, second])
