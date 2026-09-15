@@ -1,5 +1,6 @@
 import inspect
 import textwrap
+from functools import partial
 from typing import Callable
 
 import orjson
@@ -10,6 +11,10 @@ from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
 from .predict import Module
+
+
+def _get_refine_hint(module_name: str) -> str:
+    return dspy.settings.get("_refine_hints", {}).get(module_name, "N/A")
 
 
 class OfferFeedback(Signature):
@@ -85,6 +90,15 @@ class Refine(Module):
             ```
         """
         self.module = module
+        for name, predictor in self.module.named_predictors():
+            predictor.signature = predictor.signature.append(
+                "hint_",
+                InputField(
+                    default_factory=partial(_get_refine_hint, name),
+                    desc="A hint to the module from an earlier run",
+                ),
+            )
+
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
         self.N = N
@@ -101,35 +115,22 @@ class Refine(Module):
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 
-            predictor2name = {predictor: name for name, predictor in mod.named_predictors()}
-            signature2name = {predictor.signature: name for name, predictor in mod.named_predictors()}
-            module_names = [name for name, _ in mod.named_predictors()]
+            named_predictors = mod.named_predictors()
+            predictor2name = {predictor: name for name, predictor in named_predictors}
+            module_names = [name for name, _ in named_predictors]
 
             try:
-                with dspy.context(trace=[]):
-                    if not advice:
-                        outputs = mod(**kwargs)
-                    else:
+                attempt_trace = []
+                with dspy.context(trace=attempt_trace, _refine_hints=advice or {}):
+                    outputs = mod(**kwargs)
 
-                        class WrapperAdapter(adapter.__class__):
-                            def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name.get(signature), "N/A")  # noqa: B023
-                                signature = signature.append(
-                                    "hint_", InputField(desc="A hint to the module from an earlier run")
-                                )
-                                return adapter(lm, lm_kwargs, signature, demos, inputs)
-
-                        with dspy.context(adapter=WrapperAdapter()):
-                            outputs = mod(**kwargs)
-
-                    trace = dspy.settings.trace.copy()
+                    trace = attempt_trace.copy()
 
                     # TODO: Remove the hint from the trace, if it's there.
 
