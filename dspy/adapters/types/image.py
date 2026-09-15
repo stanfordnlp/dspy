@@ -2,6 +2,7 @@ import base64
 import io
 import mimetypes
 import os
+import re
 import warnings
 from functools import lru_cache
 from typing import Any, Union
@@ -195,6 +196,54 @@ def _is_http_url(string: str) -> bool:
         return False
 
 
+# RFC 2397: ``data:[<mediatype>][;base64],<data>``. Neither the media type nor any
+# parameter may contain a comma, so the first comma always ends the header.
+_DATA_URI_PATTERN = re.compile(
+    r"\Adata:(?P<mediatype>[^,;]*)(?P<parameters>(?:;[^,;]*)*),(?P<payload>.*)\Z",
+    re.DOTALL,
+)
+
+
+def _preview(value: str, limit: int = 64) -> str:
+    """Shorten ``value`` for an error message so multi-megabyte payloads stay readable."""
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}... ({len(value)} characters)"
+
+
+def _check_data_uri_syntax(image: str) -> None:
+    """Reject ``data:`` URIs whose syntax could never yield a usable image.
+
+    The payload is never decoded, so a well-formed URI whose bytes turn out not to be an
+    image is still accepted here and left for the provider to reject. Only two things are
+    checked, both of which are required for the reference to be usable at all:
+
+    - the URI has the RFC 2397 shape, i.e. a header terminated by a comma; and
+    - when the header declares ``base64``, the payload is actually base64.
+
+    Raises:
+        ValueError: If the URI is malformed.
+    """
+    match = _DATA_URI_PATTERN.match(image)
+    if match is None:
+        raise ValueError(f"Malformed data URI; expected 'data:[<mediatype>][;base64],<data>': {_preview(image)}")
+
+    is_base64 = any(parameter.strip().lower() == "base64" for parameter in match.group("parameters").split(";"))
+    if not is_base64:
+        # A non-base64 payload is percent-encoded text (RFC 2397 section 3): there is no
+        # fixed alphabet to check it against.
+        return
+
+    # Payloads are routinely wrapped across lines, so whitespace is ignored the same way
+    # a browser would. Padding is optional here: an unpadded payload is still unambiguous
+    # once its length is known, and rejecting it would break inputs that decode fine.
+    payload = "".join(match.group("payload").split())
+    try:
+        base64.b64decode(payload + "=" * (-len(payload) % 4), validate=True)
+    except ValueError as e:
+        raise ValueError(f"Malformed base64 payload in data URI ({e}): {_preview(image)}") from e
+
+
 def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
     """
     Normalize an in-memory image or preserve a remote image reference.
@@ -206,13 +255,15 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict]) -> str:
         str: A data URI or remote URL reference.
 
     Raises:
-        ValueError: If the file type is not supported.
+        ValueError: If the file type is not supported, or if a data URI is malformed.
     """
     if isinstance(image, dict) and "url" in image:
         return encode_image(image["url"])
     elif isinstance(image, str):
         if image.startswith("data:"):
-            # Already a data URI
+            # Already a data URI; validate it so an unusable reference is rejected at the
+            # boundary instead of reaching formatting or provider code later.
+            _check_data_uri_syntax(image)
             return image
         elif is_url(image):
             return image
