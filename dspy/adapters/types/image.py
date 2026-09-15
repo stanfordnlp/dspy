@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import mimetypes
 import os
@@ -104,13 +105,13 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
-    @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
         try:
-            image_url = encode_image(self.url)
+            # Deep-copy so callers that mutate the nested list/dict cannot
+            # poison the shared @lru_cache entry for this URL.
+            return copy.deepcopy(_format_image(self.url))
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
 
     @classmethod
     def from_url(cls, url: str, verify: bool = True, timeout: float | None = 30.0) -> "Image":
@@ -161,6 +162,12 @@ class Image(Type):
             image_type = self.url.split(";")[0].split("/")[-1]
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
         return f"Image(url='{self.url}')"
+
+
+@lru_cache(maxsize=32)
+def _format_image(url: str) -> list[dict[str, Any]] | str:
+    image_url = encode_image(url)
+    return [{"type": "image_url", "image_url": {"url": image_url}}]
 
 
 def is_url(string: str) -> bool:
