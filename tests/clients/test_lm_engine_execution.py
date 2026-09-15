@@ -146,8 +146,8 @@ def test_unrepresentable_ordinary_options_choose_compatibility_before_io(monkeyp
         return CallResult(outputs=["compatible"], response_model=lm.model)
 
     monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
-    assert dspy.LM("openai/gpt-4o-mini")("hello", prediction={"type": "content", "content": "hello"}) == ["compatible"]
-    assert calls[0]["prediction"]["content"] == "hello"
+    assert dspy.LM("openai/gpt-4o-mini")("hello", audio={"voice": "alloy", "format": "wav"}) == ["compatible"]
+    assert calls[0]["audio"]["voice"] == "alloy"
     assert not transport.requests
 
 

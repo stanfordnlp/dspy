@@ -4,9 +4,10 @@ from datetime import datetime
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, ClassVar, Iterator, Mapping
 
+from ..adaptation import AdaptationPolicy, adapt, check_policy, nearest_effort
 from ..errors import (
     AuthError,
     BillingError,
@@ -22,7 +23,7 @@ from ..errors import (
     map_http_error,
 )
 from ..access import ANTHROPIC_API
-from ..compat import ANTHROPIC_PRESET_BASE_URLS, AnthropicCompat, ResolvedAnthropicCompat, resolve_anthropic_compat
+from ..compat import ANTHROPIC_PRESET_BASE_URLS, AnthropicCompat, ResolvedAnthropicCompat, preset_base_url, resolve_anthropic_compat
 from ..features import ProviderManifest
 from ..sse import SSEEvent
 from ..transports import TransportRequest
@@ -83,7 +84,6 @@ ANTHROPIC_PROVIDER_EXECUTED_BLOCKS = {
     "code_execution_tool_result",
 }
 
-_DEFAULT_ANTHROPIC_VISIBLE_TOKENS = 1024
 _DEFAULT_ANTHROPIC_THINKING_BUDGET = 1024
 
 
@@ -115,10 +115,12 @@ def _response_format_to_anthropic_output_config(format_config: dict[str, Any]) -
     constrained); `name` is a label with no slot (dropped, stated in MAP-8).
     """
     if format_config["type"] == "json_object":
+        # MAP-13 rule 4(c) until a live receipt shows an open schema is
+        # accepted (changes/2026-09-14-adapt-visibly.md §4 item 4).
         raise UnsupportedFeatureError(
             "anthropic: response_format json_object is not supported — the Messages API has no "
             "any-JSON mode; give a json_schema (objects need additionalProperties: false)",
-            provider="anthropic",
+            provider="anthropic", feature="config.response_format",
         )
     return {"format": {"type": "json_schema", "schema": format_config["schema"]}}
 
@@ -158,15 +160,44 @@ def _reasoning_thinking_budget(request: Request) -> int | None:
     return EFFORT_THINKING_BUDGETS[reasoning.effort]
 
 
-def _max_tokens_for_anthropic(request: Request, thinking_budget: int | None) -> int:
+# Output ceilings by model class, for the `max_tokens` the Messages API
+# requires and the caller did not set (MAP-13 `defaulted`, decision
+# 2026-09-14 §4.8).  Until then the default was 1024, which cut ordinary
+# answers off with nothing said.  The 3.x classes have documented lower
+# ceilings and a value above them is a 400; everything else (4.x and later,
+# and any name this table does not know) gets 16384 — loud and actionable
+# if a model's ceiling is lower ("max_tokens: 16384 > N"), never a silent
+# truncation.  A table that rots; `Config.max_tokens` overrides.
+_DEFAULT_MAX_TOKENS_BY_CLASS: tuple[tuple[str, int], ...] = (
+    ("claude-3-haiku", 4096), ("claude-3-opus", 4096), ("claude-3-sonnet", 4096),
+    ("claude-3-5-", 8192), ("claude-3.5-", 8192),
+)
+_DEFAULT_MAX_TOKENS = 16384
+
+
+def _default_max_tokens(model: str) -> int:
+    lowered = model.lower()
+    for marker, ceiling in _DEFAULT_MAX_TOKENS_BY_CLASS:
+        if marker in lowered:
+            return ceiling
+    return _DEFAULT_MAX_TOKENS
+
+
+def _max_tokens_for_anthropic(request: Request, thinking_budget: int | None, *, provider: str = "anthropic") -> int:
     """Manual class: max_tokens includes thinking, so the wire ceiling is the
     budget plus the visible cap.  Adaptive class (thinking_budget None):
     Config.max_tokens is the total ceiling — provider semantics, stated in
-    spec/types.md."""
+    spec/types.md.  The Messages API requires the field: when the caller
+    set none, the class default is used and recorded (MAP-13)."""
+    visible = request.config.max_tokens
+    if visible is None:
+        visible = _default_max_tokens(request.model)
+        adapt("config.max_tokens", "defaulted",
+              "the Messages API requires max_tokens and none was set; the class default was used",
+              applied=visible, provider=provider)
     if thinking_budget is None:
-        return request.config.max_tokens or _DEFAULT_ANTHROPIC_VISIBLE_TOKENS
-    visible_budget = request.config.max_tokens or _DEFAULT_ANTHROPIC_VISIBLE_TOKENS
-    return thinking_budget + visible_budget
+        return visible
+    return thinking_budget + visible
 
 
 def _finish_reason(stop_reason: str | None, *, has_tool_call: bool = False) -> str:
@@ -249,12 +280,15 @@ class AnthropicLM(BaseProviderLM):
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
 
+    # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
     provider: str = field(default="anthropic", init=False)
     account_id: str | None = field(default=None, init=False, repr=False)
     manifest: ClassVar[ProviderManifest] = ANTHROPIC_API
     _resolved_compat: ResolvedAnthropicCompat = field(init=False, repr=False, default=ResolvedAnthropicCompat())
 
     def __post_init__(self) -> None:
+        check_policy(self.adaptations)
         self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
         compat = self.compat if self.compat is not None else self._registry_compat()
         if isinstance(compat, str):
@@ -263,7 +297,9 @@ class AnthropicLM(BaseProviderLM):
             # as OpenAIChatLM).
             resolved = resolve_anthropic_compat(AnthropicCompat.preset(compat))
             if self.base_url == _DEFAULT_BASE_URL:
-                self.base_url = ANTHROPIC_PRESET_BASE_URLS.get(compat.lower(), _DEFAULT_BASE_URL)
+                self.base_url = preset_base_url(
+                    ANTHROPIC_PRESET_BASE_URLS, compat, dialect="Messages", default_preset="anthropic"
+                )
         elif isinstance(compat, AnthropicCompat):
             resolved = resolve_anthropic_compat(compat)
         else:
@@ -459,7 +495,7 @@ class AnthropicLM(BaseProviderLM):
             # ToolResultBlockParam takes text, image and document blocks only.
             raise UnsupportedFeatureError(
                 f"{self.provider}: a {part.type} part cannot reach a tool_result block (text, image and document only; MAP-10)",
-                provider=self.provider,
+                provider=self.provider, feature=f"messages[*].tool_result.content[{part.type}]",
             )
         return {"type": "text", "text": parts_to_text((part,), provider=self.provider)}
 
@@ -470,6 +506,21 @@ class AnthropicLM(BaseProviderLM):
             text = parts_to_text(msg.parts)
             parts = [{"type": "text", "text": f"[developer]\n{text}"}]
         return {"role": role, "content": parts}
+
+    def _allowed_subset(self, request: Request) -> tuple[str, ...] | None:
+        """The names of a proper-subset allowlist, else None.  MAP-13: the
+        Messages API cannot restrict to a subset, so the adapter sends
+        ONLY those tools — that is what "may only call these" means — and
+        records it as client_side."""
+        tc = request.config.tool_choice
+        if tc is None or tc.mode == "none" or not tc.allowed:
+            return None
+        if len(tc.allowed) == 1 and tc.mode == "required":
+            return None
+        declared = {t.name for t in request.tools}
+        if set(tc.allowed) == declared:
+            return None
+        return tuple(tc.allowed)
 
     def _tool_choice_payload(self, request: Request) -> dict[str, Any] | None:
         tc = request.config.tool_choice
@@ -488,20 +539,11 @@ class AnthropicLM(BaseProviderLM):
             if len(tc.allowed) == 1 and tc.mode == "required":
                 payload["type"] = "tool"
                 payload["name"] = tc.allowed[0]
-            elif set(tc.allowed) == {t.name for t in request.tools}:
-                # Allowing every declared tool is no restriction at all.
-                payload["type"] = "any" if tc.mode == "required" else "auto"
             else:
-                # A proper-subset allowlist has no Anthropic wire form.
-                # Degrading to any/auto would let the model call excluded
-                # tools — raise, never silently widen the caller's policy.
-                raise UnsupportedFeatureError(
-                    "anthropic: tool_choice.allowed subsets are not supported — "
-                    "the Messages API can force one named tool or allow all "
-                    "declared tools, but cannot restrict to a subset. Send only "
-                    "the allowed tools in Request.tools instead",
-                    provider=self.provider,
-                )
+                # Every declared tool, or (MAP-13) a proper subset that
+                # _payload has already narrowed the tools list to: either
+                # way the wire form is any/auto over the tools sent.
+                payload["type"] = "any" if tc.mode == "required" else "auto"
         elif tc.mode == "required":
             payload["type"] = "any"
         else:
@@ -541,17 +583,18 @@ class AnthropicLM(BaseProviderLM):
         # key / resource name mechanisms the Messages API does not have.
         if use_cache and cache_cfg is not None:
             if cache_cfg.key is not None:
-                raise UnsupportedFeatureError(
-                    "anthropic: cache.key is not supported — the Messages API has no "
-                    "cache affinity key (OpenAI's prompt_cache_key); marks on blocks "
-                    "are the mechanism (prefix / prefix_until_index)",
-                    provider=self.provider,
-                )
+                # MAP-13: a best-effort routing hint by definition; no home here.
+                adapt("config.cache.key", "dropped",
+                      "the Messages API has no cache affinity key (OpenAI's prompt_cache_key); "
+                      "marks on blocks are its mechanism and were placed",
+                      asked=cache_cfg.key, provider=self.provider)
             if cache_cfg.resource is not None:
+                # MAP-13 rule 4(b): the program references a stored object
+                # that does not exist on this provider.
                 raise UnsupportedFeatureError(
                     "anthropic: cache.resource is not supported — the Messages API has no "
                     "stored-cache tier; it caches by marks on blocks",
-                    provider=self.provider,
+                    provider=self.provider, feature="config.cache.resource",
                 )
             idx = None
             if cache_cfg.prefix_until_index is not None:
@@ -580,47 +623,53 @@ class AnthropicLM(BaseProviderLM):
         )
         if reasoning is not None and not reasoning.is_off:
             if compat.reasoning_efforts is not None and reasoning.effort not in compat.reasoning_efforts:
-                # MAP-7 rule 2: a word with no native level raises here when
-                # the server would not refuse it (Moonshot's Anthropic wire
-                # answered 200 to `medium` and to `bogus`, live 2026-09-03).
-                raise UnsupportedFeatureError(
-                    f"{self.provider}: reasoning.effort={reasoning.effort!r} has no level on this server "
-                    f"(it accepts {', '.join(compat.reasoning_efforts)}) and would be accepted silently",
-                    provider=self.provider,
-                )
+                # MAP-13: an effort word with no level here is clamped to the
+                # nearest declared level (the dial is ordinal); the server
+                # would have accepted the word silently (Moonshot answered
+                # 200 to `medium` and to `bogus`, live 2026-09-03).
+                nearest = nearest_effort(reasoning.effort, compat.reasoning_efforts)
+                adapt("config.reasoning.effort", "clamped",
+                      f"this server has no {reasoning.effort!r} level (it accepts "
+                      f"{', '.join(compat.reasoning_efforts)}) and would have accepted the word silently",
+                      asked=reasoning.effort, applied=nearest, provider=self.provider)
+                reasoning = replace(reasoning, effort=nearest)
             if reasoning.summary in ("concise", "detailed"):
-                raise UnsupportedFeatureError(
-                    f"anthropic: reasoning.summary={reasoning.summary!r} is an OpenAI detail level; "
-                    "the Messages API returns thinking blocks whenever thinking runs (use 'auto' or None)",
-                    provider=self.provider,
-                )
+                # MAP-13: a visibility level the wire lacks; thinking blocks
+                # are returned whenever thinking runs, which is "auto".
+                adapt("config.reasoning.summary", "substituted",
+                      "the Messages API has no summary detail levels; it returns thinking blocks "
+                      "whenever thinking runs, which is 'auto'",
+                      asked=reasoning.summary, applied="auto", provider=self.provider)
+                reasoning = replace(reasoning, summary="auto")
             if adaptive:
                 if reasoning.thinking_budget is not None:
-                    raise UnsupportedFeatureError(
-                        f"{self.provider}: reasoning.thinking_budget is not supported on {request.model} — "
-                        + ("this server ignores budget_tokens (a silent no-op); effort is the dial"
+                    # MAP-13: effort carries the intent (MAP-7 rule 5); the
+                    # budget has no honoured field on this class.
+                    adapt("config.reasoning.thinking_budget", "dropped",
+                          ("this server ignores budget_tokens; effort is the dial"
                            if deepseek_thinking else
-                           "this server accepts budget_tokens without translating it (a silent no-op); "
-                           "effort is the dial (protocols--messages.md)"
+                           "this server accepts budget_tokens without translating it; effort is the dial "
+                           "(protocols--messages.md)"
                            if always_adaptive else
-                           "this model class takes thinking.type 'adaptive' with output_config.effort; "
+                           f"{request.model} takes thinking.type 'adaptive' with output_config.effort; "
                            "budget_tokens is rejected by the API (live 2026-09-02)"),
-                        provider=self.provider,
-                    )
+                          asked=reasoning.thinking_budget, provider=self.provider)
+                    reasoning = replace(reasoning, thinking_budget=None)
                 # MAP-7: the word goes verbatim on the always-adaptive server;
                 # it answers an unsupported level with a 400 of its own.
                 if reasoning.effort == "minimal" and not (deepseek_thinking or always_adaptive or effort_only):
-                    raise UnsupportedFeatureError(
-                        "anthropic: reasoning.effort='minimal' has no level on this model class "
-                        "(output_config.effort is low|medium|high|xhigh|max); 'low' is the floor",
-                        provider=self.provider,
-                    )
+                    adapt("config.reasoning.effort", "clamped",
+                          "this model class has no 'minimal' level (output_config.effort is "
+                          "low|medium|high|xhigh|max); 'low' is the floor",
+                          asked="minimal", applied="low", provider=self.provider)
+                    reasoning = replace(reasoning, effort="low")
+            request = replace(request, config=replace(request.config, reasoning=reasoning))
         thinking_budget = None if adaptive else _reasoning_thinking_budget(request)
         payload: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
             "stream": stream,
-            "max_tokens": _max_tokens_for_anthropic(request, thinking_budget),
+            "max_tokens": _max_tokens_for_anthropic(request, thinking_budget, provider=self.provider),
         }
 
         if request.system:
@@ -632,44 +681,67 @@ class AnthropicLM(BaseProviderLM):
                 payload["system"] = [{"type": "text", "text": system_text, "cache_control": cache_marker}]
             else:
                 payload["system"] = system_text
-        if compat.sampling_params == "reject":
+        sampling_fixed = compat.sampling_params == "reject"
+        if sampling_fixed:
             for name in ("temperature", "top_p", "top_k"):
                 if getattr(request.config, name) is not None:
                     # The server documents none of these and swallows them
-                    # silently (Moonshot, live 2026-09-03: temperature 0.5 is
-                    # HTTP 200 here, "only 1 is allowed" on its chat wire).
-                    raise UnsupportedFeatureError(
-                        f"{self.provider}: config.{name} is silently ignored by this server "
-                        "(the model's sampling is fixed); omit it",
-                        provider=self.provider,
-                    )
-        if request.config.temperature is not None:
-            payload["temperature"] = request.config.temperature
-        if request.config.top_p is not None:
+                    # silently (Moonshot, live 2026-09-03).  MAP-13: omit and
+                    # record — the note supplies the visibility.
+                    adapt(f"config.{name}", "dropped",
+                          "this server ignores sampling parameters (the model's sampling is fixed)",
+                          asked=getattr(request.config, name), provider=self.provider)
+        for name in ("seed", "frequency_penalty", "presence_penalty"):
+            if getattr(request.config, name) is not None:
+                # MAP-13: a sampling hint with no field on the Messages API.
+                adapt(f"config.{name}", "dropped",
+                      f"the Messages API has no {name} field",
+                      asked=getattr(request.config, name), provider=self.provider)
+        if request.config.temperature is not None and not sampling_fixed:
+            temperature = request.config.temperature
+            if temperature > 1.0:
+                # MAP-13: the canonical range is 0–2; this wire's ceiling is
+                # 1.0 and both scales default to 1.0, so "hotter than allowed"
+                # becomes the hottest.  Never rescaled.
+                adapt("config.temperature", "clamped",
+                      "the Messages API accepts temperature in [0, 1]; the canonical range is [0, 2]",
+                      asked=temperature, applied=1.0, provider=self.provider)
+                temperature = 1.0
+            payload["temperature"] = temperature
+        if request.config.top_p is not None and not sampling_fixed:
             payload["top_p"] = request.config.top_p
-        if request.config.top_k is not None:
+        if request.config.top_k is not None and not sampling_fixed:
             payload["top_k"] = request.config.top_k
         if request.config.stop:
             payload["stop_sequences"] = list(request.config.stop)
         if request.tools:
             tools_wire: list[dict[str, Any]] = []
+            allowed_subset = self._allowed_subset(request)
             for tool in request.tools:
+                if allowed_subset is not None and tool.name not in allowed_subset:
+                    continue
                 if isinstance(tool, FunctionTool):
                     tools_wire.append({"name": tool.name, "description": tool.description, "input_schema": tool.parameters})
                 elif isinstance(tool, BuiltinTool):
                     tools_wire.append(_builtin_to_anthropic(tool))
+            if allowed_subset is not None:
+                adapt("config.tool_choice.allowed", "client_side",
+                      "the Messages API cannot restrict to a subset of the declared tools; "
+                      "only the allowed tools were sent, which is what the allowlist means",
+                      asked=list(request.config.tool_choice.allowed), applied=[t["name"] for t in tools_wire],
+                      provider=self.provider)
             payload["tools"] = tools_wire
         tool_choice = self._tool_choice_payload(request)
         if tool_choice is not None:
             tc = request.config.tool_choice
             if compat.parallel_tool_calls == "reject" and tc is not None and tc.parallel is not None:
                 # disable_parallel_tool_use is documented as ignored
-                # (guide--anthropic-api.md); a silent no-op is refused (MAP-8 §2).
-                raise UnsupportedFeatureError(
-                    f"{self.provider}: tool_choice.parallel is silently ignored by this server "
-                    "(disable_parallel_tool_use is not applied); omit it",
-                    provider=self.provider,
-                )
+                # (guide--anthropic-api.md).  MAP-13: omit it and say so.
+                adapt("config.tool_choice.parallel", "dropped",
+                      "this server accepts disable_parallel_tool_use and does not apply it "
+                      "(guide--anthropic-api.md); the model may return several calls",
+                      asked=tc.parallel, provider=self.provider)
+                tool_choice.pop("disable_parallel_tool_use", None)
             payload["tool_choice"] = tool_choice
         if deepseek_thinking:
             # DeepSeek over the Anthropic wire (guide--anthropic-api.md; live
@@ -711,13 +783,14 @@ class AnthropicLM(BaseProviderLM):
                 # The server accepts output_config.format and ignores the
                 # schema (DeepSeek, live 2026-09-03: 200 with keys the schema
                 # never named).  Silent, so refuse before the wire.
-                raise UnsupportedFeatureError(
-                    f"{self.provider}: response_format is silently ignored by this server "
-                    "(output_config.format is accepted and not applied); describe the shape in the prompt",
-                    provider=self.provider,
-                )
-            output_config = _response_format_to_anthropic_output_config(request.config.response_format)
-            payload["output_config"] = {**payload.get("output_config", {}), **output_config}
+                # MAP-13: omit and record; the caller can describe the shape in the prompt.
+                adapt("config.response_format", "dropped",
+                      "this server accepts output_config.format and does not apply it; "
+                      "describe the shape in the prompt",
+                      asked=request.config.response_format, provider=self.provider)
+            else:
+                output_config = _response_format_to_anthropic_output_config(request.config.response_format)
+                payload["output_config"] = {**payload.get("output_config", {}), **output_config}
         # Promoted cross-provider knobs (changes/2026-09-01-extensions-burn-down):
         # user_id rides Anthropic's metadata.user_id; store has no Anthropic
         # wire field — raise, never silently drop.
@@ -725,19 +798,25 @@ class AnthropicLM(BaseProviderLM):
             payload["service_tier"] = request.config.service_tier
         if request.config.user_id is not None:
             payload["metadata"] = {"user_id": request.config.user_id}
-        if request.config.store is not None:
-            raise UnsupportedFeatureError(
-                "anthropic: config.store is not supported — the Messages API has no "
-                "response-storage opt-out field (OpenAI and Gemini carry it)",
-                provider=self.provider,
-            )
+        if request.config.store is False:
+            # MAP-13 "satisfied": the Messages API keeps no retrievable
+            # stored-response object, so an opt-out holds by construction.
+            adapt("config.store", "satisfied",
+                  "the Messages API has no stored-response object to opt out of; "
+                  "nothing retrievable is kept",
+                  asked=False, provider=self.provider)
+        elif request.config.store is True:
+            adapt("config.store", "dropped",
+                  "the Messages API has no stored-response object to opt into "
+                  "(OpenAI and Gemini carry `store`)",
+                  asked=True, provider=self.provider)
         if request.config.logprobs is not None:
-            raise UnsupportedFeatureError(
-                "anthropic: config.logprobs is not supported — the Messages API "
-                "does not expose token log probabilities (OpenAI and Gemini "
-                "carry them)",
-                provider=self.provider,
-            )
+            # MAP-13 (decision 2026-09-14 §4.1): Response.logprobs is optional;
+            # the program sees absence, not a later crash.
+            adapt("config.logprobs", "dropped",
+                  "the Messages API does not expose token log probabilities "
+                  "(OpenAI and Gemini carry them); Response.logprobs will be absent",
+                  asked=request.config.logprobs, provider=self.provider)
         if request.config.extensions:
             passthrough = {k: v for k, v in request.config.extensions.items() if k != "prompt_caching"}
             payload.update(passthrough)
@@ -764,7 +843,6 @@ class AnthropicLM(BaseProviderLM):
             endpoint="messages",
             stream=stream,
             model=request.model,
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────
@@ -1075,12 +1153,10 @@ class AnthropicLM(BaseProviderLM):
 
     def _batch_submit_request(self, request: BatchRequest, upload_body: dict[str, Any] | None) -> TransportRequest:
         if request.label is not None:
-            raise UnsupportedFeatureError(
-                "anthropic: batch labels are not supported — the Message Batches "
-                "create body has no metadata field (verified live 2026-08-31); "
-                "submit without a label and correlate by id",
-                provider=self.provider,
-            )
+            adapt("label", "dropped",
+                  "the Message Batches create body has no metadata field (verified live "
+                  "2026-08-31); correlate by id",
+                  asked=request.label, provider=self.provider)
         payload = {
             "requests": [
                 {"custom_id": str(i), "params": self._payload(nested, stream=False)}

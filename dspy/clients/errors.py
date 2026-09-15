@@ -4,6 +4,7 @@ Engines speak dspy.lm15 errors. Only DSPy-owned boundaries translate them into
 public DSPy errors; SDK-specific interpretation belongs to the owning engine.
 """
 
+import re
 from contextlib import contextmanager
 
 from dspy import lm15
@@ -11,6 +12,7 @@ from dspy.utils.exceptions import (
     ContextWindowExceededError,
     LMAuthError,
     LMBillingError,
+    LMCollectionLimitError,
     LMConfigurationError,
     LMError,
     LMInvalidRequestError,
@@ -39,6 +41,7 @@ ERROR_MAPPING = (
     (lm15.TimeoutError, LMTimeoutError),
     (lm15.LockTimeoutError, LMLockTimeoutError),
     (lm15.StreamAssemblyError, LMStreamAssemblyError),
+    (lm15.CollectionLimitError, LMCollectionLimitError),
     (lm15.ServerError, LMServerError),
     (lm15.CapabilityError, LMUnsupportedFeatureError),
     (lm15.NotConfiguredError, LMNotConfiguredError),
@@ -47,6 +50,15 @@ ERROR_MAPPING = (
     (lm15.TransportError, LMTransportError),
     (lm15.ProviderError, LMProviderError),
 )
+
+
+_ROUTER_CONFIG_KEYS = re.compile(r"pass RouterConfig\(api_keys=\{'[^']+': \"\.\.\.\"\}\)")
+
+
+def _dspy_remedy(message: str) -> str:
+    """Say the remedy in DSPy's terms: a DSPy user cannot pass a RouterConfig."""
+    message = _ROUTER_CONFIG_KEYS.sub('pass api_key="..." to dspy.LM(...)', message)
+    return message.replace("(api_key, or RouterConfig api_keys)", "(api_key= on dspy.LM)")
 
 
 def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Exception:
@@ -62,19 +74,30 @@ def wrap_error(exc: Exception, *, model: str, provider: str | None = None) -> Ex
     if not isinstance(exc, lm15.LM15Error):
         return LMUnexpectedError(str(exc), model=model, provider=provider)
     target = next((target for source, target in ERROR_MAPPING if isinstance(exc, source)), LMUnexpectedError)
+    # The message is preserved verbatim (the contract pins it) except for the
+    # one local case whose remedy names a RouterConfig: a missing key.
+    message = _dspy_remedy(exc.message) if isinstance(exc, lm15.NotConfiguredError) else exc.message
+    details = {}
+    if isinstance(exc, lm15.CapabilityError):
+        details["feature"] = exc.feature
+    if isinstance(exc, lm15.CollectionLimitError):
+        details["source"] = exc
     wrapped = target(
-        message=exc.message,
+        message=message,
         model=getattr(exc, "model", None) or model,
         provider=exc.provider or provider,
         provider_code=exc.provider_code,
         status=exc.status,
         request_id=exc.request_id,
         retry_after=exc.retry_after,
+        **details,
     )
     for name in (
         "partial", "part_index", "env_keys", "credential_hint", "path", "lock_path",
         "providers", "candidates", "rules_tried", "catalog_searched", "cleanup_errors",
     ):
+        if name == "partial" and isinstance(exc, lm15.CollectionLimitError):
+            continue  # Even hasattr() would evaluate its lazy partial property.
         if hasattr(exc, name):
             setattr(wrapped, name, getattr(exc, name))
     return wrapped

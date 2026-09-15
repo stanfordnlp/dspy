@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .adaptation import adaptation_from_dict, adaptation_to_dict
 from .models import (
     InferenceModelInfo,
     InferencePricing,
@@ -490,6 +491,9 @@ def config_to_dict(c: Config) -> dict[str, Any]:
         "tool_choice": tool_choice_to_dict(c.tool_choice) if c.tool_choice else None,
         "reasoning": reasoning_to_dict(c.reasoning) if c.reasoning else None,
         "cache": cache_config_to_dict(c.cache) if c.cache else None,
+        "seed": c.seed,  # 0 is data (a seed), not emptiness — emitted
+        "frequency_penalty": c.frequency_penalty,  # 0.0 is data (explicitly none) — emitted
+        "presence_penalty": c.presence_penalty,
         "service_tier": c.service_tier,
         "user_id": c.user_id,
         "store": c.store,  # False is data (opt-out), not emptiness — emitted
@@ -526,6 +530,9 @@ def config_from_dict(d: dict[str, Any]) -> Config:
         tool_choice=tool_choice_from_dict(tool_choice) if tool_choice is not None else None,
         reasoning=reasoning_from_dict(reasoning) if reasoning is not None else None,
         cache=cache_config_from_dict(cache) if cache is not None else None,
+        seed=d.get("seed"),
+        frequency_penalty=d.get("frequency_penalty"),
+        presence_penalty=d.get("presence_penalty"),
         service_tier=d.get("service_tier"),
         user_id=d.get("user_id"),
         store=d.get("store"),
@@ -614,6 +621,8 @@ def delta_to_dict(d: Delta) -> dict[str, Any]:
         out["text"] = d.text
         if d.logprobs:
             out["logprobs"] = _logprobs_to_json(d.logprobs)
+        if not d.logprobs_complete:
+            out["logprobs_complete"] = False
     elif isinstance(d, ThinkingDelta):
         out["text"] = d.text
     elif isinstance(d, AudioDelta):
@@ -654,6 +663,7 @@ def delta_from_dict(d: dict[str, Any]) -> Delta:
             text=d.get("text", ""),
             part_index=part_index,
             logprobs=_logprobs_from_json(d.get("logprobs")) or (),
+            logprobs_complete=d.get("logprobs_complete", True),
         )
     if t == "thinking":
         return ThinkingDelta(text=d.get("text", ""), part_index=part_index)
@@ -730,7 +740,10 @@ def usage_from_dict(d: dict[str, Any]) -> Usage:
 
 def stream_event_to_dict(e: StreamEvent) -> dict[str, Any]:
     if isinstance(e, StreamStartEvent):
-        return _clean_mapping({"type": e.type, "id": e.id, "model": e.model})
+        return _clean_mapping({
+            "type": e.type, "id": e.id, "model": e.model,
+            "adaptations": [adaptation_to_dict(a) for a in e.adaptations] or None,
+        })
     if isinstance(e, StreamDeltaEvent):
         return {"type": e.type, "delta": delta_to_dict(e.delta)}
     if isinstance(e, StreamEndEvent):
@@ -748,7 +761,10 @@ def stream_event_to_dict(e: StreamEvent) -> dict[str, Any]:
 def stream_event_from_dict(d: dict[str, Any]) -> StreamEvent:
     t = d["type"]
     if t == "start":
-        return StreamStartEvent(id=d.get("id"), model=d.get("model"))
+        return StreamStartEvent(
+            id=d.get("id"), model=d.get("model"),
+            adaptations=tuple(adaptation_from_dict(a) for a in d.get("adaptations") or ()),
+        )
     if t == "delta":
         return StreamDeltaEvent(delta=delta_from_dict(d["delta"]))
     if t == "end":
@@ -803,6 +819,8 @@ def response_to_dict(r: Response, *, include_provider_data: bool = False) -> dic
         "finish_reason": r.finish_reason,
         "usage": usage_to_dict(r.usage),
         "logprobs": _logprobs_to_json(r.logprobs),
+        "logprobs_complete": None if r.logprobs_complete else False,
+        "adaptations": [adaptation_to_dict(a) for a in r.adaptations] or None,
     }
     if include_provider_data and r.provider_data is not None:
         out["provider_data"] = r.provider_data
@@ -817,7 +835,9 @@ def response_from_dict(d: dict[str, Any]) -> Response:
         finish_reason=d["finish_reason"],
         usage=usage_from_dict(d["usage"]) if isinstance(d.get("usage"), dict) else Usage(),
         logprobs=_logprobs_from_json(d.get("logprobs")),
+        logprobs_complete=d.get("logprobs_complete", True),
         provider_data=d.get("provider_data"),
+        adaptations=tuple(adaptation_from_dict(a) for a in d.get("adaptations") or ()),
     )
 
 

@@ -21,10 +21,11 @@ any execute-tools-until-done loop belongs to the layer above lm15.
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Any, AsyncIterator, Iterator
 
-from .errors import LM15Error, StreamAssemblyError, error_class_for_code
+from .errors import LM15Error, StreamAssemblyError, StreamCleanupWarning, error_class_for_code
 from .types import (
     AudioDelta,
     AudioPart,
@@ -100,13 +101,17 @@ class StreamAccumulator:
     message_continuation: list[ContinuationState] = field(default_factory=list)
     part_continuation: dict[int, list[ContinuationState]] = field(default_factory=dict)
     logprob_seq: list[TokenLogprob] = field(default_factory=list)
+    logprobs_complete: bool = True
     provider_data: dict[str, Any] | None = None
+    adaptations: tuple = ()
 
     def push(self, event: StreamEvent) -> None:
         """Fold one canonical stream event into the accumulated state."""
         if event.type == "start":
             self.started_id = event.id or self.started_id
             self.started_model = event.model or self.started_model
+            if event.adaptations:
+                self.adaptations = event.adaptations
             return
 
         if event.type == "end":
@@ -125,6 +130,7 @@ class StreamAccumulator:
             self.text_parts.setdefault(delta.part_index, []).append(delta.text or "")
             if delta.logprobs:
                 self.logprob_seq.extend(delta.logprobs)
+            self.logprobs_complete = self.logprobs_complete and delta.logprobs_complete
 
         elif delta.type == "thinking":
             self.thinking_parts.setdefault(delta.part_index, []).append(delta.text or "")
@@ -259,7 +265,9 @@ class StreamAccumulator:
             finish_reason=finish,
             usage=self.usage or Usage(),
             logprobs=tuple(self.logprob_seq) if self.logprob_seq else None,
+            logprobs_complete=self.logprobs_complete,
             provider_data=self.provider_data,
+            adaptations=self.adaptations,
         )
 
 
@@ -287,12 +295,19 @@ class ResponseStream:
         self._failure: BaseException | None = None
         self._done = False
         self._source_closed = False
+        #: Failures that followed the end event (a read error while draining,
+        #: a close() that raised).  The Response is complete regardless; each
+        #: was also emitted as a StreamCleanupWarning.
+        self.cleanup_errors: tuple[BaseException, ...] = ()
         self._event_iter = self._pump()
 
     def _close_source(self, primary: BaseException | None = None) -> None:
         if not self._source_closed:
             self._source_closed = True
-            _close_events(self._source, primary, self._response)
+            _close_events(self._source, primary, self._response, self._record_cleanup)
+
+    def _record_cleanup(self, exc: BaseException) -> None:
+        self.cleanup_errors = (*self.cleanup_errors, exc)
 
     def close(self) -> None:
         """Stop reading and release the source, without draining it.
@@ -301,7 +316,7 @@ class ResponseStream:
         promise that the provider stops generating or billing immediately.
         """
         if not self._done and self._response is None and self._failure is None:
-            self._failure = RuntimeError("stream closed before completion")
+            self._failure = _closed_early(self._accumulator)
         try:
             self._event_iter.close()
         finally:
@@ -371,20 +386,23 @@ class ResponseStream:
     def _pump(self) -> Iterator[StreamEvent]:
         primary = None
         try:
-            for event in self._source:
-                _check_terminal(event, self._response)
-                self._accumulator.push(event)
-                if event.type == "end":
-                    self._response = self._accumulator.response()
-                yield event
+            try:
+                for event in self._source:
+                    _check_terminal(event, self._response)
+                    self._accumulator.push(event)
+                    if event.type == "end":
+                        self._response = self._accumulator.response()
+                    yield event
+            except Exception as exc:
+                if not _after_completion(exc, self._response):
+                    raise
+                _warn_cleanup(exc, self._record_cleanup)
             if self._response is None:
                 raise _incomplete(self._accumulator)
         except BaseException as exc:
-            primary = _after_completion_error(exc, self._response)
+            primary = exc
             if self._failure is None and not (isinstance(exc, GeneratorExit) and self._response is not None):
-                self._failure = primary
-            if primary is not exc:
-                raise primary from exc
+                self._failure = exc
             raise
         finally:
             self._done = True
@@ -414,17 +432,22 @@ class AsyncResponseStream:
         self._failure: BaseException | None = None
         self._done = False
         self._source_closed = False
+        #: See :attr:`ResponseStream.cleanup_errors`.
+        self.cleanup_errors: tuple[BaseException, ...] = ()
         self._event_gen = self._pump()
 
     async def _close_source(self, primary: BaseException | None = None) -> None:
         if not self._source_closed:
             self._source_closed = True
-            await _aclose_events(self._source, primary, self._response)
+            await _aclose_events(self._source, primary, self._response, self._record_cleanup)
+
+    def _record_cleanup(self, exc: BaseException) -> None:
+        self.cleanup_errors = (*self.cleanup_errors, exc)
 
     async def aclose(self) -> None:
         """Stop reading and release the source, without draining it."""
         if not self._done and self._response is None and self._failure is None:
-            self._failure = RuntimeError("stream closed before completion")
+            self._failure = _closed_early(self._accumulator)
         try:
             await self._event_gen.aclose()
         finally:
@@ -465,20 +488,23 @@ class AsyncResponseStream:
     async def _pump(self) -> AsyncIterator[StreamEvent]:
         primary = None
         try:
-            async for event in self._source:
-                _check_terminal(event, self._response)
-                self._accumulator.push(event)
-                if event.type == "end":
-                    self._response = self._accumulator.response()
-                yield event
+            try:
+                async for event in self._source:
+                    _check_terminal(event, self._response)
+                    self._accumulator.push(event)
+                    if event.type == "end":
+                        self._response = self._accumulator.response()
+                    yield event
+            except Exception as exc:
+                if not _after_completion(exc, self._response):
+                    raise
+                _warn_cleanup(exc, self._record_cleanup)
             if self._response is None:
                 raise _incomplete(self._accumulator)
         except BaseException as exc:
-            primary = _after_completion_error(exc, self._response)
+            primary = exc
             if self._failure is None and not (isinstance(exc, GeneratorExit) and self._response is not None):
-                self._failure = primary
-            if primary is not exc:
-                raise primary from exc
+                self._failure = exc
             raise
         finally:
             self._done = True
@@ -497,18 +523,21 @@ def materialize_response(events: Iterator[StreamEvent], request: Request) -> Res
     response = None
     primary = None
     try:
-        for event in events:
-            _check_terminal(event, response)
-            accumulator.push(event)
-            if event.type == "end":
-                response = accumulator.response()
+        try:
+            for event in events:
+                _check_terminal(event, response)
+                accumulator.push(event)
+                if event.type == "end":
+                    response = accumulator.response()
+        except Exception as exc:
+            if not _after_completion(exc, response):
+                raise
+            _warn_cleanup(exc)
         if response is None:
             raise _incomplete(accumulator)
         return response
     except BaseException as exc:
-        primary = _after_completion_error(exc, response)
-        if primary is not exc:
-            raise primary from exc
+        primary = exc
         raise
     finally:
         _close_events(events, primary, response)
@@ -520,18 +549,21 @@ async def amaterialize_response(events: AsyncIterator[StreamEvent], request: Req
     response = None
     primary = None
     try:
-        async for event in events:
-            _check_terminal(event, response)
-            accumulator.push(event)
-            if event.type == "end":
-                response = accumulator.response()
+        try:
+            async for event in events:
+                _check_terminal(event, response)
+                accumulator.push(event)
+                if event.type == "end":
+                    response = accumulator.response()
+        except Exception as exc:
+            if not _after_completion(exc, response):
+                raise
+            _warn_cleanup(exc)
         if response is None:
             raise _incomplete(accumulator)
         return response
     except BaseException as exc:
-        primary = _after_completion_error(exc, response)
-        if primary is not exc:
-            raise primary from exc
+        primary = exc
         raise
     finally:
         await _aclose_events(events, primary, response)
@@ -539,7 +571,11 @@ async def amaterialize_response(events: AsyncIterator[StreamEvent], request: Req
 
 def _check_terminal(event, response):
     if response is not None:
-        raise StreamAssemblyError("Stream emitted an event after completion", partial=response)
+        raise StreamAssemblyError(
+            "Stream emitted an event after its end event (MAP-3: the end event is "
+            "final); the source that produced this stream is defective",
+            partial=response,
+        )
     if event.type == "error":
         raise _exception_from_error(event)
 
@@ -551,19 +587,61 @@ def _incomplete(accumulator):
         partial = exc.partial
     except Exception:
         partial = None
-    return StreamAssemblyError("Stream ended without a completion event", partial=partial)
+    return StreamAssemblyError(
+        "Stream ended without an end event: its finish reason and usage never "
+        "arrived, so the text is not a finished turn (MAP-3)",
+        partial=partial,
+    )
 
 
-def _after_completion_error(exc, response):
-    if response is not None and isinstance(exc, Exception) and not isinstance(exc, (StreamAssemblyError, Warning)):
-        return StreamAssemblyError("Stream failed after response completion", partial=response)
-    return exc
+def _closed_early(accumulator):
+    """The caller closed the stream before its end event: the same fact as
+    a stream that ended without one (MAP-3) — no finish reason, no usage,
+    the text not a finished turn — so the same error, inside the family
+    (every failure lm15 raises is an LM15Error). ``partial`` is what had
+    arrived."""
+    try:
+        partial = accumulator.response()
+    except StreamAssemblyError as exc:
+        partial = exc.partial
+    except Exception:
+        partial = None
+    return StreamAssemblyError(
+        "Stream closed before its end event: the response was not completed "
+        "(close() was called while the stream was still open; MAP-3)",
+        partial=partial,
+    )
 
 
-def _cleanup_failure(primary, cleanup, response):
+def _after_completion(exc, response):
+    """Is ``exc`` a source failure that followed a complete Response?
+
+    True only when the end event was seen and the failure is not itself an
+    assembly defect: the Response is complete, the provider billed it, and
+    the failure concerns the connection's afterlife.  Such a failure is
+    reported (StreamCleanupWarning), never raised in place of the Response.
+    """
+    return response is not None and not isinstance(exc, StreamAssemblyError)
+
+
+def _warn_cleanup(exc, record=None):
+    import warnings
+
+    if record is not None:
+        record(exc)
+    warnings.warn(
+        f"stream source failed after the response was complete "
+        f"({type(exc).__name__}: {exc}); the Response is returned unchanged",
+        StreamCleanupWarning,
+        stacklevel=3,
+    )
+
+
+def _cleanup_failure(primary, cleanup, response, record):
     if primary is None or isinstance(primary, GeneratorExit):
         if response is not None:
-            raise StreamAssemblyError("Stream cleanup failed after response completion", partial=response) from cleanup
+            _warn_cleanup(cleanup, record)
+            return
         raise cleanup
     try:
         primary.cleanup_errors = (*getattr(primary, "cleanup_errors", ()), cleanup)
@@ -573,22 +651,22 @@ def _cleanup_failure(primary, cleanup, response):
         pass  # Optional diagnostics must not replace the primary failure.
 
 
-def _close_events(source, primary=None, response=None):
+def _close_events(source, primary=None, response=None, record=None):
     try:
         close = getattr(source, "close", None)
         if close is not None:
             close()
     except Exception as cleanup:
-        _cleanup_failure(primary, cleanup, response)
+        _cleanup_failure(primary, cleanup, response, record)
 
 
-async def _aclose_events(source, primary=None, response=None):
+async def _aclose_events(source, primary=None, response=None, record=None):
     try:
         close = getattr(source, "aclose", None)
         if close is not None:
             await close()
     except Exception as cleanup:
-        _cleanup_failure(primary, cleanup, response)
+        _cleanup_failure(primary, cleanup, response, record)
 
 
 # ─── Conversion utilities ────────────────────────────────────────────
@@ -600,15 +678,20 @@ def response_to_events(response: Response) -> Iterator[StreamEvent]:
     response contains a valid Part that has no Delta representation, this
     function raises instead of silently dropping content.
     """
-    yield StreamStartEvent(id=response.id, model=response.model)
+    yield StreamStartEvent(id=response.id, model=response.model, adaptations=response.adaptations)
     # Response.logprobs is message-level; the delta vocabulary carries
     # logprobs on text deltas.  Emitting the whole sequence on the first
     # text delta makes Response -> events -> Response lossless.
     pending_logprobs = response.logprobs or ()
+    pending_complete = response.logprobs_complete
+    if not pending_complete and not any(isinstance(p, TextPart) for p in response.message.parts):
+        raise TypeError("Cannot stream incomplete logprobs without a TextPart to carry their coverage")
     for idx, part in enumerate(response.message.parts):
         if isinstance(part, TextPart):
-            yield StreamDeltaEvent(delta=TextDelta(text=part.text, part_index=idx, logprobs=pending_logprobs))
+            yield StreamDeltaEvent(delta=TextDelta(text=part.text, part_index=idx, logprobs=pending_logprobs,
+                                                   logprobs_complete=pending_complete))
             pending_logprobs = ()
+            pending_complete = True
         elif isinstance(part, ThinkingPart):
             yield StreamDeltaEvent(delta=ThinkingDelta(text=part.text, part_index=idx))
         elif isinstance(part, ToolCallPart):
@@ -679,6 +762,14 @@ def response_to_events(response: Response) -> Iterator[StreamEvent]:
     )
 
 
+def _stamp_start(event: StreamStartEvent, adaptations: tuple) -> StreamStartEvent:
+    if not adaptations or event.adaptations:
+        return event
+    from dataclasses import replace
+
+    return replace(event, adaptations=tuple(adaptations))
+
+
 class _EndProviderData:
     """MAP-3 / D9: which adapter end event's ``provider_data`` the merged
     end carries.  Rank 2: a frame that supplied usage.  Rank 1: a frame that
@@ -702,7 +793,7 @@ class _EndProviderData:
 
 
 def coalesce_stream(
-    events: Iterator[StreamEvent], *, model: str | None = None
+    events: Iterator[StreamEvent], *, model: str | None = None, adaptations: tuple = ()
 ) -> Iterator[StreamEvent]:
     """Enforce MAP-3 and MAP-4: one final StreamEndEvent, one leading StreamStartEvent.
 
@@ -725,19 +816,28 @@ def coalesce_stream(
     start passes through; duplicates after the first are dropped.  Error
     events never force a start: a stream that fails to open has no start.
 
+    ``adaptations`` (MAP-13) are stamped on the start event, provider-sent
+    or synthesized: they are known before the first byte.
+
     See docs/mapping-rules.md MAP-3 and MAP-4.
     """
     primary = None
+    ended = None
     try:
-        yield from _coalesce_stream(events, model=model)
+        for event in _coalesce_stream(events, model=model, adaptations=adaptations):
+            if event.type == "end":
+                ended = event
+            yield event
     except BaseException as exc:
         primary = exc
         raise
     finally:
-        _close_events(events, primary)
+        # After the merged end event the stream is complete: a close() that
+        # raises is reported, not raised (contract 2026-09-11-stream-completion).
+        _close_events(events, primary, ended)
 
 
-def _coalesce_stream(events: Iterator[StreamEvent], *, model: str | None) -> Iterator[StreamEvent]:
+def _coalesce_stream(events: Iterator[StreamEvent], *, model: str | None, adaptations: tuple = ()) -> Iterator[StreamEvent]:
     started = False
     saw_end = False
     finish_reason = None
@@ -748,7 +848,7 @@ def _coalesce_stream(events: Iterator[StreamEvent], *, model: str | None) -> Ite
             if started:
                 continue
             started = True
-            yield event
+            yield _stamp_start(event, adaptations)
             continue
         if event.type == "end":
             saw_end = True
@@ -760,11 +860,11 @@ def _coalesce_stream(events: Iterator[StreamEvent], *, model: str | None) -> Ite
             continue
         if not started and event.type == "delta":
             started = True
-            yield StreamStartEvent(model=model)
+            yield StreamStartEvent(model=model, adaptations=adaptations)
         yield event
     if saw_end:
         if not started:
-            yield StreamStartEvent(model=model)
+            yield StreamStartEvent(model=model, adaptations=adaptations)
         yield StreamEndEvent(
             finish_reason=finish_reason,
             usage=usage,
@@ -773,7 +873,7 @@ def _coalesce_stream(events: Iterator[StreamEvent], *, model: str | None) -> Ite
 
 
 async def acoalesce_stream(
-    events: "AsyncIterator[StreamEvent]", *, model: str | None = None
+    events: "AsyncIterator[StreamEvent]", *, model: str | None = None, adaptations: tuple = ()
 ) -> "AsyncIterator[StreamEvent]":
     """Async mirror of :func:`coalesce_stream` — same MAP-3/MAP-4 semantics.
 
@@ -785,17 +885,20 @@ async def acoalesce_stream(
     are dropped; error events never force a start.
     """
     primary = None
+    ended = None
     try:
-        async for event in _acoalesce_stream(events, model=model):
+        async for event in _acoalesce_stream(events, model=model, adaptations=adaptations):
+            if event.type == "end":
+                ended = event
             yield event
     except BaseException as exc:
         primary = exc
         raise
     finally:
-        await _aclose_events(events, primary)
+        await _aclose_events(events, primary, ended)
 
 
-async def _acoalesce_stream(events: AsyncIterator[StreamEvent], *, model: str | None) -> AsyncIterator[StreamEvent]:
+async def _acoalesce_stream(events: AsyncIterator[StreamEvent], *, model: str | None, adaptations: tuple = ()) -> AsyncIterator[StreamEvent]:
     started = False
     saw_end = False
     finish_reason = None
@@ -806,7 +909,7 @@ async def _acoalesce_stream(events: AsyncIterator[StreamEvent], *, model: str | 
             if started:
                 continue
             started = True
-            yield event
+            yield _stamp_start(event, adaptations)
             continue
         if event.type == "end":
             saw_end = True
@@ -818,16 +921,218 @@ async def _acoalesce_stream(events: AsyncIterator[StreamEvent], *, model: str | 
             continue
         if not started and event.type == "delta":
             started = True
-            yield StreamStartEvent(model=model)
+            yield StreamStartEvent(model=model, adaptations=adaptations)
         yield event
     if saw_end:
         if not started:
-            yield StreamStartEvent(model=model)
+            yield StreamStartEvent(model=model, adaptations=adaptations)
         yield StreamEndEvent(
             finish_reason=finish_reason,
             usage=usage,
             provider_data=end_data.value,
         )
+
+
+# ─── MAP-13 client-side stop ─────────────────────────────────────────
+#
+# A wire with no stop field (OpenAI Responses) gets the sequence applied
+# here: the visible text is cut at the first occurrence, the finish reason
+# becomes "stop", and the source is closed at the cut.  Whether the
+# provider then stops generating (and billing) on a closed connection is
+# the provider's behaviour, not a promise lm15 can make; what lm15 does
+# promise is that the end event carries no usage after a cut (the final
+# frame was never read) — "not reported", never estimated.
+
+
+def _first_stop(text: str, stop: tuple[str, ...]) -> tuple[int, str] | None:
+    best: tuple[int, str] | None = None
+    for seq in stop:
+        if not seq:
+            continue
+        idx = text.find(seq)
+        if idx >= 0 and (best is None or idx < best[0]):
+            best = (idx, seq)
+    return best
+
+
+def apply_client_side_stop(response: Response, stop: tuple[str, ...]) -> Response:
+    """Cut the response's visible text at the first stop sequence.
+
+    The text parts are one stream in document order: a sequence that
+    starts at the end of one part and finishes at the start of the next
+    is a hit (a provider's own stop works on the token stream and knows
+    no block boundary).  The part holding the start is cut there; every
+    later part is removed.
+    """
+    from dataclasses import replace
+
+    if not stop:
+        return response
+    text_parts = [(i, p) for i, p in enumerate(response.message.parts) if isinstance(p, TextPart)]
+    joined = "".join(p.text for _, p in text_parts)
+    hit = _first_stop(joined, stop)
+    if hit is None:
+        return response
+    # Locate the part that holds the hit's start.
+    offset = 0
+    cut_index, cut_at = text_parts[-1][0], 0
+    for index, part in text_parts:
+        if offset + len(part.text) > hit[0]:
+            cut_index, cut_at = index, hit[0] - offset
+            break
+        offset += len(part.text)
+    parts: list[Part] = []
+    for index, part in enumerate(response.message.parts):
+        if index > cut_index:
+            break
+        if index == cut_index:
+            parts.append(replace(part, text=part.text[:cut_at]))
+        else:
+            parts.append(part)
+    if not parts:
+        parts = [TextPart(text="")]
+    message = replace(response.message, parts=tuple(parts))
+    scores, incomplete = _scores_before_cut(response.logprobs or (), joined, hit[0])
+    return replace(response, message=message, finish_reason="stop", logprobs=scores or None,
+                   logprobs_complete=response.logprobs_complete and not incomplete)
+
+
+def _scores_before_cut(
+    scores: tuple[TokenLogprob, ...], text: str, cut_at: int,
+) -> tuple[tuple[TokenLogprob, ...], bool]:
+    """Keep original scores for whole retained tokens; never score a token fragment.
+
+    Byte boundaries matter: a provider token can itself contain only part of
+    a Unicode character. Only use token spellings as a fallback when their
+    concatenated UTF-8 bytes exactly reproduce the original text.
+    """
+    if not scores or cut_at == 0:
+        return (), False
+    if cut_at == len(text):
+        return scores, False
+    try:
+        token_bytes = [bytes(s.bytes) if s.bytes is not None else s.token.encode("utf-8") for s in scores]
+        original = text.encode("utf-8")
+        boundary = len(text[:cut_at].encode("utf-8"))
+    except (ValueError, UnicodeError):
+        return (), True
+    if b"".join(token_bytes) != original:
+        # These scores cannot be placed reliably on the shortened text.
+        return (), True
+    end = 0
+    for index, data in enumerate(token_bytes):
+        if end == boundary:
+            return scores[:index], False
+        end += len(data)
+        if end > boundary:
+            return scores[:index], True
+    return scores, False
+
+
+class _StopCutter:
+    """Keep original events until their text is safe, then pass them unchanged.
+
+    Text parts form one text stream. A possible stop suffix holds its
+    entire event, plus intervening events to preserve order. Only the
+    event actually cut is reconstructed; unrelated fields survive via
+    dataclasses.replace. This can delay delivery by an event boundary,
+    but never splits token scores just to release text earlier.
+    """
+
+    def __init__(self, stop: tuple[str, ...]) -> None:
+        self.stop = tuple(s for s in stop if s)
+        self.hold = max((len(s) for s in self.stop), default=1) - 1
+        self.segments: deque[StreamEvent] = deque()
+        self.cut = False
+
+    def _take(self, count: int, *, cutting: bool = False) -> list[StreamEvent]:
+        out: list[StreamEvent] = []
+        while self.segments:
+            event = self.segments[0]
+            if event.type != "delta" or not isinstance(event.delta, TextDelta):
+                out.append(self.segments.popleft())
+                continue
+            delta = event.delta
+            if cutting and count == 0:
+                break
+            if len(delta.text) <= count:
+                out.append(self.segments.popleft())
+                count -= len(delta.text)
+            elif cutting:
+                scores, incomplete = _scores_before_cut(delta.logprobs, delta.text, count)
+                out.append(replace(event, delta=replace(delta, text=delta.text[:count], logprobs=scores,
+                                                       logprobs_complete=delta.logprobs_complete and not incomplete)))
+                break
+            else:
+                break
+        return out
+
+    def feed(self, event: StreamEvent) -> list[StreamEvent]:
+        if event.type != "delta" or not isinstance(event.delta, TextDelta):
+            if not self.segments:
+                return [event]
+            self.segments.append(event)
+            return []
+        self.segments.append(event)
+        buf = "".join(e.delta.text for e in self.segments
+                      if e.type == "delta" and isinstance(e.delta, TextDelta))
+        hit = _first_stop(buf, self.stop)
+        if hit is not None:
+            out = self._take(hit[0], cutting=True)
+            self.segments.clear()
+            self.cut = True
+            return out
+        return self._take(max(0, len(buf) - self.hold))
+
+    def flush(self) -> list[StreamEvent]:
+        out = list(self.segments)
+        self.segments.clear()
+        return out
+
+
+def _cut_events(cutter: _StopCutter, event: StreamEvent):
+    if event.type in ("end", "error"):
+        yield from cutter.flush()
+        yield event
+    else:
+        yield from cutter.feed(event)
+
+
+def truncate_stream_at_stop(events: Iterator[StreamEvent], stop: tuple[str, ...]) -> Iterator[StreamEvent]:
+    cutter = _StopCutter(stop)
+    if not cutter.stop:
+        yield from events
+        return
+    try:
+        for event in events:
+            for out in _cut_events(cutter, event):
+                yield out
+            if cutter.cut:
+                yield StreamEndEvent(finish_reason="stop")
+                return
+    finally:
+        close = getattr(events, "close", None)
+        if close is not None:
+            close()
+
+
+async def atruncate_stream_at_stop(events: AsyncIterator[StreamEvent], stop: tuple[str, ...]) -> AsyncIterator[StreamEvent]:
+    cutter = _StopCutter(stop)
+    if not cutter.stop:
+        async for event in events:
+            yield event
+        return
+    try:
+        async for event in events:
+            for out in _cut_events(cutter, event):
+                yield out
+            if cutter.cut:
+                yield StreamEndEvent(finish_reason="stop")
+                return
+    finally:
+        aclose = getattr(events, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 # ─── Internal helpers ────────────────────────────────────────────────

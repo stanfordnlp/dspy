@@ -19,7 +19,7 @@ from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_di
 from dspy.clients.engines.legacy_engine import AsyncLegacyEngine, LegacyEngine
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
-from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
+from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine, timeouts_for
 from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.clients.errors import error_boundary
@@ -32,6 +32,7 @@ from dspy.lm15 import (
     Response,
     RouterConfig,
     StreamAssemblyError,
+    UnsupportedFeatureError,
     request_from_openai_chat,
 )
 from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
@@ -68,6 +69,31 @@ class PreparedCall:
         return key
 
 
+def _check_encodable(value, where):
+    """Refuse text no provider can receive before any engine is chosen.
+
+    lm15's builder already raises the same ValueError, but only inside the
+    engine attempt, where a forced native engine reports it as unexpected.
+    Nested containers cover message lists, tool inputs and typed Requests.
+    """
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            bad = " ".join(f"U+{ord(ch):04X}" for ch in value[exc.start:exc.end])
+            raise ValueError(
+                f"{where} contains text that is not valid Unicode (lone surrogate {bad}), which no "
+                "provider can receive; repair the text first, e.g. text.encode('utf-8', 'replace').decode('utf-8')"
+            ) from None
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _check_encodable(key, where)
+            _check_encodable(item, where)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _check_encodable(item, where)
+
+
 def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
     kwargs = dict(kwargs)
     request = kwargs.pop("request", None)
@@ -100,6 +126,7 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         from dspy.clients.engines.base import validate_request
 
         validate_request(request)
+        _check_encodable(request_to_dict(request), "request")
         extra = set(kwargs) - {"cache", "rollout_id"}
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
@@ -121,6 +148,7 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
     if hasattr(lm, "_warn_zero_temp_rollout"):
         lm._warn_zero_temp_rollout(merged.get("temperature"), merged.get("rollout_id"))
     rendered = messages or [{"role": "user", "content": prompt}]
+    _check_encodable(rendered, "messages" if messages else "prompt")
     if getattr(lm, "use_developer_role", False) and lm.model_type == "responses":
         rendered = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in rendered]
     n = merged.get("n", 1)
@@ -198,6 +226,8 @@ def _select_engine(lm, call, asynchronous):
             canonical = _canonical(call, compat=resolution.compat)
         except (LM15Error, TypeError, ValueError) as exc:
             if spec == "lm15" or call.request is not None or call.legacy.get("prompt_cache") is not None:
+                if isinstance(exc, UnsupportedFeatureError):
+                    raise  # The outer boundary preserves its feature and other diagnostics.
                 raise LMUnsupportedFeatureError(str(exc), model=lm.model) from exc
             # This is a representational refusal BEFORE execution. Preserve the
             # original body on the compatibility backend, never retry elsewhere.
@@ -215,18 +245,30 @@ def _select_engine(lm, call, asynchronous):
     # Long-lived sync pools and a separate async pool per event loop. Copies
     # share the store; a copy with changed client settings gets a distinct key.
     loop = asyncio.get_running_loop() if asynchronous else None
-    key = (loop, lm.model, lm.model_type, tuple(sorted((k, v if isinstance(v, (str, int, float, type(None))) else id(v))
-                                                   for k, v in clients.items())))
+    timeouts = timeouts_for(clients.get("timeout"))
+    key = (loop, lm.model, lm.model_type, timeouts,
+           tuple(sorted((k, v if isinstance(v, (str, int, float, type(None))) else id(v))
+                        for k, v in clients.items() if k != "timeout")))
     with lm._engine_lock:
         backend = lm._engine_store.get(key)
         if backend is None:
             provider = resolution.provider
             api_keys = {provider: clients["api_key"]} if "api_key" in clients else None
             url = clients.get("api_base") or clients.get("base_url")
-            config = RouterConfig(api_keys=api_keys, base_urls={provider: url} if url else None)
+            config = RouterConfig(api_keys=api_keys, base_urls={provider: url} if url else None, timeouts=timeouts)
             cls = AsyncLM15Engine if asynchronous else LM15Engine
             backend = cls(config, model_type=lm.model_type)
             lm._engine_store[key] = backend
+    if spec == "auto" and canonical is not None and call.legacy.get("prompt_cache") is None:
+        # The migration promise: an input the native route cannot carry
+        # selects LiteLLM BEFORE any I/O. lm15 MAP-13 adapts most settings
+        # and records it; what it still refuses is known from plan() with
+        # no network, so the fallback happens here, not after a failed call.
+        try:
+            backend.plan(canonical)
+        except UnsupportedFeatureError:
+            cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
+            return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
     return backend, canonical, resolution.provider
 
 
@@ -561,5 +603,11 @@ def finalize(lm, call, result):
             entry["cost_details"] = result.cost_details
         if call.request:
             entry["request"] = call.request
+        # lm15 MAP-13: what the wire got that differs from what was asked
+        # (a dropped seed, a clamped temperature). Data on the entry, never
+        # printed; absent when the request went out as written.
+        adaptations = tuple(a for response in result.responses for a in getattr(response, "adaptations", ()))
+        if adaptations:
+            entry["adaptations"] = adaptations
         lm.update_history(entry)
     return result.typed(call.request, lm.model_type) if call.request else result.outputs

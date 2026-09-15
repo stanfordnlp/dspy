@@ -21,6 +21,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, ClassVar, Mapping, Protocol, TypeVar
 
+from ..adaptation import AdaptationPolicy
 from ..errors import (
     ProviderError,
     TransportError as LM15TransportError,
@@ -46,7 +47,7 @@ from ..types import (
     StreamEvent,
 )
 from .anthropic import AnthropicLM
-from .base import BaseProviderLM, Credential, HttpResponse, _attach_error_metadata
+from .base import BaseProviderLM, Credential, HttpResponse, _attach_error_metadata, _client_side_stop
 from .claude_code import DEFAULT_CLAUDE_CODE_VERSION, ClaudeCodeLM
 from .gemini import GeminiLM
 from .openai import OpenAILM
@@ -144,23 +145,50 @@ class AsyncBaseProviderLM:
             return await asyncio.to_thread(build, *args, **kwargs)
         return build(*args, **kwargs)
 
+    # MAP-13 policy; every async dataclass declares the field (constructor
+    # parity with its sync sibling) and this is the fallback.
+    adaptations: AdaptationPolicy = "note"
+
+    def plan(self, request: Request):
+        """What a call WOULD adapt (MAP-13), no network, no credential; pure, so sync."""
+        return self._inner.plan(request, policy=self.adaptations)
+
     async def complete(self, request: Request) -> Response:
-        req = await self._build(self._inner.build_request, request, stream=False)
+        req, adaptations = await self._build(self._inner._build, request, stream=False, policy=self.adaptations)
+        if _client_side_stop(adaptations):
+            # Mirror of BaseProviderLM.complete: a client-side stop streams
+            # and closes at the cut (MAP-13); see the sync comment.
+            from ..result import amaterialize_response
+
+            return await amaterialize_response(self.stream(request), request)
         resp = await self._send(req)
         if resp.status >= 400:
             raise self._inner._http_error(resp)
-        return self._inner.parse_response(request, resp)
+        return self._inner._finish_response(request, self._inner.parse_response(request, resp), adaptations, policy=self.adaptations)
 
     def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
         # provider terminal frame; the coalescer merges them so the public
         # stream yields exactly one final StreamEndEvent.
-        from ..result import acoalesce_stream
+        return self._astream(request)
 
-        return acoalesce_stream(self._stream_raw(request), model=request.model)
+    async def _astream(self, request: Request) -> AsyncIterator[StreamEvent]:
+        from ..result import acoalesce_stream, atruncate_stream_at_stop
+        req, adaptations = await self._build(self._inner._build, request, stream=True, policy=self.adaptations)
+        events = acoalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=self._inner._visible(adaptations, policy=self.adaptations))
+        if _client_side_stop(adaptations):
+            events = atruncate_stream_at_stop(events, request.config.stop)
+        try:
+            async for event in events:
+                yield event
+        finally:
+            aclose = getattr(events, "aclose", None)
+            if aclose is not None:
+                await aclose()
 
-    async def _stream_raw(self, request: Request) -> AsyncIterator[StreamEvent]:
-        req = await self._build(self._inner.build_request, request, stream=True)
+    async def _stream_raw(self, request: Request, req: "TransportRequest | None" = None) -> AsyncIterator[StreamEvent]:
+        if req is None:
+            req = await self._build(self._inner.build_request, request, stream=True)
         try:
             async with self.transport.stream(req) as resp:
                 if resp.status >= 400:
@@ -187,6 +215,7 @@ class AsyncBaseProviderLM:
                     headers=resp.headers,
                     body=body,
                     http_version=resp.http_version,
+                    provider=self.provider,
                 )
         except NetworkTransportError as exc:
             raise LM15TransportError(str(exc)) from exc
@@ -492,6 +521,7 @@ class AsyncOpenAILM(AsyncBaseProviderLM):
     settings: "Mapping[str, str] | None" = field(default=None, kw_only=True)
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False, kw_only=True)
     account_id: str | None = None
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     async def live(self, config: LiveConfig):
         self._inner._require("live")
@@ -521,6 +551,7 @@ class AsyncOpenAILM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = OpenAILM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             transport=_ForbiddenTransport(),
             base_url=self.base_url,
@@ -549,6 +580,7 @@ class AsyncAnthropicLM(AsyncBaseProviderLM):
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     provider: str = field(default="anthropic", init=False)
     manifest: ClassVar[ProviderManifest] = AnthropicLM.manifest
@@ -557,6 +589,7 @@ class AsyncAnthropicLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = AnthropicLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             transport=_ForbiddenTransport(),
             base_url=self.base_url,
@@ -584,6 +617,7 @@ class AsyncGeminiLM(AsyncBaseProviderLM):
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     provider: str = field(default="gemini", init=False)
     manifest: ClassVar[ProviderManifest] = GeminiLM.manifest
@@ -592,6 +626,7 @@ class AsyncGeminiLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = GeminiLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             transport=_ForbiddenTransport(),
             base_url=self.base_url,
@@ -635,6 +670,7 @@ class AsyncOpenAIChatLM(AsyncBaseProviderLM):
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     provider: str = field(default="openai-chat", init=False)
     manifest: ClassVar[ProviderManifest] = OpenAIChatLM.manifest
@@ -643,6 +679,7 @@ class AsyncOpenAIChatLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = OpenAIChatLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             transport=_ForbiddenTransport(),
             base_url=self.base_url,
@@ -685,6 +722,7 @@ class AsyncClaudeCodeLM(AsyncBaseProviderLM):
     base_url: str = "https://api.anthropic.com/v1"
     api_version: str = "2023-06-01"
     claude_code_version: str = DEFAULT_CLAUDE_CODE_VERSION
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     # Not constructor params on the sync sibling either (it is not a dataclass).
     provider: str = field(default="claude-code", init=False)
@@ -694,6 +732,7 @@ class AsyncClaudeCodeLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = ClaudeCodeLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             credentials_path=self.credentials_path,
             transport=_ForbiddenTransport(),
@@ -750,6 +789,7 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
     base_url: str = DEFAULT_CODEX_BASE_URL
     originator: str = DEFAULT_CODEX_ORIGINATOR
     client_version: str = DEFAULT_CODEX_CLIENT_VERSION
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     # Not constructor params on the sync sibling either (it is not a dataclass).
     provider: str = field(default="openai-codex", init=False)
@@ -759,6 +799,7 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = OpenAICodexLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             account_id=self.account_id,
             auth_path=self.auth_path,
@@ -824,6 +865,7 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
 @dataclass(slots=True)
 class AsyncXaiLM(AsyncBaseProviderLM):
     """Async mirror of :class:`XaiLM` (subscription OAuth or bearer key)."""
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     api_key: Credential | None = field(default=None, repr=False)
     credentials_path: "str | os.PathLike[str] | None" = None
@@ -840,6 +882,7 @@ class AsyncXaiLM(AsyncBaseProviderLM):
 
     def __post_init__(self) -> None:
         self._inner = XaiLM(
+            adaptations=self.adaptations,
             api_key=self.api_key,
             credentials_path=self.credentials_path,
             transport=_ForbiddenTransport(),

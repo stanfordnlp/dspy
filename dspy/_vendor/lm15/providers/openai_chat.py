@@ -15,15 +15,17 @@ from datetime import datetime
 import json
 import mimetypes
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, ClassVar, Iterator, Mapping
 
 from ..compat import (
     OPENAI_CHAT_PRESET_BASE_URLS,
+    preset_base_url,
     OpenAIChatCompat,
     ResolvedOpenAIChatCompat,
     resolve_openai_chat_compat,
 )
+from ..adaptation import AdaptationPolicy, adapt, check_policy, nearest_effort
 from ..errors import ProviderError, ServerError, UnsupportedFeatureError
 from ..access import OPENAI_CHAT_API
 from ..features import ProviderManifest
@@ -139,7 +141,7 @@ def _chat_content_parts(msg: Message, *, force_array: bool = False, provider: st
             raise UnsupportedFeatureError(
                 f"{provider}: a {part.type} part in a {msg.role} message has no slot on the Chat Completions wire "
                 "(text and image_url only); the OpenAI Responses, Anthropic and Gemini dialects carry it (MAP-10)",
-                provider=provider,
+                provider=provider, feature=f"messages[*].parts[{part.type}]",
             )
         else:
             out.append({"type": "text", "text": parts_to_text((part,), provider=provider)})
@@ -201,20 +203,18 @@ def _response_format_to_chat(format_config: dict[str, Any]) -> dict[str, Any]:
 # OpenAI documents that no canonical field expresses and that the builder
 # re-emits verbatim (payload.update(extensions)), so they round-trip.
 _INGEST_EXTENSIONS_KEYS: frozenset[str] = frozenset({
-    "seed", "logit_bias", "presence_penalty", "frequency_penalty", "metadata",
-    "verbosity", "moderation", "provider",
+    "logit_bias", "metadata", "verbosity", "moderation", "provider",
+    # prediction: a latency hint (predicted outputs); harmless verbatim on
+    # OpenAI, dropped-with-note elsewhere (decision 2026-09-14 §4.9).
+    "prediction",
 })
 
 # Top-level keys refused with the reason a canonical Request cannot carry them.
 _INGEST_REFUSED_KEYS: dict[str, str] = {
     "n": "lm15 reads one choice per response; n>1 would silently lose choices — fan out in the caller",
-    "functions": "the deprecated function-calling shape; declare tools with {type: function, function: {...}}",
-    "function_call": "the deprecated function-calling shape; use tool_choice",
     "audio": "audio output parameters have no canonical slot on the chat surface",
     "modalities": "output modality selection has no canonical slot on the chat surface",
-    "prediction": "predicted-output content has no canonical slot",
     "web_search_options": "a server-executed search the chat dialect cannot map to parts (MAP-1); the Responses dialect carries web_search as a BuiltinTool",
-    "top_k": "the Chat Completions wire has no top_k (the builder raises on Config.top_k for the same reason); servers that take it do so through extensions",
 }
 
 # Call-mode keys: they say HOW the request is sent, not WHAT is asked.  A
@@ -227,7 +227,11 @@ _INGEST_CALL_MODE_KEYS: frozenset[str] = frozenset({"stream", "stream_options"})
 # the tables above, and an unlisted key is refused).
 _INGEST_CONFIG_KEYS: frozenset[str] = frozenset({
     "model", "messages", "tools", "tool_choice", "parallel_tool_calls",
-    "max_completion_tokens", "max_tokens", "temperature", "top_p", "stop",
+    # functions / function_call: the deprecated function-calling shape,
+    # translated to tools / tool_choice (MAP-13: a pure spelling change).
+    "functions", "function_call",
+    "max_completion_tokens", "max_tokens", "temperature", "top_p", "top_k", "stop",
+    "seed", "frequency_penalty", "presence_penalty",
     "logprobs", "top_logprobs", "response_format", "service_tier", "store",
     "user", "safety_identifier", "user_id",
     "reasoning_effort", "reasoning", "thinking", "enable_thinking", "chat_template_kwargs", "reasoning_format",
@@ -591,6 +595,15 @@ def _ingest_tools(provider: str, raw: Any, compat: ResolvedOpenAIChatCompat) -> 
     return tools
 
 
+def _tool_choice_from_function_call(raw: Any) -> Any:
+    """The deprecated ``function_call`` spelling → the ``tool_choice`` shape."""
+    if raw in ("none", "auto"):
+        return raw
+    if isinstance(raw, Mapping) and "name" in raw:
+        return {"type": "function", "function": {"name": raw["name"]}}
+    raise ValueError(f"function_call must be 'none', 'auto', or {{name}}; got {raw!r}")
+
+
 def _ingest_tool_choice(provider: str, raw: Any, parallel: Any) -> ToolChoice | None:
     """Inverse of OpenAIChatLM._tool_choice_payload plus parallel_tool_calls."""
     mode: str | None = None
@@ -815,7 +828,7 @@ def _ingest_config(
         if len(set(map(repr, values.values()))) > 1:
             raise ValueError(f"max_tokens and max_completion_tokens disagree: {values}")
         kwargs["max_tokens"] = next(iter(values.values()))
-    for key in ("temperature", "top_p", "service_tier", "store"):
+    for key in ("temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty", "service_tier", "store"):
         if key in body:
             kwargs[key] = body[key]
     if "stop" in body:
@@ -829,7 +842,12 @@ def _ingest_config(
         raise ValueError("top_logprobs requires logprobs: true")
     if "response_format" in body:
         kwargs["response_format"] = _ingest_response_format(provider, body["response_format"])
-    kwargs["tool_choice"] = _ingest_tool_choice(provider, body.get("tool_choice"), body.get("parallel_tool_calls"))
+    if "function_call" in body and "tool_choice" in body:
+        raise ValueError("function_call and tool_choice cannot both be given")
+    kwargs["tool_choice"] = _ingest_tool_choice(
+        provider, _tool_choice_from_function_call(body["function_call"]) if "function_call" in body else body.get("tool_choice"),
+        body.get("parallel_tool_calls"),
+    )
 
     user_keys = [k for k in ("user", "safety_identifier", "user_id") if k in body]
     if "user_id" in user_keys and compat.user_field != "user_id":
@@ -863,7 +881,14 @@ def _ingest_openai_chat(provider: str, body: Mapping[str, Any], compat: Resolved
     if "messages" not in body:
         raise ValueError("messages is required")
     system, messages, system_breakpoint, breakpoint_index = _ingest_messages(provider, body["messages"], compat)
-    tools = _ingest_tools(provider, body.get("tools"), compat)
+    if "functions" in body and "tools" in body:
+        raise ValueError("functions and tools cannot both be given")
+    raw_tools = body.get("tools")
+    if "functions" in body:
+        if not isinstance(body["functions"], list):
+            raise TypeError("functions must be an array")
+        raw_tools = [{"type": "function", "function": fn} for fn in body["functions"]]
+    tools = _ingest_tools(provider, raw_tools, compat)
     config = _ingest_config(provider, body, compat, system_breakpoint=system_breakpoint, breakpoint_index=breakpoint_index)
     return Request(model=model, messages=tuple(messages), system=system, tools=tuple(tools), config=config)
 
@@ -929,7 +954,7 @@ def _response_from_chat_body(
             raise UnsupportedFeatureError(
                 f"{provider}: the body carries {len(choices)} choices; a canonical Response is one message — "
                 "name the choice to read (choice=i) and read each one, or send no n",
-                provider=provider,
+                provider=provider, feature="n",
             )
         index = 0
     else:
@@ -1075,6 +1100,8 @@ class OpenAIChatLM(BaseProviderLM):
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
 
+    # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
     provider: str = field(default="openai-chat", init=False)
     account_id: str | None = field(default=None, init=False, repr=False)
     manifest: ClassVar[ProviderManifest] = OPENAI_CHAT_API
@@ -1091,13 +1118,15 @@ class OpenAIChatLM(BaseProviderLM):
     normalize_error = OpenAILM.normalize_error
 
     def __post_init__(self) -> None:
+        check_policy(self.adaptations)
         self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
         compat = self.compat if self.compat is not None else self._registry_compat()
         if isinstance(compat, str):
-            preset_key = compat.lower().replace("-", "_").replace(" ", "_")
             partial = OpenAIChatCompat.preset(compat)
             if self.base_url == _DEFAULT_BASE_URL:
-                self.base_url = OPENAI_CHAT_PRESET_BASE_URLS.get(preset_key, _DEFAULT_BASE_URL)
+                self.base_url = preset_base_url(
+                    OPENAI_CHAT_PRESET_BASE_URLS, compat, dialect="Chat Completions", default_preset="openai"
+                )
         elif isinstance(compat, OpenAIChatCompat):
             partial = compat
         else:
@@ -1137,7 +1166,7 @@ class OpenAIChatLM(BaseProviderLM):
 
     # ─── Request serialization ──────────────────────────────────────
 
-    def _build_messages(self, request: Request, compat: ResolvedOpenAIChatCompat) -> list[dict[str, Any]]:
+    def _build_messages(self, request: Request, compat: ResolvedOpenAIChatCompat, *, breakpoint_index: int | None = None) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
         if request.system:
             system_text = request.system if isinstance(request.system, str) else parts_to_text(request.system)
@@ -1150,7 +1179,6 @@ class OpenAIChatLM(BaseProviderLM):
             else:
                 messages.append({"role": compat.instruction_role, "content": system_text})
 
-        breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)
         for msg_index, msg in enumerate(request.messages):
             if msg_index == breakpoint_index and msg.role in ("assistant", "tool"):
                 raise _breakpoint_unsupported(self.provider, msg_index, msg.role)
@@ -1236,7 +1264,7 @@ class OpenAIChatLM(BaseProviderLM):
                 raise UnsupportedFeatureError(
                     f"{self.provider}: builtin tool {tool.name!r} has no Groq wire "
                     f"mapping — supported: {sorted(_GROQ_BUILTIN_MAP)}",
-                    provider=self.provider,
+                    provider=self.provider, feature=f"tools[{tool.name}]",
                 )
             entry: dict[str, Any] = {"type": wire_type}
             if tool.config:
@@ -1248,7 +1276,7 @@ class OpenAIChatLM(BaseProviderLM):
             "unproven servers may silently ignore unknown tool types. Use "
             "compat='groq' for Groq's server-executed tools, or the OpenAI "
             "Responses / Anthropic / Gemini providers",
-            provider=self.provider,
+            provider=self.provider, feature=f"tools[{tool.name}]",
         )
 
     def _tool_choice_payload(self, request: Request) -> Any:
@@ -1266,7 +1294,7 @@ class OpenAIChatLM(BaseProviderLM):
                     f"{self.provider}: cannot force builtin tools {builtins} — the "
                     "Chat Completions wire has no hosted-tool tool_choice form "
                     "(OpenAI Responses and Anthropic carry it)",
-                    provider=self.provider,
+                    provider=self.provider, feature="config.tool_choice.allowed",
                 )
             if len(entries) == 1 and tc.mode == "required":
                 return {"type": "function", "function": {"name": entries[0].name}}
@@ -1295,9 +1323,10 @@ class OpenAIChatLM(BaseProviderLM):
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
         compat = self._compat_for(request.model)
+        breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
             "model": request.model,
-            "messages": self._build_messages(request, compat),
+            "messages": self._build_messages(request, compat, breakpoint_index=breakpoint_index),
         }
         if stream:
             payload["stream"] = True
@@ -1310,12 +1339,15 @@ class OpenAIChatLM(BaseProviderLM):
         if request.config.top_p is not None:
             payload["top_p"] = request.config.top_p
         if request.config.top_k is not None:
-            # No wire slot on Chat Completions (port.md rule 4: a raise or an
-            # extensions door, never omission).
-            raise UnsupportedFeatureError(
-                f"{self.provider}: config.top_k has no field on the Chat Completions wire; servers that accept "
-                "top_k take it through extensions", provider=self.provider,
-            )
+            # MAP-13: a sampling hint with no field on this wire; servers
+            # that take one do so through extensions.
+            adapt("config.top_k", "dropped",
+                  "the Chat Completions wire has no top_k (Anthropic and Gemini carry it; servers "
+                  "that accept it take it through extensions)",
+                  asked=request.config.top_k, provider=self.provider)
+        for name in ("seed", "frequency_penalty", "presence_penalty"):
+            if getattr(request.config, name) is not None:
+                payload[name] = getattr(request.config, name)
         if request.config.stop:
             payload["stop"] = list(request.config.stop)
         if request.config.logprobs is not None:
@@ -1344,17 +1376,31 @@ class OpenAIChatLM(BaseProviderLM):
         if tool_choice is not None:
             tc = request.config.tool_choice
             if compat.forced_tool_choice == "reject" and (tc.mode != "auto" or tc.allowed):
-                # MAP-8: the server documents tool_choice=auto only and ignores
-                # every other form without an error (Z.AI, live 2026-09-03:
-                # required → text answer, none → a tool call).  A silent widen
-                # is worse than an error; omit tool_choice or use "auto".
-                raise UnsupportedFeatureError(
-                    f"{self.provider}: tool_choice mode={tc.mode!r}"
-                    + (f" allowed={list(tc.allowed)}" if tc.allowed else "")
-                    + " is silently ignored by this server (only 'auto' is honoured); "
-                    "omit tool_choice, or send only the tools you want callable",
-                    provider=self.provider,
-                )
+                # The server documents tool_choice=auto only and ignores every
+                # other form without an error (Z.AI, live 2026-09-03: required
+                # → text answer, none → a tool call).  MAP-13: "none" and an
+                # allowlist have a client-side form — send no tools / only
+                # those tools — and are recorded; "required" cannot be forced
+                # and the program depends on the call (rule 4b): refused.
+                if tc.mode == "required":
+                    raise UnsupportedFeatureError(
+                        f"{self.provider}: tool_choice mode='required' is silently ignored by this server "
+                        "(only 'auto' is honoured) and a forced call cannot be reproduced client-side",
+                        provider=self.provider, feature="config.tool_choice.mode",
+                    )
+                if tc.mode == "none":
+                    adapt("config.tool_choice.mode", "client_side",
+                          "this server ignores tool_choice='none'; no tools were sent, which is the same outcome",
+                          asked="none", applied="no tools sent", provider=self.provider)
+                    payload.pop("tools", None)
+                else:
+                    kept = [t for t in payload.get("tools", []) if t.get("function", {}).get("name") in tc.allowed]
+                    adapt("config.tool_choice.allowed", "client_side",
+                          "this server ignores tool_choice allowlists; only the allowed tools were sent, "
+                          "which is what the allowlist means",
+                          asked=list(tc.allowed), applied=[t["function"]["name"] for t in kept], provider=self.provider)
+                    payload["tools"] = kept
+                tool_choice = "auto"
             payload["tool_choice"] = tool_choice
         if request.config.tool_choice and request.config.tool_choice.parallel is not None:
             payload["parallel_tool_calls"] = request.config.tool_choice.parallel
@@ -1363,41 +1409,50 @@ class OpenAIChatLM(BaseProviderLM):
                 # The server accepts response_format.type=json_schema and
                 # ignores it (Z.AI, live 2026-09-03: HTTP 200, fenced JSON with
                 # keys the schema never named).  json_object is honoured.
-                raise UnsupportedFeatureError(
-                    f"{self.provider}: response_format type "
-                    f"{request.config.response_format['type']!r} is silently ignored by this "
-                    "server; use {'type': 'json_object'} and describe the shape in the prompt",
-                    provider=self.provider,
-                )
-            payload["response_format"] = _response_format_to_chat(request.config.response_format)
+                adapt("config.response_format", "dropped",
+                      f"this server accepts response_format type {request.config.response_format['type']!r} "
+                      "and does not apply it; use {'type': 'json_object'} and describe the shape in the prompt",
+                      asked=request.config.response_format, provider=self.provider)
+            else:
+                payload["response_format"] = _response_format_to_chat(request.config.response_format)
         if request.config.reasoning:
             reasoning = request.config.reasoning
-            if not reasoning.is_off:
+            if compat.thinking_format == "none":
+                # No reasoning dial on this server.  MAP-13: the dial is
+                # dropped and recorded — the model may reason at its own
+                # default and the tokens show in usage.  (The 2026-09-11
+                # refusal here rested on "ollama has no dial", which was a
+                # preset written without a receipt; Ollama maps
+                # reasoning_effort to `think` — THEORY.md §3.17.)
+                adapt("config.reasoning", "dropped",
+                      "this server has no reasoning dial on its wire (compat thinking_format='none'); "
+                      "the model reasons at its own default; pass the server's own knob through extensions",
+                      asked={"effort": reasoning.effort}, provider=self.provider)
+                reasoning = None
+            if reasoning is not None and not reasoning.is_off:
                 # MAP-7: verbatim effort; no budget on this wire; summary
                 # levels are Responses-only; "auto" maps to the dialect's
                 # visibility knob where one exists (Groq include_reasoning).
                 if reasoning.thinking_budget is not None:
-                    raise UnsupportedFeatureError(
-                        f"{self.provider}: reasoning.thinking_budget is not supported — the Chat "
-                        "Completions wire has no thinking token budget; use effort",
-                        provider=self.provider,
-                    )
+                    adapt("config.reasoning.thinking_budget", "dropped",
+                          "the Chat Completions wire has no thinking token budget; effort carries the intent",
+                          asked=reasoning.thinking_budget, provider=self.provider)
                 if reasoning.summary in ("concise", "detailed"):
-                    raise UnsupportedFeatureError(
-                        f"{self.provider}: reasoning.summary={reasoning.summary!r} is an OpenAI Responses "
-                        "detail level; the Chat Completions wire has none (use 'auto')",
-                        provider=self.provider,
-                    )
+                    adapt("config.reasoning.summary", "substituted",
+                          "the Chat Completions wire has no summary detail levels; 'auto' is what it shows",
+                          asked=reasoning.summary, applied="auto", provider=self.provider)
+                    reasoning = replace(reasoning, summary="auto")
                 effort = reasoning.effort
                 if compat.reasoning_efforts is not None and effort not in compat.reasoning_efforts:
-                    # MAP-7 rule 2: a word with no native level raises here
-                    # when the server would not refuse it (Moonshot kimi-k3
+                    # MAP-13: clamp to the nearest declared level; the server
+                    # would have accepted the word silently (Moonshot kimi-k3
                     # answered 200 to `medium` and to `bogus`, live 2026-09-03).
-                    raise UnsupportedFeatureError(
-                        f"{self.provider}: reasoning.effort={effort!r} has no level on this server "
-                        f"(it accepts {', '.join(compat.reasoning_efforts)}) and would be accepted silently",
-                        provider=self.provider,
-                    )
+                    nearest = nearest_effort(effort, compat.reasoning_efforts)
+                    adapt("config.reasoning.effort", "clamped",
+                          f"this server has no {effort!r} level (it accepts "
+                          f"{', '.join(compat.reasoning_efforts)}) and would have accepted the word silently",
+                          asked=effort, applied=nearest, provider=self.provider)
+                    effort = nearest
                 if compat.builtin_tools == "groq" and reasoning.summary == "auto":
                     # Groq's visibility knob (MAP-7 rule 7): "parsed" returns
                     # the trace as message.reasoning.  Live 2026-09-02: Qwen
@@ -1431,7 +1486,7 @@ class OpenAIChatLM(BaseProviderLM):
                         "enable_thinking": True,
                         "preserve_thinking": True,
                     }
-            else:
+            elif reasoning is not None:
                 # Explicit off must reach the wire; omission lets
                 # reasoning-by-default models spend hidden reasoning tokens
                 # (verified live 2026-09-01 on Groq: gpt-oss-20b spent 45
@@ -1454,7 +1509,7 @@ class OpenAIChatLM(BaseProviderLM):
                     payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         # Prompt caching (MAP-6): off switch, key, retention, resource.
-        _cache_common_payload(request, payload, compat.cache_control, self.provider)
+        _cache_common_payload(request, payload, compat.cache_control, self.provider, breakpoint_index=breakpoint_index)
 
         if compat.routing is not None:
             payload["provider"] = compat.routing
@@ -1494,7 +1549,6 @@ class OpenAIChatLM(BaseProviderLM):
             model=request.model,
             headers=self._headers(),
             payload=self._payload(request, stream=stream),
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

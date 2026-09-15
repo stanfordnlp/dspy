@@ -191,6 +191,7 @@ OPENAI_RESPONSES_PRESETS: dict[str, OpenAIResponsesCompat] = {
         cache_control="none",
         tool_result_media="reject",  # MAP-10: no receipt on this door — reject until one exists
     ),
+    "lmstudio": None,  # type: ignore[dict-item]  # filled below: ollama's policy object
     "vllm": OpenAIResponsesCompat(
         developer_role="system",
         max_output_tokens_field="max_tokens",
@@ -278,8 +279,19 @@ OPENAI_RESPONSES_PRESETS: dict[str, OpenAIResponsesCompat] = {
 
 # Default base URLs for the Responses presets that name a server (the
 # registry's access policies point here so each URL has one copy).
+OPENAI_RESPONSES_PRESETS["lmstudio"] = OPENAI_RESPONSES_PRESETS["ollama"]
+
+# A server's OpenAI root is one address whichever OpenAI-shaped path is
+# used; the local engines' roots are the chat table's.  A preset that names
+# a server absent here (qwen, deepseek, zai: no documented Responses root)
+# is REFUSED at construction without an explicit base_url — never sent to
+# the OpenAI cloud (preset_base_url below, 2026-09-11).
 OPENAI_RESPONSES_PRESET_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8000/v1",
+    "sglang": "http://localhost:30000/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     # dev.meta.ai overview.md: one base URL for every Meta Model API surface.
     "meta": "https://api.meta.ai/v1",
@@ -496,6 +508,33 @@ def _preset_key(name: str) -> str:
     return _OPENAI_CHAT_PRESET_ALIASES.get(key, key)
 
 
+def preset_base_url(table: dict[str, str], name: str, *, dialect: str, default_preset: str) -> str:
+    """The address a preset name supplies for one dialect.
+
+    A name that names a server supplies that server's root.  The dialect's
+    own default (``default_preset``: ``openai`` / ``anthropic``) is the
+    only name that resolves to the cloud default.  Any other name with no
+    entry in ``table`` is refused with :class:`NotConfiguredError`: a
+    request meant for a named server must never be sent to the OpenAI
+    cloud with whatever key is around because a table lacked a row
+    (2026-09-11; before, ``compat="lmstudio"`` did exactly that).
+    """
+    key = _preset_key(name)
+    try:
+        return table[key]
+    except KeyError:
+        pass
+    if key == default_preset:
+        return table[default_preset]
+    from .errors import NotConfiguredError
+
+    raise NotConfiguredError(
+        f"compat {name!r} names a server whose {dialect} address lm15 does not "
+        f"know; pass base_url= (the server's OpenAI-compatible root, e.g. "
+        f"'http://localhost:PORT/v1')"
+    )
+
+
 # Spelling aliases → canonical preset key.  Every alias is permanent.  One
 # map serves all three dialect tables: a name means the same server in each.
 _OPENAI_CHAT_PRESET_ALIASES: dict[str, str] = {
@@ -504,8 +543,7 @@ _OPENAI_CHAT_PRESET_ALIASES: dict[str, str] = {
     "chat_completions": "openai",
     "responses": "openai",
     "openai_responses": "openai",
-    "lmstudio": "ollama",
-    "lm_studio": "ollama",
+    "lm_studio": "lmstudio",
     "dashscope_qwen": "qwen",
     "z_ai": "zai",
 }
@@ -528,8 +566,31 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         cache_control="openai",
         tool_result_media="reject",  # MAP-10: text-only tool row; gpt-5.4 received the USER image and not the tool image
     ),
-    # ollama / LM Studio: max_tokens, no reasoning dial on the wire.
+    # ollama: max_tokens; reasoning_effort (and `reasoning: {effort}`) on
+    # the wire, mapped to Ollama's `think` by openai/openai.go
+    # `thinkFromReasoningEffort` (lm15-contract/research/tool-result-content/
+    # sources/ollama.txt:536-560): none → think:false, minimal → low,
+    # low|medium|high|max verbatim, xhigh → max; an unknown word is a 400.
+    # Until 2026-09-14 this said thinking_format="none" with "no receipt";
+    # THEORY.md §3.17.  Source receipt; live receipt still owed.
     "ollama": OpenAIChatCompat(
+        instruction_role="system",
+        max_tokens_field="max_tokens",
+        stream_usage="include",
+        thinking_format="reasoning_effort",
+        reasoning_efforts=("minimal", "low", "medium", "high", "xhigh", "max"),
+        tool_result_name="omit",
+        strict_tools="omit",
+        cache_control="none",
+        tool_result_media="reject",  # MAP-10: openai.go builds image rows without ToolCallID; no receipt — reject until one exists
+    ),
+    # LM Studio: its own policy at http://localhost:1234/v1
+    # (OPENAI_CHAT_PRESET_BASE_URLS).  HYPOTHESIS, no receipt (THEORY.md
+    # §3.17): lmstudio.ai lists max_tokens and no reasoning dial, so
+    # thinking_format="none" — under MAP-13 a set dial is dropped and
+    # recorded, never refused on this unverified line.  Until 2026-09-11
+    # the name was an alias of "ollama".
+    "lmstudio": OpenAIChatCompat(
         instruction_role="system",
         max_tokens_field="max_tokens",
         stream_usage="include",
@@ -537,7 +598,7 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
         tool_result_name="omit",
         strict_tools="omit",
         cache_control="none",
-        tool_result_media="reject",  # MAP-10: openai.go builds image rows without ToolCallID; no receipt — reject until one exists
+        tool_result_media="reject",
     ),
     # Groq: server-executed builtin tools (browser_search / code_interpreter,
     # live 2026-09-01); reasoning_effort dial; no cache_control field.
@@ -756,9 +817,12 @@ OPENAI_CHAT_PRESETS: dict[str, OpenAIChatCompat] = {
 # Used by OpenAIChatLM when a compat preset is given by name and no
 # explicit base_url overrides it; the provider registry's access policies
 # point here so there is one copy of each URL.
+
 OPENAI_CHAT_PRESET_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "ollama": "http://localhost:11434/v1",
+    # lmstudio.ai docs (Local Server): "http://localhost:1234/v1".
+    "lmstudio": "http://localhost:1234/v1",
     "groq": "https://api.groq.com/openai/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "xai": "https://api.x.ai/v1",

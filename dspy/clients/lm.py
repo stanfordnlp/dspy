@@ -36,8 +36,10 @@ def _get_litellm():
 
 def _is_openai_reasoning_model(model: str) -> bool:
     model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
+    # Every gpt-5 generation, including dotted versions (gpt-5.6-luna), is a
+    # reasoning family. The "-chat" variants are the documented exception.
     return re.match(
-        r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+        r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?:\.\d+)*(?!-chat)(?:-.*)?)$",
         model_family,
     ) is not None
 
