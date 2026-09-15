@@ -446,19 +446,28 @@ class BaseProviderLM:
         """What a call with this request WOULD adapt, with no network and no
         credential invoked (like ``resolve()``, offline).  Raises what the
         call would raise (a refusal under any policy, or every deviation
-        under ``adaptations="refuse"``)."""
+        under ``adaptations="refuse"``).  Returns the full record under
+        every policy, "silent" included: a preview that hid what it saw
+        would be no preview."""
         return self._build(request, stream=False, policy=policy, planning=True)[1]
 
-    def _finish_response(self, request: Request, response: Response, adaptations: "tuple[Adaptation, ...]") -> Response:
-        """Stamp the record on the response and apply client-side steps."""
+    def _visible(self, adaptations: "tuple[Adaptation, ...]", *, policy: "AdaptationPolicy | None" = None) -> "tuple[Adaptation, ...]":
+        """What the response carries: everything under "note" (and "refuse",
+        which only ever holds satisfied/defaulted), nothing under "silent".
+        Behaviour is decided from the full record, never from this."""
+        return () if (policy if policy is not None else self.adaptations) == "silent" else adaptations
+
+    def _finish_response(self, request: Request, response: Response, adaptations: "tuple[Adaptation, ...]", *, policy: "AdaptationPolicy | None" = None) -> Response:
+        """Stamp the visible record on the response and apply client-side steps."""
         from ..result import apply_client_side_stop
 
         if _client_side_stop(adaptations):
             response = apply_client_side_stop(response, request.config.stop)
-        if adaptations and not response.adaptations:
+        visible = self._visible(adaptations, policy=policy)
+        if visible and not response.adaptations:
             from dataclasses import replace
 
-            response = replace(response, adaptations=adaptations)
+            response = replace(response, adaptations=visible)
         return response
 
     def complete(self, request: Request) -> Response:
@@ -466,11 +475,12 @@ class BaseProviderLM:
         if _client_side_stop(adaptations):
             # MAP-13 (decision 2026-09-14): a stop sequence the wire cannot
             # take is honoured by streaming under the hood and closing the
-            # connection at the cut — the model stops generating and the
-            # tokens past the sequence are not billed.  The price is the
-            # usage report, which only the final frame carries; it is
-            # "not reported", never estimated.  A stream that never hits
-            # the sequence completes normally, usage included.
+            # connection at the cut.  Whether the provider then stops
+            # generating (and billing) on a closed connection is its own
+            # behaviour, not a promise made here.  The price is the usage
+            # report, which only the final frame carries; it is "not
+            # reported", never estimated.  A stream that never hits the
+            # sequence completes normally, usage included.
             from ..result import materialize_response
 
             return materialize_response(self.stream(request), request)
@@ -486,7 +496,7 @@ class BaseProviderLM:
         from ..result import coalesce_stream, truncate_stream_at_stop
 
         req, adaptations = self._build(request, stream=True)
-        events = coalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=adaptations)
+        events = coalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=self._visible(adaptations))
         if _client_side_stop(adaptations):
             events = truncate_stream_at_stop(events, request.config.stop)
         return events

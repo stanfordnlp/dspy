@@ -164,7 +164,7 @@ class AsyncBaseProviderLM:
         resp = await self._send(req)
         if resp.status >= 400:
             raise self._inner._http_error(resp)
-        return self._inner._finish_response(request, self._inner.parse_response(request, resp), adaptations)
+        return self._inner._finish_response(request, self._inner.parse_response(request, resp), adaptations, policy=self.adaptations)
 
     def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
@@ -175,7 +175,7 @@ class AsyncBaseProviderLM:
     async def _astream(self, request: Request) -> AsyncIterator[StreamEvent]:
         from ..result import acoalesce_stream, atruncate_stream_at_stop
         req, adaptations = await self._build(self._inner._build, request, stream=True, policy=self.adaptations)
-        events = acoalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=adaptations)
+        events = acoalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=self._inner._visible(adaptations, policy=self.adaptations))
         if _client_side_stop(adaptations):
             events = atruncate_stream_at_stop(events, request.config.stop)
         try:

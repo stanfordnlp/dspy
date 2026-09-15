@@ -893,9 +893,9 @@ class OpenAILM(BaseProviderLM):
             # or as it streams (the source is closed at the cut).
             adapt("config.stop", "client_side",
                   "the Responses wire has no stop field; the reply is streamed and the connection "
-                  "closed at the first stop sequence, so generation stops there and nothing past it "
-                  "is billed — the usage report rides only the final frame, so it is not reported "
-                  "when the cut happens (never estimated)",
+                  "closed at the first stop sequence (whether the provider then stops generating, "
+                  "and billing, is its own behaviour); the usage report rides only the final frame, "
+                  "so it is not reported when the cut happens (never estimated)",
                   asked=list(request.config.stop), applied=list(request.config.stop), provider=self.provider)
         if request.config.top_k is not None:
             adapt("config.top_k", "dropped",
