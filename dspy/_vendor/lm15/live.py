@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable, Deque
 
-from .errors import TransportError
+from .errors import CollectionLimitError, TransportError
 from .types import (
     ErrorDetail,
     LiveClientAudioEvent,
@@ -79,6 +79,25 @@ def require_websocket_async_connect():
 # provisional collectors, not new canonical wire types.
 
 _TURN_TERMINAL = frozenset({"turn_end", "interrupted", "error"})
+DEFAULT_TURN_MAX_BYTES = 16 * 1024 * 1024
+DEFAULT_TURN_MAX_EVENTS = 10_000
+
+
+def _event_size(event: LiveServerEvent, remaining: int) -> int:
+    """Compact ASCII JSON byte charge, not a claim about resident memory.
+
+    Count incrementally and stop as soon as the event would exceed the
+    remaining budget. No serialized copy of the whole collection is built.
+    """
+    from .serde import live_server_event_to_dict
+
+    encoder = json.JSONEncoder(ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+    size = 0
+    for chunk in encoder.iterencode(live_server_event_to_dict(event)):
+        size += len(chunk)  # ASCII characters are exactly one byte each.
+        if size > remaining:
+            break
+    return size
 
 
 @dataclass(frozen=True)
@@ -92,8 +111,9 @@ class Turn:
     cancelled response's tokens precede its ``interrupted``. A ``tool_call`` ending mirrors the non-live
     ``finish_reason="tool_call"`` contract: the model is waiting for
     YOUR result — answer with ``send_tool_result()`` and materialize the
-    next turn. Materializing buffers text and audio in memory until the
-    turn ends; for latency-sensitive playback iterate events instead.
+    next turn. turn() collects within a configurable byte/event budget.
+    Materializing adds combined text/audio copies; use raw session events
+    when retaining a whole turn is not wanted.
     """
 
     ended_by: str
@@ -166,7 +186,16 @@ def _materialize_turn(events: tuple[LiveServerEvent, ...]) -> Turn:
 
 
 class _TurnState:
-    def __init__(self, session: Any) -> None:
+    def __init__(
+        self, session: Any, *, max_bytes: int = DEFAULT_TURN_MAX_BYTES,
+        max_events: int = DEFAULT_TURN_MAX_EVENTS,
+    ) -> None:
+        for name, value in (("max_bytes", max_bytes), ("max_events", max_events)):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer; use raw session events for unbuffered reading")
+        self._max_bytes = max_bytes
+        self._max_events = max_events
+        self._retained_bytes = 0
         self._session = session
         self._done = False
         self._events: list[LiveServerEvent] = []
@@ -174,9 +203,36 @@ class _TurnState:
         self._result: Turn | None = None
         self._reading = False
 
+    @property
+    def retained_bytes(self) -> int:
+        """Accepted events' compact-JSON byte charge, not process memory."""
+        return self._retained_bytes
+
+    @property
+    def retained_events(self) -> int:
+        return len(self._events)
+
     def snapshot(self) -> Turn:
         """Collected data so far; incomplete is not a successful turn."""
+        if isinstance(self._failure, CollectionLimitError):
+            return self._failure.partial
         return _materialize_turn(tuple(self._events))
+
+    def _limit_error(self, limit: str, maximum: int, event=None) -> CollectionLimitError:
+        self._done = True
+        return CollectionLimitError(
+            f"Live turn collection exceeded {limit}={maximum}; the turn is incomplete. "
+            "Raise this limit on session.turn(...), or process raw session events without collecting. "
+            "Inspect partial_events and rejected_event before continuing; the session remains open.",
+            limit=limit, maximum=maximum, retained_bytes=self._retained_bytes,
+            partial_events=tuple(self._events), rejected_event=event,
+        )
+
+    def _check_event_limit(self) -> None:
+        # Do not consume the next event when the count alone proves it
+        # cannot fit. This includes a terminal event, which also counts.
+        if len(self._events) >= self._max_events:
+            raise self._limit_error("max_events", self._max_events)
 
     def close(self) -> None:
         """Stop this view, not the underlying live session."""
@@ -187,7 +243,11 @@ class _TurnState:
     def _accept(self, event: LiveServerEvent | None) -> LiveServerEvent:
         if event is None:
             raise TransportError("live session closed before the turn reached a boundary")
+        size = _event_size(event, self._max_bytes - self._retained_bytes)
+        if size > self._max_bytes - self._retained_bytes:
+            raise self._limit_error("max_bytes", self._max_bytes, event)
         self._events.append(event)
+        self._retained_bytes += size
         if event.type in _TURN_TERMINAL:
             self._done = True
         return event
@@ -206,6 +266,10 @@ class _TurnState:
 class TurnView(_TurnState):
     """One buffered half-duplex view. Iteration stops on terminal events;
     result also stops at a tool call. Already-yielded events stay in the result.
+    Defaults: 16 MiB of compact ASCII JSON event data, at most 10,000 events.
+    Limits are per view and configurable via max_bytes/max_events. On overflow
+    CollectionLimitError preserves partial events and any consumed rejected
+    event. The session stays open; this is not a cancellation or billing promise.
     Use raw session iteration when buffering is not wanted.
     """
 
@@ -221,6 +285,7 @@ class TurnView(_TurnState):
             raise StopIteration
         self._reading = True
         try:
+            self._check_event_limit()
             return self._accept(self._session.recv())
         except Exception as exc:
             self._failure = exc
@@ -255,6 +320,7 @@ class AsyncTurnView(_TurnState):
             raise StopAsyncIteration
         self._reading = True
         try:
+            self._check_event_limit()
             return self._accept(await self._session.recv())
         except Exception as exc:
             self._failure = exc
@@ -367,9 +433,12 @@ class WebSocketLiveSession:
             for event in decoded:
                 self._pending.append(event)
 
-    def turn(self) -> TurnView:
-        """Iterate one turn; see :class:`TurnView` and :class:`Turn`."""
-        return TurnView(self)
+    def turn(
+        self, *, max_bytes: int = DEFAULT_TURN_MAX_BYTES,
+        max_events: int = DEFAULT_TURN_MAX_EVENTS,
+    ) -> TurnView:
+        """Collect one bounded turn. For unbuffered processing, iterate this session."""
+        return TurnView(self, max_bytes=max_bytes, max_events=max_events)
 
     def close(self) -> None:
         if self._closed:
@@ -536,9 +605,12 @@ class AsyncWebSocketLiveSession:
             for event in decoded:
                 self._pending.append(event)
 
-    def turn(self) -> AsyncTurnView:
-        """Iterate one turn; see :class:`AsyncTurnView` and :class:`Turn`."""
-        return AsyncTurnView(self)
+    def turn(
+        self, *, max_bytes: int = DEFAULT_TURN_MAX_BYTES,
+        max_events: int = DEFAULT_TURN_MAX_EVENTS,
+    ) -> AsyncTurnView:
+        """Async collection with the same limits and recovery as TurnView."""
+        return AsyncTurnView(self, max_bytes=max_bytes, max_events=max_events)
 
     async def close(self) -> None:
         if self._closed:

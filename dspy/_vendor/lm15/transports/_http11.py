@@ -465,53 +465,76 @@ def content_codings(values: list[str]) -> list[str]:
 
 
 class _Inflater:
-    """One zlib stream.  ``deflate`` on the wire is zlib-wrapped by the RFC
-    but raw-deflate in the wild (IIS, some CDNs); like browsers and curl,
-    try zlib first and fall back to raw on the first bytes."""
+    """One content coding, possibly containing several gzip members.
 
-    __slots__ = ("_coding", "_obj", "_started")
+    Deflate normally has a two-byte zlib header (RFC 1950). Wait for
+    both bytes before selecting wrapped or legacy raw deflate, regardless
+    of how the transport split them. Never reinterpret a checksum failure
+    as another format after output has already been delivered.
+    """
+
+    __slots__ = ("_coding", "_obj", "_started", "_prefix")
 
     def __init__(self, coding: str) -> None:
         import zlib
 
         self._coding = coding
         self._started = False
-        if coding == "deflate":
-            self._obj = zlib.decompressobj(zlib.MAX_WBITS)
-        else:
-            self._obj = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        self._prefix = b""
+        self._obj = None if coding == "deflate" else zlib.decompressobj(16 + zlib.MAX_WBITS)
 
     def decompress(self, data: bytes) -> bytes:
         import zlib
 
         if not data:
             return b""
-        try:
-            out = self._obj.decompress(data)
-        except zlib.error as exc:
-            if self._coding == "deflate" and not self._started:
-                self._obj = zlib.decompressobj(-zlib.MAX_WBITS)
-                try:
-                    out = self._obj.decompress(data)
-                except zlib.error as raw_exc:
-                    raise ProtocolError(f"malformed deflate body: {raw_exc}") from raw_exc
-            else:
-                raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
         self._started = True
-        return out
+        if self._obj is None:
+            needed = 2 - len(self._prefix)
+            self._prefix += data[:needed]
+            data = data[needed:]
+            if len(self._prefix) < 2:
+                return b""
+            cmf, flg = self._prefix
+            wrapped = (cmf & 0x0F) == 8 and (cmf >> 4) <= 7 and ((cmf << 8) | flg) % 31 == 0
+            self._obj = zlib.decompressobj(zlib.MAX_WBITS if wrapped else -zlib.MAX_WBITS)
+            data = self._prefix + data
+            self._prefix = b""
+
+        output: list[bytes] = []
+        while data:
+            if self._obj.eof:
+                if self._coding == "deflate":
+                    raise ProtocolError("malformed deflate body: data after the compressed stream")
+                # Match stdlib gzip's allowance for zero padding between
+                # members or after the last member. Other trailing bytes
+                # must form a valid member; they are never silently lost.
+                data = data.lstrip(b"\x00")
+                if not data:
+                    break
+                self._obj = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            try:
+                output.append(self._obj.decompress(data))
+            except zlib.error as exc:
+                raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
+            # zlib stops at ONE gzip member. Carry the remaining bytes
+            # into a fresh member decoder, including a split next header.
+            data = self._obj.unused_data
+        return b"".join(output)
 
     def finish(self) -> bytes:
         import zlib
 
-        try:
-            out = self._obj.flush()
-        except zlib.error as exc:
-            raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
-        if self._started and not self._obj.eof:
+        if not self._started:
+            return b""
+        if self._obj is None or not self._obj.eof:
             raise ProtocolError(
                 f"{self._coding} body ended before the compressed stream did (truncated)"
             )
-        return out
+        try:
+            return self._obj.flush()
+        except zlib.error as exc:
+            raise ProtocolError(f"malformed {self._coding} body: {exc}") from exc
 
 
 class ContentDecoder(_BodyDecoder):

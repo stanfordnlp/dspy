@@ -843,7 +843,6 @@ class AnthropicLM(BaseProviderLM):
             endpoint="messages",
             stream=stream,
             model=request.model,
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

@@ -21,6 +21,7 @@ any execute-tools-until-done loop belongs to the layer above lm15.
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Any, AsyncIterator, Iterator
 
@@ -100,6 +101,7 @@ class StreamAccumulator:
     message_continuation: list[ContinuationState] = field(default_factory=list)
     part_continuation: dict[int, list[ContinuationState]] = field(default_factory=dict)
     logprob_seq: list[TokenLogprob] = field(default_factory=list)
+    logprobs_complete: bool = True
     provider_data: dict[str, Any] | None = None
     adaptations: tuple = ()
 
@@ -128,6 +130,7 @@ class StreamAccumulator:
             self.text_parts.setdefault(delta.part_index, []).append(delta.text or "")
             if delta.logprobs:
                 self.logprob_seq.extend(delta.logprobs)
+            self.logprobs_complete = self.logprobs_complete and delta.logprobs_complete
 
         elif delta.type == "thinking":
             self.thinking_parts.setdefault(delta.part_index, []).append(delta.text or "")
@@ -262,6 +265,7 @@ class StreamAccumulator:
             finish_reason=finish,
             usage=self.usage or Usage(),
             logprobs=tuple(self.logprob_seq) if self.logprob_seq else None,
+            logprobs_complete=self.logprobs_complete,
             provider_data=self.provider_data,
             adaptations=self.adaptations,
         )
@@ -679,10 +683,15 @@ def response_to_events(response: Response) -> Iterator[StreamEvent]:
     # logprobs on text deltas.  Emitting the whole sequence on the first
     # text delta makes Response -> events -> Response lossless.
     pending_logprobs = response.logprobs or ()
+    pending_complete = response.logprobs_complete
+    if not pending_complete and not any(isinstance(p, TextPart) for p in response.message.parts):
+        raise TypeError("Cannot stream incomplete logprobs without a TextPart to carry their coverage")
     for idx, part in enumerate(response.message.parts):
         if isinstance(part, TextPart):
-            yield StreamDeltaEvent(delta=TextDelta(text=part.text, part_index=idx, logprobs=pending_logprobs))
+            yield StreamDeltaEvent(delta=TextDelta(text=part.text, part_index=idx, logprobs=pending_logprobs,
+                                                   logprobs_complete=pending_complete))
             pending_logprobs = ()
+            pending_complete = True
         elif isinstance(part, ThinkingPart):
             yield StreamDeltaEvent(delta=ThinkingDelta(text=part.text, part_index=idx))
         elif isinstance(part, ToolCallPart):
@@ -983,78 +992,110 @@ def apply_client_side_stop(response: Response, stop: tuple[str, ...]) -> Respons
     if not parts:
         parts = [TextPart(text="")]
     message = replace(response.message, parts=tuple(parts))
-    return replace(response, message=message, finish_reason="stop")
+    scores, incomplete = _scores_before_cut(response.logprobs or (), joined, hit[0])
+    return replace(response, message=message, finish_reason="stop", logprobs=scores or None,
+                   logprobs_complete=response.logprobs_complete and not incomplete)
+
+
+def _scores_before_cut(
+    scores: tuple[TokenLogprob, ...], text: str, cut_at: int,
+) -> tuple[tuple[TokenLogprob, ...], bool]:
+    """Keep original scores for whole retained tokens; never score a token fragment.
+
+    Byte boundaries matter: a provider token can itself contain only part of
+    a Unicode character. Only use token spellings as a fallback when their
+    concatenated UTF-8 bytes exactly reproduce the original text.
+    """
+    if not scores or cut_at == 0:
+        return (), False
+    if cut_at == len(text):
+        return scores, False
+    try:
+        token_bytes = [bytes(s.bytes) if s.bytes is not None else s.token.encode("utf-8") for s in scores]
+        original = text.encode("utf-8")
+        boundary = len(text[:cut_at].encode("utf-8"))
+    except (ValueError, UnicodeError):
+        return (), True
+    if b"".join(token_bytes) != original:
+        # These scores cannot be placed reliably on the shortened text.
+        return (), True
+    end = 0
+    for index, data in enumerate(token_bytes):
+        if end == boundary:
+            return scores[:index], False
+        end += len(data)
+        if end > boundary:
+            return scores[:index], True
+    return scores, False
 
 
 class _StopCutter:
-    """Streaming text cutter over ONE text stream in document order.
+    """Keep original events until their text is safe, then pass them unchanged.
 
-    Withholds the last ``len(longest stop) - 1`` characters so a sequence
-    split across deltas — or across two text parts, which a provider's own
-    stop would also catch — is still seen; releases them when later text
-    proves no match.  Withheld text is kept as segments that remember the
-    part they came from, so every released or cut piece is emitted under
-    its own part's index.
+    Text parts form one text stream. A possible stop suffix holds its
+    entire event, plus intervening events to preserve order. Only the
+    event actually cut is reconstructed; unrelated fields survive via
+    dataclasses.replace. This can delay delivery by an event boundary,
+    but never splits token scores just to release text earlier.
     """
 
     def __init__(self, stop: tuple[str, ...]) -> None:
         self.stop = tuple(s for s in stop if s)
         self.hold = max((len(s) for s in self.stop), default=1) - 1
-        self.segments: list[tuple[int, str]] = []  # withheld, in document order
+        self.segments: deque[StreamEvent] = deque()
         self.cut = False
 
-    def _take(self, count: int) -> list[tuple[int, str]]:
-        """Remove and return the first ``count`` characters of the withheld
-        text as (part, text) pieces."""
-        out: list[tuple[int, str]] = []
-        while count > 0 and self.segments:
-            idx, text = self.segments[0]
-            if len(text) <= count:
-                out.append((idx, text))
-                count -= len(text)
-                self.segments.pop(0)
+    def _take(self, count: int, *, cutting: bool = False) -> list[StreamEvent]:
+        out: list[StreamEvent] = []
+        while self.segments:
+            event = self.segments[0]
+            if event.type != "delta" or not isinstance(event.delta, TextDelta):
+                out.append(self.segments.popleft())
+                continue
+            delta = event.delta
+            if cutting and count == 0:
+                break
+            if len(delta.text) <= count:
+                out.append(self.segments.popleft())
+                count -= len(delta.text)
+            elif cutting:
+                scores, incomplete = _scores_before_cut(delta.logprobs, delta.text, count)
+                out.append(replace(event, delta=replace(delta, text=delta.text[:count], logprobs=scores,
+                                                       logprobs_complete=delta.logprobs_complete and not incomplete)))
+                break
             else:
-                out.append((idx, text[:count]))
-                self.segments[0] = (idx, text[count:])
-                count = 0
+                break
         return out
 
-    def feed(self, part_index: int, text: str) -> list[tuple[int, str]]:
-        """Text safe to emit now as ``(part_index, text)`` pieces; sets
-        ``cut`` when the stop was hit (the prefix before it is emitted in
-        the same call)."""
-        if text:
-            self.segments.append((part_index, text))
-        buf = "".join(t for _, t in self.segments)
+    def feed(self, event: StreamEvent) -> list[StreamEvent]:
+        if event.type != "delta" or not isinstance(event.delta, TextDelta):
+            if not self.segments:
+                return [event]
+            self.segments.append(event)
+            return []
+        self.segments.append(event)
+        buf = "".join(e.delta.text for e in self.segments
+                      if e.type == "delta" and isinstance(e.delta, TextDelta))
         hit = _first_stop(buf, self.stop)
         if hit is not None:
-            out = self._take(hit[0])
+            out = self._take(hit[0], cutting=True)
             self.segments.clear()
             self.cut = True
             return out
-        # No hit: everything but the last hold characters is safe (ALL of
-        # buf is withheld when it is shorter than that — a negative slice
-        # start here once released "S" of "ST" and missed "ST"+"OP";
-        # review of dspy#10409).
-        safe = max(0, len(buf) - self.hold) if self.hold else len(buf)
-        return self._take(safe)
+        return self._take(max(0, len(buf) - self.hold))
 
-    def flush(self) -> list[tuple[int, str]]:
-        out, self.segments = list(self.segments), []
+    def flush(self) -> list[StreamEvent]:
+        out = list(self.segments)
+        self.segments.clear()
         return out
 
 
 def _cut_events(cutter: _StopCutter, event: StreamEvent):
-    """Yield the events to emit for one incoming event; sets cutter.cut."""
-    if event.type == "delta" and isinstance(event.delta, TextDelta):
-        for idx, emit in cutter.feed(event.delta.part_index, event.delta.text):
-            if emit:
-                yield StreamDeltaEvent(delta=TextDelta(part_index=idx, text=emit))
-        return
-    if event.type == "end":
-        for idx, text in cutter.flush():
-            yield StreamDeltaEvent(delta=TextDelta(part_index=idx, text=text))
-    yield event
+    if event.type in ("end", "error"):
+        yield from cutter.flush()
+        yield event
+    else:
+        yield from cutter.feed(event)
 
 
 def truncate_stream_at_stop(events: Iterator[StreamEvent], stop: tuple[str, ...]) -> Iterator[StreamEvent]:

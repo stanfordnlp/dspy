@@ -621,6 +621,8 @@ def delta_to_dict(d: Delta) -> dict[str, Any]:
         out["text"] = d.text
         if d.logprobs:
             out["logprobs"] = _logprobs_to_json(d.logprobs)
+        if not d.logprobs_complete:
+            out["logprobs_complete"] = False
     elif isinstance(d, ThinkingDelta):
         out["text"] = d.text
     elif isinstance(d, AudioDelta):
@@ -661,6 +663,7 @@ def delta_from_dict(d: dict[str, Any]) -> Delta:
             text=d.get("text", ""),
             part_index=part_index,
             logprobs=_logprobs_from_json(d.get("logprobs")) or (),
+            logprobs_complete=d.get("logprobs_complete", True),
         )
     if t == "thinking":
         return ThinkingDelta(text=d.get("text", ""), part_index=part_index)
@@ -816,6 +819,7 @@ def response_to_dict(r: Response, *, include_provider_data: bool = False) -> dic
         "finish_reason": r.finish_reason,
         "usage": usage_to_dict(r.usage),
         "logprobs": _logprobs_to_json(r.logprobs),
+        "logprobs_complete": None if r.logprobs_complete else False,
         "adaptations": [adaptation_to_dict(a) for a in r.adaptations] or None,
     }
     if include_provider_data and r.provider_data is not None:
@@ -831,6 +835,7 @@ def response_from_dict(d: dict[str, Any]) -> Response:
         finish_reason=d["finish_reason"],
         usage=usage_from_dict(d["usage"]) if isinstance(d.get("usage"), dict) else Usage(),
         logprobs=_logprobs_from_json(d.get("logprobs")),
+        logprobs_complete=d.get("logprobs_complete", True),
         provider_data=d.get("provider_data"),
         adaptations=tuple(adaptation_from_dict(a) for a in d.get("adaptations") or ()),
     )
