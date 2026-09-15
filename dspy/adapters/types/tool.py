@@ -9,6 +9,7 @@ from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
 from dspy.dsp.utils.settings import settings
+from dspy.lm15 import FunctionTool
 from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
@@ -153,19 +154,17 @@ class Tool(Type):
     def format(self):
         return str(self)
 
-    def format_as_litellm_function_call(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.desc,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.args,
-                    "required": [k for k in self.args if "default" not in self.args[k]],
-                },
+    def as_function_tool(self) -> FunctionTool:
+        """The lm15 tool declaration sent to models that call tools natively."""
+        return FunctionTool(
+            name=self.name,
+            description=self.desc,
+            parameters={
+                "type": "object",
+                "properties": self.args,
+                "required": [k for k in self.args if "default" not in self.args[k]],
             },
-        }
+        )
 
     def _run_async_in_sync(self, coroutine):
         try:

@@ -23,17 +23,31 @@ class SimpleModule(dspy.Module):
         return self.predictor(**kwargs)
 
 
+class _RecordedEngine:
+    """Replay recorded LM history: entries are keyed on the OpenAI-shaped messages they were recorded with."""
+
+    def __init__(self, history):
+        self.recorded = {}
+        for m in history:
+            self.recorded[hash(repr(m["messages"]))] = m
+
+    def complete(self, request):
+        from dspy.clients.lm15_boundary import request_kwargs
+        from dspy.lm15 import Message, Response, Usage
+
+        if request.system is None and len(request.messages) == 1:
+            messages = None  # a prompt-style call was recorded with messages=None
+        else:
+            messages = request_kwargs(request, "chat")["messages"]
+        assert hash(repr(messages)) in self.recorded, f"Message {messages} not found in history"
+        outputs = self.recorded[hash(repr(messages))]["outputs"]
+        text = outputs[0] if isinstance(outputs[0], str) else outputs[0]["text"]
+        return Response(None, request.model, Message.assistant(text), "stop", Usage())
+
+
 class DictDummyLM(dspy.clients.lm.LM):
     def __init__(self, history):
-        super().__init__("dummy", "chat", 0.0, 1000, True)
-        self.history = {}
-        for m in history:
-            self.history[hash(repr(m["messages"]))] = m
-
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        assert hash(repr(messages)) in self.history, f"Message {messages} not found in history"
-        m = self.history[hash(repr(messages))]
-        return m["outputs"]
+        super().__init__("dummy", "chat", 0.0, 1000, cache=False, engine=_RecordedEngine(history))
 
 
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):

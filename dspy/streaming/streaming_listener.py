@@ -17,8 +17,7 @@ from dspy.utils.lazy_import import require
 jiter = require("jiter")
 
 if TYPE_CHECKING:
-    from litellm import ModelResponseStream
-
+    from dspy.clients.engines.streaming import EngineChunk
     from dspy.primitives.module import Module
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
@@ -116,7 +115,7 @@ class StreamListener:
 
         return False
 
-    def receive(self, chunk: ModelResponseStream):
+    def receive(self, chunk: EngineChunk):
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
@@ -154,7 +153,7 @@ class StreamListener:
                     is_last_chunk=self.stream_end,
                 )
 
-        # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
+        # For non-custom streamable types, the streamed text is the chunk's delta content.
         try:
             chunk_message = chunk.choices[0].delta.content
             if chunk_message is None:

@@ -5,7 +5,8 @@ import json
 import pytest
 
 import dspy
-from dspy.clients.execution import _canonical, prepare
+from dspy.clients.execution import prepare
+from dspy.clients.requests import build_request
 from dspy.lm15 import CacheConfig, Config, Message, Request, Response, Usage
 
 
@@ -75,13 +76,13 @@ def test_invalid_values_are_rejected(value):
 
 def test_answer_cache_keys_serialize_and_separate_prompt_policies():
     lm = dspy.LM("openai/gpt-4o")
-    plain = prepare(lm, "hello", None, {}).key(lm, False)
-    disabled = prepare(lm, "hello", None, {"prompt_cache": None}).key(lm, False)
-    stable = prepare(lm, "hello", None, {"prompt_cache": CacheConfig(prefix="stable")}).key(lm, False)
-    history = prepare(lm, "hello", None, {"prompt_cache": CacheConfig(prefix="history")}).key(lm, False)
+    plain = prepare(lm, "hello", {}).key()
+    disabled = prepare(lm, "hello", {"prompt_cache": None}).key()
+    stable = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="stable")}).key()
+    history = prepare(lm, "hello", {"prompt_cache": CacheConfig(prefix="history")}).key()
     assert plain == disabled
     assert dspy.cache.cache_key(stable) != dspy.cache.cache_key(history)
-    assert json.loads(json.dumps(stable))["prompt_cache"] == {"mode": "auto", "prefix": "stable"}
+    assert json.loads(json.dumps(stable))["request"]["config"]["cache"] == {"mode": "auto", "prefix": "stable"}
 
 
 @pytest.mark.asyncio
@@ -106,7 +107,7 @@ def test_no_compatibility_fallback(options, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("prompt_cache must not reach LiteLLM")
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
+    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
     lm = dspy.LM("openai/gpt-4o", cache=False, prompt_cache=CacheConfig(prefix="stable"), **options)
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hello")
@@ -118,7 +119,7 @@ def test_unrepresentable_input_does_not_fallback_with_prompt_cache(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("Compatibility fallback attempted")
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
+    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
     lm = dspy.LM("openai/gpt-4o", cache=False, prompt_cache=CacheConfig(prefix="stable"))
     with pytest.raises(dspy.LMUnsupportedFeatureError):
         lm("hello", prediction={"type": "content", "content": "hello"})
@@ -126,20 +127,19 @@ def test_unrepresentable_input_does_not_fallback_with_prompt_cache(monkeypatch):
 
 def test_provider_cache_options_cannot_conflict():
     lm = dspy.LM("openai/gpt-4o", prompt_cache=CacheConfig(prefix="stable"))
-    call = prepare(lm, "hello", None, {"prompt_cache_key": "other"})
     with pytest.raises(dspy.LMUnsupportedFeatureError, match="Do not combine"):
-        _canonical(call)
+        build_request(lm, "hello", {"prompt_cache_key": "other"})
 
 
 def test_none_is_not_forwarded_to_litellm(monkeypatch):
-    from dspy.clients.call_result import CallResult
     from dspy.clients.engines import LiteLLMEngine
 
-    def complete(self, lm, request, **context):
-        assert "prompt_cache" not in request
-        return CallResult(outputs=["ok"], response_model=lm.model)
+    def complete(self, request):
+        assert request.config.cache is None
+        assert not (request.config.extensions or {})
+        return Response(None, request.model, Message.assistant("ok"), "stop", Usage())
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
+    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
     assert dspy.LM("openai/gpt-4o", engine="litellm", cache=False)("hello", prompt_cache=None) == ["ok"]
 
 
@@ -157,8 +157,10 @@ def test_native_anthropic_marks_system_prefix(monkeypatch):
     lm = dspy.LM("anthropic/claude-haiku-4-5", engine="lm15", api_key="fake", cache=False,
                  prompt_cache=CacheConfig(prefix="stable"))
     try:
-        assert lm(messages=[{"role": "system", "content": "stable instructions"},
-                            {"role": "user", "content": "changing input"}]) == ["ok"]
+        from dspy.adapters import Prompt
+
+        prompt = Prompt(system="stable instructions", messages=(Message.user("changing input"),))
+        assert lm(build_request(lm, prompt, {})).text == "ok"
         payload = json.loads(transport.requests[0].body)
         assert payload["system"] == [{"type": "text", "text": "stable instructions",
                                        "cache_control": {"type": "ephemeral"}}]

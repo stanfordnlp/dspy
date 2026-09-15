@@ -4,7 +4,7 @@ from typing import Any, NamedTuple
 
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.base import Adapter
+from dspy.adapters.base import Adapter, prompt_to_openai_messages
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     apply_output_field_defaults,
@@ -281,16 +281,12 @@ class ChatAdapter(Adapter):
         """
         Format the call data into finetuning data according to the OpenAI API specifications.
 
-        For the chat adapter, this means formatting the data as a list of messages, where each message is a dictionary
-        with a "role" and "content" key. The role can be "system", "user", or "assistant". Then, the messages are
-        wrapped in a dictionary with a "messages" key.
+        Fine-tuning files are a provider format: the rendered prompt is written as OpenAI chat messages (each a
+        dictionary with "role" and "content"), followed by the assistant answer, wrapped in a "messages" key.
         """
-        system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
-            signature=signature, demos=demos, inputs=inputs
-        )
+        prompt = self.format(signature=signature, demos=demos, inputs=inputs)
         assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
             signature=signature, outputs=outputs
         )
-        assistant_message = {"role": "assistant", "content": assistant_message_content}
-        messages = system_user_messages + [assistant_message]
+        messages = prompt_to_openai_messages(prompt) + [{"role": "assistant", "content": assistant_message_content}]
         return {"messages": messages}

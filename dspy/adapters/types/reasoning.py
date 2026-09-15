@@ -4,6 +4,7 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 from dspy.clients.base_lm import BaseLM
+from dspy.lm15 import Response, ThinkingPart
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
@@ -66,10 +67,9 @@ class Reasoning(Type):
             return signature
 
         if "gpt-5" in lm.model and lm.model_type == "chat":
-            # There is a caveat of Litellm as 1.79.0 that when using the chat completion API on GPT-5 family models,
-            # the reasoning content is not available in the response. As a workaround, we don't enable the native
-            # reasoning feature for GPT-5 family models when using the chat completion API.
-            # Litellm issue: https://github.com/BerriAI/litellm/issues/14748
+            # OpenAI's Chat Completions API does not return reasoning content for
+            # GPT-5 family models (only the Responses API does), so native
+            # reasoning would leave the field empty. Keep the text field instead.
             return signature
 
         lm_kwargs["reasoning_effort"] = reasoning_effort
@@ -77,11 +77,10 @@ class Reasoning(Type):
         return signature.delete(field_name)
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Reasoning"]:
-        """Parse the LM response into a Reasoning object."""
-        if "reasoning_content" in response:
-            return Reasoning(content=response["reasoning_content"])
-        return None
+    def parse_lm_response(cls, response: Response) -> Optional["Reasoning"]:
+        """Read the model's native thinking parts into a Reasoning object."""
+        thinking = "".join(part.text for part in response.message.parts_of(ThinkingPart))
+        return Reasoning(content=thinking) if thinking else None
 
     @classmethod
     def parse_stream_chunk(cls, chunk) -> str | None:

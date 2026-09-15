@@ -10,6 +10,7 @@ import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.test_utils.engines import litellm_response
 
 
 def test_xml_adapter_format_and_parse_basic():
@@ -383,20 +384,19 @@ def test_xml_adapter_formats_nested_images():
 
     image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2}).messages
 
-    assert len(messages) == 4
+    assert len(messages) == 3
 
     # Image information in the few-shot example's user message
-    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
-    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
-    assert expected_image1_content in messages[1]["content"]
-    assert expected_image2_content in messages[1]["content"]
-    assert expected_image3_content in messages[1]["content"]
+    from dspy.lm15 import ImagePart
+
+    assert ImagePart(url="https://example.com/image1.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image2.jpg", media_type="image/jpeg") in messages[0].parts
+    assert ImagePart(url="https://example.com/image3.jpg", media_type="image/jpeg") in messages[0].parts
 
     # The query image is formatted in the last user message
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+    assert ImagePart(url="https://example.com/image4.jpg", media_type="image/jpeg") in messages[-1].parts
 
 
 def test_xml_adapter_with_code():
@@ -408,15 +408,15 @@ def test_xml_adapter_with_code():
         result: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
+    prompt = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
 
-    assert len(messages) == 2
+    assert len(prompt.messages) == 1
 
     # The output field type description should be included in the system message even if the output field is nested
-    assert dspy.Code.description() in messages[0]["content"]
+    assert dspy.Code.description() in prompt.system
 
     # The user message should include the question and the tools
-    assert "print('Hello, world!')" in messages[1]["content"]
+    assert "print('Hello, world!')" in prompt.messages[0].text
 
     # Test with code as output field
     class CodeGeneration(dspy.Signature):
@@ -426,7 +426,7 @@ def test_xml_adapter_with_code():
         code: dspy.Code = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response()) as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content='<code>print("Hello, world!")</code>'))],
             model="openai/gpt-4o-mini",
@@ -448,11 +448,10 @@ def test_xml_adapter_full_prompt():
         answer: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
-    messages = adapter.format(QA, [], {"query": "when was Marie Curie born"})
+    prompt = adapter.format(QA, [], {"query": "when was Marie Curie born"})
 
-    assert len(messages) == 2
-    assert messages[0]["role"] == "system"
-    assert messages[1]["role"] == "user"
+    assert len(prompt.messages) == 1
+    assert prompt.messages[0].role == "user"
 
     union_type_repr = "Union[str, NoneType]" if sys.version_info >= (3, 14) else "UnionType[str, NoneType]"
 
@@ -475,8 +474,8 @@ def test_xml_adapter_full_prompt():
         "Respond with the corresponding output fields wrapped in XML tags `<answer>`."
     )
 
-    assert messages[0]["content"] == expected_system
-    assert messages[1]["content"] == expected_user
+    assert prompt.system == expected_system
+    assert prompt.messages[0].text == expected_user
 
 
 def test_xml_adapter_format_exact_messages_for_simple_signature():

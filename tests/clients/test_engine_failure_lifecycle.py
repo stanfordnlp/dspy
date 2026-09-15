@@ -384,27 +384,49 @@ async def test_compatibility_stream_keeps_usage_if_sdk_close_fails(asynchronous,
         def __init__(self):
             self.sent = False
 
+        def _chunk(self):
+            if self.sent:
+                return None
+            self.sent = True
+            return {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            chunk = self._chunk()
+            if chunk is None:
+                raise StopIteration
+            return chunk
+
         def __aiter__(self):
             return self
 
         async def __anext__(self):
-            if self.sent:
+            chunk = self._chunk()
+            if chunk is None:
                 raise StopAsyncIteration
-            self.sent = True
-            return {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}
+            return chunk
+
+        def close(self):
+            raise lm15.TransportError("cleanup failed")
 
         async def aclose(self):
             raise lm15.TransportError("cleanup failed")
 
     calls = []
 
-    async def complete(**kwargs):
+    def complete(**kwargs):
         calls.append(kwargs)
         return Source()
 
+    async def acomplete(**kwargs):
+        return complete(**kwargs)
+
     raw = litellm.ModelResponse(model="fake", choices=[{"message": {"role": "assistant", "content": "ok"}}],
                                usage={"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3})
-    monkeypatch.setattr(litellm, "acompletion", complete)
+    monkeypatch.setattr(litellm, "completion", complete)
+    monkeypatch.setattr(litellm, "acompletion", acomplete)
     monkeypatch.setattr(litellm, "stream_chunk_builder", lambda chunks: raw)
     lm = dspy.LM("openai/fake", engine="litellm", cache=True, num_retries=2)
     with dspy.context(send_stream=Sink()), track_usage() as tracker, pytest.raises(dspy.LMTransportError):

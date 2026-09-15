@@ -17,6 +17,8 @@ from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
 from dspy.utils.usage_tracker import track_usage
+from tests.test_utils.engines import litellm_response, recording_lm
+from tests.test_utils.engines import make_response as make_lm_response
 
 
 def make_response(output_blocks):
@@ -112,7 +114,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
             mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy,
         ):
 
-            def fake_completion(*, cache, num_retries, retry_strategy, **request):
+            def fake_completion(*, cache, num_retries, **request):
                 return ModelResponse(
                     choices=[Choices(message=Message(role="assistant", content="Hi!"))],
                     usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
@@ -122,7 +124,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
             lm = dspy.LM("dummy", engine="litellm", model_type="chat")
-            lm(messages=[{"role": "user", "content": "Hello"}])
+            lm("Hello")
 
             cache_key_spy.assert_not_called()
             cache_get_spy.assert_called_once()
@@ -134,7 +136,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
     calls: list[dict] = []
 
-    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+    def fake_completion(*, cache, num_retries, **request):
         calls.append(request)
         return ModelResponse(
             choices=[Choices(message=Message(role="assistant", content="Hi!"))],
@@ -154,23 +156,23 @@ def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
     lm = dspy.LM(engine="litellm", model="openai/dspy-test-model", model_type="chat")
 
     with track_usage() as usage_tracker:
-        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=1)
+        lm("Query", rollout_id=1)
     assert len(usage_tracker.usage_data) == 1
 
     with track_usage() as usage_tracker:
-        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=1)
+        lm("Query", rollout_id=1)
     assert len(usage_tracker.usage_data) == 0
 
     with track_usage() as usage_tracker:
-        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=2)
+        lm("Query", rollout_id=2)
     assert len(usage_tracker.usage_data) == 1
 
     with track_usage() as usage_tracker:
-        lm(messages=[{"role": "user", "content": "NoRID"}])
+        lm("NoRID")
     assert len(usage_tracker.usage_data) == 1
 
     with track_usage() as usage_tracker:
-        lm(messages=[{"role": "user", "content": "NoRID"}], rollout_id=None)
+        lm("NoRID", rollout_id=None)
     assert len(usage_tracker.usage_data) == 0
 
     assert len(dspy.cache.memory_cache) == 3
@@ -179,7 +181,7 @@ def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
 
 
 def test_zero_temperature_rollout_warns_once(monkeypatch):
-    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+    def fake_completion(*, cache, num_retries, **request):
         return ModelResponse(
             choices=[Choices(message=Message(role="assistant", content="Hi!"))],
             usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
@@ -198,7 +200,7 @@ def test_zero_temperature_rollout_warns_once(monkeypatch):
 
 
 def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
-    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+    def fake_completion(*, cache, num_retries, **request):
         return ModelResponse(
             choices=[Choices(message=Message(role="assistant", content="Hi!"))],
             usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
@@ -238,7 +240,12 @@ def test_text_lms_can_be_queried(litellm_test_server):
 def test_lm_calls_support_callables(litellm_test_server):
     api_base, _ = litellm_test_server
 
-    with mock.patch("litellm.completion", autospec=True, wraps=litellm.completion) as spy_completion:
+    real_completion = litellm.completion
+
+    def call_through(**kwargs):
+        return real_completion(**kwargs)
+
+    with mock.patch("litellm.completion", side_effect=call_through) as spy_completion:
 
         def azure_ad_token_provider(*args, **kwargs):
             return None
@@ -276,14 +283,21 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     lm("Query")
 
 
+def _litellm_failure(lm, error):
+    with mock.patch("litellm.completion", side_effect=error):
+        with pytest.raises(dspy.LMError) as exc_info:
+            lm("question")
+    return exc_info.value
+
+
 def test_lm_wraps_litellm_errors_with_metadata():
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False, num_retries=0)
     response = mock.Mock()
     response.status_code = 429
     response.headers = {"x-request-id": "req-123", "retry-after": "2.5"}
 
     error = litellm.RateLimitError(message="too many requests", llm_provider="openai", model="gpt-4o", response=response)
-    wrapped = lm._wrap_litellm_exception(error)
+    wrapped = _litellm_failure(lm, error)
 
     assert isinstance(wrapped, dspy.LMRateLimitError)
     assert wrapped.model == "gpt-4o"
@@ -294,9 +308,9 @@ def test_lm_wraps_litellm_errors_with_metadata():
 
 
 def test_lm_wraps_litellm_context_window_error():
-    lm = dspy.LM("openai/gpt-4o-mini")
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False, num_retries=0)
     error = litellm.ContextWindowExceededError(message="too long", llm_provider="openai", model="gpt-4o")
-    wrapped = lm._wrap_litellm_exception(error)
+    wrapped = _litellm_failure(lm, error)
 
     assert isinstance(wrapped, dspy.ContextWindowExceededError)
     assert isinstance(wrapped, dspy.LMError)
@@ -305,8 +319,8 @@ def test_lm_wraps_litellm_context_window_error():
 
 
 def test_lm_wraps_unknown_boundary_error_as_unexpected_error():
-    lm = dspy.LM("openai/gpt-4o-mini")
-    wrapped = lm._wrap_litellm_exception(RuntimeError("local boundary failure"))
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False, num_retries=0)
+    wrapped = _litellm_failure(lm, RuntimeError("local boundary failure"))
 
     assert isinstance(wrapped, dspy.LMUnexpectedError)
     assert wrapped.code == "unexpected"
@@ -317,7 +331,7 @@ def test_lm_preserves_existing_lm_error_without_self_cause():
     error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
     lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
-    with mock.patch("dspy.clients.lm.litellm_completion", side_effect=error):
+    with mock.patch("litellm.completion", side_effect=error):
         with pytest.raises(dspy.LMRateLimitError) as exc_info:
             lm("question")
 
@@ -330,7 +344,7 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
     error = dspy.LMRateLimitError("rate limited", model="openai/gpt-4o-mini")
     lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
 
-    with mock.patch("dspy.clients.lm.alitellm_completion", side_effect=error):
+    with mock.patch("litellm.acompletion", side_effect=error):
         with pytest.raises(dspy.LMRateLimitError) as exc_info:
             await lm.acall("question")
 
@@ -340,7 +354,7 @@ async def test_lm_preserves_existing_lm_error_without_self_cause_async():
 
 def test_retry_number_set_correctly():
     lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", num_retries=3)
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion", return_value=litellm_response("ok")) as mock_completion:
         lm("query")
 
     # DSPy owns retries; every individual backend attempt disables them.
@@ -479,77 +493,31 @@ def test_base_lm_init_uses_lm_defaults_and_isolates_callback_list():
 
 
 
-# BaseLM direct-call compatibility tests.
-#
-# These cover the staged typed LM migration: legacy calls still return lists by default, explicit LMRequest calls and
-# experimental direct calls return LMResponse, and typed-LM subclasses receive normalized LMRequest objects.
+# BaseLM engine tests: a custom LM is a BaseLM bound to an engine.
 
 
-def test_base_lm_default_call_keeps_legacy_outputs():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            assert prompt == "Query"
-            assert messages is None
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
-                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                model="custom-model",
-            )
-
-    assert CustomLM("custom-model")("Query") == ["Hi!"]
+def test_base_lm_runs_its_engine_and_returns_list_outputs():
+    lm = recording_lm(["Hi!"], model="custom-model")
+    assert lm("Query") == ["Hi!"]
+    [request] = lm.engine.requests
+    assert request.messages[0].text == "Query"
 
 
+def test_base_lm_rejects_engines_that_do_not_return_responses():
+    class BadEngine:
+        def complete(self, request):
+            return ["not a response"]
+
+    lm = dspy.LM("custom-model", engine=BadEngine(), cache=False, num_retries=0)
+    with pytest.raises(dspy.LMUnexpectedError, match=r"must return dspy\.lm15\.Response"):
+        lm("Query")
 
 
+def test_base_lm_tracks_usage_for_custom_engines():
+    from dspy.lm15 import Usage
 
-
-
-
-
-
-def test_base_lm_typed_forward_contract_rejects_non_lm_response_at_call_time():
-    class CustomLM(dspy.BaseLM):
-        forward_contract = "typed_lm"
-
-        def forward(self, request):
-            return ["not typed"]
-
-    with pytest.raises(TypeError, match="typed_lm contract was removed"):
-        CustomLM("custom-model")("Query")
-
-
-
-
-def _model_response(text: str) -> ModelResponse:
-    return ModelResponse(
-        choices=[Choices(message=Message(role="assistant", content=text))],
-        usage={},
-        model="custom-model",
-    )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def test_base_lm_tracks_usage_for_custom_subclasses():
-    class CustomLM(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            return ModelResponse(
-                choices=[Choices(message=Message(role="assistant", content="Hi!"))],
-                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                model="custom-model",
-            )
-
-    lm = CustomLM(model="custom-model")
+    lm = recording_lm([make_lm_response("Hi!", usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2))],
+                      model="custom-model")
 
     with track_usage() as usage_tracker:
         lm("Query")
@@ -805,11 +773,10 @@ async def test_async_lm_call_with_cache(tmp_path):
 
     lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
 
-    with mock.patch("dspy.clients.lm.alitellm_completion") as mock_alitellm_completion:
+    with mock.patch("litellm.acompletion") as mock_alitellm_completion:
         mock_alitellm_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini"
         )
-        mock_alitellm_completion.__qualname__ = "alitellm_completion"
         await lm.acall("Query")
 
         assert len(cache.memory_cache) == 1
@@ -912,15 +879,20 @@ def test_responses_api():
 
 
 def test_lm_replaces_system_with_developer_role():
-    with mock.patch("dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}) as mock_completion:
-        lm = dspy.LM(
-            "openai/gpt-4o-mini",
-            engine="litellm", cache=False,
-            model_type="responses",
-            use_developer_role=True,
-        )
-        lm.forward(messages=[{"role": "system", "content": "hi"}])
-        assert mock_completion.call_args.kwargs["request"]["messages"][0]["role"] == "developer"
+    from dspy.adapters import Prompt
+    from dspy.clients.requests import build_request
+    from dspy.lm15 import Message as LMMessage
+
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False, model_type="responses", use_developer_role=True)
+    request = build_request(lm, Prompt(system="hi", messages=(LMMessage.user("q"),)), {})
+
+    # The instruction travels as a leading developer message, not as Request.system.
+    assert request.system is None
+    assert request.messages[0].role == "developer"
+    assert request.messages[0].text == "hi"
+    with mock.patch("litellm.responses", return_value=_responses_text_response()) as mock_responses:
+        lm(request)
+    assert mock_responses.call_args.kwargs["input"][0]["role"] == "developer"
 
 
 @pytest.mark.parametrize(
@@ -1131,200 +1103,6 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["max_tokens"] == 100
 
 
-def test_responses_api_converts_images_correctly():
-    from dspy.clients.lm import _convert_chat_request_to_responses_request
-
-    # Test with base64 image
-    request_with_base64_image = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "What's in this image?"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        },
-                    },
-                ],
-            }
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request_with_base64_image)
-
-    assert "input" in result
-    assert len(result["input"]) == 1
-    assert result["input"][0]["role"] == "user"
-
-    content = result["input"][0]["content"]
-    assert len(content) == 2
-
-    # First item should be text converted to input_text format
-    assert content[0]["type"] == "input_text"
-    assert content[0]["text"] == "What's in this image?"
-
-    # Second item should be converted to input_image format
-    assert content[1]["type"] == "input_image"
-    assert (
-        content[1]["image_url"]
-        == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    )
-
-    # Test with URL image
-    request_with_url_image = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}]}
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request_with_url_image)
-
-    content = result["input"][0]["content"]
-    assert len(content) == 1
-    assert content[0]["type"] == "input_image"
-    assert content[0]["image_url"] == "https://example.com/image.jpg"
-
-
-def test_responses_api_converts_files_correctly():
-    from dspy.clients.lm import _convert_chat_request_to_responses_request
-
-    # Test with file data (base64 encoded)
-    request_with_file = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Analyze this file"},
-                    {
-                        "type": "file",
-                        "file": {
-                            "file_data": "data:text/plain;base64,SGVsbG8gV29ybGQ=",
-                            "filename": "test.txt",
-                        },
-                    },
-                ],
-            }
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request_with_file)
-
-    assert "input" in result
-    assert len(result["input"]) == 1
-    assert result["input"][0]["role"] == "user"
-
-    content = result["input"][0]["content"]
-    assert len(content) == 2
-
-    # First item should be text converted to input_text format
-    assert content[0]["type"] == "input_text"
-    assert content[0]["text"] == "Analyze this file"
-
-    # Second item should be converted to input_file format
-    assert content[1]["type"] == "input_file"
-    assert content[1]["file_data"] == "data:text/plain;base64,SGVsbG8gV29ybGQ="
-    assert content[1]["filename"] == "test.txt"
-
-    # Test with file_id
-    request_with_file_id = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "file",
-                        "file": {
-                            "file_id": "file-abc123",
-                            "filename": "document.pdf",
-                        },
-                    }
-                ],
-            }
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request_with_file_id)
-
-    content = result["input"][0]["content"]
-    assert len(content) == 1
-    assert content[0]["type"] == "input_file"
-    assert content[0]["file_id"] == "file-abc123"
-    assert content[0]["filename"] == "document.pdf"
-
-    # Test with all file fields
-    request_with_all_fields = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "file",
-                        "file": {
-                            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
-                            "file_id": "file-xyz789",
-                            "filename": "report.pdf",
-                        },
-                    }
-                ],
-            }
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request_with_all_fields)
-
-    content = result["input"][0]["content"]
-    assert content[0]["type"] == "input_file"
-    assert content[0]["file_data"] == "data:application/pdf;base64,JVBERi0xLjQ="
-    assert content[0]["file_id"] == "file-xyz789"
-    assert content[0]["filename"] == "report.pdf"
-
-
-def test_responses_api_preserves_multi_message_structure():
-    from dspy.clients.lm import _convert_chat_request_to_responses_request
-
-    request = {
-        "model": "openai/gpt-5-mini",
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "What is 2+2?"},
-            {"role": "assistant", "content": "4"},
-            {"role": "user", "content": "And 3+3?"},
-            {"role": "assistant", "content": [{"type": "text", "text": "6"}]},
-            {"role": "user", "content": "And 4+4?"},
-        ],
-    }
-
-    result = _convert_chat_request_to_responses_request(request)
-
-    assert "input" in result
-    assert len(result["input"]) == 6
-
-    assert result["input"][0]["role"] == "system"
-    assert result["input"][0]["content"] == [{"type": "input_text", "text": "You are a helpful assistant."}]
-
-    assert result["input"][1]["role"] == "user"
-    assert result["input"][1]["content"] == [{"type": "input_text", "text": "What is 2+2?"}]
-
-    # Assistant history replays model output, which the Responses API types as
-    # "output_text"; "input_text" on an assistant item is rejected with a 400.
-    assert result["input"][2]["role"] == "assistant"
-    assert result["input"][2]["content"] == [{"type": "output_text", "text": "4"}]
-
-    assert result["input"][3]["role"] == "user"
-    assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
-    assert result["input"][4]["role"] == "assistant"
-    assert result["input"][4]["content"] == [{"type": "output_text", "text": "6"}]
-    assert result["input"][5]["role"] == "user"
-    assert result["input"][5]["content"] == [{"type": "input_text", "text": "And 4+4?"}]
-
-
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[
@@ -1351,25 +1129,19 @@ def test_responses_api_with_image_input():
             max_tokens=16000,
         )
 
-        # Test with messages containing an image
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Describe this image"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        },
-                    },
-                ],
-            }
-        ]
+        # A request whose user message carries an image part
+        from dspy.lm15 import ImagePart, Request
+        from dspy.lm15 import Message as LMMessage
 
-        lm_result = lm(messages=messages)
+        request = Request(model=lm.model, messages=(LMMessage.user([
+            "Describe this image",
+            ImagePart(data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                      media_type="image/png"),
+        ]),))
 
-        assert lm_result == [{"text": "This is a test answer with image input."}]
+        lm_result = lm(request)
+
+        assert lm_result.text == "This is a test answer with image input."
 
         dspy_responses.assert_called_once()
         call_args = dspy_responses.call_args.kwargs
@@ -1438,6 +1210,7 @@ def test_responses_api_with_pydantic_model_input():
         "name": TestModel.__name__,
         "type": "json_schema",
         "schema": {**TestModel.model_json_schema(), "additionalProperties": False},
+        "strict": True,
     }
 
 
@@ -1554,41 +1327,13 @@ async def test_responses_api_with_none_usage_async():
         assert tracker.get_total_tokens() == {}
 
 
-@pytest.mark.asyncio
-async def test_streaming_passes_headers_correctly():
-    from dspy.clients.lm import _get_stream_completion_fn
-
-    custom_headers = {"Authorization": "Bearer my-custom-token"}
-    request = {
-        "model": "openai/gpt-4o-mini",
-        "messages": [{"role": "user", "content": "test"}],
-    }
-
-    mock_stream = mock.AsyncMock()
-    mock_stream.send = mock.AsyncMock()
-
-    async def empty_async_generator():
-        return
-        yield  # Make it a generator
-
-    with mock.patch("dspy.settings") as mock_settings:
-        mock_settings.send_stream = mock_stream
-        mock_settings.caller_predict = None
-        mock_settings.track_usage = False
-
-        with mock.patch("litellm.acompletion") as mock_acompletion:
-            mock_acompletion.return_value = empty_async_generator()
-
-            stream_fn = _get_stream_completion_fn(request, {}, sync=False, headers=custom_headers)
-            assert stream_fn is not None
-
-            with mock.patch("litellm.stream_chunk_builder", return_value={}):
-                await stream_fn()
-
-            # Verify headers were passed to litellm.acompletion
-            mock_acompletion.assert_called_once()
-            call_kwargs = mock_acompletion.call_args.kwargs
-            assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+def test_litellm_engine_passes_headers_and_identifies_dspy():
+    lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False, headers={"Authorization": "Bearer my-custom-token"})
+    with mock.patch("litellm.completion", return_value=litellm_response("ok")) as mock_completion:
+        lm("test")
+    headers = mock_completion.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer my-custom-token"
+    assert headers["User-Agent"] == f"DSPy/{dspy.__version__}"
 
 
 # ---------------------------------------------------------------------------
@@ -1634,66 +1379,52 @@ class ContractSchema(pydantic.BaseModel):
 
 
 
-def test_lm_responses_passes_hosted_tools_through_unchanged():
+def test_lm_responses_engine_writes_lm15_tools_and_documents():
+    """The LiteLLM Responses engine serializes canonical tools and parts with lm15's own dialect."""
+    from dspy.lm15 import BuiltinTool, DocumentPart, FunctionTool, Request, ToolChoice
+    from dspy.lm15 import Message as LMMessage
+
     response = _responses_text_response()
-    hosted_tool = {"type": "web_search", "search_context_size": "low"}
-    flat_tool = {
-        "type": "function",
-        "name": "get_weather",
-        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
-        "strict": True,
+    lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
+    request = Request(
+        model=lm.model,
+        messages=(LMMessage.user(["Read this.", DocumentPart(data="JVBERi0xLjQK", media_type="application/pdf")]),),
+        tools=(
+            BuiltinTool("web_search", config={"search_context_size": "low"}),
+            FunctionTool("get_weather", parameters={"type": "object", "properties": {"city": {"type": "string"}}}),
+        ),
+        config=dspy.lm15.Config(tool_choice=ToolChoice(mode="required", allowed=("get_weather",))),
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
+        lm(request)
+
+    sent = responses.call_args.kwargs
+    assert sent["tools"][0]["type"].startswith("web_search")
+    assert sent["tools"][1]["name"] == "get_weather"
+    assert sent["tool_choice"] == {"type": "function", "name": "get_weather"}
+    file_item = sent["input"][0]["content"][1]
+    assert file_item["type"] == "input_file"
+    assert file_item["file_data"] == "data:application/pdf;base64,JVBERi0xLjQK"
+
+
+def test_lm_reads_responses_api_tool_spellings_from_options():
+    """Flat function tools, hosted tools and their tool_choice forms become lm15 objects."""
+    from dspy.clients.requests import build_request
+    from dspy.lm15 import BuiltinTool, FunctionTool
+
+    lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
+    flat = {"type": "function", "name": "get_time", "parameters": {"type": "object", "properties": {}}, "strict": True}
+
+    request = build_request(lm, "hi", {"tools": [flat, {"type": "web_search_preview"}, _chat_shaped_weather_tool()],
+                                       "tool_choice": {"type": "function", "name": "get_time"}})
+    assert {(type(tool), tool.name) for tool in request.tools} == {
+        (FunctionTool, "get_time"), (BuiltinTool, "web_search_preview"), (FunctionTool, "get_weather"),
     }
+    assert request.config.tool_choice.allowed == ("get_time",)
 
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
-        lm("What is in the news?", tools=[hosted_tool, _chat_shaped_weather_tool(), flat_tool])
-
-    sent_tools = responses.call_args.kwargs["tools"]
-    assert sent_tools[0] == hosted_tool
-    assert sent_tools[1]["name"] == "get_weather"
-    assert sent_tools[2] == flat_tool
-
-
-def test_lm_responses_passes_native_tool_choice_shapes_through():
-    response = _responses_text_response()
-    for native_choice in (
-        {"type": "function", "name": "get_weather"},
-        {"type": "web_search_preview"},
-        {"type": "allowed_tools", "mode": "auto", "tools": [{"type": "function", "name": "get_weather"}]},
-    ):
-        with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-            lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
-            lm("What is the weather?", tools=[_chat_shaped_weather_tool()], tool_choice=native_choice)
-
-        assert responses.call_args.kwargs["tool_choice"] == native_choice
-
-
-def test_lm_responses_tolerates_native_content_and_sdk_message_dumps():
-    response = _responses_text_response()
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
-        lm(
-            messages=[
-                {"role": "user", "content": [{"type": "input_text", "text": "Say hi."}]},
-                # An assistant message dict dumped from an OpenAI SDK response.
-                {"role": "assistant", "content": "hi", "refusal": None, "annotations": [], "function_call": None},
-                {"role": "user", "content": [{"type": "output_text", "text": "Again."}]},
-                {
-                    "id": "msg_1",
-                    "type": "message",
-                    "status": "completed",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "hello", "annotations": []}],
-                },
-            ]
-        )
-
-    sent = responses.call_args.kwargs["input"]
-    assert sent[0]["content"] == [{"type": "input_text", "text": "Say hi."}]
-    assert sent[1] == {"role": "assistant", "content": [{"type": "output_text", "text": "hi"}]}
-    assert sent[2]["content"] == [{"type": "input_text", "text": "Again."}]
-    assert sent[3] == {"role": "assistant", "content": [{"type": "output_text", "text": "hello"}]}
+    hosted = build_request(lm, "hi", {"tools": [{"type": "web_search_preview"}], "tool_choice": {"type": "web_search_preview"}})
+    assert hosted.config.tool_choice.allowed == ("web_search_preview",)
 
 
 def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
@@ -1704,31 +1435,8 @@ def test_lm_responses_explicit_reasoning_wins_over_constructor_effort():
         lm("Say hi.", reasoning={"effort": "high"})
 
     sent = responses.call_args.kwargs
-    assert sent["reasoning"] == {"effort": "high"}
+    assert sent["reasoning"] == {"effort": "high", "summary": "auto"}
     assert "reasoning_effort" not in sent
-
-
-def test_lm_responses_forwards_raw_base64_file_data_verbatim():
-    response = _responses_text_response()
-    raw_base64 = "JVBERi0xLjQK"
-
-    with mock.patch("litellm.responses", autospec=True, return_value=response) as responses:
-        lm = dspy.LM("openai/dspy-test-model", engine="litellm", model_type="responses", cache=False)
-        lm(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Read this."},
-                        {"type": "file", "file": {"file_data": raw_base64, "filename": "doc.pdf"}},
-                    ],
-                }
-            ]
-        )
-
-    file_item = responses.call_args.kwargs["input"][0]["content"][1]
-    assert file_item["type"] == "input_file"
-    assert file_item["file_data"] == raw_base64
 
 
 def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
