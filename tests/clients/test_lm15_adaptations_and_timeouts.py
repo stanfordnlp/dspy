@@ -167,3 +167,70 @@ def test_missing_key_remedy_names_dspy_lm(monkeypatch):
         lm("hello")
     text = str(err.value)
     assert 'pass api_key="..." to dspy.LM(...)' in text and "RouterConfig" not in text
+
+
+# ─── review findings, through dspy.LM ────────────────────────────────
+
+def test_simultaneous_first_calls_share_one_pool_and_close_releases_it(monkeypatch):
+    import threading
+
+    from dspy.clients.engines import LM15Engine as Engine
+
+    calls = []
+    monkeypatch.setattr(Engine, "complete", lambda self, request: calls.append(request) or dspy.lm15.Response(
+        None, request.model, dspy.lm15.Message.assistant("ok"), "stop", dspy.lm15.Usage()))
+    lm = dspy.LM("openai/gpt-4o", api_key="k", cache=False, timeout=30)
+    barrier = threading.Barrier(8)
+    transports: set[int] = set()
+
+    def go():
+        barrier.wait()
+        assert lm("hello") == ["ok"]
+        backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+        transports.add(id(backend.router._shared_transport()))
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(transports) == 1
+    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {}), False)
+    transport = backend.router._shared_transport()
+    lm.close()
+    assert transport._closed
+
+
+def test_stop_word_split_across_stream_chunks_is_honoured(monkeypatch):
+    import dspy.clients.execution as execution
+    from dspy.lm15 import RouterConfig
+
+    frames = [
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"r","model":"gpt-5"}}\n\n',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"m","role":"assistant","content":[]}}\n\n',
+    ]
+    for piece in ("alpha ", "S", "T", "O", "P", " beta"):
+        frames.append('event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": piece}) + "\n\n")
+    frames.append('event: response.completed\ndata: {"type":"response.completed","response":{"id":"r","model":"gpt-5","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":9}}}\n\n')
+    transport = FakeTransport([FakeResponse(status=200, body="".join(frames).encode())])
+    monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
+        **{**{k: v for k, v in kwargs.items() if k != "timeouts"}, "api_keys": {"openai": "fake"}, "transport": transport},
+    ))
+    lm = dspy.LM("openai/gpt-5", model_type="responses", cache=False)
+    outputs = lm("hello", stop=["STOP"])
+    assert outputs[0]["text"] == "alpha "
+    assert [a.action for a in lm.history[-1]["adaptations"]] == ["client_side"]
+
+
+def test_plan_reads_no_stored_login(monkeypatch):
+    from dspy._vendor.lm15 import access
+
+    class Forbidden(dict):
+        def get(self, key, default=None):
+            raise AssertionError("engine selection must not read a stored login")
+
+    monkeypatch.setattr(access, "_CREDENTIAL_LOADERS", Forbidden())
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    lm = dspy.LM("anthropic/claude-sonnet-4-5", cache=False)
+    backend, _, _ = _engine(lm, prepare(lm, "hello", None, {"seed": 7}), False)
+    assert isinstance(backend, LM15Engine)  # selected without a key, without a login

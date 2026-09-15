@@ -114,7 +114,10 @@ class _Routing:
         with self._lock:
             if self._closed:
                 raise ConfigurationError("Engine is closed")
-        return self.router.plan(replace(request, model=f"{resolution.provider}:{resolution.model}"))
+            # Under the engine's lock like _target: the router is thread-safe
+            # itself (lm15 rc2), and this keeps "closed" and "planning"
+            # from interleaving.
+            return self.router.plan(replace(request, model=f"{resolution.provider}:{resolution.model}"))
 
 
 class LM15Engine(_Routing):
