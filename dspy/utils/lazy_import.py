@@ -106,6 +106,16 @@ class _LazyModule(types.ModuleType):
                 return loaded
 
             spec = self._dspy_lazy_spec
+            if not hasattr(spec.loader, "exec_module"):
+                # Let importlib drive loaders that only implement the legacy
+                # load_module protocol.
+                sys.modules.pop(module_name, None)
+                try:
+                    return importlib.import_module(module_name)
+                except Exception:
+                    sys.modules[module_name] = self
+                    raise
+
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             try:
