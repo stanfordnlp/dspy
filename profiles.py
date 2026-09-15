@@ -265,12 +265,13 @@ def _redacted_url(url: str) -> str:
 
     try:
         parts = urlsplit(url)
+        # netloc is "user:pass@host:port"; keep only what follows the "@".
+        # (Reading parts.port instead raised on an out-of-range port and
+        # turned a warning into a failure — greptile on dspy#10409.)
+        host = parts.netloc.rsplit("@", 1)[-1]
+        return urlunsplit((parts.scheme, host, parts.path, "", ""))
     except ValueError:
         return "<url>"
-    host = parts.hostname or ""
-    if parts.port is not None:
-        host = f"{host}:{parts.port}"
-    return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 def _default_openai_responses_compat_for_base_url(base_url: str) -> OpenAIResponsesCompat:
