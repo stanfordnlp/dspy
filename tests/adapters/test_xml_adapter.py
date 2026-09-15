@@ -9,6 +9,7 @@ from typing_extensions import TypedDict
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
+from dspy.primitives.repl_types import REPLEntry
 from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
@@ -144,8 +145,7 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
 
     adapter = XMLAdapter()
     order_schema = (
-        "<order><order_id>...</order_id><address><city>...</city></address>"
-        "<labels><item>...</item></labels></order>"
+        "<order><order_id>...</order_id><address><city>...</city></address><labels><item>...</item></labels></order>"
     )
     orders_schema = (
         "<orders><item><order_id>...</order_id><address><city>...</city></address>"
@@ -306,8 +306,7 @@ def test_xml_adapter_format_and_parse_list_of_models():
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml == (
-        "<items><item><name>a</name><score>1.1</score></item>"
-        "<item><name>b</name><score>2.2</score></item></items>"
+        "<items><item><name>a</name><score>1.1</score></item><item><name>b</name><score>2.2</score></item></items>"
     )
     assert adapter.parse(TestSignature, xml) == {"items": items}
 
@@ -484,7 +483,8 @@ def test_xml_adapter_format_exact_messages_for_simple_signature():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?"},
@@ -567,7 +567,7 @@ def test_xml_adapter_format_exact_non_native_tool_result_history_field():
         "</question>\n"
         "\n"
         "<tools>\n"
-        '["search. It takes arguments {\'query\': {\'type\': \'string\'}}."]\n'
+        "[\"search. It takes arguments {'query': {'type': 'string'}}.\"]\n"
         "</tools>\n"
         "\n"
         "Respond with the corresponding output fields wrapped in XML tags `<next_thought>`, then `<tool_calls>`."
@@ -580,7 +580,8 @@ def test_xml_adapter_format_exact_messages_for_two_input_signature():
         answer: str = dspy.InputField()
         judgement: str = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "why did a chicken cross the kitchen?", "answer": "To get to the other side!"},
@@ -634,7 +635,8 @@ def test_xml_adapter_format_exact_messages_with_demo_and_typed_output():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         MultiAnswer,
         demos=[{"question": "Q1", "answer": "A1", "score": 0.9}],
         inputs={"question": "Q2"},
@@ -667,9 +669,12 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is:\x20
         Given the fields `question`, produce the fields `answer`, `score`.""",
         },
-        {"role": "user", "content": """<question>
+        {
+            "role": "user",
+            "content": """<question>
 Q1
-</question>"""},
+</question>""",
+        },
         {
             "role": "assistant",
             "content": """<answer>
@@ -739,7 +744,8 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
             }
         ]
     )
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         RichRenderingSignature,
         demos=[
             {
@@ -759,107 +765,132 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
         },
     )
 
-    expected_messages = [{"role": "system",
-      "content": "Your input fields are:\n"
-                 "1. `history` (History): \n"
-                 "2. `image` (Image): \n"
-                 "3. `tools` (list[Tool]): \n"
-                 "4. `profile` (Profile): \n"
-                 "5. `question` (str):\n"
-                 "Your output fields are:\n"
-                 "1. `answer` (AnswerCard):\n"
-                 "All interactions will be structured in the following way, with the appropriate "
-                 "values filled in.\n"
-                 "\n"
-                 "<history>\n"
-                 "{history}\n"
-                 "</history>\n"
-                 "\n"
-                 "<image>\n"
-                 "{image}\n"
-                 "</image>\n"
-                 "\n"
-                 "<tools>\n"
-                 "{tools}\n"
-                 "</tools>\n"
-                 "\n"
-                 "<profile>\n"
-                 "{profile}\n"
-                 "</profile>\n"
-                 "\n"
-                 "<question>\n"
-                 "{question}\n"
-                 "</question>\n"
-                 "\n"
-                 "<answer><answer>...</answer><sources><item>...</item></sources></answer>\n"
-                 "In adhering to this structure, your objective is: \n"
-                 "        Answer using all supplied context."},
-     {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "<image>\n"},
-                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
-                  {"type": "text",
-                   "text": '\n'
-                           '</image>\n'
-                           '\n'
-                           '<tools>\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
-                           '</tools>\n'
-                           '\n'
-                           '<profile>\n'
-                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
-                           '"interests": ["math", "machines"]}\n'
-                           '</profile>\n'
-                           '\n'
-                           '<question>\n'
-                           'What should we mention?\n'
-                           '</question>'}]},
-     {"role": "assistant",
-      "content": "<answer><answer>Mention analytical engines.</answer><sources><item>demo</item></sources></answer>"},
-     {"role": "user",
-      "content": '<profile>\n'
-                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
-                 '["math", "machines"]}\n'
-                 '</profile>\n'
-                 '\n'
-                 '<question>\n'
-                 'Who is Ada?\n'
-                 '</question>'},
-     {"role": "assistant",
-      "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>"},
-     {"role": "user",
-      "content": [{"type": "text", "text": "<image>\n"},
-                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
-                  {"type": "text",
-                   "text": '\n'
-                           '</image>\n'
-                           '\n'
-                           '<tools>\n'
-                           '["search, whose description is <desc>Search for documents.</desc>. It '
-                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
-                           '\'default\': 3}}."]\n'
-                           '</tools>\n'
-                           '\n'
-                           '<profile>\n'
-                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
-                           '"interests": ["compilers", "navy"]}\n'
-                           '</profile>\n'
-                           '\n'
-                           '<question>\n'
-                           'What should the answer include?\n'
-                           '</question>\n'
-                           '\n'
-                           'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`. Use this nested XML structure: '
-                               '<answer><answer>...</answer><sources><item>...</item></sources></answer>'}]}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `history` (History): \n"
+            "2. `image` (Image): \n"
+            "3. `tools` (list[Tool]): \n"
+            "4. `profile` (Profile): \n"
+            "5. `question` (str):\n"
+            "Your output fields are:\n"
+            "1. `answer` (AnswerCard):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<history>\n"
+            "{history}\n"
+            "</history>\n"
+            "\n"
+            "<image>\n"
+            "{image}\n"
+            "</image>\n"
+            "\n"
+            "<tools>\n"
+            "{tools}\n"
+            "</tools>\n"
+            "\n"
+            "<profile>\n"
+            "{profile}\n"
+            "</profile>\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<answer><answer>...</answer><sources><item>...</item></sources></answer>\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Answer using all supplied context.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "This is an example of the task, though some input or output fields are not "
+                    "supplied.\n"
+                    "\n"
+                    "<image>\n",
+                },
+                {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                {
+                    "type": "text",
+                    "text": "\n"
+                    "</image>\n"
+                    "\n"
+                    "<tools>\n"
+                    '["search, whose description is <desc>Search for documents.</desc>. It '
+                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                    "'default': 3}}.\"]\n"
+                    "</tools>\n"
+                    "\n"
+                    "<profile>\n"
+                    '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                    '"interests": ["math", "machines"]}\n'
+                    "</profile>\n"
+                    "\n"
+                    "<question>\n"
+                    "What should we mention?\n"
+                    "</question>",
+                },
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": "<answer><answer>Mention analytical engines.</answer><sources><item>demo</item></sources></answer>",
+        },
+        {
+            "role": "user",
+            "content": "<profile>\n"
+            '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+            '["math", "machines"]}\n'
+            "</profile>\n"
+            "\n"
+            "<question>\n"
+            "Who is Ada?\n"
+            "</question>",
+        },
+        {
+            "role": "assistant",
+            "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>",
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "<image>\n"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                {
+                    "type": "text",
+                    "text": "\n"
+                    "</image>\n"
+                    "\n"
+                    "<tools>\n"
+                    '["search, whose description is <desc>Search for documents.</desc>. It '
+                    "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                    "'default': 3}}.\"]\n"
+                    "</tools>\n"
+                    "\n"
+                    "<profile>\n"
+                    '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                    '"interests": ["compilers", "navy"]}\n'
+                    "</profile>\n"
+                    "\n"
+                    "<question>\n"
+                    "What should the answer include?\n"
+                    "</question>\n"
+                    "\n"
+                    "Respond with the corresponding output fields wrapped in XML tags "
+                    "`<answer>`. Use this nested XML structure: "
+                    "<answer><answer>...</answer><sources><item>...</item></sources></answer>",
+                },
+            ],
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
 
 def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
     class XmlAddress(pydantic.BaseModel):
@@ -874,33 +905,41 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
         question: str = dspy.InputField()
         summary: XmlSummary = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"})
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(), PydanticSignature, [], {"question": "Summarize"}
+    )
 
-    expected_messages = [{"role": "system",
-      "content": "Your input fields are:\n"
-                 "1. `question` (str):\n"
-                 "Your output fields are:\n"
-                 "1. `summary` (XmlSummary):\n"
-                 "All interactions will be structured in the following way, with the appropriate "
-                 "values filled in.\n"
-                 "\n"
-                 "<question>\n"
-                 "{question}\n"
-                 "</question>\n"
-                 "\n"
-                 "<summary><title>...</title><address><city>...</city><country>...</country>"
-                 "</address></summary>\n"
-                 "In adhering to this structure, your objective is: \n"
-                 "        Given the fields `question`, produce the fields `summary`."},
-     {"role": "user",
-      "content": "<question>\n"
-                 "Summarize\n"
-                 "</question>\n"
-                 "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
-                    "Use this nested XML structure: "
-                    "<summary><title>...</title><address><city>...</city><country>...</country>"
-                    "</address></summary>"}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `question` (str):\n"
+            "Your output fields are:\n"
+            "1. `summary` (XmlSummary):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<summary><title>...</title><address><city>...</city><country>...</country>"
+            "</address></summary>\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Given the fields `question`, produce the fields `summary`.",
+        },
+        {
+            "role": "user",
+            "content": "<question>\n"
+            "Summarize\n"
+            "</question>\n"
+            "\n"
+            "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
+            "Use this nested XML structure: "
+            "<summary><title>...</title><address><city>...</city><country>...</country>"
+            "</address></summary>",
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -913,69 +952,223 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
         answer: str = dspy.OutputField()
         score: float = dspy.OutputField()
 
-    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.XMLAdapter(),
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
         IncompleteDemoSignature,
         [{"question": "Q1", "answer": "A1"}],
         {"question": "Q2", "context": "C2"},
     )
 
-    expected_messages = [{"role": "system",
-      "content": "Your input fields are:\n"
-                 "1. `question` (str): \n"
-                 "2. `context` (str):\n"
-                 "Your output fields are:\n"
-                 "1. `answer` (str): \n"
-                 "2. `score` (float):\n"
-                 "All interactions will be structured in the following way, with the appropriate "
-                 "values filled in.\n"
-                 "\n"
-                 "<question>\n"
-                 "{question}\n"
-                 "</question>\n"
-                 "\n"
-                 "<context>\n"
-                 "{context}\n"
-                 "</context>\n"
-                 "\n"
-                 "<answer>\n"
-                 "{answer}\n"
-                 "</answer>\n"
-                 "\n"
-                 "<score>\n"
-                 "{score}        # note: the value you produce must be a single float value\n"
-                 "</score>\n"
-                 "In adhering to this structure, your objective is: \n"
-                 "        Given the fields `question`, `context`, produce the fields `answer`, "
-                 "`score`."},
-     {"role": "user",
-      "content": "This is an example of the task, though some input or output fields are not "
-                 "supplied.\n"
-                 "\n"
-                 "<question>\n"
-                 "Q1\n"
-                 "</question>"},
-     {"role": "assistant",
-      "content": "<answer>\n"
-                 "A1\n"
-                 "</answer>\n"
-                 "\n"
-                 "<score>\n"
-                 "Not supplied for this particular example. \n"
-                 "</score>"},
-     {"role": "user",
-      "content": "<question>\n"
-                 "Q2\n"
-                 "</question>\n"
-                 "\n"
-                 "<context>\n"
-                 "C2\n"
-                 "</context>\n"
-                 "\n"
-                 "Respond with the corresponding output fields wrapped in XML tags `<answer>`, then "
-                 "`<score>`."}]
+    expected_messages = [
+        {
+            "role": "system",
+            "content": "Your input fields are:\n"
+            "1. `question` (str): \n"
+            "2. `context` (str):\n"
+            "Your output fields are:\n"
+            "1. `answer` (str): \n"
+            "2. `score` (float):\n"
+            "All interactions will be structured in the following way, with the appropriate "
+            "values filled in.\n"
+            "\n"
+            "<question>\n"
+            "{question}\n"
+            "</question>\n"
+            "\n"
+            "<context>\n"
+            "{context}\n"
+            "</context>\n"
+            "\n"
+            "<answer>\n"
+            "{answer}\n"
+            "</answer>\n"
+            "\n"
+            "<score>\n"
+            "{score}        # note: the value you produce must be a single float value\n"
+            "</score>\n"
+            "In adhering to this structure, your objective is: \n"
+            "        Given the fields `question`, `context`, produce the fields `answer`, "
+            "`score`.",
+        },
+        {
+            "role": "user",
+            "content": "This is an example of the task, though some input or output fields are not "
+            "supplied.\n"
+            "\n"
+            "<question>\n"
+            "Q1\n"
+            "</question>",
+        },
+        {
+            "role": "assistant",
+            "content": "<answer>\nA1\n</answer>\n\n<score>\nNot supplied for this particular example. \n</score>",
+        },
+        {
+            "role": "user",
+            "content": "<question>\n"
+            "Q2\n"
+            "</question>\n"
+            "\n"
+            "<context>\n"
+            "C2\n"
+            "</context>\n"
+            "\n"
+            "Respond with the corresponding output fields wrapped in XML tags `<answer>`, then "
+            "`<score>`.",
+        },
+    ]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_non_reasoning_lm():
+    class NonReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return False
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=NonReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<reasoning>\nFirst explore the data\n</reasoning>\n\n<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" not in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_reasoning_lm():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=100,
+                ),
+            }
+        ]
+    )
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx = 20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
+    assert "reasoning_effort" in lm_kwargs
+
+
+def test_xml_adapter_format_messages_and_lm_kwargs_with_repl_history_and_truncation():
+    class ReasoningLM(dspy.utils.DummyLM):
+        @property
+        def supports_reasoning(self):
+            return True
+
+    class REPLHistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        variables_info: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {
+                "variables_info": "INFO_1",
+                "repl_entry": REPLEntry(
+                    reasoning="First explore the data",
+                    code="x = 10\nprint(f'x = {x}')",
+                    output="x = 20",
+                    max_output_chars=4,
+                ),
+            }
+        ]
+    )
+
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.XMLAdapter(),
+        REPLHistorySignature,
+        [],
+        {"variables_info": "INFO_2", "history": history},
+        lm=ReasoningLM([{}]),
+    )
+
+    assert messages[1]["role"] == "user"
+    assert "INFO_1" in messages[1]["content"]
+    assert messages[2] == {
+        "role": "assistant",
+        "content": "<code>\nx = 10\nprint(f'x = {x}')\n</code>",
+    }
+    assert messages[3] == {
+        "role": "user",
+        "content": "<repl_output>\nx \n\n... (2 characters omitted) ...\n\n20\n</repl_output>",
+    }
+    assert messages[4]["role"] == "user"
+    assert "INFO_2" in messages[4]["content"]
+    assert "history" not in messages[4]["content"]
 
 
 def test_format_system_message():
