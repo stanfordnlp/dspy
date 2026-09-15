@@ -93,15 +93,16 @@ class Tool(Type):
         sig = inspect.signature(annotations_func)
         # Get available type hints
         available_hints = get_type_hints(annotations_func)
-        # Build a dictionary of arg name -> type (defaulting to Any when missing)
-        hints = {param_name: available_hints.get(param_name, Any) for param_name in sig.parameters.keys()}
-        default_values = {param_name: sig.parameters[param_name].default for param_name in sig.parameters.keys()}
 
         # Process each argument's type to generate its JSON schema.
-        for k, v in hints.items():
-            arg_types[k] = v
-            if k == "return":
+        # *args / **kwargs are not JSON-schema parameters; including them makes
+        # native function-calling treat a phantom "kwargs"/"args" field as required.
+        for param_name, param in sig.parameters.items():
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
                 continue
+            k = param_name
+            v = available_hints.get(k, Any)
+            arg_types[k] = v
             # Check if the type (or its origin) is a subclass of Pydantic's BaseModel
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
@@ -110,8 +111,8 @@ class Tool(Type):
                 args[k] = v_json_schema
             else:
                 args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
-            if default_values[k] is not inspect.Parameter.empty:
-                args[k]["default"] = default_values[k]
+            if param.default is not inspect.Parameter.empty:
+                args[k]["default"] = param.default
             if arg_desc and k in arg_desc:
                 args[k]["description"] = arg_desc[k]
 
