@@ -92,6 +92,28 @@ def test_lm_after_dump_and_load_state():
     assert new_instance.lm.dump_state() == expected_lm_state
 
 
+def test_config_after_dump_and_load_state():
+    # Per-predictor generation config must survive a save/load round-trip.
+    # Regression: dump_state did not serialize self.config, so it was lost on load.
+    predict_instance = Predict("question -> answer", max_tokens=1234, n=4)
+    assert predict_instance.config == {"max_tokens": 1234, "n": 4}
+
+    dumped_state = predict_instance.dump_state()
+    assert "config" in dumped_state
+
+    new_instance = Predict("question -> answer")
+    new_instance.load_state(dumped_state)
+    assert new_instance.config == {"max_tokens": 1234, "n": 4}
+
+    # Backward compatibility: state files saved before this change (no "config" key)
+    # must still load without error, leaving the config untouched.
+    legacy_state = dict(dumped_state)
+    del legacy_state["config"]
+    legacy_instance = Predict("question -> answer")
+    legacy_instance.load_state(legacy_state)
+    assert legacy_instance.config == {}
+
+
 def test_base_lm_dump_state_ignores_internal_class_marker_kwarg():
     lm = CustomStateLM(model="custom-model", deployment="prod", **{LM_CLASS_STATE_KEY: "malicious.module.LM"})
 
