@@ -53,10 +53,12 @@ jobs:
           branch_status=$?
           set -e
           if [[ "$branch_status" == 0 ]]; then
-            git -C docs-deployment fetch origin versioned-docs:versioned-docs
+            git -C docs-deployment fetch origin versioned-docs:refs/remotes/origin/versioned-docs
           elif [[ "$branch_status" != 2 ]]; then
             exit "$branch_status"
           fi
+          # Anchor the complete candidate to production so GitHub can review it as a PR.
+          git -C docs-deployment branch --force versioned-docs master
       - name: Reconstruct all historical snapshots
         run: |
           python docs/scripts/bootstrap_versioned_docs.py \
@@ -77,4 +79,4 @@ jobs:
           gh auth setup-git
           # This staging push does not change production or activate Mike.
           # A reviewed dspy-docs PR promotes the candidate to master atomically.
-          git -C docs-deployment push origin versioned-docs
+          git -C docs-deployment push --force-with-lease origin versioned-docs
