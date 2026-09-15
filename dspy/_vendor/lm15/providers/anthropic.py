@@ -788,8 +788,9 @@ class AnthropicLM(BaseProviderLM):
                       "this server accepts output_config.format and does not apply it; "
                       "describe the shape in the prompt",
                       asked=request.config.response_format, provider=self.provider)
-            output_config = _response_format_to_anthropic_output_config(request.config.response_format)
-            payload["output_config"] = {**payload.get("output_config", {}), **output_config}
+            else:
+                output_config = _response_format_to_anthropic_output_config(request.config.response_format)
+                payload["output_config"] = {**payload.get("output_config", {}), **output_config}
         # Promoted cross-provider knobs (changes/2026-09-01-extensions-burn-down):
         # user_id rides Anthropic's metadata.user_id; store has no Anthropic
         # wire field — raise, never silently drop.

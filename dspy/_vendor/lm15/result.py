@@ -947,26 +947,39 @@ def _first_stop(text: str, stop: tuple[str, ...]) -> tuple[int, str] | None:
 
 
 def apply_client_side_stop(response: Response, stop: tuple[str, ...]) -> Response:
-    """Cut the response's text parts at the first stop sequence (in
-    document order across parts); parts after the cut are removed."""
+    """Cut the response's visible text at the first stop sequence.
+
+    The text parts are one stream in document order: a sequence that
+    starts at the end of one part and finishes at the start of the next
+    is a hit (a provider's own stop works on the token stream and knows
+    no block boundary).  The part holding the start is cut there; every
+    later part is removed.
+    """
     from dataclasses import replace
 
     if not stop:
         return response
-    parts: list[Part] = []
-    cut = False
-    for part in response.message.parts:
-        if cut:
-            break
-        if isinstance(part, TextPart):
-            hit = _first_stop(part.text, stop)
-            if hit is not None:
-                parts.append(replace(part, text=part.text[: hit[0]]))
-                cut = True
-                continue
-        parts.append(part)
-    if not cut:
+    text_parts = [(i, p) for i, p in enumerate(response.message.parts) if isinstance(p, TextPart)]
+    joined = "".join(p.text for _, p in text_parts)
+    hit = _first_stop(joined, stop)
+    if hit is None:
         return response
+    # Locate the part that holds the hit's start.
+    offset = 0
+    cut_index, cut_at = text_parts[-1][0], 0
+    for index, part in text_parts:
+        if offset + len(part.text) > hit[0]:
+            cut_index, cut_at = index, hit[0] - offset
+            break
+        offset += len(part.text)
+    parts: list[Part] = []
+    for index, part in enumerate(response.message.parts):
+        if index > cut_index:
+            break
+        if index == cut_index:
+            parts.append(replace(part, text=part.text[:cut_at]))
+        else:
+            parts.append(part)
     if not parts:
         parts = [TextPart(text="")]
     message = replace(response.message, parts=tuple(parts))
@@ -974,45 +987,69 @@ def apply_client_side_stop(response: Response, stop: tuple[str, ...]) -> Respons
 
 
 class _StopCutter:
-    """Streaming text cutter.  Withholds the last ``len(longest stop) - 1``
-    characters of each text part so a sequence split across two deltas is
-    still caught; releases them when a later delta proves no match."""
+    """Streaming text cutter over ONE text stream in document order.
+
+    Withholds the last ``len(longest stop) - 1`` characters so a sequence
+    split across deltas — or across two text parts, which a provider's own
+    stop would also catch — is still seen; releases them when later text
+    proves no match.  Withheld text is kept as segments that remember the
+    part they came from, so every released or cut piece is emitted under
+    its own part's index.
+    """
 
     def __init__(self, stop: tuple[str, ...]) -> None:
         self.stop = tuple(s for s in stop if s)
         self.hold = max((len(s) for s in self.stop), default=1) - 1
-        self.pending: dict[int, str] = {}
+        self.segments: list[tuple[int, str]] = []  # withheld, in document order
         self.cut = False
 
-    def feed(self, part_index: int, text: str) -> str | None:
-        """Text safe to emit now, or None once the stop has been hit
-        (the emitted prefix comes in the same call that sets ``cut``)."""
-        buf = self.pending.get(part_index, "") + text
+    def _take(self, count: int) -> list[tuple[int, str]]:
+        """Remove and return the first ``count`` characters of the withheld
+        text as (part, text) pieces."""
+        out: list[tuple[int, str]] = []
+        while count > 0 and self.segments:
+            idx, text = self.segments[0]
+            if len(text) <= count:
+                out.append((idx, text))
+                count -= len(text)
+                self.segments.pop(0)
+            else:
+                out.append((idx, text[:count]))
+                self.segments[0] = (idx, text[count:])
+                count = 0
+        return out
+
+    def feed(self, part_index: int, text: str) -> list[tuple[int, str]]:
+        """Text safe to emit now as ``(part_index, text)`` pieces; sets
+        ``cut`` when the stop was hit (the prefix before it is emitted in
+        the same call)."""
+        if text:
+            self.segments.append((part_index, text))
+        buf = "".join(t for _, t in self.segments)
         hit = _first_stop(buf, self.stop)
         if hit is not None:
-            self.pending[part_index] = ""
+            out = self._take(hit[0])
+            self.segments.clear()
             self.cut = True
-            return buf[: hit[0]]
-        # Withhold the last hold characters — ALL of buf when it is shorter
-        # than that (a negative slice start here once released "S" of "ST"
-        # and missed "ST"+"OP"; found in review of dspy#10409).
-        keep = buf[max(0, len(buf) - self.hold):] if self.hold else ""
-        emit = buf[: len(buf) - len(keep)]
-        self.pending[part_index] = keep
-        return emit
+            return out
+        # No hit: everything but the last hold characters is safe (ALL of
+        # buf is withheld when it is shorter than that — a negative slice
+        # start here once released "S" of "ST" and missed "ST"+"OP";
+        # review of dspy#10409).
+        safe = max(0, len(buf) - self.hold) if self.hold else len(buf)
+        return self._take(safe)
 
     def flush(self) -> list[tuple[int, str]]:
-        out = [(i, t) for i, t in self.pending.items() if t]
-        self.pending.clear()
+        out, self.segments = list(self.segments), []
         return out
 
 
 def _cut_events(cutter: _StopCutter, event: StreamEvent):
     """Yield the events to emit for one incoming event; sets cutter.cut."""
     if event.type == "delta" and isinstance(event.delta, TextDelta):
-        emit = cutter.feed(event.delta.part_index, event.delta.text)
-        if emit:
-            yield StreamDeltaEvent(delta=TextDelta(part_index=event.delta.part_index, text=emit))
+        for idx, emit in cutter.feed(event.delta.part_index, event.delta.text):
+            if emit:
+                yield StreamDeltaEvent(delta=TextDelta(part_index=idx, text=emit))
         return
     if event.type == "end":
         for idx, text in cutter.flush():
