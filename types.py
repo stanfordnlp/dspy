@@ -51,6 +51,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, TypeVar, get_args
 
+from .adaptation import Adaptation
+
 
 # ─── Literal vocabularies ────────────────────────────────────────────
 
@@ -192,6 +194,15 @@ def _check_json_object(value: Any, *, field_name: str, required: bool = False) -
 def _validate_json_field(obj: object, field_name: str, *, required: bool = False) -> None:
     """Validate a JSON object field on a dataclass."""
     _check_json_object(getattr(obj, field_name), field_name=field_name, required=required)
+
+
+def _validate_adaptations(obj: object, field_name: str) -> None:
+    value = getattr(obj, "adaptations")
+    if isinstance(value, list):
+        value = tuple(value)
+        object.__setattr__(obj, "adaptations", value)
+    if not isinstance(value, tuple) or not all(isinstance(a, Adaptation) for a in value):
+        raise TypeError(f"{field_name} must be a tuple of Adaptation")
 
 
 def _validate_extensions_field(obj: object) -> None:
@@ -1487,11 +1498,15 @@ class StreamStartEvent:
 
     id: str | None = None
     model: str | None = None
+    # MAP-13: what the wire got that differs from what was asked, known
+    # before the first byte and so carried by the first event.
+    adaptations: tuple[Adaptation, ...] = ()
     type: Literal["start"] = field(default="start", init=False)
 
     def __post_init__(self) -> None:
         _validate_optional_text(self.id, field_name="StreamStartEvent.id", allow_empty=False)
         _validate_optional_text(self.model, field_name="StreamStartEvent.model", allow_empty=False)
+        _validate_adaptations(self, "StreamStartEvent.adaptations")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1758,6 +1773,9 @@ class Config:
     """
 
     max_tokens: int | None = None
+    # temperature's canonical range is 0–2 (OpenAI's and Gemini's); a wire
+    # whose ceiling is 1 (Anthropic) clamps and records it (MAP-13).  Never
+    # rescaled: both scales default to 1.0 and 0–1 is the same cool half.
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
@@ -1766,6 +1784,16 @@ class Config:
     tool_choice: ToolChoice | None = None
     reasoning: Reasoning | None = None
     cache: CacheConfig | None = None
+    # Sampling knobs promoted from extensions 2026-09-14 (MAP-13 audit):
+    # OpenAI (both dialects), Gemini (generationConfig.seed /
+    # frequencyPenalty / presencePenalty) and every OpenAI-compatible
+    # server carry them; as extensions they reached Gemini at the wrong
+    # path.  seed is best-effort determinism everywhere it exists; the
+    # penalties are in [-2, 2] on every wire that has them.  A wire
+    # without them (Anthropic) drops and records.
+    seed: int | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
     # Cross-provider knobs promoted from extensions (2026-09-01 burn-down):
     # service_tier is an OPEN string namespace — the tier concept is shared
     # (OpenAI, Anthropic), the value vocabulary is provider-owned, like
@@ -1800,10 +1828,22 @@ class Config:
             ):
                 raise TypeError(f"{field_name} must be numeric")
             _coerce_float_field(self, field_name)
-        if self.temperature is not None and self.temperature < 0:
-            raise ValueError("temperature must be >= 0")
+        if self.temperature is not None and not (0 <= self.temperature <= 2):
+            raise ValueError("temperature must be in [0, 2]")
         if self.top_p is not None and not (0 <= self.top_p <= 1):
             raise ValueError("top_p must be in [0, 1]")
+        _coerce_int_field(self, "seed")
+        if self.seed is not None and (isinstance(self.seed, bool) or not isinstance(self.seed, int)):
+            raise TypeError("seed must be an int")
+        for field_name in ("frequency_penalty", "presence_penalty"):
+            value = getattr(self, field_name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+            ):
+                raise TypeError(f"{field_name} must be numeric")
+            _coerce_float_field(self, field_name)
+            if value is not None and not (-2 <= value <= 2):
+                raise ValueError(f"{field_name} must be in [-2, 2]")
         if any(not isinstance(s, str) or not s for s in self.stop):
             raise ValueError("stop must contain non-empty strings")
         if self.tool_choice is not None and not isinstance(self.tool_choice, ToolChoice):
@@ -2098,6 +2138,10 @@ class Response:
     # (TextDelta.part_index) and in provider_data, not here.
     logprobs: tuple[TokenLogprob, ...] | None = None
     provider_data: ProviderData | None = None
+    # MAP-13: what the wire got that differs from what was asked (a
+    # dropped hint, a clamped dial, a client-side stop).  Empty when the
+    # request went out exactly as written.  Never printed; data.
+    adaptations: tuple[Adaptation, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_optional_text(self.id, field_name="Response.id", allow_empty=False)
@@ -2112,6 +2156,7 @@ class Response:
             raise TypeError("Response.usage must be a Usage")
         _validate_logprobs_field(self, "logprobs", allow_none=True)
         _validate_json_field(self, "provider_data")
+        _validate_adaptations(self, "Response.adaptations")
 
     def __repr__(self) -> str:
         display_text = self.text
@@ -2127,6 +2172,8 @@ class Response:
             fields.append(("citations", repr(citations)))
         if self.logprobs is not None:
             fields.append(("logprobs", f"<{len(self.logprobs)} tokens>"))
+        if self.adaptations:
+            fields.append(("adaptations", repr([f"{a.field}:{a.action}" for a in self.adaptations])))
         if self.id is not None:
             fields.append(("id", repr(self.id)))
         if self.provider_data is not None:
