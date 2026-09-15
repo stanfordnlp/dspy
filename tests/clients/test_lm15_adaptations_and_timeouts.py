@@ -210,7 +210,7 @@ def test_stop_word_split_across_stream_chunks_is_honoured(monkeypatch):
         'event: response.output_item.added\ndata: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"m","role":"assistant","content":[]}}\n\n',
     ]
     for piece in ("alpha ", "S", "T", "O", "P", " beta"):
-        frames.append('event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": piece}) + "\n\n")
+        frames.append("event: response.output_text.delta\ndata: " + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": piece}) + "\n\n")
     frames.append('event: response.completed\ndata: {"type":"response.completed","response":{"id":"r","model":"gpt-5","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":9}}}\n\n')
     transport = FakeTransport([FakeResponse(status=200, body="".join(frames).encode())])
     monkeypatch.setattr(execution, "RouterConfig", lambda **kwargs: RouterConfig(
@@ -243,8 +243,8 @@ def test_stop_word_spanning_two_text_parts_is_honoured(monkeypatch):
     frames = [
         'event: response.created\ndata: {"type":"response.created","response":{"id":"r","model":"gpt-5"}}\n\n',
         'event: response.output_item.added\ndata: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"m","role":"assistant","content":[]}}\n\n',
-        'event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "alpha S"}) + "\n\n",
-        'event: response.output_text.delta\ndata: ' + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 1, "delta": "TOP beta"}) + "\n\n",
+        "event: response.output_text.delta\ndata: " + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "alpha S"}) + "\n\n",
+        "event: response.output_text.delta\ndata: " + json.dumps({"type": "response.output_text.delta", "output_index": 0, "content_index": 1, "delta": "TOP beta"}) + "\n\n",
         'event: response.completed\ndata: {"type":"response.completed","response":{"id":"r","model":"gpt-5","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":9}}}\n\n',
     ]
     transport = FakeTransport([FakeResponse(status=200, body="".join(frames).encode())])
