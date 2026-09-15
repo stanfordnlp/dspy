@@ -46,7 +46,13 @@ def test_timeouts_for_a_number_bounds_every_wait_but_connect(timeout, expected):
 def test_timeouts_for_httpx_timeout_maps_each_component():
     httpx = pytest.importorskip("httpx")
     assert timeouts_for(httpx.Timeout(120.0)) == Timeouts(connect=120.0, read=120.0, write=120.0, pool=120.0)
-    assert timeouts_for(httpx.Timeout(connect=5.0, read=900.0, write=None, pool=None)) == Timeouts(connect=5.0, read=900.0)
+    assert timeouts_for(httpx.Timeout(connect=5.0, read=900.0, write=30.0, pool=15.0)) == Timeouts(
+        connect=5.0, read=900.0, write=30.0, pool=15.0,
+    )
+    # httpx None means "wait forever", which lm15 cannot honour: refused,
+    # never silently replaced by the 600 s default (gauntlet follow-up).
+    with pytest.raises(dspy.lm15.UnsupportedFeatureError, match="disables pool, write"):
+        timeouts_for(httpx.Timeout(connect=5.0, read=900.0, write=None, pool=None))
 
 
 @pytest.mark.parametrize("bad", [0, -1, float("inf"), float("nan"), True, "10"])

@@ -132,6 +132,12 @@ class _LiteLLMConfig:
         if self.model_type == "responses" and request.config.stop:
             wire_request = replace(request, config=replace(request.config, stop=()))
         data = request_kwargs(wire_request, self.model_type)
+        if self.model_type == "chat" and request.config.top_k is not None:
+            # The conversion speaks OpenAI's chat dialect, which has no top_k
+            # field. LiteLLM translates top_k for providers that take it
+            # (Anthropic, Gemini, local servers), so the setting is forwarded
+            # as a LiteLLM argument rather than dropped by the conversion.
+            data["top_k"] = request.config.top_k
         data.update(self.client_options)
         data.update(model=request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
         if self.model_type == "chat":
@@ -143,6 +149,12 @@ class _LiteLLMConfig:
 
     def _response(self, raw, request):
         response = response_value(raw, self.model_type, request)
+        if self.model_type == "responses" and request.config.top_k is not None:
+            note = Adaptation(
+                field="config.top_k", action="dropped", asked=request.config.top_k,
+                reason="The Responses API has no top_k field; the setting was not sent.",
+            )
+            response = replace(response, adaptations=(*response.adaptations, note))
         if self.model_type == "responses" and request.config.stop:
             response = apply_client_side_stop(response, request.config.stop)
             note = Adaptation(

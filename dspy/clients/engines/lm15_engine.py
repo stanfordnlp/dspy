@@ -28,13 +28,23 @@ def timeouts_for(timeout) -> Timeouts | None:
     A number of seconds bounds every wait the way LiteLLM's ``timeout`` did:
     the next byte (read), the send (write), and a free connection (pool).
     Connecting keeps lm15's short default. An ``httpx.Timeout`` maps each of
-    its components; a component left ``None`` keeps lm15's default, since
-    lm15 bounds every wait and has no "forever".
+    its components. In httpx a component set to ``None`` means "wait
+    forever"; lm15 bounds every wait and has no "forever", so such a value
+    is refused as unsupported rather than silently replaced by a default.
     """
     if timeout is None:
         return None
-    parts = {name: getattr(timeout, name, None) for name in ("connect", "read", "write", "pool")}
-    if not any(hasattr(timeout, name) for name in ("connect", "read", "write", "pool")):
+    names = ("connect", "read", "write", "pool")
+    if any(hasattr(timeout, name) for name in names):
+        parts = {name: getattr(timeout, name, None) for name in names}
+        disabled = sorted(name for name, value in parts.items() if value is None)
+        if disabled:
+            raise UnsupportedFeatureError(
+                f"timeout disables {', '.join(disabled)} (None means wait forever); the native engine "
+                "bounds every wait, so pass a number of seconds for each component or use engine='litellm'",
+                feature="timeout",
+            )
+    else:
         parts = {"connect": None, "read": timeout, "write": timeout, "pool": timeout}
     kwargs = {}
     for name, value in parts.items():

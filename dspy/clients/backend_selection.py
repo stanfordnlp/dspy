@@ -8,7 +8,7 @@ before execution. No provider client is constructed and no credential is invoked
 import os
 from dataclasses import dataclass, field
 
-from dspy.clients.engines.lm15_engine import LM15Engine
+from dspy.clients.engines.lm15_engine import LM15Engine, timeouts_for
 from dspy.lm15 import RouterConfig, UnknownModelError, UnsupportedFeatureError
 
 CLIENT_KEYS = {"api_key", "api_base", "base_url", "headers", "extra_headers", "timeout", "api_version",
@@ -48,6 +48,11 @@ def select_backend(lm, options=None):
             if (set(clients) - NATIVE_CLIENT_KEYS) or (resolution.provider.startswith("azure") and
                                                        any(key in clients for key in ("api_base", "base_url"))):
                 native = False
+            # A timeout the native engine cannot honor as written (a disabled
+            # httpx component) is a client setting LiteLLM carries; a malformed
+            # one stays a local TypeError/ValueError on every engine.
+            if native and "timeout" in clients:
+                timeouts_for(clients["timeout"])
         except (UnknownModelError, UnsupportedFeatureError):
             if spec == "lm15":
                 raise

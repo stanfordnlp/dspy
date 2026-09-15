@@ -63,7 +63,20 @@ another backend. Text completions and client settings not implemented by the
 native integration remain on LiteLLM. The `timeout` setting, a number of seconds
 or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
 reply (headers first, then each streamed chunk), the send, and a free
-connection; the native default is 600 seconds, the same as LiteLLM's.
+connection; the native default is 600 seconds, the same as LiteLLM's. An
+`httpx.Timeout` component set to `None` means "wait forever", which the native
+engine cannot honour: under `engine="auto"` that call uses LiteLLM, and under
+`engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
+rather than silently substituting a default.
+
+Text that no provider can receive (a lone surrogate character) raises a plain
+`ValueError` before any engine is chosen, on every engine setting, so it is
+never reported as an unexpected engine failure or retried.
+
+Typed Requests through the LiteLLM engine forward `top_k` as a LiteLLM
+argument on the Chat Completions path (LiteLLM translates it for providers
+that take it); on the Responses path, which has no such field, it is dropped
+and recorded under `"adaptations"`.
 
 A setting the native route cannot carry exactly as written is **adapted and
 recorded**, rather than silently ignored or unnecessarily refused (lm15 MAP-13): `seed` on Anthropic is

@@ -69,6 +69,31 @@ class PreparedCall:
         return key
 
 
+def _check_encodable(value, where):
+    """Refuse text no provider can receive before any engine is chosen.
+
+    lm15's builder already raises the same ValueError, but only inside the
+    engine attempt, where a forced native engine reports it as unexpected.
+    Nested containers cover message lists, tool inputs and typed Requests.
+    """
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            bad = " ".join(f"U+{ord(ch):04X}" for ch in value[exc.start:exc.end])
+            raise ValueError(
+                f"{where} contains text that is not valid Unicode (lone surrogate {bad}), which no "
+                "provider can receive; repair the text first, e.g. text.encode('utf-8', 'replace').decode('utf-8')"
+            ) from None
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _check_encodable(key, where)
+            _check_encodable(item, where)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _check_encodable(item, where)
+
+
 def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
     kwargs = dict(kwargs)
     request = kwargs.pop("request", None)
@@ -101,6 +126,7 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         from dspy.clients.engines.base import validate_request
 
         validate_request(request)
+        _check_encodable(request_to_dict(request), "request")
         extra = set(kwargs) - {"cache", "rollout_id"}
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
@@ -122,6 +148,7 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
     if hasattr(lm, "_warn_zero_temp_rollout"):
         lm._warn_zero_temp_rollout(merged.get("temperature"), merged.get("rollout_id"))
     rendered = messages or [{"role": "user", "content": prompt}]
+    _check_encodable(rendered, "messages" if messages else "prompt")
     if getattr(lm, "use_developer_role", False) and lm.model_type == "responses":
         rendered = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in rendered]
     n = merged.get("n", 1)
