@@ -68,7 +68,7 @@ The model writes these into its code blocks. You don’t call them, but knowing 
 One sub-LLM call. It sends the prompt to `sub_lm` or the configured LM, increments the counter, and returns the response text. It raises if the prompt is empty or the budget is spent.
 
 **`llm_query_batched(prompts)`**
-Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. A failed call comes back as an `[ERROR] ...` string in its slot rather than aborting the batch. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
+Concurrent sub-LLM calls over a list, run on an eight-worker thread pool and returned in input order. Empty prompts and LM failures raise the same errors as `llm_query`. This beats a Python loop of `llm_query` when the model has many independent snippets to read.
 
 **`SUBMIT(...)`**
 Ends the run and returns the final outputs. RLM validates the submitted dict against the signature’s output fields and parses each value to its declared type. On a type error or a missing field it feeds the message back to the model for another attempt instead of failing the call.
@@ -83,6 +83,8 @@ Three independent limits. `max_iters` bounds REPL turns before the extract fallb
 
 **`sub_lm`**
 The model for `llm_query` and `llm_query_batched`. Left unset it falls back to `dspy.settings.lm`, so by default the loop and its sub-calls share one model.
+
+RLM automatically runs eligible independent `llm_query` loops concurrently while preserving response and continuation order. Loops remain scalar when their queries depend on earlier results or RLM cannot safely separate prompt construction from result handling. If a call fails, later concurrent calls may already be in flight and still count against `max_llm_calls`.
 
 ### Extending the sandbox with tools and inputs
 
