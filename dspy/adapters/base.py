@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
 _REPL_OUTPUT_SIGNATURE = Signature({"repl_output": (str, InputField())})
+_REPL_ACTION_SIGNATURE = Signature({"reasoning": (str, OutputField()), "code": (str, OutputField())})
 
 
 class Adapter:
@@ -546,50 +547,49 @@ class Adapter:
                 else None
             )
 
-            # RLM history events (see `build_repl_event`) carry the RLM's own input/output fields (e.g. `query`,
-            # `answer`) around a REPLEntry. Those fields are not part of the inner action signature, so they are
-            # rendered here as plain context rather than through the signature-driven path.
-            # Handled before the generic rendering below so outer fields are kept even when they share a name with
-            # an inner action field (e.g. an RLM whose signature has its own `code` or `reasoning`).
+            # RLM history events (see `build_repl_event`): a REPLEntry (or extract-fallback marker) with the
+            # RLM's own input/output fields recorded around it. Only fields the current signature declares are
+            # rendered, so the replay is the inner LM's own transcript: `variables_info` on the first event of a
+            # turn, then each iteration's reasoning/code as an assistant turn and its REPL output as a user turn.
+            # Handled before the generic rendering below so it never applies to RLM events.
             if is_repl_event(message):
                 repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
                 if isinstance(repl_entry, ExtractFallbackMarker):
-                    # Extract-fallback event: only the final output fields, which the model produced via the
-                    # extract `Predict` call, so replay them as an assistant turn.
+                    # Extract-fallback event: the outputs the extract call produced. The model said them, so they
+                    # replay as an assistant turn, rendered from the event's own output fields (which are the
+                    # extract signature's outputs, not the action signature's) so the same turn is shown to both.
                     if repl_outputs:
-                        messages.append(
-                            {"role": "assistant", "content": self._format_untyped_assistant_fields(repl_outputs)}
-                        )
+                        fallback_signature = Signature({name: (str, OutputField()) for name in repl_outputs})
+                        assistant_content = self.format_assistant_message_content(fallback_signature, repl_outputs)
+                        messages.append({"role": "assistant", "content": assistant_content})
                     continue
 
-                if repl_inputs:
-                    messages.append({"role": "user", "content": self._format_untyped_user_fields(repl_inputs)})
+                user_content = self.format_user_message_content(signature, repl_inputs)
+                if user_content:
+                    messages.append({"role": "user", "content": user_content})
 
-                # Format assistant message with code and reasoning (if present)
-                # Fish code and (potentially) reasoning out of REPLEntry
-                assistant_values: dict[str, Any] = {}
-                assistant_values["code"] = repl_entry.code
-
-                # If the LM supports native reasoning, then we don't want to put the reasoning in the assistant message content.
-                # We don't have access to the LM here, so we check if the signature's outputs has a dspy.Reasoning field as a proxy.
-                # All dspy.Reasoning fields are removed from the signature when the LM supports native reasoning,
-                # so if there exists a dspy.Reasoning output field, we know we have a non-reasoning LM
-                # and therefore include the repl entry's reasoning content in the assistant message content
-                if any(
-                    isinstance(field.annotation, type) and issubclass(field.annotation, Reasoning)
-                    for field in signature.output_fields.values()
-                ):
+                # The entry is always an action (reasoning + code), whichever signature is replaying it (the RLM
+                # action signature or its extract signature), so render it with a fixed action signature.
+                #
+                # Under native reasoning the adapter deletes the `reasoning` output field before the call, so the
+                # model never emitted reasoning as text; a signature with `code` but no `reasoning` is that case,
+                # and the replayed action omits reasoning to match. (Providers differ on whether prior-turn
+                # reasoning may be passed back at all, so it is not attached as `reasoning_content`.)
+                native_reasoning = "code" in signature.output_fields and "reasoning" not in signature.output_fields
+                assistant_values: dict[str, Any] = {"code": repl_entry.code}
+                action_signature = _REPL_ACTION_SIGNATURE
+                if native_reasoning:
+                    action_signature = action_signature.delete("reasoning")
+                else:
                     assistant_values["reasoning"] = repl_entry.reasoning
-                assistant_content = self.format_assistant_message_content(signature, assistant_values)
-                if assistant_content:
-                    messages.append({"role": "assistant", "content": assistant_content})
+                assistant_content = self.format_assistant_message_content(action_signature, assistant_values)
+                messages.append({"role": "assistant", "content": assistant_content})
 
-                # Format user message with repl output, followed by any RLM output fields recorded on this event
-                repl_output_values = {
-                    "repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars),
-                    **repl_outputs,
-                }
-                content = self._format_untyped_user_fields(repl_output_values)
+                # Format user message with repl output
+                content = self.format_user_message_content(
+                    _REPL_OUTPUT_SIGNATURE,
+                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+                )
                 messages.append({"role": "user", "content": content})
                 continue
 
@@ -648,16 +648,6 @@ class Adapter:
         del inputs[history_field_name]
 
         return messages
-
-    def _format_untyped_user_fields(self, values: dict[str, Any]) -> str:
-        """Format arbitrary fields as user-message content, treating each as a `str` input field."""
-        untyped_signature = Signature({name: (str, InputField()) for name in values})
-        return self.format_user_message_content(untyped_signature, values)
-
-    def _format_untyped_assistant_fields(self, values: dict[str, Any]) -> str:
-        """Format arbitrary fields as assistant-message content, treating each as a `str` output field."""
-        untyped_signature = Signature({name: (str, OutputField()) for name in values})
-        return self.format_assistant_message_content(untyped_signature, values)
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.

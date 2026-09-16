@@ -512,7 +512,6 @@ class TestRLMInterpreterLifecycle:
             rlm.generate_action(
                 history=dspy.History(messages=[]),
                 variables_info=["query: str"],
-                repl_history=REPLHistory(),
                 iteration="1/20",
             )
 
@@ -1054,7 +1053,7 @@ class TestRLMDynamicSignature:
         # Required input/output fields
         assert "history" in action_sig.input_fields
         assert "variables_info" in action_sig.input_fields
-        assert "repl_history" in action_sig.input_fields
+        assert "repl_history" not in action_sig.input_fields  # the turn is fed through `history`
         assert "reasoning" in action_sig.output_fields
         assert "code" in action_sig.output_fields
 
@@ -1077,7 +1076,7 @@ class TestRLMDynamicSignature:
         extract_sig = rlm.extract.signature
         assert "history" in extract_sig.input_fields
         assert "variables_info" in extract_sig.input_fields
-        assert "repl_history" in extract_sig.input_fields
+        assert "repl_history" not in extract_sig.input_fields
         assert "summary" in extract_sig.output_fields
         assert "key_facts" in extract_sig.output_fields
         assert "confidence" in extract_sig.output_fields
@@ -1887,8 +1886,9 @@ class TestRLMHistoryWithDummyLM:
             for hist_entry, traj_entry in zip(history_entries, combined_trajs, strict=True)
         )
 
-    def test_reused_history_renders_prior_query_and_answer(self, pooled_interpreter):
-        """A prior turn's RLM inputs/outputs must reach the model when its history is reused."""
+    def test_reused_history_replays_inner_transcript(self, pooled_interpreter):
+        """A reused history replays what the action LM saw: the variable previews, then each iteration as an
+        assistant turn followed by its REPL output. Raw outer inputs/outputs are recorded but not rendered."""
         with dummy_lm_context(
             [
                 {"reasoning": "explore", "code": "x = 1\nprint(x)"},
@@ -1898,46 +1898,60 @@ class TestRLMHistoryWithDummyLM:
             rlm = RLM("query -> answer: int", max_iters=3)
             result = rlm.forward(pooled_interpreter, query="What is seven?")
 
+        # Every event records the action inputs the LM saw at that step; event 0 also records the outer input
+        first_event, second_event = result.history.messages
+        assert first_event["query"] == "What is seven?"
+        assert list(second_event) == ["variables_info", "iteration", "repl_entry", "answer"]
+        for event, label in ((first_event, "1/3"), (second_event, "2/3")):
+            assert any("Variable: `query`" in line for line in event["variables_info"])
+            assert event["iteration"] == label
+
         messages = dspy.ChatAdapter().format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
-        roles = [m["role"] for m in messages]
-        assert roles == ["user", "assistant", "user", "assistant", "user"]
+        assert [m["role"] for m in messages] == ["user", "assistant", "user", "user", "assistant", "user"]
 
-        # Prior query is rendered as user context before the trajectory
-        assert "[[ ## query ## ]]\nWhat is seven?" in messages[0]["content"]
-        # Trajectory itself is unchanged
+        # Each step's replayed user message is the live one: preview + iteration, never the raw query
+        for step_message, label in ((messages[0], "1/3"), (messages[3], "2/3")):
+            assert "[[ ## variables_info ## ]]" in step_message["content"]
+            assert "Variable: `query`" in step_message["content"]
+            assert f"[[ ## iteration ## ]]\n{label}" in step_message["content"]
+            assert "[[ ## query ## ]]" not in step_message["content"]
+        # Trajectory
         assert "[[ ## code ## ]]\nx = 1\nprint(x)" in messages[1]["content"]
         assert "[[ ## repl_output ## ]]\n1" in messages[2]["content"]
-        assert "SUBMIT(7)" in messages[3]["content"]
-        # Prior answer follows the final REPL output in the same user message
-        assert "[[ ## repl_output ## ]]" in messages[4]["content"]
-        assert "[[ ## answer ## ]]\n7" in messages[4]["content"]
-        # Nothing leaked a bogus assistant turn
+        assert "SUBMIT(7)" in messages[4]["content"]
+        # The answer reaches the LM the way it did originally: through the final REPL output
+        assert "FINAL: {'answer': 7}" in messages[5]["content"]
+        assert "[[ ## answer ## ]]" not in messages[5]["content"]
         assert "None" not in "".join(m["content"] for m in messages)
 
-    def test_reused_history_keeps_outer_fields_named_like_inner_fields(self, pooled_interpreter):
-        """Outer RLM fields named `code`/`reasoning` must not be confused with the action signature's own."""
+    def test_reused_history_ignores_outer_fields_named_like_inner_fields(self, pooled_interpreter):
+        """Outer RLM fields named `code`/`reasoning` are never confused with the action signature's own."""
         with dummy_lm_context([{"reasoning": "inner reasoning", "code": "SUBMIT(reasoning='outer reasoning out')"}]):
             rlm = RLM("code: str -> reasoning: str", max_iters=2)
             result = rlm.forward(pooled_interpreter, code="print('outer code in')")
 
         assert result.reasoning == "outer reasoning out"
+        assert result.history.messages[0]["code"] == "print('outer code in')"  # recorded for callers
 
         messages = dspy.ChatAdapter().format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
         assert [m["role"] for m in messages] == ["user", "assistant", "user"]
-        # Outer input `code` is retained as user context
-        assert "[[ ## code ## ]]\nprint('outer code in')" in messages[0]["content"]
+        # Outer `code` input appears only via its preview, never as a `[[ ## code ## ]]` user section
+        assert "[[ ## variables_info ## ]]" in messages[0]["content"]
+        assert "[[ ## code ## ]]" not in messages[0]["content"]
         # Assistant turn carries the *inner* reasoning/code from the REPL entry
         assert "[[ ## reasoning ## ]]\ninner reasoning" in messages[1]["content"]
         assert "SUBMIT(reasoning='outer reasoning out')" in messages[1]["content"]
-        # Outer output `reasoning` is retained after the REPL output
-        assert "[[ ## reasoning ## ]]\nouter reasoning out" in messages[2]["content"]
+        # Outer `reasoning` output is not rendered as a section; it is visible in the FINAL output
+        assert "[[ ## reasoning ## ]]" not in messages[2]["content"]
+        assert "FINAL: {'reasoning': 'outer reasoning out'}" in messages[2]["content"]
 
     def test_reused_history_extract_fallback_with_outer_field_named_reasoning(self, pooled_interpreter):
-        """A fallback event whose outer output is named like an inner action field still replays intact."""
+        """A fallback event whose outer output is named like an inner action field replays from its own fields
+        under both signatures, never as a partial action."""
         with dummy_lm_context(
             [
                 {"reasoning": "inner reasoning", "code": "x = 1\nprint(x)"},
@@ -1948,19 +1962,31 @@ class TestRLMHistoryWithDummyLM:
             result = rlm.forward(pooled_interpreter, query="What is seven?")
 
         assert result.reasoning == "the extracted answer"
+        adapter = dspy.ChatAdapter()
 
-        messages = dspy.ChatAdapter().format_conversation_history(
+        # Under the action signature the fallback replays from its own fields: an assistant turn with just the
+        # outer `reasoning` output -- never a partial action with `code: None`
+        action_messages = adapter.format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
-        assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
-        assert "[[ ## reasoning ## ]]\ninner reasoning" in messages[1]["content"]
-        # Fallback replays the completed outer output, not an action with `code: None`
-        assert "[[ ## reasoning ## ]]\nthe extracted answer" in messages[3]["content"]
-        assert "code" not in messages[3]["content"]
-        assert "None" not in "".join(m["content"] for m in messages)
+        assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
+        assert "[[ ## reasoning ## ]]\ninner reasoning" in action_messages[1]["content"]
+        assert action_messages[3]["content"] == "[[ ## reasoning ## ]]\nthe extracted answer\n\n[[ ## completed ## ]]\n"
+        assert "code" not in action_messages[3]["content"]
+        assert "None" not in "".join(m["content"] for m in action_messages)
+
+        # Extract signature's outputs are exactly the outer outputs -> full typed assistant turn
+        extract_messages = adapter.format_conversation_history(
+            rlm.extract.signature, "history", {"history": result.history}
+        )
+        assert [m["role"] for m in extract_messages] == ["user", "assistant", "user", "assistant"]
+        assert (
+            extract_messages[3]["content"] == "[[ ## reasoning ## ]]\nthe extracted answer\n\n[[ ## completed ## ]]\n"
+        )
 
     def test_reused_history_renders_extract_fallback_answer(self, pooled_interpreter):
-        """The extract-fallback event (output fields only) replays as an assistant turn carrying those outputs."""
+        """The extract-fallback event replays its outputs as an assistant turn under both the extract and the
+        action signature."""
         with dummy_lm_context(
             [
                 {"reasoning": "explore", "code": "x = 1\nprint(x)"},
@@ -1970,14 +1996,44 @@ class TestRLMHistoryWithDummyLM:
             rlm = RLM("query -> answer: int", max_iters=1)
             result = rlm.forward(pooled_interpreter, query="What is seven?")
 
-        messages = dspy.ChatAdapter().format_conversation_history(
+        adapter = dspy.ChatAdapter()
+
+        # Under the extract signature, `answer` is a declared output field -> typed assistant turn
+        extract_messages = adapter.format_conversation_history(
+            rlm.extract.signature, "history", {"history": result.history}
+        )
+        assert [m["role"] for m in extract_messages] == ["user", "assistant", "user", "assistant"]
+        assert "[[ ## variables_info ## ]]" in extract_messages[0]["content"]
+        assert extract_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
+
+        # Under the action signature the same assistant turn is shown (rendered from the event's own output
+        # fields), so a continuation still sees how the prior turn concluded
+        action_messages = adapter.format_conversation_history(
             rlm.generate_action.signature, "history", {"history": result.history}
         )
-        assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
-        assert "[[ ## query ## ]]\nWhat is seven?" in messages[0]["content"]
-        # The extracted answer was produced by the model, so it replays as an assistant turn
-        assert "[[ ## answer ## ]]\n7" in messages[3]["content"]
-        assert "None" not in "".join(m["content"] for m in messages)
+        assert [m["role"] for m in action_messages] == ["user", "assistant", "user", "assistant"]
+        assert action_messages[3]["content"] == "[[ ## answer ## ]]\n7\n\n[[ ## completed ## ]]\n"
+        assert "None" not in "".join(m["content"] for m in action_messages)
+
+    def test_extract_request_sees_trajectory_actions(self, pooled_interpreter):
+        """The extract call replays the turn's actions as reasoning/code, not as its own (absent) output fields."""
+        with dummy_lm_context(
+            [
+                {"reasoning": "explore", "code": "x = 1\nprint(x)"},
+                {"answer": "7"},
+            ]
+        ):
+            rlm = RLM("query -> answer: int", max_iters=1)
+            rlm.forward(pooled_interpreter, query="What is seven?")
+            extract_request = dspy.settings.lm.history[-1]["messages"]
+
+        roles = [m["role"] for m in extract_request]
+        assert roles == ["system", "user", "assistant", "user", "user"]
+        assert "[[ ## reasoning ## ]]\nexplore" in extract_request[2]["content"]
+        assert "[[ ## code ## ]]\nx = 1\nprint(x)" in extract_request[2]["content"]
+        assert "[[ ## answer ## ]]" not in extract_request[2]["content"]
+        assert "[[ ## repl_output ## ]]\n1" in extract_request[3]["content"]
+        assert "None" not in "".join(m["content"] for m in extract_request)
 
     def test_history_records_extract_fallback(self, pooled_interpreter):
         with dummy_lm_context(

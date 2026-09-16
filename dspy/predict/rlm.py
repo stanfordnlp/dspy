@@ -44,7 +44,6 @@ from dspy.primitives.repl_types import (
     EXTRACT_FALLBACK,
     REPL_ENTRY_KEY,
     REPLEntry,
-    REPLHistory,
     REPLVariable,
     build_repl_event,
 )
@@ -419,11 +418,6 @@ class RLM(Module):
                 "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
             )
             .append(
-                "repl_history",
-                dspy.InputField(desc="Previous REPL code executions and their outputs"),
-                type_=REPLHistory,
-            )
-            .append(
                 "iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str
             )
             .append(
@@ -456,9 +450,6 @@ class RLM(Module):
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
             full_extract_instructions,
-        )
-        extract_sig = extract_sig.prepend(
-            "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
         )
         extract_sig = extract_sig.prepend(
             "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
@@ -669,7 +660,7 @@ class RLM(Module):
         self,
         variables: list[REPLVariable],
         history: dspy.History,
-        repl_history: REPLHistory,
+        turn_entries: list[REPLEntry],
         output_field_names: list[str],
         history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
@@ -682,7 +673,6 @@ class RLM(Module):
         extract_pred = self.extract(
             history=history,
             variables_info=variables_info,
-            repl_history=repl_history,
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
@@ -693,7 +683,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.model_dump() for e in repl_history.entries],
+            repl_trajectory=[e.model_dump() for e in turn_entries],
             **final_outputs,
         )
 
@@ -816,7 +806,6 @@ class RLM(Module):
         repl: CodeInterpreter,
         variables: list[REPLVariable],
         history: dspy.History,
-        repl_history: REPLHistory,
         iteration: int,
         regular_args: dict[str, Any],
         output_field_names: list[str],
@@ -829,8 +818,7 @@ class RLM(Module):
             history=history,
             signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
-            repl_history=repl_history,
-            iteration=f"{iteration + 1}/{self.max_iters}",
+            iteration=self._iteration_label(iteration),
         )
         if self.verbose:
             logger.info(
@@ -890,7 +878,8 @@ class RLM(Module):
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
-            repl_history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
+            turn_entries: list[REPLEntry] = []
+            variables_info = [variable.format() for variable in variables]
 
             inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
@@ -901,17 +890,16 @@ class RLM(Module):
                     repl,
                     variables,
                     history,
-                    repl_history,
                     iteration,
                     regular_args,
                     output_field_names,
                 )
-
-                # Update repl_history
-                repl_history = self._append_repl_history_with_entry(repl_history, repl_entry)
+                turn_entries.append(repl_entry)
 
                 # Update history
-                history_event = self._repl_entry_event(inputs=inputs, iteration=iteration, repl_entry=repl_entry)
+                history_event = self._repl_entry_event(
+                    inputs=inputs, variables_info=variables_info, iteration=iteration, repl_entry=repl_entry
+                )
                 self._append_history_with_event(history, history_event)
 
                 if final_outputs:
@@ -920,14 +908,14 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.model_dump() for e in repl_history.entries],
+                        repl_trajectory=[e.model_dump() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
             return self._extract_fallback(
                 variables,
                 history,
-                repl_history,
+                turn_entries,
                 output_field_names,
                 history_processor,
             )
@@ -936,7 +924,7 @@ class RLM(Module):
         self,
         variables: list[REPLVariable],
         history: dspy.History,
-        repl_history: REPLHistory,
+        turn_entries: list[REPLEntry],
         output_field_names: list[str],
         history_processor: Callable[[dspy.History], dspy.History | None] | None = None,
     ) -> Prediction:
@@ -949,7 +937,6 @@ class RLM(Module):
         extract_pred = await self.extract.acall(
             history=history,
             variables_info=variables_info,
-            repl_history=repl_history,
         )
 
         final_outputs = {name: getattr(extract_pred, name) for name in output_field_names}
@@ -960,7 +947,7 @@ class RLM(Module):
         return Prediction(
             history=history,
             final_reasoning="Extract forced final output",
-            repl_trajectory=[e.model_dump() for e in repl_history.entries],
+            repl_trajectory=[e.model_dump() for e in turn_entries],
             **final_outputs,
         )
 
@@ -969,7 +956,6 @@ class RLM(Module):
         repl: CodeInterpreter,
         variables: list[REPLVariable],
         history: dspy.History,
-        repl_history: REPLHistory,
         iteration: int,
         regular_args: dict[str, Any],
         output_field_names: list[str],
@@ -980,8 +966,7 @@ class RLM(Module):
             history=history,
             signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
-            repl_history=repl_history,
-            iteration=f"{iteration + 1}/{self.max_iters}",
+            iteration=self._iteration_label(iteration),
         )
         if self.verbose:
             logger.info(
@@ -1037,7 +1022,8 @@ class RLM(Module):
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
-            repl_history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
+            turn_entries: list[REPLEntry] = []
+            variables_info = [variable.format() for variable in variables]
 
             inputs = {name: input_args[name] for name in self.signature.input_fields if name in input_args}
 
@@ -1047,17 +1033,16 @@ class RLM(Module):
                     repl,
                     variables,
                     history,
-                    repl_history,
                     iteration,
                     regular_args,
                     output_field_names,
                 )
-
-                # Update repl_history
-                repl_history = self._append_repl_history_with_entry(repl_history, repl_entry)
+                turn_entries.append(repl_entry)
 
                 # Update history
-                history_event = self._repl_entry_event(inputs=inputs, iteration=iteration, repl_entry=repl_entry)
+                history_event = self._repl_entry_event(
+                    inputs=inputs, variables_info=variables_info, iteration=iteration, repl_entry=repl_entry
+                )
                 self._append_history_with_event(history, history_event)
 
                 if final_outputs:
@@ -1066,30 +1051,33 @@ class RLM(Module):
                         **final_outputs,
                         history=history,
                         final_reasoning=repl_entry.reasoning,
-                        repl_trajectory=[e.model_dump() for e in repl_history.entries],
+                        repl_trajectory=[e.model_dump() for e in turn_entries],
                     )
 
             # Max iterations reached - use extract fallback
             return await self._aextract_fallback(
-                variables, history, repl_history, output_field_names, history_processor
+                variables, history, turn_entries, output_field_names, history_processor
             )
 
-    def _repl_entry_event(self, *, inputs: dict[str, Any], iteration: int, repl_entry: REPLEntry) -> dict[str, Any]:
-        # Input fields are recorded only on the first iteration of a turn; final outputs are added to the last
-        # event by the caller via `dict.update`, which keeps them after the REPL entry as `split_repl_event` expects.
-        return build_repl_event(inputs if iteration == 0 else None, repl_entry)
+    def _repl_entry_event(
+        self, *, inputs: dict[str, Any], variables_info: list[str], iteration: int, repl_entry: REPLEntry
+    ) -> dict[str, Any]:
+        # Each event records the action-signature inputs the LM saw at that step (`variables_info` and
+        # `iteration`), so a replayed step's user message matches the live one. The RLM's own input fields are
+        # recorded on the first iteration of a turn only, for callers and history processors; they are not
+        # rendered. Final outputs are added to the last event by the caller via `dict.update`, which keeps them
+        # after the REPL entry as `split_repl_event` expects.
+        event_inputs: dict[str, Any] = dict(inputs) if iteration == 0 else {}
+        event_inputs["variables_info"] = variables_info
+        event_inputs["iteration"] = self._iteration_label(iteration)
+        return build_repl_event(event_inputs, repl_entry)
+
+    def _iteration_label(self, iteration: int) -> str:
+        return f"{iteration + 1}/{self.max_iters}"
 
     def _append_history_with_event(self, history: dspy.History, event: dict[str, Any]):
         if event:
             history.messages.append(event)
-
-    def _append_repl_history_with_entry(self, repl_history: REPLHistory, entry: REPLEntry) -> REPLHistory:
-        if entry.max_output_chars != repl_history.max_output_chars:
-            raise ValueError(
-                f"REPLHistory max_output_chars ({repl_history.max_output_chars:, } chars) "
-                f"does not equal REPLEntry max_output_chars ({entry.max_output_chars:, } chars)"
-            )
-        return repl_history.append(reasoning=entry.reasoning, code=entry.code, output=entry.output)
 
 
 def _apply_history_processor(
