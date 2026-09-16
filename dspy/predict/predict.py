@@ -127,13 +127,13 @@ class Predict(Module, Parameter):
             f"`predict({input_fields[0]}=input_value, ...)`."
         )
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Prediction:
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
         return super().__call__(**kwargs)
 
-    async def acall(self, *args, **kwargs):
+    async def acall(self, *args: Any, **kwargs: Any) -> Prediction:
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
