@@ -469,6 +469,49 @@ def test_apply_sync_streaming_close_stops_background_consumption():
     )
 
 
+def test_apply_sync_streaming_gc_releases_the_producer():
+    # Breaking out of a for loop does not close a generator; dropping the
+    # last reference does (and `contextlib.closing` does so deterministically
+    # — see the apply_sync_streaming docstring). Until then the producer is
+    # parked on the bounded buffer, never draining the whole stream. This
+    # pins the GC boundary of that contract.
+    import gc
+
+    consumed = {"count": 0, "finalized": False}
+    total = 1000
+
+    async def counting_stream():
+        try:
+            for i in range(total):
+                consumed["count"] = i + 1
+                yield f"chunk-{i}"
+        finally:
+            consumed["finalized"] = True
+
+    sync_output = dspy.streaming.apply_sync_streaming(counting_stream())
+    for _chunk in sync_output:
+        break  # retained break: the producer parks on the bounded buffer
+
+    del sync_output  # last reference dropped -> GC closes the generator
+    gc.collect()
+
+    deadline = time.time() + 2
+    while time.time() < deadline and not consumed["finalized"]:
+        time.sleep(0.01)
+
+    assert consumed["count"] < 100, (
+        f"the producer consumed {consumed['count']}/{total} chunks after abandonment"
+    )
+    assert consumed["finalized"], "the upstream generator was never closed"
+
+    deadline = time.time() + 2
+    while time.time() < deadline and any("(producer)" in t.name for t in threading.enumerate()):
+        time.sleep(0.01)
+    assert not any("(producer)" in t.name for t in threading.enumerate()), (
+        "the producer thread outlived the abandoned stream"
+    )
+
+
 def test_apply_sync_streaming_drains_streams_longer_than_the_buffer():
     # The queue is bounded for backpressure; a stream longer than the buffer
     # must still drain completely, in order.

@@ -60,7 +60,9 @@ def streamify(
         is_async_program: Whether the program is async. If `False`, the program will be wrapped with `asyncify`,
             otherwise the program will be called with `acall`.
         async_streaming: Whether to return an async generator or a sync generator. If `False`, the streaming will be
-            converted to a sync generator.
+            converted to a sync generator backed by a background producer; close the generator (or wrap it in
+            `contextlib.closing`) when you may stop consuming early, so the producer and the LM stream are released
+            deterministically (see `apply_sync_streaming`).
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -244,7 +246,26 @@ _SYNC_STREAM_BACKPRESSURE_POLL_SECONDS = 0.01
 
 
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
-    """Convert the async streaming generator to a sync generator."""
+    """Convert the async streaming generator to a sync generator.
+
+    The returned generator owns a background producer (thread + event loop +
+    the upstream LM stream). Like any resource-backed generator, it releases
+    them when it is closed: on exhaustion, on ``close()``, or when the last
+    reference is dropped (garbage collection). Breaking out of a ``for`` loop
+    while KEEPING the reference does not close a generator in Python — until
+    it is closed, the producer stays parked on a full buffer (it consumes at
+    most one bounded buffer past what was read, never the whole stream). Use
+    ``contextlib.closing`` when consumption may stop early:
+
+    ```python
+    from contextlib import closing
+
+    with closing(apply_sync_streaming(stream)) as sync_stream:
+        for chunk in sync_stream:
+            if is_enough(chunk):
+                break  # closed on exit — producer released deterministically
+    ```
+    """
     # Bounded so the producer cannot race arbitrarily far ahead of the
     # consumer; sized like the async path's memory-object stream.
     queue = Queue(maxsize=_SYNC_STREAM_BUFFER_SIZE)
