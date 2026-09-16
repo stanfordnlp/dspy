@@ -18,6 +18,29 @@ if TYPE_CHECKING:
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
 
+def _python_type_from_json_schema(prop: dict[str, Any]) -> type:
+    """Map a JSON Schema type field to a Python type.
+
+    MCP and OpenAPI schemas commonly use union forms such as ``{"type": ["string", "null"]}``
+    or ``{"anyOf": [{"type": "integer"}, {"type": "null"}]}``. Those values are unhashable
+    lists, so a direct ``_TYPE_MAPPING.get(prop["type"])`` raises TypeError.
+    """
+    type_value = prop.get("type")
+    if isinstance(type_value, list):
+        non_null = [item for item in type_value if item != "null"]
+        type_value = non_null[0] if non_null else (type_value[0] if type_value else None)
+    if isinstance(type_value, str) and type_value in _TYPE_MAPPING:
+        return _TYPE_MAPPING[type_value]
+    for key in ("anyOf", "oneOf"):
+        for option in prop.get(key) or []:
+            if not isinstance(option, dict):
+                continue
+            mapped = _python_type_from_json_schema(option)
+            if mapped is not Any:
+                return mapped
+    return Any
+
+
 class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
@@ -570,7 +593,7 @@ def convert_input_schema_to_tool_args(
         if len(defs) > 0:
             prop = _resolve_json_schema_reference({"$defs": defs, **prop})
         args[name] = prop
-        arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
+        arg_types[name] = _python_type_from_json_schema(prop)
         arg_desc[name] = prop.get("description", "No description provided.")
         if name in required:
             arg_desc[name] += " (Required)"
