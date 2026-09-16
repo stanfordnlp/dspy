@@ -162,6 +162,7 @@ async def test_convert_mcp_tool():
 
             # Check add
             add_tool = convert_mcp_tool(session, response.tools[0])
+            text_add_tool = convert_mcp_tool(session, response.tools[0], result_mode="text")
             assert add_tool.name == "add"
             assert add_tool.desc == "Add two numbers"
             assert add_tool.args == {
@@ -173,7 +174,8 @@ async def test_convert_mcp_tool():
                 "a": "No description provided. (Required)",
                 "b": "No description provided. (Required)",
             }
-            assert await add_tool.acall(a=1, b=2) == "3"
+            assert await add_tool.acall(a=1, b=2) == {"result": 3}
+            assert await text_add_tool.acall(a=1, b=2) == "3"
 
             # Check hello
             hello_tool = convert_mcp_tool(session, response.tools[1])
@@ -264,8 +266,10 @@ async def test_react_v2_native_mcp_end_to_end():
             else:
                 observations = {m["tool_call_id"]: m["content"] for m in messages if m["role"] == "tool"}
                 assert "error!" in observations["mcp_error"]
-                assert observations["mcp_add"] == "42"
-                calls = [("final", "submit", {"answer": int(observations["mcp_add"])})]
+                assert observations["mcp_add"] == '{"result": 42}'
+                add_obs = json.loads(observations["mcp_add"])
+                answer_val = add_obs["result"] if isinstance(add_obs, dict) else int(add_obs)
+                calls = [("final", "submit", {"answer": answer_val})]
             return dotdict(
                 choices=[
                     dotdict(
@@ -309,4 +313,4 @@ async def test_react_v2_native_mcp_end_to_end():
     }
     results = pred.history.messages[0]["tool_calls"].tool_call_results.tool_call_results
     assert [(r.call_id, r.is_error) for r in results] == [("mcp_error", True), ("mcp_add", False)]
-    assert results[1].value == "42"
+    assert results[1].value == {"result": 42}
