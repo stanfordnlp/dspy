@@ -23,6 +23,9 @@ ROOT_URL_ATTRIBUTE = re.compile(
     re.IGNORECASE,
 )
 VERSIONED_PATH = re.compile(r"^/(?:current|\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)(?:/|$)")
+RELEASE_BADGE_VERSION = re.compile(
+    r'(?s)(<div class=(?:"hp-hero-badge"|hp-hero-badge)>.*?\bDSPy )(\S+)(\s+&mdash;)'
+)
 SHARED_HEADER_STYLES = Path(__file__).parent.parent / "versioning" / "header.css"
 
 
@@ -116,6 +119,19 @@ def scope_root_relative_urls(site: Path, identifier: str) -> None:
             page.write_text(scoped)
 
 
+def set_release_badge_version(site: Path, version: str) -> None:
+    """Keep a historical home page from advertising the latest live release."""
+    home = site / "index.html"
+    html = home.read_text()
+    updated, count = RELEASE_BADGE_VERSION.subn(
+        lambda match: f"{match.group(1)}{version}{match.group(3)}",
+        html,
+        count=1,
+    )
+    if count:
+        home.write_text(updated)
+
+
 def installed_packages() -> dict[str, str]:
     return dict(
         sorted(
@@ -204,6 +220,7 @@ def build(
     if version:
         if artifact is None or package_source is None:
             raise ValueError("release builds require an artifact and package source")
+        set_release_badge_version(output, version)
     scope_root_relative_urls(output, identifier)
     if version:
         validate_release_site(output, config, version)

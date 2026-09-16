@@ -5,7 +5,13 @@ import subprocess
 
 import pytest
 
-from docs.scripts.build_docs import patched_config, release_version, remove_source_maps, scope_root_relative_urls
+from docs.scripts.build_docs import (
+    patched_config,
+    release_version,
+    remove_source_maps,
+    scope_root_relative_urls,
+    set_release_badge_version,
+)
 from docs.scripts.publish_versioned_docs import publish_site, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
@@ -105,6 +111,22 @@ def test_root_relative_links_stay_inside_the_selected_version(tmp_path):
     assert 'href="/3.2.1/api/"' in html
     assert 'href="/3.4.0b1/api/"' in html
     assert 'href="//example.com/path"' in html
+
+
+def test_release_badge_uses_snapshot_version_without_changing_other_content(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    home = site / "index.html"
+    home.write_text(
+        '<div class="hp-hero-badge">\n<span></span>\nDSPy 3.4.0b1 &mdash; Historical blurb\n</div>'
+        '<p>Documentation example for DSPy 3.4.0b1</p>'
+    )
+
+    set_release_badge_version(site, "3.3.1")
+
+    html = home.read_text()
+    assert "DSPy 3.3.1 &mdash; Historical blurb" in html
+    assert "Documentation example for DSPy 3.4.0b1" in html
 
 
 @requires_mike
