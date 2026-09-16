@@ -41,3 +41,8 @@ def test_majority_with_no_majority():
     completions = [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}]
     result = majority(completions)
     assert result.completions[0]["answer"] == "2"  # The first completion is returned in case of a tie
+
+
+def test_majority_with_prediction_without_completions():
+    result = majority(Prediction(answer="Paris"))
+    assert result.answer == "Paris"

@@ -19,8 +19,13 @@ def majority(prediction_or_completions, normalize=default_normalize, field=None)
     # Get the completions
     if isinstance(prediction_or_completions, Prediction):
         completions = prediction_or_completions.completions
+        if completions is None:
+            completions = [prediction_or_completions]
     else:
         completions = prediction_or_completions
+
+    if not completions:
+        raise ValueError("majority() requires at least one completion")
 
     try:
         signature = completions.signature
