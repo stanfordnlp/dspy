@@ -93,6 +93,15 @@ def test_example_hash_is_order_insensitive():
     assert hash(example1) == hash(example2)
 
 
+def test_example_hash_with_list_context_and_history():
+    history = dspy.History(messages=[{"question": "q", "answer": "a"}])
+    example1 = Example(question="capital?", context=["Paris is in France"], history=history)
+    example2 = Example(question="capital?", context=["Paris is in France"], history=history)
+    assert example1 == example2
+    assert hash(example1) == hash(example2)
+    assert len({example1, example2}) == 1
+
+
 def test_example_set_and_dict_lookup_after_reorder():
     # Direct consequence of the hash contract: equal Examples constructed in
     # different field orders must deduplicate in sets and look up in dicts.
