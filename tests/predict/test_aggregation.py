@@ -1,3 +1,5 @@
+import pytest
+
 from dspy.evaluate import normalize_text
 from dspy.predict.aggregation import majority
 from dspy.primitives.prediction import Completions, Prediction
@@ -46,3 +48,12 @@ def test_majority_with_no_majority():
 def test_majority_with_prediction_without_completions():
     result = majority(Prediction(answer="Paris"))
     assert result.answer == "Paris"
+
+
+def test_majority_empty_completions_raises_value_error():
+    with pytest.raises(ValueError, match="at least one completion"):
+        majority(Completions({}))
+    with pytest.raises(ValueError, match="at least one completion"):
+        majority(Prediction.from_completions([]))
+    with pytest.raises(ValueError, match="at least one completion"):
+        majority([])
