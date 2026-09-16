@@ -7,9 +7,10 @@ import json
 import os
 import struct
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, ClassVar, Iterator, Mapping
 
+from ..adaptation import AdaptationPolicy, adapt, check_policy
 from ..errors import (
     AuthError,
     BillingError,
@@ -403,12 +404,15 @@ class GeminiLM(BaseProviderLM):
     settings: "Mapping[str, str] | None" = None
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
 
+    # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
     provider: str = field(default="gemini", init=False)
     account_id: str | None = field(default=None, init=False, repr=False)
     manifest: ClassVar[ProviderManifest] = GEMINI_API
     _api_key_header: ClassVar[str] = "x-goog-api-key"
 
     def __post_init__(self) -> None:
+        check_policy(self.adaptations)
         self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
 
     _error_status_map: ClassVar[dict[str, type[ProviderError]]] = {
@@ -574,14 +578,14 @@ class GeminiLM(BaseProviderLM):
                 raise UnsupportedFeatureError(
                     f"{self.provider}: a {p.type} part in tool_result {part.id!r} cannot reach a functionResponse — "
                     "multimodal function responses take images (png/jpeg/webp) and documents (pdf, text/plain) only (MAP-10)",
-                    provider=self.provider,
+                    provider=self.provider, feature=f"messages[*].tool_result[{part.id}].content[{p.type}]",
                 )
         name = part.name or (names or {}).get(part.id)
         if not name:
             raise UnsupportedFeatureError(
                 f"{self.provider}: tool_result {part.id!r} needs a function name on the Gemini wire and no preceding "
                 "assistant tool_call with that id is in the transcript; set ToolResultPart.name (MAP-10 rule 6)",
-                provider=self.provider,
+                provider=self.provider, feature=f"messages[*].tool_result[{part.id}].name",
             )
         text = parts_to_text(text_parts, provider=self.provider, where="functionResponse.response")
         if part.is_error:
@@ -654,28 +658,27 @@ class GeminiLM(BaseProviderLM):
         if tc is None:
             return None
         if tc.parallel is False:
-            # MAP-8 rule 2 (live 2026-09-02): no wire knob; two calls came back
-            # on 2.5 and 3.7 with the preference set.  The outcome is not
-            # observable from usage, so the MAP-6 fallback exception does not
-            # apply — raise.
-            raise UnsupportedFeatureError(
-                "gemini: tool_choice.parallel=False is not supported — GenerateContent has no "
-                "parallel-tool-calls knob and returns several calls regardless (OpenAI and "
-                "Anthropic carry it)",
-                provider=self.provider,
-            )
+            # MAP-13: no wire knob (live 2026-09-02: two calls came back on
+            # 2.5 and 3.7 with the preference set).  A preference; agent
+            # loops iterate tool-call parts as a list anyway.  Dropped and
+            # recorded — the record is the visibility MAP-8 rule 2 wanted.
+            adapt("config.tool_choice.parallel", "dropped",
+                  "GenerateContent has no parallel-tool-calls knob and may return several calls "
+                  "(OpenAI and Anthropic carry it)",
+                  asked=False, provider=self.provider)
         mode = {"none": "NONE", "required": "ANY", "auto": "AUTO"}[tc.mode]
         cfg: dict[str, Any] = {"mode": mode}
         if tc.allowed:
             by_name = {t.name: t for t in request.tools}
             builtins = [name for name in tc.allowed if isinstance(by_name.get(name), BuiltinTool)]
             if builtins:
+                # MAP-13 rule 4(b): the program depends on the forced tool running.
                 raise UnsupportedFeatureError(
                     f"gemini: cannot force builtin tools {builtins} — "
                     "functionCallingConfig addresses function declarations only; "
                     "googleSearch/codeExecution have no tool_choice form "
                     "(OpenAI Responses and Anthropic carry builtin forcing)",
-                    provider=self.provider,
+                    provider=self.provider, feature="config.tool_choice.allowed",
                 )
             cfg["allowedFunctionNames"] = list(tc.allowed)
             if tc.mode == "auto":
@@ -698,17 +701,15 @@ class GeminiLM(BaseProviderLM):
         suffix_from = 0
         if cache_cfg is not None and cache_cfg.mode != "off":
             if cache_cfg.key is not None:
-                raise UnsupportedFeatureError(
-                    "gemini: cache.key is not supported — GenerateContent has no cache "
-                    "affinity key; use cache.resource with a stored cache (lm.cache(prefix))",
-                    provider=self.provider,
-                )
+                adapt("config.cache.key", "dropped",
+                      "GenerateContent has no cache affinity key; implicit caching applies, and a "
+                      "stored cache (lm.cache(prefix), cache.resource) is the explicit tier",
+                      asked=cache_cfg.key, provider=self.provider)
             if cache_cfg.retention is not None and cache_cfg.retention != "short":
-                raise UnsupportedFeatureError(
-                    "gemini: cache.retention is not supported in-request — lifetime belongs to "
-                    "the stored cache (cache_create(..., ttl_seconds=...) / cache_update)",
-                    provider=self.provider,
-                )
+                adapt("config.cache.retention", "dropped",
+                      "GenerateContent takes no lifetime in-request; it belongs to the stored cache "
+                      "(cache_create(..., ttl_seconds=...) / cache_update)",
+                      asked=cache_cfg.retention, provider=self.provider)
             if cache_cfg.resource is not None:
                 resource = cache_cfg.resource
                 if cache_cfg.prefix_until_index is not None:
@@ -734,6 +735,12 @@ class GeminiLM(BaseProviderLM):
             generation_config["topP"] = _gemini_number(request.config.top_p)
         if request.config.top_k is not None:
             generation_config["topK"] = request.config.top_k
+        if request.config.seed is not None:
+            generation_config["seed"] = request.config.seed
+        if request.config.frequency_penalty is not None:
+            generation_config["frequencyPenalty"] = _gemini_number(request.config.frequency_penalty)
+        if request.config.presence_penalty is not None:
+            generation_config["presencePenalty"] = _gemini_number(request.config.presence_penalty)
         if request.config.stop:
             generation_config["stopSequences"] = list(request.config.stop)
         if request.config.logprobs is not None:
@@ -749,38 +756,38 @@ class GeminiLM(BaseProviderLM):
         if request.config.reasoning is not None:
             reasoning = request.config.reasoning
             level_class = gemini_level_class(request.model)
+            if reasoning.is_off and level_class:
+                # MAP-13 (decision 2026-09-14 §4.2): the Gemini 3 class has no
+                # honoured off switch (thinkingBudget 0 accepted, 58 tokens
+                # still spent on 3.7 Flash, live 2026-09-02); the closest to
+                # "none" is the lowest level, and the spend shows in
+                # usage.reasoning_tokens.
+                adapt("config.reasoning.effort", "substituted",
+                      f"{request.model} cannot disable thinking (the Gemini 3 class honours no off switch); "
+                      "the lowest level was sent and the thinking spend is visible in usage",
+                      asked="off", applied="minimal", provider=self.provider)
+                reasoning = replace(reasoning, effort="minimal")
             if reasoning.is_off:
-                if level_class:
-                    # MAP-7 rule 4 / MAP-5: Gemini 3.x cannot fully disable
-                    # thinking; 3.7 Flash accepts thinkingBudget 0 and still
-                    # spent 58 tokens (live 2026-09-02) — a silent paid no-op.
-                    raise UnsupportedFeatureError(
-                        f"gemini: reasoning cannot be disabled on {request.model} — the Gemini 3 "
-                        "class has no full off switch (thinkingBudget 0 is accepted but not honoured); "
-                        "use effort='low' or a 2.5 model",
-                        provider=self.provider,
-                    )
                 generation_config["thinkingConfig"] = {"thinkingBudget": 0}
             else:
                 if reasoning.summary in ("concise", "detailed"):
-                    raise UnsupportedFeatureError(
-                        f"gemini: reasoning.summary={reasoning.summary!r} is an OpenAI detail level; "
-                        "GenerateContent has includeThoughts only (use 'auto')",
-                        provider=self.provider,
-                    )
+                    adapt("config.reasoning.summary", "substituted",
+                          "GenerateContent has includeThoughts only, no detail levels; 'auto' shows the thoughts",
+                          asked=reasoning.summary, applied="auto", provider=self.provider)
+                    reasoning = replace(reasoning, summary="auto")
                 thinking: dict[str, Any] = {}
                 if reasoning.summary is not None:
                     thinking["includeThoughts"] = True  # MAP-7 rule 7: only when asked
                 if reasoning.thinking_budget is not None:
                     thinking["thinkingBudget"] = reasoning.thinking_budget  # 3.x: accepted, docs warn
                 elif level_class:
-                    if reasoning.effort in ("xhigh", "max"):
-                        raise UnsupportedFeatureError(
-                            f"gemini: reasoning.effort={reasoning.effort!r} has no thinkingLevel on the "
-                            "Gemini 3 class (minimal|low|medium|high); 'high' is the ceiling",
-                            provider=self.provider,
-                        )
-                    thinking["thinkingLevel"] = reasoning.effort
+                    effort = reasoning.effort
+                    if effort in ("xhigh", "max"):
+                        adapt("config.reasoning.effort", "clamped",
+                              "the Gemini 3 class has thinkingLevel minimal|low|medium|high; 'high' is the ceiling",
+                              asked=effort, applied="high", provider=self.provider)
+                        effort = "high"
+                    thinking["thinkingLevel"] = effort
                 else:
                     thinking["thinkingBudget"] = EFFORT_THINKING_BUDGETS[reasoning.effort]
                 generation_config["thinkingConfig"] = thinking
@@ -825,11 +832,12 @@ class GeminiLM(BaseProviderLM):
         if request.config.service_tier is not None:
             payload["serviceTier"] = request.config.service_tier
         if request.config.user_id is not None:
-            raise UnsupportedFeatureError(
-                "gemini: config.user_id is not supported — GenerateContent has no "
-                "end-user attribution field (OpenAI and Anthropic carry it)",
-                provider=self.provider,
-            )
+            # MAP-13 (decision 2026-09-14 §4.5): attribution has no field
+            # here and nothing in the program depends on it at run time; a
+            # compliance policy sets adaptations="refuse".
+            adapt("config.user_id", "dropped",
+                  "GenerateContent has no end-user attribution field (OpenAI and Anthropic carry it)",
+                  asked=request.config.user_id, provider=self.provider)
 
         if extensions:
             passthrough = {k: v for k, v in extensions.items() if k not in {"prompt_caching", "output"}}
@@ -848,7 +856,6 @@ class GeminiLM(BaseProviderLM):
             headers=self._auth_headers({"Content-Type": "application/json"}),
             params=params,
             payload=self._payload(request),
-            read_timeout=120.0 if stream else 60.0,
         )
 
     # ─── Response parsing ───────────────────────────────────────────

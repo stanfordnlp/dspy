@@ -59,9 +59,50 @@ Engine selection:
 - `engine="litellm"`: explicitly use the compatibility backend.
 
 Authentication failures, timeouts and provider errors never cause a switch to
-another backend. Native capability errors also raise rather than dropping the
-requested feature. Text completions and client settings not implemented by the
-native integration remain on LiteLLM.
+another backend. Text completions and client settings not implemented by the
+native integration remain on LiteLLM. The `timeout` setting, a number of seconds
+or an `httpx.Timeout`, stays native: it bounds the wait for the next byte of the
+reply (headers first, then each streamed chunk), the send, and a free
+connection; the native default is 600 seconds, the same as LiteLLM's. An
+`httpx.Timeout` component set to `None` means "wait forever", which the native
+engine cannot honour: under `engine="auto"` that call uses LiteLLM, and under
+`engine="lm15"` it raises `LMUnsupportedFeatureError` (feature `timeout`)
+rather than silently substituting a default.
+
+Text that no provider can receive (a lone surrogate character) raises a plain
+`ValueError` before any engine is chosen, on every engine setting, so it is
+never reported as an unexpected engine failure or retried.
+
+Typed Requests through the LiteLLM engine forward `top_k` as a LiteLLM
+argument on the Chat Completions path (LiteLLM translates it for providers
+that take it); on the Responses path, which has no such field, it is dropped
+and recorded under `"adaptations"`.
+
+A setting the native route cannot carry exactly as written is **adapted and
+recorded**, rather than silently ignored or unnecessarily refused (lm15 MAP-13): `seed` on Anthropic is
+left out, `temperature=1.5` on Anthropic becomes `1.0`, a thinking-summary
+level the wire lacks becomes `auto`. Each history entry carries the record
+under `"adaptations"` (`field`, `action`, `asked`, `applied`, `reason`); the
+lm15 `Response` in the entry carries the same. Nothing is printed. What lm15
+still refuses — an image inside a tool result on the Chat Completions wire, a
+stored cache object that does not exist on the provider, `n > 1` — is known
+before any request is sent, and under `engine="auto"` such a call goes to
+LiteLLM without a failed native attempt first; under `engine="lm15"` it raises,
+naming the field in `error.feature`.
+
+For stop sequences on the Responses API, the engine matters:
+
+- **Native lm15:** streams internally and closes at the stop. Final usage is
+  unavailable after an early cut; closing does not guarantee billing stops.
+- **Typed Requests through LiteLLM:** trims the completed reply using lm15's
+  stop helper. Generation is not stopped early; full provider usage is retained.
+  This is recorded in `response.adaptations` and history. Typed Responses
+  streaming through LiteLLM remains unsupported; use native lm15 for it.
+
+Both preserve scores for whole retained tokens. If a stop cuts through a token,
+`response.logprobs_complete` is false: the retained partial token has no invented
+score. The flag survives saved-response caching. Chat Completions still sends
+stop sequences to the provider directly.
 
 ### Caching, retries, usage and streaming
 
@@ -176,6 +217,13 @@ DSPy errors, including those from legacy plugins, are preserved by identity.
 - `LMStreamAssemblyError` identifies an incomplete or invalid stream. It is not
   automatically retried; `partial` may hold salvageable content, not a successful
   result. Unknown usage stays unknown.
+- `LMCollectionLimitError` identifies a local collection budget being reached.
+  It is not retryable. `partial_events`, `rejected_event`, `limit`, `maximum`,
+  `retained_bytes`, and `retained_events` survive the engine boundary. Reading
+  `partial` assembles the incomplete turn on demand; wrapping the error does
+  not allocate combined text/audio. DSPy does not add a live-session API here.
+- `LMUnsupportedFeatureError.feature` preserves the unsupported setting path
+  reported by lm15. It also fills `features` when no explicit list was provided.
 - Unknown engine failures become `LMUnexpectedError`, with the original exception
   as `__cause__`. The canonical cause retains its exact lm15 code and SDK cause;
   the public error retains useful request IDs, provider codes, retry hints, routing

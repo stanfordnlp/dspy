@@ -57,11 +57,23 @@ recommended front door.  Needing a custom ``base_url``/transport/compat
 (azure, a self-hosted gateway) is the documented escape hatch: ``lm()``
 returns the ordinary provider LM — keep it and configure it yourself
 next time.
+
+Connections
+-----------
+A router owns ONE transport (connection pool) shared by every LM it
+builds, so ``RouterConfig(timeouts=..., max_connections=...)`` is the
+whole connection budget of that router: ``Timeouts(read=1800)`` for a
+slow local model, ``max_connections=200`` for a wide evaluation.  Pass
+``transport=`` instead to bring your own (then the two knobs are refused:
+configure the transport you pass).  ``close()`` / ``aclose()`` (or ``with``)
+releases every socket; a router that is simply dropped closes its idle
+sockets when collected.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import AsyncIterator, Iterator, Literal, Mapping, overload
@@ -72,6 +84,8 @@ from .errors import AmbiguousModelError, NotConfiguredError, UnknownModelError
 from .models import ModelInfo, ModelRegistry
 from .providers import Credential
 from .registry import PROVIDERS, ProviderDefinition, canonical_provider as _canonical_provider
+from .adaptation import AdaptationPolicy, check_policy
+from .transports import Timeouts
 from .types import Request, Response, StreamEvent
 
 __all__ = [
@@ -362,6 +376,13 @@ class RouterConfig:
     proxy in front of OpenAI, a vLLM server on another port.  Not for
     the cloud doors (azure, bedrock, vertex): their URL is derived from
     ``settings`` (resource, region), and an entry for one is refused.
+
+    ``timeouts`` (:class:`lm15.Timeouts`) and ``max_connections`` shape the
+    one transport the router builds and shares across its LMs; defaults
+    are the provider SDKs' (connect 10 s, read/write/pool 600 s, 100
+    connections).  ``transport`` replaces that transport with one you
+    built; it cannot be combined with the two knobs, which would then
+    silently not apply.
     """
 
     registry: ModelRegistry | None = None
@@ -377,6 +398,44 @@ class RouterConfig:
     transport: object | None = None  # SyncTransport for LMRouter, AsyncTransport
                                      # for AsyncLMRouter; passed to every LM the
                                      # router constructs (tests, custom pooling)
+    timeouts: Timeouts | None = field(default=None, kw_only=True)
+    max_connections: int | None = field(default=None, kw_only=True)
+    # MAP-13: "note" (adapt and record on the response), "silent" (adapt,
+    # record nothing), "refuse" (every adaptation is an error before the
+    # wire).  Applied to every LM the router builds.
+    adaptations: AdaptationPolicy = field(default="note", kw_only=True)
+
+    def __post_init__(self) -> None:
+        check_policy(self.adaptations)
+        if self.timeouts is not None and not isinstance(self.timeouts, Timeouts):
+            raise TypeError(
+                f"RouterConfig(timeouts=...) takes lm15.Timeouts, got {type(self.timeouts).__name__}; "
+                "e.g. Timeouts(read=600)"
+            )
+        if self.max_connections is not None:
+            from .transports._limits import check_max_connections
+
+            check_max_connections(self.max_connections)
+        if self.transport is not None and (self.timeouts is not None or self.max_connections is not None):
+            raise NotConfiguredError(
+                "RouterConfig(transport=...) cannot be combined with timeouts= or max_connections=: "
+                "they configure the transport lm15 would build, and would silently not apply to "
+                "the one you passed. Configure that transport directly (StdlibTransport(read_timeout=...))."
+            )
+
+    def transport_kwargs(self) -> dict:
+        """Constructor keywords for the default transport this config asks for."""
+        kwargs: dict = {}
+        if self.timeouts is not None:
+            kwargs.update(
+                connect_timeout=self.timeouts.connect,
+                read_timeout=self.timeouts.read,
+                write_timeout=self.timeouts.write,
+                pool_timeout=self.timeouts.pool,
+            )
+        if self.max_connections is not None:
+            kwargs["max_connections"] = self.max_connections
+        return kwargs
 
 
 # ------------------------------------------------------------- internals ----
@@ -645,12 +704,16 @@ def _env_key_for(provider: str, config: RouterConfig, adapters: Mapping[str, typ
     return env_keys[0]
 
 
-def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type]):
+def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], transport: object | None = None):
     cls = _adapter_for(resolution.provider, adapters)
     definition = _bound(resolution.provider, adapters)
     extra: dict = {}
-    if config.transport is not None:
+    if transport is not None:
+        extra["transport"] = transport
+    elif config.transport is not None:
         extra["transport"] = config.transport
+    if config.adaptations != "note":
+        extra["adaptations"] = config.adaptations
     base_url = _base_url_entry(config, resolution.provider)
     if base_url is not None:
         if definition is not None and definition.hosted:
@@ -733,6 +796,51 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
     return cls(api_key=api_key, **extra)
 
 
+PLANNING_KEY = "lm15-planning"
+
+
+def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], transport: object | None):
+    """A throwaway LM for ``plan()``: the build's bytes are discarded, so it
+    carries a placeholder credential under every policy — no stored login
+    is read or refreshed, no cloud chain is walked, no environment key is
+    needed — and placeholder host settings where a cloud door would
+    otherwise refuse to render its URL.  Never cached.  Everything else
+    (compat preset, access policy, base_url, adaptations policy) is the
+    real route's, so the plan is the call's."""
+    cls = _adapter_for(resolution.provider, adapters)
+    definition = _bound(resolution.provider, adapters)
+    extra: dict = {"api_key": PLANNING_KEY, "adaptations": config.adaptations}
+    if transport is not None:
+        extra["transport"] = transport
+    elif config.transport is not None:
+        extra["transport"] = config.transport
+    base_url = _base_url_entry(config, resolution.provider)
+    if base_url is not None and not (definition is not None and definition.hosted):
+        extra["base_url"] = base_url
+    account_field = getattr(cls, "__dataclass_fields__", {}).get("account_id")
+    if account_field is not None and account_field.init:
+        # The Codex backend derives an account id from its token at
+        # construction; a placeholder token has none, so name one.
+        extra["account_id"] = PLANNING_KEY
+    if definition is None:
+        return cls(**extra)
+    if definition.hosted:
+        from .cloud.hosts import resolve_settings
+
+        env = config.env if config.env is not None else os.environ
+        given = dict((config.settings or {}).get(resolution.provider) or {})
+        try:
+            settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider)
+        except NotConfiguredError:
+            placeholders = {setting.name: given.get(setting.name) or setting.default or "planning"
+                            for setting in definition.access.host.settings}
+            settings = resolve_settings(definition.access.host, placeholders, None, provider=resolution.provider)
+        if definition.compat is not None:
+            extra["compat"] = definition.compat
+        return cls(access=definition.access, settings=settings, **extra)
+    return cls(compat=definition.compat, access=definition.access, **extra)
+
+
 def _routed_request(request: Request, resolution: Resolution) -> Request:
     if request.model == resolution.model:
         return request
@@ -768,7 +876,7 @@ _CLIENT_KEYWORDS: Mapping[str, str] = MappingProxyType({
     "api_key": "LMRouter(RouterConfig(api_keys={provider: key})) or the environment",
     "api_base": "LMRouter(RouterConfig(base_urls={provider: url}))",
     "base_url": "LMRouter(RouterConfig(base_urls={provider: url}))",
-    "timeout": "RouterConfig(transport=...)",
+    "timeout": "RouterConfig(timeouts=Timeouts(read=...))",
     "num_retries": "your own retry loop over lm15.RETRYABLE_ERRORS (lm15 never retries)",
     "max_retries": "your own retry loop over lm15.RETRYABLE_ERRORS (lm15 never retries)",
     "headers": "RouterConfig(transport=...)",
@@ -778,7 +886,7 @@ _CLIENT_KEYWORDS: Mapping[str, str] = MappingProxyType({
     "cache": "your own cache keyed on the Request (lm15 has no response cache)",
     "caching": "your own cache keyed on the Request (lm15 has no response cache)",
     "mock_response": "lm15.testing.FakeLM",
-    "drop_params": "nothing: lm15 refuses what it cannot carry instead of dropping it",
+    "drop_params": "RouterConfig(adaptations='silent'): lm15 adapts what a wire cannot carry and records it on the response (MAP-13); 'silent' keeps no record, 'refuse' raises instead",
     "custom_llm_provider": "the model string's prefix",
 })
 
@@ -830,15 +938,48 @@ class LMRouter:
 
     Four methods, no state you can't see: config is frozen; the only
     mutation is an LM cache keyed by provider (one LM per provider,
-    built lazily, reused).
+    built lazily, reused) and the one transport those LMs share.
     """
 
     def __init__(self, config: RouterConfig = RouterConfig()) -> None:
         _check_provider_keyed(config, self._adapters)
         self.config = config
         self._lms: dict[str, object] = {}
+        self._transport: object | None = config.transport
+        # One lock for the LM cache and the shared transport: routers are
+        # used from many threads (an evaluation's workers), and two first
+        # calls at once must not each build a pool that close() cannot
+        # find (found in review of dspy#10409).
+        self._lock = threading.RLock()
 
     _adapters: Mapping[str, type] = ADAPTERS
+
+    def _shared_transport(self):
+        """The transport every LM of this router uses: the configured one,
+        else one StdlibTransport built from ``timeouts``/``max_connections``
+        on first use and shared, so the router's pool is one pool."""
+        with self._lock:
+            if self._transport is None:
+                from .transports import StdlibTransport
+
+                self._transport = StdlibTransport(**self.config.transport_kwargs())
+            return self._transport
+
+    def close(self) -> None:
+        """Close every connection this router holds.  Idempotent; the router
+        may be used again afterwards (a fresh transport is built)."""
+        with self._lock:
+            transport, self._transport = self._transport, None
+            self._lms.clear()
+        close = getattr(transport, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "LMRouter":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
     def resolve(self, model: str) -> Resolution:
         """Offline lookup; invokes no credential providers and returns no secrets.
@@ -856,11 +997,26 @@ class LMRouter:
         hatch is built in: keep it, configure transports yourself.
         """
         resolution = self.resolve(model)
-        lm = self._lms.get(resolution.provider)
-        if lm is None:
-            lm = _build_lm(resolution, self.config, self._adapters)
-            self._lms[resolution.provider] = lm
+        with self._lock:
+            lm = self._lms.get(resolution.provider)
+            if lm is None:
+                lm = _build_lm(resolution, self.config, self._adapters, self._shared_transport())
+                self._lms[resolution.provider] = lm
         return lm
+
+    def plan(self, request: Request):
+        """MAP-13 pre-flight: what this request WOULD adapt on its route, no
+        network and no credential (like ``resolve()``); raises what the call
+        would raise.  A route with no key gets a throwaway planning LM (not
+        cached): the build's bytes are discarded, so no key is needed."""
+        resolution = self.resolve(request.model)
+        with self._lock:
+            lm = self._lms.get(resolution.provider)
+        if lm is None:
+            # Not lm(): constructing the real LM reads or refreshes a stored
+            # login and walks cloud chains — I/O a pre-flight must not do.
+            lm = _build_planning_lm(resolution, self.config, self._adapters, self._shared_transport())
+        return lm.plan(_routed_request(request, resolution))
 
     def complete(self, request: Request) -> Response:
         resolution = self.resolve(request.model)
@@ -954,19 +1110,49 @@ class AsyncLMRouter:
         _check_provider_keyed(config, self._adapters)
         self.config = config
         self._lms: dict[str, object] = {}
+        self._transport: object | None = config.transport
+        self._lock = threading.RLock()  # construction is sync; see LMRouter
 
     _adapters: Mapping[str, type] = ASYNC_ADAPTERS
+
+    def _shared_transport(self):
+        with self._lock:
+            if self._transport is None:
+                from .transports import StdlibAsyncTransport
+
+                self._transport = StdlibAsyncTransport(**self.config.transport_kwargs())
+            return self._transport
+
+    async def aclose(self) -> None:
+        """Close every connection this router holds.  An async transport's
+        pool belongs to the loop that used it; call this on that loop
+        before it ends (one router per loop).  Idempotent."""
+        with self._lock:
+            transport, self._transport = self._transport, None
+            self._lms.clear()
+        aclose = getattr(transport, "aclose", None)
+        if callable(aclose):
+            await aclose()
+
+    async def __aenter__(self) -> "AsyncLMRouter":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.aclose()
 
     def resolve(self, model: str) -> Resolution:
         return _resolve(model, self.config, self._adapters)
 
     def lm(self, model: str):
         resolution = self.resolve(model)
-        lm = self._lms.get(resolution.provider)
-        if lm is None:
-            lm = _build_lm(resolution, self.config, self._adapters)
-            self._lms[resolution.provider] = lm
+        with self._lock:
+            lm = self._lms.get(resolution.provider)
+            if lm is None:
+                lm = _build_lm(resolution, self.config, self._adapters, self._shared_transport())
+                self._lms[resolution.provider] = lm
         return lm
+
+    plan = LMRouter.plan
 
     async def complete(self, request: Request) -> Response:
         resolution = self.resolve(request.model)

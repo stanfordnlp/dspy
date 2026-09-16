@@ -18,6 +18,7 @@ from typing import ClassVar
 from ..access import CLAUDE_CODE, DEFAULT_CLAUDE_CODE_SYSTEM_PROMPT, DEFAULT_CLAUDE_CODE_VERSION  # noqa: F401
 from ..features import ProviderManifest
 from .anthropic import AnthropicLM
+from ..adaptation import AdaptationPolicy
 from .base import Credential, SyncTransport, default_transport
 
 
@@ -35,6 +36,7 @@ class ClaudeCodeLM(AnthropicLM):
         base_url: str = "https://api.anthropic.com/v1",
         api_version: str = "2023-06-01",
         claude_code_version: str = DEFAULT_CLAUDE_CODE_VERSION,
+        adaptations: "AdaptationPolicy" = "note",
     ) -> None:
         self.claude_code_version = claude_code_version
         policy = CLAUDE_CODE
@@ -47,6 +49,7 @@ class ClaudeCodeLM(AnthropicLM):
             api_version=api_version,
             access=policy,
             credentials_path=credentials_path,
+            adaptations=adaptations,
         )
 
     @classmethod

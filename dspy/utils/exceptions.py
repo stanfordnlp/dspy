@@ -81,6 +81,31 @@ class LMLockTimeoutError(LMError):
         super().__init__(message, **kwargs)
 
 
+class LMCollectionLimitError(LMError):
+    """A local collector reached its budget; never automatically retry.
+
+    Retains the canonical source error so its partial result remains lazy:
+    wrapping a memory-limit failure must not allocate combined text/audio.
+    ``partial_events`` and ``rejected_event`` are available without that work.
+    """
+
+    default_code = "collection_limit"
+
+    def __init__(self, message: str = "", *, source=None, **kwargs: Any):
+        self._source = source
+        self.limit = getattr(source, "limit", None)
+        self.maximum = getattr(source, "maximum", None)
+        self.retained_bytes = getattr(source, "retained_bytes", 0)
+        self.retained_events = getattr(source, "retained_events", 0)
+        self.partial_events = getattr(source, "partial_events", ())
+        self.rejected_event = getattr(source, "rejected_event", None)
+        super().__init__(message, **kwargs)
+
+    @property
+    def partial(self):
+        return self._source.partial if self._source is not None else None
+
+
 class LMConfigurationError(LMError):
     """The LM or provider client is not configured correctly."""
 
@@ -98,6 +123,7 @@ class LMUnsupportedFeatureError(LMError):
 
     Args:
         message: Human-readable error message.
+        feature: One unsupported setting path reported by the engine.
         features: Feature names that were requested but unavailable, such as
             `"finetuning"`, `"reinforce"`, or `"structured_outputs"`.
         issues: Optional detailed reasons the requested feature could not be
@@ -112,10 +138,12 @@ class LMUnsupportedFeatureError(LMError):
         message: str = "",
         *,
         features: list[str] | None = None,
+        feature: str | None = None,
         issues: list[str] | None = None,
         **kwargs: Any,
     ):
-        self.features = list(features or [])
+        self.feature = feature
+        self.features = list(features) if features is not None else ([feature] if feature is not None else [])
         self.issues = list(issues or [])
         super().__init__(message, **kwargs)
 

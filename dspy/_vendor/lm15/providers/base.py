@@ -20,6 +20,7 @@ from ..errors import (
     map_http_error,
     with_credential_hint,
 )
+from ..adaptation import Adaptation, AdaptationPolicy, check_policy, collecting, is_planning
 from ..credentials import AwsCredentials, CredentialLike, CredentialValue, coerce_credential
 from ..features import EndpointSupport, ProviderManifest
 from ..models import ModelInfo
@@ -162,6 +163,7 @@ class HttpResponse:
     headers: list[tuple[str, str]]
     body: bytes
     http_version: str = "HTTP/1.1"
+    provider: str | None = None  # who answered; names the ProviderError json() raises
 
     def header(self, name: str) -> str | None:
         lname = name.lower()
@@ -178,7 +180,34 @@ class HttpResponse:
         return self.body.decode("utf-8", errors="replace")
 
     def json(self):
-        return json.loads(self.body)
+        """The body as JSON.  A body that is not JSON — a gateway's HTML
+        error page behind a 200, a truncated reply, a captive portal — is
+        a provider reply that cannot become a Response without inventing
+        one, so it raises :class:`ProviderError` (ErrorCode ``provider``)
+        carrying the status and the first bytes of what arrived.  A raw
+        ``JSONDecodeError`` would escape every ``except LM15Error`` and
+        say nothing about who sent what."""
+        try:
+            return json.loads(self.body)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ProviderError(
+                _non_json_message(self, exc),
+                provider=self.provider,
+                status=self.status,
+                request_id=self.header("x-request-id") or self.header("request-id"),
+            ) from exc
+
+
+def _non_json_message(response: "HttpResponse", exc: Exception) -> str:
+    content_type = response.header("content-type") or "no content-type"
+    excerpt = response.body[:200].decode("utf-8", errors="replace")
+    if len(response.body) > 200:
+        excerpt += "…"
+    return (
+        f"the reply (HTTP {response.status}, {content_type}, {len(response.body)} bytes) is not JSON: "
+        f"{exc}. Body starts: {excerpt!r}. A gateway or proxy in front of the provider is the "
+        "usual cause; the request may or may not have been served."
+    )
 
 
 class ProviderDialect(Protocol):
@@ -207,6 +236,10 @@ _SURFACE_WORD = {
 }
 
 
+def _client_side_stop(adaptations: "tuple[Adaptation, ...]") -> bool:
+    return any(a.field == "config.stop" and a.action == "client_side" for a in adaptations)
+
+
 class BaseProviderLM:
     """Shared synchronous provider LM implementation.
 
@@ -224,6 +257,9 @@ class BaseProviderLM:
     manifest: ClassVar[ProviderManifest] = ProviderManifest(provider="unknown")
     access: ProviderManifest
     account_id: str | None = None
+    # MAP-13 policy: "note" (adapt and record), "silent", "refuse".  Each
+    # dialect declares it as a constructor field; this is the fallback.
+    adaptations: AdaptationPolicy = "note"
     _credential_source: str = "explicit"
     # Cloud-host state (AUTH-10): the resolved host settings and the clock
     # every time-dependent byte (SigV4 date, JWT iat/exp) is read from.  The
@@ -335,7 +371,10 @@ class BaseProviderLM:
 
         from ..access import auth_header
 
-        credential = resolve_credential_value(self.api_key) if self.api_key is not None else None
+        # plan() builds and discards: no credential provider is invoked, no
+        # header is signed — the record of adaptations does not depend on it.
+        planning = is_planning()
+        credential = resolve_credential_value(self.api_key) if self.api_key is not None and not planning else None
         hdrs = dict(headers.items()) if isinstance(headers, dict) else dict(headers or [])
         if credential is not None and not isinstance(credential, AwsCredentials):
             pair = auth_header(self.access, credential, api_key_header=self._api_key_header)
@@ -391,23 +430,80 @@ class BaseProviderLM:
                 provider=self.provider,
             )
 
+    # ─── MAP-13: build with adaptations, plan, client-side steps ───
+
+    def _build(self, request: Request, stream: bool, *, policy: "AdaptationPolicy | None" = None, planning: bool = False) -> "tuple[TransportRequest, tuple[Adaptation, ...]]":
+        """``build_request`` inside an adaptation scope: the wire request and
+        the record of what differs from what was asked.  The one place a
+        scope is opened; builders record through ``lm15.adaptation.adapt``.
+        ``policy`` overrides the adapter's own (the async mirror passes its);
+        ``planning`` skips credentials and signing (the bytes are discarded)."""
+        with collecting(check_policy(policy if policy is not None else self.adaptations), provider=self.provider, planning=planning) as scope:
+            req = self.build_request(request, stream=stream)
+        return req, tuple(scope.records)
+
+    def plan(self, request: Request, *, policy: "AdaptationPolicy | None" = None) -> "tuple[Adaptation, ...]":
+        """What a call with this request WOULD adapt, with no network and no
+        credential invoked (like ``resolve()``, offline).  Raises what the
+        call would raise (a refusal under any policy, or every deviation
+        under ``adaptations="refuse"``).  Returns the full record under
+        every policy, "silent" included: a preview that hid what it saw
+        would be no preview."""
+        return self._build(request, stream=False, policy=policy, planning=True)[1]
+
+    def _visible(self, adaptations: "tuple[Adaptation, ...]", *, policy: "AdaptationPolicy | None" = None) -> "tuple[Adaptation, ...]":
+        """What the response carries: everything under "note" (and "refuse",
+        which only ever holds satisfied/defaulted), nothing under "silent".
+        Behaviour is decided from the full record, never from this."""
+        return () if (policy if policy is not None else self.adaptations) == "silent" else adaptations
+
+    def _finish_response(self, request: Request, response: Response, adaptations: "tuple[Adaptation, ...]", *, policy: "AdaptationPolicy | None" = None) -> Response:
+        """Stamp the visible record on the response and apply client-side steps."""
+        from ..result import apply_client_side_stop
+
+        if _client_side_stop(adaptations):
+            response = apply_client_side_stop(response, request.config.stop)
+        visible = self._visible(adaptations, policy=policy)
+        if visible and not response.adaptations:
+            from dataclasses import replace
+
+            response = replace(response, adaptations=visible)
+        return response
+
     def complete(self, request: Request) -> Response:
-        req = self.build_request(request, stream=False)
+        req, adaptations = self._build(request, stream=False)
+        if _client_side_stop(adaptations):
+            # MAP-13 (decision 2026-09-14): a stop sequence the wire cannot
+            # take is honoured by streaming under the hood and closing the
+            # connection at the cut.  Whether the provider then stops
+            # generating (and billing) on a closed connection is its own
+            # behaviour, not a promise made here.  The price is the usage
+            # report, which only the final frame carries; it is "not
+            # reported", never estimated.  A stream that never hits the
+            # sequence completes normally, usage included.
+            from ..result import materialize_response
+
+            return materialize_response(self.stream(request), request)
         resp = self._send(req)
         if resp.status >= 400:
             raise self._http_error(resp)
-        return self.parse_response(request, resp)
+        return self._finish_response(request, self.parse_response(request, resp), adaptations)
 
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
         # provider terminal frame; the coalescer merges them so the public
         # stream yields exactly one final StreamEndEvent.
-        from ..result import coalesce_stream
+        from ..result import coalesce_stream, truncate_stream_at_stop
 
-        return coalesce_stream(self._stream_raw(request), model=request.model)
+        req, adaptations = self._build(request, stream=True)
+        events = coalesce_stream(self._stream_raw(request, req), model=request.model, adaptations=self._visible(adaptations))
+        if _client_side_stop(adaptations):
+            events = truncate_stream_at_stop(events, request.config.stop)
+        return events
 
-    def _stream_raw(self, request: Request) -> Iterator[StreamEvent]:
-        req = self.build_request(request, stream=True)
+    def _stream_raw(self, request: Request, req: "TransportRequest | None" = None) -> Iterator[StreamEvent]:
+        if req is None:
+            req = self.build_request(request, stream=True)
         self._ensure_transport_open()
         try:
             with self.transport.stream(req) as resp:
@@ -437,6 +533,7 @@ class BaseProviderLM:
                     headers=resp.headers,
                     body=body,
                     http_version=resp.http_version,
+                    provider=self.provider,
                 )
         except NetworkTransportError as exc:
             raise LM15TransportError(str(exc)) from exc
@@ -502,7 +599,7 @@ class BaseProviderLM:
         replaced before the next request.
         """
         if isinstance(self.transport, StdlibTransport) and getattr(self.transport, "_closed", False):
-            self.transport = default_transport()
+            self.transport = self.transport.copy()
 
     def __enter__(self):
         return self
@@ -737,13 +834,19 @@ class BaseProviderLM:
         """Submit to the provider's batch queue; returns the ticket snapshot."""
         self._require("batches")
         upload_body = None
-        upload_req = self._batch_upload_request(request)
+        # MAP-13: the batch builders run under the adapter's policy so
+        # "refuse" refuses here too; a batch ticket has no adaptations field
+        # (provisional surface), so under "note" the record is not kept.
+        with collecting(check_policy(self.adaptations), provider=self.provider):
+            upload_req = self._batch_upload_request(request)
         if upload_req is not None:
             resp = self._send(upload_req)
             if resp.status >= 400:
                 raise self._http_error(resp)
             upload_body = resp.json()
-        resp = self._send(self._batch_submit_request(request, upload_body))
+        with collecting(check_policy(self.adaptations), provider=self.provider):
+            submit_req = self._batch_submit_request(request, upload_body)
+        resp = self._send(submit_req)
         if resp.status >= 400:
             raise self._http_error(resp)
         return self._batch_job_from_body(resp.text())
