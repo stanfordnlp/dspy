@@ -296,7 +296,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
             List of results, and optionally failed examples and exceptions.
         """
         # Create a list of execution pairs (self, example)
-        exec_pairs = [(self, example.inputs()) for example in examples]
+        exec_pairs = []
+        for example in examples:
+            if isinstance(example, dict):
+                exec_pairs.append((self, example))
+            else:
+                exec_pairs.append((self, example.inputs()))
 
         # Create an instance of Parallel
         parallel_executor = Parallel(
