@@ -1,12 +1,19 @@
 /* Shared header treatment for Material release snapshots and Zensical Current. */
+.md-version__alias {
+    display: none;
+}
+
 @media screen and (min-width: 60em) {
-    .md-version {
+    .md-header__inner > .md-version {
+        flex: 0 0 5.25rem;
         position: relative;
+        width: 5.25rem;
         height: 2.4rem;
+        margin-right: 0;
         margin-left: 0.4rem;
     }
 
-    .md-version__current {
+    .md-header__inner > .md-version .md-version__current {
         box-sizing: border-box;
         min-width: 5.25rem;
         height: 1.8rem;
@@ -18,11 +25,11 @@
         font-weight: 600;
     }
 
-    .md-version__list {
+    .md-header__inner > .md-version .md-version__list {
         top: calc(100% - 0.3rem);
-        right: auto;
-        left: 1.4rem;
-        width: 9.5rem;
+        right: 0;
+        left: auto;
+        width: 8rem;
         max-height: 19rem;
         margin-right: 0;
         margin-left: 0;
@@ -64,11 +71,6 @@
         color: var(--md-accent-fg-color);
     }
 
-    /* Minor aliases remain redirects, but patches are the selectable versions. */
-    .md-version__alias {
-        display: none;
-    }
-
     /* Match the wider search field used by the historical Material header. */
     .md-search {
         width: 13rem;
@@ -85,5 +87,10 @@
 
     .md-search__button::after {
         display: none;
+    }
+
+    .md-header__source {
+        width: 8.7rem;
+        margin-left: 0;
     }
 }
