@@ -26,6 +26,8 @@ def _transform_value(value):
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
+    elif isinstance(value, (list, tuple)):
+        return [_transform_value(v) for v in value]
     else:
         return value
 
