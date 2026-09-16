@@ -203,7 +203,7 @@ class Evaluate:
             )
             data = self._prepare_results_output(results, metric_name)
 
-            with open(save_as_csv, "w", newline="") as csvfile:
+            with open(save_as_csv, "w", newline="", encoding="utf-8") as csvfile:
                 fieldnames = data[0].keys()
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
@@ -217,10 +217,7 @@ class Evaluate:
                 else metric.__class__.__name__
             )
             data = self._prepare_results_output(results, metric_name)
-            with open(
-                    save_as_json,
-                    "w",
-            ) as f:
+            with open(save_as_json, "w", encoding="utf-8") as f:
                 json.dump(data, f)
 
         return EvaluationResult(
