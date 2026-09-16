@@ -365,11 +365,11 @@ def test_predictor_call_budget_can_be_disabled() -> None:
 # not repaint a later, unrelated crash as an infrastructure error.
 
 
-class _RateLimitedLM(DummyLM):
+def _rate_limited_lm(_answers=None):
     """A host LM whose provider is down: every call raises a typed LM infrastructure error."""
+    from tests.test_utils.engines import failing_lm
 
-    def forward(self, *args, **kwargs):
-        raise LMRateLimitError("429 from the provider", model="dummy")
+    return failing_lm(LMRateLimitError("429 from the provider", model="dummy"))
 
 
 def _boundary_flex(drive):
@@ -408,7 +408,7 @@ def test_bridged_lm_failure_keeps_its_type_across_the_boundary() -> None:
         tools[bridge.CALL_TOOL](handle="solve", inputs={"value": 2})
 
     flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
+    dspy.configure(lm=_rate_limited_lm([]))
     with pytest.raises(LMRateLimitError) as err:
         flex(value=2)
     assert isinstance(err.value, LMError)  # catchable by the family callers actually handle
@@ -431,7 +431,7 @@ def test_recovered_lm_failure_does_not_hijack_a_later_crash() -> None:
         raise NameError("name 'oops' is not defined")
 
     flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
+    dspy.configure(lm=_rate_limited_lm([]))
     with pytest.raises(CodeExecutionError, match="NameError"):
         flex(value=2)
 
@@ -450,7 +450,7 @@ def test_recovered_lm_failure_does_not_hijack_a_local_later_crash() -> None:
         raise NameError("later sandbox bug")
 
     flex = _boundary_flex(drive)
-    dspy.configure(lm=_RateLimitedLM([]))
+    dspy.configure(lm=_rate_limited_lm([]))
     with pytest.raises(CodeExecutionError, match="NameError"):
         flex(value=2)
 
@@ -690,7 +690,7 @@ RECOVERED_LM_FAILURE_MODULE = textwrap.dedent(
 def test_lm_failure_type_survives_the_real_sandbox_boundary() -> None:
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     flex._bind_code(LM_FAILURE_MODULE)
-    dspy.configure(lm=_RateLimitedLM([]))
+    dspy.configure(lm=_rate_limited_lm([]))
     with pytest.raises(LMRateLimitError):
         flex(value=2)
 
@@ -699,7 +699,7 @@ def test_lm_failure_type_survives_the_real_sandbox_boundary() -> None:
 def test_recovered_lm_failure_does_not_hijack_through_the_real_sandbox() -> None:
     flex = Flex(Doubler, interpreter_factory=lambda: dspy.PythonInterpreter())
     flex._bind_code(RECOVERED_LM_FAILURE_MODULE)
-    dspy.configure(lm=_RateLimitedLM([]))
+    dspy.configure(lm=_rate_limited_lm([]))
     with pytest.raises(CodeInterpreterError) as err:
         flex(value=2)
     assert not isinstance(err.value, LMError)  # the local NameError is not repainted as infra

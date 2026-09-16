@@ -76,7 +76,13 @@ def serialize_for_json(value: Any) -> Any:
     # that pydantic doesn't recognize or can't serialize)
     try:
         return TypeAdapter(type(value)).dump_python(value, mode="json")
-    except Exception:
+    except Exception as exc:
+        from dspy.adapters.types.base_type import TypeFormatError
+
+        if isinstance(exc, TypeFormatError):
+            raise
+        if isinstance(exc.__cause__, TypeFormatError):
+            raise exc.__cause__ from None
         return str(value)
 
 

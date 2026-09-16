@@ -1,37 +1,21 @@
-import functools
 import logging
-import os
 import re
 import threading
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal
 
-import dspy
-from dspy.clients._litellm import get_litellm
-from dspy.clients.cache import request_cache
-from dspy.clients.call_context import completed_legacy, stream_emitted
-from dspy.clients.engines.lifecycle import aclosing_stream
-from dspy.clients.legacy_requests import chat_to_responses
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.lm15 import CacheConfig
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import LMConfigurationError, LMError, LMUnsupportedFeatureError
-from dspy.utils.lazy_import import require
+from dspy.utils.exceptions import LMConfigurationError, LMUnsupportedFeatureError
 
 from .base_lm import BaseLM
 
-anyio = require("anyio")
-
-if TYPE_CHECKING:
-    from anyio.streams.memory import MemoryObjectSendStream
-
 logger = logging.getLogger(__name__)
 
-
-def _get_litellm():
-    return get_litellm(feature="dspy.LM")
+ENGINE_SELECTIONS = ("auto", "lm15", "litellm")
 
 
 def _is_openai_reasoning_model(model: str) -> bool:
@@ -46,11 +30,11 @@ class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
 
-    Use lm("hello") for a list-returning convenience call, or pass an explicit
-    dspy.lm15.Request to receive a dspy.lm15.Response. OpenAI-style messages=
-    dictionaries are deprecated and scheduled for removal in DSPy 3.5. Adapters
-    and custom engines must migrate to the canonical request/response contract.
-    See https://dspy.ai/community/normalized-lm-api-migration/.
+    `lm(request)` runs one `dspy.lm15.Request` and returns a `dspy.lm15.Response`;
+    `lm.generate(request, n=...)` returns several. `lm("hello")` is a convenience
+    that renders one user message with this LM's generation defaults and returns
+    a list of outputs. Custom backends are engines passed with `engine=`; see
+    https://dspy.ai/community/normalized-lm-api-migration/.
     """
 
     def __init__(
@@ -106,7 +90,7 @@ class LM(BaseLM):
                 stripped before sending requests to the provider.
         """
         if isinstance(engine, str):
-            if engine not in {"auto", "lm15", "litellm"}:
+            if engine not in ENGINE_SELECTIONS:
                 raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
             if async_engine is not None:
                 raise ValueError("async_engine is only used with a custom engine object")
@@ -118,10 +102,9 @@ class LM(BaseLM):
             if not isinstance(prompt_cache, CacheConfig):
                 raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
             kwargs["prompt_cache"] = prompt_cache
-        self._engine_spec = engine
-        self._async_engine_spec = async_engine
         self._engine_store = {}
         self._engine_lock = threading.RLock()
+        self._warned_zero_temp_rollout = False
         super().__init__(
             model=model,
             model_type=model_type,
@@ -130,8 +113,12 @@ class LM(BaseLM):
             cache=cache,
             num_retries=num_retries,
             callbacks=callbacks,
+            engine=None if isinstance(engine, str) else engine,
+            async_engine=async_engine,
             **kwargs,
         )
+        if isinstance(engine, str):
+            self._engine_spec = engine
 
         self.provider = provider or self.infer_provider()
         self.finetuning_model = finetuning_model
@@ -198,44 +185,6 @@ class LM(BaseLM):
             )
             self._warned_zero_temp_rollout = True
 
-    def _get_cached_completion_fn(self, completion_fn, cache):
-        ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
-        if cache:
-            completion_fn = request_cache(
-                cache_arg_name="request",
-                ignored_args_for_cache_key=ignored_args_for_cache_key,
-            )(completion_fn)
-
-        litellm_cache_args = {"no-cache": True, "no-store": True}
-
-        return completion_fn, litellm_cache_args
-
-    def _wrap_litellm_exception(self, exc: Exception) -> LMError:
-        from dspy.clients.engines.litellm_errors import to_lm15_error
-        from dspy.clients.errors import wrap_error
-
-        canonical = to_lm15_error(exc, model=self.model, provider=self._provider_name)
-        return wrap_error(canonical, model=self.model, provider=self._provider_name)
-
-    def forward(self, prompt=None, messages=None, **kwargs):
-        """Compatibility forward entry point; public calls also record history."""
-        from dspy.clients.execution import execute, prepare
-
-        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
-
-    async def aforward(self, prompt=None, messages=None, **kwargs):
-        import asyncio
-
-        from dspy.clients.execution import aexecute, prepare
-
-        call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True, direct=True)
-        return (await aexecute(self, call)).provider_response()
-
-    @property
-    def engine(self):
-        """Configured engine selection ('auto', 'lm15', 'litellm', or an engine object)."""
-        return self._engine_spec
-
     def close(self):
         """Close owned synchronous engine pools after active calls have finished.
 
@@ -283,7 +232,7 @@ class LM(BaseLM):
             raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
         spec = kwargs.pop("engine", self._engine_spec)
         async_spec = kwargs.pop("async_engine", self._async_engine_spec)
-        if isinstance(spec, str) and spec not in {"auto", "lm15", "litellm"}:
+        if isinstance(spec, str) and spec not in ENGINE_SELECTIONS:
             raise ValueError("Unknown engine selection")
         if not isinstance(spec, str) and not callable(getattr(spec, "complete", None)):
             raise TypeError("Custom engines must implement complete(Request)")
@@ -428,210 +377,3 @@ class LM(BaseLM):
             state.pop("max_completion_tokens")
 
         return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
-
-    def _check_truncation(self, results):
-        from dspy.clients.legacy_outputs import value
-
-        if self.model_type != "responses" and any(value(c, "finish_reason") == "length" for c in value(results, "choices", []) or []):
-            logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs.get('max_tokens', self.kwargs.get('max_completion_tokens'))}. "
-                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
-                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
-                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
-                " if the reason for truncation is repetition."
-            )
-
-
-def _get_stream_completion_fn(
-    request: dict[str, Any],
-    cache_kwargs: dict[str, Any],
-    sync=True,
-    headers: dict[str, Any] | None = None,
-):
-    stream = dspy.settings.send_stream
-    caller_predict = dspy.settings.caller_predict
-
-    if stream is None:
-        return None
-
-    # The stream is already opened, and will be closed by the caller.
-    stream = cast("MemoryObjectSendStream", stream)
-    caller_predict_id = id(caller_predict) if caller_predict else None
-
-    if dspy.settings.track_usage:
-        request["stream_options"] = {"include_usage": True}
-
-    async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        response = await _get_litellm().acompletion(
-            num_retries=0,
-            cache=cache_kwargs,
-            stream=True,
-            headers=headers,
-            **request,
-        )
-        chunks = []
-        async with aclosing_stream(response):
-            async for chunk in response:
-                if caller_predict_id:
-                    chunk.predict_id = caller_predict_id
-                chunks.append(chunk)
-                stream_emitted()
-                await stream.send(chunk)
-            raw = _get_litellm().stream_chunk_builder(chunks)
-            completed_legacy(raw)
-            return raw
-
-    def sync_stream_completion():
-        return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
-
-    async def async_stream_completion():
-        return await stream_completion(request, cache_kwargs)
-
-    if sync:
-        return sync_stream_completion
-    else:
-        return async_stream_completion
-
-
-def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
-    if stream_completion is None:
-        return _get_litellm().completion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=headers,
-            **request,
-        )
-
-    return stream_completion()
-
-
-def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    # Extract the provider and model from the model string.
-    # TODO: Not all the models are in the format of "provider/model"
-    model = request.pop("model").split("/", 1)
-    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
-
-    # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
-
-    # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
-
-    return _get_litellm().text_completion(
-        cache=cache,
-        model=f"text-completion-openai/{model}",
-        api_key=api_key,
-        api_base=api_base,
-        prompt=prompt,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=headers)
-    if stream_completion is None:
-        return await _get_litellm().acompletion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=headers,
-            **request,
-        )
-
-    return await stream_completion()
-
-
-async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    model = request.pop("model").split("/", 1)
-    headers = request.pop("headers", None)
-    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
-
-    # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
-
-    # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
-
-    return await _get_litellm().atext_completion(
-        cache=cache,
-        model=f"text-completion-openai/{model}",
-        api_key=api_key,
-        api_base=api_base,
-        prompt=prompt,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    request = _convert_chat_request_to_responses_request(request)
-
-    return _get_litellm().responses(
-        cache=cache,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    request = _convert_chat_request_to_responses_request(request)
-
-    return await _get_litellm().aresponses(
-        cache=cache,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """Translate ordinary calls without the retired experimental types."""
-    if "input" in request:
-        data = dict(request)
-        data.pop("messages", None)
-        return data
-    return chat_to_responses(request)
-
-
-def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
-    headers = headers or {}
-    return {
-        "User-Agent": f"DSPy/{dspy.__version__}",
-        **headers,
-    }
-

@@ -1,9 +1,8 @@
-from unittest import mock
-
 import pytest
 
 import dspy
 from tests.adapters.conftest import format_messages_and_lm_kwargs
+from tests.test_utils.engines import recording_lm
 
 
 def test_two_step_adapter_format_exact_messages_for_simple_signature_with_demo():
@@ -57,6 +56,34 @@ def test_two_step_adapter_format_exact_messages_with_typed_outputs():
     assert lm_kwargs == expected_lm_kwargs
 
 
+def _assert_two_step_requests(main_lm, extraction_lm):
+    # main LM call
+    [main_request] = main_lm.engine.requests
+    assert len(main_request.messages) == 1
+    assert "1. `question` (str)" in main_request.system
+    assert "1. `solution` (str)" in main_request.system
+    assert "2. `answer` (float)" in main_request.system
+    assert main_request.messages[0].role == "user"
+    assert "question:" in main_request.messages[0].text.lower()
+    assert "What is 5 + 7?" in main_request.messages[0].text
+
+    # extraction LM call
+    [extraction_request] = extraction_lm.engine.requests
+    assert len(extraction_request.messages) == 1
+    assert "`text` (str)" in extraction_request.system
+    assert "`solution` (str)" in extraction_request.system
+    assert "`answer` (float)" in extraction_request.system
+    assert extraction_request.messages[0].role == "user"
+    assert "text from main LM" in extraction_request.messages[0].text
+
+
+EXTRACTED = """
+[[ ## solution ## ]] result
+[[ ## answer ## ]] 12
+[[ ## completed ## ]]
+"""
+
+
 def test_two_step_adapter_call():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField(desc="The math question to solve")
@@ -64,63 +91,15 @@ def test_two_step_adapter_call():
         answer: float = dspy.OutputField(desc="The final numerical answer")
 
     program = dspy.Predict(TestSignature)
+    main_lm = recording_lm(["text from main LM"], model="openai/gpt-4o-mini", temperature=1.0)
+    extraction_lm = recording_lm([EXTRACTED], model="openai/gpt-4o", temperature=1.0)
 
-    mock_main_lm = mock.MagicMock(spec=dspy.LM)
-    mock_main_lm.return_value = ["text from main LM"]
-    mock_main_lm.kwargs = {"temperature": 1.0}
-    mock_main_lm.model = "openai/gpt-4o-mini"
-
-    mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = [
-        """
-[[ ## solution ## ]] result
-[[ ## answer ## ]] 12
-[[ ## completed ## ]]
-"""
-    ]
-    mock_extraction_lm.kwargs = {"temperature": 1.0}
-    mock_extraction_lm.model = "openai/gpt-4o"
-
-    dspy.configure(lm=mock_main_lm, adapter=dspy.TwoStepAdapter(extraction_model=mock_extraction_lm))
+    dspy.configure(lm=main_lm, adapter=dspy.TwoStepAdapter(extraction_model=extraction_lm))
 
     result = program(question="What is 5 + 7?")
 
     assert result.answer == 12
-
-    # main LM call
-    mock_main_lm.assert_called_once()
-    _, call_kwargs = mock_main_lm.call_args
-    assert len(call_kwargs["messages"]) == 2
-
-    # assert first message
-    assert call_kwargs["messages"][0]["role"] == "system"
-    content = call_kwargs["messages"][0]["content"]
-    assert "1. `question` (str)" in content
-    assert "1. `solution` (str)" in content
-    assert "2. `answer` (float)" in content
-
-    # assert second message
-    assert call_kwargs["messages"][1]["role"] == "user"
-    content = call_kwargs["messages"][1]["content"]
-    assert "question:" in content.lower()
-    assert "What is 5 + 7?" in content
-
-    # extraction LM call
-    mock_extraction_lm.assert_called_once()
-    _, call_kwargs = mock_extraction_lm.call_args
-    assert len(call_kwargs["messages"]) == 2
-
-    # assert first message
-    assert call_kwargs["messages"][0]["role"] == "system"
-    content = call_kwargs["messages"][0]["content"]
-    assert "`text` (str)" in content
-    assert "`solution` (str)" in content
-    assert "`answer` (float)" in content
-
-    # assert second message
-    assert call_kwargs["messages"][1]["role"] == "user"
-    content = call_kwargs["messages"][1]["content"]
-    assert "text from main LM" in content
+    _assert_two_step_requests(main_lm, extraction_lm)
 
 
 @pytest.mark.asyncio
@@ -131,62 +110,14 @@ async def test_two_step_adapter_async_call():
         answer: float = dspy.OutputField(desc="The final numerical answer")
 
     program = dspy.Predict(TestSignature)
+    main_lm = recording_lm(["text from main LM"], model="openai/gpt-4o-mini", temperature=1.0)
+    extraction_lm = recording_lm([EXTRACTED], model="openai/gpt-4o", temperature=1.0)
 
-    mock_main_lm = mock.MagicMock(spec=dspy.LM)
-    mock_main_lm.acall.return_value = ["text from main LM"]
-    mock_main_lm.kwargs = {"temperature": 1.0}
-    mock_main_lm.model = "openai/gpt-4o-mini"
-
-    mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.acall.return_value = [
-        """
-[[ ## solution ## ]] result
-[[ ## answer ## ]] 12
-[[ ## completed ## ]]
-"""
-    ]
-    mock_extraction_lm.kwargs = {"temperature": 1.0}
-    mock_extraction_lm.model = "openai/gpt-4o"
-
-    with dspy.context(lm=mock_main_lm, adapter=dspy.TwoStepAdapter(extraction_model=mock_extraction_lm)):
+    with dspy.context(lm=main_lm, adapter=dspy.TwoStepAdapter(extraction_model=extraction_lm)):
         result = await program.acall(question="What is 5 + 7?")
 
     assert result.answer == 12
-
-    # main LM call
-    mock_main_lm.acall.assert_called_once()
-    _, call_kwargs = mock_main_lm.acall.call_args
-    assert len(call_kwargs["messages"]) == 2
-
-    # assert first message
-    assert call_kwargs["messages"][0]["role"] == "system"
-    content = call_kwargs["messages"][0]["content"]
-    assert "1. `question` (str)" in content
-    assert "1. `solution` (str)" in content
-    assert "2. `answer` (float)" in content
-
-    # assert second message
-    assert call_kwargs["messages"][1]["role"] == "user"
-    content = call_kwargs["messages"][1]["content"]
-    assert "question:" in content.lower()
-    assert "What is 5 + 7?" in content
-
-    # extraction LM call
-    mock_extraction_lm.acall.assert_called_once()
-    _, call_kwargs = mock_extraction_lm.acall.call_args
-    assert len(call_kwargs["messages"]) == 2
-
-    # assert first message
-    assert call_kwargs["messages"][0]["role"] == "system"
-    content = call_kwargs["messages"][0]["content"]
-    assert "`text` (str)" in content
-    assert "`solution` (str)" in content
-    assert "`answer` (float)" in content
-
-    # assert second message
-    assert call_kwargs["messages"][1]["role"] == "user"
-    content = call_kwargs["messages"][1]["content"]
-    assert "text from main LM" in content
+    _assert_two_step_requests(main_lm, extraction_lm)
 
 
 def test_two_step_adapter_parse():
@@ -197,19 +128,16 @@ def test_two_step_adapter_parse():
 
     first_response = "main LM response"
 
-    mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = [
-        """
+    # The chat-format parse fails on this JSON reply; the JSON fallback reads it.
+    reply = """
         {
             "tags": ["AI", "deep learning", "neural networks"],
             "confidence": 0.87
         }
     """
-    ]
-    mock_extraction_lm.kwargs = {"temperature": 1.0}
-    mock_extraction_lm.model = "openai/gpt-4o"
-    adapter = dspy.TwoStepAdapter(mock_extraction_lm)
-    dspy.configure(adapter=adapter, lm=mock_extraction_lm)
+    extraction_lm = recording_lm([reply, reply], model="openai/gpt-4o", temperature=1.0)
+    adapter = dspy.TwoStepAdapter(extraction_lm)
+    dspy.configure(adapter=adapter, lm=extraction_lm)
 
     result = adapter.parse(ComplexSignature, first_response)
 
@@ -223,13 +151,11 @@ def test_two_step_adapter_parse_errors():
         answer: str = dspy.OutputField()
 
     first_response = "main LM response"
+    # The extraction LM never answers in the chat format, so the chat parse and
+    # its JSON fallback both fail.
+    extraction_lm = recording_lm(["invalid response", "invalid response"], model="openai/gpt-4o", temperature=1.0)
 
-    mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = ["invalid response"]
-    mock_extraction_lm.kwargs = {"temperature": 1.0}
-    mock_extraction_lm.model = "openai/gpt-4o"
-
-    adapter = dspy.TwoStepAdapter(mock_extraction_lm)
+    adapter = dspy.TwoStepAdapter(extraction_lm)
 
     with pytest.raises(dspy.AdapterParseError, match="Failed to parse response"):
         adapter.parse(TestSignature, first_response)

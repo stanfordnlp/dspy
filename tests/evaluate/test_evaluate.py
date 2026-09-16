@@ -145,12 +145,12 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
         return pool
 
     class SlowLM(DummyLM):
-        def __call__(self, *args, **kwargs):
+        def generate(self, *args, **kwargs):
             try:
                 started.wait()
                 if not release.wait(10):
                     raise TimeoutError("Test did not release the evaluation worker")
-                return super().__call__(*args, **kwargs)
+                return super().generate(*args, **kwargs)
             finally:
                 worker_finished.set()
 

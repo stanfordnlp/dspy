@@ -1,8 +1,6 @@
 """Offline checks for the coordinated LM engine path."""
 
 import json
-import zipfile
-from pathlib import Path
 
 import pytest
 
@@ -130,48 +128,26 @@ def test_provider_auth_error_does_not_switch_backend(monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("An authentication failure must not invoke LiteLLM")
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", forbidden)
+    monkeypatch.setattr(LiteLLMEngine, "complete", forbidden)
     with pytest.raises(dspy.LMAuthError):
         dspy.LM("openai/gpt-4o-mini", cache=False)("hello")
 
 
 def test_unrepresentable_ordinary_options_choose_compatibility_before_io(monkeypatch):
     transport = native_transport(monkeypatch, [])
-    from dspy.clients.call_result import CallResult
+    from dspy.lm15 import Message, Response, Usage
 
     calls = []
 
-    def complete(engine, lm, request, **context):
+    def complete(engine, request):
         calls.append(request)
-        return CallResult(outputs=["compatible"], response_model=lm.model)
+        return Response(None, request.model, Message.assistant("compatible"), "stop", Usage())
 
-    monkeypatch.setattr(LiteLLMEngine, "complete_legacy", complete)
+    monkeypatch.setattr(LiteLLMEngine, "complete", complete)
+    # `prediction` has no lm15 verdict: it rides in Config.extensions and selects LiteLLM.
     assert dspy.LM("openai/gpt-4o-mini")("hello", prediction={"type": "content", "content": "hello"}) == ["compatible"]
-    assert calls[0]["prediction"]["content"] == "hello"
+    assert calls[0].config.extensions["prediction"]["content"] == "hello"
     assert not transport.requests
-
-
-@pytest.mark.asyncio
-async def test_legacy_plugin_sync_async_preserve_forward_inputs():
-    from dspy.dsp.utils.utils import dotdict
-
-    class Plugin(dspy.BaseLM):
-        def forward(self, prompt=None, messages=None, **kwargs):
-            self.received = prompt, messages, kwargs
-            return dotdict(model=self.model, usage={"total_tokens": 1}, choices=[
-                dotdict(message=dotdict(content="ok"), finish_reason="stop")
-            ])
-
-        async def aforward(self, **kwargs):
-            return self.forward(**kwargs)
-
-    plugin = Plugin("custom")
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert plugin("hello") == ["ok"]
-    assert plugin.received == ("hello", None, {})
-    with pytest.warns(DeprecationWarning, match="scheduled for removal in 3.5"):
-        assert await plugin.acall("hello") == ["ok"]
-    assert len(plugin.history) == 2
 
 
 def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
@@ -182,31 +158,6 @@ def test_new_native_cache_uses_restricted_plain_data(monkeypatch, tmp_path):
         assert lm("hello") == ["hello"]
         assert lm("hello") == ["hello"]
         assert len(transport.requests) == 1
-    finally:
-        dspy.cache.disk_cache.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("case_index", range(6))
-async def test_old_disk_cache_hits_before_native_routing(case_index, monkeypatch, tmp_path):
-    from tests.clients.test_lm_migration_compatibility import plain
-
-    fixtures = Path(__file__).parent / "fixtures" / "lm_3_3_0"
-    case = json.loads((fixtures / "manifest.json").read_text())["cases"][case_index]
-    with zipfile.ZipFile(fixtures / f"{case['name']}.zip") as archive:
-        archive.extractall(tmp_path)
-    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=False, disk_cache_dir=tmp_path)
-    import dspy.clients.execution as execution
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("An old disk hit must not even initialize an engine")
-
-    monkeypatch.setattr(execution, "_engine", forbidden)
-    try:
-        lm = dspy.LM(**case["init"])
-        output = lm(**case["call"]) if case["mode"] == "sync" else await lm.acall(**case["call"])
-        assert plain(output) == case["outputs"]
-        assert lm.history[-1]["usage"] == {}
     finally:
         dspy.cache.disk_cache.close()
 

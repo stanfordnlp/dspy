@@ -1,13 +1,11 @@
 from typing import Any
 
-import json_repair
-
-from dspy.adapters.base import Adapter
+from dspy.adapters.base import Adapter, Prompt, response_text, user_message
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
-from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.requests import build_request
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 from dspy.utils.exceptions import AdapterParseError
@@ -47,9 +45,7 @@ class TwoStepAdapter(Adapter):
             raise ValueError("extraction_model must be an instance of dspy.BaseLM")
         self.extraction_model = extraction_model
 
-    def format(
-        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
-    ) -> list[dict[str, Any]]:
+    def format(self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]) -> Prompt:
         """
         Format a prompt for the first stage with the main LM.
         This no specific structure is required for the main LM, we customize the format method
@@ -61,20 +57,11 @@ class TwoStepAdapter(Adapter):
             inputs: The current input
 
         Returns:
-            A list of messages to be passed to the main LM.
+            The prompt for the main LM.
         """
-        messages = []
-
-        # Create a task description for the main LM
-        task_description = self.format_task_description(signature)
-        messages.append({"role": "system", "content": task_description})
-
-        messages.extend(self.format_demos(signature, demos))
-
-        # Format the current input
-        messages.append({"role": "user", "content": self.format_user_message_content(signature, inputs)})
-
-        return messages
+        messages = list(self.format_demos(signature, demos))
+        messages.append(user_message(self.format_user_message_content(signature, inputs)))
+        return Prompt(system=self.format_task_description(signature), messages=tuple(messages))
 
     def parse(self, signature: Signature, completion: str) -> dict[str, Any]:
         """
@@ -118,27 +105,18 @@ class TwoStepAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        from dspy.adapters.base import _execution_options
 
-        # TODO(3.5): use Request/Response for both the main and extraction calls.
-        with adapter_message_call(lm, inputs):
-            outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        request = build_request(lm, self.format(signature, demos, inputs), lm_kwargs)
+        responses = await lm.agenerate(request, **_execution_options(lm_kwargs))
         # The signature is supposed to be "text -> {original output fields}"
         extractor_signature = self._create_extractor_signature(signature)
 
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
-        for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
-
-            if isinstance(output, dict):
-                text = output["text"]
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
-
+        for response in responses:
+            text = response_text(response) or ""
             try:
                 # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
                 value = await ChatAdapter().acall(
@@ -154,22 +132,17 @@ class TwoStepAdapter(Adapter):
                 raise AdapterParseError(
                     adapter_name="TwoStepAdapter",
                     signature=signature,
-                    lm_response=str(output),
+                    lm_response=text,
                     message=f"Failed to parse response from the original completion: {e}",
                 ) from e
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+            if response.tool_calls and tool_call_output_field_name:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"id": call.id, "name": call.name, "args": call.input} for call in response.tool_calls]
+                )
 
-            if output_logprobs is not None:
-                value["logprobs"] = output_logprobs
+            if response.logprobs is not None:
+                value["logprobs"] = response.logprobs
 
             values.append(value)
         return values

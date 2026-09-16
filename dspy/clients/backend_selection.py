@@ -23,14 +23,29 @@ class BackendSelection:
     clients: dict = field(default_factory=dict, repr=False)
 
 
-def select_backend(lm, options=None):
-    """Select using LM defaults plus call overrides, without inference I/O."""
-    spec = lm._engine_spec
+def select_backend(lm, options=None, request=None):
+    """Select using LM defaults plus call overrides, without inference I/O.
+
+    A built Request may carry provider options lm15 has no verdict for in
+    `Config.extensions`; only the LiteLLM compatibility engine can send them.
+    """
+    spec = lm.engine
     if not isinstance(spec, str):
         raise TypeError("Custom engines supply their own capability contract")
     clients = {key: val for key, val in lm.kwargs.items() if key in CLIENT_KEYS}
     clients.update({key: val for key, val in (options or {}).items() if key in CLIENT_KEYS})
     native = spec != "litellm" and lm.model_type != "text"
+    if native and request is not None:
+        from dspy.clients.requests import passthrough_keys
+
+        extra = passthrough_keys(request)
+        if extra:
+            if spec == "lm15":
+                raise UnsupportedFeatureError(
+                    f"The native lm15 engine has no mapping for these provider options: {sorted(extra)}. "
+                    "Use engine='auto' or 'litellm' to send them through LiteLLM."
+                )
+            native = False
     resolution = None
     if native:
         try:

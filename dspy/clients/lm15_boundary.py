@@ -1,14 +1,15 @@
-"""Typed direct calls using the exact lm15 objects bundled with DSPy.
+"""Conversions at the edge of the Request/Response contract, with lm15's own code.
 
-Execution controls (response caching, retries and history) stay in DSPy. The
-provider-neutral Request contains only what is sent to the model.
+Engines that speak an OpenAI-shaped SDK (LiteLLM) serialize Requests and read
+responses here; fine-tuning files and history displays reuse the same writers.
+No credentials are resolved and no network I/O happens here.
 """
 
 import json
+from typing import Any
 
 from dspy._vendor.lm15.providers.base import HttpResponse
 from dspy._vendor.lm15.serde import part_to_dict
-from dspy.clients.legacy_outputs import plain
 from dspy.lm15 import OpenAIChatLM, OpenAILM, Request, response_from_openai_chat
 
 
@@ -17,21 +18,46 @@ class _NoTransport:
         raise RuntimeError("The typed conversion boundary must not perform network I/O")
 
 
+def plain(obj: Any):
+    """Read SDK fields without invoking deferred Pydantic serializers."""
+    from pydantic import BaseModel
+
+    if isinstance(obj, BaseModel):
+        obj = dict(obj)
+    if isinstance(obj, dict):
+        return {key: plain(item) for key, item in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [plain(item) for item in obj]
+    return obj
+
+
 def request_kwargs(request: Request, model_type: str) -> dict:
-    """Serialize with lm15's dialect, never a second copy of its type system."""
-    if "n" in (request.config.extensions or {}):
-        raise ValueError("A typed Request produces one Response; do not put n in Config.extensions.")
+    """Serialize a Request as the keyword arguments of an OpenAI-shaped SDK call."""
     if model_type not in {"chat", "responses", "text"}:
         raise ValueError(f"Unsupported model_type: {model_type!r}")
     # Private dialect mapping is confined here because lm15 does not expose a
-    # public outbound-body converter. No credentials are resolved or sent.
+    # public outbound-body converter.
     dialect = OpenAIChatLM(api_key="conversion-only", transport=_NoTransport())
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())
     data = dialect._payload(request, stream=False)
     data.pop("model", None)
     data.pop("stream", None)
+    if model_type == "text":
+        # Text-completion endpoints take one prompt; the conversation is
+        # flattened the way DSPy always did for them.
+        data["prompt"] = text_prompt(data.pop("messages"))
     return data
+
+
+def text_prompt(messages: list[dict]) -> str:
+    lines = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            content = "".join(block.get("text", "") for block in content if isinstance(block, dict))
+        lines.append(content or "")
+    return "\n\n".join([*lines, "BEGIN RESPONSE:"])
 
 
 def snapshot_request(request: Request) -> Request:
@@ -78,6 +104,7 @@ def history_messages(request: Request) -> list[dict]:
 
 
 def response_value(response, model_type: str, request: Request):
+    """Read an OpenAI-shaped SDK response (Chat, Responses or text) as a Response."""
     body = plain(response)
     if model_type == "responses":
         dialect = OpenAILM(api_key="conversion-only", transport=_NoTransport())

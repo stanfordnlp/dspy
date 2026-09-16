@@ -443,9 +443,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 d = {"Inputs": new_inputs, "Generated Outputs": new_outputs}
                 if isinstance(outputs, FailedPrediction):
+                    from dspy.adapters.base import prompt_to_openai_messages
+
                     adapter = ChatAdapter()
                     structure_instruction = ""
-                    for dd in adapter.format(module.signature, [], {}):
+                    for dd in prompt_to_openai_messages(adapter.format(module.signature, [], {})):
                         structure_instruction += dd["role"] + ": " + dd["content"] + "\n"
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score

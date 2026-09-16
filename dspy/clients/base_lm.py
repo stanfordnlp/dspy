@@ -1,13 +1,10 @@
 import copy as copy_module
-import datetime
 import importlib
 import inspect
-import uuid
 from typing import Any, TextIO
 
-from dspy.clients._deprecation import warn_legacy_lm, warn_openai_messages
-from dspy.clients.legacy_outputs import responses_outputs
 from dspy.dsp.utils import settings
+from dspy.lm15 import Request, Response
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
@@ -15,6 +12,7 @@ MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 LM_CLASS_STATE_KEY = "_dspy_lm_class"
 _BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
+_MIGRATION_GUIDE = "https://dspy.ai/community/normalized-lm-api-migration/"
 
 
 def _import_lm_class(class_path: str) -> type:
@@ -45,22 +43,30 @@ def _import_lm_class(class_path: str) -> type:
     raise ImportError(f"Could not import serialized LM class `{class_path}`.") from last_error
 
 
+def _check_engine(engine, async_engine):
+    if engine is not None and not callable(getattr(engine, "complete", None)):
+        raise TypeError("An engine must implement complete(Request) -> Response")
+    if async_engine is not None and not callable(getattr(async_engine, "complete", None)):
+        raise TypeError("An async engine must implement `async complete(Request) -> Response`")
+
+
 class BaseLM:
     """Base class for DSPy language models.
 
-    Legacy subclasses implement forward(prompt=None, messages=None, **kwargs)
-    and optionally aforward with the same arguments. Ordinary calls return
-    lists of strings or dictionaries. The built-in LM also accepts explicit
-    dspy.lm15.Request calls. The experimental setting does not change outputs.
+    Every LM executes through an *engine*: an object implementing
+    `complete(Request) -> Response`, optionally `stream(Request)` yielding lm15
+    stream events, plus an async counterpart with `async complete` and an async
+    `stream`. `dspy.LM` selects its built-in engines from the model string; any
+    other LM supplies engines directly. DSPy's LM layer owns response caching,
+    retries, candidate fan-out, usage accounting, callbacks and history around
+    that single-request contract, so engines never add a second layer of those.
 
-    Implementing custom LMs through forward()/aforward() is deprecated. The old
-    subclass interface remains supported throughout DSPy 3.4 and is scheduled
-    for removal in 3.5. Implement an engine with complete(Request) -> Response
-    and pass it to dspy.LM(engine=...) instead. LegacyEngine and AsyncLegacyEngine
-    are transition wrappers for 3.4 only and are also scheduled for removal in 3.5.
-    OpenAI-style messages= dictionaries are deprecated too: use lm15.Request
-    and Message objects instead. lm("hello") remains a list-returning convenience.
-    See the [migration guide](https://dspy.ai/community/normalized-lm-api-migration/#custom-engines-and-legacy-plugins).
+    Calls speak lm15 objects: `lm(request)` returns one `dspy.lm15.Response`,
+    `lm.generate(request, n=...)` returns several, and `lm("text")` is a
+    convenience that renders one user message and returns a list of outputs.
+    OpenAI-style `messages=` dictionaries and `forward()` implementations were
+    removed in DSPy 3.5; see the migration guide at
+    https://dspy.ai/community/normalized-lm-api-migration/.
 
     Persistent custom state belongs in dump_state/load_state. Runtime clients
     are shared by copy(), while DSPy history, callbacks and kwargs are isolated.
@@ -75,6 +81,8 @@ class BaseLM:
         cache=True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
+        engine=None,
+        async_engine=None,
         **kwargs,
     ):
         """Initialize a base language model.
@@ -86,11 +94,17 @@ class BaseLM:
             temperature: The default sampling temperature.
             max_tokens: The default maximum number of output tokens.
             cache: Whether requests should use DSPy's cache by default.
-            num_retries: The default number of provider request retries.
             callbacks: Optional instance-level callback handlers.
-            **kwargs: Additional default request parameters stored in
-                `self.kwargs`.
+            num_retries: The default number of engine attempts after a
+                transient failure.
+            engine: An object implementing `complete(Request) -> Response`.
+                Engines are borrowed; DSPy never closes them.
+            async_engine: The async counterpart used by `acall`/`agenerate`.
+            **kwargs: Additional default generation options stored in
+                `self.kwargs`, in the OpenAI vocabulary (`top_p`, `stop`,
+                `reasoning_effort`, ...).
         """
+        _check_engine(engine, async_engine)
         self.model = model
         self.model_type = model_type
         self.cache = cache
@@ -98,104 +112,101 @@ class BaseLM:
         self.num_retries = num_retries
         self.kwargs = self._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
-        self._warned_zero_temp_rollout = False
+        self._engine_spec = engine
+        self._async_engine_spec = async_engine
 
     def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
         return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @property
+    def engine(self):
+        """The configured engine (an object, or a named selection on `dspy.LM`)."""
+        return self._engine_spec
+
+    @property
+    def async_engine(self):
+        """The configured async engine object, if any."""
+        return self._async_engine_spec
+
+    @property
     def supports_function_calling(self) -> bool:
         """Whether the model supports function calling (tool use)."""
-        return False
+        return bool(getattr(self._engine_spec, "supports_function_calling", False))
 
     @property
     def supports_reasoning(self) -> bool:
         """Whether the model supports native reasoning (extended thinking)."""
-        return False
+        return bool(getattr(self._engine_spec, "supports_reasoning", False))
 
     @property
     def supports_response_schema(self) -> bool:
         """Whether the model supports structured output via response schema."""
-        return False
+        return bool(getattr(self._engine_spec, "supports_response_schema", False))
 
     @property
     def supported_params(self) -> set[str]:
-        """Set of supported OpenAI-style parameter names for the model."""
-        return set()
-
-    def _process_lm_response(self, response, prompt, messages, **kwargs):
-        merged_kwargs = {**self.kwargs, **kwargs}
-
-        if self.model_type == "responses":
-            outputs = self._process_response(response)
-        else:
-            outputs = self._process_completion(response, merged_kwargs)
-
-        return self._record_response(response, prompt, messages, outputs, kwargs)
-
-    def _record_response(self, response, prompt, messages, outputs, kwargs, request=None):
-        if not getattr(response, "cache_hit", False) and settings.usage_tracker:
-            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
-
-        if settings.disable_history:
-            return outputs
-
-        # Cache hits retain historical cost metadata but add no billed usage.
-        kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-        entry = {
-            "prompt": prompt,
-            "messages": messages,
-            "kwargs": kwargs,
-            "response": response,
-            "outputs": outputs,
-            "usage": dict(getattr(response, "usage", {}) or {}),
-            "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
-            "timestamp": datetime.datetime.now().isoformat(),
-            "uuid": str(uuid.uuid4()),
-            "model": self.model,
-            "response_model": response.model,
-            "model_type": self.model_type,
-        }
-
-        if request is not None:
-            entry["request"] = request
-        self.update_history(entry)
-
-        return outputs
+        """Set of supported OpenAI-style generation option names for the model."""
+        return set(getattr(self._engine_spec, "supported_params", ()) or ())
 
     @with_callbacks
-    def __call__(self, prompt=None, *, messages=None, **kwargs):
-        """Return legacy outputs, or one lm15.Response for an explicit Request."""
+    def __call__(self, prompt=None, *, cache=None, rollout_id=None, **options):
+        """Run one model call.
+
+        Args:
+            prompt: A `dspy.lm15.Request`, or a string rendered as one user
+                message with this LM's generation defaults.
+            cache: Override this LM's response-cache setting for the call.
+            rollout_id: Distinguish otherwise identical cached requests.
+            **options: Generation options for a string prompt, in the OpenAI
+                vocabulary (`temperature`, `max_tokens`, `n`, ...), plus
+                client settings (`api_key`, `api_base`, ...) for this call.
+                A `Request` accepts only the client settings; its `config`
+                already holds the generation options.
+
+        Returns:
+            The `Response` for a `Request`; a list of outputs for a string.
+        """
         from dspy.clients.execution import execute, finalize, prepare
 
-        call = prepare(self, prompt, messages, kwargs)
-        if not call.managed:
-            warn_legacy_lm()
-        warn_openai_messages(self, messages)
+        call = prepare(self, prompt, options, cache=cache, rollout_id=rollout_id)
         return finalize(self, call, execute(self, call))
 
     @with_callbacks
-    async def acall(self, prompt=None, *, messages=None, **kwargs):
-        """Async equivalent of __call__, with the same execution ownership."""
+    async def acall(self, prompt=None, *, cache=None, rollout_id=None, **options):
+        """Async equivalent of `__call__`, with the same execution ownership."""
         import asyncio
 
         from dspy.clients.execution import aexecute, finalize, prepare
 
         # Canonical media snapshots may read local files. Context variables
         # propagate to the worker; callbacks/finalization stay on the caller.
-        call = await asyncio.to_thread(prepare, self, prompt, messages, kwargs, asynchronous=True)
-        if not call.managed:
-            warn_legacy_lm()
-        warn_openai_messages(self, messages)
+        call = await asyncio.to_thread(prepare, self, prompt, options, cache=cache, rollout_id=rollout_id,
+                                       asynchronous=True)
         return finalize(self, call, await aexecute(self, call))
 
-    def forward(self, prompt=None, messages=None, **kwargs):
-        """Return an OpenAI-shaped provider response for a legacy LM call."""
-        raise NotImplementedError("Subclasses must implement this method.")
+    @with_callbacks
+    def generate(self, request: Request, *, n: int = 1, cache=None, rollout_id=None, **client_options) -> list[Response]:
+        """Return `n` responses for one request, as DSPy adapters do.
 
-    async def aforward(self, prompt=None, messages=None, **kwargs):
-        """Asynchronously return an OpenAI-shaped provider response."""
-        raise NotImplementedError("Subclasses must implement this method.")
+        Candidates are separate engine requests, cached and recorded together
+        as one call. Each response contains exactly one assistant message.
+        `client_options` are per-call client settings such as `api_base`.
+        """
+        from dspy.clients.execution import execute, finalize, prepare
+
+        call = prepare(self, request, client_options, cache=cache, rollout_id=rollout_id, n=n, candidates=True)
+        return finalize(self, call, execute(self, call))
+
+    @with_callbacks
+    async def agenerate(self, request: Request, *, n: int = 1, cache=None, rollout_id=None, **client_options) -> list[Response]:
+        """Async equivalent of `generate`."""
+        import asyncio
+
+        from dspy.clients.execution import aexecute, finalize, prepare
+
+        call = await asyncio.to_thread(prepare, self, request, client_options, cache=cache, rollout_id=rollout_id, n=n,
+                                       candidates=True, asynchronous=True)
+        return finalize(self, call, await aexecute(self, call))
 
     def dump_state(self) -> dict[str, Any]:
         """Return a sanitized reconstruction state for this LM.
@@ -269,15 +280,15 @@ class BaseLM:
     def copy(self, **kwargs):
         """Return a copy of the language model with updated parameters.
 
-        The default implementation makes a shallow runtime copy. Provider
-        clients, sessions, and local model handles are preserved by reference.
-        DSPy-owned mutable state is isolated for `history`, the `callbacks`
-        list, and the `kwargs` dict. Other attributes are shared by reference.
-        Subclasses with additional mutable DSPy-owned state should override this
-        method.
+        The default implementation makes a shallow runtime copy. Engines,
+        provider clients, sessions, and local model handles are preserved by
+        reference. DSPy-owned mutable state is isolated for `history`, the
+        `callbacks` list, and the `kwargs` dict. Other attributes are shared by
+        reference. Subclasses with additional mutable DSPy-owned state should
+        override this method.
 
         Args:
-            **kwargs: Attribute or request-parameter updates to apply to the
+            **kwargs: Attribute or generation-option updates to apply to the
                 copy. For example, `lm.copy(rollout_id=1, temperature=1.0)`
                 returns an LM whose requests use a different rollout ID at
                 non-zero temperature to bypass cache collisions.
@@ -332,79 +343,6 @@ class BaseLM:
             if len(module.history) >= settings.max_history_size:
                 module.history.pop(0)
             module.history.append(entry)
-
-    def _process_completion(self, response, merged_kwargs):
-        """Process the response of OpenAI chat completion API and extract outputs.
-
-        Args:
-            response: The OpenAI chat completion response
-                https://platform.openai.com/docs/api-reference/chat/object
-            merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-
-        Returns:
-            List of processed outputs
-        """
-        from dspy.clients.legacy_outputs import value
-
-        outputs = []
-        for c in value(response, "choices", []) or []:
-            message = value(c, "message")
-            output = {"text": value(message, "content") if message is not None else value(c, "text")}
-
-            if reasoning := value(message, "reasoning_content"):
-                output["reasoning_content"] = reasoning
-
-            if merged_kwargs.get("logprobs"):
-                output["logprobs"] = value(c, "logprobs")
-            if calls := value(message, "tool_calls"):
-                output["tool_calls"] = calls
-
-            # Extract citations from LiteLLM response if available
-            citations = self._extract_citations_from_response(c)
-            if citations:
-                output["citations"] = citations
-
-            outputs.append(output)
-
-        if all(len(output) == 1 for output in outputs):
-            # Return a list if every output only has "text" key
-            outputs = [output["text"] for output in outputs]
-        return outputs
-
-    def _extract_citations_from_response(self, choice):
-        """Extract citations from LiteLLM response if available.
-        Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
-
-        Args:
-            choice: The choice object from response.choices
-
-        Returns:
-            A list of citation dictionaries or None if no citations found
-        """
-        try:
-            # Check for citations in LiteLLM provider_specific_fields
-            from dspy.clients.legacy_outputs import value
-
-            fields = value(value(choice, "message"), "provider_specific_fields", {}) or {}
-            citations_data = fields.get("citations")
-            if isinstance(citations_data, list):
-                return [citation for group in citations_data for citation in (group if isinstance(group, list) else [group])]
-        except Exception:
-            return None
-
-    def _process_response(self, response):
-        """Process the response of OpenAI Response API and extract outputs.
-
-        Args:
-            response: OpenAI Response API response
-                https://platform.openai.com/docs/api-reference/responses/object
-
-        Returns:
-            List of processed outputs, which is always of size 1 because the Response API only supports one output.
-            Each output is a dictionary in the same shape the chat path produces: `text` is always present, and
-            `reasoning_content`, `tool_calls`, and `citations` appear when present.
-        """
-        return responses_outputs(response)
 
 
 def inspect_history(n: int = 1, file: "TextIO | None" = None) -> None:

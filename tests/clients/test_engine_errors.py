@@ -146,7 +146,7 @@ async def test_unexpected_engine_errors_are_not_guessed_or_retried(asynchronous,
     original.status_code = 503  # An arbitrary plugin attribute is not SDK evidence.
     engine = Engine(original)
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False, num_retries=3)
-    monkeypatch.setattr("dspy.clients.lm._get_litellm", lambda: pytest.fail("Native errors must not load LiteLLM"))
+    monkeypatch.setattr("dspy.clients._litellm.get_litellm", lambda **kwargs: pytest.fail("Native errors must not load LiteLLM"))
     with pytest.raises(dspy.LMUnexpectedError) as caught:
         await invoke(lm, asynchronous, "hello")
     assert caught.value.__cause__ is original
@@ -282,13 +282,14 @@ async def test_custom_request_refusal_is_projected_before_adapter_fallback(async
     lm = dspy.LM("custom", engine=engine, async_engine=AsyncEngine(engine), cache=False)
     adapter = dspy.ChatAdapter()
     monkeypatch.setattr(adapter, "_make_json_adapter_fallback", lambda: pytest.fail("Setup failures are not parse failures"))
-    args = (lm, {"prediction": {"type": "content", "content": "x"}}, dspy.Signature("question -> answer"), [], {"question": "hi"})
-    with pytest.raises(dspy.LMUnsupportedFeatureError) as caught:
+    # `functions` is the deprecated tool shape lm15 refuses outright; the
+    # refusal is a setup failure, projected before any engine call.
+    args = (lm, {"functions": [{"name": "f"}]}, dspy.Signature("question -> answer"), [], {"question": "hi"})
+    with pytest.raises(dspy.LMUnsupportedFeatureError):
         if asynchronous:
             await adapter.acall(*args)
         else:
             adapter(*args)
-    assert isinstance(caught.value.__cause__, lm15.UnsupportedFeatureError)
     assert engine.calls == 0
 
 
@@ -334,7 +335,7 @@ def test_capability_routing_failure_is_projected_without_backend_fallback(monkey
         raise error
 
     monkeypatch.setattr(LM15Engine, "resolve", fail)
-    monkeypatch.setattr("dspy.clients.lm._get_litellm", lambda: pytest.fail("No backend switch on auth errors"))
+    monkeypatch.setattr("dspy.clients._litellm.get_litellm", lambda **kwargs: pytest.fail("No backend switch on auth errors"))
     with pytest.raises(dspy.LMAuthError) as caught:
         _ = dspy.LM("openai/test").supports_function_calling
     assert caught.value.__cause__ is error

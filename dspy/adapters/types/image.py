@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import Type
+from dspy._vendor.lm15.types import image
+from dspy.adapters.types.base_type import Type, split_data_uri
+from dspy.lm15 import ImagePart
 
 try:
     from PIL import Image as PILImage
@@ -105,12 +107,17 @@ class Image(Type):
         super().__init__(**data)
 
     @lru_cache(maxsize=32)
-    def format(self) -> list[dict[str, Any]] | str:
+    def format(self) -> list[ImagePart] | str:
         try:
             image_url = encode_image(self.url)
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
+        inline = split_data_uri(image_url)
+        if inline is not None:
+            media_type, data = inline
+            return [image(data=data, media_type=media_type)]
+        guessed = mimetypes.guess_type(image_url)[0]
+        return [image(url=image_url, media_type=guessed if guessed and guessed.startswith("image/") else None)]
 
     @classmethod
     def from_url(cls, url: str, verify: bool = True, timeout: float | None = 30.0) -> "Image":

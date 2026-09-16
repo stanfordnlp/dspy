@@ -1,16 +1,15 @@
 """LiteLLM behind the same single-response interface as native lm15 engines."""
 
 import json
+import os
 from dataclasses import replace
 
 from dspy._vendor.lm15.sse import SSEEvent
 from dspy.clients._litellm import get_litellm
-from dspy.clients.call_context import completed_legacy
 from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_errors import litellm_errors
-from dspy.clients.legacy_outputs import plain
-from dspy.clients.lm15_boundary import request_kwargs, response_value
+from dspy.clients.lm15_boundary import plain, request_kwargs, response_value
 from dspy.lm15 import (
     ConfigurationError,
     OpenAIChatLM,
@@ -94,12 +93,16 @@ class _ChatStream:
         )
 
 
+def _user_agent(headers):
+    import dspy
+
+    return {"User-Agent": f"DSPy/{dspy.__version__}", **(headers or {})}
+
+
 class _LiteLLMConfig:
     def __init__(self, *, model_type="chat", **client_options):
         if model_type not in {"chat", "responses", "text"}:
-            raise UnsupportedFeatureError(
-                "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
-            )
+            raise UnsupportedFeatureError("LiteLLM engines support the chat, Responses and text completion APIs.")
         allowed = {
             "api_key", "api_base", "base_url", "api_version", "organization", "project",
             "headers", "extra_headers", "extra_query", "timeout", "azure_ad_token_provider",
@@ -116,8 +119,6 @@ class _LiteLLMConfig:
         validate_request(request)
         if self._closed:
             raise ConfigurationError("Engine is closed")
-        if self.model_type == "text":
-            raise UnsupportedFeatureError("Text-completion models accept ordinary prompt/messages calls, not typed requests.")
         if streaming and self.model_type != "chat":
             raise UnsupportedFeatureError(
                 "LiteLLMEngine streaming currently requires model_type='chat'. "
@@ -125,7 +126,18 @@ class _LiteLLMConfig:
             )
         data = request_kwargs(request, self.model_type)
         data.update(self.client_options)
-        data.update(model=request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
+        data["headers"] = _user_agent(data.pop("headers", None))
+        data.update(num_retries=0, cache={"no-cache": True, "no-store": True})
+        if self.model_type == "text":
+            # Text completions are addressed through LiteLLM's OpenAI-compatible
+            # text endpoint; credentials follow the provider prefix, as before.
+            provider, _, model = request.model.partition("/")
+            provider, model = (provider, model) if model else ("openai", provider)
+            data.setdefault("api_key", os.getenv(f"{provider}_API_KEY"))
+            data.setdefault("api_base", os.getenv(f"{provider}_API_BASE"))
+            data["model"] = f"text-completion-openai/{model}"
+            return data
+        data["model"] = request.model
         if self.model_type == "chat":
             data["n"] = 1
         if streaming:
@@ -140,23 +152,10 @@ class _LiteLLMConfig:
 class LiteLLMEngine(_LiteLLMConfig):
     """One synchronous attempt. LiteLLM's process-global clients are borrowed."""
 
-    def complete_legacy(self, lm, request, **context):
-        """Carry ordinary provider-specific inputs without a lossy typed conversion."""
-        from dspy.clients import lm as lm_module
-        from dspy.clients.call_result import CallResult
-
-        fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
-              "responses": lm_module.litellm_responses_completion}[self.model_type]
-        with litellm_errors(model=lm.model):
-            raw = fn(request=request, num_retries=0)
-        completed_legacy(raw)
-        lm._check_truncation(raw)
-        return CallResult.legacy(lm, raw, kwargs=request)
-
     def complete(self, request: Request):
         data = self._arguments(request)
         litellm = get_litellm(feature="LiteLLM engine")
-        fn = litellm.responses if self.model_type == "responses" else litellm.completion
+        fn = {"chat": litellm.completion, "responses": litellm.responses, "text": litellm.text_completion}[self.model_type]
         with litellm_errors(model=request.model):
             raw = fn(**data)
         return response_value(raw, self.model_type, request)
@@ -185,22 +184,10 @@ class LiteLLMEngine(_LiteLLMConfig):
 class AsyncLiteLLMEngine(_LiteLLMConfig):
     """Async equivalent; cancellation propagates without retrying."""
 
-    async def complete_legacy(self, lm, request, **context):
-        from dspy.clients import lm as lm_module
-        from dspy.clients.call_result import CallResult
-
-        fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
-              "responses": lm_module.alitellm_responses_completion}[self.model_type]
-        with litellm_errors(model=lm.model):
-            raw = await fn(request=request, num_retries=0)
-        completed_legacy(raw)
-        lm._check_truncation(raw)
-        return CallResult.legacy(lm, raw, kwargs=request)
-
     async def complete(self, request: Request):
         data = self._arguments(request)
         litellm = get_litellm(feature="LiteLLM engine")
-        fn = litellm.aresponses if self.model_type == "responses" else litellm.acompletion
+        fn = {"chat": litellm.acompletion, "responses": litellm.aresponses, "text": litellm.atext_completion}[self.model_type]
         with litellm_errors(model=request.model):
             raw = await fn(**data)
         return response_value(raw, self.model_type, request)

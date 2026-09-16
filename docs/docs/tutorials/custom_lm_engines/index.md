@@ -1,6 +1,6 @@
 # Custom LM Engines
 
-In the DSPy 3.4 development API, you can supply your own execution engine to `dspy.LM`. The minimum synchronous interface is:
+You can supply your own execution engine to `dspy.LM`. The minimum synchronous interface is:
 
 ```python
 class MyEngine:
@@ -8,10 +8,7 @@ class MyEngine:
         ...
 ```
 
-DSPy formats the program's inputs, converts them to an lm15 request, calls your engine, and parses the answer into a `Prediction`. You do not need to subclass `BaseLM` or return an OpenAI SDK object.
-
-!!! warning "DSPy 3.5 cutoff"
-    Custom `BaseLM.forward()`/`aforward()` integrations, `LegacyEngine`/`AsyncLegacyEngine`, and `complete_legacy()` shortcuts are deprecated in 3.4 and scheduled for removal in 3.5. Implement the request/response engine contract shown here; a legacy wrapper does not extend the migration deadline. OpenAI-style `lm(messages=[...])` calls are also being removed. `lm("hello")` remains a list-returning convenience; adapters use `lm(Request(...))` and consume `Response` directly. See the [migration guide](../../community/normalized-lm-api-migration.md).
+DSPy formats the program's inputs into an lm15 `Request`, calls your engine, and parses the `Response` into a `Prediction`. This is the only integration contract since DSPy 3.5: there is no `BaseLM.forward()` to override and no OpenAI SDK object to return. See the [migration guide](../../community/normalized-lm-api-migration.md) if you are coming from an older custom LM.
 
 Expected backend failures should raise specific errors from `dspy.lm15`, such as
 `AuthError` or `RateLimitError`. DSPy translates them into its public `LMError`
@@ -23,7 +20,7 @@ This tutorial wraps the [Pi CLI](https://pi.dev) as a custom engine. Pi keeps it
 
 ## Prerequisites
 
-- A DSPy build with the custom `engine=` interface.
+- DSPy 3.4 or later.
 - Pi installed, available as `pi` on your PATH, and authenticated.
 - A model available to your Pi account. The example uses `openai-codex` and `gpt-6-astra`; change those two CLI arguments if needed.
 - A local Git repository to inspect.

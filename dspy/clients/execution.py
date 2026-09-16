@@ -1,217 +1,130 @@
-"""One execution path for native, compatibility and custom DSPy LMs."""
+"""One execution path for native, compatibility and custom DSPy LMs.
+
+Every call becomes one lm15 Request before anything here runs. This module
+owns what engines do not: cache reads and writes, retries, candidate fan-out,
+usage accounting, history and the public return shapes.
+"""
 
 import asyncio
-import copy
 import time
-from contextlib import nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
-
-import pydantic
 
 from dspy._vendor.lm15.result import StreamAccumulator
 from dspy._vendor.lm15.serde import request_to_dict
-from dspy.clients._deprecation import warn_legacy_shortcut
 from dspy.clients._http import finite_seconds
-from dspy.clients.backend_selection import CLIENT_KEYS, select_backend
+from dspy.clients.backend_selection import select_backend
 from dspy.clients.call_context import stream_emitted
 from dspy.clients.call_result import CACHE_FORMAT, CallResult, combine, usage_dict
-from dspy.clients.engines.legacy_engine import AsyncLegacyEngine, LegacyEngine
+from dspy.clients.engines.base import validate_request
 from dspy.clients.engines.lifecycle import aclosing_stream, closing_stream
 from dspy.clients.engines.litellm_engine import AsyncLiteLLMEngine, LiteLLMEngine
 from dspy.clients.engines.lm15_engine import AsyncLM15Engine, LM15Engine
 from dspy.clients.engines.stream_guard import achecked_stream, checked_stream
 from dspy.clients.engines.streaming import ListenerBridge
 from dspy.clients.errors import error_boundary
-from dspy.clients.legacy_outputs import plain, value
+from dspy.clients.lm15_boundary import snapshot_request
+from dspy.clients.requests import CLIENT_KEYS, EXECUTION_KEYS, build_request
 from dspy.dsp.utils.settings import settings
-from dspy.lm15 import (
-    CacheConfig,
-    LM15Error,
-    Request,
-    Response,
-    RouterConfig,
-    StreamAssemblyError,
-    request_from_openai_chat,
-)
+from dspy.lm15 import Request, Response, RouterConfig, StreamAssemblyError
 from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
-from dspy.utils.lazy_import import require
-
-anyio = require("anyio")
 
 IGNORED_CACHE_KEYS = ["api_key", "api_base", "base_url"]
+_MESSAGES_REMOVED = (
+    "lm(messages=[...]) was removed in DSPy 3.5. Build a dspy.lm15.Request with Message objects "
+    "(system text goes in Request.system) and call lm(request); it returns an lm15 Response. "
+    "See https://dspy.ai/community/normalized-lm-api-migration/#migrating-openai-style-messages."
+)
 
 
 @dataclass
 class PreparedCall:
-    prompt: Any
-    messages: Any
-    kwargs: dict
-    legacy: dict
-    request: Request | None
+    request: Request
+    prompt: str | None
+    options: dict
     cache: bool
+    rollout_id: Any
     n: int
-    managed: bool
+    convenience: bool
+    candidates: bool
 
-    def key(self, lm, asynchronous):
-        if self.request is not None:
-            return {"_fn_identifier": "dspy.clients.lm15.complete.async" if asynchronous else "dspy.clients.lm15.complete",
-                    "request": request_to_dict(self.request), "rollout_id": self.kwargs.get("rollout_id")}
-        suffix = {"chat": "completion", "text": "text_completion", "responses": "responses_completion"}[lm.model_type]
-        name = ("alitellm_" if asynchronous else "litellm_") + suffix
-        key = {**self.legacy, "_fn_identifier": f"dspy.clients.lm.{name}"}
-        prompt_cache = key.pop("prompt_cache", None)
-        if prompt_cache is not None:
-            from dspy._vendor.lm15.serde import cache_config_to_dict
-
-            key["prompt_cache"] = cache_config_to_dict(prompt_cache)
+    def key(self):
+        key = {"_fn_identifier": "dspy.clients.lm15.complete", "request": request_to_dict(self.request),
+               "rollout_id": self.rollout_id}
+        if self.n != 1:
+            key["n"] = self.n
         return key
 
 
-def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
-    kwargs = dict(kwargs)
-    request = kwargs.pop("request", None)
-    if isinstance(prompt, Request):
-        if request is not None:
+def _count(value, lm):
+    if value is None:
+        value = lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("n must be a positive integer")
+    return value
+
+
+def prepare(lm, prompt, options, *, cache=None, rollout_id=None, n=None, candidates=False, asynchronous=False):
+    options = dict(options)
+    if "messages" in options:
+        raise TypeError(_MESSAGES_REMOVED)
+    if "request" in options:
+        if prompt is not None:
             raise TypeError("Pass a Request once, positionally or by keyword")
-        request, prompt = prompt, None
-    managed = hasattr(lm, "_engine_spec")
-    if managed and not direct:
-        from dspy.clients.lm import LM
-        from dspy.utils.dummies import DummyLM
-
-        base = DummyLM if isinstance(lm, DummyLM) else LM if isinstance(lm, LM) else None
-        if base is not None:
-            method = "aforward" if asynchronous else "forward"
-            managed = method not in vars(lm) and getattr(type(lm), method) is getattr(base, method)
-            if base is DummyLM and asynchronous:
-                # DummyLM's inherited aforward delegates to forward, including
-                # a subclass's override. Do not bypass that override either.
-                managed = managed and "forward" not in vars(lm) and type(lm).forward is DummyLM.forward
-    if getattr(type(lm), "forward_contract", "legacy") != "legacy":
-        raise TypeError("The DSPy 3.3 typed_lm contract was removed; implement an lm15 engine instead.")
-    if request is not None:
-        if not isinstance(request, Request):
-            raise TypeError("request must be a dspy.lm15.Request")
-        if prompt is not None or messages is not None:
-            raise TypeError("Do not combine a Request with prompt/messages")
-        if request.model != lm.model:
-            raise ValueError("Request.model must match LM.model")
-        from dspy.clients.engines.base import validate_request
-
-        validate_request(request)
-        extra = set(kwargs) - {"cache", "rollout_id"}
+        prompt = options.pop("request")
+    use_cache = (lm.cache if cache is None else cache) and getattr(lm, "_cache_responses", True)
+    if rollout_id is None:
+        rollout_id = lm.kwargs.get("rollout_id")
+    if isinstance(prompt, Request):
+        extra = set(options) - EXECUTION_KEYS - CLIENT_KEYS
         if extra:
             raise TypeError(f"Generation options belong in Request.config: {sorted(extra)}")
-        from dspy.clients.lm15_boundary import snapshot_request
-
-        request = snapshot_request(request)
-        legacy = {"model": lm.model}
-        use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
-        return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
-    merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
-    prompt_cache = merged.get("prompt_cache")
-    if prompt_cache is not None:
-        if not isinstance(prompt_cache, CacheConfig):
-            raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
-        if not managed or getattr(lm, "_engine_spec", None) == "litellm" or lm.model_type == "text":
-            raise LMUnsupportedFeatureError("prompt_cache requires native lm15 or a canonical custom engine.")
-    if merged.get("rollout_id") is None:
-        merged.pop("rollout_id", None)
+        if prompt.model != lm.model:
+            raise ValueError("Request.model must match LM.model")
+        validate_request(prompt)
+        count = _count(n if n is not None else options.get("n"), lm) if candidates else 1
+        return PreparedCall(snapshot_request(prompt), None, options, bool(use_cache), rollout_id, count,
+                            False, candidates)
+    if not isinstance(prompt, str):
+        raise TypeError("An LM call takes a dspy.lm15.Request or a prompt string")
+    if candidates:
+        raise TypeError("generate() takes a dspy.lm15.Request")
+    count = _count(options.pop("n", options.pop("num_generations", None)), lm)
     if hasattr(lm, "_warn_zero_temp_rollout"):
-        lm._warn_zero_temp_rollout(merged.get("temperature"), merged.get("rollout_id"))
-    rendered = messages or [{"role": "user", "content": prompt}]
-    if getattr(lm, "use_developer_role", False) and lm.model_type == "responses":
-        rendered = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in rendered]
-    n = merged.get("n", 1)
-    if n is None:
-        n = 1
-    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
-        raise ValueError("n must be a positive integer")
-    use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
-    return PreparedCall(prompt, messages, kwargs, {"model": lm.model, "messages": rendered, **merged},
-                        None, use_cache, n, managed)
-
-
-def _canonical(call, *, compat=None):
-    if call.request is not None:
-        return call.request
-    body = {key: val for key, val in call.legacy.items()
-            if key not in CLIENT_KEYS | {"n", "rollout_id", "num_generations", "prompt_cache"} and val is not None}
-    format_ = body.get("response_format")
-    if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
-        from dspy.clients.legacy_requests import _close_object_schemas
-
-        # Match the legacy Responses path's preparation of generated schemas.
-        # Raw caller-supplied schemas remain unchanged.
-        body["response_format"] = {"type": "json_schema", "json_schema": {
-            "name": format_.__name__, "schema": _close_object_schemas(format_.model_json_schema()), "strict": True,
-        }}
-    request = request_from_openai_chat(body, compat=compat)
-    prompt_cache = call.legacy.get("prompt_cache")
-    if prompt_cache is not None:
-        if request.config.cache is not None:
-            raise LMUnsupportedFeatureError("Do not combine prompt_cache with provider-shaped prompt-cache options.")
-        request = replace(request, config=replace(request.config, cache=prompt_cache))
-    return request
+        lm._warn_zero_temp_rollout({**lm.kwargs, **options}.get("temperature"), rollout_id)
+    request = snapshot_request(build_request(lm, prompt, options))
+    return PreparedCall(request, prompt, options, bool(use_cache), rollout_id, count, True, False)
 
 
 def _engine(lm, call, asynchronous):
-    # Setup is outside the retry loop. Canonical routing/conversion refusals
-    # still need the same public error projection as engine-call failures.
+    # Setup is outside the retry loop. Routing refusals need the same public
+    # error projection as engine-call failures.
     with error_boundary(lm.model):
         return _select_engine(lm, call, asynchronous)
 
 
 def _select_engine(lm, call, asynchronous):
-    if not call.managed:
-        backend = AsyncLegacyEngine(lm, _implicit=True) if asynchronous else LegacyEngine(lm, _implicit=True)
-        return backend, _canonical(call) if call.request else None, None
-    spec = lm._engine_spec
+    spec = lm.engine
     if not isinstance(spec, str):
-        backend = lm._async_engine_spec if asynchronous else spec
+        backend = lm.async_engine if asynchronous else spec
         if backend is None:
-            raise LMUnsupportedFeatureError("This custom engine has no async counterpart; pass async_engine=.")
-        # TODO(3.5): remove the legacy shortcut after moving DummyLM and all
-        # adapter execution to canonical requests/responses. Do not warn users
-        # about DSPy's own temporary implementation, or repeat wrapper warnings.
-        legacy_complete = getattr(backend, "complete_legacy", None)
-        if call.request is None and call.legacy.get("prompt_cache") is None and callable(legacy_complete):
-            from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
-
-            builtin_methods = (
-                DummyEngine.complete_legacy, AsyncDummyEngine.complete_legacy,
-                LiteLLMEngine.complete_legacy, AsyncLiteLLMEngine.complete_legacy,
-            )
-            implementation = getattr(legacy_complete, "__func__", legacy_complete)
-            if not isinstance(backend, (LegacyEngine, AsyncLegacyEngine)) and not any(
-                implementation is method for method in builtin_methods
-            ):
-                warn_legacy_shortcut()
-            return backend, None, None
-        return backend, _canonical(call), None
-    selection = select_backend(lm, call.legacy)
-    native, resolution, clients = selection.native, selection.resolution, selection.clients
-    canonical = call.request
-    if native:
-        try:
-            canonical = _canonical(call, compat=resolution.compat)
-        except (LM15Error, TypeError, ValueError) as exc:
-            if spec == "lm15" or call.request is not None or call.legacy.get("prompt_cache") is not None:
-                raise LMUnsupportedFeatureError(str(exc), model=lm.model) from exc
-            # This is a representational refusal BEFORE execution. Preserve the
-            # original body on the compatibility backend, never retry elsewhere.
-            native = False
-    if not native:
-        if call.legacy.get("prompt_cache") is not None:
+            what = "async engine; pass async_engine= with `async complete(Request)`" if asynchronous else (
+                "engine; pass engine= with `complete(Request) -> Response`")
             raise LMUnsupportedFeatureError(
-                "This request requires LiteLLM, which has no prompt_cache bridge. "
-                "Use native-compatible inputs/settings or omit prompt_cache."
+                f"{type(lm).__name__} has no {what}. Custom LMs are engines in DSPy 3.5; "
+                "see https://dspy.ai/community/normalized-lm-api-migration/.", model=lm.model,
             )
-        # None disables the bridge; it is never a provider keyword.
-        call.legacy.pop("prompt_cache", None)
+        return backend, None
+    selection = select_backend(lm, call.options, request=call.request)
+    if not selection.native:
+        if call.request.config.cache is not None:
+            raise LMUnsupportedFeatureError(
+                "Provider prompt caching requires the native lm15 engine or a custom engine; "
+                "the LiteLLM compatibility engine has no prompt-cache bridge.", model=lm.model,
+            )
         cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
-        return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
+        return cls(model_type=lm.model_type, **selection.clients), None
+    resolution, clients = selection.resolution, selection.clients
     # Long-lived sync pools and a separate async pool per event loop. Copies
     # share the store; a copy with changed client settings gets a distinct key.
     loop = asyncio.get_running_loop() if asynchronous else None
@@ -227,33 +140,25 @@ def _select_engine(lm, call, asynchronous):
             cls = AsyncLM15Engine if asynchronous else LM15Engine
             backend = cls(config, model_type=lm.model_type)
             lm._engine_store[key] = backend
-    return backend, canonical, resolution.provider
+    return backend, resolution.provider
 
 
-def _cached(lm, call, asynchronous):
+def _cached(lm, call):
     if not call.cache:
         return None
     import dspy
 
-    record = dspy.cache.get(call.key(lm, asynchronous), IGNORED_CACHE_KEYS)
-    if record is None:
-        return None
+    record = dspy.cache.get(call.key(), IGNORED_CACHE_KEYS)
     if isinstance(record, dict) and record.get("_dspy_format") == CACHE_FORMAT:
         return CallResult.load(record)
-    result = CallResult.legacy(lm, record, kwargs=call.legacy)
-    result.cache_hit = True
-    result.usage = {}
-    return result
+    return None
 
 
-def _store(lm, call, result, asynchronous):
+def _store(lm, call, result):
     if call.cache:
         import dspy
 
-        # Preserve the original SDK cache format on the compatibility path.
-        # Native responses use only plain data, compatible with restricted mode.
-        record = result.dump() if result.responses or result.raw is None else result.raw
-        dspy.cache.put(call.key(lm, asynchronous), record, IGNORED_CACHE_KEYS)
+        dspy.cache.put(call.key(), result.dump(), IGNORED_CACHE_KEYS)
 
 
 def _delay(exc, attempt):
@@ -261,19 +166,18 @@ def _delay(exc, attempt):
     return hint if hint is not None else min(2 ** min(attempt, 6), 60)
 
 
-def _result(lm, response, call, provider, request=None, *, estimate=True):
+def _result(lm, response, call, provider):
     if not isinstance(response, Response):
         actual = f"{type(response).__module__}.{type(response).__qualname__}"
         raise TypeError(f"Engine.complete must return dspy.lm15.Response, got {actual}")
     result = CallResult.native(response, model_type=lm.model_type,
-                               logprobs=(call.request.config.logprobs is not None if call.request else bool(call.legacy.get("logprobs"))),
-                               provider=provider)
-    if estimate:
-        _price_result(lm, result, response, provider, request)
+                               logprobs=call.request.config.logprobs is not None, provider=provider)
     if response.finish_reason == "length":
         import logging
 
-        logging.getLogger("dspy.clients.lm").warning("LM response was truncated; increase max_tokens or inspect history.")
+        logging.getLogger("dspy.clients.lm").warning(
+            "LM response was truncated; increase max_tokens or inspect the response with `dspy.inspect_history()`."
+        )
     return result
 
 
@@ -285,7 +189,7 @@ def _price_result(lm, result, response, provider, request):
     from dspy.clients.costs import estimate_cost
 
     try:
-        wire_model = request.model if request is not None else lm.model
+        wire_model = request.model
         if provider is not None:
             from dspy.clients.capabilities import resolve
 
@@ -317,22 +221,22 @@ def _retain_response_usage(state, results, response, provider):
         state.recorded = True
 
 
-def _accept_response(lm, call, state, results, response, provider, request):
+def _accept_response(lm, call, state, results, response, provider):
     state.completed = True
     state.response = response
     _retain_response_usage(state, results, response, provider)
-    state.result = _result(lm, response, call, provider, request, estimate=False)
+    state.result = _result(lm, response, call, provider)
     results[-1] = state.result
 
 
-def _accept_end(lm, call, state, results, accumulator, provider, request):
+def _accept_end(lm, call, state, results, accumulator, provider):
     state.completed = True
     try:
         response = accumulator.response()
     except StreamAssemblyError as exc:
         _retain_response_usage(state, results, exc.partial, provider)
         raise
-    _accept_response(lm, call, state, results, response, provider, request)
+    _accept_response(lm, call, state, results, response, provider)
 
 
 def _partial(accumulator):
@@ -346,30 +250,6 @@ def _partial(accumulator):
     except Exception:
         # Salvaging diagnostics must never replace the primary error.
         return None
-
-
-def _legacy_done(state, results, progress):
-    state.emitted = progress.get("emitted", False)
-    state.completed = state.completed or progress.get("completed", False)
-    if state.result is not None:
-        results.append(state.result)
-        state.recorded = True
-    elif state.completed and "raw" in progress:
-        # A completed compatibility response can outlive a failed SDK close or
-        # output conversion. Extract only reported usage, not invented outputs.
-        try:
-            usage = plain(dict(value(progress["raw"], "usage", {}) or {}))
-        except Exception:
-            usage = {}
-        results.append(CallResult(usage=usage))
-        state.recorded = True
-
-
-def _accept_legacy(state, result):
-    state.completed = True
-    if not isinstance(result, CallResult):
-        raise TypeError("Engine.complete_legacy must return a CallResult")
-    state.result = result
 
 
 def _account_failed_call(lm, results, primary):
@@ -391,151 +271,127 @@ def _retryable(state, exc, attempt, retries):
     return not state.completed and not state.emitted and attempt < retries and is_retryable_lm_error(exc)
 
 
-def _attempt(lm, call, backend, request, provider, state, results):
+def _bridge(lm):
+    return ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
+
+
+def _attempt(lm, call, backend, provider, state, results):
     stream = settings.send_stream
-    if request is None:
-        progress = {"emitted": False}
-        try:
-            with settings.context(_lm_stream_progress=progress):
-                result = backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
-                                                 messages=call.messages, call_kwargs=call.kwargs)
-                _accept_legacy(state, result)
-        finally:
-            _legacy_done(state, results, progress)
-    elif stream is None:
+    request = call.request
+    if stream is None:
         try:
             response = backend.complete(request)
         except StreamAssemblyError as exc:
             _retain_response_usage(state, results, exc.partial, provider)
             raise
-        _accept_response(lm, call, state, results, response, provider, request)
-    else:
-        accumulator = StreamAccumulator(request)
-        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
-        events = checked_stream(backend.stream(request), provider=provider)
+        _accept_response(lm, call, state, results, response, provider)
+        return
+    accumulator = StreamAccumulator(request)
+    bridge = _bridge(lm)
+    events = checked_stream(backend.stream(request), provider=provider)
+    try:
+        with closing_stream(events):
+            for event in events:
+                accumulator.push(event)
+                if event.type == "end":
+                    _accept_end(lm, call, state, results, accumulator, provider)
+                if chunk := bridge.chunk(event):
+                    state.emitted = True
+                    stream_emitted()
+                    from dspy.utils.lazy_import import require
+
+                    require("anyio").from_thread.run(stream.send, chunk)
+    except StreamAssemblyError as exc:
+        if exc.partial is None:
+            exc.partial = _partial(accumulator)
+        raise
+
+
+async def _aattempt(lm, call, backend, provider, state, results):
+    stream = settings.send_stream
+    request = call.request
+    if stream is None:
         try:
-            with closing_stream(events):
-                for event in events:
-                    accumulator.push(event)
-                    if event.type == "end":
-                        _accept_end(lm, call, state, results, accumulator, provider, request)
-                    if chunk := bridge.chunk(event):
-                        state.emitted = True
-                        stream_emitted()
-                        anyio.from_thread.run(stream.send, chunk)
+            response = await backend.complete(request)
         except StreamAssemblyError as exc:
-            if exc.partial is None:
-                exc.partial = _partial(accumulator)
+            _retain_response_usage(state, results, exc.partial, provider)
             raise
+        _accept_response(lm, call, state, results, response, provider)
+        return
+    accumulator = StreamAccumulator(request)
+    bridge = _bridge(lm)
+    events = achecked_stream(backend.stream(request), provider=provider)
+    try:
+        async with aclosing_stream(events):
+            async for event in events:
+                accumulator.push(event)
+                if event.type == "end":
+                    _accept_end(lm, call, state, results, accumulator, provider)
+                if chunk := bridge.chunk(event):
+                    state.emitted = True
+                    stream_emitted()
+                    await stream.send(chunk)
+    except StreamAssemblyError as exc:
+        if exc.partial is None:
+            exc.partial = _partial(accumulator)
+        raise
 
 
 def execute(lm, call):
-    if result := _cached(lm, call, False):
+    if result := _cached(lm, call):
         return result
-    backend, request, provider = _engine(lm, call, False)
+    backend, provider = _engine(lm, call, False)
     results = []
-    # Ordinary compatibility calls keep backend-native n; canonical engines
-    # produce one candidate per attempt.
-    # TODO(candidate-parallelism): bound concurrent canonical requests while
-    # respecting engine concurrency guarantees, output order, per-candidate
-    # retries/cancellation accounting, and whole-call caching. Define candidate
-    # identity for listeners before multiplexing streams. Concurrency reduces
-    # latency, not the input-token charges for separate requests.
-    count = call.n if request is not None else 1
-    retries = lm.num_retries if call.managed else 0
+    # Candidates are separate sequential requests. Bounded parallelism is a
+    # follow-up: it must keep output order, per-candidate retry accounting and
+    # whole-call caching, and it does not remove per-request input-token charges.
     try:
-        for _ in range(count):
-            for attempt in range(retries + 1):
+        for _ in range(call.n):
+            for attempt in range(lm.num_retries + 1):
                 state = _Attempt()
                 try:
-                    boundary = error_boundary(lm.model, provider=provider, unexpected=True) if call.managed else nullcontext()
-                    with boundary:
-                        _attempt(lm, call, backend, request, provider, state, results)
+                    with error_boundary(lm.model, provider=provider, unexpected=True):
+                        _attempt(lm, call, backend, provider, state, results)
                     break
                 except Exception as exc:
-                    if not _retryable(state, exc, attempt, retries):
+                    if not _retryable(state, exc, attempt, lm.num_retries):
                         raise
                     time.sleep(_delay(exc, attempt))
             # Completion is irreversible. Advisory pricing and storage never
             # run inside the retry region, even if custom code raises here.
-            if request is not None:
-                _price_result(lm, state.result, state.response, provider, request)
+            _price_result(lm, state.result, state.response, provider, call.request)
         result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
-        _store(lm, call, result, False)
+        _store(lm, call, result)
         return result
     except BaseException as exc:
         _account_failed_call(lm, results, exc)
         raise
 
 
-async def _aattempt(lm, call, backend, request, provider, state, results):
-    stream = settings.send_stream
-    if request is None:
-        progress = {"emitted": False}
-        try:
-            with settings.context(_lm_stream_progress=progress):
-                result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
-                                                       messages=call.messages, call_kwargs=call.kwargs)
-                _accept_legacy(state, result)
-        finally:
-            _legacy_done(state, results, progress)
-    elif stream is None:
-        try:
-            response = await backend.complete(request)
-        except StreamAssemblyError as exc:
-            _retain_response_usage(state, results, exc.partial, provider)
-            raise
-        _accept_response(lm, call, state, results, response, provider, request)
-    else:
-        accumulator = StreamAccumulator(request)
-        bridge = ListenerBridge(lm.model, id(settings.caller_predict) if settings.caller_predict else None)
-        events = achecked_stream(backend.stream(request), provider=provider)
-        try:
-            async with aclosing_stream(events):
-                async for event in events:
-                    accumulator.push(event)
-                    if event.type == "end":
-                        _accept_end(lm, call, state, results, accumulator, provider, request)
-                    if chunk := bridge.chunk(event):
-                        state.emitted = True
-                        stream_emitted()
-                        await stream.send(chunk)
-        except StreamAssemblyError as exc:
-            if exc.partial is None:
-                exc.partial = _partial(accumulator)
-            raise
-
-
 async def aexecute(lm, call):
     if call.cache:
-        if result := await asyncio.to_thread(_cached, lm, call, True):
+        if result := await asyncio.to_thread(_cached, lm, call):
             return result
-    backend, request, provider = _engine(lm, call, True)
+    backend, provider = _engine(lm, call, True)
     results = []
-    # TODO(candidate-parallelism): apply the same guarantees as execute() above;
-    # cancellation must account for every completed candidate exactly once.
-    count = call.n if request is not None else 1
-    retries = lm.num_retries if call.managed else 0
     try:
-        for _ in range(count):
-            for attempt in range(retries + 1):
+        for _ in range(call.n):
+            for attempt in range(lm.num_retries + 1):
                 state = _Attempt()
                 try:
-                    boundary = error_boundary(lm.model, provider=provider, unexpected=True) if call.managed else nullcontext()
-                    with boundary:
-                        await _aattempt(lm, call, backend, request, provider, state, results)
+                    with error_boundary(lm.model, provider=provider, unexpected=True):
+                        await _aattempt(lm, call, backend, provider, state, results)
                     break
                 except Exception as exc:
-                    if not _retryable(state, exc, attempt, retries):
+                    if not _retryable(state, exc, attempt, lm.num_retries):
                         raise
                     await asyncio.sleep(_delay(exc, attempt))
-            if request is not None:
-                await asyncio.to_thread(_price_result, lm, state.result, state.response, provider, request)
+            await asyncio.to_thread(_price_result, lm, state.result, state.response, provider, call.request)
         result = results[0] if len(results) == 1 else combine(results, model_type=lm.model_type)
         if call.cache:
             # Cancellation may leave this worker writing a complete result,
             # never a partial one. Usage still belongs to this public call.
-            await asyncio.to_thread(_store, lm, call, result, True)
+            await asyncio.to_thread(_store, lm, call, result)
         return result
     except BaseException as exc:
         _account_failed_call(lm, results, exc)
@@ -551,15 +407,18 @@ def finalize(lm, call, result):
 
         from dspy.clients.lm15_boundary import history_messages
 
-        entry = {"prompt": call.prompt, "messages": history_messages(call.request) if call.request else call.messages,
-                 "kwargs": {key: val for key, val in call.kwargs.items() if not key.startswith("api_")},
-                 "response": result.raw if result.raw is not None else result.responses,
+        entry = {"prompt": call.prompt, "messages": history_messages(call.request),
+                 "kwargs": {key: val for key, val in call.options.items() if not key.startswith("api_")},
+                 "request": call.request,
+                 "response": result.responses[0] if len(result.responses) == 1 else result.responses,
                  "outputs": result.outputs, "usage": result.usage, "cost": result.cost,
                  "timestamp": datetime.datetime.now().isoformat(), "uuid": str(uuid.uuid4()),
                  "model": lm.model, "response_model": result.response_model, "model_type": lm.model_type}
         if result.cost_details:
             entry["cost_details"] = result.cost_details
-        if call.request:
-            entry["request"] = call.request
         lm.update_history(entry)
-    return result.typed(call.request, lm.model_type) if call.request else result.outputs
+    if call.candidates:
+        return list(result.responses)
+    if call.convenience:
+        return result.outputs
+    return result.responses[0]
