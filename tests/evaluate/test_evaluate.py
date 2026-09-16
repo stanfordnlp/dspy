@@ -488,6 +488,8 @@ def test_evaluate_save_as_csv_utf8_when_locale_is_cp1252(tmp_path, monkeypatch):
 
     real_open = builtins.open
 
+    encodings = []
+
     def open_defaulting_to_cp1252(
         file,
         mode="r",
@@ -498,6 +500,8 @@ def test_evaluate_save_as_csv_utf8_when_locale_is_cp1252(tmp_path, monkeypatch):
         closefd=True,
         opener=None,
     ):
+        if "w" in str(mode) and "b" not in str(mode):
+            encodings.append((str(file), encoding))
         if encoding is None and "b" not in str(mode):
             encoding = "cp1252"
         return real_open(file, mode, buffering, encoding, errors, newline, closefd, opener)
@@ -520,6 +524,8 @@ def test_evaluate_save_as_csv_utf8_when_locale_is_cp1252(tmp_path, monkeypatch):
     assert "\u5317\u4eac" in csv_text
     assert "B\u011bij\u012bng" in csv_text
     json.loads(json_path.read_text(encoding="utf-8"))
+    assert any(path.endswith(".csv") and encoding == "utf-8" for path, encoding in encodings)
+    assert any(path.endswith(".json") and encoding == "utf-8" for path, encoding in encodings)
 
 
 def test_evaluate_raises_on_empty_devset():
