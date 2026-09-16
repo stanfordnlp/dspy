@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Any, get_origin
+import types
+from typing import Annotated, Any, Union, get_args, get_origin
 
 import json_repair
 
@@ -24,6 +25,19 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
+
+
+def _unwrap_annotation(annotation: Any) -> Any:
+    """Strip Optional/Union/Annotated wrappers down to the inner type."""
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        return _unwrap_annotation(args[0]) if args else annotation
+    if origin is Union or origin is types.UnionType:
+        non_none = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none) == 1:
+            return _unwrap_annotation(non_none[0])
+    return annotation
 
 
 class Adapter:
@@ -490,23 +504,25 @@ class Adapter:
 
     def _get_history_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
-            if field.annotation == History:
+            if _unwrap_annotation(field.annotation) == History:
                 return name
         return None
 
     def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
-            # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
-            origin = get_origin(field.annotation)
-            if origin is list and field.annotation.__args__[0] == Tool:
+            # Look for annotation `list[dspy.Tool]` or `dspy.Tool`, including Optional wrappers.
+            annotation = _unwrap_annotation(field.annotation)
+            origin = get_origin(annotation)
+            args = get_args(annotation)
+            if origin is list and args and args[0] == Tool:
                 return name
-            if field.annotation == Tool:
+            if annotation == Tool:
                 return name
         return None
 
     def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.output_fields.items():
-            if field.annotation == ToolCalls:
+            if _unwrap_annotation(field.annotation) == ToolCalls:
                 return name
         return None
 
