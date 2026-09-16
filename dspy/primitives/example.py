@@ -1,6 +1,28 @@
 from pydantic import BaseModel
 
 
+def _hashable_value(value):
+    """Reduce nested Example fields to something `hash()` can accept.
+
+    `__hash__` is defined so Examples can live in sets and dict keys, but RAG
+    examples commonly store lists, dicts, or Pydantic models such as History.
+    Those are unhashable, so `frozenset(self._store.items())` raises TypeError.
+    """
+    if isinstance(value, dict):
+        return tuple(sorted((k, _hashable_value(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_hashable_value(v) for v in value)
+    if isinstance(value, set):
+        return tuple(sorted((_hashable_value(v) for v in value), key=repr))
+    if isinstance(value, BaseModel):
+        return _hashable_value(value.model_dump())
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
+
+
 class Example:
     """A flexible data container for DSPy examples and training data with named fields.
 
@@ -165,7 +187,7 @@ class Example:
         return isinstance(other, Example) and self._store == other._store
 
     def __hash__(self):
-        return hash(frozenset(self._store.items()))
+        return hash(frozenset((k, _hashable_value(v)) for k, v in self._store.items()))
 
     def keys(self, include_dspy=False):
         """Return field names, like `dict.keys()`.
