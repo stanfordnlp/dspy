@@ -18,11 +18,20 @@
         min-width: 5.25rem;
         height: 1.8rem;
         margin: 0.3rem 0;
-        padding: 0 0.65rem;
+        padding: 0 1.6rem 0 0.65rem;
         border: 1px solid var(--md-accent-fg-color);
         border-radius: 0.2rem;
         color: inherit;
         font-weight: 600;
+        text-align: left;
+    }
+
+    .md-header__inner > .md-version .md-version__current::after {
+        position: absolute;
+        top: 50%;
+        right: 0.65rem;
+        margin: 0;
+        transform: translateY(-50%);
     }
 
     .md-header__inner > .md-version .md-version__list {
@@ -90,7 +99,7 @@
     }
 
     .md-header__source {
-        width: 8.7rem;
+        width: 10rem;
         margin-left: 0;
     }
 }
