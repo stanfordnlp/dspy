@@ -96,5 +96,6 @@ These are community-maintained projects and are not officially supported by the 
 | **OpenLIT** | [Link](https://docs.openlit.io/latest/sdk/integrations/dspy) |
 | **Relevance AI** | [Link](https://relevanceai.com/blog/dspy-programming---not-prompting---language-models) |
 | **Advancing Analytics** | [Link](https://www.advancinganalytics.co.uk/blog/prompt-optimisation-an-introduction-to-dspy) |
+| **OrcaReplay** | [Link](https://github.com/Continuum-AI-Corp/OrcaReplay) |
 
 Credit: Some of these resources were originally compiled in the [Awesome DSPy](https://github.com/ganarajpr/awesome-dspy/tree/master) repo.
