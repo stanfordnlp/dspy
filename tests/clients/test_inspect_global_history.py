@@ -137,3 +137,16 @@ def test_inspect_history_n_larger_than_history(capsys):
     dspy.inspect_history(n=5)
     history = GLOBAL_HISTORY
     assert len(history) == 2  # Should return all available entries
+
+
+def test_pretty_print_history_with_empty_outputs():
+    out = StringIO()
+    history = [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "outputs": [],
+            "timestamp": "now",
+        }
+    ]
+    pretty_print_history(history, n=1, file=out)
+    assert "hello" in out.getvalue()
