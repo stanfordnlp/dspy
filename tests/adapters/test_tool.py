@@ -711,6 +711,28 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
 
 
 
+def test_tool_convert_input_schema_nullable_json_schema_types():
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "a name",
+                    "type": ["string", "null"],
+                },
+                "count": {
+                    "description": "a count",
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                },
+            },
+            "required": ["name"],
+        }
+    )
+    assert arg_types == {"name": str, "count": int}
+    assert args["name"]["type"] == ["string", "null"]
+    assert " (Required)" in arg_desc["name"]
+
+
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
