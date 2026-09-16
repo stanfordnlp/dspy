@@ -107,6 +107,7 @@ from .base import (
     resolve_credential_value,
 )
 from .common import (
+    COMPLETION_READ_TIMEOUT,
     tool_result_error_text,
     tool_result_output_openai,
     iso_utc,
@@ -994,7 +995,7 @@ class OpenAILM(BaseProviderLM):
             model=request.model,
             headers=self._headers(),
             payload=self._payload(request, stream=stream),
-            read_timeout=120.0 if stream else 60.0,
+            read_timeout=COMPLETION_READ_TIMEOUT,
         )
 
     # ─── Response parsing ───────────────────────────────────────────
