@@ -1,6 +1,11 @@
 from pydantic import BaseModel
 
 
+def _sort_key(value):
+    """Order mixed-type values without comparing int and str directly."""
+    return (type(value).__qualname__, repr(value))
+
+
 def _hashable_value(value):
     """Reduce nested Example fields to something `hash()` can accept.
 
@@ -9,17 +14,27 @@ def _hashable_value(value):
     Those are unhashable, so `frozenset(self._store.items())` raises TypeError.
     """
     if isinstance(value, dict):
-        return tuple(sorted((k, _hashable_value(v)) for k, v in value.items()))
+        items = ((_hashable_value(k), _hashable_value(v)) for k, v in value.items())
+        return tuple(sorted(items, key=_sort_key))
     if isinstance(value, (list, tuple)):
         return tuple(_hashable_value(v) for v in value)
     if isinstance(value, set):
-        return tuple(sorted((_hashable_value(v) for v in value), key=repr))
+        return tuple(sorted((_hashable_value(v) for v in value), key=_sort_key))
     if isinstance(value, BaseModel):
         return _hashable_value(value.model_dump())
     try:
         hash(value)
     except TypeError:
-        return repr(value)
+        # Avoid identity-bearing repr() so value-equal objects hash equally.
+        state = getattr(value, "__dict__", None)
+        if isinstance(state, dict):
+            return (type(value), _hashable_value(state))
+        slots = getattr(type(value), "__slots__", None)
+        if slots is not None:
+            names = slots if isinstance(slots, (list, tuple)) else (slots,)
+            slot_state = {name: getattr(value, name, None) for name in names if name != "__dict__"}
+            return (type(value), _hashable_value(slot_state))
+        return (type(value),)
     return value
 
 
@@ -129,6 +144,7 @@ class Example:
         self._store = {}
         self._demos = []
         self._input_keys = None
+        self._cached_hash = None
 
         # Initialize from a base Example if provided
         if base and isinstance(base, type(self)):
@@ -187,7 +203,11 @@ class Example:
         return isinstance(other, Example) and self._store == other._store
 
     def __hash__(self):
-        return hash(frozenset((k, _hashable_value(v)) for k, v in self._store.items()))
+        if self._cached_hash is not None:
+            return self._cached_hash
+        computed = hash(frozenset((k, _hashable_value(v)) for k, v in self._store.items()))
+        super().__setattr__("_cached_hash", computed)
+        return computed
 
     def keys(self, include_dspy=False):
         """Return field names, like `dict.keys()`.
