@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 
 
 def _is_open_ended_mapping_annotation(annotation: Any) -> bool:
-    """True for dict[...] and the same type wrapped in Optional/Union/Annotated."""
+    """True for dict, dict[...], and the same type wrapped in Optional/Union/Annotated."""
+    if annotation is dict:
+        return True
     origin = get_origin(annotation)
     if origin is dict:
         return True
