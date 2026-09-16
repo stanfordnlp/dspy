@@ -6,6 +6,7 @@ import subprocess
 import pytest
 
 from docs.scripts.build_docs import (
+    install_shared_header,
     patched_config,
     release_version,
     remove_source_maps,
@@ -91,6 +92,22 @@ def test_production_build_removes_source_maps(tmp_path):
     assert result["source_maps"] == 1
     assert not (assets / "app.js.map").exists()
     assert "sourceMappingURL" not in (assets / "app.js").read_text()
+
+
+def test_shared_header_assets_are_installed_on_nested_pages(tmp_path):
+    site = make_site(tmp_path, "Home")
+
+    install_shared_header(site)
+    install_shared_header(site)
+
+    assert (site / "_static" / "dspy-header.css").is_file()
+    assert (site / "_static" / "dspy-header.js").is_file()
+    home = (site / "index.html").read_text()
+    nested = (site / "guide" / "index.html").read_text()
+    assert home.count('href="_static/dspy-header.css"') == 1
+    assert home.count('src="_static/dspy-header.js"') == 1
+    assert nested.count('href="../_static/dspy-header.css"') == 1
+    assert nested.count('src="../_static/dspy-header.js"') == 1
 
 
 def test_root_relative_links_stay_inside_the_selected_version(tmp_path):

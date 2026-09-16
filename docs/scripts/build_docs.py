@@ -26,7 +26,7 @@ VERSIONED_PATH = re.compile(r"^/(?:current|\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)
 RELEASE_BADGE_VERSION = re.compile(
     r'(?s)(<div class=(?:"hp-hero-badge"|hp-hero-badge)>.*?\bDSPy )(\S+)(\s+&mdash;)'
 )
-SHARED_HEADER_STYLES = Path(__file__).parent.parent / "versioning" / "header.css"
+SHARED_HEADER_ASSETS = Path(__file__).parent.parent / "versioning"
 
 
 def release_version(value: str) -> str:
@@ -89,17 +89,25 @@ def remove_source_maps(site: Path) -> dict[str, int]:
     return {"before": before, "after": after, "source_maps": len(source_maps)}
 
 
-def install_shared_header_styles(site: Path, source: Path = SHARED_HEADER_STYLES) -> None:
+def install_shared_header(site: Path, source: Path = SHARED_HEADER_ASSETS) -> None:
     """Give every renderer and historical snapshot the same header controls."""
-    destination = site / "_static" / "dspy-header.css"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(source.read_bytes())
+    destination = site / "_static"
+    destination.mkdir(parents=True, exist_ok=True)
+    styles = destination / "dspy-header.css"
+    script = destination / "dspy-header.js"
+    styles.write_bytes((source / "header.css").read_bytes())
+    script.write_bytes((source / "header.js").read_bytes())
     for page in site.rglob("*.html"):
-        relative = Path(os.path.relpath(destination, page.parent)).as_posix()
-        tag = f'<link rel="stylesheet" href="{relative}">'
+        relative_styles = Path(os.path.relpath(styles, page.parent)).as_posix()
+        relative_script = Path(os.path.relpath(script, page.parent)).as_posix()
+        style_tag = f'<link rel="stylesheet" href="{relative_styles}">'
+        script_tag = f'<script src="{relative_script}" defer></script>'
         html = page.read_text()
-        if tag not in html:
-            page.write_text(html.replace("</head>", f"{tag}</head>", 1))
+        if style_tag not in html:
+            html = html.replace("</head>", f"{style_tag}</head>", 1)
+        if script_tag not in html:
+            html = html.replace("</head>", f"{script_tag}</head>", 1)
+        page.write_text(html)
 
 
 def scope_root_relative_urls(site: Path, identifier: str) -> None:
@@ -224,7 +232,7 @@ def build(
     scope_root_relative_urls(output, identifier)
     if version:
         validate_release_site(output, config, version)
-    install_shared_header_styles(output)
+    install_shared_header(output)
     optimization = remove_source_maps(output)
     if version:
         repository = config.parent.parent
