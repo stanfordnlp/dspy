@@ -91,15 +91,18 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             print("\n", file=out)
 
         if outputs:
-            if isinstance(outputs[0], dict):
-                if outputs[0].get("text"):
+            first = outputs[0]
+            if first is None:
+                pass
+            elif isinstance(first, dict):
+                if first.get("text"):
                     print(_red("Response:", use_colors=use_colors), file=out)
-                    print(_green(outputs[0]["text"].strip(), use_colors=use_colors), file=out)
+                    print(_green(first["text"].strip(), use_colors=use_colors), file=out)
 
-                print_tool_calls(outputs[0].get("tool_calls"))
+                print_tool_calls(first.get("tool_calls"))
             else:
                 print(_red("Response:", use_colors=use_colors), file=out)
-                print(_green(str(outputs[0]).strip(), use_colors=use_colors), file=out)
+                print(_green(str(first).strip(), use_colors=use_colors), file=out)
 
             if len(outputs) > 1:
                 choices_text = f" \t (and {len(outputs) - 1} other completions)"

@@ -150,3 +150,19 @@ def test_pretty_print_history_with_empty_outputs():
     ]
     pretty_print_history(history, n=1, file=out)
     assert "hello" in out.getvalue()
+
+
+def test_pretty_print_history_skips_none_outputs():
+    out = StringIO()
+    history = [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "outputs": [None],
+            "timestamp": "now",
+        }
+    ]
+    pretty_print_history(history, n=1, file=out)
+    text = out.getvalue()
+    assert "hello" in text
+    assert "Response:" not in text
+    assert "None" not in text
