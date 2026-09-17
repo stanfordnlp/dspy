@@ -136,6 +136,11 @@ def prepare(lm, prompt, messages, kwargs, *, asynchronous=False, direct=False):
         legacy = {"model": lm.model}
         use_cache = kwargs.get("cache", lm.cache) if managed and getattr(lm, "_cache_responses", True) else False
         return PreparedCall(None, None, kwargs, legacy, request, use_cache, 1, managed)
+    if managed and not isinstance(getattr(lm, "_engine_spec", "auto"), str):
+        # A custom engine owns its connection; a call cannot hand it one either.
+        from dspy.clients.lm import _refuse_client_settings
+
+        _refuse_client_settings(lm._engine_spec, kwargs, where="LM call")
     merged = {**lm.kwargs, **{key: val for key, val in kwargs.items() if key != "cache"}}
     prompt_cache = merged.get("prompt_cache")
     if prompt_cache is not None:

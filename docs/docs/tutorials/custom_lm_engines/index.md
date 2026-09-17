@@ -1,6 +1,8 @@
 # Custom LM Engines
 
-In the DSPy 3.4 development API, you can supply your own execution engine to `dspy.LM`. The minimum synchronous interface is:
+In the DSPy 3.4 development API, you can supply your own execution engine to `dspy.LM`. An engine is for a backend that is not an HTTP provider DSPy's bundled lm15 can speak to: a CLI, an in-process model, an agent harness. It owns its whole connection, so the [rules below](#what-a-custom-engine-owns) apply.
+
+The minimum synchronous engine interface is:
 
 ```python
 class MyEngine:
@@ -18,6 +20,33 @@ Expected backend failures should raise specific errors from `dspy.lm15`, such as
 family and owns retries. Unexpected exceptions retain their original cause and
 are not guessed to be retryable from their message text. See
 [errors and retry ownership](../../community/normalized-lm-api-migration.md#errors-and-retry-ownership).
+
+## What a custom engine owns
+
+A custom engine is borrowed by `dspy.LM` and owns its connection. Three rules follow, and DSPy enforces each rather than guessing:
+
+**Connection settings are refused.** `dspy.LM(engine=MyEngine(), api_key=...)` raises `ValueError`, and so do `api_base`, `base_url`, `timeout`, `headers`, `extra_headers` and the other client settings — on construction, on `copy()`, and on every call (`lm("hi", api_key=...)`), before any cache lookup. There is no channel from the LM to the engine for them; before 3.4 they were silently dropped and a call could run with the engine's key while the LM said another. Give them to the engine's constructor.
+
+**The engine pair is one unit.** `async_engine=` is only accepted with a custom `engine=`, and each side must be its kind: the sync engine's `complete` is a plain function returning a `Response`, the async engine's is a coroutine function (`async def complete`). A sync method on the async side, or the reverse, is refused at construction rather than on the first call. `lm.copy(engine=...)` replaces both: the copy has no async engine unless you pass a new `async_engine=` in the same call. A copy that does not mention `engine` keeps the pair.
+
+**Saving needs the engine's own state.** An engine is saved when it implements `dump_state() -> dict` (JSON-serializable, no secrets) and the classmethod `load_state(state) -> engine`:
+
+```python
+class MyEngine:
+    def __init__(self, model="gpt-6-astra"):
+        self.model = model
+
+    def complete(self, request): ...
+
+    def dump_state(self):
+        return {"model": self.model}
+
+    @classmethod
+    def load_state(cls, state):
+        return cls(**state)
+```
+
+`lm.dump_state()` then records `{"engine": {"class": "your.module:MyEngine", "state": {...}}}` (and `async_engine` likewise). Loading imports that class from the file, which is the same trust decision as a custom LM class, so it is gated the same way: `program.load(path, allow_unsafe_lm_state=True)` or `dspy.LM.load_state(state, allow_custom_lm_class=True)`. The class must be importable by that path in the process that loads the state. Define it at module level, not inside a function — `dump_state()` refuses a class it cannot import back — and for state that must outlive the session, in an importable module: a class defined in a script or notebook is recorded as `__main__:MyEngine`, which loads only in a process whose `__main__` defines it again. `dump_state()` also refuses engine state JSON cannot carry. An engine without the two methods cannot be saved either; `dump_state()` says so and the way out is to save the program without that LM and set it again after loading. Keep secrets out of engine state, as DSPy keeps `api_key` out of LM state.
 
 This tutorial wraps the [Pi CLI](https://pi.dev) as a custom engine. Pi keeps its normal system prompt and tools, so a DSPy program can ask it to inspect a repository. The entire agent run, including tool calls, becomes one DSPy LM response.
 
@@ -78,7 +107,7 @@ program(
 )
 ```
 
-Here `"pi"` is a DSPy model label for history; the engine's CLI arguments select the actual provider and model.
+Here `"pi"` is a DSPy model label for history; the engine's CLI arguments select the actual provider and model. `PiEngine` holds no state, so to make it saveable add `dump_state` returning `{}` and `load_state` returning `cls()`.
 
 An answer for the DSPy repository can look like:
 

@@ -273,6 +273,14 @@ an async iterator for async calls. DSPy does not silently run a sync backend on 
 async path. Engines must not add another DSPy cache or retry loop. Custom engines
 are caller-owned and are not closed by DSPy.
 
+A custom engine owns its connection: `api_key`, `api_base`, `timeout`,
+`extra_headers` and the other client settings are refused on `dspy.LM(engine=...)`,
+on `copy()` and on every call, rather than dropped. `copy(engine=...)` replaces the
+engine pair, and each side must be its kind (a coroutine function on the async side).
+An engine is saved by `dump_state()`/`load_state()` of its own, and loading one is
+gated by `allow_unsafe_lm_state=True` like a custom LM class. See the
+[custom-engine tutorial](../tutorials/custom_lm_engines/index.md).
+
 Implementing custom LMs through `BaseLM.forward(prompt=None, messages=None, **kwargs)`
 or `aforward` is **deprecated**. Implement an engine instead, as shown above and in
 the [custom-engine tutorial](../tutorials/custom_lm_engines/index.md). The old subclass
