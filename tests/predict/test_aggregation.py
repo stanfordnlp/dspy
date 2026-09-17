@@ -57,3 +57,5 @@ def test_majority_empty_completions_raises_value_error():
         majority(Prediction.from_completions([]))
     with pytest.raises(ValueError, match="at least one completion"):
         majority([])
+    with pytest.raises(ValueError, match="at least one completion"):
+        majority(Completions({"answer": []}))

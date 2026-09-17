@@ -10,13 +10,21 @@ def _is_empty_completions(completions) -> bool:
     """True when there are no completion rows to vote on.
 
     Empty Completions({}) should be rejected, but Completions.__len__ currently
-    calls next() on an empty values iterator and raises StopIteration. Inspect
-    the stored dict instead of truth-testing the object.
+    calls next() on an empty values iterator and raises StopIteration. Completions
+    with declared fields but zero rows, such as Completions({"answer": []}), must
+    also be treated as empty. Inspect the stored dict instead of truth-testing
+    the object.
     """
     stored = getattr(completions, "_completions", None)
     if isinstance(stored, dict):
-        return not stored
-    return not completions
+        if not stored:
+            return True
+        first = next(iter(stored.values()), [])
+        return len(first) == 0
+    try:
+        return len(completions) == 0
+    except Exception:
+        return not completions
 
 
 def majority(prediction_or_completions, normalize=default_normalize, field=None):
