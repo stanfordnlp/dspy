@@ -20,6 +20,8 @@ HOST_CONFIG = (
     json.dumps(
         {
             "framework": None,
+            "buildCommand": None,
+            "outputDirectory": ".",
             "trailingSlash": True,
             "headers": [
                 {
