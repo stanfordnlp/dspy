@@ -1,3 +1,5 @@
+import pytest
+
 import dspy
 from dspy.utils.dummies import DummyLM
 
@@ -46,3 +48,11 @@ def test_multi_chain_comparison_without_rationale():
     dspy.configure(lm=lm)
     final_pred = compare_answers([dspy.Prediction(answer="blue")], question="What is the color of the sky?")
     assert final_pred.answer == "blue"
+
+
+def test_multi_chain_comparison_requires_answer():
+    compare_answers = dspy.MultiChainComparison(BasicQA, M=1)
+    lm = DummyLM([{"rationale": "holistic", "answer": "blue"}])
+    dspy.configure(lm=lm)
+    with pytest.raises(KeyError):
+        compare_answers([dspy.Prediction(rationale="a guess")], question="What is the color of the sky?")
