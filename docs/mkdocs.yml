@@ -268,6 +268,7 @@ plugins:
                     merge_init_into_class: true
     - redirects:
         redirect_maps:
+            # Redirect /intro/ to the main page
             "intro/index.md": "index.md"
             "deep-dive/optimizers/bootstrap-fewshot.md": "api/optimizers/BootstrapFewShot.md"
             "deep-dive/optimizers/bfrs.md": "api/optimizers/BootstrapFewShotWithRandomSearch.md"
@@ -284,6 +285,8 @@ plugins:
             "quick-start/getting-started-02.md": "tutorials/rag/index.md"
             "community/community-ports.md": "community/built-with-dspy.md"
             "production/companies.md": "community/use-cases.md"
+
+            # Redirect old learn/ pages to the new Getting Started tutorial
             "learn/index.md": "getting-started/program-dont-prompt.md"
             "learn/programming/overview.md": "getting-started/first-program.md"
             "learn/programming/language_models.md": "getting-started/installation.md"
@@ -297,6 +300,8 @@ plugins:
             "learn/evaluation/metrics.md": "getting-started/metrics.md"
             "learn/optimization/overview.md": "getting-started/gepa-optimization.md"
             "learn/optimization/optimizers.md": "getting-started/gepa-optimization.md"
+
+            # Redirect old numbered Getting Started URLs to the new kebab-case paths
             "getting_started/01_program_dont_prompt.md": "getting-started/program-dont-prompt.md"
             "getting_started/02_installation.md": "getting-started/installation.md"
             "getting_started/03_first_program.md": "getting-started/first-program.md"
