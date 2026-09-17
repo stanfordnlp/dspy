@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import os
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
@@ -35,7 +36,7 @@ from dspy.lm15 import (
     UnsupportedFeatureError,
     request_from_openai_chat,
 )
-from dspy.utils.exceptions import LMUnsupportedFeatureError, is_retryable_lm_error
+from dspy.utils.exceptions import LMConfigurationError, LMUnsupportedFeatureError, is_retryable_lm_error
 from dspy.utils.lazy_import import require
 
 anyio = require("anyio")
@@ -189,6 +190,44 @@ def _canonical(call, *, compat=None):
     return request
 
 
+# LiteLLM's generic doors, by lm15 dialect: the route a declared provider
+# takes when a call falls back, with the declared address and credential
+# carried along. The provider's own aliases are never handed to LiteLLM as
+# a prefix: LiteLLM may know that name as a different service.
+_LITELLM_GENERIC_DOOR = {"openai-chat": "openai", "openai-responses": "openai", "anthropic": "anthropic"}
+
+
+def _declared_fallback(lm, binding, resolution, clients):
+    """(wire model, client options) for LiteLLM to reach a declared provider
+    at its declared address with its own credential — never LiteLLM's idea
+    of a similarly named service, never an ambient OPENAI_API_KEY."""
+    definition = binding.definition
+    door = _LITELLM_GENERIC_DOOR.get(definition.dialect)
+    if door is None or definition.hosted:
+        raise LMUnsupportedFeatureError(
+            f"{lm.model!r}: the declared provider {definition.id!r} has no LiteLLM route for these client "
+            f"settings; use settings the native engine carries (api_key, api_base, timeout)",
+            model=lm.model, provider=definition.id,
+        )
+    options = dict(clients)
+    if not (options.get("api_base") or options.get("base_url")):
+        options["api_base"] = definition.access.base_url
+    if not options.get("api_key"):
+        key = next((os.environ[name] for name in definition.access.env_keys if os.environ.get(name)), None)
+        key = key or definition.placeholder_key
+        if not key:
+            variables = " or ".join(definition.access.env_keys) or "api_key="
+            raise LMConfigurationError(
+                f"no credential for the declared provider {definition.id!r}: set {variables} or pass api_key=",
+                model=lm.model, provider=definition.id,
+            )
+        options["api_key"] = key
+    static = dict(definition.access.headers)
+    if static:
+        options["extra_headers"] = {**static, **(options.get("extra_headers") or {})}
+    return f"{door}/{resolution.model}", options
+
+
 def _engine(lm, call, asynchronous):
     # Setup is outside the retry loop. Canonical routing/conversion refusals
     # still need the same public error projection as engine-call failures.
@@ -225,19 +264,27 @@ def _select_engine(lm, call, asynchronous):
         return backend, _canonical(call), None
     selection = select_backend(lm, call.legacy)
     native, resolution, clients = selection.native, selection.resolution, selection.clients
+    from dspy.lm15 import _binding_for, _definitions
+
+    binding = _binding_for(lm._providers, resolution.provider) if resolution is not None and resolution.declared else None
     canonical = call.request
     if native:
         try:
             canonical = _canonical(call, compat=resolution.compat)
         except (LM15Error, TypeError, ValueError) as exc:
-            if spec == "lm15" or call.request is not None or call.legacy.get("prompt_cache") is not None:
+            # A declared provider's compat is the caller's own statement of
+            # what that server takes; a refusal it produces is final, not a
+            # reason to send the request through LiteLLM anyway.
+            if (spec == "lm15" or binding is not None or call.request is not None
+                    or call.legacy.get("prompt_cache") is not None):
                 if isinstance(exc, UnsupportedFeatureError):
                     raise  # The outer boundary preserves its feature and other diagnostics.
                 raise LMUnsupportedFeatureError(str(exc), model=lm.model) from exc
             # This is a representational refusal BEFORE execution. Preserve the
             # original body on the compatibility backend, never retry elsewhere.
             native = False
-    if not native:
+
+    def compatibility_engine():
         if call.legacy.get("prompt_cache") is not None:
             raise LMUnsupportedFeatureError(
                 "This request requires LiteLLM, which has no prompt_cache bridge. "
@@ -246,7 +293,16 @@ def _select_engine(lm, call, asynchronous):
         # None disables the bridge; it is never a provider keyword.
         call.legacy.pop("prompt_cache", None)
         cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
+        if binding is not None:
+            # A declared provider keeps its destination and credential across
+            # the backend switch; only the LM's model string stays as it was
+            # (history, cache key).
+            wire_model, options = _declared_fallback(lm, binding, resolution, clients)
+            return cls(model_type=lm.model_type, wire_model=wire_model, **options), canonical if call.request else None, None
         return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
+
+    if not native:
+        return compatibility_engine()
     # Long-lived sync pools and a separate async pool per event loop. Copies
     # share the store; a copy with changed client settings gets a distinct key.
     loop = asyncio.get_running_loop() if asynchronous else None
@@ -260,7 +316,8 @@ def _select_engine(lm, call, asynchronous):
             provider = resolution.provider
             api_keys = {provider: clients["api_key"]} if "api_key" in clients else None
             url = clients.get("api_base") or clients.get("base_url")
-            config = RouterConfig(api_keys=api_keys, base_urls={provider: url} if url else None, timeouts=timeouts)
+            config = RouterConfig(api_keys=api_keys, base_urls={provider: url} if url else None, timeouts=timeouts,
+                                  providers=_definitions(lm._providers))
             cls = AsyncLM15Engine if asynchronous else LM15Engine
             backend = cls(config, model_type=lm.model_type)
             lm._engine_store[key] = backend
@@ -272,8 +329,12 @@ def _select_engine(lm, call, asynchronous):
         try:
             backend.plan(canonical)
         except UnsupportedFeatureError:
-            cls = AsyncLiteLLMEngine if asynchronous else LiteLLMEngine
-            return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
+            if binding is not None:
+                # The declaration is the authority on what that server cannot
+                # do; sending the request through LiteLLM anyway would defeat
+                # the refusal it encodes (a silent degrade). Refuse.
+                raise
+            return compatibility_engine()
     return backend, canonical, resolution.provider
 
 
@@ -333,12 +394,18 @@ def _price_result(lm, result, response, provider, request):
 
     try:
         wire_model = request.model if request is not None else lm.model
+        namespaces = None
         if provider is not None:
             from dspy.clients.capabilities import resolve
+            from dspy.lm15 import _binding_for
 
-            wire_model = resolve(lm).model
+            route = resolve(lm)
+            wire_model = route.model
+            binding = _binding_for(getattr(lm, "_providers", ()), provider) if route.declared else None
+            if binding is not None:
+                namespaces = binding.metadata_namespaces
         result.cost, result.cost_details = estimate_cost(
-            response, provider=provider, requested_model=wire_model, request=request,
+            response, provider=provider, requested_model=wire_model, request=request, namespaces=namespaces,
         )
     except Warning:
         raise

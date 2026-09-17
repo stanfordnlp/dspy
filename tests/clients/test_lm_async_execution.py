@@ -292,7 +292,7 @@ async def test_cost_lookup_runs_off_loop(endpoint, monkeypatch):
     threads = []
     loop_thread = threading.get_ident()
 
-    def info(*args):
+    def info(*args, **kwargs):
         threads.append(threading.get_ident())
         return {"input_cost_per_token": 0.001, "output_cost_per_token": 0.002}
 

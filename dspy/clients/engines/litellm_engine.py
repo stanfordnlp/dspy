@@ -97,7 +97,7 @@ class _ChatStream:
 
 
 class _LiteLLMConfig:
-    def __init__(self, *, model_type="chat", **client_options):
+    def __init__(self, *, model_type="chat", wire_model=None, **client_options):
         if model_type not in {"chat", "responses", "text"}:
             raise UnsupportedFeatureError(
                 "Typed LiteLLM engines support chat and Responses APIs. Use ordinary LM calls for text completions."
@@ -112,6 +112,10 @@ class _LiteLLMConfig:
             raise TypeError(f"Unknown engine client options: {sorted(unknown)}. Generation options belong in Request.config.")
         self.model_type = model_type
         self.client_options = dict(client_options)
+        # The model string LiteLLM receives when it differs from the LM's
+        # (a declared provider reached through LiteLLM's generic door). The
+        # LM's own string stays on the request, the history and the cache key.
+        self.wire_model = wire_model
         self._closed = False
 
     def _arguments(self, request, *, streaming=False):
@@ -139,7 +143,7 @@ class _LiteLLMConfig:
             # as a LiteLLM argument rather than dropped by the conversion.
             data["top_k"] = request.config.top_k
         data.update(self.client_options)
-        data.update(model=request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
+        data.update(model=self.wire_model or request.model, num_retries=0, cache={"no-cache": True, "no-store": True})
         if self.model_type == "chat":
             data["n"] = 1
         if streaming:
@@ -180,6 +184,8 @@ class LiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.litellm_completion, "text": lm_module.litellm_text_completion,
               "responses": lm_module.litellm_responses_completion}[self.model_type]
+        if self.wire_model is not None:
+            request = {**request, "model": self.wire_model, **self.client_options}
         with litellm_errors(model=lm.model):
             raw = fn(request=request, num_retries=0)
         completed_legacy(raw)
@@ -224,6 +230,8 @@ class AsyncLiteLLMEngine(_LiteLLMConfig):
 
         fn = {"chat": lm_module.alitellm_completion, "text": lm_module.alitellm_text_completion,
               "responses": lm_module.alitellm_responses_completion}[self.model_type]
+        if self.wire_model is not None:
+            request = {**request, "model": self.wire_model, **self.client_options}
         with litellm_errors(model=lm.model):
             raw = await fn(request=request, num_retries=0)
         completed_legacy(raw)
