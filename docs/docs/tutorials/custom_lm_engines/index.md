@@ -1,6 +1,6 @@
 # Custom LM Engines
 
-In the DSPy 3.4 development API, you can supply your own execution engine to `dspy.LM`. An engine is for a backend that is not an HTTP provider DSPy's bundled lm15 can speak to: a CLI, an in-process model, an agent harness. It owns its whole connection, so the [rules below](#what-a-custom-engine-owns) apply.
+You can supply your own execution engine to `dspy.LM`. An engine is for a backend that is not an HTTP provider DSPy's bundled lm15 can speak to: a CLI, an in-process model, an agent harness. It owns its whole connection, so the [rules below](#what-a-custom-engine-owns) apply.
 
 The minimum synchronous engine interface is:
 
@@ -25,7 +25,7 @@ are not guessed to be retryable from their message text. See
 
 A custom engine is borrowed by `dspy.LM` and owns its connection. Three rules follow, and DSPy enforces each rather than guessing:
 
-**Connection settings are refused.** `dspy.LM(engine=MyEngine(), api_key=...)` raises `ValueError`, and so do `api_base`, `base_url`, `timeout`, `headers`, `extra_headers` and the other client settings — on construction, on `copy()`, and on every call (`lm("hi", api_key=...)`), before any cache lookup. There is no channel from the LM to the engine for them; before 3.4 they were silently dropped and a call could run with the engine's key while the LM said another. Give them to the engine's constructor.
+**Connection settings are refused.** `dspy.LM(engine=MyEngine(), api_key=...)` raises `ValueError`, and so do `api_base`, `base_url`, `timeout`, `headers`, `extra_headers` and the other client settings — on construction, on `copy()`, and on every call (`lm("hi", api_key=...)`), before any cache lookup. There is no channel from the LM to the engine for them, and dropping them silently would let a call run with the engine's key while the LM said another. Give them to the engine's constructor.
 
 **The engine pair is one unit.** `async_engine=` is only accepted with a custom `engine=`, and each side must be its kind: the sync engine's `complete` is a plain function returning a `Response`, the async engine's is a coroutine function (`async def complete`). A sync method on the async side, or the reverse, is refused at construction rather than on the first call. `lm.copy(engine=...)` replaces both: the copy has no async engine unless you pass a new `async_engine=` in the same call. A copy that does not mention `engine` keeps the pair.
 
