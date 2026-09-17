@@ -181,6 +181,15 @@ class ProviderDefinition:
                 )
             if not self.hosted and not self.access.base_url:
                 raise ValueError(f"{self.id}: a declared provider names its base_url on the access policy")
+            if not self.hosted and self.access.credential_policy != "key":
+                # The router binds a bound entry as cls(api_key=..., access=...,
+                # compat=...); the OAuth policies build self-resolving
+                # constructors that take no access policy, so a bound OAuth
+                # entry would silently lose its declaration.
+                raise ValueError(
+                    f"{self.id}: a declared provider is key-based; credential_policy "
+                    f"{self.access.credential_policy!r} needs its own adapter class"
+                )
             return
         if self.hosted:
             # A cloud door (AUTH-10 host): the base URL is a template rendered

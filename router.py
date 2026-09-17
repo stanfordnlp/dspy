@@ -377,6 +377,8 @@ class Resolution:
                                     # compat object for a declared provider
     declared: bool = False          # provider from RouterConfig(providers=),
                                     # not the receipted registry
+    credential_policy: str = "key"  # the provider's AccessPolicy.credential_policy
+    placeholder_key: str | None = None  # a keyless local server's default key
 
     def describe(self) -> str:
         """One-paragraph human-readable explanation of this resolution."""
@@ -397,8 +399,10 @@ class Resolution:
         if self.declared:
             parts.append("declared by RouterConfig(providers=...) — no lm15 receipts")
         parts.append(f"wire model {self.model!r}")
-        definition = _bound(self.provider, ADAPTERS)
-        policy = _credential_policy(self.provider)
+        # Pure data: the resolution carries its provider's credential facts
+        # (a declared provider is not in the module tables — greptile on
+        # dspy#10440, 2026-09-17).
+        policy = self.credential_policy
         if policy == "oauth-unless-explicit":
             # resolve() is pure (no file reads), so it describes the chain
             # rather than asserting a winner.
@@ -410,7 +414,7 @@ class Resolution:
             parts.append(f"key from ${self.env_key}")
         elif policy == "oauth":
             parts.append("local OAuth credential (no env key)")
-        elif definition is not None and definition.placeholder_key is not None:
+        elif self.placeholder_key is not None:
             parts.append("key from explicit api_keys or the preset's local-server default")
         else:
             parts.append("key from explicit api_keys")
@@ -573,6 +577,8 @@ def _resolution(
         model_info=model_info,
         compat=definition.compat if definition is not None else None,
         declared=_declared(provider, adapters),
+        credential_policy=_credential_policy(provider, adapters),
+        placeholder_key=definition.placeholder_key if definition is not None else None,
     )
 
 
