@@ -1,0 +1,1119 @@
+{
+  "cases": [
+    {
+      "cache_key": "9d5fcfd793295ebdb683e3a30b0e251e9c0c565caa672c0079d3a4701e95b002",
+      "call": {
+        "prompt": "Say hello."
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Hello."
+        ],
+        "prompt": "Say hello.",
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/gpt-4o-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 32,
+        "model": "openai/gpt-4o-mini",
+        "temperature": 0.7
+      },
+      "mode": "sync",
+      "name": "text_sync",
+      "outputs": [
+        "Hello."
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Hello.",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-text_sync",
+        "model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Hello."
+        ],
+        "prompt": "Say hello.",
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    },
+    {
+      "cache_key": "778c7834c0c2946eee028269cfe6d95bb2b7fced39079cda9b4049dbad0f0786",
+      "call": {
+        "prompt": "Say hello."
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Hello."
+        ],
+        "prompt": "Say hello.",
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/gpt-4o-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 32,
+        "model": "openai/gpt-4o-mini",
+        "temperature": 0.7
+      },
+      "mode": "async",
+      "name": "text_async",
+      "outputs": [
+        "Hello."
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Hello.",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-text_async",
+        "model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Hello."
+        ],
+        "prompt": "Say hello.",
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    },
+    {
+      "cache_key": "48d470a107728ef8cea49490502659e6b89418695562f945725e52184cb8ece1",
+      "call": {
+        "logprobs": true,
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "n": 2,
+        "rollout_id": 7
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {
+          "logprobs": true,
+          "n": 2,
+          "rollout_id": 7
+        },
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "First answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_0",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "Second answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ]
+          }
+        ],
+        "prompt": null,
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/gpt-4o-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 32,
+        "model": "openai/gpt-4o-mini",
+        "temperature": 0.7
+      },
+      "mode": "sync",
+      "name": "rich_n_sync",
+      "outputs": [
+        {
+          "citations": [
+            {
+              "cited_text": "Paris",
+              "document_index": 0,
+              "end_char_index": 5,
+              "start_char_index": 0,
+              "type": "char_location"
+            }
+          ],
+          "logprobs": {
+            "content": [
+              {
+                "bytes": [
+                  70
+                ],
+                "logprob": -0.1,
+                "token": "First",
+                "top_logprobs": []
+              }
+            ]
+          },
+          "reasoning_content": "Check the evidence.",
+          "text": "First answer.",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"city\":\"Paris\"}",
+                "name": "weather"
+              },
+              "id": "call_0",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "citations": [
+            {
+              "cited_text": "Paris",
+              "document_index": 0,
+              "end_char_index": 5,
+              "start_char_index": 0,
+              "type": "char_location"
+            }
+          ],
+          "logprobs": {
+            "content": [
+              {
+                "bytes": [
+                  70
+                ],
+                "logprob": -0.1,
+                "token": "First",
+                "top_logprobs": []
+              }
+            ]
+          },
+          "reasoning_content": "Check the evidence.",
+          "text": "Second answer.",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"city\":\"Paris\"}",
+                "name": "weather"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        }
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "message": {
+              "content": "First answer.",
+              "provider_specific_fields": {
+                "citations": [
+                  [
+                    {
+                      "cited_text": "Paris",
+                      "document_index": 0,
+                      "end_char_index": 5,
+                      "start_char_index": 0,
+                      "type": "char_location"
+                    }
+                  ]
+                ]
+              },
+              "reasoning_content": "Check the evidence.",
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"city\":\"Paris\"}",
+                    "name": "weather"
+                  },
+                  "id": "call_0",
+                  "type": "function"
+                }
+              ]
+            }
+          },
+          {
+            "finish_reason": "stop",
+            "index": 1,
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "message": {
+              "content": "Second answer.",
+              "provider_specific_fields": {
+                "citations": [
+                  [
+                    {
+                      "cited_text": "Paris",
+                      "document_index": 0,
+                      "end_char_index": 5,
+                      "start_char_index": 0,
+                      "type": "char_location"
+                    }
+                  ]
+                ]
+              },
+              "reasoning_content": "Check the evidence.",
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"city\":\"Paris\"}",
+                    "name": "weather"
+                  },
+                  "id": "call_1",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-rich_n_sync",
+        "model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {
+          "logprobs": true,
+          "n": 2,
+          "rollout_id": 7
+        },
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "First answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_0",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "Second answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ]
+          }
+        ],
+        "prompt": null,
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    },
+    {
+      "cache_key": "f28cf7bece73d7c0c0d5f04e421d257c6f9751f1fa3d6d58ebd73e3c611d38f4",
+      "call": {
+        "logprobs": true,
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "n": 2,
+        "rollout_id": 7
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {
+          "logprobs": true,
+          "n": 2,
+          "rollout_id": 7
+        },
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "First answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_0",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "Second answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ]
+          }
+        ],
+        "prompt": null,
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/gpt-4o-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 32,
+        "model": "openai/gpt-4o-mini",
+        "temperature": 0.7
+      },
+      "mode": "async",
+      "name": "rich_n_async",
+      "outputs": [
+        {
+          "citations": [
+            {
+              "cited_text": "Paris",
+              "document_index": 0,
+              "end_char_index": 5,
+              "start_char_index": 0,
+              "type": "char_location"
+            }
+          ],
+          "logprobs": {
+            "content": [
+              {
+                "bytes": [
+                  70
+                ],
+                "logprob": -0.1,
+                "token": "First",
+                "top_logprobs": []
+              }
+            ]
+          },
+          "reasoning_content": "Check the evidence.",
+          "text": "First answer.",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"city\":\"Paris\"}",
+                "name": "weather"
+              },
+              "id": "call_0",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "citations": [
+            {
+              "cited_text": "Paris",
+              "document_index": 0,
+              "end_char_index": 5,
+              "start_char_index": 0,
+              "type": "char_location"
+            }
+          ],
+          "logprobs": {
+            "content": [
+              {
+                "bytes": [
+                  70
+                ],
+                "logprob": -0.1,
+                "token": "First",
+                "top_logprobs": []
+              }
+            ]
+          },
+          "reasoning_content": "Check the evidence.",
+          "text": "Second answer.",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"city\":\"Paris\"}",
+                "name": "weather"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        }
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "message": {
+              "content": "First answer.",
+              "provider_specific_fields": {
+                "citations": [
+                  [
+                    {
+                      "cited_text": "Paris",
+                      "document_index": 0,
+                      "end_char_index": 5,
+                      "start_char_index": 0,
+                      "type": "char_location"
+                    }
+                  ]
+                ]
+              },
+              "reasoning_content": "Check the evidence.",
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"city\":\"Paris\"}",
+                    "name": "weather"
+                  },
+                  "id": "call_0",
+                  "type": "function"
+                }
+              ]
+            }
+          },
+          {
+            "finish_reason": "stop",
+            "index": 1,
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "message": {
+              "content": "Second answer.",
+              "provider_specific_fields": {
+                "citations": [
+                  [
+                    {
+                      "cited_text": "Paris",
+                      "document_index": 0,
+                      "end_char_index": 5,
+                      "start_char_index": 0,
+                      "type": "char_location"
+                    }
+                  ]
+                ]
+              },
+              "reasoning_content": "Check the evidence.",
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"city\":\"Paris\"}",
+                    "name": "weather"
+                  },
+                  "id": "call_1",
+                  "type": "function"
+                }
+              ]
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-rich_n_async",
+        "model": "openai/gpt-4o-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {
+          "logprobs": true,
+          "n": 2,
+          "rollout_id": 7
+        },
+        "messages": [
+          {
+            "content": "Check Paris.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_type": "chat",
+        "outputs": [
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "First answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_0",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "citations": [
+              {
+                "cited_text": "Paris",
+                "document_index": 0,
+                "end_char_index": 5,
+                "start_char_index": 0,
+                "type": "char_location"
+              }
+            ],
+            "logprobs": {
+              "content": [
+                {
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.1,
+                  "token": "First",
+                  "top_logprobs": []
+                }
+              ]
+            },
+            "reasoning_content": "Check the evidence.",
+            "text": "Second answer.",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "weather"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ]
+          }
+        ],
+        "prompt": null,
+        "response_model": "openai/gpt-4o-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    },
+    {
+      "cache_key": "ccdb678ca227fe3ebda50fe7265b8e5d1001d8ace76422dd186d6b6a6fb289a1",
+      "call": {
+        "prompt": "What is two plus two?"
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/o3-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Four."
+        ],
+        "prompt": "What is two plus two?",
+        "response_model": "openai/o3-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/o3-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 16000,
+        "model": "openai/o3-mini",
+        "temperature": 1.0
+      },
+      "mode": "sync",
+      "name": "reasoning_key_sync",
+      "outputs": [
+        "Four."
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Four.",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-reasoning_key_sync",
+        "model": "openai/o3-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/o3-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Four."
+        ],
+        "prompt": "What is two plus two?",
+        "response_model": "openai/o3-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    },
+    {
+      "cache_key": "93185b1a3b1bd2abcd106efe23749f7c38e8e5dacf0bd4d285c4c75fa631e51e",
+      "call": {
+        "prompt": "What is two plus two?"
+      },
+      "cold_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/o3-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Four."
+        ],
+        "prompt": "What is two plus two?",
+        "response_model": "openai/o3-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "cold_usage": {
+        "openai/o3-mini": {
+          "completion_tokens": 8,
+          "completion_tokens_details": null,
+          "prompt_tokens": 12,
+          "prompt_tokens_details": null,
+          "total_tokens": 20
+        }
+      },
+      "init": {
+        "max_tokens": 16000,
+        "model": "openai/o3-mini",
+        "temperature": 1.0
+      },
+      "mode": "async",
+      "name": "reasoning_key_async",
+      "outputs": [
+        "Four."
+      ],
+      "provider_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Four.",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1,
+        "id": "fixture-reasoning_key_async",
+        "model": "openai/o3-mini",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 12,
+          "total_tokens": 20
+        }
+      },
+      "warm_history": {
+        "cost": 0.01,
+        "kwargs": {},
+        "messages": null,
+        "model": "openai/o3-mini",
+        "model_type": "chat",
+        "outputs": [
+          "Four."
+        ],
+        "prompt": "What is two plus two?",
+        "response_model": "openai/o3-mini",
+        "usage": {}
+      },
+      "warm_usage": {}
+    }
+  ],
+  "dependencies": {
+    "cloudpickle": "3.1.2",
+    "diskcache": "5.6.3",
+    "dspy": "3.3.1",
+    "litellm": "1.96.0",
+    "orjson": "3.12.0",
+    "pydantic": "2.13.4"
+  },
+  "history_keys": [
+    "prompt",
+    "messages",
+    "kwargs",
+    "outputs",
+    "usage",
+    "cost",
+    "model",
+    "response_model",
+    "model_type"
+  ],
+  "python": "3.12.12",
+  "source_commit": "e4e97aae29b8ad8aa2fb7e99ffae6fd52970fad8"
+}

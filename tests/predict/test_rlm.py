@@ -15,7 +15,12 @@ import pytest
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _strip_code_fences
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreterError,
+    FinalOutput,
+    resolve_interpreter_factory,
+)
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -229,7 +234,10 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
         assert rlm.sub_lm is None
+        # PythonInterpreter is the public default; the resolver lets the configured factory
+        # override it on each forward.
         assert rlm._interpreter_factory is PythonInterpreter
+        assert resolve_interpreter_factory(rlm._interpreter_factory) is PythonInterpreter
 
         # Test custom values
         mock_lm = dspy.LM("openai/gpt-4o-mini")
@@ -300,7 +308,7 @@ class TestRLMInitialization:
 
         tools = RLM("context -> answer", sub_lm=MagicMock(return_value="untyped response"))._make_llm_tools()
 
-        with pytest.raises(TypeError, match="Sub-LM must return dspy.LMResponse or a non-empty list"):
+        with pytest.raises(TypeError, match="Sub-LM must return dspy.lm15.Response or a non-empty list"):
             tools["llm_query"]("test prompt")
 
     def test_llm_query_reports_textless_response_type(self):
@@ -444,14 +452,12 @@ class TestRLMInterpreterLifecycle:
             pass
 
         class CapturingLM(dspy.BaseLM):
-            forward_contract = "typed_lm"
-
             def __init__(self):
                 super().__init__("snapshot-model", temperature=0.0, max_tokens=1000, cache=False)
-                self.request = None
+                self.messages = None
 
-            def forward(self, request):
-                self.request = request
+            def forward(self, prompt=None, messages=None, **kwargs):
+                self.messages = messages
                 raise StopLMCall
 
         lm = CapturingLM()
@@ -464,10 +470,13 @@ class TestRLMInterpreterLifecycle:
                 iteration="1/20",
             )
 
-        request = lm.request.model_dump_json(indent=2).encode()
-        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        import json
 
-        assert request == snapshot.read_bytes().removesuffix(b"\n")
+        snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
+        recorded = json.loads(snapshot.read_text())
+        expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
+                    for message in recorded["messages"]]
+        assert lm.messages == expected
 
     def test_interpreter_remains_available_as_signature_input(self):
         factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "CPython"})])
@@ -698,6 +707,15 @@ class TestREPLTypes:
         # True original length shown in header
         assert "200 chars" in formatted
 
+    @pytest.mark.parametrize(
+        ("limit", "head", "tail"),
+        [(1, "", "f"), (5, "ab", "def"), (0, "", "abcdef"), (-1, "abcde", "bcdef")],
+    )
+    def test_repl_entry_truncation_limits(self, limit, head, tail):
+        formatted = REPLEntry.format_output("abcdef", max_output_chars=limit)
+
+        assert formatted == f"Output (6 chars):\n{head}\n\n... ({6 - limit} characters omitted) ...\n\n{tail}"
+
     def test_repl_entry_format_no_truncation(self):
         """Test REPLEntry.format() passes short output through without truncation."""
         output = "a" * 50
@@ -729,6 +747,15 @@ class TestREPLTypes:
         assert var.preview.startswith("a" * 25)
         assert var.preview.endswith("b" * 25)
         assert "..." in var.preview
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(1, "...f"), (5, "ab...def"), (0, "...abcdef"), (-1, "abcde...bcdef")],
+    )
+    def test_repl_variable_truncation_limits(self, limit, expected):
+        var = REPLVariable.from_value("value", "abcdef", preview_chars=limit)
+
+        assert var.preview == expected
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""

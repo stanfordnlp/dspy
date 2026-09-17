@@ -35,45 +35,21 @@ def test_bootstrap_trace_data():
         return example.number == prediction.number
 
     # Configure dspy
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
-    # Mock litellm completion responses
-    # 4 successful responses and 1 that will trigger AdapterParseError
-    successful_responses = [
+    # One reply per example: JSON parsing failures do not restart execution in
+    # another format. Keep four successes and one captured parsing failure.
+    responses = [
         ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 1}\n```'))],
+            choices=[Choices(message=Message(content=(
+                "This is an invalid JSON!" if number is None else f'```json\n{{"number": {number}}}\n```'
+            )))],
             model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 2}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 3}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
-        ModelResponse(
-            choices=[Choices(message=Message(content='```json\n{"number": 4}\n```'))],
-            model="openai/gpt-4o-mini",
-        ),
+        )
+        for number in (1, 2, None, 4, 5)
     ]
 
-    # Create a side effect that will trigger AdapterParseError on the 3rd call (index 2)
-    def completion_side_effect(*args, **kwargs):
-        call_count = completion_side_effect.call_count
-        completion_side_effect.call_count += 1
-
-        if call_count in (2, 3):
-            # Return malformed responses for both structured-output mode and JSON-mode fallback.
-            return ModelResponse(
-                choices=[Choices(message=Message(content="This is an invalid JSON!"))],
-                model="openai/gpt-4o-mini",
-            )
-        return successful_responses[call_count if call_count < 2 else call_count - 2]
-
-    completion_side_effect.call_count = 0
-
-    with mock.patch("litellm.completion", side_effect=completion_side_effect):
+    with mock.patch("litellm.completion", side_effect=responses) as completion:
         # Call bootstrap_trace_data
         results = bootstrap_trace_data(
             program=program,
@@ -84,7 +60,8 @@ def test_bootstrap_trace_data():
             capture_failed_parses=True,
         )
 
-    # Verify results
+    # Verify results, including the absence of a hidden JSON-mode replay.
+    assert completion.call_count == 5
     assert len(results) == 5, f"Expected 5 results, got {len(results)}"
 
     # Count successful and failed predictions

@@ -7,24 +7,31 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
 import orjson
-from anyio import create_memory_object_stream, create_task_group
-from anyio.streams.memory import MemoryObjectSendStream
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
 from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
 from dspy.utils.asyncify import asyncify
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 logger = logging.getLogger(__name__)
 
 
 def _is_litellm_model_response_stream(value: Any) -> bool:
+    from dspy.clients.engines.streaming import EngineChunk
+
+    if isinstance(value, EngineChunk):
+        return True
     cls = type(value)
     return cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")
 
 
 if TYPE_CHECKING:
+    from anyio.streams.memory import MemoryObjectSendStream
+
     from dspy.primitives.module import Module
 
 
@@ -170,15 +177,15 @@ def streamify(
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
 
-    async def generator(args, kwargs, stream: MemoryObjectSendStream):
+    async def generator(args, kwargs, stream: "MemoryObjectSendStream"):
         with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
-        send_stream, receive_stream = create_memory_object_stream(16)
-        async with create_task_group() as tg, send_stream, receive_stream:
+        send_stream, receive_stream = anyio.create_memory_object_stream(16)
+        async with anyio.create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
@@ -232,6 +239,7 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     """Convert the async streaming generator to a sync generator."""
     queue = Queue()  # Queue to hold items from the async generator
     stop_sentinel = object()  # Sentinel to signal the generator is complete
+    exception_sentinel = object()
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
@@ -243,6 +251,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
+            except BaseException as exc:
+                queue.put((exception_sentinel, exc))
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -258,6 +268,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
+        if isinstance(item, tuple) and len(item) == 2 and item[0] is exception_sentinel:
+            raise item[1]
         yield item
 
 
