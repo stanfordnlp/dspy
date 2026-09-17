@@ -44,6 +44,150 @@ def _is_openai_reasoning_model(model: str) -> bool:
     ) is not None
 
 
+_ENGINE_SELECTIONS = ("auto", "lm15", "litellm")
+# Serialized custom engines: {"class": "pkg.module:Qual.Name", "state": {...}}.
+_ENGINE_CLASS_KEY = "class"
+_ENGINE_STATE_KEY = "state"
+
+
+def _is_coroutine_function(fn) -> bool:
+    import inspect
+
+    if inspect.iscoroutinefunction(fn):
+        return True
+    # A callable object whose __call__ (own or inherited) is async: resolve
+    # it through the MRO as Python does. A plain function's type resolves
+    # __call__ to a slot wrapper, which is not a coroutine function.
+    call = next((vars(cls)["__call__"] for cls in type(fn).__mro__ if "__call__" in vars(cls)), None)
+    return inspect.iscoroutinefunction(call)
+
+
+def _check_engines(engine, async_engine) -> None:
+    """One rule for the constructor and copy(): a selection string with no
+    async counterpart, or a custom engine object with complete(Request) — a
+    plain function on the sync engine, a coroutine function on the async one
+    (dspy.clients.engines.base). Checked here, at construction, rather than
+    on the first call, where the wrong kind fails as an unexpected error."""
+    if isinstance(engine, str):
+        if engine not in _ENGINE_SELECTIONS:
+            raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
+        if async_engine is not None:
+            raise ValueError("async_engine is only used with a custom engine object")
+        return
+    complete = getattr(engine, "complete", None)
+    if not callable(complete):
+        raise TypeError("A custom engine must implement complete(Request) -> Response")
+    if _is_coroutine_function(complete):
+        raise TypeError(
+            "engine.complete is a coroutine function; the sync engine returns a Response directly. "
+            "Pass an async engine as async_engine="
+        )
+    if async_engine is None:
+        return
+    acomplete = getattr(async_engine, "complete", None)
+    if not callable(acomplete):
+        raise TypeError("A custom async engine must implement async complete(Request) -> Response")
+    if not _is_coroutine_function(acomplete):
+        raise TypeError(
+            "async_engine.complete is not a coroutine function; the async engine is awaited "
+            "(async def complete). Pass a sync engine as engine="
+        )
+
+
+def _refuse_client_settings(engine, kwargs, *, where: str = "dspy.LM") -> None:
+    """A custom engine owns its connection: api_key, api_base, timeout and the
+    other client settings have no way to reach it, so they are refused rather
+    than dropped (dspy#10409 follow-up: the Fireworks custom engine ran with
+    the engine's key while the LM said another). Applied at construction, on
+    copy(), and to every call's own keyword arguments — the same rule at
+    each door, before any cache lookup."""
+    if isinstance(engine, str):
+        return
+    from dspy.clients.backend_selection import CLIENT_KEYS
+
+    present = sorted(key for key in kwargs if key in CLIENT_KEYS and kwargs[key] is not None)
+    if present:
+        raise ValueError(
+            f"{where}: {present} configure a connection DSPy owns; a custom engine owns its own. "
+            "Configure them on the engine instead."
+        )
+
+
+def _engine_class_path(engine) -> str:
+    cls = type(engine)
+    return f"{cls.__module__}:{cls.__qualname__}"
+
+
+def _dump_engine(engine, name: str) -> dict[str, Any]:
+    dump = getattr(engine, "dump_state", None)
+    load = getattr(type(engine), "load_state", None)
+    if not callable(dump) or not callable(load):
+        raise TypeError(
+            f"{name}={type(engine).__name__} cannot be saved: a custom engine is saved when it implements "
+            "dump_state() -> dict (JSON-serializable, no secrets) and the classmethod load_state(state) "
+            "-> engine. Otherwise save the program without this LM and set it again after loading."
+        )
+    path = _engine_class_path(engine)
+    # The path must lead back to this class when loading (pickle's rule): a
+    # class defined inside a function or built dynamically would save fine
+    # and never load.
+    try:
+        found = _import_engine_class(path)
+    except (ImportError, TypeError, ValueError):
+        found = None
+    if found is not type(engine):
+        raise TypeError(
+            f"{name}={type(engine).__name__} cannot be saved: its class is not importable as `{path}`. "
+            "Define the engine class at module level so a loader can import it."
+        )
+    state = dump()
+    if not isinstance(state, dict):
+        raise TypeError(f"{name}.dump_state() must return a dict, got {type(state).__name__}")
+    import json
+
+    try:
+        json.dumps(state)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name}.dump_state() must return JSON-serializable data: {exc}") from exc
+    return {_ENGINE_CLASS_KEY: path, _ENGINE_STATE_KEY: state}
+
+
+def _import_engine_class(class_path: str) -> type:
+    import importlib
+
+    module_name, _, qualname = class_path.partition(":")
+    if not module_name or not qualname:
+        raise ValueError(f"Serialized engine class path must be 'module:QualName', got {class_path!r}")
+    obj = importlib.import_module(module_name)
+    for part in qualname.split("."):
+        try:
+            obj = getattr(obj, part)
+        except AttributeError as exc:
+            raise ImportError(f"Serialized engine class `{class_path}` cannot be imported: {exc}") from exc
+    if not isinstance(obj, type):
+        raise TypeError(f"Serialized engine `{class_path}` is not a class")
+    return obj
+
+
+def _load_engine(record, name: str, *, allow_custom_lm_class: bool):
+    if not isinstance(record, dict) or _ENGINE_CLASS_KEY not in record:
+        raise ValueError(f"Serialized {name} must be a selection string or a {{'class', 'state'}} record")
+    class_path = record[_ENGINE_CLASS_KEY]
+    if not allow_custom_lm_class:
+        raise ValueError(
+            f"Refusing to import custom serialized engine class `{class_path}`. "
+            "Pass allow_unsafe_lm_state=True when loading trusted files to enable custom engines."
+        )
+    cls = _import_engine_class(class_path)
+    load = getattr(cls, "load_state", None)
+    if not callable(load):
+        raise TypeError(f"Serialized engine `{class_path}` has no load_state(state) classmethod")
+    engine = load(record.get(_ENGINE_STATE_KEY, {}))
+    if not callable(getattr(engine, "complete", None)):
+        raise TypeError(f"`{class_path}.load_state` must return an engine with complete(Request)")
+    return engine
+
+
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
@@ -92,8 +236,11 @@ class LM(BaseLM):
                 backoff.
             engine: 'auto' prefers lm15 for representable requests; 'litellm' preserves the compatibility backend;
                 'lm15' refuses unsupported mappings rather than selecting LiteLLM. A custom engine implements
-                complete(Request) -> Response and optionally stream(Request). Engines are borrowed.
-            async_engine: Async counterpart when supplying a custom engine object.
+                complete(Request) -> Response and optionally stream(Request). Engines are borrowed and own
+                their connection: api_key, api_base, timeout and the other client settings are refused with a
+                custom engine, at construction and on every call.
+            async_engine: Async counterpart when supplying a custom engine object. The pair is one unit:
+                copy(engine=...) replaces both unless async_engine= is given too.
             prompt_cache: Optional lm15 CacheConfig for provider-side prompt caching on ordinary calls.
                 Separate from DSPy's response cache. Requires native lm15 or a canonical custom engine;
                 may incur cache-write/storage charges. A call-time value overrides this default, and None
@@ -107,13 +254,8 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
-        if isinstance(engine, str):
-            if engine not in {"auto", "lm15", "litellm"}:
-                raise ValueError("engine must be 'auto', 'lm15', 'litellm', or an engine object")
-            if async_engine is not None:
-                raise ValueError("async_engine is only used with a custom engine object")
-        elif not callable(getattr(engine, "complete", None)):
-            raise TypeError("A custom engine must implement complete(Request) -> Response")
+        _check_engines(engine, async_engine)
+        _refuse_client_settings(engine, kwargs)
         if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
             raise ValueError("num_retries must be a nonnegative integer")
         if prompt_cache is not None:
@@ -283,12 +425,16 @@ class LM(BaseLM):
     def copy(self, **kwargs):
         if kwargs.get("prompt_cache") is not None and not isinstance(kwargs["prompt_cache"], CacheConfig):
             raise TypeError("prompt_cache must be a dspy.lm15.CacheConfig or None")
-        spec = kwargs.pop("engine", self._engine_spec)
-        async_spec = kwargs.pop("async_engine", self._async_engine_spec)
-        if isinstance(spec, str) and spec not in {"auto", "lm15", "litellm"}:
-            raise ValueError("Unknown engine selection")
-        if not isinstance(spec, str) and not callable(getattr(spec, "complete", None)):
-            raise TypeError("Custom engines must implement complete(Request)")
+        if "engine" in kwargs:
+            # The engine pair is one unit: a new engine drops the old async
+            # counterpart unless a new one comes with it.
+            spec = kwargs.pop("engine")
+            async_spec = kwargs.pop("async_engine", None)
+        else:
+            spec = self._engine_spec
+            async_spec = kwargs.pop("async_engine", self._async_engine_spec)
+        _check_engines(spec, async_spec)
+        _refuse_client_settings(spec, {**self.kwargs, **kwargs}, where="LM.copy")
         copied = super().copy(**kwargs)
         copied._engine_spec = spec
         copied._async_engine_spec = async_spec
@@ -389,19 +535,31 @@ class LM(BaseLM):
     def dump_state(self):
         """Return a sanitized reconstruction state for this LM.
 
+        A custom engine is recorded as its class path and its own
+        ``dump_state()``; the class must be importable by that path in the
+        process that loads the state. A class defined in ``__main__`` (a
+        script or notebook) loads only where ``__main__`` defines it again;
+        for durable state define the engine in an importable module.
+
         Returns:
             A dictionary that can be passed to `BaseLM.load_state` to
             reconstruct this `LM`. The state excludes API keys.
         """
-        if not isinstance(self._engine_spec, str):
-            raise TypeError("Custom engine objects require custom dump_state/load_state methods; they cannot be stored in JSON LM state.")
         state = super().dump_state()
         if state.get("prompt_cache") is not None:
             from dspy._vendor.lm15.serde import cache_config_to_dict
 
             state["prompt_cache"] = cache_config_to_dict(state["prompt_cache"])
-        if self._engine_spec != "auto":
-            state["engine"] = self._engine_spec
+        if isinstance(self._engine_spec, str):
+            if self._engine_spec != "auto":
+                state["engine"] = self._engine_spec
+        else:
+            # A custom engine is saved as its class path and its own state;
+            # loading it imports a class from the file, so it is gated like a
+            # custom LM class (allow_unsafe_lm_state).
+            state["engine"] = _dump_engine(self._engine_spec, "engine")
+            if self._async_engine_spec is not None:
+                state["async_engine"] = _dump_engine(self._async_engine_spec, "async_engine")
         state.update(
             {
                 "finetuning_model": self.finetuning_model,
@@ -428,6 +586,15 @@ class LM(BaseLM):
             if "max_tokens" not in state:
                 state["max_tokens"] = state["max_completion_tokens"]
             state.pop("max_completion_tokens")
+
+        if not isinstance(state.get("engine", "auto"), str):
+            state["engine"] = _load_engine(state["engine"], "engine", allow_custom_lm_class=allow_custom_lm_class)
+            if state.get("async_engine") is not None:
+                state["async_engine"] = _load_engine(
+                    state["async_engine"], "async_engine", allow_custom_lm_class=allow_custom_lm_class
+                )
+        elif state.get("async_engine") is not None:
+            raise ValueError("Serialized async_engine without a custom engine")
 
         return super().load_state(state, allow_custom_lm_class=allow_custom_lm_class)
 
