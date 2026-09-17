@@ -4,6 +4,10 @@
 }
 
 @media screen and (min-width: 60em) {
+    .md-header__topic > .md-version {
+        visibility: hidden;
+    }
+
     .md-header__inner > .md-version {
         flex: 0 0 5.25rem;
         display: flex;
