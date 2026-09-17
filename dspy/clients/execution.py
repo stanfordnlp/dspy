@@ -193,16 +193,27 @@ def _canonical(call, *, compat=None):
 # LiteLLM's generic doors, by lm15 dialect: the route a declared provider
 # takes when a call falls back, with the declared address and credential
 # carried along. The provider's own aliases are never handed to LiteLLM as
-# a prefix: LiteLLM may know that name as a different service.
-_LITELLM_GENERIC_DOOR = {"openai-chat": "openai", "openai-responses": "openai", "anthropic": "anthropic"}
+# a prefix: LiteLLM may know that name as a different service. Each door
+# sends the credential under one scheme (the OpenAI SDK's bearer header,
+# the Anthropic SDK's x-api-key header) — the only scheme it can carry.
+_LITELLM_GENERIC_DOOR = {
+    "openai-chat": ("openai", "bearer"),
+    "openai-responses": ("openai", "bearer"),
+    "anthropic": ("anthropic", "x-api-key"),
+}
 
 
 def _declared_fallback(lm, binding, resolution, clients):
     """(wire model, client options) for LiteLLM to reach a declared provider
-    at its declared address with its own credential — never LiteLLM's idea
-    of a similarly named service, never an ambient OPENAI_API_KEY."""
+    at its declared address with its own credential, sent under the scheme
+    the declaration selects for it — never LiteLLM's idea of a similarly
+    named service, never an ambient OPENAI_API_KEY, never a scheme the
+    declaration did not name."""
+    from dspy._vendor.lm15.access import select_scheme
+    from dspy._vendor.lm15.credentials import coerce_credential
+
     definition = binding.definition
-    door = _LITELLM_GENERIC_DOOR.get(definition.dialect)
+    door, sends = _LITELLM_GENERIC_DOOR.get(definition.dialect, (None, None))
     if door is None or definition.hosted:
         raise LMUnsupportedFeatureError(
             f"{lm.model!r}: the declared provider {definition.id!r} has no LiteLLM route for these client "
@@ -212,7 +223,8 @@ def _declared_fallback(lm, binding, resolution, clients):
     options = dict(clients)
     if not (options.get("api_base") or options.get("base_url")):
         options["api_base"] = definition.access.base_url
-    if not options.get("api_key"):
+    key = options.get("api_key")
+    if not key:
         key = next((os.environ[name] for name in definition.access.env_keys if os.environ.get(name)), None)
         key = key or definition.placeholder_key
         if not key:
@@ -221,7 +233,18 @@ def _declared_fallback(lm, binding, resolution, clients):
                 f"no credential for the declared provider {definition.id!r}: set {variables} or pass api_key=",
                 model=lm.model, provider=definition.id,
             )
-        options["api_key"] = key
+    # The scheme this credential travels under natively (lm15 AUTH-2). The
+    # door renders exactly one; a declaration that needs another gets no
+    # fallback rather than its secret in a header it did not declare.
+    scheme = select_scheme(definition.access, coerce_credential(key))
+    if scheme != sends:
+        raise LMUnsupportedFeatureError(
+            f"{lm.model!r}: the declared provider {definition.id!r} authenticates with {scheme!r}, which the "
+            f"LiteLLM {door}/ door cannot send (it sends {sends!r}); use settings the native engine carries "
+            "(api_key, api_base, timeout)",
+            model=lm.model, provider=definition.id, features=[scheme],
+        )
+    options["api_key"] = key
     static = dict(definition.access.headers)
     if static:
         options["extra_headers"] = {**static, **(options.get("extra_headers") or {})}
@@ -296,9 +319,11 @@ def _select_engine(lm, call, asynchronous):
         if binding is not None:
             # A declared provider keeps its destination and credential across
             # the backend switch; only the LM's model string stays as it was
-            # (history, cache key).
+            # (history, cache key). It is still that provider: errors and
+            # pricing name it and read its metadata namespaces.
             wire_model, options = _declared_fallback(lm, binding, resolution, clients)
-            return cls(model_type=lm.model_type, wire_model=wire_model, **options), canonical if call.request else None, None
+            engine = cls(model_type=lm.model_type, wire_model=wire_model, **options)
+            return engine, canonical if call.request else None, resolution.provider
         return cls(model_type=lm.model_type, **clients), canonical if call.request else None, None
 
     if not native:
@@ -383,6 +408,23 @@ def _result(lm, response, call, provider, request=None, *, estimate=True):
 
         logging.getLogger("dspy.clients.lm").warning("LM response was truncated; increase max_tokens or inspect history.")
     return result
+
+
+def _price_legacy(lm, result, provider):
+    """A declared provider reached through LiteLLM's generic door is still
+    that provider: its usage is priced from the declaration's namespaces,
+    replacing LiteLLM's reading of the door's model string (a colliding
+    name would be priced as another vendor's; an unknown one not at all).
+    Chat only; other model types keep LiteLLM's figure."""
+    if provider is None or result.raw is None or lm.model_type != "chat":
+        return
+    try:
+        from dspy._vendor.lm15.providers.openai_chat import response_from_openai_chat
+
+        response = response_from_openai_chat(plain(result.raw), model=lm.model)
+    except Exception:
+        return  # advisory: never fail a completed call over pricing
+    _price_result(lm, result, response, provider, None)
 
 
 def _price_result(lm, result, response, provider, request):
@@ -514,6 +556,7 @@ def _attempt(lm, call, backend, request, provider, state, results):
                 result = backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
                                                  messages=call.messages, call_kwargs=call.kwargs)
                 _accept_legacy(state, result)
+                _price_legacy(lm, result, provider)
         finally:
             _legacy_done(state, results, progress)
     elif stream is None:
@@ -591,6 +634,7 @@ async def _aattempt(lm, call, backend, request, provider, state, results):
                 result = await backend.complete_legacy(lm, copy.deepcopy(call.legacy), prompt=call.prompt,
                                                        messages=call.messages, call_kwargs=call.kwargs)
                 _accept_legacy(state, result)
+                await asyncio.to_thread(_price_legacy, lm, result, provider)  # metadata lookup off the loop
         finally:
             _legacy_done(state, results, progress)
     elif stream is None:

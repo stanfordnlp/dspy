@@ -66,11 +66,12 @@ def server():
         worker.join()
 
 
-def _definition(base_url, provider="fireworks", aliases=("fireworks-ai",), headers=(), **compat):
+def _definition(base_url, provider="fireworks", aliases=("fireworks-ai",), headers=(), auth_scheme=("bearer",), **compat):
     compat.setdefault("max_tokens_field", "max_tokens")
     return ProviderDefinition.chat(
         AccessPolicy(provider=provider, supports=EndpointSupport(complete=True, stream=True, models=True),
-                     auth_modes=("bearer",), env_keys=("FIREWORKS_API_KEY",), base_url=base_url, headers=tuple(headers)),
+                     auth_modes=("bearer",), auth_scheme=auth_scheme, env_keys=("FIREWORKS_API_KEY",),
+                     base_url=base_url, headers=tuple(headers)),
         compat=OpenAIChatCompat(**compat),
         aliases=aliases, note="Fireworks (test)",
     )
@@ -316,6 +317,59 @@ def test_capabilities_on_the_fallback_route_come_from_the_declaration(litellm_st
         prediction = dspy.Predict("question -> answer")(question="capital of France?")
     assert litellm_stub[-1]["api_base"] == "https://private-gateway.test/v1"
     assert prediction.answer == "Paris"
+
+
+def test_fallback_sends_the_credential_only_under_the_declared_scheme(litellm_stub):
+    # LiteLLM's openai/ door renders the key as a bearer header; its
+    # anthropic/ door as x-api-key. A declaration whose scheme the door
+    # cannot send gets no fallback — never its secret in an undeclared
+    # header (greptile on dspy#10442).
+    from dspy.lm15 import AnthropicCompat
+
+    register_provider(_definition("https://private-gateway.test/v1", provider="hdr", aliases=(), auth_scheme=("x-api-key",)))
+    lm = dspy.LM(f"hdr/{MODEL}", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"authenticates with 'x-api-key'.*openai/ door cannot send"):
+        lm("hi")
+    assert not litellm_stub
+    register_provider(ProviderDefinition.anthropic(
+        AccessPolicy(provider="claude-gw", auth_modes=("x-api-key",), auth_scheme=("x-api-key",),
+                     env_keys=("CLAUDE_GW_KEY",), base_url="https://claude-gateway.test"),
+        compat=AnthropicCompat()))
+    lm = dspy.LM("claude-gw/claude-x", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    assert "Paris" in lm("hi")[0]
+    assert litellm_stub[-1]["model"] == "anthropic/claude-x"
+    assert litellm_stub[-1]["api_base"] == "https://claude-gateway.test"
+    assert litellm_stub[-1]["api_key"] == "secret"
+    register_provider(ProviderDefinition.anthropic(
+        AccessPolicy(provider="claude-bearer", auth_modes=("bearer",), auth_scheme=("bearer",),
+                     env_keys=("CLAUDE_GW_KEY",), base_url="https://claude-gateway.test"),
+        compat=AnthropicCompat()))
+    lm = dspy.LM("claude-bearer/claude-x", api_key="secret", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    with pytest.raises(dspy.LMUnsupportedFeatureError, match=r"authenticates with 'bearer'.*anthropic/ door cannot send"):
+        lm("hi")
+
+
+@pytest.mark.asyncio
+async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub):
+    # The fallback reaches the same server; pricing comes from the
+    # declaration's namespaces on every path, never from LiteLLM's reading
+    # of the generic door's model string (greptile on dspy#10442).
+    register_provider(_definition("https://private-gateway.test/v1"), metadata_namespaces=("fireworks_ai",))
+    lm = dspy.LM(f"fireworks/{MODEL}", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm("hi")  # legacy body path
+    lm(dspy.lm15.Request(model=lm.model, messages=(dspy.lm15.Message.user("hi"),)))  # canonical path
+    await lm.acall("hi")  # async legacy path
+    costs = [entry["cost"] for entry in lm.history[-3:]]
+    assert all(cost is not None and cost > 0 for cost in costs) and len(set(costs)) == 1
+    for entry in lm.history[-3:]:
+        assert entry["cost_details"]["provider"] == "fireworks"
+        assert entry["cost_details"]["metadata"]["namespaces"] == ["fireworks_ai"]
+    # A colliding name on a gateway with no namespace is unknown, not OpenAI's price.
+    register_provider(_definition("https://private-gateway.test/v1", provider="gw", aliases=()))
+    plain = dspy.LM("gw/gpt-4o", api_key="k", extra_headers={"X": "1"}, cache=False, num_retries=0)
+    plain("hi")
+    assert plain.history[-1]["cost"] is None
+    assert "names no metadata namespace" in plain.history[-1]["cost_details"]["reason"]
 
 
 def test_a_declared_refusal_is_final_under_auto(litellm_stub, server):
