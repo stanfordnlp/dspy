@@ -22,7 +22,18 @@ HOST_CONFIG = (
             "framework": None,
             "buildCommand": "true",
             "outputDirectory": ".",
-            "trailingSlash": True,
+            "redirects": [
+                {
+                    "source": "/:version(\\d+\\.\\d+(?:\\.\\d+(?:(?:a|b|rc)\\d+)?)?)",
+                    "destination": "/:version/",
+                    "permanent": True,
+                },
+                {
+                    "source": "/:path((?:.*/)?[^./]+)",
+                    "destination": "/:path/",
+                    "permanent": True,
+                },
+            ],
             "headers": [
                 {
                     "source": "/(.*).md",
