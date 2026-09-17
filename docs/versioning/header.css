@@ -6,21 +6,24 @@
 @media screen and (min-width: 60em) {
     .md-header__inner > .md-version {
         flex: 0 0 5.25rem;
+        display: flex;
+        align-items: flex-start;
         position: relative;
         width: 5.25rem;
         height: 2.4rem;
         margin-right: 0;
         margin-left: 0.4rem;
+        padding-top: 0.25rem;
     }
 
     .md-header__inner > .md-version .md-version__current {
         box-sizing: border-box;
         min-width: 5.25rem;
         height: 1.8rem;
-        margin: 0.3rem 0;
+        margin: 0;
         padding: 0 1.6rem 0 0.65rem;
-        border: 1px solid var(--md-accent-fg-color);
-        border-radius: 0.2rem;
+        border: 1px solid color-mix(in srgb, currentcolor 62%, transparent);
+        border-radius: 0.1rem;
         color: inherit;
         font-weight: 600;
         text-align: left;
