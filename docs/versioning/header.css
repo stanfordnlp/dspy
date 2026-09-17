@@ -22,7 +22,7 @@
         height: 1.8rem;
         margin: 0;
         padding: 0 1.6rem 0 0.65rem;
-        border: 1px solid color-mix(in srgb, currentcolor 62%, transparent);
+        border: 1px solid color-mix(in srgb, currentcolor 37%, transparent);
         border-radius: 0.1rem;
         color: inherit;
         font-weight: 600;
