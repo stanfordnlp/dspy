@@ -11,7 +11,13 @@ from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    CodeProposalFn,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -74,6 +80,9 @@ class DspyGEPAResult:
     - val_subscores: per-candidate scores keyed by validation instance id
     - per_val_instance_best_candidates: for each val instance id, a set of candidate indices achieving the best score
     - discovery_eval_counts: Budget (number of metric calls / rollouts) consumed up to the discovery of each candidate
+    - val_aggregate_subscores: per-candidate objective scores aggregated over the validation set
+    - per_objective_best_candidates: candidate indices achieving the best score for each objective
+    - objective_pareto_front: highest score achieved for each objective
 
     - total_metric_calls: total number of metric calls made across the run
     - num_full_val_evals: number of full validation evaluations performed
@@ -100,6 +109,11 @@ class DspyGEPAResult:
     num_full_val_evals: int | None = None
     log_dir: str | None = None
     seed: int | None = None
+
+    # Multi-objective data
+    val_aggregate_subscores: list[dict[str, float]] | None = None
+    per_objective_best_candidates: dict[str, set[int]] | None = None
+    objective_pareto_front: dict[str, float] | None = None
 
     @property
     def best_idx(self) -> int:
@@ -140,6 +154,13 @@ class DspyGEPAResult:
             per_val_instance_best_candidates={
                 val_id: list(s) for val_id, s in self.per_val_instance_best_candidates.items()
             },
+            val_aggregate_subscores=self.val_aggregate_subscores,
+            per_objective_best_candidates=(
+                {objective: list(s) for objective, s in self.per_objective_best_candidates.items()}
+                if self.per_objective_best_candidates is not None
+                else None
+            ),
+            objective_pareto_front=self.objective_pareto_front,
             discovery_eval_counts=self.discovery_eval_counts,
             total_metric_calls=self.total_metric_calls,
             num_full_val_evals=self.num_full_val_evals,
@@ -158,6 +179,9 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
+            val_aggregate_subscores=gepa_result.val_aggregate_subscores,
+            per_objective_best_candidates=gepa_result.per_objective_best_candidates,
+            objective_pareto_front=gepa_result.objective_pareto_front,
             total_metric_calls=gepa_result.total_metric_calls,
             num_full_val_evals=gepa_result.num_full_val_evals,
             log_dir=gepa_result.run_dir,
@@ -268,6 +292,23 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
+        code_proposer: Optional custom proposer for `dspy.Flex` code components, implementing the
+            `CodeProposalFn` protocol from `dspy.teleprompt.gepa.gepa_utils`.
+            **Default: None** - Uses the built-in code proposer, which rewrites each Flex
+            submodule's full `module_src` from the failing examples and feedback.
+
+            A custom code proposer is called once per reflection round with the code components to
+            update, the current candidate, the reflective dataset, and per-component task
+            descriptions (the rendered Flex signature) and context blurbs (available tools and
+            style notes). It must return a complete replacement `dspy.Module` subclass source per
+            component. It is invoked inside the reflection_lm context, so predictors it creates
+            use the reflection LM unless it selects a different one with `dspy.context(lm=...)`.
+            Unlike instruction_proposer, it does not satisfy the requirement for a reflection
+            provider: GEPA still requires reflection_lm or instruction_proposer to be set.
+
+            Only Flex components are routed to it; regular predictors keep going to
+            instruction_proposer (or the default instruction proposer). This parameter has no
+            effect on programs without `dspy.Flex` submodules.
         component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components
@@ -279,7 +320,8 @@ class GEPA(Teleprompter):
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
-        num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
+        num_threads: The total number of threads available for candidate and example evaluation. Multi-proposal
+            candidate evaluations share this budget. Optional.
         failure_score: The score to assign to failed examples. Default is 0.0.
         perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA
             to determine if all examples in a minibatch are perfect.
@@ -324,6 +366,12 @@ class GEPA(Teleprompter):
               MLflow can be used alongside Weights & Biases (WandB).
             - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
             - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+            - sampling_strategy, selection_strategy, acceptance_criterion: GEPA 0.1.4 proposal controls.
+              DSPy evaluates proposal candidates concurrently within the `num_threads` budget.
+            - wandb_attach_existing, mlflow_attach_existing, tracking_key_prefix: GEPA 0.1.4 tracking controls.
+
+            `max_reflection_cost` is not supported yet because DSPy LMs do not expose the cumulative cost
+            interface GEPA requires. Passing it raises an error instead of silently ignoring the budget.
 
             Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters
             and should not be passed through gepa_kwargs.
@@ -340,8 +388,9 @@ class GEPA(Teleprompter):
         Merge Configuration: GEPA can merge successful program variants using `use_merge=True`.
         The `max_merge_invocations` parameter controls how many merge attempts are made during optimization.
 
-        Evaluation Configuration: Use `num_threads` to parallelize evaluation. The `failure_score` and
-        `perfect_score` parameters help GEPA understand your metric's range and optimize accordingly.
+        Evaluation Configuration: `num_threads` controls total evaluation concurrency and is shared across
+        candidates in multi-proposal batches. The `failure_score` and `perfect_score` parameters help GEPA
+        understand your metric's range and optimize accordingly.
 
         Logging Configuration: Set `log_dir` to save detailed logs and enable checkpoint resuming.
         Use `track_stats=True` to access detailed optimization results via the `detailed_results` attribute.
@@ -365,6 +414,7 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
+        code_proposer: "CodeProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
         # Merge-based configuration
         use_merge: bool = True,
@@ -448,8 +498,12 @@ class GEPA(Teleprompter):
         self.seed = seed
 
         self.custom_instruction_proposer = instruction_proposer
+        self.custom_code_proposer = code_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
+
+        if self.gepa_kwargs.get("max_reflection_cost") is not None:
+            raise ValueError("max_reflection_cost is not supported by dspy.GEPA yet.")
 
         if "reflection_prompt_template" in self.gepa_kwargs:
             raise ValueError(
@@ -590,6 +644,7 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
+            custom_code_proposer=self.custom_code_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )

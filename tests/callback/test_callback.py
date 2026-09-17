@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import cloudpickle
@@ -149,24 +150,70 @@ def test_callback_injection_local():
 
 
 def test_callback_error_handling():
+    expected_error = ValueError("Error")
+
     class Target(dspy.Module):
         @with_callbacks
         def forward(self, x: int, y: str, z: float) -> int:
             time.sleep(0.1)
-            raise ValueError("Error")
+            raise expected_error
 
     callback = MyCallback()
     dspy.configure(callbacks=[callback])
 
     target = Target()
 
-    with pytest.raises(ValueError, match="Error"):
+    with pytest.raises(ValueError, match="Error") as exc_info:
         target.forward(1, "2", 3.0)
 
     assert len(callback.calls) == 2
     assert callback.calls[0]["handler"] == "on_module_start"
     assert callback.calls[1]["handler"] == "on_module_end"
-    assert isinstance(callback.calls[1]["exception"], ValueError)
+    assert callback.calls[1]["exception"] is exc_info.value is expected_error
+
+
+@pytest.mark.parametrize("expected_error", [KeyboardInterrupt(), SystemExit()])
+def test_callback_reports_and_propagates_base_exception(expected_error):
+    class Target(dspy.Module):
+        @with_callbacks
+        def forward(self):
+            raise expected_error
+
+    callback = MyCallback()
+    target = Target(callbacks=[callback])
+
+    with pytest.raises(BaseException) as exc_info:
+        target.forward()
+
+    assert callback.calls[1]["handler"] == "on_module_end"
+    assert callback.calls[1]["outputs"] is None
+    assert callback.calls[1]["exception"] is exc_info.value is expected_error
+    assert ACTIVE_CALL_ID.get() is None
+
+
+@pytest.mark.asyncio
+async def test_callback_reports_and_propagates_async_cancellation():
+    started = asyncio.Event()
+
+    class Target(dspy.Module):
+        @with_callbacks
+        async def run(self):
+            started.set()
+            await asyncio.Event().wait()
+
+    callback = MyCallback()
+    target = Target(callbacks=[callback])
+    task = asyncio.create_task(target.run())
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert callback.calls[1]["handler"] == "on_module_end"
+    assert callback.calls[1]["outputs"] is None
+    assert isinstance(callback.calls[1]["exception"], asyncio.CancelledError)
+    assert ACTIVE_CALL_ID.get() is None
 
 
 def test_multiple_callbacks():

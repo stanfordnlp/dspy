@@ -78,7 +78,7 @@ The constructor mutates the input signature: it prepends one output field (a syn
 
 For tasks where the answer is best computed, not narrated.
 
-Each module accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. Passing an interpreter as the first positional argument when calling the module, such as `program(interpreter, **inputs)`, instead uses that caller-owned instance without shutting it down. Caller-owned reuse is sequential; use the factory path for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
+Each module accepts an `interpreter_factory` that is called once per invocation; DSPy shuts down the returned interpreter even when the invocation raises. `PythonInterpreter` is the public default, and `dspy.configure(interpreter_factory=...)` replaces it at each invocation. A module's own factory wins, unless it is `PythonInterpreter`. Passing an interpreter as the first positional argument when calling the module, such as `program(interpreter, **inputs)`, instead uses that caller-owned instance without shutting it down. Caller-owned reuse is sequential; use the factory path for concurrent invocations. A `PythonInterpreter` override must also stay on the thread where it was first used.
 
 **`dspy.ProgramOfThought(signature, max_iters=3, interpreter_factory=PythonInterpreter)`**
 Holds three internal `ChainOfThought` predictors: `code_generate` produces Python, `code_regenerate` rewrites it after a recoverable execution error, and `generate_output` extracts the declared output fields from the run’s printed result. The forward loop asks `code_generate` for code, runs it through the `PythonInterpreter`, and feeds `CodeExecutionError` or `SyntaxError` back to `code_regenerate` for up to `max_iters` rounds. A terminal `CodeInterpreterError` propagates immediately. Once execution succeeds, `generate_output` produces the signature’s output fields. If `max_iters` is exhausted, the module raises.
@@ -98,12 +98,13 @@ Wraps `ParallelExecutor` and submits each `(module, example)` pair to a thread p
 
 **`dspy.KNN`** is a retrieval helper, not a generation module — see the Retrievers reference page.
 
-**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [Tools, ReAct, and MCP](tools-react-and-mcp.md). The wrapping machinery there is what `CodeAct` and `RLM` reuse.
+**`dspy.ReAct`** is the canonical tool-using loop and has its own page: [ReAct and ReActV2](react.md). The shared [tool-wrapping machinery](tools.md) is also used by `CodeAct` and `RLM`.
 
 ## Cross-links
 
 - [Modules: composing your own](modules.md) — every variant here is a `dspy.Module` (except `Parallel` and `majority`), so the composition rules apply.
-- [Tools, ReAct, and MCP](tools-react-and-mcp.md) — `CodeAct` and `RLM` use the same tool-wrapping machinery as `ReAct`.
+- [Tools and MCP](tools.md) — `CodeAct`, `RLM`, and ReAct use the same tool-wrapping machinery.
+- [ReAct and ReActV2](react.md) — the dedicated agent-loop comparison and migration plan.
 - [RLM: exploring large contexts with code](rlm.md) — the deep dive on the experimental REPL-driven module summarized above.
 - [Flex: Optimizable module code](flex.md) — the deep dive on the code-optimizable Flex module summarized above.
 - [Settings and `context()`](settings-and-context.md) — how `Parallel` and `Module.batch` snapshot the active overrides into each worker.

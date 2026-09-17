@@ -3,6 +3,7 @@ from contextvars import ContextVar
 from typing import Callable
 
 ACTIVE_CALL_ID = ContextVar("active_call_id", default=None)
+_ACTIVE_COMPILES = ContextVar("active_compiles", default=())
 
 
 def _bind_active_call_id(fn: Callable) -> Callable:

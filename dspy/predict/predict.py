@@ -1,12 +1,13 @@
 import logging
 import random
 import types
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.utils import annotation_allows_none
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
@@ -219,7 +220,7 @@ class Predict(Module, Parameter):
         missing = [
             k
             for k, field_info in signature.input_fields.items()
-            if k not in kwargs and not _annotation_allows_none(field_info.annotation)
+            if k not in kwargs and not annotation_allows_none(field_info.annotation)
         ]
         if missing:
             present = [k for k in signature.input_fields if k in kwargs]
@@ -308,22 +309,6 @@ def _get_type_name(type_annotation) -> str:
         return f"{origin_name}[{args_str}]"
 
     return getattr(origin, "__name__", str(origin))
-
-
-def _annotation_allows_none(annotation: Any) -> bool:
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-
-    if annotation is None or annotation is type(None):
-        return True
-
-    if origin is Annotated:
-        return bool(args) and _annotation_allows_none(args[0])
-
-    if origin is Union or origin is types.UnionType:
-        return any(_annotation_allows_none(arg) for arg in args)
-
-    return False
 
 
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:

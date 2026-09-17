@@ -93,7 +93,7 @@ These are community-maintained projects and are not officially supported by the 
 | **LlamaIndex** | [Link](https://github.com/stanfordnlp/dspy/blob/main/examples/llamaindex/dspy_llamaindex_rag.ipynb) |
 | **Langtrace** | [Link](https://docs.langtrace.ai/supported-integrations/llm-frameworks/dspy) |
 | **Langfuse** | [Link](https://langfuse.com/docs/integrations/dspy) |
-| **OpenLIT** | [Link](https://docs.openlit.io/latest/integrations/dspy) |
+| **OpenLIT** | [Link](https://docs.openlit.io/latest/sdk/integrations/dspy) |
 | **Relevance AI** | [Link](https://relevanceai.com/blog/dspy-programming---not-prompting---language-models) |
 | **Advancing Analytics** | [Link](https://www.advancinganalytics.co.uk/blog/prompt-optimisation-an-introduction-to-dspy) |
 

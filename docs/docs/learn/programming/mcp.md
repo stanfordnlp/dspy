@@ -22,13 +22,28 @@ MCP enables you to:
 - **Share tools across stacks** - Use the same tools across different frameworks.
 - **Simplify integration** - Convert MCP tools to DSPy tools with one line.
 
-DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass `mcp.ClientSession` to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
+DSPy does not handle MCP server connections directly. Use a client interface from the `mcp` library, then pass the client or session to `dspy.Tool.from_mcp_tool`. DSPy supports both major versions of the `mcp` Python SDK.
 
 ## Using MCP with DSPy
 
 ### 1. HTTP Server (Remote)
 
-For remote MCP servers over HTTP, use the streamable HTTP transport:
+With `mcp` SDK v2, use the high-level `Client` for a remote server:
+
+```python
+import asyncio
+import dspy
+from mcp.client import Client
+
+async def main():
+    async with Client("http://localhost:8000/mcp") as client:
+        response = await client.list_tools()
+        dspy_tools = [dspy.Tool.from_mcp_tool(client, tool) for tool in response.tools]
+
+asyncio.run(main())
+```
+
+With SDK v1, use the streamable HTTP transport and a `ClientSession`:
 
 ```python
 import asyncio
@@ -69,20 +84,48 @@ asyncio.run(main())
 
 ### 2. Stdio Server (Local Process)
 
-The most common way to use MCP is with a local server process communicating via stdio:
+The most common way to use MCP is with a local server process communicating via stdio. This example connects ReActV2 to an arithmetic server and works with both SDK versions.
+
+Save the following as `mcp_server.py`:
+
+```python
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:
+    from mcp.server import MCPServer
+
+server = MCPServer("arithmetic")
+
+@server.tool()
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+if __name__ == "__main__":
+    server.run()
+```
+
+Save the client below as `agent.py` alongside it. Set `OPENAI_API_KEY` in your environment and run `python agent.py`. The client starts and stops the MCP server automatically. Native function calling requires a model that supports tools.
 
 ```python
 import asyncio
+import sys
+from pathlib import Path
+
 import dspy
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+dspy.configure(
+    lm=dspy.LM("openai/gpt-4.1-mini"),
+    adapter=dspy.ChatAdapter(use_native_function_calling=True),
+)
+
 async def main():
     # Configure the stdio server
     server_params = StdioServerParameters(
-        command="python",                    # Command to run
-        args=["path/to/your/mcp_server.py"], # Server script path
-        env=None,                            # Optional environment variables
+        command=sys.executable,
+        args=[str(Path(__file__).with_name("mcp_server.py"))],
     )
 
     # Connect to the server
@@ -100,13 +143,13 @@ async def main():
                 for tool in response.tools
             ]
 
-            # Create a ReAct agent with the tools
+            # Create a ReActV2 agent with the tools
             class QuestionAnswer(dspy.Signature):
                 """Answer questions using available tools."""
                 question: str = dspy.InputField()
-                answer: str = dspy.OutputField()
+                answer: int = dspy.OutputField()
 
-            react_agent = dspy.ReAct(
+            react_agent = dspy.ReActV2(
                 signature=QuestionAnswer,
                 tools=dspy_tools,
                 max_iters=5
@@ -114,13 +157,15 @@ async def main():
 
             # Use the agent
             result = await react_agent.acall(
-                question="What is 25 + 17?"
+                question="Use the add tool to calculate 25 + 17."
             )
             print(result.answer)
 
 # Run the async function
 asyncio.run(main())
 ```
+
+Keep the agent call inside the open MCP session: converted tools use that session to execute requests. MCP tools are asynchronous, so use `await react_agent.acall(...)`.
 
 ## Tool Conversion
 
@@ -142,6 +187,8 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 # Use it like any DSPy tool
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
+
+By default, MCP tools return the `content` field. Pass `result_mode="structured"` to `dspy.Tool.from_mcp_tool` to return `structuredContent` when available; if it is absent, DSPy falls back to the default conversion.
 
 ## Learn More
 

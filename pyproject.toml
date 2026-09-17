@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.3.0"
+version="3.4.0b1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -26,7 +26,7 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
-    "pydantic>=2.0",
+    "pydantic>=2.11.0",
     "litellm>=1.65.8",
     "diskcache>=5.6.0",
     "json-repair>=0.54.2",
@@ -34,13 +34,14 @@ dependencies = [
     "anyio",
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
-    "gepa[dspy]==0.1.1",
+    "gepa[dspy]==0.1.4",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client>=4.5.4,<4.22.0"]
 mcp = ["mcp; python_version >= '3.10'"]
+deno = ["deno>=2.4.5,<3.0.0"]
 langchain = ["langchain_core>=0.3.0"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
@@ -77,6 +78,9 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+"dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
+"dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
+"dspy._vendor.lm15" = ["py.typed"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -124,6 +128,7 @@ filterwarnings = [
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
+  "dspy/_vendor/**",  # vendored lm15, linted in its own repository
   "tests/reliability/*.py",
 ]
 

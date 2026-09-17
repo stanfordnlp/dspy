@@ -3,7 +3,8 @@
 A ``Flex`` never executes its optimizer-authored ``module_src`` in the host process. Instead,
 every ``forward``:
 
-1. creates a fresh interpreter from the Flex's ``interpreter_factory`` (``BridgeRuntime.forward``);
+1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
+   ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. injects the sandbox-side shim (``_sandbox_shim.py``), which fakes a tiny ``dspy`` module whose
    predictor constructors and calls are proxies;
 3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
@@ -32,9 +33,8 @@ import functools
 import inspect
 import json
 import logging
-import types
 from pathlib import Path
-from typing import Any, Callable, Union, get_args, get_origin
+from typing import Any, Callable
 
 from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -42,7 +42,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 import dspy
 from dspy import CodeInterpreterError
 from dspy.adapters.types.base_type import Type as _CustomType
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import annotation_allows_none, parse_value
 from dspy.primitives.code_interpreter import _create_interpreter
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
@@ -178,13 +178,6 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     return value
 
 
-def _is_field_optional(annotation: Any) -> bool:
-    """True if the field annotation is optional, a union admitting None."""
-    return annotation is type(None) or (
-        get_origin(annotation) in (Union, types.UnionType) and type(None) in get_args(annotation)
-    )
-
-
 class _Invocation:
     """Per-forward bridge state: the predictors this forward constructed (keyed by the sandbox
     attribute name), its predictor-call budget, and the original custom-type objects to restore
@@ -307,7 +300,7 @@ class BridgeRuntime:
             if not field.is_required():
                 out[name] = field.get_default(call_default_factory=True)
                 filled.add(name)
-            elif _is_field_optional(field.annotation):
+            elif annotation_allows_none(field.annotation):
                 out[name] = None
                 filled.add(name)
             else:
@@ -366,8 +359,9 @@ class BridgeRuntime:
         # A code-executing sub-predictor should run its inner code in the backend chosen for Flex, so
         # hand it the Flex interpreter factory (it makes and tears down a fresh interpreter per forward).
         # The sandbox code can't set this itself, since a live interpreter can't cross the boundary.
+        # The resolver lets a configured factory override the default for Flex and its
+        # code-executing sub-predictors alike.
         if "interpreter_factory" not in extra and _accepts_interpreter_factory(cls):
             factory = self._sub_interpreter_factory()
-            if factory is not None:
-                extra["interpreter_factory"] = factory
+            extra["interpreter_factory"] = factory
         return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)

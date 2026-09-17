@@ -93,7 +93,7 @@ class FlexContext:
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: only the tools listed above may be passed to "
-                "dspy.ReAct/dspy.RLM (their functions live on the host). A function you define inside "
+                "dspy.ReActV2/dspy.RLM (their functions live on the host). A function you define inside "
                 "the module can be called directly in forward, but cannot be handed to those predictors."
             )
         return "\n\n".join(parts) if parts else "(no extra context)"

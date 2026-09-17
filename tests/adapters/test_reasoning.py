@@ -109,3 +109,21 @@ def test_reasoning_error_message():
 
     with pytest.raises(AttributeError, match="`Reasoning` object has no attribute 'nonexistent_method'"):
         reasoning.nonexistent_method
+
+
+def test_native_reasoning_default_survives_provider_omission():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        reasoning: dspy.Reasoning = dspy.OutputField(default_factory=lambda: dspy.Reasoning(content="(omitted)"))
+
+    adapter = dspy.ChatAdapter()
+    # Native reasoning strips the field from the signature the LM formats against; the provider
+    # then omits native reasoning entirely.
+    processed = Sig.delete("reasoning")
+    outputs = [{"text": "[[ ## answer ## ]]\n42\n\n[[ ## completed ## ]]"}]
+
+    value = adapter._call_postprocess(processed, Sig, outputs, None, {})[0]
+
+    assert value["answer"] == "42"
+    assert value["reasoning"] == dspy.Reasoning(content="(omitted)")

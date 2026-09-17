@@ -1,19 +1,33 @@
 import asyncio
 import dataclasses
+import io
 import json
 import os
 import random
+import shutil
+import subprocess
+import sys
 import threading
+import types
 from collections import namedtuple
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+import dspy.primitives.python_interpreter as python_interpreter
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import LARGE_VAR_THRESHOLD, PythonInterpreter, _make_jsonable
+from dspy.primitives.python_interpreter import (
+    LARGE_VAR_THRESHOLD,
+    PythonInterpreter,
+    _deno_subprocess_env,
+    _find_deno_executable,
+    _make_jsonable,
+    _validate_deno_version,
+)
 
 
 class _Hit(BaseModel):
@@ -210,17 +224,41 @@ def test_enable_write_flag(tmp_path):
 
 
 def test_enable_net_flag():
-    test_url = "https://example.com"
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
 
-    with PythonInterpreter(enable_network_access=None) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        with pytest.raises(CodeInterpreterError, match="PythonError"):
-            interpreter.execute(code)
+    requests = []
 
-    with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
-        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
-        result = interpreter.execute(code)
-        assert int(result) == 200, "Network access is permitted with enable_network_access"
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    address = f"127.0.0.1:{server.server_port}"
+    code = f"import js\nresp = await js.fetch('http://{address}/')\nawait resp.text()\nresp.status"
+    try:
+        with PythonInterpreter(enable_network_access=None) as interpreter:
+            with pytest.raises(CodeInterpreterError):
+                interpreter.execute(code)
+        assert requests == [], "Denied requests must not reach the server"
+
+        with PythonInterpreter(enable_network_access=[address]) as interpreter:
+            result = interpreter.execute(code)
+            assert int(result) == 200, "Network access is permitted with enable_network_access"
+        assert requests == ["/"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_interpreter_security_filesystem_access(tmp_path):
@@ -253,6 +291,40 @@ except Exception as e:
     with PythonInterpreter(enable_read_paths=[secret_path_str]) as interpreter:
         output = interpreter(malicious_code)
         assert secret_content in output
+
+
+def test_default_runner_cannot_read_shared_deno_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    shared_cache.mkdir()
+    canary = shared_cache / "secret.txt"
+    canary.write_text("shared cache secret")
+    monkeypatch.setenv("DENO_DIR", str(shared_cache))
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            f"""import js
+try:
+    js.Deno.readTextFileSync({str(canary)!r})
+    result = "disclosed"
+except Exception as error:
+    result = str(error)
+result"""
+        )
+
+    assert "disclosed" not in result
+    assert "read access" in result.lower()
+
+
+def test_default_runner_starts_offline_from_warm_shared_cache(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    runner = str(Path(python_interpreter.__file__).with_name("runner.js"))
+    env = {**_deno_subprocess_env(), "DENO_DIR": str(shared_cache)}
+    subprocess.run([_find_deno_executable(), "cache", "--no-config", "--no-lock", runner], env=env, check=True)
+    monkeypatch.setenv("DENO_DIR", str(shared_cache))
+
+    with PythonInterpreter() as interpreter:
+        interpreter.deno_command.insert(interpreter.deno_command.index(os.path.realpath(runner)), "--cached-only")
+        assert interpreter.execute("1 + 1") == 2
 
 
 def test_tools_dict_is_copied():
@@ -390,6 +462,274 @@ def test_deno_command_dict_raises_type_error():
         PythonInterpreter(deno_command={"invalid": "dict"})
 
 
+def test_custom_deno_command_is_unchanged():
+    command = ["custom-deno", "run", "custom-runner.js", "argument"]
+
+    interpreter = PythonInterpreter(deno_command=command)
+
+    assert interpreter.deno_command == command
+    assert interpreter.deno_command is not command
+
+
+def test_rejects_mounts_with_the_same_guest_basename(tmp_path):
+    first = tmp_path / "first" / "shared.txt"
+    second = tmp_path / "second" / "shared.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first], enable_write_paths=[second])
+
+
+def test_allows_same_canonical_file_as_read_and_write_mount(tmp_path):
+    path = tmp_path / "shared.txt"
+
+    PythonInterpreter(deno_command=["deno"], enable_read_paths=[path], enable_write_paths=[path])
+
+
+def test_rejects_alias_basename_colliding_with_another_file(tmp_path):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second" / "shared.txt"
+    alias = tmp_path / "alias" / "shared.txt"
+    second.parent.mkdir()
+    alias.parent.mkdir()
+    try:
+        alias.symlink_to(first)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    with pytest.raises(CodeInterpreterError, match="unique basenames"):
+        PythonInterpreter(deno_command=["deno"], enable_read_paths=[first, alias, second])
+
+
+def test_custom_deno_command_preserves_environment(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    captured = {}
+    interpreter = PythonInterpreter(deno_command=["custom-deno", "run"])
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return object()
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+
+    interpreter._spawn_process()
+
+    assert captured["command"] == ["custom-deno", "run"]
+    assert captured["env"]["DENO_NO_PACKAGE_JSON"] == "0"
+
+
+def test_deno_subprocess_env_disables_package_json(monkeypatch):
+    monkeypatch.setenv("DENO_NO_PACKAGE_JSON", "0")
+    monkeypatch.setenv("DSPY_DENO_TEST_VALUE", "preserved")
+
+    env = _deno_subprocess_env()
+
+    assert env["DENO_NO_PACKAGE_JSON"] == "1"
+    assert env["DSPY_DENO_TEST_VALUE"] == "preserved"
+    assert os.environ["DENO_NO_PACKAGE_JSON"] == "0"
+
+
+def test_managed_deno_package_is_preferred(monkeypatch):
+    managed_deno = types.SimpleNamespace(find_deno_bin=lambda: "/managed/bin/deno")
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+
+    assert _find_deno_executable() == "/managed/bin/deno"
+
+
+def test_missing_managed_deno_binary_falls_back_to_path(monkeypatch):
+    def missing_binary():
+        raise FileNotFoundError
+
+    managed_deno = types.SimpleNamespace(find_deno_bin=missing_binary)
+    monkeypatch.setitem(sys.modules, "deno", managed_deno)
+    monkeypatch.setattr(shutil, "which", lambda executable: "/system/bin/deno" if executable == "deno" else None)
+
+    assert _find_deno_executable() == "/system/bin/deno"
+
+
+def test_default_command_uses_managed_deno_for_info_and_run(monkeypatch, tmp_path):
+    deno_executable = str(tmp_path / "managed-deno")
+    seen_operations = []
+    monkeypatch.setattr(python_interpreter, "_find_deno_executable", lambda: deno_executable)
+    monkeypatch.setattr(
+        python_interpreter,
+        "_validate_deno_version",
+        lambda executable: seen_operations.append(("version", executable)),
+    )
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_get_deno_dir",
+        staticmethod(lambda executable: seen_operations.append(("info", executable)) or str(tmp_path / "cache")),
+    )
+
+    interpreter = PythonInterpreter()
+
+    assert seen_operations == [("info", deno_executable)]
+    assert interpreter.deno_command[:5] == [
+        deno_executable,
+        "run",
+        "--no-config",
+        "--no-lock",
+        "--node-modules-dir=false",
+    ]
+    runner_index = interpreter.deno_command.index(os.path.realpath(interpreter._get_runner_path()))
+    assert all(interpreter.deno_command.index(flag) < runner_index for flag in interpreter.deno_command[2:5])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(interpreter, "_health_check", lambda: None)
+    interpreter._spawn_process()
+
+    assert seen_operations == [("info", deno_executable), ("version", deno_executable)]
+
+
+def test_default_command_revokes_shared_cache_after_startup(monkeypatch, tmp_path):
+    shared_cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(shared_cache)))
+    interpreter = PythonInterpreter()
+
+    assert str(shared_cache) in next(arg for arg in interpreter.deno_command if arg.startswith("--allow-read="))
+    assert f"--dspy-deno-dir={shared_cache}" in interpreter.deno_command
+
+
+def test_rejects_write_paths_overlapping_runtime_files(monkeypatch, tmp_path):
+    cache = tmp_path / "deno"
+    monkeypatch.setattr(PythonInterpreter, "_get_deno_dir", staticmethod(lambda executable: str(cache)))
+
+    with pytest.raises(CodeInterpreterError, match="runtime files"):
+        PythonInterpreter(enable_write_paths=[cache])
+
+
+@pytest.mark.parametrize("version", [(2, 0, 0), (2, 4, 5), (2, 9, 5)])
+def test_accepts_supported_deno_2_versions(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
+
+    _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize("version", [(1, 46, 3), (3, 0, 0)])
+def test_rejects_unsupported_system_deno(monkeypatch, version):
+    monkeypatch.setattr(python_interpreter, "_get_deno_version", lambda executable: version)
+    version_text = "\\.".join(map(str, version))
+
+    with pytest.raises(CodeInterpreterError, match=rf"Unsupported Deno version {version_text}"):
+        _validate_deno_version("/system/bin/deno")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "stderr"),
+    [
+        (0, "not a Deno version", ""),
+        (0, "", "deno 2.9.5"),
+        (1, "deno 2.9.5", "version probe failed"),
+    ],
+)
+def test_rejects_invalid_deno_version_probe(monkeypatch, returncode, stdout, stderr):
+    result = types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+    monkeypatch.setattr(python_interpreter.subprocess, "run", lambda *args, **kwargs: result)
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/fake/bin/deno")
+
+
+def test_deno_version_probe_is_bounded_and_not_cached(monkeypatch):
+    results = iter(
+        [
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.5", stderr=""),
+            types.SimpleNamespace(returncode=0, stdout="deno 2.9.4", stderr=""),
+        ]
+    )
+    seen_timeouts = []
+
+    def fake_run(*args, **kwargs):
+        seen_timeouts.append(kwargs["timeout"])
+        return next(results)
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 5)
+    assert python_interpreter._get_deno_version("/fake/bin/deno") == (2, 9, 4)
+    assert seen_timeouts == [python_interpreter.DENO_PROBE_TIMEOUT_SECONDS] * 2
+
+
+def test_deno_version_probe_timeout_is_reported_as_indeterminate(monkeypatch):
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", timeout)
+
+    with pytest.raises(CodeInterpreterError, match="Unable to determine the Deno version"):
+        _validate_deno_version("/hanging/bin/deno")
+
+
+def test_deno_info_probe_is_bounded(monkeypatch):
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"denoDir": "/cache"}))
+
+    monkeypatch.setattr(python_interpreter.subprocess, "run", fake_run)
+    PythonInterpreter._query_deno_dir.cache_clear()
+
+    assert PythonInterpreter._query_deno_dir("/bounded/bin/deno") == "/cache"
+    assert captured["timeout"] == python_interpreter.DENO_PROBE_TIMEOUT_SECONDS
+
+
+def test_explicit_deno_dir_skips_info_query(monkeypatch, tmp_path):
+    deno_dir = str(tmp_path / "deno-cache")
+    monkeypatch.setenv("DENO_DIR", deno_dir)
+    monkeypatch.setattr(
+        PythonInterpreter,
+        "_query_deno_dir",
+        staticmethod(lambda executable: pytest.fail(f"unexpected Deno info query for {executable}")),
+    )
+
+    assert PythonInterpreter._get_deno_dir("/managed/bin/deno") == deno_dir
+
+
+def test_ignores_parent_package_json_and_node_modules(monkeypatch, tmp_path):
+    """A parent Node project must not redirect runner.js's Pyodide import."""
+    project_dir = tmp_path / "node-project"
+    runner_dir = project_dir / "runtime"
+    fake_pyodide_dir = project_dir / "node_modules" / "pyodide"
+    runner_dir.mkdir(parents=True)
+    fake_pyodide_dir.mkdir(parents=True)
+
+    runner_path = runner_dir / "runner.js"
+    shutil.copyfile(Path(python_interpreter.__file__).with_name("runner.js"), runner_path)
+    (project_dir / "package.json").write_text(json.dumps({"dependencies": {"pyodide": "0.29.4"}}))
+    (fake_pyodide_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "pyodide",
+                "version": "0.29.4",
+                "type": "module",
+                "exports": {"./pyodide.js": "./pyodide.js"},
+            }
+        )
+    )
+    (fake_pyodide_dir / "blocked.txt").write_text("ambient package was selected")
+    (fake_pyodide_dir / "pyodide.js").write_text(
+        'Deno.readTextFileSync(new URL("./blocked.txt", import.meta.url));\n'
+        'export default { loadPyodide() { throw new Error("DSPy loaded Pyodide from parent node_modules"); } };\n'
+    )
+
+    class ParentProjectInterpreter(PythonInterpreter):
+        def _get_runner_path(self):
+            return str(runner_path)
+
+    monkeypatch.chdir(runner_dir)
+    monkeypatch.delenv("DENO_NO_PACKAGE_JSON", raising=False)
+
+    with ParentProjectInterpreter() as interpreter:
+        assert interpreter.execute("6 * 7") == 42
+
+    assert not (project_dir / "deno.lock").exists()
+
+
 # =============================================================================
 # Typed Tool Signature Tests
 # =============================================================================
@@ -405,6 +745,26 @@ def test_tool_with_typed_signature(configure_pooled_interpreter):
     # Tool should be callable with typed signature
     result = sandbox.execute('my_tool(query="test", limit=5)')
     assert result == "searched 'test' with limit 5"
+
+
+def test_tool_none_type_and_nested_json_default():
+    def tool(value: type(None) = None, items: list = [None]):  # noqa: B006
+        return [value, items]
+
+    with PythonInterpreter(tools={"tool": tool}) as interpreter:
+        assert interpreter.execute("tool()") == [None, [None]]
+
+
+@pytest.mark.parametrize(
+    ("field", "code", "expected"),
+    [
+        ({"name": "nothing", "type": "NoneType"}, "SUBMIT(nothing=None)", {"nothing": None}),
+        ({"name": "FinalOutput", "type": "str"}, "SUBMIT(FinalOutput='ok')", {"FinalOutput": "ok"}),
+    ],
+)
+def test_submit_valid_runtime_edge_cases(field, code, expected):
+    with PythonInterpreter(output_fields=[field]) as interpreter:
+        assert interpreter.execute(code) == FinalOutput(expected)
 
 
 def test_tool_positional_args(configure_pooled_interpreter):
@@ -483,6 +843,51 @@ def test_protocol_failure_ends_session(monkeypatch):
 
         with pytest.raises(CodeInterpreterError, match="session has ended"):
             interpreter.execute("2 + 2")
+
+
+def test_request_ids_are_128_bit_random_values():
+    interpreter = PythonInterpreter(deno_command=["deno"])
+    request_ids = {interpreter._next_request_id() for _ in range(100)}
+
+    assert len(request_ids) == 100
+    assert all(len(request_id) == 32 and int(request_id, 16) >= 0 for request_id in request_ids)
+
+
+def test_guest_prototype_hook_cannot_redirect_tool_wrapper():
+    calls = []
+
+    def benign():
+        calls.append("benign")
+        return "safe"
+
+    def danger():
+        calls.append("danger")
+        return "unsafe"
+
+    with PythonInterpreter(tools={"benign": benign, "danger": danger}) as interpreter:
+        result = interpreter.execute(
+            "import js\n"
+            "js.eval('Object.prototype.toJSON = function() { "
+            'if (Object.hasOwn(this, "name")) return {name: "danger", kwargs: {}}; '
+            "return this; }')\n"
+            "benign()"
+        )
+
+    assert result == "safe"
+    assert calls == ["benign"]
+
+
+def test_tool_cannot_reenter_same_interpreter():
+    holder = {}
+
+    def nested_execute():
+        return holder["interpreter"].execute("'nested'")
+
+    with PythonInterpreter(tools={"nested_execute": nested_execute}) as interpreter:
+        holder["interpreter"] = interpreter
+        with pytest.raises(CodeExecutionError, match="cannot execute recursively"):
+            interpreter.execute("nested_execute()")
+        assert interpreter.execute("40 + 2") == 42
 
 
 def test_failed_health_check_ends_session(monkeypatch):
@@ -1150,3 +1555,106 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+def test_system_exit_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Regression test for #10165: the unhandled Deno rejection accompanying
+    SystemExit must not be consumed as the response, desyncing later requests."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="SystemExit"):
+        interpreter.execute("import sys\nsys.exit(0)")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_keyboard_interrupt_is_recoverable_and_session_stays_synced(pooled_interpreter):
+    """KeyboardInterrupt takes the same asyncio re-raise path as SystemExit (#10165)."""
+    interpreter = pooled_interpreter
+    with pytest.raises(CodeExecutionError, match="KeyboardInterrupt"):
+        interpreter.execute("raise KeyboardInterrupt('stop')")
+
+    assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_base_exception_subclasses_are_recoverable_and_session_stays_synced(pooled_interpreter):
+    """Subclasses of SystemExit/KeyboardInterrupt take the same re-raise path (#10165)."""
+    interpreter = pooled_interpreter
+    for code, error_type in [
+        ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+        ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+    ]:
+        with pytest.raises(CodeExecutionError, match=error_type):
+            interpreter.execute(code)
+        assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_out_of_band_messages_are_skipped_not_consumed_as_responses():
+    """Notifications and unsolicited id-less errors are diagnostics, not responses (#10165)."""
+    interpreter = PythonInterpreter()
+
+    notification = {"jsonrpc": "2.0", "method": "unhandled_error", "params": {"message": "boom"}}
+    assert interpreter._handle_out_of_band_message(notification, "during test")
+    assert interpreter._last_diagnostic == "boom"
+
+    unsolicited_error = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "crash"}, "id": None}
+    assert interpreter._handle_out_of_band_message(unsolicited_error, "during test")
+    assert interpreter._last_diagnostic == "crash"
+
+    # Real responses (success or error, with an id) must not be consumed.
+    result = {"jsonrpc": "2.0", "result": {"output": "2\n"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(result, "during test")
+    error_response = {"jsonrpc": "2.0", "error": {"code": -32007, "message": "boom"}, "id": 1}
+    assert not interpreter._handle_out_of_band_message(error_response, "during test")
+
+
+def test_id_less_protocol_errors_are_terminal():
+    """ParseError/InvalidRequest mean the sandbox never read the request, so no
+    response will follow; waiting for one would block forever (#10165)."""
+    interpreter = PythonInterpreter()
+    parse_error = {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Invalid JSON input"}, "id": None}
+    with pytest.raises(CodeInterpreterError, match="Protocol error"):
+        interpreter._handle_out_of_band_message(parse_error, "during test")
+
+
+def test_unsolicited_error_line_is_not_consumed_as_the_response(monkeypatch):
+    """#10165: an id-less async error arriving ahead of the real response (the
+    wire trace an unhandled rejection produces) must not be mistaken for it."""
+    request_id = "a" * 32
+    monkeypatch.setattr(python_interpreter.secrets, "token_hex", lambda _: request_id)
+
+    class FakeDeno:
+        def __init__(self, lines):
+            self.stdin = io.StringIO()
+            self.stdout = io.StringIO("".join(line + "\n" for line in lines))
+            self.stderr = io.StringIO()
+
+        def poll(self):
+            return None
+
+    interpreter = PythonInterpreter()
+    interpreter.deno_process = FakeDeno([
+        json.dumps({"jsonrpc": "2.0", "error": {"code": -32007, "message": "Unhandled async error: PythonError"}, "id": None}),
+        json.dumps({"jsonrpc": "2.0", "result": {"output": "ok\n"}, "id": request_id}),
+    ])
+    assert interpreter.execute("print('ok')") == "ok\n"
+
+
+def test_base_exceptions_do_not_desync_interpreter():
+    with PythonInterpreter() as interpreter:
+        for code, error_type in [
+            ("import sys\nsys.exit(0)", "SystemExit"),
+            ("raise KeyboardInterrupt()", "KeyboardInterrupt"),
+            ("class ExitSignal(SystemExit): pass\nraise ExitSignal(0)", "ExitSignal"),
+            ("class InterruptSignal(KeyboardInterrupt): pass\nraise InterruptSignal()", "InterruptSignal"),
+        ]:
+            with pytest.raises(CodeExecutionError, match=error_type):
+                interpreter.execute(code)
+            assert interpreter.execute("print('still alive')") == "still alive\n"
+
+
+def test_execution_instructions_are_class_metadata():
+    interpreter = PythonInterpreter(deno_command=["deno", "run"])
+
+    assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
+    assert "Pyodide" in interpreter.execution_instructions
+    assert "standard libraries" in interpreter.execution_instructions

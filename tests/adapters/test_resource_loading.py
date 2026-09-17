@@ -140,6 +140,37 @@ def test_explicit_remote_resource_factories(monkeypatch, factory, mime_type):
     assert base64.b64decode(encoded) == b"remote bytes"
 
 
+@pytest.mark.parametrize(
+    ("factory", "module", "mime_type"),
+    [(dspy.Image.from_url, "image", "image/png"), (dspy.Audio.from_url, "audio", "audio/wav")],
+)
+def test_from_url_applies_a_timeout_by_default(monkeypatch, factory, module, mime_type):
+    seen = {}
+
+    class Response:
+        def __init__(self):
+            self.content = b"remote bytes"
+            self.headers = {"Content-Type": mime_type}
+
+        def raise_for_status(self):
+            return None
+
+    def record_request(url, **kwargs):
+        seen.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(f"dspy.adapters.types.{module}.requests.get", record_request)
+
+    factory("https://example.com/resource")
+    assert seen.get("timeout") == 30.0
+
+    factory("https://example.com/resource", timeout=5.0)
+    assert seen.get("timeout") == 5.0
+
+    factory("https://example.com/resource", timeout=None)
+    assert seen.get("timeout") is None
+
+
 def test_in_memory_resource_construction():
     image = dspy.Image(
         base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")

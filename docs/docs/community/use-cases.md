@@ -1,6 +1,6 @@
 # DSPy in Production
 
-<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, Microsoft AI, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
+<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, Microsoft AI, Moody's, AWS, Sephora, VMware, Nubank</strong>, and dozens more.</p>
 
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production. To add yours, please [open a PR](https://github.com/stanfordnlp/dspy/edit/main/docs/docs/community/use-cases.md).
 
@@ -11,6 +11,7 @@ This list represents companies that have publicly shared their use cases or have
   <a href="https://microsoft.ai/" title="Microsoft AI"><img class="logo-microsoft-ai" src="../../static/img/logos/microsoft-ai.svg" alt="Microsoft AI"></a>
   <a href="https://replit.com/" title="Replit"><img class="logo-replit" src="../../static/img/logos/replit.svg" alt="Replit"></a>
   <a href="https://aws.amazon.com/" title="AWS"><img class="logo-aws" src="../../static/img/logos/aws.svg" alt="AWS"></a>
+  <a href="https://nubank.com.br/" title="Nubank"><img class="logo-nubank" src="../../static/img/logos/nubank.svg" alt="Nubank"></a>
 </div>
 
 ## Featured case studies
@@ -50,6 +51,7 @@ This list represents companies that have publicly shared their use cases or have
 | **[Sephora](https://www.sephora.com/)** | Undisclosed agent usecases; perspectives shared in [DAIS Session](https://www.youtube.com/watch?v=D2HurSldDkE). |
 | **[Zoro UK](https://www.zoro.co.uk/)** | E-commerce applications around structured shopping. [Portkey Session](https://www.youtube.com/watch?v=_vGKSc1tekE) |
 | **[VMware](https://www.vmware.com/)** | RAG and other prompt optimization applications. [Interview in The Register.](https://www.theregister.com/2024/02/22/prompt_engineering_ai_models/) [Business Insider.](https://www.businessinsider.com/chaptgpt-large-language-model-ai-prompt-engineering-automated-optimizer-2024-3) |
+| **[Nubank](https://nubank.com.br/)** | Uses DSPy with GEPA to optimize modular, semantically versioned prompts for production-grade financial-service agents. [Engineering blog](https://building.nubank.com/building-ai-agents-for-131-million-customers/) |
 | **[Nous Research](https://nousresearch.com/)** | Evolutionary self-improvement for the Hermes agent: optimizes skills, prompts, and code using DSPy + GEPA. [GitHub](https://github.com/NousResearch/hermes-agent-self-evolution) |
 | **[Haize Labs](https://www.haizelabs.com/)** | Automated red-teaming for LLMs. [Blog](https://blog.haizelabs.com/posts/dspy/) |
 | **[Plastic Labs](https://www.plasticlabs.ai/)** | R&D pipelines for Honcho. [Blog](https://blog.plasticlabs.ai/blog/User-State-is-State-of-the-Art) |

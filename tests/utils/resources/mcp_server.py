@@ -1,7 +1,11 @@
-from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
-mcp = FastMCP("test")
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:
+    from mcp.server import MCPServer
+
+mcp = MCPServer("test")
 
 
 class Profile(BaseModel):

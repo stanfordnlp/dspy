@@ -31,9 +31,19 @@ class RaisingPredictor:
     def __call__(self, **kwargs):
         raise ValueError("unexpected extractor failure")
 
+
 def add(a: float, b: float) -> float:
     "add two numbers"
     return a + b
+
+
+def test_codeact_warns_that_rlm_is_preferred():
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"CodeAct is deprecated and will be removed in 3\.5\. RLM is the preferred replacement\.",
+    ):
+        CodeAct(BasicQA, tools=[add])
+
 
 def test_codeact_code_generation(pooled_interpreter):
     lm = DummyLM(
@@ -61,9 +71,11 @@ class ExtremumFinder(Signature):
     maximum = dspy.OutputField(desc="The maximum of the given numbers")
     minimum = dspy.OutputField(desc="The minimum of the given numbers")
 
+
 def extract_maximum_minimum(input_list: str) -> dict[str, float]:
     numbers = list(map(float, input_list.split(",")))
     return {"maximum": max(numbers), "minimum": min(numbers)}
+
 
 def test_codeact_support_multiple_fields(pooled_interpreter):
     lm = DummyLM(
@@ -82,7 +94,7 @@ def test_codeact_support_multiple_fields(pooled_interpreter):
     assert res.maximum == "6"
     assert res.minimum == "2"
     assert res.trajectory == {
-        "code_output_0": '"{\'maximum\': 6.0, \'minimum\': 2.0}\\n"',
+        "code_output_0": "\"{'maximum': 6.0, 'minimum': 2.0}\\n\"",
         "generated_code_0": "result = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)",
     }
 
@@ -137,7 +149,7 @@ def test_codeact_code_execution_failure(pooled_interpreter):
     assert res.answer == "2"
     assert res.trajectory == {
         "generated_code_0": "unknown+1",
-        "observation_0": 'Failed to execute the generated code: NameError: ["name \'unknown\' is not defined"]',
+        "observation_0": "Failed to execute the generated code: NameError: [\"name 'unknown' is not defined\"]",
         "generated_code_1": "result = add(1,1)\nprint(result)",
         "code_output_1": '"2\\n"',
     }
@@ -157,8 +169,7 @@ def test_codeact_evaluate_creates_one_interpreter_per_example():
     program.codeact = StaticPredictor(generated_code="print(add(1, 1))", finished=True)
     program.extractor = StaticPredictor(answer="2")
     devset = [
-        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question")
-        for index in range(4)
+        dspy.Example(question=f"What is 1+1? ({index})", answer="2").with_inputs("question") for index in range(4)
     ]
 
     result = dspy.Evaluate(
@@ -197,9 +208,7 @@ def test_codeact_factory_creates_fresh_interpreter_per_sequential_call():
 def test_codeact_allows_interpreter_as_signature_input():
     factory = MockInterpreterFactory(responses=["", "CPython\n"])
     program = CodeAct("interpreter -> answer", tools=[add], interpreter_factory=factory)
-    program.codeact = Mock(
-        return_value=dspy.Prediction(generated_code="print(interpreter)", finished=True)
-    )
+    program.codeact = Mock(return_value=dspy.Prediction(generated_code="print(interpreter)", finished=True))
     program.extractor = StaticPredictor(answer="CPython")
 
     result = program(interpreter="CPython")
@@ -271,6 +280,7 @@ def test_codeact_propagates_terminal_interpreter_failure_and_shuts_down():
 class CustomTool:
     def __call__(self, a: float, b: float) -> float:
         return a + b
+
 
 def test_codeact_tool_validation():
     with pytest.raises(ValueError, match=r"CodeAct only accepts functions and not callable objects."):

@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from typing import Any
 from unittest import mock
@@ -37,6 +38,15 @@ class DictDummyLM(dspy.clients.lm.LM):
 
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
+
+
+def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    correct = float(example.output == prediction.output)
+    return dspy.Prediction(
+        score=(correct + 1.0) / 2,
+        objective_scores={"correctness": correct, "incorrectness": 1.0 - correct},
+        feedback="Return the expected answer.",
+    )
 
 
 def bad_metric(example, prediction):
@@ -85,6 +95,92 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection
     adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
 
     assert captured_kwargs["callback_metadata"] == expected_callback_metadata
+
+
+def test_gepa_adapter_evaluate_keeps_outputs_aligned_when_program_crashes(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class CrashingModule(dspy.Module):
+        def forward(self, **kwargs):
+            if kwargs["input"] == "crash":
+                raise RuntimeError("boom")
+            return dspy.Prediction(output=kwargs["input"])
+
+    def always_one_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+        return 1.0
+
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=always_one_metric,
+        feedback_map={},
+        failure_score=-0.5,
+    )
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: CrashingModule(),
+    )
+
+    batch = [
+        Example(input="first", output="first").with_inputs("input"),
+        Example(input="crash", output="crash").with_inputs("input"),
+        Example(input="third", output="third").with_inputs("input"),
+    ]
+
+    with dspy.context(max_errors=100):
+        result = adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
+
+    # gepa's valset evaluation indexes outputs and scores by batch position, so a
+    # crashed example must keep its slot rather than shrinking the lists.
+    assert len(result.outputs) == 3
+    assert len(result.scores) == 3
+    assert result.outputs[0].output == "first"
+    assert result.outputs[1] is None
+    assert result.outputs[2].output == "third"
+    assert result.scores == [1.0, -0.5, 1.0]
+    assert [t["example_ind"] for t in result.trajectories] == [0, 2]
+
+
+def test_gepa_adapter_forwards_sparse_objective_scores():
+    from dspy.teleprompt.gepa import gepa_utils
+
+    adapter = gepa_utils.DspyAdapter(SimpleModule("input -> output"), multi_objective_metric, {})
+    evaluation = adapter._make_evaluation_batch(
+        outputs=[None, None],
+        raw_scores=[
+            dspy.Prediction(score=0.75, objective_scores={"quality": 1.0, "cost": 0.5}),
+            dspy.Prediction(score=0.25),
+        ],
+        trajectories=None,
+    )
+
+    assert evaluation.scores == [0.75, 0.25]
+    assert evaluation.objective_scores == [{"quality": 1.0, "cost": 0.5}, {}]
+
+
+def test_gepa_flex_evaluation_forwards_metric_objective_scores(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_flex_utils
+
+    example = Example(input="question", output="answer")
+    prediction = dspy.Prediction(output="answer")
+    monkeypatch.setattr(
+        gepa_flex_utils.bootstrap_trace_module,
+        "bootstrap_trace_data",
+        lambda **kwargs: [{"example_ind": 0, "example": example, "prediction": prediction, "trace": []}],
+    )
+
+    evaluation = gepa_flex_utils.evaluate_with_trace(
+        program=SimpleModule("input -> output"),
+        batch=[example],
+        metric_fn=multi_objective_metric,
+        num_threads=1,
+        failure_score=0.0,
+        callback_metadata={},
+        capture_traces=True,
+    )
+
+    assert evaluation.scores == [1.0]
+    assert evaluation.objective_scores == [{"correctness": 1.0, "incorrectness": 0.0}]
 
 
 @pytest.fixture
@@ -601,6 +697,49 @@ def test_track_stats_result_structure():
         assert isinstance(best_list, list)
 
 
+def test_multi_objective_frontier_results():
+    from gepa.strategies.candidate_selector import select_program_candidate_from_pareto_front
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=multi_objective_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        gepa_kwargs={"frontier_type": "objective"},
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+
+    result = optimizer.compile(student, trainset=trainset, valset=trainset).detailed_results
+
+    assert result.val_aggregate_subscores is not None
+    assert result.per_objective_best_candidates is not None
+    assert result.objective_pareto_front is not None
+    assert result.per_objective_best_candidates == {"correctness": {1}, "incorrectness": {0}}
+    assert result.objective_pareto_front == {"correctness": 0.5, "incorrectness": 1.0}
+    serialized = result.to_dict()
+    assert serialized["val_aggregate_subscores"] == result.val_aggregate_subscores
+    assert serialized["per_objective_best_candidates"] == {"correctness": [1], "incorrectness": [0]}
+    assert serialized["objective_pareto_front"] == result.objective_pareto_front
+    selected_parents = {
+        select_program_candidate_from_pareto_front(
+            result.per_objective_best_candidates,
+            result.val_aggregate_scores,
+            random.Random(seed),
+        )
+        for seed in range(10)
+    }
+    assert selected_parents == {0, 1}
+
+
 def test_track_best_outputs_result_structure():
     """
     Verify best_outputs_valset has the correct type from GEPA 0.1.1:
@@ -632,3 +771,71 @@ def test_track_best_outputs_result_structure():
         assert isinstance(entries, list)
         for cand_idx, output in entries:
             assert isinstance(cand_idx, int)
+
+
+def test_gepa_rejects_unsupported_reflection_cost_budget():
+    dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=1,
+        reflection_lm=DummyLM([]),
+        gepa_kwargs={"max_reflection_cost": None},
+    )
+
+    with pytest.raises(ValueError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=1,
+            reflection_lm=DummyLM([]),
+            gepa_kwargs={"max_reflection_cost": 1.0},
+        )
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, rng=random.Random(42))
+    state = adapter.get_adapter_state()
+    expected = adapter.rng.random()
+    adapter.rng.random()
+    adapter.set_adapter_state(state)
+    assert adapter.rng.random() == expected
+
+
+def test_batch_evaluate_is_parallel_and_preserves_context():
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, num_threads=4)
+    barrier = threading.Barrier(2)
+    trace_modes = []
+    thread_budgets = []
+
+    def evaluate(batch, candidate, capture_traces=False, num_threads=None):
+        if capture_traces:
+            barrier.wait(timeout=1)
+        trace_modes.append(capture_traces)
+        thread_budgets.append(num_threads)
+        return EvaluationBatch(outputs=[(candidate, dspy.settings.lm, ACTIVE_CALL_ID.get())], scores=[1.0])
+
+    adapter.evaluate = evaluate
+    lm = DummyLM([])
+    token = ACTIVE_CALL_ID.set("parent")
+    try:
+        with dspy.context(lm=lm):
+            results = adapter.batch_evaluate([("first", []), ("second", [])])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert [result.outputs[0] for result in results] == [("first", lm, "parent"), ("second", lm, "parent")]
+
+    adapter.batch_evaluate([("first", [])], capture_traces=False)
+    assert trace_modes == [True, True, False]
+    assert thread_budgets == [2, 2, 4]
+
+    adapter.num_threads = 8
+    adapter.batch_evaluate([("first", []), ("second", []), ("third", [])], capture_traces=False)
+    assert trace_modes == [True, True, False, False, False, False]
+    assert sorted(thread_budgets[-3:]) == [2, 3, 3]
+    assert sum(thread_budgets[-3:]) == 8

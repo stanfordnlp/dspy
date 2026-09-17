@@ -3,10 +3,11 @@ import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
-import anyio.from_thread
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 
 @dataclass
@@ -117,7 +118,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
@@ -145,7 +146,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
@@ -173,7 +174,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
