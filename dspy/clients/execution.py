@@ -210,7 +210,8 @@ def _declared_fallback(lm, binding, resolution, clients):
     named service, never an ambient OPENAI_API_KEY, never a scheme the
     declaration did not name."""
     from dspy._vendor.lm15.access import select_scheme
-    from dspy._vendor.lm15.credentials import coerce_credential
+    from dspy._vendor.lm15.credentials import AwsCredentials
+    from dspy._vendor.lm15.providers.base import resolve_credential_value
 
     definition = binding.definition
     door, sends = _LITELLM_GENERIC_DOOR.get(definition.dialect, (None, None))
@@ -233,18 +234,20 @@ def _declared_fallback(lm, binding, resolution, clients):
                 f"no credential for the declared provider {definition.id!r}: set {variables} or pass api_key=",
                 model=lm.model, provider=definition.id,
             )
-    # The scheme this credential travels under natively (lm15 AUTH-2). The
-    # door renders exactly one; a declaration that needs another gets no
-    # fallback rather than its secret in a header it did not declare.
-    scheme = select_scheme(definition.access, coerce_credential(key))
-    if scheme != sends:
+    # The scheme this credential travels under natively (lm15 AUTH-2). A
+    # callable credential is invoked once per call, as the native path does.
+    # The door renders exactly one scheme; a declaration that needs another
+    # gets no fallback rather than its secret in a header it did not declare.
+    credential = resolve_credential_value(key)
+    scheme = select_scheme(definition.access, credential)
+    if scheme != sends or isinstance(credential, AwsCredentials):
         raise LMUnsupportedFeatureError(
             f"{lm.model!r}: the declared provider {definition.id!r} authenticates with {scheme!r}, which the "
             f"LiteLLM {door}/ door cannot send (it sends {sends!r}); use settings the native engine carries "
             "(api_key, api_base, timeout)",
             model=lm.model, provider=definition.id, features=[scheme],
         )
-    options["api_key"] = key
+    options["api_key"] = credential.value  # LiteLLM takes the string
     static = dict(definition.access.headers)
     if static:
         options["extra_headers"] = {**static, **(options.get("extra_headers") or {})}

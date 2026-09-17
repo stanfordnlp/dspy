@@ -349,6 +349,18 @@ def test_fallback_sends_the_credential_only_under_the_declared_scheme(litellm_st
         lm("hi")
 
 
+def test_fallback_resolves_a_callable_credential_per_call(litellm_stub):
+    # lm15 credentials may be zero-argument callables (rotating tokens). The
+    # fallback invokes them like the native path, on each call, and hands
+    # LiteLLM the string (greptile on dspy#10442).
+    register_provider(_definition("https://private-gateway.test/v1"))
+    tokens = iter(["token-1", "token-2"])
+    lm = dspy.LM(f"fireworks/{MODEL}", api_key=lambda: next(tokens), extra_headers={"X": "1"}, cache=False, num_retries=0)
+    lm("hi")
+    lm("hi again")
+    assert [call["api_key"] for call in litellm_stub[-2:]] == ["token-1", "token-2"]
+
+
 @pytest.mark.asyncio
 async def test_fallback_is_still_the_declared_provider_for_pricing(litellm_stub):
     # The fallback reaches the same server; pricing comes from the
