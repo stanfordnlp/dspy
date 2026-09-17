@@ -412,6 +412,26 @@ def test_chat_adapter_format_demos_exclude_history_field():
     assert lm_kwargs == {}
 
 
+def test_chat_adapter_format_demos_skips_history_only_demo_instead_of_emitting_empty_turn():
+    # Regression test: when `history` is the *only* input field, stripping it before rendering demos (see
+    # test_chat_adapter_format_demos_exclude_history_field above) leaves nothing to render, which previously
+    # produced a contentless `{"role": "user", "content": ""}` turn. Skip such demos instead of emitting an
+    # empty turn.
+    class HistoryOnlySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        HistoryOnlySignature,
+        [{"history": dspy.History(messages=[{"question": "hi"}]), "answer": "hello"}],
+        {"history": dspy.History(messages=[])},
+    )
+
+    assert not any(m["content"] == "" for m in messages)
+    assert not any("hello" in m["content"] for m in messages)
+    assert lm_kwargs == {}
+
+
 def test_chat_adapter_format_exact_messages_with_list_value_for_string_input():
     class ListAsStringSignature(dspy.Signature):
         context: str = dspy.InputField()
