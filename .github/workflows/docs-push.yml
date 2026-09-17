@@ -144,7 +144,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: krypticmouse/dspy-docs
-          ref: versioned-docs
+          ref: master
           path: docs-deployment
           persist-credentials: false
           token: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
@@ -160,5 +160,5 @@ jobs:
             --site current-site \
             --identifier current \
             --package-source working-tree \
-            --branch versioned-docs
-          git -C docs-deployment push origin versioned-docs
+            --branch master
+          git -C docs-deployment push origin master

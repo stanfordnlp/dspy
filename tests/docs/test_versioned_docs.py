@@ -2,6 +2,7 @@ import argparse
 import importlib.util
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,17 @@ from docs.scripts.build_docs import (
 from docs.scripts.publish_versioned_docs import publish_site, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
+
+
+def test_current_workflow_publishes_to_production_branch():
+    workflow = Path(".github/workflows/docs-push.yml").read_text()
+    checkout = workflow.split("      - name: Check out documentation deployment", 1)[1].split("      - name:", 1)[0]
+    publish = workflow.split("      - name: Publish Current through Mike", 1)[1]
+
+    assert "ref: master" in checkout
+    assert "--branch master" in publish
+    assert "push origin master" in publish
+    assert "versioned-docs" not in checkout + publish
 
 
 def make_site(root, content: str):
