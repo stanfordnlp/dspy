@@ -212,7 +212,7 @@ def test_mike_current_is_mutable_and_default(tmp_path):
     assert 'location.replace("/current/guide/"' in branch_file(repository, "versioned-docs", "guide/index.html")
     host_config = json.loads(branch_file(repository, "versioned-docs", "vercel.json"))
     assert host_config["framework"] is None
-    assert host_config["buildCommand"] is None
+    assert host_config["buildCommand"] == "true"
     assert host_config["outputDirectory"] == "."
     production_inventory = subprocess.run(
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
