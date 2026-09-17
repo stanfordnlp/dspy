@@ -8,6 +8,10 @@
         visibility: hidden;
     }
 
+    .md-version--placeholder {
+        pointer-events: none;
+    }
+
     .md-header__inner > .md-version {
         flex: 0 0 5.25rem;
         display: flex;
