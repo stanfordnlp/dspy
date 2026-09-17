@@ -527,13 +527,22 @@ class Adapter:
 
         incomplete_demo_prefix = "This is an example of the task, though some input or output fields are not supplied."
         for demo in incomplete_demos:
-            messages.append(user_message(self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix)))
+            content = self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix)
+            if not content:
+                # No input fields to show (e.g. the signature's only input was the history field, which is
+                # deliberately excluded here). A demo with no input content is not informative, so skip it
+                # instead of emitting an empty user turn.
+                continue
+            messages.append(user_message(content))
             messages.append(Message.assistant(self.format_assistant_message_content(
                 signature, demo, missing_field_message="Not supplied for this particular example. "
             )))
 
         for demo in complete_demos:
-            messages.append(user_message(self.format_user_message_content(signature, demo)))
+            content = self.format_user_message_content(signature, demo)
+            if not content:
+                continue
+            messages.append(user_message(content))
             messages.append(Message.assistant(self.format_assistant_message_content(
                 signature, demo, missing_field_message="Not supplied for this conversation history message. "
             )))
