@@ -313,7 +313,13 @@ class Adapter:
         messages = []
         system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
-        messages.extend(self.format_demos(signature, demos))
+        if history_field_name:
+            # Demos are rendered as multiturn messages that look just like conversation history. Formatting them
+            # with the history field still present would print a `[[ ## history ## ]]` block (e.g. an empty
+            # `{"messages": []}`) inside the demo, which an LLM can easily mistake for real conversation history.
+            messages.extend(self.format_demos(signature_without_history, demos))
+        else:
+            messages.extend(self.format_demos(signature, demos))
         if history_field_name:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
