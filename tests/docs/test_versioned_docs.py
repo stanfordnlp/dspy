@@ -214,6 +214,19 @@ def test_mike_current_is_mutable_and_default(tmp_path):
     assert host_config["framework"] is None
     assert host_config["buildCommand"] == "true"
     assert host_config["outputDirectory"] == "."
+    assert host_config["redirects"] == [
+        {
+            "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)",
+            "destination": "/:version/",
+            "permanent": True,
+        },
+        {
+            "source": "/:path((?:.*/)?[^./]+)",
+            "destination": "/:path/",
+            "permanent": True,
+        },
+    ]
+    assert "trailingSlash" not in host_config
     production_inventory = subprocess.run(
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
     )
