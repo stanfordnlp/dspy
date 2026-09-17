@@ -565,7 +565,7 @@ class Adapter:
             if self.use_native_function_calling and tool_calls is not None:
                 content_signature = signature
                 for name, field in signature.output_fields.items():
-                    if field.annotation == ToolCalls or message.get(name) is None:
+                    if _unwrap_annotation(field.annotation) == ToolCalls or message.get(name) is None:
                         content_signature = content_signature.delete(name)
 
                 content = (
