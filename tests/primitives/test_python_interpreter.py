@@ -1658,3 +1658,29 @@ def test_execution_instructions_are_class_metadata():
     assert interpreter.execution_instructions == PythonInterpreter.execution_instructions
     assert "Pyodide" in interpreter.execution_instructions
     assert "standard libraries" in interpreter.execution_instructions
+
+
+def test_error_after_a_tool_call_is_recoverable_and_session_stays_synced(configure_pooled_interpreter):
+    """A step that raises after calling a tool must fail like any other step. The tool call is a
+    JSPI stack switch (run_sync), and an exception propagating out of runPythonAsync afterwards
+    escaped as an unhandled rejection that ended the Deno process (#10165)."""
+
+    def describe(path: str = "") -> dict:
+        return {"path": path, "keys": ["a", "b"]}
+
+    sandbox = configure_pooled_interpreter(tools={"describe": describe})
+    with pytest.raises(CodeExecutionError, match="KeyError"):
+        sandbox.execute("x = describe('')\nprint(x[:3])")  # a slice as the KeyError arg, not JSON
+    with pytest.raises(CodeExecutionError, match="ValueError"):
+        sandbox.execute("describe('')\nraise ValueError('after the tool')")
+
+    assert sandbox.execute("print(describe('')['keys'])") == "['a', 'b']\n"
+    assert sandbox.execute("print('still alive')") == "still alive\n"
+
+
+def test_exception_args_that_are_not_json_are_reported(pooled_interpreter):
+    """last_exception_args serialises the args; a set or a slice must not make the report itself raise."""
+    with pytest.raises(CodeExecutionError, match="KeyError") as info:
+        pooled_interpreter.execute("raise KeyError({1, 2})")
+    assert "{1, 2}" in str(info.value)
+    assert pooled_interpreter.execute("print('still alive')") == "still alive\n"

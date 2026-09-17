@@ -18,7 +18,9 @@ buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
 sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+    # default=repr: an exception whose args are not JSON (a slice in a KeyError, a set) would
+    # otherwise raise here, from inside the host's error reporting, and take the sandbox down.
+    return json.dumps(sys.last_exc.args, default=repr) if sys.last_exc else None
 
 class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
@@ -29,6 +31,25 @@ class _DSPyFinalOutput(BaseException):
 if 'SUBMIT' not in dir():
     def SUBMIT(output):
         raise _DSPyFinalOutput({"output": output})
+
+from pyodide.code import eval_code_async as _dspy_eval_code_async
+
+class _DSPyStepError:
+    # A step's exception, handed back as a value. An exception that propagates out of
+    # runPythonAsync after a JSPI stack switch (a tool call made in the same step) escapes as
+    # an unhandled promise rejection and takes the sandbox down; catching it here keeps the
+    # step's promise settling normally, and the host still reads sys.last_exc for the args.
+    __dspy_step_error__ = True
+    def __init__(self, exc):
+        self.step_type = type(exc).__name__  # not .type: PyProxy already exposes that
+        self.step_message = str(exc)
+
+async def _dspy_guarded(code):
+    try:
+        return await _dspy_eval_code_async(code, globals())
+    except BaseException as exc:
+        sys.last_exc = exc
+        return _DSPyStepError(exc)
 `;
 
 // Generate a tool wrapper function with typed signature.
@@ -338,8 +359,16 @@ while (true) {
       pyodide.runPython(PYTHON_SETUP_CODE);
       setupCompleted = true;  // Mark setup as complete - old_stdout/old_stderr now exist
 
-      // Run the user's code
-      const result = await pyodide.runPythonAsync(code);
+      // Run the user's code inside the guard (see _dspy_guarded in PYTHON_SETUP_CODE): a
+      // step that raises after a tool call must not reject the promise, so the guard returns
+      // the exception and it is re-thrown here, into the catch below, with the same shape.
+      pyodide.globals.set("_dspy_code", code);
+      const result = await pyodide.runPythonAsync("await _dspy_guarded(_dspy_code)");
+      if (result && result.__dspy_step_error__) {
+        const stepError = { type: result.step_type, message: result.step_message };
+        result.destroy?.();
+        throw stepError;
+      }
       const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
 
       // If result is None, output prints; otherwise output the result
