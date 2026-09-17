@@ -34,6 +34,11 @@
     margin-top: 2rem;
 }
 
+/* Keep help and project links together at the right edge of the tabs row. */
+.md-tabs__item:nth-last-child(2) {
+    margin-left: auto;
+}
+
 /* Responsive adjustments */
 @media screen and (min-width: 76.25em) {
     .md-logo {
