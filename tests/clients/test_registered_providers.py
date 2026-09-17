@@ -30,7 +30,7 @@ from dspy.lm15 import (
     unregister_provider,
 )
 
-MODEL = "accounts/fireworks/models/deepseek-v4p1-flash"
+MODEL = "accounts/fireworks/models/deepseek-v4-flash"  # in the bundled metadata snapshot (tools, reasoning, schema, prices)
 
 
 @pytest.fixture
@@ -79,8 +79,16 @@ def _definition(base_url, provider="fireworks", aliases=("fireworks-ai",), heade
 
 @pytest.fixture(autouse=True)
 def clean_registry(monkeypatch):
+    import dspy.clients.model_metadata as metadata
+
     for name in ("FIREWORKS_API_KEY", "FIREWORKS_API_BASE", "FIREWORKS_BASE_URL", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
+    # Capabilities and prices come from the bundled metadata snapshot, not
+    # from whatever the live LiteLLM map says today (or whichever a sibling
+    # test loaded first).
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    monkeypatch.setattr(metadata, "_data", None)
+    monkeypatch.setattr(metadata, "_source", {})
     before = {b.id for b in registered_providers()}
     yield
     for binding in registered_providers():
