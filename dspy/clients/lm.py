@@ -109,7 +109,8 @@ def _refuse_client_settings(engine, kwargs, *, where: str = "dspy.LM") -> None:
     if present:
         raise ValueError(
             f"{where}: {present} configure a connection DSPy owns; a custom engine owns its own. "
-            "Configure them on the engine instead."
+            "Configure them on the engine, or for an HTTP provider declare it with "
+            "dspy.lm15.register_provider(...) and drop engine="
         )
 
 
@@ -264,6 +265,12 @@ class LM(BaseLM):
             kwargs["prompt_cache"] = prompt_cache
         self._engine_spec = engine
         self._async_engine_spec = async_engine
+        # The declared providers this LM routes with, bound now and kept for
+        # its life (copies share them): selection, capabilities, pricing and
+        # both engines read one tuple, so a later registration cannot split them.
+        from dspy.lm15 import registered_providers
+
+        self._providers = registered_providers()
         self._engine_store = {}
         self._engine_lock = threading.RLock()
         super().__init__(
@@ -450,6 +457,7 @@ class LM(BaseLM):
         self.__dict__.update(state)
         self._engine_spec = getattr(self, "_engine_spec", "auto")
         self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        self._providers = getattr(self, "_providers", ())
         self._engine_lock = threading.RLock()
         self._engine_store = {}
 
