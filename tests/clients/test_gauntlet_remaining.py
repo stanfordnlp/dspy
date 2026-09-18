@@ -209,6 +209,21 @@ def test_response_format_model_is_sent_strict_and_complete(server, monkeypatch):
     assert fmt["schema"]["required"] == ["name", "count", "tag", "inner", "items"]
 
 
+def test_forced_litellm_responses_path_sends_the_same_strict_schema():
+    # engine="litellm" with model_type="responses" converts the legacy body
+    # itself; a pydantic response_format must mean the same contract there
+    # (greptile on dspy#10451).
+    from dspy.clients.legacy_requests import chat_to_responses
+
+    data = chat_to_responses({"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}],
+                              "response_format": Record})
+    fmt = data["text"]["format"]
+    assert fmt["type"] == "json_schema" and fmt["strict"] is True
+    assert fmt["schema"]["required"] == ["name", "count", "tag", "inner", "items"]
+    assert "default" not in fmt["schema"]["properties"]["tag"]
+    assert fmt["schema"]["$defs"]["Inner"]["additionalProperties"] is False
+
+
 # ─── 14b. an empty model id is refused at construction ────────────────
 
 

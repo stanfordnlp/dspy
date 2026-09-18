@@ -1434,10 +1434,13 @@ def test_responses_api_with_pydantic_model_input():
     assert "text" in call_args
     response_format = call_args["text"]["format"]
 
+    # The same strict contract as the native path: closed, every property
+    # required, strict: true.
     assert response_format == {
         "name": TestModel.__name__,
         "type": "json_schema",
         "schema": {**TestModel.model_json_schema(), "additionalProperties": False},
+        "strict": True,
     }
 
 

@@ -160,7 +160,10 @@ def chat_to_responses(request: dict[str, Any]) -> dict[str, Any]:
     format_ = data.pop("response_format", None)
     if format_ is not None:
         if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
-            format_ = {"name": format_.__name__, "type": "json_schema", "schema": _close_object_schemas(format_.model_json_schema())}
+            # The same contract as the canonical path: a generated schema is
+            # sent strict and shaped for strict mode, on either engine.
+            format_ = {"name": format_.__name__, "type": "json_schema",
+                       "schema": _strict_json_schema(format_.model_json_schema()), "strict": True}
         data["text"] = {**data.get("text", {}), "format": format_}
     # The former config serializer omitted absent common generation parameters.
     for key in ("temperature", "top_p", "n", "logprobs", "reasoning", "tool_choice"):
