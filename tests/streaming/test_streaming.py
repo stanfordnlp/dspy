@@ -2078,3 +2078,43 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+@pytest.mark.anyio
+async def test_streamify_aclose_after_partial_consumption():
+    """Closing a partially consumed stream closes cleanly (#10380).
+
+    GeneratorExit used to unwind through the anyio task group, which collected
+    it as an "unhandled error in a TaskGroup" and re-raised it wrapped in a
+    BaseExceptionGroup instead of letting aclose() return.
+    """
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    async def long_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+        )
+        for _ in range(50):
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="token "))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=long_stream):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()
+        ):
+            stream = program(question="What is the capital of France?")
+            received = None
+            async for value in stream:
+                if isinstance(value, StreamResponse):
+                    received = value
+                    break
+
+            assert received is not None, "expected at least one streamed token before closing"
+
+            # Must not raise: a consumer stopping early is normal cleanup.
+            await stream.aclose()
