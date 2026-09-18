@@ -570,3 +570,53 @@ def test_modules_to_serialize_registration_does_not_outlive_the_save(tmp_path):
     finally:
         sys.modules.pop("scoped_module", None)
         sys.path.remove(str(tmp_path))
+
+
+def test_overlapping_saves_share_one_by_value_registration(tmp_path):
+    # The registry is process-wide. A save that overlaps another must keep
+    # the module registered until the last of them is done, or the later
+    # one pickles the rest of its objects by reference (greptile on
+    # dspy#10451).
+    import sys
+    import threading
+
+    import cloudpickle
+
+    from dspy.utils.pickle_by_value import serialize_by_value
+
+    (tmp_path / "shared_module.py").write_text("def f():\n    return 1\n")
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import shared_module
+
+        def registered():
+            return "shared_module" in cloudpickle.list_registry_pickle_by_value()
+
+        # Nested on one thread.
+        with serialize_by_value([shared_module]):
+            with serialize_by_value([shared_module]):
+                assert registered()
+            assert registered()  # the inner save finishing does not strip the outer one
+        assert not registered()
+
+        # Two threads: A enters, B enters, A leaves while B is still saving.
+        b_entered, a_left = threading.Event(), threading.Event()
+        seen = {}
+
+        def save_b():
+            with serialize_by_value([shared_module]):
+                b_entered.set()
+                a_left.wait(5)
+                seen["during_b_after_a_left"] = registered()
+
+        worker = threading.Thread(target=save_b)
+        with serialize_by_value([shared_module]):
+            worker.start()
+            assert b_entered.wait(5)
+        a_left.set()
+        worker.join(5)
+        assert seen["during_b_after_a_left"] is True
+        assert not registered()
+    finally:
+        sys.modules.pop("shared_module", None)
+        sys.path.remove(str(tmp_path))
