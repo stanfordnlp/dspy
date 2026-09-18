@@ -538,7 +538,7 @@ def _hint_responses_api(lm, exc):
     API only, and says so in its refusal ("use /v1/responses"). DSPy has the
     switch — model_type="responses" — so the error names it. No endpoint is
     chosen for the caller: which models need it is OpenAI's policy, not
-    DSPy's to guess (gauntlet 2026-09-13)."""
+    DSPy's to guess."""
     from dspy.utils.exceptions import LMInvalidRequestError
 
     if not isinstance(exc, LMInvalidRequestError) or getattr(lm, "model_type", None) != "chat":

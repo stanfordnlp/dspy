@@ -303,7 +303,7 @@ def test_prediction_to_fields_serializes_json_mode_values() -> None:
 def test_shim_reaches_host_only_via_registered_tools() -> None:
     # The bridge must not depend on Deno/Pyodide internals — only on the CodeInterpreter.tools
     # contract — so any backend (a local microVM, gVisor, ...) can drive it.
-    shim = bridge._shim_source()
+    shim = bridge.SHIM_SETUP
     assert "pyodide" not in shim.lower()
     assert "_js_tool_call" not in shim
     assert "run_sync" not in shim
@@ -315,7 +315,7 @@ def test_shim_reaches_host_only_via_registered_tools() -> None:
 def test_shim_file_literals_match_bridge_constants() -> None:
     # The shim lives in a sibling .py file with literal protocol strings (no interpolation); guard
     # against drift between those literals and bridge.py's host-side constants.
-    shim = bridge._shim_source()
+    shim = bridge.SHIM_SETUP
     for token in (bridge.CONSTRUCT_TOOL, bridge.CALL_TOOL, bridge.TOOL_MARKER, bridge.SIGNATURE_MARKER):
         assert token in shim, f"{token!r} missing from the shim file"
     for kind in bridge.BRIDGEABLE_KINDS:

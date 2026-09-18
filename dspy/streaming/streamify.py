@@ -207,7 +207,7 @@ def streamify(
         except BaseException as exc:
             # The task group reports failures as an exception group. One
             # failure is the program's own exception; callers wrote
-            # `except dspy.LMError`, and it must catch it (gauntlet 2026-09-13).
+            # `except dspy.LMError`, and it must catch it.
             leaf = _single_failure(exc)
             if leaf is None:
                 raise

@@ -33,6 +33,7 @@ import functools
 import inspect
 import json
 import logging
+from pathlib import Path
 from typing import Any, Callable
 
 from pydantic import TypeAdapter
@@ -67,25 +68,8 @@ _OUT_VAR = "__dspy_flex_out"
 _JSON_VAR = "__dspy_flex_json"
 
 
-@functools.lru_cache(maxsize=1)
-def _shim_source() -> str:
-    """The sandbox-side dspy shim, injected as text into each per-forward
-    interpreter. Read as package data on first use, not at import: a frozen
-    application (PyInstaller) ships modules as bytecode, and reading a sibling
-    ``.py`` at import made ``import dspy`` fail there (gauntlet 2026-09-13).
-    A frozen application must collect this file as data; the error says so."""
-    from importlib.resources import files
-
-    try:
-        return files(__package__).joinpath("_sandbox_shim.py").read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError) as exc:
-        raise CodeInterpreterError(
-            "dspy.Flex needs its sandbox shim, dspy/predict/flex/_sandbox_shim.py, readable as package data. "
-            "A frozen application ships modules as bytecode only; add the file as data (PyInstaller: "
-            "`--add-data <site-packages>/dspy/predict/flex/_sandbox_shim.py:dspy/predict/flex`; "
-            "`--collect-data dspy` does not collect .py files) or install a DSPy release that ships its "
-            "PyInstaller hook"
-        ) from exc
+# The sandbox-side dspy shim, injected as text into each per-forward interpreter.
+SHIM_SETUP = (Path(__file__).parent / "_sandbox_shim.py").read_text(encoding="utf-8")
 
 
 def parse_module_class_name(module_src: str) -> str:
@@ -278,7 +262,7 @@ class BridgeRuntime:
             interp.tools.update(
                 {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
             )
-            interp.execute(_shim_source())
+            interp.execute(SHIM_SETUP)
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
                 f"{_INSTANCE_VAR} = {self._class_name}()\n"

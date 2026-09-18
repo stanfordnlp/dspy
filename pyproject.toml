@@ -77,7 +77,7 @@ include = ["dspy", "dspy.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-dspy = ["primitives/*.js", "predict/flex/_sandbox_shim.py"]  # the shim is read as text, not imported
+dspy = ["primitives/*.js"]
 "dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
 "dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
 "dspy._vendor.lm15" = ["py.typed"]

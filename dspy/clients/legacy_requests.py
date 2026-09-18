@@ -15,7 +15,7 @@ def _strict_json_schema(schema: Any, *, root: dict | None = None) -> Any:
     the OpenAI SDK's ``to_strict_json_schema``: every property required,
     objects closed, ``None`` defaults dropped, a lone ``allOf`` and a ``$ref``
     with siblings unravelled. A generated pydantic schema with defaults or an
-    optional submodel was refused by the API before this (gauntlet 2026-09-13).
+    optional submodel was refused by the API before this.
     """
     if not isinstance(schema, dict):
         return schema
