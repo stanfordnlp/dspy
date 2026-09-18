@@ -15,6 +15,7 @@ from docs.scripts.zensical_build import (
     prepare_config,
     redirect_maps,
     remove_redirect_sources,
+    social_cards,
     validate_output,
     write_redirects,
 )
@@ -134,6 +135,29 @@ def test_prepared_config_exposes_stats_without_mutating_source():
 
     assert prepared["extra"] == {"social": [], "stats": {"stars": "10k"}}
     assert source == {"extra": {"social": []}}
+
+
+def test_social_cards_replace_renderer_image_metadata(tmp_path):
+    image = pytest.importorskip("PIL.Image")
+    logo = tmp_path / "logo.png"
+    image.new("RGBA", (16, 16), "red").save(logo)
+    home = tmp_path / "index.html"
+    home.write_text(
+        "<html><head>"
+        '<meta content="https://renderer.example/og.png" property="og:image">'
+        '<meta name="twitter:image" content="https://renderer.example/twitter.png">'
+        "</head><body><article>Home</article></body></html>"
+    )
+
+    social_cards(tmp_path, "https://dspy.ai/current/", {"/": "DSPy"}, logo)
+
+    rendered = home.read_text()
+    card = "https://dspy.ai/current/assets/images/social-zensical/8a5edab282632443.png"
+    assert rendered.count('property="og:image"') == 1
+    assert rendered.count('name="twitter:image"') == 1
+    assert 'property="twitter:image"' not in rendered
+    assert rendered.count(f'content="{card}"') == 2
+    assert "renderer.example" not in rendered
 
 
 def test_redirect_sources_are_removed_only_from_prepared_tree(tmp_path):
