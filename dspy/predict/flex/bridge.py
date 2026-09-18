@@ -80,8 +80,11 @@ def _shim_source() -> str:
         return files(__package__).joinpath("_sandbox_shim.py").read_text(encoding="utf-8")
     except (FileNotFoundError, OSError) as exc:
         raise CodeInterpreterError(
-            "dspy.Flex needs its sandbox shim (dspy/predict/flex/_sandbox_shim.py) as package data; "
-            "in a frozen application collect DSPy's data files (PyInstaller: `--collect-data dspy`)"
+            "dspy.Flex needs its sandbox shim, dspy/predict/flex/_sandbox_shim.py, readable as package data. "
+            "A frozen application ships modules as bytecode only; add the file as data (PyInstaller: "
+            "`--add-data <site-packages>/dspy/predict/flex/_sandbox_shim.py:dspy/predict/flex`; "
+            "`--collect-data dspy` does not collect .py files) or install a DSPy release that ships its "
+            "PyInstaller hook"
         ) from exc
 
 

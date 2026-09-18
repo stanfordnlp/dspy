@@ -271,3 +271,28 @@ def test_flex_shim_is_read_lazily_as_package_data():
     assert "_DspyPending" in source and bridge._shim_source() is source  # cached
 
 
+def test_flex_shim_error_names_a_way_that_works(monkeypatch):
+    # `--collect-data dspy` skips .py files; the message must not advertise it.
+    from importlib import resources
+
+    from dspy.predict.flex import bridge
+    from dspy.primitives.code_interpreter import CodeInterpreterError
+
+    bridge._shim_source.cache_clear()
+
+    class Missing:
+        def joinpath(self, name):
+            return self
+
+        def read_text(self, encoding=None):
+            raise FileNotFoundError("_sandbox_shim.py")
+
+    monkeypatch.setattr(resources, "files", lambda package: Missing())
+    try:
+        with pytest.raises(CodeInterpreterError, match="--add-data") as info:
+            bridge._shim_source()
+        assert "`--collect-data dspy` does not collect" in str(info.value)
+    finally:
+        bridge._shim_source.cache_clear()
+
+
