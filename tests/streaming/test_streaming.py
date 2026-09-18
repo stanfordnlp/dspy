@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 from dataclasses import dataclass
 from unittest import mock
@@ -430,6 +431,56 @@ def test_apply_sync_streaming_propagates_generator_exceptions():
     assert next(sync_output) == "first"
     with pytest.raises(StreamFailureError, match="stream broke"):
         next(sync_output)
+
+
+def test_apply_sync_streaming_close_stops_background_consumption():
+    # Abandoning a partially consumed sync stream used to leave the producer
+    # thread pumping the ENTIRE upstream into the queue — every remaining LM
+    # chunk consumed and billed with nobody reading (GH#10406). Closing must
+    # stop the producer, finalize the upstream generator, and end the thread.
+    consumed = {"count": 0, "finalized": False}
+    total = 1000
+
+    async def counting_stream():
+        try:
+            for i in range(total):
+                consumed["count"] = i + 1
+                yield f"chunk-{i}"
+        finally:
+            consumed["finalized"] = True
+
+    sync_output = dspy.streaming.apply_sync_streaming(counting_stream())
+    assert next(sync_output) == "chunk-0"
+
+    sync_output.close()
+
+    # The producer may legitimately run one bounded buffer ahead — never the
+    # whole stream.
+    assert consumed["count"] < 100, (
+        f"the producer consumed {consumed['count']}/{total} chunks after close()"
+    )
+    assert consumed["finalized"], "the upstream generator was never closed"
+
+    deadline = time.time() + 2
+    while time.time() < deadline and any("(producer)" in t.name for t in threading.enumerate()):
+        time.sleep(0.01)
+    assert not any("(producer)" in t.name for t in threading.enumerate()), (
+        "the producer thread outlived the closed stream"
+    )
+
+
+def test_apply_sync_streaming_drains_streams_longer_than_the_buffer():
+    # The queue is bounded for backpressure; a stream longer than the buffer
+    # must still drain completely, in order.
+    total = 100
+
+    async def counting_stream():
+        for i in range(total):
+            yield i
+
+    sync_output = dspy.streaming.apply_sync_streaming(counting_stream())
+
+    assert list(sync_output) == list(range(total))
 
 
 @pytest.mark.anyio
