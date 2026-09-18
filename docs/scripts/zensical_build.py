@@ -271,10 +271,18 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
             "twitter:description": description,
             "twitter:image": card_url,
         }
+        managed_images = {"og:image", "twitter:image"}
+        html = re.sub(
+            r'<meta\b(?=[^>]*(?:property|name)=["\'](?:og:image|twitter:image)["\'])[^>]*>\s*',
+            "",
+            html,
+            flags=re.IGNORECASE,
+        )
         tags = "".join(
-            f'<meta property="{escape(key)}" content="{escape(value, quote=True)}">\n'
+            f'<meta {"name" if key.startswith("twitter:") else "property"}="{escape(key)}" '
+            f'content="{escape(value, quote=True)}">\n'
             for key, value in metadata.items()
-            if key not in parser.metadata
+            if key in managed_images or key not in parser.metadata
         )
         page.write_text(html.replace("</head>", f"{tags}</head>", 1))
 
