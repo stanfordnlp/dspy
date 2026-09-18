@@ -480,6 +480,54 @@ def test_evaluate_save_as_csv_with_history():
             os.unlink(temp_csv)
 
 
+def test_evaluate_save_as_csv_utf8_when_locale_is_cp1252(tmp_path, monkeypatch):
+    """Evaluate CSV export must not depend on the Windows ANSI code page (#10411)."""
+    import builtins
+
+    answer = "Don't guess \u2014 the capital is \u5317\u4eac (B\u011bij\u012bng)."
+
+    real_open = builtins.open
+
+    encodings = []
+
+    def open_defaulting_to_cp1252(
+        file,
+        mode="r",
+        buffering=-1,
+        encoding=None,
+        errors=None,
+        newline=None,
+        closefd=True,
+        opener=None,
+    ):
+        if "w" in str(mode) and "b" not in str(mode):
+            encodings.append((str(file), encoding))
+        if encoding is None and "b" not in str(mode):
+            encoding = "cp1252"
+        return real_open(file, mode, buffering, encoding, errors, newline, closefd, opener)
+
+    monkeypatch.setattr(builtins, "open", open_defaulting_to_cp1252)
+
+    def program(**kwargs):
+        return dspy.Prediction(answer=answer)
+
+    def metric(example, pred, trace=None):
+        return 1.0
+
+    devset = [dspy.Example(question="capital of China?", answer=answer).with_inputs("question")]
+    csv_path = tmp_path / "results.csv"
+    json_path = tmp_path / "results.json"
+    ev = Evaluate(devset=devset, metric=metric, num_threads=1, display_progress=False)
+    ev(program, save_as_csv=str(csv_path), save_as_json=str(json_path))
+
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "\u5317\u4eac" in csv_text
+    assert "B\u011bij\u012bng" in csv_text
+    json.loads(json_path.read_text(encoding="utf-8"))
+    assert any(path.endswith(".csv") and encoding == "utf-8" for path, encoding in encodings)
+    assert any(path.endswith(".json") and encoding == "utf-8" for path, encoding in encodings)
+
+
 def test_evaluate_raises_on_empty_devset():
     program = Predict("question -> answer")
     ev = Evaluate(
