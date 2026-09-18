@@ -1701,6 +1701,24 @@ In adhering to this structure, your objective is:\x20
     assert system_message == expected_system_message
 
 
+def test_structured_output_schema_is_isolated_from_callers():
+    from dspy.adapters.json_adapter import _get_structured_outputs_response_format
+
+    class OptionalAnswer(dspy.Signature):
+        """Return an optional answer."""
+
+        question: str = dspy.InputField()
+        answer: str | None = dspy.OutputField(default=None)
+
+    model = _get_structured_outputs_response_format(OptionalAnswer)
+    schema = model.model_json_schema()
+    answer_schema = schema.get("properties", {}).get("answer", {})
+    answer_schema.pop("default", None)
+
+    isolated = model.model_json_schema()
+    assert isolated.get("properties", {}).get("answer", {}).get("default", "missing") is None
+
+
 def test_missing_optional_output_fields_fall_back_to_defaults():
     from dspy.utils.exceptions import AdapterParseError
 
