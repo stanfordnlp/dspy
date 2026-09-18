@@ -7,7 +7,7 @@ from pathlib import Path
 import cloudpickle
 import orjson
 
-from dspy.utils.saving import get_dependency_versions
+from dspy.utils.saving import dump_program, get_dependency_versions
 
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
 # named_sub_modules for the time being.
@@ -218,7 +218,7 @@ class BaseModule:
                     cloudpickle.register_pickle_by_value(module)
 
                 with open(path / "program.pkl", "wb") as f:
-                    cloudpickle.dump(self, f)
+                    dump_program(self, f)
             except Exception as e:
                 raise RuntimeError(
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
