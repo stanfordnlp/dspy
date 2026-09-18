@@ -84,9 +84,12 @@ class StreamListener:
     def reset(self):
         """Reset the per-stream state so the listener can capture a fresh stream.
 
-        Called at the start of every top-level streamed call so a listener built once and reused
-        across many calls (the common `streamify(program)` pattern) keeps working, and also used by
-        the `allow_reuse` path to reset between multiple emissions within a single call (#8425).
+        Called by `streamify()` on the shallow per-call copy of each listener it builds for a
+        top-level call, so a listener built once and reused across many calls (the common
+        `streamify(program)` pattern) keeps working without sharing parser state between calls,
+        and also used by the `allow_reuse` path in `receive()` to reset between multiple emissions
+        within a single call (#8425). Because the copy is shallow, a subclass that adds per-stream
+        mutable state must rebind it here (assign a new container) rather than clear it in place.
         """
         self.field_start_queue = []
         self.field_end_queue = Queue()
