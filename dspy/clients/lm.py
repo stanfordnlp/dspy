@@ -308,6 +308,7 @@ class LM(BaseLM):
 
         if initial_kwargs.get("rollout_id") is None:
             initial_kwargs.pop("rollout_id", None)
+        self._validate_stream_arg(initial_kwargs)
         return initial_kwargs
 
     @property
@@ -348,6 +349,15 @@ class LM(BaseLM):
                 stacklevel=3,
             )
             self._warned_zero_temp_rollout = True
+
+    def _validate_stream_arg(self, kwargs: dict[str, Any]):
+        if kwargs.get("stream"):
+            raise LMUnsupportedFeatureError(
+                "dspy.LM does not support raw 'stream=True'. Use 'dspy.streamify' for streaming responses.",
+                model=self.model,
+                provider=self._provider_name,
+                features=["stream"],
+            )
 
     def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
@@ -401,6 +411,7 @@ class LM(BaseLM):
         with ExitStack() as cleanup:
             for engine in engines:
                 cleanup.callback(engine.close)
+
 
     async def aclose(self):
         """Close this event loop's owned pools and the synchronous pools."""
@@ -460,6 +471,7 @@ class LM(BaseLM):
         self._providers = getattr(self, "_providers", ())
         self._engine_lock = threading.RLock()
         self._engine_store = {}
+
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
