@@ -542,3 +542,31 @@ def test_forward_through_call_no_warning(capsys):
     module(x="test")
     captured = capsys.readouterr()
     assert "directly is discouraged" not in captured.err
+
+
+def test_modules_to_serialize_registration_does_not_outlive_the_save(tmp_path):
+    # cloudpickle's by-value registry is process-wide and keyed by module
+    # name. A save must not leave a module registered, or every later pickle
+    # of any module by that name in the process is by value.
+    import sys
+
+    import cloudpickle
+
+    (tmp_path / "scoped_module.py").write_text("def f():\n    return 1\n")
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import scoped_module
+
+        assert "scoped_module" not in cloudpickle.list_registry_pickle_by_value()
+        dspy.Predict("q -> a").save(tmp_path / "prog", save_program=True, modules_to_serialize=[scoped_module])
+        assert "scoped_module" not in cloudpickle.list_registry_pickle_by_value()
+        # A registration the caller made themselves is theirs to keep.
+        cloudpickle.register_pickle_by_value(scoped_module)
+        try:
+            dspy.Predict("q -> a").save(tmp_path / "prog2", save_program=True, modules_to_serialize=[scoped_module])
+            assert "scoped_module" in cloudpickle.list_registry_pickle_by_value()
+        finally:
+            cloudpickle.unregister_pickle_by_value(scoped_module)
+    finally:
+        sys.modules.pop("scoped_module", None)
+        sys.path.remove(str(tmp_path))
