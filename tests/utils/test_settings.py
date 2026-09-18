@@ -266,3 +266,19 @@ def callback(x):
         # Only need to clean up sys.path
         if str(tmp_path) in sys.path:
             sys.path.remove(str(tmp_path))
+
+
+def test_settings_save_with_duplicate_modules_does_not_raise(tmp_path):
+    """Passing the same module twice in `modules_to_serialize` must not raise.
+
+    Mirrors the `registered_by_us` deduplication in `dspy/settings.py`: without
+    dedup, the second `unregister_pickle_by_value` in the `finally` block raised
+    `ValueError` because the first call had already removed the entry.
+    """
+    import json as some_module
+
+    import cloudpickle
+
+    settings_path = tmp_path / "settings.pkl"
+    dspy.settings.save(settings_path, modules_to_serialize=[some_module, some_module])
+    assert some_module.__name__ not in cloudpickle.list_registry_pickle_by_value()
