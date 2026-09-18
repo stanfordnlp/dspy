@@ -188,7 +188,7 @@ dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
 result = await dspy_tool.acall(param1="value", param2=123)
 ```
 
-By default, MCP tools return the `content` field. Pass `result_mode="structured"` to `dspy.Tool.from_mcp_tool` to return `structuredContent` when available; if it is absent, DSPy falls back to the default conversion.
+By default in DSPy 3.4, MCP tools return structured content (`result_mode="structured"`) when present, falling back to text content if structured content is absent. Pass `result_mode="text"` to `dspy.Tool.from_mcp_tool` to preserve DSPy's legacy text/non-text conversion behavior.
 
 ## Learn More
 
