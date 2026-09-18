@@ -20,7 +20,7 @@ import pytest
 
 import dspy
 from dspy.predict.flex import Flex
-from dspy.predict.flex.bridge import SHIM_SETUP
+from dspy.predict.flex.bridge import _shim_source
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.teleprompt.gepa.gepa_flex_utils import CodeProposalSignature
@@ -153,7 +153,7 @@ def test_proposer_prompts_only_advertise_names_the_sandbox_defines() -> None:
     # The shim only registers itself as the importable `dspy` inside the sandbox (where the host
     # bridge tools are in globals), so running it here just builds the module object to inspect.
     namespace: dict = {}
-    exec(SHIM_SETUP, namespace)
+    exec(_shim_source(), namespace)
     shim = namespace["dspy"]
 
     prompts = PRIMITIVES_CATALOG + (CodeProposalSignature.__doc__ or "")

@@ -35,6 +35,23 @@ if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
 
+def _single_failure(exc: BaseException) -> BaseException | None:
+    """The one exception inside a (possibly nested) exception group, or None
+    when ``exc`` is not a group or holds several distinct failures."""
+    if not hasattr(exc, "exceptions"):
+        return None
+    leaves: list[BaseException] = []
+    pending = [exc]
+    while pending:
+        current = pending.pop()
+        children = getattr(current, "exceptions", None)
+        if children is None:
+            leaves.append(current)
+        else:
+            pending.extend(children)
+    return leaves[0] if len(leaves) == 1 else None
+
+
 def streamify(
     program: "Module",
     status_message_provider: StatusMessageProvider | None = None,
@@ -184,6 +201,19 @@ def streamify(
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
+        try:
+            async for value in _stream_program(args, kwargs):
+                yield value
+        except BaseException as exc:
+            # The task group reports failures as an exception group. One
+            # failure is the program's own exception; callers wrote
+            # `except dspy.LMError`, and it must catch it (gauntlet 2026-09-13).
+            leaf = _single_failure(exc)
+            if leaf is None:
+                raise
+            raise leaf from None
+
+    async def _stream_program(args, kwargs):
         send_stream, receive_stream = anyio.create_memory_object_stream(16)
         async with anyio.create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)

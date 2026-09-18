@@ -33,7 +33,6 @@ import functools
 import inspect
 import json
 import logging
-from pathlib import Path
 from typing import Any, Callable
 
 from pydantic import TypeAdapter
@@ -68,8 +67,24 @@ _OUT_VAR = "__dspy_flex_out"
 _JSON_VAR = "__dspy_flex_json"
 
 
-# The sandbox-side dspy shim, injected as text into each per-forward interpreter.
-SHIM_SETUP = (Path(__file__).parent / "_sandbox_shim.py").read_text(encoding="utf-8")
+@functools.lru_cache(maxsize=1)
+def _shim_source() -> str:
+    """The sandbox-side dspy shim, injected as text into each per-forward
+    interpreter. Read as package data on first use, not at import: a frozen
+    application (PyInstaller) ships modules as bytecode, and reading a sibling
+    ``.py`` at import made ``import dspy`` fail there (gauntlet 2026-09-13).
+    DSPy ships a PyInstaller hook that collects this file; without it the
+    error says so."""
+    from importlib.resources import files
+
+    try:
+        return files(__package__).joinpath("_sandbox_shim.py").read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        raise CodeInterpreterError(
+            "dspy.Flex needs its sandbox shim (dspy/predict/flex/_sandbox_shim.py) as package data; "
+            "in a frozen application collect DSPy's data files (DSPy ships a PyInstaller hook: "
+            "`pyinstaller --collect-data dspy` or the hook entry point)"
+        ) from exc
 
 
 def parse_module_class_name(module_src: str) -> str:
@@ -262,7 +277,7 @@ class BridgeRuntime:
             interp.tools.update(
                 {name: _restoring_entrypoint(fn, originals) for name, fn in self._tool_callables().items()}
             )
-            interp.execute(SHIM_SETUP)
+            interp.execute(_shim_source())
             interp.execute(self._module_src)  # defines the class in the sandbox
             code = (
                 f"{_INSTANCE_VAR} = {self._class_name}()\n"
