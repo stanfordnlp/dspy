@@ -166,6 +166,41 @@ def test_same_lm_on_successive_loops(endpoint):
     assert lm._engine_store == {}
 
 
+def _open_fds():
+    import os
+
+    return len(os.listdir("/proc/self/fd")) if os.path.isdir("/proc/self/fd") else None
+
+
+def test_close_releases_pools_of_closed_loops(endpoint):
+    # A loop that has finished can no longer aclose() its pool; close()
+    # releases it and the sockets are closed, not only the sync pool's.
+    import gc
+
+    lm = native_lm(endpoint)
+    for _ in range(3):
+        asyncio.run(lm.acall("alpha"))
+    lm("alpha")
+    async_pools = [key for key in lm._engine_store if key[0] is not None]
+    assert len(async_pools) == 1 and async_pools[0][0].is_closed()  # earlier loops were evicted as each new one came
+    before = _open_fds()
+    lm.close()
+    gc.collect()
+    assert lm._engine_store == {}
+    if before is not None:
+        assert _open_fds() < before
+
+
+def test_a_new_loop_evicts_pools_of_closed_loops(endpoint):
+    # A long-lived LM used from many asyncio.run() calls does not keep one
+    # pool per finished loop; the next loop's pool replaces them.
+    lm = native_lm(endpoint)
+    for _ in range(4):
+        asyncio.run(lm.acall("alpha"))
+    assert len([key for key in lm._engine_store if key[0] is not None]) == 1
+    lm.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("streaming", [False, True])

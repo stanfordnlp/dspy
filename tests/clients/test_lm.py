@@ -1434,10 +1434,13 @@ def test_responses_api_with_pydantic_model_input():
     assert "text" in call_args
     response_format = call_args["text"]["format"]
 
+    # The same strict contract as the native path: closed, every property
+    # required, strict: true.
     assert response_format == {
         "name": TestModel.__name__,
         "type": "json_schema",
         "schema": {**TestModel.model_json_schema(), "additionalProperties": False},
+        "strict": True,
     }
 
 
@@ -1741,3 +1744,27 @@ def test_lm_responses_does_not_validate_reasoning_temperature_client_side():
     sent = responses.call_args.kwargs
     assert sent["temperature"] == 0.7
     assert sent["reasoning"] == {"effort": "low", "summary": "auto"}
+
+
+@pytest.mark.parametrize("model", ["openai/", "anthropic/", ""])
+def test_empty_model_id_is_refused_at_construction(model):
+    # "openai/" selected LiteLLM silently and failed at call time.
+    with pytest.raises(ValueError, match="model"):
+        dspy.LM(model, api_key="k")
+
+
+def test_responses_only_refusal_names_model_type():
+    # OpenAI serves function tools for its reasoning models on the Responses
+    # API only and says "use /v1/responses"; DSPy's error names its switch.
+    from dspy.clients.execution import _hint_responses_api
+    from dspy.utils.exceptions import LMInvalidRequestError
+
+    exc = LMInvalidRequestError("Function tools are not supported in /v1/chat/completions; use /v1/responses", model="m")
+    lm = dspy.LM("openai/gpt-5.6-luna", api_key="k", model_type="responses", max_tokens=16000)
+    _hint_responses_api(lm, exc)
+    assert "DSPy:" not in str(exc)  # already on the Responses API
+    lm = dspy.LM("openai/gpt-5.6-luna", api_key="k", max_tokens=16000)
+    _hint_responses_api(lm, exc)
+    _hint_responses_api(lm, exc)
+    assert str(exc).count("DSPy:") == 1
+    assert "model_type='responses'" in str(exc) and "/v1/responses" in str(exc)

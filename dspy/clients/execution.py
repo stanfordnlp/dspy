@@ -174,12 +174,12 @@ def _canonical(call, *, compat=None):
             if key not in CLIENT_KEYS | {"n", "rollout_id", "num_generations", "prompt_cache"} and val is not None}
     format_ = body.get("response_format")
     if isinstance(format_, type) and issubclass(format_, pydantic.BaseModel):
-        from dspy.clients.legacy_requests import _close_object_schemas
+        from dspy.clients.legacy_requests import _strict_json_schema
 
-        # Match the legacy Responses path's preparation of generated schemas.
-        # Raw caller-supplied schemas remain unchanged.
+        # A generated schema is sent strict, so it is shaped as strict mode
+        # takes it. Raw caller-supplied schemas remain unchanged.
         body["response_format"] = {"type": "json_schema", "json_schema": {
-            "name": format_.__name__, "schema": _close_object_schemas(format_.model_json_schema()), "strict": True,
+            "name": format_.__name__, "schema": _strict_json_schema(format_.model_json_schema()), "strict": True,
         }}
     request = request_from_openai_chat(body, compat=compat)
     prompt_cache = call.legacy.get("prompt_cache")
@@ -341,6 +341,8 @@ def _select_engine(lm, call, asynchronous):
     with lm._engine_lock:
         backend = lm._engine_store.get(key)
         if backend is None:
+            if loop is not None:
+                lm._reap_closed_loops()
             provider = resolution.provider
             api_keys = {provider: clients["api_key"]} if "api_key" in clients else None
             url = clients.get("api_base") or clients.get("base_url")
@@ -531,6 +533,25 @@ def _accept_legacy(state, result):
     state.result = result
 
 
+def _hint_responses_api(lm, exc):
+    """OpenAI serves function tools for its reasoning models on the Responses
+    API only, and says so in its refusal ("use /v1/responses"). DSPy has the
+    switch — model_type="responses" — so the error names it. No endpoint is
+    chosen for the caller: which models need it is OpenAI's policy, not
+    DSPy's to guess."""
+    from dspy.utils.exceptions import LMInvalidRequestError
+
+    if not isinstance(exc, LMInvalidRequestError) or getattr(lm, "model_type", None) != "chat":
+        return
+    message = getattr(exc, "message", "") or ""
+    if "/v1/responses" not in message or "DSPy:" in message:
+        return
+    hint = " DSPy: construct the LM with model_type='responses' to use the Responses API for this model."
+    exc.message = message + hint
+    if exc.args and isinstance(exc.args[0], str):
+        exc.args = (exc.args[0] + hint, *exc.args[1:])
+
+
 def _account_failed_call(lm, results, primary):
     if settings.usage_tracker:
         for result in results:
@@ -624,6 +645,7 @@ def execute(lm, call):
         _store(lm, call, result, False)
         return result
     except BaseException as exc:
+        _hint_responses_api(lm, exc)
         _account_failed_call(lm, results, exc)
         raise
 
@@ -699,6 +721,7 @@ async def aexecute(lm, call):
             await asyncio.to_thread(_store, lm, call, result, True)
         return result
     except BaseException as exc:
+        _hint_responses_api(lm, exc)
         _account_failed_call(lm, results, exc)
         raise
 
