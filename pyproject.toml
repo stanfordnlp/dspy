@@ -76,9 +76,6 @@ where = ["."]
 include = ["dspy", "dspy.*"]
 exclude = ["tests", "tests.*"]
 
-[project.entry-points.pyinstaller40]
-hook-dirs = "dspy.__pyinstaller:get_hook_dirs"
-
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
 "dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
@@ -186,7 +183,6 @@ known-first-party = ["dspy"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
-"dspy/__pyinstaller/hook-dspy.py" = ["N999"]  # PyInstaller requires the hook-<package>.py name
 "tests/**/*.py" = [
     "S101",    # Allow assert statements in tests
     "TID252",  # Allow relative imports in tests

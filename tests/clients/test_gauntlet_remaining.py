@@ -264,14 +264,10 @@ def test_hint_is_added_once_and_only_for_chat():
 
 
 def test_flex_shim_is_read_lazily_as_package_data():
-    import importlib
-
     from dspy.predict.flex import bridge
 
     assert not hasattr(bridge, "SHIM_SETUP")  # nothing read at import
     source = bridge._shim_source()
     assert "_DspyPending" in source and bridge._shim_source() is source  # cached
-    hook_dirs = importlib.import_module("dspy.__pyinstaller").get_hook_dirs()
-    assert os.path.isfile(os.path.join(hook_dirs[0], "hook-dspy.py"))
 
 

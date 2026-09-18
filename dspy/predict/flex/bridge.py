@@ -73,8 +73,7 @@ def _shim_source() -> str:
     interpreter. Read as package data on first use, not at import: a frozen
     application (PyInstaller) ships modules as bytecode, and reading a sibling
     ``.py`` at import made ``import dspy`` fail there (gauntlet 2026-09-13).
-    DSPy ships a PyInstaller hook that collects this file; without it the
-    error says so."""
+    A frozen application must collect this file as data; the error says so."""
     from importlib.resources import files
 
     try:
@@ -82,8 +81,7 @@ def _shim_source() -> str:
     except (FileNotFoundError, OSError) as exc:
         raise CodeInterpreterError(
             "dspy.Flex needs its sandbox shim (dspy/predict/flex/_sandbox_shim.py) as package data; "
-            "in a frozen application collect DSPy's data files (DSPy ships a PyInstaller hook: "
-            "`pyinstaller --collect-data dspy` or the hook entry point)"
+            "in a frozen application collect DSPy's data files (PyInstaller: `--collect-data dspy`)"
         ) from exc
 
 
