@@ -49,6 +49,13 @@
     }
 }
 
+@media screen and (min-width: 60em) {
+    /* Zensical's search surface sits two pixels above Material's input. */
+    .md-header__inner > .md-version {
+        padding-top: 0.15rem !important;
+    }
+}
+
 /* Dark mode specific adjustments */
 [data-md-color-scheme="slate"] .md-logo img {
     filter: brightness(0.9);
