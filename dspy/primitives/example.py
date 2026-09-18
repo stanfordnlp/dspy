@@ -324,7 +324,8 @@ class Example:
         """
         copied = self.copy()
         for key in keys:
-            del copied[key]
+            if key in copied:
+                del copied[key]
         return copied
 
     def toDict(self):  # noqa: N802
