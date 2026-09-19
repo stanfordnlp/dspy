@@ -84,7 +84,7 @@ def bootstrap_trace_data(
 
                 trace = dspy.settings.trace.copy()
                 # Trace is Tuple[signature, inputs, prediction outputs]
-                if present:
+                if present and expected:
                     failed_pred = FailedPrediction(
                         completion_text=completion_str,
                         format_reward=format_failure_score
