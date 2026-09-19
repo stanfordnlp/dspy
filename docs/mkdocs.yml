@@ -366,6 +366,7 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
+    - "js/copy-page.js"
     - "js/hero-interactive.js"
 
 markdown_extensions:
