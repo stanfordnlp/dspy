@@ -2,11 +2,13 @@
 
 ## Why optimizers need metrics
 
-Before DSPy can improve our program automatically, we need to tell it what “better” means. That starts with a metric and a baseline evaluation. In this section we’ll see why optimization beats hand-tuning, design a quantifiable metric for our haiku task, and run a baseline score so we have something to beat.
+Before DSPy can improve our program automatically, we need to tell it what “better” means. That starts with a metric and a baseline evaluation. In this section we’ll design a quantifiable metric for our haiku task and run a baseline score so we have something to beat.
 
-So far we’ve written DSPy programs by hand. Our signatures and instructions are only as good as what we type, with no examples to learn from. The quality of our haikus depends on the base knowledge a given model has about locations and writing haikus.
+This is the third form of intent in a DSPy program. Python expresses exact structure, signatures describe fuzzy transformations, and examples plus metrics describe success across real cases. Metrics are especially useful for requirements that vary across a distribution or are easier to judge than to enumerate.
 
-*Optimizers* close that gap. An optimizer is an algorithm that improves your program automatically, and [DSPy ships several](../diving-deeper/choosing-an-optimizer.md). Some select small input/output pairs (few-shot examples) to include in the prompt as demonstrations. Others rewrite the natural-language instructions in your signatures. A few go further and fine-tune the underlying model. What they share is a loop: run your program many times, keep the version that scores best.
+They are not a substitute for saying what we know. So far we’ve written DSPy programs by hand, and if every haiku must have three lines, we should state or enforce that requirement directly. Evaluation and optimization help us measure the result, adapt it to a model, and handle the long tail.
+
+*Optimizers* close that gap. An optimizer is an algorithm that improves your program automatically, and [DSPy ships several](../diving-deeper/choosing-an-optimizer.md). Some select small input/output pairs as demonstrations. Others rewrite natural-language instructions. Some fine-tune the underlying model, and newer optimizers can use reinforcement learning. What they share is a contract: take a program and a way to judge it, then produce a better program.
 
 To decide what “better” means, an optimizer needs a *metric*: a Python function that scores a single prediction.
 
