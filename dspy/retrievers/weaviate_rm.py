@@ -89,7 +89,7 @@ class WeaviateRM(dspy.Retrieve):
         for query in queries:
             if self._client_type == "WeaviateClient":
                 if tenant:
-                    results = self._weaviate_collection.query.with_tenant(tenant).hybrid(query=query, limit=k, **kwargs)
+                    results = self._weaviate_collection.with_tenant(tenant).query.hybrid(query=query, limit=k, **kwargs)
                 else:
                     results = self._weaviate_collection.query.hybrid(query=query, limit=k, **kwargs)
 
