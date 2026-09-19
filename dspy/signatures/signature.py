@@ -526,6 +526,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         for field in cls.fields:
             state["fields"].append(
                 {
+                    "name": field,
                     "prefix": cls.fields[field].json_schema_extra["prefix"],
                     "description": cls.fields[field].json_schema_extra["desc"],
                 }
@@ -538,9 +539,21 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
         signature_copy.instructions = state["instructions"]
-        for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):
-            field.json_schema_extra["prefix"] = saved_field["prefix"]
-            field.json_schema_extra["desc"] = saved_field["description"]
+        saved_fields = state["fields"]
+        if saved_fields and all("name" in saved_field for saved_field in saved_fields):
+            # Match by field name so a reordered (or differently-sized) target signature
+            # is restored correctly rather than by position.
+            saved_by_name = {saved_field["name"]: saved_field for saved_field in saved_fields}
+            for name, field in signature_copy.fields.items():
+                saved_field = saved_by_name.get(name)
+                if saved_field is not None:
+                    field.json_schema_extra["prefix"] = saved_field["prefix"]
+                    field.json_schema_extra["desc"] = saved_field["description"]
+        else:
+            # Backward compatibility: state saved before field names were serialized.
+            for field, saved_field in zip(signature_copy.fields.values(), saved_fields, strict=False):
+                field.json_schema_extra["prefix"] = saved_field["prefix"]
+                field.json_schema_extra["desc"] = saved_field["description"]
 
         return signature_copy
 
