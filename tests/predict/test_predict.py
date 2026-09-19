@@ -1780,3 +1780,47 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def _preprocessed_lm_kwargs(module_config, lm_temperature, call_config=None):
+    """Return the LM kwargs `Predict` resolves for a call, without hitting a provider."""
+    predict = Predict("input -> output", **module_config)
+    predict.lm = dspy.LM("openai/gpt-4o-mini", temperature=lm_temperature, cache=False)
+    kwargs = {"input": "hello"}
+    if call_config is not None:
+        kwargs["config"] = call_config
+    return predict._forward_preprocess(**kwargs)[1]
+
+
+@pytest.mark.parametrize("lm_temperature", [None, 0.9])
+def test_explicit_zero_temperature_is_bumped_for_n_gt_1(lm_temperature):
+    config = _preprocessed_lm_kwargs({"temperature": 0.0, "n": 3}, lm_temperature)
+
+    assert config["temperature"] == 0.7
+
+
+@pytest.mark.parametrize("lm_temperature", [None, 0.9])
+def test_explicit_zero_temperature_passed_per_call_is_bumped_for_n_gt_1(lm_temperature):
+    config = _preprocessed_lm_kwargs({"n": 3}, lm_temperature, {"temperature": 0.0, "n": 3})
+
+    assert config["temperature"] == 0.7
+
+
+@pytest.mark.parametrize("lm_temperature", [None, 0.9])
+def test_low_nonzero_temperature_is_bumped_for_n_gt_1(lm_temperature):
+    config = _preprocessed_lm_kwargs({"temperature": 0.1, "n": 3}, lm_temperature)
+
+    assert config["temperature"] == 0.7
+
+
+@pytest.mark.parametrize("lm_temperature", [None, 0.9])
+def test_explicit_zero_temperature_without_n_is_forwarded_unchanged(lm_temperature):
+    config = _preprocessed_lm_kwargs({"temperature": 0.0}, lm_temperature)
+
+    assert config["temperature"] == 0.0
+
+
+def test_unset_temperature_is_left_to_a_high_lm_default():
+    config = _preprocessed_lm_kwargs({"n": 3}, 0.9)
+
+    assert "temperature" not in config
