@@ -5,6 +5,7 @@ from litellm import Choices, Message, ModelResponse
 
 import dspy
 from dspy.primitives.example import Example
+from dspy.utils.exceptions import AdapterParseError
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
 
 
@@ -210,3 +211,47 @@ def test_bootstrap_trace_partial_credit_and_zero_reward():
     assert len(results) == 1
     assert isinstance(results[0]["prediction"], FailedPrediction)
     assert results[0]["score"] == 0.0
+
+
+def test_bootstrap_trace_zero_output_signature_skips_fractional_credit():
+    """A zero-output signature must not divide by zero on partial-credit fraction.
+
+    An AdapterParseError may report a non-empty parsed_result for a signature with
+    no output fields; the fractional calculation must be skipped entirely.
+    """
+
+    class ZeroOutputSignature(dspy.Signature):
+        text: str = dspy.InputField()
+
+    program = dspy.Predict(ZeroOutputSignature)
+    dataset = [Example(text="one").with_inputs("text")]
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+
+    with mock.patch(
+        "dspy.adapters.json_adapter.JSONAdapter.parse",
+        side_effect=AdapterParseError(
+            adapter_name="JSONAdapter",
+            signature=ZeroOutputSignature,
+            lm_response='{"unexpected": 1}',
+            parsed_result={"unexpected": 1},
+        ),
+    ), mock.patch("litellm.completion", return_value=ModelResponse(
+        choices=[Choices(message=Message(content='{"unexpected": 1}'))],
+        model="openai/gpt-4o-mini",
+    )):
+        results = bootstrap_trace_data(
+            program=program,
+            dataset=dataset,
+            metric=lambda example, prediction, trace=None: True,
+            num_threads=1,
+            raise_on_error=False,
+            capture_failed_parses=True,
+            failure_score=1,
+            format_failure_score=-1,
+        )
+
+    assert len(results) == 1
+    assert isinstance(results[0]["prediction"], FailedPrediction)
+    assert results[0]["prediction"].format_reward == -1
+    assert results[0]["score"] == -1
