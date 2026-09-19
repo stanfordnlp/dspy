@@ -173,3 +173,29 @@ def test_json_file_loading_works_without_permission(tmp_path):
     new_predict = dspy.Predict("question->answer")
     new_predict.load(json_path)
     assert new_predict.dump_state() == predict.dump_state()
+
+
+class _ProgramWithRetriever(dspy.Module):
+    def __init__(self):
+        self.retriever = dspy.Retrieve(k=5)
+
+
+def test_dump_state_forwards_json_mode_to_retrieve():
+    """BaseModule.dump_state calls every parameter with json_mode=..., so a bare Retrieve must accept it."""
+    program = _ProgramWithRetriever()
+
+    assert program.dump_state() == {"retriever": {"k": 5}}
+    assert program.dump_state(json_mode=False) == {"retriever": {"k": 5}}
+
+
+def test_save_and_load_model_with_retrieve(tmp_path):
+    """Test that a program holding only a Retrieve can be saved and reloaded."""
+    program = _ProgramWithRetriever()
+
+    for path in (tmp_path / "program.json", tmp_path / "program.pkl"):
+        program.save(path)
+
+        loaded_program = _ProgramWithRetriever()
+        loaded_program.load(path, allow_pickle=True)
+        assert loaded_program.retriever.k == 5
+        assert loaded_program.dump_state() == program.dump_state()
