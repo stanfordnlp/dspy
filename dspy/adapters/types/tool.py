@@ -524,25 +524,53 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
     """Recursively resolve json model schema, expanding all references."""
 
     # If there are no definitions to resolve, return the main schema
-    if "$defs" not in schema and "definitions" not in schema:
+    defs = dict(schema.get("$defs", {}))
+    defs.update(schema.get("definitions", {}))
+    if not defs:
         return schema
 
-    def resolve_refs(obj: Any) -> Any:
+    used_recursive_refs = set()
+
+    def resolve_refs(obj: Any, seen: frozenset[str] = frozenset()) -> Any:
         if not isinstance(obj, (dict, list)):
             return obj
         if isinstance(obj, dict):
-            if "$ref" in obj:
+            if "$ref" in obj and isinstance(obj["$ref"], str):
                 ref_path = obj["$ref"].split("/")[-1]
-                return resolve_refs(schema["$defs"][ref_path])
-            return {k: resolve_refs(v) for k, v in obj.items()}
+                if ref_path in seen:
+                    used_recursive_refs.add(ref_path)
+                    return {"$ref": obj["$ref"]}
+                if ref_path in defs:
+                    expanded = resolve_refs(defs[ref_path], seen | {ref_path})
+                    if isinstance(expanded, dict):
+                        merged = dict(expanded)
+                        for k, v in obj.items():
+                            if k not in ("$ref", "$defs", "definitions"):
+                                merged[k] = resolve_refs(v, seen)
+                        return merged
+                    return expanded
+            return {
+                k: resolve_refs(v, seen)
+                for k, v in obj.items()
+                if k not in ("$defs", "definitions")
+            }
 
         # Must be a list
-        return [resolve_refs(item) for item in obj]
+        return [resolve_refs(item, seen) for item in obj]
 
-    # Resolve all references in the main schema
     resolved_schema = resolve_refs(schema)
-    # Remove the $defs key as it's no longer needed
-    resolved_schema.pop("$defs", None)
+
+    if used_recursive_refs:
+        resolved_defs = {
+            k: resolve_refs(defs[k], frozenset({k}))
+            for k in used_recursive_refs
+            if k in defs
+        }
+        if "$defs" in schema or "definitions" not in schema:
+            resolved_schema["$defs"] = resolved_defs
+        if "definitions" in schema:
+            resolved_schema["definitions"] = resolved_defs
+
     return resolved_schema
 
 
@@ -564,7 +592,7 @@ def convert_input_schema_to_tool_args(
 
     required = schema.get("required", [])
 
-    defs = schema.get("$defs", {})
+    defs = schema.get("$defs") or schema.get("definitions") or {}
 
     for name, prop in properties.items():
         if len(defs) > 0:
