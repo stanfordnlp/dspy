@@ -162,7 +162,7 @@ class JSONAdapter(ChatAdapter):
         for k, v in fields.items():
             if k in signature.output_fields:
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[k] = parse_value(v, signature.output_fields[k].annotation, signature.output_fields[k])
                 except ValueError as exc:
                     raise AdapterParseError(
                         adapter_name=type(self).__name__, signature=signature, lm_response=completion,
