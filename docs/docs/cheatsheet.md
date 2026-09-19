@@ -468,11 +468,11 @@ dspy.configure_cache(
 )
 ```
 
-## DSPy `Refine` and `BestofN`
+## DSPy `Refine` and `BestOfN`
 
->`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
+>`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestOfN` in DSPy 2.6.
 
-### BestofN
+### BestOfN
 
 Runs a module up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 

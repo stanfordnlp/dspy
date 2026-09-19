@@ -99,7 +99,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
 - **How do I use DSPy assertions?**
 
     a) **How to Add Assertions to Your Program**:
-    - **Define Constraints**: Use `dspy.Assert` and/or `dspy.Suggest` to define constraints within your DSPy program. These are based on boolean validation checks for the outcomes you want to enforce, which can simply be Python functions to validate the model outputs.
+    - **Define Constraints**: Use `dspy.Refine` and/or `dspy.BestOfN` to define constraints within your DSPy program. These are based on boolean validation checks for the outcomes you want to enforce, which can simply be Python functions to validate the model outputs.
     - **Integrating Assertions**: Keep your Assertion statements following a model generations (hint: following a module layer)
 
     b) **How to Activate the Assertions**:
@@ -109,7 +109,7 @@ Modules can be frozen by setting their `._compiled` attribute to be True, indica
     2. **Activate Assertions**:
         - Directly call `activate_assertions` on your DSPy program with assertions: `program_with_assertions = ProgramWithAssertions().activate_assertions()`
 
-    **Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Assert` or `dspy.Suggest` statements from either of the methods above. 
+    **Note**: To use Assertions properly, you must **activate** a DSPy program that includes `dspy.Refine` or `dspy.BestOfN` statements from either of the methods above. 
 
 ## Errors
 
