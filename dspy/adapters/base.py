@@ -15,7 +15,8 @@ from dspy.clients._deprecation import adapter_message_call
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
-from dspy.signatures.field import InputField
+from dspy.primitives.repl_types import ExtractFallbackMarker, REPLEntry, is_repl_event, split_repl_event
+from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 _TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
+_REPL_OUTPUT_SIGNATURE = Signature({"repl_output": (str, InputField())})
+_REPL_ACTION_SIGNATURE = Signature({"reasoning": (str, OutputField()), "code": (str, OutputField())})
 
 
 class Adapter:
@@ -298,6 +301,9 @@ class Adapter:
         """
         inputs_copy = dict(inputs)
 
+        signature_without_history = None
+        conversation_history: list[dict[str, Any]] = []
+
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
         history_field_name = self._get_history_field_name(signature)
@@ -305,16 +311,15 @@ class Adapter:
             # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
-                signature_without_history,
-                history_field_name,
-                inputs_copy,
+                signature_without_history, history_field_name, inputs_copy
             )
 
         messages = []
+
         system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
-        if history_field_name:
+        if history_field_name and signature_without_history:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
             messages.extend(conversation_history)
@@ -488,13 +493,13 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
-    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
@@ -504,7 +509,7 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
                 return name
@@ -541,6 +546,52 @@ class Adapter:
                 if tool_calls is not None and tool_calls.tool_call_results is not None
                 else None
             )
+
+            # RLM history events (see `build_repl_event`): a REPLEntry (or extract-fallback marker) with the
+            # RLM's own input/output fields recorded around it. Only fields the current signature declares are
+            # rendered, so the replay is the inner LM's own transcript: `variables_info` on the first event of a
+            # turn, then each iteration's reasoning/code as an assistant turn and its REPL output as a user turn.
+            # Handled before the generic rendering below so it never applies to RLM events.
+            if is_repl_event(message):
+                repl_inputs, repl_entry, repl_outputs = split_repl_event(message)
+                if isinstance(repl_entry, ExtractFallbackMarker):
+                    # Extract-fallback event: the outputs the extract call produced. The model said them, so they
+                    # replay as an assistant turn, rendered from the event's own output fields (which are the
+                    # extract signature's outputs, not the action signature's) so the same turn is shown to both.
+                    if repl_outputs:
+                        fallback_signature = Signature({name: (str, OutputField()) for name in repl_outputs})
+                        assistant_content = self.format_assistant_message_content(fallback_signature, repl_outputs)
+                        messages.append({"role": "assistant", "content": assistant_content})
+                    continue
+
+                user_content = self.format_user_message_content(signature, repl_inputs)
+                if user_content:
+                    messages.append({"role": "user", "content": user_content})
+
+                # The entry is always an action (reasoning + code), whichever signature is replaying it (the RLM
+                # action signature or its extract signature), so render it with a fixed action signature.
+                #
+                # Under native reasoning the adapter deletes the `reasoning` output field before the call, so the
+                # model never emitted reasoning as text; a signature with `code` but no `reasoning` is that case,
+                # and the replayed action omits reasoning to match. (Providers differ on whether prior-turn
+                # reasoning may be passed back at all, so it is not attached as `reasoning_content`.)
+                native_reasoning = "code" in signature.output_fields and "reasoning" not in signature.output_fields
+                assistant_values: dict[str, Any] = {"code": repl_entry.code}
+                action_signature = _REPL_ACTION_SIGNATURE
+                if native_reasoning:
+                    action_signature = action_signature.delete("reasoning")
+                else:
+                    assistant_values["reasoning"] = repl_entry.reasoning
+                assistant_content = self.format_assistant_message_content(action_signature, assistant_values)
+                messages.append({"role": "assistant", "content": assistant_content})
+
+                # Format user message with repl output
+                content = self.format_user_message_content(
+                    _REPL_OUTPUT_SIGNATURE,
+                    {"repl_output": REPLEntry.format_output(repl_entry.output, repl_entry.max_output_chars)},
+                )
+                messages.append({"role": "user", "content": content})
+                continue
 
             user_content = self.format_user_message_content(signature, message)
             if user_content:
