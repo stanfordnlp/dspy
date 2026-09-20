@@ -122,6 +122,7 @@ nav:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - CodeAct: api/modules/CodeAct.md
+            - Decide: api/modules/Decide.md
             - Flex: api/modules/Flex.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
