@@ -1716,3 +1716,28 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+def test_missing_optional_output_fields_with_literal_none_fall_back_to_none():
+    from typing import Annotated, Literal
+
+    from dspy.adapters.utils import annotation_allows_none
+
+    assert annotation_allows_none(Literal["yes", "no", None])
+    assert annotation_allows_none(Literal[None])
+    assert annotation_allows_none(Annotated[Literal["yes", None], "meta"])
+    assert not annotation_allows_none(Literal["yes", "no"])
+
+    class LiteralOptionalSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        verdict: Literal["yes", "no", None] = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    parsed = adapter.parse(LiteralOptionalSignature, '{"answer": "42", "verdict": "yes"}')
+    assert parsed == {"answer": "42", "verdict": "yes"}
+
+    # A Literal that includes None allows the field to be omitted, so the parser falls back to
+    # None instead of raising AdapterParseError.
+    parsed = adapter.parse(LiteralOptionalSignature, '{"answer": "42"}')
+    assert parsed == {"answer": "42", "verdict": None}

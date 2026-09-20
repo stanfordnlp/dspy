@@ -31,7 +31,7 @@ def annotation_allows_none(annotation: Any) -> bool:
     if origin is Annotated:
         return bool(args) and annotation_allows_none(args[0])
 
-    if origin is Union or origin is types.UnionType:
+    if origin in (Union, types.UnionType, Literal):
         return any(annotation_allows_none(arg) for arg in args)
 
     return False
