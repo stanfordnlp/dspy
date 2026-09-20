@@ -56,6 +56,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
         first = module(text="x")
         module.thresholds["flag"] = 0.9
         module.weights["rating"] = [0, 2, 8]
+        module.weights["label"] = {"2": 0.1}
         second = module(text="x")
     assert first.flag.value is True
     assert second.flag.value is False
@@ -63,6 +64,10 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert second.flag.confidence == pytest.approx(1 / 9)
     assert first.rating.value == pytest.approx(6.7)
     assert second.rating.value == pytest.approx(5.4)
+    assert first.label.value == 2
+    assert second.label.value == "other"
+    assert second.label.probabilities == first.label.probabilities == {"2": 0.8, "other": 0.2}
+    assert second.label.confidence == first.label.confidence == 0.73
     assert first.get_lm_usage() == {"jev-test": {"prompt_tokens": 10, "completion_tokens": 2}}
     assert second.get_lm_usage() == {}
     assert len(transport) == 1
@@ -71,6 +76,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert body["state"] == {"text": "x"}
     assert body["questions"]["rating"]["criteria"] == ["bad", "fair", "great"]
     assert "thresholds" not in json.dumps(body)
+    assert "weights" not in json.dumps(body)
     assert "test-only" not in json.dumps(client.history)
     assert [h["cache_hit"] for h in client.history] == [False, True]
     first.rating.probabilities[0] = 0.99
@@ -83,6 +89,8 @@ async def test_async_sdk_and_shared_cache(transport):
     asynchronous = await module.acall(text="x")
     synchronous = module(text="x")
     assert asynchronous.toDict() == synchronous.toDict()
+    module.weights["label"] = {"2": 0.1}
+    assert (await module.acall(text="x")).label == "other"
     assert len(transport) == 1
     assert synchronous.rating == pytest.approx(6.7)
 
