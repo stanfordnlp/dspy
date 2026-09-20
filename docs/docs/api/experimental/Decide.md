@@ -1,4 +1,10 @@
-# dspy.Decide
+# dspy.experimental.Decide
+
+!!! warning "Experimental API"
+    `Decide`, `Noul`, `Score`, `Choice`, and `TypeSafe` are experimental and may
+    change or be removed without warning. Import them from `dspy.experimental`.
+    The planned cascade and numeric optimizer will also start as experimental
+    APIs; neither is included in this release.
 
 `Decide` answers closed-set questions through a System One model. Declare the
 answer space through types; the module owns the numeric parameters used to
@@ -9,22 +15,23 @@ interpret the answers. It never falls back to a generative LM.
 ```python
 from typing import Annotated, Literal
 import dspy
+from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
 
-Severity = dspy.Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
-Category = dspy.Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
+Severity = Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
+Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
 
 class Assess(dspy.Signature):
     """Assess the ticket."""
 
     ticket: str = dspy.InputField()
-    urgent: dspy.Noul = dspy.OutputField()
+    urgent: Noul = dspy.OutputField()
     severity: Severity = dspy.OutputField()
     category: Category = dspy.OutputField()
 
 # pip install "dspy[typesafe]"
 # Set TYPESAFE_API_KEY in the environment.
-dspy.configure(system_one=dspy.TypeSafe("jev-latest"))
-assess = dspy.Decide(Assess)
+dspy.configure(system_one=TypeSafe("jev-latest"))
+assess = Decide(Assess)
 result = assess(ticket="Payment failed and checkout is unavailable.")
 print(result.severity.value, result.severity.confidence)
 ```
@@ -41,7 +48,7 @@ it is a runtime API, not a standard generic accepted by every static type checke
 
 | Shorthand | Rich type | Runtime rich value |
 | --- | --- | --- |
-| `bool` | `dspy.Noul` | Boolean `.value`, `.confidence`, optional `.probability` |
+| `bool` | `Noul` | Boolean `.value`, `.confidence`, optional `.probability` |
 | `Annotated[float, Severity]` | `Severity` | Numeric `.value`, `.confidence`, optional `.probabilities` |
 | `Literal["billing", "technical"]` | `Category` | Selected `.value`, `.confidence`, optional `.probabilities` |
 
@@ -124,7 +131,7 @@ are included in each provider question. Demonstrations are included as examples.
 ```python
 copy = assess.deepcopy()
 assess.save("assess.json")
-restored = dspy.Decide(Assess)
+restored = Decide(Assess)
 restored.load("assess.json")
 ```
 
@@ -136,22 +143,22 @@ files, following DSPy's LM-state policy. Custom callable clients should be suppl
 through settings rather than serialized. Whole-program saving uses DSPy's existing
 trusted-pickle workflow and must never be loaded from untrusted sources.
 
-::: dspy.Decide
+::: dspy.experimental.Decide
     options:
         members: [__init__, forward, aforward, dump_state, load_state]
 
-::: dspy.Noul
+::: dspy.experimental.Noul
     options:
         members: false
 
-::: dspy.Score
+::: dspy.experimental.Score
     options:
         members: false
 
-::: dspy.Choice
+::: dspy.experimental.Choice
     options:
         members: false
 
-::: dspy.TypeSafe
+::: dspy.experimental.TypeSafe
     options:
         members: [__init__, __call__, acall]

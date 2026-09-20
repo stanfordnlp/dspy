@@ -4,6 +4,7 @@ import json
 import pytest
 
 import dspy
+from dspy.experimental import TypeSafe
 from tests.predict.test_decide import decide
 
 sdk = pytest.importorskip("typesafe_sdk")
@@ -49,7 +50,7 @@ def transport(monkeypatch):
 
 
 def test_real_sdk_request_cache_usage_and_local_parameters(transport):
-    client = dspy.TypeSafe("jev-test", api_key="test-only", base_url="https://example.test")
+    client = TypeSafe("jev-test", api_key="test-only", base_url="https://example.test")
     module = decide(True, client)
     with dspy.context(track_usage=True):
         first = module(text="x")
@@ -78,7 +79,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
 
 @pytest.mark.asyncio
 async def test_async_sdk_and_shared_cache(transport):
-    module = decide(client=dspy.TypeSafe("jev-test", api_key="test-only"))
+    module = decide(client=TypeSafe("jev-test", api_key="test-only"))
     asynchronous = await module.acall(text="x")
     synchronous = module(text="x")
     assert asynchronous.toDict() == synchronous.toDict()
@@ -87,7 +88,7 @@ async def test_async_sdk_and_shared_cache(transport):
 
 
 def test_cache_identity_and_controls(transport):
-    client = dspy.TypeSafe("jev-test", api_key="test-only", base_url="https://a.test")
+    client = TypeSafe("jev-test", api_key="test-only", base_url="https://a.test")
     module = decide(client=client)
     module(text="x")
     client.base_url = "https://b.test"
@@ -110,7 +111,7 @@ def test_client_copy_and_environment(monkeypatch, transport):
     monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-environment")
     monkeypatch.setenv("TYPESAFE_BASE_URL", "https://environment.test/")
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-environment-key")
-    client = dspy.TypeSafe()
+    client = TypeSafe()
     module = decide(client=client)
     assert module(text="x").flag is True
     assert transport[0][0] == "https://environment.test/v1/systemone"

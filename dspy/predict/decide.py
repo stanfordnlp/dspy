@@ -13,9 +13,11 @@ from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
 from dspy.predict.predict import Predict, _sanitize_lm_state, serialize_object
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.annotation import experimental
 from dspy.utils.callback import BaseCallback
 
 
+@experimental
 class Decide(Predict):
     """Answer a signature's closed-set outputs in one System One request.
 
@@ -32,7 +34,7 @@ class Decide(Predict):
 
     Args:
         signature: A DSPy signature with supported output annotations.
-        client: A dspy.TypeSafe client; defaults to settings.system_one.
+        client: A dspy.experimental.TypeSafe client; defaults to settings.system_one.
         callbacks: DSPy module callbacks.
     """
 
@@ -126,7 +128,9 @@ class Decide(Predict):
         demos = kwargs.pop("demos", self.demos)
         client = self.client if self.client is not None else settings.system_one
         if client is None:
-            raise ValueError("Configure a System One client with dspy.configure(system_one=dspy.TypeSafe(...)).")
+            raise ValueError(
+                "Configure a System One client with dspy.configure(system_one=dspy.experimental.TypeSafe(...))."
+            )
         types = self._output_types(signature)
         self._validate_parameters(types)
         inputs = {}
@@ -196,7 +200,7 @@ class Decide(Predict):
         state["weights"] = copy.deepcopy(self.weights)
         if self.client is not None and not isinstance(self.client, TypeSafe):
             raise TypeError(
-                "Saving an explicit Decide client requires dspy.TypeSafe; configure custom clients in settings."
+                "Saving an explicit Decide client requires dspy.experimental.TypeSafe; configure custom clients in settings."
             )
         state["client"] = self.client.dump_state() if self.client is not None else None
         return state
