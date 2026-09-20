@@ -81,6 +81,8 @@ def lm(lm_for_test):
 @pytest.fixture(scope="module")
 def client():
     pytest.importorskip("typesafe_sdk")
+    if not os.getenv("TYPESAFE_API_KEY"):
+        pytest.skip("TYPESAFE_API_KEY is required for the live Jev integration checks")
     return TypeSafe(cache=False, timeout=60)
 
 
