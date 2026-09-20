@@ -1780,3 +1780,28 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_forward_preprocess_explicit_zero_temperature_is_not_treated_as_unset():
+    """Regression test for #10456: an explicit temperature=0.0 must not fall through to the
+    LM's default via truthiness, or the n>1 randomness bump would depend on the LM default."""
+    def sent_temperature(lm_temperature, module_config, call_config=None):
+        predict = Predict("input -> output", **module_config)
+        predict.lm = dspy.LM("openai/gpt-4o-mini", temperature=lm_temperature, cache=False)
+        kwargs = {"input": "hello"}
+        if call_config is not None:
+            kwargs["config"] = call_config
+        _, config, _, _, _ = predict._forward_preprocess(**kwargs)
+        return config.get("temperature")
+
+    # Same caller intent (temperature=0.0, n=3) must behave the same whatever the LM default is.
+    assert sent_temperature(0.9, {"temperature": 0.0, "n": 3}) == 0.7
+    assert sent_temperature(None, {"temperature": 0.0, "n": 3}) == 0.7
+    assert sent_temperature(0.9, {"n": 3}, {"temperature": 0.0, "n": 3}) == 0.7
+    assert sent_temperature(None, {"n": 3}, {"temperature": 0.0, "n": 3}) == 0.7
+    # Controls: non-falsy temperatures are unaffected, and the LM default still applies when unset.
+    assert sent_temperature(0.9, {"temperature": 0.2, "n": 3}) == 0.2
+    assert sent_temperature(None, {"temperature": 0.2, "n": 3}) == 0.2
+    assert sent_temperature(0.9, {"temperature": 0.1, "n": 3}) == 0.7
+    assert sent_temperature(None, {"temperature": 0.1, "n": 3}) == 0.7
+    assert sent_temperature(0.9, {"n": 3}) is None  # untouched config: no bump key written
