@@ -4,10 +4,11 @@ from typing import Annotated, Literal, get_args
 import pytest
 
 import dspy
+from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
 from dspy.utils.callback import BaseCallback
 
-Rating = dspy.Score[(-2, "bad"), (3, "fair"), (10, "great")]
-Label = dspy.Choice[(2, ""), ("other", "")]
+Rating = Score[(-2, "bad"), (3, "fair"), (10, "great")]
+Label = Choice[(2, ""), ("other", "")]
 
 
 class FakeClient:
@@ -40,7 +41,7 @@ def signature(rich=False):
     return dspy.Signature(
         {
             "text": (str, dspy.InputField()),
-            "flag": (dspy.Noul if rich else bool, dspy.OutputField(desc="Is it relevant?")),
+            "flag": (Noul if rich else bool, dspy.OutputField(desc="Is it relevant?")),
             "rating": (Rating if rich else Annotated[float, Rating], dspy.OutputField(desc="Rate usefulness.")),
             "label": (Label if rich else Literal[2, "other"], dspy.OutputField()),
         },
@@ -49,7 +50,7 @@ def signature(rich=False):
 
 
 def decide(rich=False, client=None):
-    return dspy.Decide(signature(rich), client=client)
+    return Decide(signature(rich), client=client)
 
 
 def test_native_rich_equivalence_and_request_mapping():
@@ -107,7 +108,7 @@ def test_native_rich_equivalence_and_request_mapping():
     "p,value,confidence", [(0, False, 1), (0.6, False, 0.2), (0.75, True, 0), (0.9, True, 0.2), (1, True, 1 / 3)]
 )
 def test_bool_boundary_and_confidence(p, value, confidence):
-    module = dspy.Decide("text -> flag: dspy.Noul", client=FakeClient(p))
+    module = Decide("text -> flag: dspy.experimental.Noul", client=FakeClient(p))
     module.thresholds["flag"] = 0.75
     result = module(text="x").flag
     assert result.value is value
@@ -117,7 +118,7 @@ def test_bool_boundary_and_confidence(p, value, confidence):
 
 @pytest.mark.parametrize("threshold,p,value", [(0, 0, True), (1, 0.99, False), (1, 1, True)])
 def test_threshold_endpoints(threshold, p, value):
-    module = dspy.Decide("text -> flag: bool", client=FakeClient(p))
+    module = Decide("text -> flag: bool", client=FakeClient(p))
     module.thresholds["flag"] = threshold
     assert module(text="x").flag is value
 
@@ -137,10 +138,10 @@ def test_literal_membership_and_exact_type(options, selected, expected, rich):
     sig = dspy.Signature(
         {
             "text": (str, dspy.InputField()),
-            "label": (dspy.Choice[tuple((v, "") for v in get_args(options))] if rich else options, dspy.OutputField()),
+            "label": (Choice[tuple((v, "") for v in get_args(options))] if rich else options, dspy.OutputField()),
         }
     )
-    result = dspy.Decide(sig, client=FakeClient(choice=selected))(text="x").label
+    result = Decide(sig, client=FakeClient(choice=selected))(text="x").label
     value = result.value if rich else result
     assert value == expected
     assert type(value) is type(expected)
@@ -172,13 +173,13 @@ def test_score_weights_normalization_and_snapshot():
         ("text -> answer", "Unsupported"),
         ("text -> answer: int", "Unsupported"),
         ("text -> answer: float", "requires a rubric"),
-        ("text -> answer: dspy.Choice", "Unsupported"),
+        ("text -> answer: dspy.experimental.Choice", "Unsupported"),
         ("text -> answer: Literal[1, '1']", "ambiguous"),
     ],
 )
 def test_reject_unsupported(sig, match):
     with pytest.raises(ValueError, match=match):
-        dspy.Decide(sig)
+        Decide(sig)
 
 
 @pytest.mark.parametrize(
@@ -245,7 +246,7 @@ def test_composition_discovery_trace_callbacks_and_demos():
     callback = Callback()
     assert program.named_predictors() == [("decide", program.decide)]
     assert program.named_parameters() == [("decide", program.decide)]
-    demo = dspy.Example(text="demo", flag=dspy.Noul(value=False, confidence=0.8, probability=0.1), unused="omit")
+    demo = dspy.Example(text="demo", flag=Noul(value=False, confidence=0.8, probability=0.1), unused="omit")
     program.decide.demos = [demo]
     trace = []
     with dspy.context(system_one=client, trace=trace, max_trace_size=1, callbacks=[callback]):
@@ -278,7 +279,7 @@ def test_defaults_and_input_errors():
         flag: bool = dspy.OutputField()
 
     client = FakeClient()
-    module = dspy.Decide(Sig, client=client)
+    module = Decide(Sig, client=client)
     assert module().flag is True
     assert client.calls[0][0] == {"text": "default"}
     with pytest.raises(ValueError, match="Unexpected"):
@@ -307,16 +308,16 @@ def test_copy_and_json_state_preserve_config_and_rich_demos(tmp_path):
     restored.load(path)
     assert restored.weights == module.weights
     assert restored.thresholds == module.thresholds
-    assert isinstance(restored.demos[0]["flag"], dspy.Noul)
-    assert isinstance(restored.demos[0]["rating"], dspy.Score)
-    assert isinstance(restored.demos[0]["label"], dspy.Choice)
+    assert isinstance(restored.demos[0]["flag"], Noul)
+    assert isinstance(restored.demos[0]["rating"], Score)
+    assert isinstance(restored.demos[0]["label"], Choice)
     assert type(restored.demos[0]["label"].value) is int
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
 
 
 def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
-    module = decide(client=dspy.TypeSafe("jev-test", api_key="test-credential", base_url="https://example.test"))
+    module = decide(client=TypeSafe("jev-test", api_key="test-credential", base_url="https://example.test"))
     path = tmp_path / "decide.json"
     module.save(path)
     assert "test-credential" not in path.read_text()
@@ -330,7 +331,7 @@ def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
 
 
 def test_full_program_save_load(tmp_path):
-    module = decide(True, client=dspy.TypeSafe("jev-test"))
+    module = decide(True, client=TypeSafe("jev-test"))
     module.thresholds["flag"] = 0.7
     module.save(tmp_path / "program", save_program=True)
     restored = dspy.load(tmp_path / "program", allow_pickle=True)
@@ -342,7 +343,7 @@ def test_full_program_save_load(tmp_path):
 
 
 def test_thresholds_are_per_field_and_results_are_snapshots():
-    module = dspy.Decide("text -> a: bool, b: dspy.Noul", client=FakeClient(0.6))
+    module = Decide("text -> a: bool, b: dspy.experimental.Noul", client=FakeClient(0.6))
     assert module.thresholds == {"a": 0.5, "b": 0.5}
     module.thresholds["b"] = 0.8
     before = module(text="x")

@@ -11,6 +11,7 @@ from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import core_schema
 
 from dspy.adapters.types.base_type import Type
+from dspy.utils.annotation import experimental
 
 Probability = Annotated[float, Field(ge=0, le=1)]
 
@@ -27,6 +28,7 @@ class _Decision(Type):
         return {key: value for key, value in handler(self).items() if value is not None or key == "value"}
 
 
+@experimental
 class Noul(_Decision):
     """A Boolean value with confidence and optional provider true-probability.
 
@@ -47,6 +49,7 @@ class Noul(_Decision):
         return self.value
 
 
+@experimental
 class Score(_Decision):
     """A continuous score with a declared rubric and confidence.
 
@@ -99,6 +102,7 @@ class Score(_Decision):
         return self.value
 
 
+@experimental
 class Choice(_Decision):
     """A typed option value with confidence and optional provider probabilities.
 

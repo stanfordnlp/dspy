@@ -111,6 +111,7 @@ nav:
         - Experimental:
             - api/experimental/index.md
             - Citations: api/experimental/Citations.md
+            - Decide and decision types: api/experimental/Decide.md
             - Document: api/experimental/Document.md
         - Models:
             - api/models/index.md
@@ -122,7 +123,6 @@ nav:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - CodeAct: api/modules/CodeAct.md
-            - Decide: api/modules/Decide.md
             - Flex: api/modules/Flex.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md

@@ -4,14 +4,16 @@ import copy
 import os
 
 from dspy.dsp.utils.settings import settings
+from dspy.utils.annotation import experimental
 
 
+@experimental
 class TypeSafe:
     """Call TypeSafe's System One API with DSPy's shared request cache.
 
     Install ``dspy[typesafe]`` to use this client. Model, API key, and endpoint
     default to TYPESAFE_DEFAULT_MODEL, TYPESAFE_API_KEY, and TYPESAFE_BASE_URL.
-    Configure with ``dspy.configure(system_one=dspy.TypeSafe(...))`` or pass the
+    Configure with ``dspy.configure(system_one=dspy.experimental.TypeSafe(...))`` or pass the
     client to ``Decide``. This is not a text-generating ``dspy.LM``.
 
     Args:

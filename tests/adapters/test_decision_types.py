@@ -6,16 +6,26 @@ from pydantic import TypeAdapter, ValidationError
 
 import dspy
 from dspy.adapters.json_adapter import _get_structured_outputs_response_format
+from dspy.experimental import Choice, Decide, Noul, Score
 from dspy.utils.dummies import DummyLM
 from tests.predict.test_decide import FakeClient
 
-Severity = dspy.Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
-Category = dspy.Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
+Severity = Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
+Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
+
+
+def test_decision_apis_are_experimental_only():
+    from dspy.experimental import TypeSafe
+
+    for api in (Choice, Decide, Noul, Score, TypeSafe):
+        assert getattr(dspy.experimental, api.__name__) is api
+        assert not hasattr(dspy, api.__name__)
+        assert "Experimental:" in api.__doc__
 
 
 def decision_fields(rich):
     return {
-        "urgent": dspy.Noul if rich else bool,
+        "urgent": Noul if rich else bool,
         "severity": Severity if rich else Annotated[float, Severity],
         "category": Category if rich else Literal["billing", "technical"],
     }
@@ -37,7 +47,7 @@ def decision_values(rich, evidence=False):
     if not rich:
         return {"urgent": True, "severity": 6.6, "category": "technical"}
     return {
-        "urgent": dspy.Noul(value=True, confidence=0.6, **({"probability": 0.8} if evidence else {})),
+        "urgent": Noul(value=True, confidence=0.6, **({"probability": 0.8} if evidence else {})),
         "severity": Severity(
             value=6.6, confidence=0.61, **({"probabilities": {0: 0.1, 1: 0.3, 2: 0.6}} if evidence else {})
         ),
@@ -95,7 +105,7 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
         assert "6.6" in prompt
         assert "technical" in prompt
     client = FakeClient()
-    module = dspy.Decide(signature, client=client)
+    module = Decide(signature, client=client)
     module.thresholds["accept"] = 0.99
     assert module(**values).accept is False
     state, questions = client.calls[0]
@@ -121,12 +131,12 @@ def test_score_range_is_enforced_for_native_and_rich(adapter, rich):
 @pytest.mark.parametrize(
     "kind,options",
     [
-        (dspy.Score, ((2, "a"), (1, "b"))),
-        (dspy.Score, ((1, "a"), (1, "b"))),
-        (dspy.Score, ((0, "a"), (float("nan"), "b"))),
-        (dspy.Score, ((0, "a"),)),
-        (dspy.Choice, ((1, "a"), ("1", "b"))),
-        (dspy.Choice, (([], "bad"),)),
+        (Score, ((2, "a"), (1, "b"))),
+        (Score, ((1, "a"), (1, "b"))),
+        (Score, ((0, "a"), (float("nan"), "b"))),
+        (Score, ((0, "a"),)),
+        (Choice, ((1, "a"), ("1", "b"))),
+        (Choice, (([], "bad"),)),
     ],
 )
 def test_invalid_options(kind, options):
@@ -135,14 +145,14 @@ def test_invalid_options(kind, options):
 
 
 def test_choice_type_cache_preserves_bool_vs_int():
-    boolean = dspy.Choice[(True, "yes"), (False, "no")]
-    integer = dspy.Choice[(1, "yes"), (0, "no")]
+    boolean = Choice[(True, "yes"), (False, "no")]
+    integer = Choice[(1, "yes"), (0, "no")]
     assert boolean is not integer
     assert type(integer(value=1, confidence=0.5).value) is int
     assert type(boolean(value=True, confidence=0.5).value) is bool
 
 
-@pytest.mark.parametrize("kind,value", [(dspy.Noul, True), (Severity, 4.2), (Category, "technical")])
+@pytest.mark.parametrize("kind,value", [(Noul, True), (Severity, 4.2), (Category, "technical")])
 def test_rich_confidence_required_and_serialization(kind, value):
     with pytest.raises(ValidationError):
         kind(value=value)
@@ -154,12 +164,12 @@ def test_rich_confidence_required_and_serialization(kind, value):
 
 
 def test_decide_result_can_feed_predict_and_back():
-    source = dspy.Decide(decision_signature(True, "output"), client=FakeClient(choice="technical"))
+    source = Decide(decision_signature(True, "output"), client=FakeClient(choice="technical"))
     result = source(ticket="Payment failed.")
     adapter = dspy.ChatAdapter()
     with dspy.context(lm=DummyLM([decision_values(True)], adapter=adapter), adapter=adapter):
         regenerated = dspy.Predict(decision_signature(True, "output"))(ticket="Payment failed.")
-    target = dspy.Decide(decision_signature(True, "input"), client=FakeClient())
+    target = Decide(decision_signature(True, "input"), client=FakeClient())
     assert target(**dict(result.items())).accept is True
     assert target(**dict(regenerated.items())).accept is True
     with dspy.context(lm=DummyLM([{"accept": True}])):
