@@ -7,7 +7,7 @@ from typing import Literal, get_origin
 
 from pydantic import TypeAdapter
 
-from dspy.adapters.types.decision import Noul, Score, _Decision, decision_type
+from dspy.adapters.types.decision import Choice, Noul, Score, _Decision, decision_type
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
@@ -27,9 +27,12 @@ class Decide(Predict):
     Unsupported outputs raise; Decide never falls back to a generative LM.
 
     Each instance owns ``thresholds`` (one per Boolean output, initially 0.5)
-    and ``weights`` (one list per Score output, initially the declared anchors).
-    Weights are numeric option values, not probability multipliers. They must
-    increase strictly within the declared range. Changing these parameters
+    and ``weights``. Score weights are numeric option values, initially the
+    declared anchors, and must increase strictly within the declared range.
+    Choice weights are nonnegative probability multipliers keyed by string
+    option labels, initially 1.0. Missing option weights also default to 1.0.
+    Weighted Choice selection preserves raw probabilities and provider confidence;
+    that confidence does not describe a newly selected option. Changing parameters
     reuses cached provider distributions without mutating the signature types.
 
     Args:
@@ -50,6 +53,9 @@ class Decide(Predict):
         types = self._output_types(self.signature)
         self.thresholds = {name: 0.5 for name, kind in types.items() if kind is Noul}
         self.weights = {name: [v for v, _ in kind.options] for name, kind in types.items() if issubclass(kind, Score)}
+        self.weights.update(
+            {name: {str(v): 1.0 for v, _ in kind.options} for name, kind in types.items() if issubclass(kind, Choice)}
+        )
 
     @staticmethod
     def _output_types(signature):
@@ -72,10 +78,23 @@ class Decide(Predict):
         for name, threshold in self.thresholds.items():
             if type(threshold) not in (int, float) or not 0 <= threshold <= 1:
                 raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
-        if set(self.weights) != {name for name, kind in types.items() if issubclass(kind, Score)}:
-            raise ValueError("Decide weights must match its Score output fields.")
+        if set(self.weights) != {name for name, kind in types.items() if issubclass(kind, (Score, Choice))}:
+            raise ValueError("Decide weights must match its Score and Choice output fields.")
         for name, weights in self.weights.items():
             options = types[name].options
+            if issubclass(types[name], Choice):
+                labels = {str(v) for v, _ in options}
+                if (
+                    not isinstance(weights, dict)
+                    or not set(weights) <= labels
+                    or any(type(w) not in (int, float) or not math.isfinite(w) or w < 0 for w in weights.values())
+                    or not any(weights.get(label, 1.0) > 0 for label in labels)
+                ):
+                    raise ValueError(
+                        f"Choice weights for {name!r} must map known string labels to finite, nonnegative numbers "
+                        "with at least one positive effective weight."
+                    )
+                continue
             if (
                 len(weights) != len(options)
                 or any(type(w) not in (int, float) or not math.isfinite(w) for w in weights)
@@ -175,8 +194,16 @@ class Decide(Predict):
                     or sum(answer["probabilities"].values()) <= 0
                 ):
                     raise ValueError(f"Invalid Choice answer for {name!r}.")
+                selected = answer["choice"]
+                weights = self.weights[name]
+                if any(w != 1 for w in weights.values()):
+                    scores = {label: answer["probabilities"][label] * weights.get(label, 1.0) for label in options}
+                    # Preserve the provider choice on ties; otherwise use declaration order.
+                    selected = max(scores, key=lambda label: (scores[label], label == answer["choice"]))
+                    if scores[selected] <= 0:
+                        raise ValueError(f"Choice weights for {name!r} leave no positive probability mass.")
                 result = kind(
-                    value=options[answer["choice"]],
+                    value=options[selected],
                     confidence=answer["confidence"],
                     probabilities=answer["probabilities"],
                 )

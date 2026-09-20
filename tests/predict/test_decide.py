@@ -167,6 +167,90 @@ def test_score_weights_normalization_and_snapshot():
     assert sum(result.probabilities.values()) == pytest.approx(0.99)
 
 
+@pytest.mark.parametrize("rich", [False, True])
+def test_choice_weights_selection_evidence_and_request(rich):
+    client = FakeClient()
+    module = decide(rich, client)
+    assert module.weights["label"] == {"2": 1.0, "other": 1.0}
+    before = module(text="x").label
+    module.weights["label"] = {"2": 0.1}  # 0.8 * 0.1 < 0.2 * 1.0
+    after = module(text="x").label
+    assert (before.value if rich else before) == 2
+    assert (after.value if rich else after) == "other"
+    assert client.calls[0] == client.calls[1]
+    if rich:
+        assert after.probabilities == before.probabilities == {"2": 0.8, "other": 0.2}
+        assert after.confidence == before.confidence == 0.73
+    module.weights["label"] = {"2": 10, "other": 100}
+    scaled = module(text="x").label
+    assert (scaled.value if rich else scaled) == "other"
+    assert Label.options == ((2, ""), ("other", ""))
+
+
+@pytest.mark.parametrize("weights", [{}, {"2": 1}, {"2": 0.25}, {"2": 0}])
+def test_choice_weights_defaults_ties_and_zero(weights):
+    module = decide(True, FakeClient())
+    module.weights["label"] = weights
+    result = module(text="x").label
+    # 0.8 * 0.25 == 0.2: the provider's selection wins the tie.
+    assert result.value == ("other" if weights.get("2") == 0 else 2)
+
+
+def test_choice_weighted_tie_prefers_provider_over_declaration_order():
+    module = decide(True, FakeClient(choice="other"))
+    module.weights["label"] = {"other": 0.25}
+    assert module(text="x").label.value == "other"  # 2 is declared first, but both weighted scores are 0.2.
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        {"unknown": 1},
+        {2: 1},
+        {"2": -1},
+        {"2": float("nan")},
+        {"2": float("inf")},
+        {"2": True},
+        {"2": 0, "other": 0},
+        [1, 2],
+    ],
+)
+def test_reject_invalid_choice_weights_before_request(weights):
+    client = FakeClient()
+    module = decide(client=client)
+    module.weights["label"] = weights
+    with pytest.raises(ValueError, match="Choice weights"):
+        module(text="x")
+    assert not client.calls
+
+
+def test_choice_weights_preserve_literal_types_and_json_state(tmp_path):
+    module = Decide("text -> label: Literal[True, 1, None]", client=FakeClient(choice="True"))
+    module.weights["label"] = {"True": 0, "1": 2, "None": 0}
+    result = module(text="x").label
+    assert type(result) is int and result == 1
+    module.client = None
+    module.save(tmp_path / "choice.json")
+    restored = Decide(module.signature)
+    restored.load(tmp_path / "choice.json")
+    assert restored.weights == module.weights
+    restored.client = FakeClient(choice="True")
+    restored.weights["label"] = {"True": 0, "1": 0, "None": 2}
+    assert restored(text="x").label is None
+    assert module.weights["label"]["1"] == 2
+
+
+def test_choice_weights_reject_zero_remaining_mass_and_tie_in_declaration_order():
+    module = Decide("text -> label: Literal['a', 'b', 'c']")
+    answers = {"label": {"choice": "c", "probabilities": {"c": 0.5, "b": 0.25, "a": 0.25}, "confidence": 0.7}}
+    module.client = lambda **_: answers
+    module.weights["label"] = {"c": 0}
+    assert module(text="x").label == "a"  # Neither tied option is the provider choice.
+    answers["label"]["probabilities"] = {"c": 1, "b": 0, "a": 0}
+    with pytest.raises(ValueError, match="no positive probability mass"):
+        module(text="x")
+
+
 @pytest.mark.parametrize(
     "sig,match",
     [
@@ -197,7 +281,10 @@ def test_reject_unsupported(sig, match):
 def test_reject_invalid_parameters(attribute, value):
     client = FakeClient()
     module = decide(client=client)
-    setattr(module, attribute, value)
+    if attribute == "weights":
+        module.weights.update(value)
+    else:
+        setattr(module, attribute, value)
     with pytest.raises(ValueError):
         module(text="x")
     assert not client.calls
@@ -292,14 +379,17 @@ def test_copy_and_json_state_preserve_config_and_rich_demos(tmp_path):
     module = decide(True)
     module.thresholds["flag"] = 0.7
     module.weights["rating"] = [-2, 1, 10]
+    module.weights["label"]["other"] = 2
     with dspy.context(system_one=FakeClient()):
         result = module(text="x")
         module.demos = [dspy.Example(text="x", **dict(result.items()))]
         before = module(text="next")
     duplicate = module.deepcopy()
     duplicate.weights["rating"][1] = 4
+    duplicate.weights["label"]["other"] = 9
     duplicate.thresholds["flag"] = 0.3
     assert module.weights["rating"] == [-2, 1, 10]
+    assert module.weights["label"] == {"2": 1, "other": 2}
     assert module.thresholds["flag"] == 0.7
     assert decide(True).weights["rating"] == [-2, 3, 10]
     path = tmp_path / "decide.json"
@@ -333,6 +423,7 @@ def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
 def test_full_program_save_load(tmp_path):
     module = decide(True, client=TypeSafe("jev-test"))
     module.thresholds["flag"] = 0.7
+    module.weights["label"] = {"2": 0.1}
     module.save(tmp_path / "program", save_program=True)
     restored = dspy.load(tmp_path / "program", allow_pickle=True)
     assert restored.weights == module.weights
@@ -340,6 +431,7 @@ def test_full_program_save_load(tmp_path):
     assert restored.client.model == "jev-test"
     restored.client = FakeClient()
     assert restored(text="x").flag.confidence == pytest.approx(1 / 7)
+    assert restored(text="x").label.value == "other"
 
 
 def test_thresholds_are_per_field_and_results_are_snapshots():

@@ -86,6 +86,7 @@ passing rich results as inputs. JSON serialization preserves it.
 ```python
 assess.thresholds["urgent"] = 0.7
 assess.weights["severity"] = [0, 4, 10]
+assess.weights["category"] = {"billing": 0.7, "technical": 1.0}
 ```
 
 Each Boolean output starts with threshold 0.5. Its value is `probability >= threshold`,
@@ -98,6 +99,20 @@ provider distributions that sum approximately to one. Weights assign numeric
 values to options; they do not multiply probabilities or introduce cut points.
 Raw distributions are retained unchanged, with integer rubric indices as keys.
 
+Choice weights instead multiply probabilities for local selection:
+`argmax(probability[label] * weight[label])`. Each option starts at 1.0, and
+omitted option weights default to 1.0. Keys are string labels, as in the provider
+distribution: use `"1"`, `"True"`, and `"None"` for integer, Boolean, and None
+members. Returned values still retain their declared Python types.
+
+For example, probabilities `{"billing": 0.7, "technical": 0.3}` with weights
+`{"billing": 0.25}` select `"technical"`: 0.175 is less than 0.3. The raw
+probabilities remain unchanged and are not renormalized. All-unit weights retain
+the provider's selection. Weighted ties prefer the provider's selection if tied,
+otherwise declaration order. Multipliers must be finite and nonnegative; zero
+disables an option. Unknown labels, all-zero effective weights, or a distribution
+with no positive mass remaining after weighting raise `ValueError`.
+
 Thresholds and weights belong to the module, separately for each output. Changing
 them does not alter shared types, previous results, or the provider request, so
 cached answers can be reused. No optimizer is included here.
@@ -107,6 +122,8 @@ cached answers can be reused. No optimizer is included here.
 - `Predict`: the LLM generates confidence alongside the rich value.
 - `Decide`, Score and Choice: confidence comes directly from the provider and
   is not recomputed from the winning probability or numeric score.
+  If Choice weights change the selected option, `.confidence` still describes
+  the original provider decision, **not confidence in the weighted selection**.
 - `Decide`, Noul: confidence is `abs(p - t) / max(t, 1 - t)`. It measures
   threshold-relative distance, not statistical calibration. At `t=0.75`, both
   `p=0.6` and `p=0.9` have confidence 0.2; the decision at `p=0.75` is True

@@ -191,6 +191,26 @@ def test_live_distribution_reinterpretation(client):
         assert module(ticket=CASES[2][1]).urgent.value is False
 
 
+def test_live_choice_weighted_reinterpretation(client):
+    module = Decide(signature(True), client=client)
+    ticket = "Checkout rejected a payment. It might be an incorrect charge or a software fault; neither is confirmed."
+    initial = module(ticket=ticket).category
+    raw = client.history[-1]["response"]["answers"]
+    other = "technical" if initial.value == "billing" else "billing"
+    assert initial.probabilities[other] > 0, "Live evidence must assign mass to the alternative to test reweighting"
+    weights = {initial.value: 0.0, other: 1.0}
+    # Use exactly the same live distribution in both forms, without another model draw.
+    for rich in (True, False):
+        weighted = Decide(signature(rich), client=lambda **_: raw)
+        weighted.weights["category"] = weights
+        result = weighted(ticket=ticket).category
+        assert (result.value if rich else result) == other
+        if rich:
+            assert result.probabilities == initial.probabilities
+            assert result.confidence == initial.confidence
+    print("weighted live Choice", initial.model_dump(), "selected", other, flush=True)
+
+
 @pytest.mark.parametrize("backend", ["chat", "json", "jev"])
 @pytest.mark.parametrize("rich", [False, True], ids=["native", "rich"])
 @pytest.mark.parametrize("urgent", [False, True])
