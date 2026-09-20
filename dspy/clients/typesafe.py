@@ -3,6 +3,7 @@
 import copy
 import os
 
+import dspy
 from dspy.dsp.utils.settings import settings
 from dspy.utils.annotation import experimental
 
@@ -53,15 +54,7 @@ class TypeSafe:
             "questions": questions,
         }
 
-    def _cached(self, request):
-        import dspy
-
-        # The endpoint is part of the identity: different deployments must not share answers.
-        return dspy.cache.get(request) if self.cache else None
-
     def _finish(self, request, response, cache_hit):
-        import dspy
-
         if self.cache and not cache_hit:
             dspy.cache.put(request, response)
         usage = {} if cache_hit else response["usage"]
@@ -100,7 +93,7 @@ class TypeSafe:
 
     def __call__(self, state, questions):
         request = self._request(state, questions)
-        response = self._cached(request)
+        response = dspy.cache.get(request) if self.cache else None
         cache_hit = response is not None
         if not cache_hit:
             try:
@@ -114,7 +107,7 @@ class TypeSafe:
     async def acall(self, state, questions):
         """Async equivalent using the SDK's native asynchronous client."""
         request = self._request(state, questions)
-        response = self._cached(request)
+        response = dspy.cache.get(request) if self.cache else None
         cache_hit = response is not None
         if not cache_hit:
             try:

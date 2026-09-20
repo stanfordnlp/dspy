@@ -3,7 +3,6 @@
 import copy
 import itertools
 import math
-from typing import Literal, get_origin
 
 from pydantic import TypeAdapter
 
@@ -141,7 +140,6 @@ class Decide(Predict):
         return questions
 
     def _prepare(self, kwargs):
-        kwargs = dict(kwargs)
         trace = kwargs.pop("_trace", True)
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
@@ -207,8 +205,7 @@ class Decide(Predict):
                     confidence=answer["confidence"],
                     probabilities=answer["probabilities"],
                 )
-            native = field.annotation in (bool, float) or get_origin(field.annotation) is Literal
-            outputs[name] = result.value if native else result
+            outputs[name] = result if field.annotation is kind else result.value
         return self._forward_postprocess([outputs], signature, _trace=trace, **inputs)
 
     def forward(self, **kwargs):
