@@ -269,6 +269,8 @@ def get_field_description_string(fields: dict) -> str:
         desc = v.json_schema_extra["desc"] if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
 
         custom_types = DspyType.extract_custom_type_from_annotation(v.annotation)
+        for metadata in v.metadata:
+            custom_types.extend(DspyType.extract_custom_type_from_annotation(metadata))
         for custom_type in custom_types:
             if len(custom_type.description()) > 0:
                 desc += f"\n    Type description of {get_annotation_name(custom_type)}: {custom_type.description()}"

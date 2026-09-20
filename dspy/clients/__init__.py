@@ -8,6 +8,7 @@ from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.typesafe import TypeSafe
 from dspy.utils.caching import default_cache_dir
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ def disable_litellm_logging():
 __all__ = [
     "BaseLM",
     "LM",
+    "TypeSafe",
     "Provider",
     "TrainingJob",
     "inspect_history",

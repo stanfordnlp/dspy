@@ -162,7 +162,7 @@ class JSONAdapter(ChatAdapter):
         for k, v in fields.items():
             if k in signature.output_fields:
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[k] = parse_value(v, signature.output_fields[k].rebuild_annotation())
                 except ValueError as exc:
                     raise AdapterParseError(
                         adapter_name=type(self).__name__, signature=signature, lm_response=completion,
@@ -237,7 +237,7 @@ def _get_structured_outputs_response_format(
             # Skip ToolCalls field if native function calling is enabled.
             continue
         default = field.default if hasattr(field, "default") else ...
-        fields[name] = (annotation, default)
+        fields[name] = (field.rebuild_annotation(), default)
 
     # Build the model with extra fields forbidden.
     pydantic_model = pydantic.create_model(
