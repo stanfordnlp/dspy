@@ -1625,14 +1625,14 @@ async def test_json_adapter_multiple_fields_detection():
 @pytest.mark.parametrize(
     "content_chunks",
     [
-        ["Matrix: [[1, 2], [3, 4]]"],
-        ["Matrix: [", "[", "1, 2], [3, 4]]"],
+        ["Matrix: [[1, 2], [3, 4]]", "\n\n[[ ## completed ## ]]"],
+        ["Matrix: [", "[", "1, 2], [3, 4]]", "\n\n[[ ## completed ## ]]"],
         ["Matrix: [[1, 2], [3, 4]]\n\n[[ ## completed ## ]]"],
     ],
 )
 def test_stream_listener_preserves_literal_double_brackets(adapter, content_chunks):
     listener = dspy.streaming.StreamListener(signature_field_name="answer")
-    chunks = ["[[ ## answer", " ## ]]\n\n", *content_chunks, "\n\n[[ ## completed ## ]]"]
+    chunks = ["[[ ## answer", " ## ]]\n\n", *content_chunks]
     outputs = []
     with dspy.context(adapter=adapter):
         for text in chunks:
