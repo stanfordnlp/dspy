@@ -70,9 +70,18 @@ PartType = Literal[
     "thinking",
     "refusal",
     "citation",
+    "data",
 ]
 
 ContinuationKind: TypeAlias = str
+
+# Judgments (changes/2026-09-17-judgments.md). ``Config.probabilities``
+# asks for a distribution over the keys a json_schema declares (MAP-14);
+# ``DataPart.method`` says how a delivered distribution was measured.
+ProbabilityPolicy = Literal["off", "if_available", "required"]
+PROBABILITY_POLICIES: tuple[str, ...] = get_args(ProbabilityPolicy)
+JudgmentMethod = Literal["provider_classification", "candidate_sequence_likelihood"]
+JUDGMENT_METHODS: tuple[str, ...] = get_args(JudgmentMethod)
 
 # FinishReason values are a separate namespace from PartType values even when
 # a token such as "tool_call" appears in both.
@@ -662,6 +671,7 @@ class ToolResultPart:
                 "ToolResultPart.content cannot contain tool calls, nested tool "
                 "results, thinking parts, or refusals"
             )
+        _validate_input_data_parts("tool results", self.content)
         _validate_continuation_field(self)
 
 
@@ -721,6 +731,60 @@ class CitationPart:
         _validate_continuation_field(self)
 
 
+def _validate_probabilities(value: Any, *, field_name: str) -> None:
+    """INV-052: ``{field: {key: float}}``, inner maps non-empty, floats in [0, 1]."""
+    if not isinstance(value, dict) or not value:
+        raise TypeError(f"{field_name} must be a non-empty mapping of field -> {{key: probability}}")
+    for name, dist in value.items():
+        if not isinstance(name, str) or not name:
+            raise TypeError(f"{field_name} keys must be non-empty strings")
+        if not isinstance(dist, dict) or not dist:
+            raise TypeError(f"{field_name}[{name!r}] must be a non-empty mapping of key -> probability")
+        for key, prob in dist.items():
+            if not isinstance(key, str) or not key:
+                raise TypeError(f"{field_name}[{name!r}] keys must be non-empty strings")
+            if isinstance(prob, bool) or not isinstance(prob, (int, float)):
+                raise TypeError(f"{field_name}[{name!r}][{key!r}] must be a number")
+            if not (0.0 <= float(prob) <= 1.0) or not _math.isfinite(float(prob)):
+                raise ValueError(f"{field_name}[{name!r}][{key!r}] must be in [0, 1]")
+
+
+@dataclass(frozen=True, slots=True)
+class DataPart:
+    """Structured data as content (changes/2026-09-17-judgments.md, D2).
+
+    In a user/system message: structured input (a provider that reads
+    JSON state takes ``value`` as such; a text-only wire gets it as JSON
+    text).  In an assistant message: the answer to a ``json_schema``
+    request that declares judgments (MAP-14) — ``value`` is the model's
+    JSON object, ``probabilities`` a distribution per judgment over its
+    declared keys when one was measured, ``method`` how (JudgmentMethod).
+    ``value`` is an opaque payload: any JSON value, verbatim (INV-002).
+    """
+
+    value: JsonValue
+    probabilities: dict[str, dict[str, float]] | None = None
+    method: JudgmentMethod | None = None
+    continuation: tuple[ContinuationState, ...] = ()
+    type: Literal["data"] = field(default="data", init=False)
+
+    def __post_init__(self) -> None:
+        if not _is_json_value(self.value):
+            raise TypeError("DataPart.value must be a JSON-compatible value")
+        if self.probabilities is not None:
+            _validate_probabilities(self.probabilities, field_name="DataPart.probabilities")
+            normalized = {
+                name: {key: float(prob) for key, prob in dist.items()}
+                for name, dist in self.probabilities.items()
+            }
+            object.__setattr__(self, "probabilities", normalized)
+        if self.method is not None and self.method not in JUDGMENT_METHODS:
+            raise ValueError(f"DataPart.method must be one of {JUDGMENT_METHODS}, got {self.method!r}")
+        if (self.method is None) != (self.probabilities is None):
+            raise ValueError("DataPart.method is present iff DataPart.probabilities is (INV-052)")
+        _validate_continuation_field(self)
+
+
 _TOOL_RESULT_FORBIDDEN_PARTS: tuple[type, ...] = (
     ToolCallPart,
     ToolResultPart,
@@ -742,6 +806,7 @@ Part: TypeAlias = (
     | ThinkingPart
     | RefusalPart
     | CitationPart
+    | DataPart
 )
 
 # Runtime dispatch table, derived from the union so adding a Part variant has
@@ -770,7 +835,7 @@ ProviderData: TypeAlias = JsonObject
 # (ToolCallPart, ToolResultPart, ThinkingPart, and RefusalPart are excluded
 # both at the type level and in ``ToolResultPart.__post_init__``.)
 ToolResultContentPart: TypeAlias = (
-    TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart | CitationPart
+    TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart | CitationPart | DataPart
 )
 ToolResultContent: TypeAlias = str | ToolResultContentPart | Sequence[str | ToolResultContentPart]
 
@@ -778,7 +843,7 @@ ToolResultContent: TypeAlias = str | ToolResultContentPart | Sequence[str | Tool
 # Excludes model/tool protocol parts which are produced by the model or
 # tool runtime, never authored by the caller.
 PromptPart: TypeAlias = (
-    TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart
+    TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart | DataPart
 )
 PromptContent: TypeAlias = str | PromptPart | Sequence[str | PromptPart]
 SystemContent: TypeAlias = PromptContent
@@ -797,6 +862,7 @@ AssistantPart: TypeAlias = (
     | ThinkingPart
     | RefusalPart
     | CitationPart
+    | DataPart
 )
 AssistantContent: TypeAlias = str | AssistantPart | Sequence[str | AssistantPart]
 
@@ -846,6 +912,18 @@ def citation(
     continuation: Sequence[ContinuationState] | ContinuationState | None = None,
 ) -> CitationPart:
     return CitationPart(url=url, title=title, text=text, continuation=_normalize_continuation(continuation))
+
+
+def data(
+    value: JsonValue,
+    *,
+    probabilities: dict[str, dict[str, float]] | None = None,
+    method: JudgmentMethod | None = None,
+    continuation: Sequence[ContinuationState] | ContinuationState | None = None,
+) -> DataPart:
+    """Create a data part (structured input, or a judged answer)."""
+    return DataPart(value=value, probabilities=probabilities, method=method,
+                    continuation=_normalize_continuation(continuation))
 
 
 def _encode_data(data: bytes | str) -> str:
@@ -1230,6 +1308,14 @@ def _validate_message_parts(role: Role, parts: tuple[Part, ...]) -> None:
     # protocol parts and not model-emitted artifacts like citations.
     if any(isinstance(p, _PROMPT_FORBIDDEN_PARTS) for p in parts):
         raise TypeError(f"{role} messages cannot contain model/tool protocol parts")
+    _validate_input_data_parts(role, parts)
+
+
+def _validate_input_data_parts(where: str, parts: tuple[Part, ...]) -> None:
+    """INV-052: a distribution is a claim about an answer; input carries value alone."""
+    for p in parts:
+        if isinstance(p, DataPart) and p.probabilities is not None:
+            raise TypeError(f"{where} data parts carry value only; probabilities belong to assistant messages (INV-052)")
 
 
 def _normalize_system(system: SystemContent | None) -> str | tuple[PromptPart, ...] | None:
@@ -1242,6 +1328,7 @@ def _normalize_system(system: SystemContent | None) -> str | tuple[PromptPart, .
     parts = _normalize_parts(system)
     if any(isinstance(p, _PROMPT_FORBIDDEN_PARTS) for p in parts):
         raise TypeError("system parts cannot contain model/tool protocol parts")
+    _validate_input_data_parts("system", parts)
     return parts
 
 
@@ -1446,7 +1533,7 @@ DELTA_TYPES: dict[str, type] = {_variant_type(cls): cls for cls in DELTA_CLASSES
 # variants (currently ContinuationDelta) carry stream metadata that attaches to
 # a Message or Part rather than materializing as content.
 StreamablePart: TypeAlias = TextPart | ThinkingPart | ImagePart | AudioPart | ToolCallPart | CitationPart
-NonStreamablePart: TypeAlias = VideoPart | DocumentPart | BinaryPart | ToolResultPart | RefusalPart
+NonStreamablePart: TypeAlias = VideoPart | DocumentPart | BinaryPart | ToolResultPart | RefusalPart | DataPart
 
 _STREAMABLE_PART_CLASSES: tuple[type, ...] = get_args(StreamablePart)
 _NON_STREAMABLE_PART_CLASSES: tuple[type, ...] = get_args(NonStreamablePart)
@@ -1492,8 +1579,13 @@ class ErrorDetail:
     code: ErrorCode
     message: str
     provider_code: str | None = None
+    # Bounded handshake diagnostics; absent means no HTTP evidence, not success.
+    http_response: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        from .rate_limits import normalize_http_response
+
+        object.__setattr__(self, "http_response", normalize_http_response(self.http_response))
         if self.code not in ERROR_CODES:
             raise ValueError(f"unsupported error code: {self.code}")
         _validate_text(self.message, field_name="ErrorDetail.message")
@@ -1820,6 +1912,11 @@ class Config:
     # own InvalidRequestError. Providers without logprobs (Anthropic)
     # RAISE — never silently drop.
     logprobs: int | None = None
+    # probabilities: ask for a distribution over the keys the json_schema
+    # declares (MAP-14). None = off. "if_available": a wire that cannot
+    # measure one records `dropped`; "required": it refuses before the
+    # wire (changes/2026-09-17-judgments.md, D3).
+    probabilities: ProbabilityPolicy | None = None
     extensions: Extensions | None = None
 
     def __post_init__(self) -> None:
@@ -1868,6 +1965,8 @@ class Config:
         _validate_non_negative(self.logprobs, field_name="logprobs")
         _validate_json_field(self, "response_format")
         _validate_response_format_shape(self.response_format)
+        if self.probabilities is not None and self.probabilities not in PROBABILITY_POLICIES:
+            raise ValueError(f"Config.probabilities must be one of {PROBABILITY_POLICIES}, got {self.probabilities!r}")
         _validate_extensions_field(self)
 
 
@@ -2226,6 +2325,43 @@ class Response:
     def tool_calls(self) -> list[ToolCallPart]:
         return self.message.parts_of(ToolCallPart)
 
+    # ─── Judgments (changes/2026-09-17-judgments.md D12) ──────────────
+
+    @property
+    def data(self) -> Any:
+        """The answer of a judgment request: the DataPart's value.
+
+        Falls back to the parsed JSON text of a plain structured-output
+        response (``json``) so ``response.data`` reads the same on a wire
+        that answered with text; ``None`` when there is neither.
+        """
+        part = self.message.first(DataPart)
+        if part is not None:
+            return part.value
+        return self.json
+
+    @property
+    def probabilities(self) -> dict[str, dict[str, float]] | None:
+        """Per-judgment distributions over the declared keys, or None when
+        none was measured (never a fabricated one)."""
+        part = self.message.first(DataPart)
+        return None if part is None else part.probabilities
+
+    @property
+    def method(self) -> str | None:
+        part = self.message.first(DataPart)
+        return None if part is None else part.method
+
+    def expected(self, field_name: str) -> float | None:
+        """Σ p·i over an ordered judgment's levels (Jev's ``score``), or None."""
+        dist = (self.probabilities or {}).get(field_name)
+        if not dist:
+            return None
+        try:
+            return sum(float(p) * int(k) for k, p in dist.items())
+        except ValueError:
+            return None
+
     @property
     def citations(self) -> list[CitationPart]:
         return self.message.parts_of(CitationPart)
@@ -2447,7 +2583,10 @@ class CachedPrefix:
     the reusable part (its config must be default: a cached object has no
     temperature).  ``resource`` is the stored object on providers with
     that tier, ``None`` on providers that mark blocks or cache
-    automatically.  ``request(messages)`` builds a Request that appends
+    automatically. Optional ``provider`` preserves a router destination;
+    prefix/resource models remain wire names, while suffix requests use
+    ``provider:wiremodel``. Reuse with the same router configuration/account.
+    ``request(messages)`` builds a Request that appends
     ``messages`` and sets the cache boundary at the seam; ``cached +
     messages`` is Python sugar for it.  The built Request and its wire
     bytes are what the contract pins; the sugar is per-language.
@@ -2455,8 +2594,15 @@ class CachedPrefix:
 
     prefix: Request
     resource: CacheInfo | None = None
+    provider: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
+        if self.provider is not None:
+            if not isinstance(self.provider, str):
+                raise TypeError("CachedPrefix.provider must be a string")
+            if not self.provider or any(c.isspace() or c in ":/" for c in self.provider):
+                raise ValueError("CachedPrefix.provider must be a non-empty provider name without routing separators")
+            object.__setattr__(self, "provider", self.provider.replace("_", "-"))
         if not isinstance(self.prefix, Request):
             raise TypeError("CachedPrefix.prefix must be a Request")
         if self.prefix.config != Config():
@@ -2495,9 +2641,12 @@ class CachedPrefix:
         tools: the prefix owns those).  ``config`` supplies generation
         settings; its ``cache`` must be unset (the prefix decides).
         """
+        model = f"{self.provider}:{self.prefix.model}" if self.provider is not None else self.prefix.model
         suffix: tuple[Message, ...]
         if isinstance(messages, Request):
-            if messages.model != self.prefix.model:
+            head, sep, rest = messages.model.partition(":")
+            same_route = self.provider is not None and sep and head.replace("_", "-") == self.provider and rest == self.prefix.model
+            if messages.model != self.prefix.model and not same_route:
                 raise ValueError("suffix Request model must equal the prefix model")
             if messages.system is not None or messages.tools:
                 raise ValueError("suffix Request cannot redefine system or tools: the prefix owns them")
@@ -2518,7 +2667,7 @@ class CachedPrefix:
         from dataclasses import replace as _replace
 
         return Request(
-            model=self.prefix.model,
+            model=model,
             system=self.prefix.system,
             tools=self.prefix.tools,
             messages=self.prefix.messages + suffix,
@@ -2877,6 +3026,7 @@ class LiveClientTurnEvent:
             raise TypeError("LiveClientTurnEvent.parts must contain Part objects")
         if any(isinstance(p, _PROMPT_FORBIDDEN_PARTS) for p in self.parts):
             raise TypeError("LiveClientTurnEvent.parts cannot contain model/tool protocol parts")
+        _validate_input_data_parts("live input", self.parts)
         _validate_bool(self.turn_complete, field_name="LiveClientTurnEvent.turn_complete")
 
 
@@ -2932,6 +3082,7 @@ class LiveClientToolResultEvent:
             raise TypeError("LiveClientToolResultEvent.content must contain Part objects")
         if any(isinstance(p, _TOOL_RESULT_FORBIDDEN_PARTS) for p in self.content):
             raise TypeError("LiveClientToolResultEvent.content cannot contain model or protocol parts")
+        _validate_input_data_parts("live tool results", self.content)
 
 
 @dataclass(frozen=True, slots=True)
@@ -3107,6 +3258,8 @@ def _check_literal_vocabularies() -> None:
         ("ToolChoiceMode", set(get_args(ToolChoiceMode)), set(TOOL_CHOICE_MODES)),
         ("ReasoningEffort", set(get_args(ReasoningEffort)), set(REASONING_EFFORTS)),
         ("ReasoningSummary", set(get_args(ReasoningSummary)), set(REASONING_SUMMARIES)),
+        ("ProbabilityPolicy", set(get_args(ProbabilityPolicy)), set(PROBABILITY_POLICIES)),
+        ("JudgmentMethod", set(get_args(JudgmentMethod)), set(JUDGMENT_METHODS)),
         ("LiveClientEventType", set(get_args(LiveClientEventType)), {_variant_type(cls) for cls in LIVE_CLIENT_EVENT_CLASSES}),
         ("LiveServerEventType", set(get_args(LiveServerEventType)), {_variant_type(cls) for cls in LIVE_SERVER_EVENT_CLASSES}),
     )
