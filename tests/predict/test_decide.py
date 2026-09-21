@@ -454,3 +454,63 @@ def test_batch_discovery_and_context(rich):
     assert len(results) == 3
     for result in results:
         assert (result.rating.value if rich else result.rating) == pytest.approx(6.7)
+
+
+@pytest.mark.parametrize(
+    "base,override",
+    [
+        (Score[(0, "low"), (1, "high")], Score[(0, "low"), (10, "high")]),
+        (Rating, Score[(-2, "bad"), (4, "fair"), (10, "great")]),
+        (Literal[True], Literal[1]),
+        (Literal["a", "b"], Literal["a", "c"]),
+        (bool, Literal[False, True]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_signature_override_rejects_changed_answer_space_before_request(base, override):
+    def sig(kind):
+        return dspy.Signature({"text": (str, dspy.InputField()), "answer": (kind, dspy.OutputField())})
+
+    client = FakeClient()
+    module = Decide(sig(base), client=client)
+    with pytest.raises(ValueError, match="signature override"):
+        module(text="x", signature=sig(override))
+    with pytest.raises(ValueError, match="signature override"):
+        await module.acall(text="x", signature=sig(override))
+    assert not client.calls
+
+
+def test_signature_override_rejects_renamed_output():
+    client = FakeClient()
+    module = Decide("text -> flag: bool", client=client)
+    with pytest.raises(ValueError, match="signature override"):
+        module(text="x", signature="text -> renamed: bool")
+    assert not client.calls
+
+
+def test_signature_override_preserves_parameters_and_accepts_prompt_changes():
+    client = FakeClient()
+    module = decide(True, client)
+    module.thresholds["flag"] = 0.9
+    module.weights["rating"] = [0, 2, 8]
+    override = module.signature.with_instructions("Assess carefully.").with_updated_fields(
+        "rating", desc="New question."
+    )
+    result = module(text="x", signature=override)
+    assert result.flag.value is False
+    assert result.rating.value == pytest.approx(5.4)
+    assert client.calls[0][1]["rating"]["instructions"]["task"] == "Assess carefully."
+    assert client.calls[0][1]["rating"]["instructions"]["question"] == "New question."
+    assert module.signature.instructions == "Assess the document."
+
+
+def test_signature_override_accepts_equivalent_types_and_native_form():
+    # A separately built Pydantic class need not have the same identity (e.g. after cache eviction).
+    from pydantic import create_model
+
+    equivalent = create_model("EquivalentRating", __base__=Rating)
+    module = decide(True, FakeClient())
+    for annotation in (equivalent, Annotated[float, equivalent]):
+        override = module.signature.with_updated_fields("rating", type_=annotation)
+        result = module(text="x", signature=override).rating
+        assert (result if type(result) is float else result.value) == pytest.approx(6.7)
