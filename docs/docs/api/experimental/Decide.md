@@ -146,9 +146,8 @@ module composition, `named_parameters()`, callbacks, traces, `batch`, and `acall
 `Predict` leaves of a mixed program without attaching demonstrations to `Decide`.
 It validates required inputs and rejects unknown
 inputs and unsupported outputs. Signature task instructions and field descriptions
-are included in each provider question. `Decide` does not support demonstrations:
-passing `demos=` or attaching nonempty `.demos` raises before inference. Optimizers
-that attach demonstrations to `Predict` are not supported for `Decide`.
+are included in each provider question. `Decide` has no demonstration configuration;
+demonstration-based optimizers target `Predict`, not `Decide`.
 
 A per-call `signature=` override may change instructions and field descriptions,
 but must preserve output names, value types, and declared Choice options/Score
@@ -169,8 +168,7 @@ Saved state contains only `signature`, `thresholds`, `weights`, and `client`.
 `reset()` preserves configuration because there is no demonstration or training
 state to clear. `reset_copy()` makes an independent copy with the same settings,
 so predictor-specific optimizers do not erase tuned decision parameters.
-Parameters survive this round trip; demonstrations are not saved, and loading
-state with nonempty demonstrations raises rather than silently discarding them. Explicit TypeSafe
+Parameters survive this round trip. Explicit TypeSafe
 client settings are saved without API keys; credentials come from the environment
 after loading. Saved endpoints require `allow_unsafe_lm_state=True` for trusted
 files, following DSPy's LM-state policy. Custom callable clients should be supplied

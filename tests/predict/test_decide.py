@@ -274,6 +274,9 @@ def test_reject_unsupported(sig, match):
         ("thresholds", {"missing": 0.3}),
         ("weights", {"rating": [0, 3]}),
         ("weights", {"rating": [-2, float("inf"), 10]}),
+        ("weights", {"rating": [-2, float("nan"), 10]}),
+        ("weights", {"rating": [-2, True, 10]}),
+        ("weights", {"rating": [-2, 3, 11]}),
         ("weights", {"rating": [0, 9, 2]}),
         ("weights", {"rating": [-3, 2, 10]}),
     ],
@@ -399,26 +402,17 @@ def test_copy_and_json_state_preserve_config(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_reject_demonstrations_before_inference_or_saving():
+async def test_reject_undeclared_demos_input_before_inference():
     client = FakeClient()
     module = decide()
     demos = [dspy.Example(text="example", flag=False)]
     with dspy.context(system_one=client):
         for value in ([], demos):
-            with pytest.raises(ValueError, match="does not support demonstrations"):
+            with pytest.raises(ValueError, match=r"Unexpected Decide inputs.*demos"):
                 module(text="x", demos=value)
-            with pytest.raises(ValueError, match="does not support demonstrations"):
+            with pytest.raises(ValueError, match=r"Unexpected Decide inputs.*demos"):
                 await module.acall(text="x", demos=value)
-        state = module.dump_state()
-        with pytest.raises(ValueError, match="does not support demonstrations"):
-            module.load_state({**state, "demos": demos})
-        module.demos = demos
-        with pytest.raises(ValueError, match="does not support demonstrations"):
-            module(text="x")
-        with pytest.raises(ValueError, match="does not support demonstrations"):
-            module.dump_state()
         assert client.calls == []
-        module.load_state({**state, "demos": []})
         assert not hasattr(module, "demos")
         assert module(text="x").flag is True
 
