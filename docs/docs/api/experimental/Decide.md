@@ -140,8 +140,11 @@ endpoint default to `TYPESAFE_DEFAULT_MODEL` and `TYPESAFE_BASE_URL`, or `jev-la
 and `https://api.typesafe.ai`. A client passed to `Decide(..., client=...)` takes
 precedence over `dspy.settings.system_one`; no text LM is needed.
 
-`Decide` participates in module composition, `named_predictors()`, callbacks,
-traces, `batch`, and `acall`. It validates required inputs and rejects unknown
+`Decide` inherits from `Module` and `Parameter`, not `Predict`. It participates in
+module composition, `named_parameters()`, callbacks, traces, `batch`, and `acall`.
+`named_predictors()` excludes it, so predictor-specific optimizers can target the
+`Predict` leaves of a mixed program without attaching demonstrations to `Decide`.
+It validates required inputs and rejects unknown
 inputs and unsupported outputs. Signature task instructions and field descriptions
 are included in each provider question. `Decide` does not support demonstrations:
 passing `demos=` or attaching nonempty `.demos` raises before inference. Optimizers
@@ -162,6 +165,10 @@ restored.load("assess.json")
 ```
 
 State-only loading requires the same signature architecture, as with `Predict`.
+Saved state contains only `signature`, `thresholds`, `weights`, and `client`.
+`reset()` preserves configuration because there is no demonstration or training
+state to clear. `reset_copy()` makes an independent copy with the same settings,
+so predictor-specific optimizers do not erase tuned decision parameters.
 Parameters survive this round trip; demonstrations are not saved, and loading
 state with nonempty demonstrations raises rather than silently discarding them. Explicit TypeSafe
 client settings are saved without API keys; credentials come from the environment
