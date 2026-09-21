@@ -84,7 +84,7 @@ class Decide(Module, Parameter):
         for name, threshold in self.thresholds.items():
             if type(threshold) not in (int, float) or not 0 <= threshold <= 1:
                 raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
-        if set(self.weights) != {name for name, kind in types.items() if issubclass(kind, (Score, Choice))}:
+        if set(self.weights) != types.keys() - self.thresholds.keys():
             raise ValueError("Decide weights must match its Score and Choice output fields.")
         for name, weights in self.weights.items():
             options = types[name].options
@@ -93,7 +93,7 @@ class Decide(Module, Parameter):
                 if (
                     not isinstance(weights, dict)
                     or not set(weights) <= labels
-                    or any(type(w) not in (int, float) or not math.isfinite(w) or w < 0 for w in weights.values())
+                    or any(type(w) not in (int, float) or not 0 <= w < math.inf for w in weights.values())
                     or not any(weights.get(label, 1.0) > 0 for label in labels)
                 ):
                     raise ValueError(
@@ -103,10 +103,8 @@ class Decide(Module, Parameter):
                 continue
             if (
                 len(weights) != len(options)
-                or any(type(w) not in (int, float) or not math.isfinite(w) for w in weights)
+                or any(type(w) not in (int, float) or not options[0][0] <= w <= options[-1][0] for w in weights)
                 or any(a >= b for a, b in itertools.pairwise(weights))
-                or weights[0] < options[0][0]
-                or weights[-1] > options[-1][0]
             ):
                 raise ValueError(f"Weights for {name!r} must increase strictly within the declared Score range.")
 
@@ -135,8 +133,6 @@ class Decide(Module, Parameter):
     def _prepare(self, kwargs):
         trace = kwargs.pop("_trace", True)
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        if "demos" in kwargs or getattr(self, "demos", None):
-            raise ValueError("Decide does not support demonstrations.")
         client = self.client if self.client is not None else settings.system_one
         if client is None:
             raise ValueError(
@@ -229,8 +225,6 @@ class Decide(Module, Parameter):
         return self._decode(answers, signature, types, inputs, trace)
 
     def dump_state(self, json_mode=True):
-        if getattr(self, "demos", None):
-            raise ValueError("Decide does not support demonstrations.")
         if self.client is not None and not isinstance(self.client, TypeSafe):
             raise TypeError(
                 "Saving an explicit Decide client requires dspy.experimental.TypeSafe; configure custom clients in settings."
@@ -244,13 +238,10 @@ class Decide(Module, Parameter):
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         state = copy.deepcopy(state)
-        if state.pop("demos", None):
-            raise ValueError("Decide does not support demonstrations.")
         client_state = state.pop("client", None)
         self.signature = self.signature.load_state(state["signature"])
         self.thresholds = state["thresholds"]
         self.weights = state["weights"]
-        self.__dict__.pop("demos", None)
         self.client = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         self._validate_parameters(self._output_types(self.signature))
         return self
