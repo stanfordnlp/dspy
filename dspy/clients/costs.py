@@ -9,20 +9,23 @@ import re
 from dspy.clients.model_metadata import model_info, rate, source_info
 
 
-def estimate_cost(response, *, provider, requested_model, request=None):
+def estimate_cost(response, *, provider, requested_model, request=None, namespaces=None):
     """Return (estimated USD cost, provenance), or (None, reason metadata).
 
     Advisory metadata must never turn a completed generation into a failure.
+    ``namespaces`` are a declared provider's metadata namespaces; the price
+    comes from them alone, and the provenance names them.
     """
     try:
-        return _estimate_cost(response, provider=provider, requested_model=requested_model, request=request)
+        return _estimate_cost(response, provider=provider, requested_model=requested_model, request=request,
+                              namespaces=namespaces)
     except Warning:
         raise
     except Exception:
         return None, {"kind": "unknown", "reason": "pricing metadata could not be interpreted"}
 
 
-def _estimate_cost(response, *, provider, requested_model, request=None):
+def _estimate_cost(response, *, provider, requested_model, request=None, namespaces=None):
     from dspy.lm15 import BuiltinTool
 
     def unknown(reason):
@@ -36,10 +39,12 @@ def _estimate_cost(response, *, provider, requested_model, request=None):
         return unknown("subscription usage is not per-token API billing")
     if request is not None and any(isinstance(tool, BuiltinTool) for tool in request.tools):
         return unknown("hosted-tool fees are not included in token rates")
-    info = model_info(provider, response.model)
+    if namespaces is not None and not namespaces:
+        return unknown("declared provider names no metadata namespace for pricing")
+    info = model_info(provider, response.model, namespaces=namespaces)
     priced_model = response.model
     if not info:
-        info = model_info(provider, requested_model)
+        info = model_info(provider, requested_model, namespaces=namespaces)
         priced_model = requested_model
     u = response.usage
     if u.input_tokens is None or u.output_tokens is None:
@@ -101,5 +106,5 @@ def _estimate_cost(response, *, provider, requested_model, request=None):
         return unknown("no matching pricing entry")
     return sum(count * amount for count, amount in dimensions if count and amount is not None), {
         "kind": "estimate", "currency": "USD", "provider": provider, "model": priced_model,
-        "metadata": source_info(),
+        "metadata": {**source_info(), **({"namespaces": list(namespaces)} if namespaces else {})},
     }

@@ -2078,3 +2078,55 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+# ─── errors inside streamify are the program's own exception ─────────
+
+
+class _FailingEngine:
+    def complete(self, request):
+        from dspy.lm15 import AuthError
+
+        raise AuthError("bad key", provider="x")
+
+    def stream(self, request):
+        from dspy.lm15 import AuthError
+
+        raise AuthError("bad key", provider="x")
+        yield  # a generator that fails before its first event
+
+
+def test_streamify_raises_the_public_error_itself():
+    # The task group reported every failure as an exception group, so
+    # `except dspy.LMError` missed it.
+    lm = dspy.LM("custom/failing", engine=_FailingEngine(), cache=False, num_retries=0)
+    stream = dspy.streamify(dspy.Predict("q -> a"), async_streaming=False)
+    with dspy.context(lm=lm), pytest.raises(dspy.LMAuthError) as info:
+        for _ in stream(q="x"):
+            pass
+    assert not hasattr(info.value, "exceptions")  # not a group
+
+
+@pytest.mark.asyncio
+async def test_async_streamify_raises_the_public_error_itself():
+    lm = dspy.LM("custom/failing", engine=_FailingEngine(), cache=False, num_retries=0)
+    stream = dspy.streamify(dspy.Predict("q -> a"), async_streaming=True)
+    with dspy.context(lm=lm), pytest.raises(dspy.LMAuthError):
+        async for _ in stream(q="x"):
+            pass
+
+
+def test_streamify_keeps_a_group_of_several_failures():
+    import builtins
+
+    from dspy.streaming.streamify import _single_failure
+
+    group_class = getattr(builtins, "BaseExceptionGroup", None)
+    if group_class is None:  # Python 3.10: anyio's backport
+        import exceptiongroup
+
+        group_class = exceptiongroup.BaseExceptionGroup
+
+    assert _single_failure(group_class("two", [ValueError("a"), ValueError("b")])) is None
+    assert isinstance(_single_failure(group_class("outer", [group_class("inner", [KeyError("k")])])), KeyError)
+    assert _single_failure(ValueError("plain")) is None

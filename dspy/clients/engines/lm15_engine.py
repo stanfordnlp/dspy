@@ -5,6 +5,7 @@ import threading
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
 
+from dspy._vendor.lm15.registry import canonical_provider
 from dspy._vendor.lm15.router import LITELLM_PROVIDER_PREFIXES
 from dspy._vendor.lm15.types import StreamEvent
 from dspy.clients.engines.base import validate_request
@@ -58,14 +59,24 @@ def timeouts_for(timeout) -> Timeouts | None:
     return Timeouts(**kwargs) if kwargs else None
 
 
-def _model_string(model: str, model_type: str) -> str:
-    """Keep endpoint selection deliberate, including model ids containing ':' ."""
+def _model_string(model: str, model_type: str, providers=()) -> str:
+    """Keep endpoint selection deliberate, including model ids containing ':' .
+
+    A ``provider/model`` prefix is a LiteLLM spelling lm15 has a door for, or
+    a provider declared on this engine's config, by id or alias in either
+    spelling.
+    """
     head, separator, rest = model.partition("/")
-    if separator and head in LITELLM_PROVIDER_PREFIXES:
-        provider = LITELLM_PROVIDER_PREFIXES[head]
-        if model_type == "responses":
-            provider = {"openai-chat": "openai", "azure-chat": "azure"}.get(provider, provider)
-        return f"{provider}:{rest}"
+    if separator and rest:
+        if head in LITELLM_PROVIDER_PREFIXES:
+            provider = LITELLM_PROVIDER_PREFIXES[head]
+            if model_type == "responses":
+                provider = {"openai-chat": "openai", "azure-chat": "azure"}.get(provider, provider)
+            return f"{provider}:{rest}"
+        spelling = canonical_provider(head)
+        for definition in providers:
+            if spelling in definition.spellings:
+                return f"{definition.id}:{rest}"
     return model
 
 
@@ -81,13 +92,14 @@ class _Routing:
 
     def resolve(self, model: str):
         """Offline routing. Callers inspect canonical errors, not a wrapped cause."""
-        routed = _model_string(model, self.model_type)
+        routed = _model_string(model, self.model_type, self.config.providers)
         if self.model_type == "chat":
             return self.router.resolve_openai_chat(routed)
         resolution = self.router.resolve(routed)
         from dspy._vendor.lm15.registry import lookup
 
-        definition = lookup(resolution.provider)
+        declared = {d.id: d for d in self.config.providers}
+        definition = declared.get(resolution.provider) or lookup(resolution.provider)
         if definition is None or definition.dialect != "openai-responses":
             raise UnsupportedFeatureError(f"{model!r} does not select a Responses API endpoint.")
         return resolution

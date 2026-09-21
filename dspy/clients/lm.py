@@ -109,7 +109,8 @@ def _refuse_client_settings(engine, kwargs, *, where: str = "dspy.LM") -> None:
     if present:
         raise ValueError(
             f"{where}: {present} configure a connection DSPy owns; a custom engine owns its own. "
-            "Configure them on the engine instead."
+            "Configure them on the engine, or for an HTTP provider declare it with "
+            "dspy.lm15.register_provider(...) and drop engine="
         )
 
 
@@ -256,6 +257,12 @@ class LM(BaseLM):
         """
         _check_engines(engine, async_engine)
         _refuse_client_settings(engine, kwargs)
+        if not isinstance(model, str) or not model:
+            raise ValueError("model must be a non-empty string")
+        _, separator, rest = model.partition("/")
+        if separator and not rest:
+            # "openai/" selected LiteLLM silently and failed at call time.
+            raise ValueError(f"model {model!r} has a provider prefix but no model id after it")
         if isinstance(num_retries, bool) or not isinstance(num_retries, int) or num_retries < 0:
             raise ValueError("num_retries must be a nonnegative integer")
         if prompt_cache is not None:
@@ -264,6 +271,12 @@ class LM(BaseLM):
             kwargs["prompt_cache"] = prompt_cache
         self._engine_spec = engine
         self._async_engine_spec = async_engine
+        # The declared providers this LM routes with, bound now and kept for
+        # its life (copies share them): selection, capabilities, pricing and
+        # both engines read one tuple, so a later registration cannot split them.
+        from dspy.lm15 import registered_providers
+
+        self._providers = registered_providers()
         self._engine_store = {}
         self._engine_lock = threading.RLock()
         super().__init__(
@@ -380,13 +393,29 @@ class LM(BaseLM):
         """Configured engine selection ('auto', 'lm15', 'litellm', or an engine object)."""
         return self._engine_spec
 
+    def _reap_closed_loops(self):
+        """Drop async pools whose event loop has closed (under the engine lock).
+
+        Their coroutines can no longer run, so they cannot be aclose()d; the
+        engine is simply released, and lm15's pool finalizers close the sockets
+        when it is collected. Called on close(), aclose(), and when a new
+        loop's pool is created, so a long-lived LM used across many
+        asyncio.run() calls does not keep one pool per finished loop.
+        """
+        dead = [key for key in self._engine_store if key[0] is not None and key[0].is_closed()]
+        for key in dead:
+            self._engine_store.pop(key)
+
     def close(self):
         """Close owned synchronous engine pools after active calls have finished.
 
-        Custom engines are borrowed. Async pools must be closed with aclose().
-        Copies share owned pools; closing one releases those shared resources.
+        Custom engines are borrowed. A live event loop's async pools must be
+        closed with aclose() on that loop; pools of loops that have already
+        closed are released here. Copies share owned pools; closing one
+        releases those shared resources.
         """
         with self._engine_lock:
+            self._reap_closed_loops()
             keys = [key for key in self._engine_store if key[0] is None]
             engines = [self._engine_store.pop(key) for key in keys]
         from contextlib import ExitStack
@@ -402,6 +431,7 @@ class LM(BaseLM):
 
         loop = asyncio.get_running_loop()
         with self._engine_lock:
+            self._reap_closed_loops()
             keys = [key for key in self._engine_store if key[0] is loop]
             engines = [self._engine_store.pop(key) for key in keys]
         try:
@@ -450,6 +480,7 @@ class LM(BaseLM):
         self.__dict__.update(state)
         self._engine_spec = getattr(self, "_engine_spec", "auto")
         self._async_engine_spec = getattr(self, "_async_engine_spec", None)
+        self._providers = getattr(self, "_providers", ())
         self._engine_lock = threading.RLock()
         self._engine_store = {}
 
