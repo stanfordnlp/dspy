@@ -6,7 +6,7 @@ import math
 
 from pydantic import TypeAdapter
 
-from dspy.adapters.types.decision import Choice, Noul, Score, _Decision, decision_type
+from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
@@ -103,7 +103,7 @@ class Decide(Predict):
             ):
                 raise ValueError(f"Weights for {name!r} must increase strictly within the declared Score range.")
 
-    def _questions(self, signature, types, demos):
+    def _questions(self, signature, types):
         questions = {}
         for name, field in signature.output_fields.items():
             kind = types[name]
@@ -115,20 +115,6 @@ class Decide(Predict):
                 "task": signature.instructions,
                 "inputs": get_field_description_string(signature.input_fields),
             }
-            examples = []
-            for demo in demos:
-                if name in demo:
-                    answer = demo[name]
-                    if isinstance(answer, _Decision):
-                        answer = answer.value
-                    examples.append(
-                        {
-                            "inputs": {k: serialize_object(demo[k]) for k in signature.input_fields if k in demo},
-                            "answer": serialize_object(answer),
-                        }
-                    )
-            if examples:
-                instructions["examples"] = examples
             question = {"instructions": instructions}
             if kind is Noul:
                 question["type"] = "noul"
@@ -142,7 +128,8 @@ class Decide(Predict):
     def _prepare(self, kwargs):
         trace = kwargs.pop("_trace", True)
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
+        if "demos" in kwargs or self.demos:
+            raise ValueError("Decide does not support demonstrations.")
         client = self.client if self.client is not None else settings.system_one
         if client is None:
             raise ValueError(
@@ -172,7 +159,7 @@ class Decide(Predict):
             inputs[name] = TypeAdapter(field.rebuild_annotation()).validate_python(value)
         if kwargs:
             raise ValueError(f"Unexpected Decide inputs: {sorted(kwargs)}.")
-        questions = self._questions(signature, types, demos)
+        questions = self._questions(signature, types)
         return client, signature, types, inputs, questions, trace
 
     def _decode(self, answers, signature, types, inputs, trace):
@@ -230,7 +217,10 @@ class Decide(Predict):
         return self._decode(answers, signature, types, inputs, trace)
 
     def dump_state(self, json_mode=True):
+        if self.demos:
+            raise ValueError("Decide does not support demonstrations.")
         state = super().dump_state(json_mode=json_mode)
+        state.pop("demos")
         state["thresholds"] = copy.deepcopy(self.thresholds)
         state["weights"] = copy.deepcopy(self.weights)
         if self.client is not None and not isinstance(self.client, TypeSafe):
@@ -242,12 +232,11 @@ class Decide(Predict):
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         state = copy.deepcopy(state)
+        if state.pop("demos", None):
+            raise ValueError("Decide does not support demonstrations.")
         client_state = state.pop("client", None)
         super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
+        self.demos = []
         self.client = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         self._validate_parameters(self._output_types(self.signature))
-        for demo in self.demos:
-            for name, field in self.signature.fields.items():
-                if name in demo and isinstance(field.annotation, type) and issubclass(field.annotation, _Decision):
-                    demo[name] = field.annotation.model_validate(demo[name])
         return self

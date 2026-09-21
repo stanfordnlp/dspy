@@ -313,7 +313,7 @@ def test_reject_malformed_answers(field, update):
         module(text="x")
 
 
-def test_composition_discovery_trace_callbacks_and_demos():
+def test_composition_discovery_trace_callbacks():
     class Callback(BaseCallback):
         def __init__(self):
             self.outputs = []
@@ -333,8 +333,6 @@ def test_composition_discovery_trace_callbacks_and_demos():
     callback = Callback()
     assert program.named_predictors() == [("decide", program.decide)]
     assert program.named_parameters() == [("decide", program.decide)]
-    demo = dspy.Example(text="demo", flag=Noul(value=False, confidence=0.8, probability=0.1), unused="omit")
-    program.decide.demos = [demo]
     trace = []
     with dspy.context(system_one=client, trace=trace, max_trace_size=1, callbacks=[callback]):
         result = program(text="first")
@@ -342,8 +340,7 @@ def test_composition_discovery_trace_callbacks_and_demos():
         program.decide(text="untraced", _trace=False)
     assert trace == [(program.decide, {"text": "second"}, result)]
     assert result in callback.outputs
-    assert client.calls[0][1]["flag"]["instructions"]["examples"] == [{"inputs": {"text": "demo"}, "answer": False}]
-    assert demo.unused == "omit"
+    assert all("examples" not in question["instructions"] for question in client.calls[0][1].values())
 
 
 @pytest.mark.asyncio
@@ -375,14 +372,12 @@ def test_defaults_and_input_errors():
         decide(client=client)()
 
 
-def test_copy_and_json_state_preserve_config_and_rich_demos(tmp_path):
+def test_copy_and_json_state_preserve_config(tmp_path):
     module = decide(True)
     module.thresholds["flag"] = 0.7
     module.weights["rating"] = [-2, 1, 10]
     module.weights["label"]["other"] = 2
     with dspy.context(system_one=FakeClient()):
-        result = module(text="x")
-        module.demos = [dspy.Example(text="x", **dict(result.items()))]
         before = module(text="next")
     duplicate = module.deepcopy()
     duplicate.weights["rating"][1] = 4
@@ -398,12 +393,34 @@ def test_copy_and_json_state_preserve_config_and_rich_demos(tmp_path):
     restored.load(path)
     assert restored.weights == module.weights
     assert restored.thresholds == module.thresholds
-    assert isinstance(restored.demos[0]["flag"], Noul)
-    assert isinstance(restored.demos[0]["rating"], Score)
-    assert isinstance(restored.demos[0]["label"], Choice)
-    assert type(restored.demos[0]["label"].value) is int
+    assert "demos" not in module.dump_state()
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
+
+
+@pytest.mark.asyncio
+async def test_reject_demonstrations_before_inference_or_saving():
+    client = FakeClient()
+    module = decide()
+    demos = [dspy.Example(text="example", flag=False)]
+    with dspy.context(system_one=client):
+        for value in ([], demos):
+            with pytest.raises(ValueError, match="does not support demonstrations"):
+                module(text="x", demos=value)
+            with pytest.raises(ValueError, match="does not support demonstrations"):
+                await module.acall(text="x", demos=value)
+        state = module.dump_state()
+        with pytest.raises(ValueError, match="does not support demonstrations"):
+            module.load_state({**state, "demos": demos})
+        module.demos = demos
+        with pytest.raises(ValueError, match="does not support demonstrations"):
+            module(text="x")
+        with pytest.raises(ValueError, match="does not support demonstrations"):
+            module.dump_state()
+        assert client.calls == []
+        module.load_state({**state, "demos": []})
+        assert module.demos == []
+        assert module(text="x").flag is True
 
 
 def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
