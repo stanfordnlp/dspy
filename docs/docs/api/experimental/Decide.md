@@ -145,6 +145,13 @@ traces, `batch`, and `acall`. It validates required inputs and rejects unknown
 inputs and unsupported outputs. Signature task instructions and field descriptions
 are included in each provider question. Demonstrations are included as examples.
 
+A per-call `signature=` override may change instructions and field descriptions,
+but must preserve output names, value types, and declared Choice options/Score
+rubrics. Equivalent native/rich forms are allowed when they resolve to the same
+decision definition. Existing thresholds and weights remain in effect. Construct
+a new `Decide` to change the answer space; incompatible overrides fail before
+any provider request.
+
 ```python
 copy = assess.deepcopy()
 assess.save("assess.json")

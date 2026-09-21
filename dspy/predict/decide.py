@@ -149,6 +149,17 @@ class Decide(Predict):
                 "Configure a System One client with dspy.configure(system_one=dspy.experimental.TypeSafe(...))."
             )
         types = self._output_types(signature)
+        if signature is not self.signature:
+            declared = self._output_types(self.signature)
+            if types.keys() != declared.keys() or any(
+                kind.model_fields["value"].annotation != declared[name].model_fields["value"].annotation
+                or getattr(kind, "options", ()) != getattr(declared[name], "options", ())
+                for name, kind in types.items()
+            ):
+                raise ValueError(
+                    "Decide signature override must preserve output names, value types, and declared options/rubrics. "
+                    "Construct a new Decide for a different answer space."
+                )
         self._validate_parameters(types)
         inputs = {}
         for name, field in signature.input_fields.items():
