@@ -1780,3 +1780,62 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def _sent_temperature(lm_temperature, module_config, call_config=None):
+    """The temperature `_forward_preprocess` decides to send, given the LM's
+    default temperature and the caller's module/call config (issue #10456)."""
+    predict = Predict("input -> output", **module_config)
+    predict.lm = dspy.LM("openai/gpt-4o-mini", temperature=lm_temperature, cache=False)
+    kwargs = {"input": "hello"}
+    if call_config is not None:
+        kwargs["config"] = call_config
+    _, config, *_ = predict._forward_preprocess(**kwargs)
+    return config.get("temperature")
+
+
+class TestTheRandomnessBumpDoesNotDependOnTheLmDefault:
+    """The n>1 randomness-keeping bump decides from the temperature the CALLER
+    set, read by presence. An explicit `temperature=0.0` is falsy, so the old
+    `or` chain skipped it and decided against the LM's default instead — the
+    same program bumped or not depending only on whether the LM carried a
+    temperature kwarg (#10456). The documented rule (unset or <=0.15 with n>1 ->
+    0.7) is unchanged; it is just applied consistently now."""
+
+    @pytest.mark.parametrize("lm_temperature", [0.9, None])
+    def test_explicit_zero_decides_the_same_way_regardless_of_the_lm_default(
+        self, lm_temperature
+    ):
+        # Was 0.7 with no LM default but 0.0 with one — the inconsistency this
+        # issue is about. Now 0.0 (<=0.15) with n>1 bumps either way.
+        assert _sent_temperature(lm_temperature, {"temperature": 0.0, "n": 3}) == 0.7
+
+    @pytest.mark.parametrize("lm_temperature", [0.9, None])
+    def test_explicit_zero_in_the_call_config_decides_the_same_way(
+        self, lm_temperature
+    ):
+        assert (
+            _sent_temperature(lm_temperature, {"n": 3}, {"temperature": 0.0, "n": 3})
+            == 0.7
+        )
+
+    @pytest.mark.parametrize("lm_temperature", [0.9, None])
+    def test_a_low_nonzero_temperature_bumps_the_same_way(self, lm_temperature):
+        assert _sent_temperature(lm_temperature, {"temperature": 0.1, "n": 3}) == 0.7
+
+    @pytest.mark.parametrize("lm_temperature", [0.9, None])
+    def test_an_above_threshold_temperature_is_left_alone(self, lm_temperature):
+        # The caller's own value is honored, and reading it by presence does not
+        # disturb a value that was never going to bump.
+        assert _sent_temperature(lm_temperature, {"temperature": 0.2, "n": 3}) == 0.2
+
+    def test_an_unset_temperature_with_no_lm_default_bumps(self):
+        assert _sent_temperature(None, {"n": 3}) == 0.7
+
+    def test_an_unset_temperature_defers_to_a_healthy_lm_default(self):
+        # No temperature in the caller's config: the LM's own default drives the
+        # decision, and an above-threshold default is left untouched.
+        assert _sent_temperature(0.9, {"n": 3}) is None
+
+    def test_a_single_generation_is_never_bumped(self):
+        assert _sent_temperature(None, {"temperature": 0.0, "n": 1}) == 0.0
