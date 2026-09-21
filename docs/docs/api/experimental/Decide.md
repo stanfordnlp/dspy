@@ -143,7 +143,9 @@ precedence over `dspy.settings.system_one`; no text LM is needed.
 `Decide` participates in module composition, `named_predictors()`, callbacks,
 traces, `batch`, and `acall`. It validates required inputs and rejects unknown
 inputs and unsupported outputs. Signature task instructions and field descriptions
-are included in each provider question. Demonstrations are included as examples.
+are included in each provider question. `Decide` does not support demonstrations:
+passing `demos=` or attaching nonempty `.demos` raises before inference. Optimizers
+that attach demonstrations to `Predict` are not supported for `Decide`.
 
 A per-call `signature=` override may change instructions and field descriptions,
 but must preserve output names, value types, and declared Choice options/Score
@@ -160,7 +162,8 @@ restored.load("assess.json")
 ```
 
 State-only loading requires the same signature architecture, as with `Predict`.
-Parameters and rich demonstrations survive this round trip. Explicit TypeSafe
+Parameters survive this round trip; demonstrations are not saved, and loading
+state with nonempty demonstrations raises rather than silently discarding them. Explicit TypeSafe
 client settings are saved without API keys; credentials come from the environment
 after loading. Saved endpoints require `allow_unsafe_lm_state=True` for trusted
 files, following DSPy's LM-state policy. Custom callable clients should be supplied
