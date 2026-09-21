@@ -331,7 +331,7 @@ def test_composition_discovery_trace_callbacks():
     program = Pipeline()
     client = FakeClient()
     callback = Callback()
-    assert program.named_predictors() == [("decide", program.decide)]
+    assert program.named_predictors() == []
     assert program.named_parameters() == [("decide", program.decide)]
     trace = []
     with dspy.context(system_one=client, trace=trace, max_trace_size=1, callbacks=[callback]):
@@ -393,7 +393,7 @@ def test_copy_and_json_state_preserve_config(tmp_path):
     restored.load(path)
     assert restored.weights == module.weights
     assert restored.thresholds == module.thresholds
-    assert "demos" not in module.dump_state()
+    assert set(module.dump_state()) == {"signature", "thresholds", "weights", "client"}
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
 
@@ -419,8 +419,63 @@ async def test_reject_demonstrations_before_inference_or_saving():
             module.dump_state()
         assert client.calls == []
         module.load_state({**state, "demos": []})
-        assert module.demos == []
+        assert not hasattr(module, "demos")
         assert module(text="x").flag is True
+
+
+def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
+    from dspy.utils.dummies import DummyLM
+
+    class Pipeline(dspy.Module):
+        def __init__(self):
+            self.nodes = {"decision": Decide("text -> flag: bool")}
+            self.explain = dspy.Predict("flag: bool -> explanation: str")
+
+        def forward(self, text):
+            return self.explain(flag=self.nodes["decision"](text=text).flag)
+
+    program = Pipeline()
+    decision = program.nodes["decision"]
+    decision.thresholds["flag"] = 0.9
+    assert not isinstance(decision, dspy.Predict)
+    assert decision.named_parameters() == [("self", decision)]
+    assert not hasattr(decision, "demos")
+    assert program.named_parameters() == [("nodes['decision']", decision), ("explain", program.explain)]
+    assert program.named_predictors() == [("explain", program.explain)]
+    trained = dspy.LabeledFewShot(k=1).compile(
+        program, trainset=[dspy.Example(flag=False, explanation="Below threshold").with_inputs("flag")]
+    )
+    assert len(trained.explain.demos) == 1
+    assert not hasattr(trained.nodes["decision"], "demos")
+    assert trained.nodes["decision"].thresholds == {"flag": 0.9}
+    path = tmp_path / "mixed.json"
+    trained.save(path)
+    restored = Pipeline()
+    restored.load(path)
+    assert restored.nodes["decision"].thresholds == {"flag": 0.9}
+    assert len(restored.explain.demos) == 1
+    trace = []
+    with dspy.context(system_one=FakeClient(), lm=DummyLM([{"explanation": "Below threshold"}]), trace=trace):
+        assert restored(text="x").explanation == "Below threshold"
+    assert [step[0] for step in trace] == [restored.nodes["decision"], restored.explain]
+    assert trace[1][1] == {"flag": False}
+
+
+def test_reset_copy_preserves_configuration_without_aliasing():
+    module = decide(True, client=TypeSafe("jev-test"))
+    module.thresholds["flag"] = 0.9
+    module.weights["rating"] = [-2, 0, 8]
+    module.weights["label"] = {"other": 3}
+    reset = module.reset_copy()
+    assert reset.thresholds == {"flag": 0.9}
+    assert reset.weights == {"rating": [-2, 0, 8], "label": {"other": 3}}
+    assert reset.signature is module.signature
+    assert reset.client.model == "jev-test"
+    reset.thresholds["flag"] = 0.5
+    reset.weights["rating"][1] = 1
+    reset.weights["label"]["other"] = 1
+    assert module.thresholds == {"flag": 0.9}
+    assert module.weights == {"rating": [-2, 0, 8], "label": {"other": 3}}
 
 
 def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):

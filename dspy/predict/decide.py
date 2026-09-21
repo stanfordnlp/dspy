@@ -10,14 +10,17 @@ from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
-from dspy.predict.predict import Predict, _sanitize_lm_state, serialize_object
+from dspy.predict.parameter import Parameter
+from dspy.predict.predict import _sanitize_lm_state, serialize_object
+from dspy.primitives.module import Module
+from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.annotation import experimental
 from dspy.utils.callback import BaseCallback
 
 
 @experimental
-class Decide(Predict):
+class Decide(Module, Parameter):
     """Answer a signature's closed-set outputs in one System One request.
 
     Declare outputs using Noul, Score[(number, description), ...], and
@@ -47,7 +50,8 @@ class Decide(Predict):
         client: TypeSafe | None = None,
         callbacks: list[BaseCallback] | None = None,
     ):
-        super().__init__(signature, callbacks=callbacks)
+        super().__init__(callbacks=callbacks)
+        self.signature = ensure_signature(signature)
         self.client = client
         types = self._output_types(self.signature)
         self.thresholds = {name: 0.5 for name, kind in types.items() if kind is Noul}
@@ -55,6 +59,9 @@ class Decide(Predict):
         self.weights.update(
             {name: {str(v): 1.0 for v, _ in kind.options} for name, kind in types.items() if issubclass(kind, Choice)}
         )
+
+    def reset(self):
+        """Keep configuration intact: Decide has no demonstration or training state to reset."""
 
     @staticmethod
     def _output_types(signature):
@@ -128,7 +135,7 @@ class Decide(Predict):
     def _prepare(self, kwargs):
         trace = kwargs.pop("_trace", True)
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        if "demos" in kwargs or self.demos:
+        if "demos" in kwargs or getattr(self, "demos", None):
             raise ValueError("Decide does not support demonstrations.")
         client = self.client if self.client is not None else settings.system_one
         if client is None:
@@ -204,7 +211,12 @@ class Decide(Predict):
                     probabilities=answer["probabilities"],
                 )
             outputs[name] = result if field.annotation is kind else result.value
-        return self._forward_postprocess([outputs], signature, _trace=trace, **inputs)
+        prediction = Prediction.from_completions([outputs], signature=signature)
+        if trace and settings.trace is not None and settings.max_trace_size > 0:
+            if len(settings.trace) >= settings.max_trace_size:
+                settings.trace.pop(0)
+            settings.trace.append((self, inputs, prediction))
+        return prediction
 
     def forward(self, **kwargs):
         client, signature, types, inputs, questions, trace = self._prepare(kwargs)
@@ -217,26 +229,28 @@ class Decide(Predict):
         return self._decode(answers, signature, types, inputs, trace)
 
     def dump_state(self, json_mode=True):
-        if self.demos:
+        if getattr(self, "demos", None):
             raise ValueError("Decide does not support demonstrations.")
-        state = super().dump_state(json_mode=json_mode)
-        state.pop("demos")
-        state["thresholds"] = copy.deepcopy(self.thresholds)
-        state["weights"] = copy.deepcopy(self.weights)
         if self.client is not None and not isinstance(self.client, TypeSafe):
             raise TypeError(
                 "Saving an explicit Decide client requires dspy.experimental.TypeSafe; configure custom clients in settings."
             )
-        state["client"] = self.client.dump_state() if self.client is not None else None
-        return state
+        return {
+            "signature": self.signature.dump_state(),
+            "thresholds": copy.deepcopy(self.thresholds),
+            "weights": copy.deepcopy(self.weights),
+            "client": self.client.dump_state() if self.client is not None else None,
+        }
 
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         state = copy.deepcopy(state)
         if state.pop("demos", None):
             raise ValueError("Decide does not support demonstrations.")
         client_state = state.pop("client", None)
-        super().load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)
-        self.demos = []
+        self.signature = self.signature.load_state(state["signature"])
+        self.thresholds = state["thresholds"]
+        self.weights = state["weights"]
+        self.__dict__.pop("demos", None)
         self.client = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         self._validate_parameters(self._output_types(self.signature))
         return self
