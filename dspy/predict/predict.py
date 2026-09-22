@@ -166,7 +166,17 @@ class Predict(Module, Parameter):
             raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
 
         # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
-        temperature = config.get("temperature") or lm.kwargs.get("temperature")
+        #
+        # Read the caller's temperature by PRESENCE, not truthiness: an explicit
+        # temperature=0.0 is falsy, so `config.get("temperature") or ...` skipped it
+        # and decided the bump against the LM's default instead -- the same program
+        # bumped or not depending only on whether the LM carried a temperature kwarg
+        # (#10456). What the caller set in `config` (module- or call-level) is what
+        # the decision reads; only an absent one falls through to the LM's default.
+        if "temperature" in config:
+            temperature = config["temperature"]
+        else:
+            temperature = lm.kwargs.get("temperature")
         num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
