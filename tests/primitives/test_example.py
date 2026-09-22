@@ -84,6 +84,24 @@ def test_example_hash():
     assert hash(example1) == hash(example2)
 
 
+def test_example_hash_is_order_insensitive():
+    # `__eq__` compares the underlying dict (order-insensitive), so the hash
+    # contract requires `__hash__` to be order-insensitive as well.
+    example1 = Example(a=1, b=2)
+    example2 = Example(b=2, a=1)
+    assert example1 == example2
+    assert hash(example1) == hash(example2)
+
+
+def test_example_set_and_dict_lookup_after_reorder():
+    # Direct consequence of the hash contract: equal Examples constructed in
+    # different field orders must deduplicate in sets and look up in dicts.
+    example1 = Example(a=1, b=2)
+    example2 = Example(b=2, a=1)
+    assert len({example1, example2}) == 1
+    assert {example1: "v"}.get(example2) == "v"
+
+
 def test_example_keys_values_items():
     example = Example(a=1, b=2, dspy_hidden=3)
     assert set(example.keys()) == {"a", "b"}
@@ -118,6 +136,36 @@ def test_example_copy_without():
     without_a = copied.without("a")
     with pytest.raises(AttributeError):
         _ = without_a.a
+
+
+def test_example_copy_preserves_input_keys():
+    """copy()/without() must preserve the input/label split.
+
+    Regression: the input keys were reset to None on copy, so .inputs()/.labels()
+    raised on any copied Example (and Example(base=other) lost the split too).
+    """
+    example = Example(question="q", answer="a").with_inputs("question")
+
+    copied = example.copy(answer="b")
+    assert copied._input_keys == {"question"}
+    assert copied.inputs().toDict() == {"question": "q"}
+    assert copied.labels().toDict() == {"answer": "b"}
+
+    # without() routes through copy(); the split must survive for remaining fields.
+    no_extra = example.copy(source="web").without("source")
+    assert no_extra._input_keys == {"question"}
+    assert no_extra.inputs().toDict() == {"question": "q"}
+
+    # Constructing directly from an Example base also preserves the split.
+    assert Example(base=example)._input_keys == {"question"}
+
+
+def test_prediction_copy_does_not_require_input_keys():
+    # Example subclasses (e.g. Prediction) don't keep _input_keys; copy() must not crash.
+    import dspy
+
+    copied = dspy.Prediction(answer="a").copy(answer="b")
+    assert copied.answer == "b"
 
 
 def test_example_to_dict():

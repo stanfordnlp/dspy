@@ -208,7 +208,8 @@ def parse_value(value, annotation):
             if v in allowed:
                 return v
 
-        raise ValueError(f"{value!r} is not one of {allowed!r}")
+            # Coerce string forms of non-string members (e.g. "2" for Literal[1, 2, 3]) below.
+            value = v
 
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
@@ -231,7 +232,7 @@ def parse_value(value, annotation):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
                 return TypeAdapter(annotation).validate_python(value)
-            except Exception:
+            except pydantic.ValidationError:
                 raise e
         raise
 

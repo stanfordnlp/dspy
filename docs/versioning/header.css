@@ -1,0 +1,115 @@
+/* Shared header treatment for Material release snapshots and Zensical Current. */
+.md-version__alias {
+    display: none;
+}
+
+@media screen and (min-width: 60em) {
+    .md-header__topic > .md-version {
+        visibility: hidden;
+    }
+
+    .md-version--placeholder {
+        pointer-events: none;
+    }
+
+    .md-header__inner > .md-version {
+        flex: 0 0 5.25rem;
+        display: flex;
+        align-items: flex-start;
+        position: relative;
+        width: 5.25rem;
+        height: 2.4rem;
+        margin-right: 0;
+        margin-left: 0.4rem;
+        padding-top: 0.25rem;
+    }
+
+    .md-header__inner > .md-version .md-version__current {
+        box-sizing: border-box;
+        min-width: 5.25rem;
+        height: 1.8rem;
+        margin: 0;
+        padding: 0 1.6rem 0 0.65rem;
+        border: 1px solid color-mix(in srgb, currentcolor 37%, transparent);
+        border-radius: 0.1rem;
+        color: inherit;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .md-header__inner > .md-version .md-version__current::after {
+        position: absolute;
+        top: 50%;
+        right: 0.65rem;
+        margin: 0;
+        transform: translateY(-50%);
+    }
+
+    .md-header__inner > .md-version .md-version__list {
+        top: calc(100% - 0.3rem);
+        right: 0;
+        left: auto;
+        width: 8rem;
+        margin-right: 0;
+        margin-left: 0;
+        padding: 0;
+        overflow-y: auto;
+        border: 1px solid var(--md-default-fg-color--lightest);
+        border-radius: 0.2rem;
+        background: var(--md-default-bg-color);
+        box-shadow: var(--md-shadow-z2);
+        scrollbar-width: thin;
+    }
+
+    .md-version:is(:focus-within, :hover) .md-version__list {
+        max-height: 19rem;
+    }
+
+    .md-version__item {
+        margin: 0;
+        border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    }
+
+    .md-version__item:last-child {
+        border-bottom: 0;
+    }
+
+    .md-version__link {
+        display: flex;
+        align-items: center;
+        min-height: 2.05rem;
+        padding: 0.45rem 0.7rem;
+        color: var(--md-default-fg-color);
+        font-size: 0.7rem;
+        line-height: 1.1;
+        white-space: nowrap;
+    }
+
+    .md-version__link:is(:focus, :hover) {
+        background: var(--md-default-fg-color--lightest);
+        color: var(--md-accent-fg-color);
+    }
+
+    /* Match the wider search field used by the historical Material header. */
+    .md-search {
+        width: 13rem;
+        height: 2.4rem;
+    }
+
+    .md-search__button {
+        width: 100%;
+        height: 1.8rem;
+        padding-right: 0.6rem;
+        border-radius: 0.1rem;
+        background: var(--md-default-fg-color--lightest);
+    }
+
+    .md-search__button::after {
+        display: none;
+    }
+
+    .md-header__source {
+        width: 10rem;
+        margin-left: 0;
+    }
+}

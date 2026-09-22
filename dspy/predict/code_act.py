@@ -30,14 +30,15 @@ class CodeAct(ReAct, ProgramOfThought):
         interpreter_factory: Callable[[], CodeInterpreter] = PythonInterpreter,
     ):
         """
-        Initializes the CodeAct class with the specified model, temperature, and max tokens.
+        Initializes the CodeAct class with the specified signature, tools, and max iterations.
 
         Args:
             signature (Union[str, Type[Signature]]): The signature of the module.
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
-                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns.
+                callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. Defaults to
+                ``dspy.PythonInterpreter``. ``dspy.configure(interpreter_factory=...)`` replaces this default.
         Examples:
             ```python
             from dspy.predict import CodeAct

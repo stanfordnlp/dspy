@@ -37,6 +37,7 @@ from dspy.primitives.code_interpreter import (
     _validate_interpreter,
     _validate_interpreter_factory,
     interpreter_capabilities,
+    resolve_interpreter_factory,
 )
 from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, SandboxLM, is_reserved_sandbox_name
 from dspy.primitives.module import Module
@@ -156,12 +157,13 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but
-    ``interpreter_factory`` can create another CodeInterpreter implementation,
-    such as an adapter for a remote sandbox. RLM updates the interpreter's
-    mutable ``tools`` dictionary with invocation-scoped tools before execution.
-    A caller-owned interpreter may be reused sequentially with the same RLM
-    instance, but must not be shared by overlapping invocations.
+    ``interpreter_factory`` defaults to ``PythonInterpreter`` (Deno/Pyodide/WASM), and
+    ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
+    accepts an adapter for a remote sandbox.
+    RLM updates the interpreter's mutable ``tools`` dictionary with
+    invocation-scoped tools before execution. A caller-owned interpreter may be
+    reused sequentially with the same RLM instance, but must not be shared by
+    overlapping invocations.
 
     Examples:
         ```python
@@ -200,7 +202,10 @@ class RLM(Module):
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
                 an ``execution_instructions`` string describing its runtime for the action prompt, and a
                 ``capabilities`` declaration (see ``InterpreterCapability``) that shapes the action prompt; the
-                facade itself is installed only into an interpreter instance that declares it.
+                facade itself is installed only into an interpreter instance that declares it. RLM applies the
+                active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
+                without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
+                ``dspy.configure(interpreter_factory=...)`` replaces the default.
         """
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
@@ -211,12 +216,13 @@ class RLM(Module):
         self.verbose = verbose
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
-        self._sub_dspy = InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_factory)
+        self._sub_dspy = self._declares_sub_dspy(resolve_interpreter_factory(interpreter_factory))
         self._user_tools = self._normalize_tools(tools)
         self._validate_namespace(self._user_tools)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
+        self._action_signature = action_sig
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
 
@@ -314,14 +320,14 @@ class RLM(Module):
                     "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
                 )
             response = target_lm(prompt)
-            if isinstance(response, dspy.LMResponse):
+            if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
                 first_output = response[0]
                 text = first_output.get("text") if isinstance(first_output, dict) else first_output
             else:
                 raise TypeError(
-                    "Sub-LM must return dspy.LMResponse or a non-empty list of text outputs, "
+                    "Sub-LM must return dspy.lm15.Response or a non-empty list of text outputs, "
                     f"got {type(response).__name__}."
                 )
 
@@ -385,12 +391,13 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
-        execution_instructions = getattr(self._interpreter_factory, "execution_instructions", "")
-        if not isinstance(execution_instructions, str):
-            raise TypeError("interpreter_factory.execution_instructions must be a string")
-        interpreter_rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
-        if self._sub_dspy:
-            interpreter_rules += SUB_AGENT_INSTRUCTIONS
+        # Seed with the factory active at construction; each action call refreshes this
+        # fragment, so a later dspy.context() can select a different runtime.
+        factory = resolve_interpreter_factory(self._interpreter_factory)
+        execution_instructions = self._get_execution_instructions(factory)
+        self._initial_execution_instructions = execution_instructions
+        self._initial_interpreter_rules = self._format_interpreter_rules(execution_instructions, self._sub_dspy)
+        interpreter_rules = self._initial_interpreter_rules
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
@@ -423,6 +430,48 @@ class RLM(Module):
         extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
+
+    @staticmethod
+    def _declares_sub_dspy(factory: Callable[[], CodeInterpreter]) -> bool:
+        return InterpreterCapability.SUB_DSPY in interpreter_capabilities(factory)
+
+    @staticmethod
+    def _format_interpreter_rules(execution_instructions: str, sub_dspy: bool) -> str:
+        rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
+        return rules + SUB_AGENT_INSTRUCTIONS if sub_dspy else rules
+
+    @staticmethod
+    def _get_execution_instructions(factory: Callable[[], CodeInterpreter]) -> str:
+        execution_instructions = getattr(factory, "execution_instructions", "")
+        if not isinstance(execution_instructions, str):
+            raise TypeError("interpreter_factory.execution_instructions must be a string")
+        return execution_instructions
+
+    def _action_signature_for_current_factory(self) -> type[Signature]:
+        """Return an action signature whose runtime guidance matches the active interpreter."""
+        factory = resolve_interpreter_factory(self._interpreter_factory)
+        execution_instructions = self._get_execution_instructions(factory)
+        sub_dspy = self._declares_sub_dspy(factory)
+        # getattr, because generate_action may have been replaced by a predictor that
+        # carries no signature of its own.
+        current_signature = getattr(self.generate_action, "signature", self._action_signature)
+
+        # Same runtime as at construction: no derived signature per iteration, and an
+        # optimizer's revised instructions stay untouched.
+        if execution_instructions == self._initial_execution_instructions and sub_dspy == self._sub_dspy:
+            return current_signature
+
+        # Replace only DSPy's own fragment, so an override cannot stack on stale guidance.
+        current_instructions = current_signature.instructions
+        current_rules = self._format_interpreter_rules(execution_instructions, sub_dspy)
+        if self._initial_interpreter_rules and self._initial_interpreter_rules in current_instructions:
+            instructions = current_instructions.replace(self._initial_interpreter_rules, current_rules, 1)
+        elif current_rules:
+            # An optimizer dropped that fragment, so append the active guidance once instead.
+            instructions = current_instructions + current_rules
+        else:
+            instructions = current_instructions
+        return current_signature.with_instructions(instructions)
 
     # =========================================================================
     # Input/Output Processing
@@ -724,7 +773,10 @@ class RLM(Module):
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
+        # A per-call signature, not a mutation of generate_action.signature, keeps a
+        # dspy.context override local to this invocation.
         action = self.generate_action(
+            signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -821,6 +873,7 @@ class RLM(Module):
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
+            signature=self._action_signature_for_current_factory(),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",

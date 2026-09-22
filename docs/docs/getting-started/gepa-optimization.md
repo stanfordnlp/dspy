@@ -86,6 +86,24 @@ Finally, we compile our optimized program:
 optimized_haiku_bot = optimizer.compile(haiku_bot, trainset=train, valset=val)
 ```
 
+### Choosing the training and validation sets
+
+GEPA uses these two splits for different jobs. The `trainset` supplies examples
+for reflective prompt updates, while the `valset` tracks Pareto scores and
+selects the program returned by `compile`. Keep a final test set separate so you
+can evaluate the optimized program on examples that influenced neither step.
+
+There is no universal split ratio. For generalization, keep as much data as
+possible in `trainset` and make `valset` the smallest sample that still
+represents the downstream distribution. Every candidate is scored on the
+validation examples, so an unnecessarily large `valset` also reduces how many
+candidate prompts GEPA can explore within a fixed metric-call budget.
+
+If you omit `valset`, GEPA reuses `trainset` for selection. That can be useful
+for inference-time search, where the goal is to find the best output for the
+examples at hand, but it deliberately allows prompts to overfit those examples.
+Pass a separate validation set when you care about performance on unseen data.
+
 Now it’s time to grab a beverage and wait.
 
 Behind the scenes, compile runs an iterative loop.

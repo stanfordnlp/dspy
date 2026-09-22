@@ -357,7 +357,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
         ]
         with dspy.context(
-            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
         ):
             results = await asyncio.gather(*coroutines)
 
@@ -404,7 +404,7 @@ def test_module_history():
             ],
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
         program(question="What is the capital of France?")
 
@@ -452,7 +452,7 @@ def test_module_history_with_concurrency():
             choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
             model="openai/gpt-4o-mini",
         )
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
 
         parallelizer = dspy.Parallel()
@@ -486,7 +486,7 @@ async def test_module_history_async():
             model="openai/gpt-4o-mini",
         )
         program = MyProgram()
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
             await program.acall(question="What is the capital of France?")
 
             # Second call only call the submodule.
@@ -503,7 +503,7 @@ async def test_module_history_async():
         assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
-            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
 
@@ -513,7 +513,7 @@ async def test_module_history_async():
         assert len(program.cot.predict.history) == 2
 
         with dspy.context(
-            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()
         ):
             await program.acall(question="What is the capital of France?")
         # History is recorded again when history is enabled.
@@ -542,3 +542,81 @@ def test_forward_through_call_no_warning(capsys):
     module(x="test")
     captured = capsys.readouterr()
     assert "directly is discouraged" not in captured.err
+
+
+def test_modules_to_serialize_registration_does_not_outlive_the_save(tmp_path):
+    # cloudpickle's by-value registry is process-wide and keyed by module
+    # name. A save must not leave a module registered, or every later pickle
+    # of any module by that name in the process is by value.
+    import sys
+
+    import cloudpickle
+
+    (tmp_path / "scoped_module.py").write_text("def f():\n    return 1\n")
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import scoped_module
+
+        assert "scoped_module" not in cloudpickle.list_registry_pickle_by_value()
+        dspy.Predict("q -> a").save(tmp_path / "prog", save_program=True, modules_to_serialize=[scoped_module])
+        assert "scoped_module" not in cloudpickle.list_registry_pickle_by_value()
+        # A registration the caller made themselves is theirs to keep.
+        cloudpickle.register_pickle_by_value(scoped_module)
+        try:
+            dspy.Predict("q -> a").save(tmp_path / "prog2", save_program=True, modules_to_serialize=[scoped_module])
+            assert "scoped_module" in cloudpickle.list_registry_pickle_by_value()
+        finally:
+            cloudpickle.unregister_pickle_by_value(scoped_module)
+    finally:
+        sys.modules.pop("scoped_module", None)
+        sys.path.remove(str(tmp_path))
+
+
+def test_overlapping_saves_share_one_by_value_registration(tmp_path):
+    # The registry is process-wide. A save that overlaps another must keep
+    # the module registered until the last of them is done, or the later
+    # one pickles the rest of its objects by reference (greptile on
+    # dspy#10451).
+    import sys
+    import threading
+
+    import cloudpickle
+
+    from dspy.utils.pickle_by_value import serialize_by_value
+
+    (tmp_path / "shared_module.py").write_text("def f():\n    return 1\n")
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import shared_module
+
+        def registered():
+            return "shared_module" in cloudpickle.list_registry_pickle_by_value()
+
+        # Nested on one thread.
+        with serialize_by_value([shared_module]):
+            with serialize_by_value([shared_module]):
+                assert registered()
+            assert registered()  # the inner save finishing does not strip the outer one
+        assert not registered()
+
+        # Two threads: A enters, B enters, A leaves while B is still saving.
+        b_entered, a_left = threading.Event(), threading.Event()
+        seen = {}
+
+        def save_b():
+            with serialize_by_value([shared_module]):
+                b_entered.set()
+                a_left.wait(5)
+                seen["during_b_after_a_left"] = registered()
+
+        worker = threading.Thread(target=save_b)
+        with serialize_by_value([shared_module]):
+            worker.start()
+            assert b_entered.wait(5)
+        a_left.set()
+        worker.join(5)
+        assert seen["during_b_after_a_left"] is True
+        assert not registered()
+    finally:
+        sys.modules.pop("shared_module", None)
+        sys.path.remove(str(tmp_path))

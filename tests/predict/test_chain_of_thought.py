@@ -31,7 +31,7 @@ async def test_async_chain_of_thought():
 def test_chain_of_thought_with_native_reasoning():
     """Test ChainOfThought with a model that supports native reasoning, but using manual fields."""
 
-    lm = dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", cache=False)
+    lm = dspy.LM(engine="litellm", model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -60,7 +60,7 @@ def test_chain_of_thought_with_native_reasoning():
 
 def test_chain_of_thought_with_manual_reasoning():
     """Test ChainOfThought with manual reasoning where LM doesn't support native reasoning."""
-    lm = dspy.LM(model="openai/gpt-4o-mini")
+    lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini")
     dspy.settings.configure(lm=lm)
 
     with mock.patch("litellm.completion") as mock_completion:

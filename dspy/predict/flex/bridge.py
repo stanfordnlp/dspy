@@ -3,7 +3,8 @@
 A ``Flex`` never executes its optimizer-authored ``module_src`` in the host process. Instead,
 every ``forward``:
 
-1. creates a fresh interpreter from the Flex's ``interpreter_factory`` (``BridgeRuntime.forward``);
+1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
+   ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. installs the sandbox dspy facade (``dspy.primitives.facade``) over the Flex's tools, interpreter
    factory, predictor-call budget, and custom types;
 3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
