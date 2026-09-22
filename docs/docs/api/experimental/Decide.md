@@ -85,19 +85,25 @@ passing rich results as inputs. JSON serialization preserves it.
 
 ```python
 assess.thresholds["urgent"] = 0.7
-assess.weights["severity"] = [0, 4, 10]
+assess.cuts["severity"] = [0.5, 1.6]
 assess.weights["category"] = {"billing": 0.7, "technical": 1.0}
 ```
 
 Each Boolean output starts with threshold 0.5. Its value is `probability >= threshold`,
-so equality returns True. Each Score output starts with its declared numeric anchors.
-Weights must remain strictly increasing within the declared score range; this keeps
-results compatible with the same type used by `Predict`.
+so equality returns True. Score uses its declared numeric anchors as a fixed scale;
+there are no tunable Score weights.
 
-Score computes `sum(p[i] * weights[i]) / sum(p)`. The denominator accounts for
-provider distributions that sum approximately to one. Weights assign numeric
-values to options; they do not multiply probabilities or introduce cut points.
+Score computes `sum(p[i] * anchors[i]) / sum(p)`. The denominator accounts for
+provider distributions that sum approximately to one.
 Raw distributions are retained unchanged, with integer rubric indices as keys.
+
+Rich Score results also expose `.level`: the number of cuts less than or equal to
+`sum(i * p[i]) / sum(p)`. Cuts use the level-index scale, not the anchor scale.
+For N levels, there are N−1 finite, strictly increasing cuts inside (0, N−1),
+initially `[0.5, 1.5, ...]`. Decide supports 2–10 Score levels.
+Changing cuts affects only `.level`, not `.value`, probabilities, or confidence.
+Native `float` outputs remain continuous and do not expose the selected level.
+`Predict` generates value and confidence, not `.level` or provider evidence.
 
 Choice weights instead multiply probabilities for local selection:
 `argmax(probability[label] * weight[label])`. Each option starts at 1.0, and
@@ -113,7 +119,7 @@ otherwise declaration order. Multipliers must be finite and nonnegative; zero
 disables an option. Unknown labels, all-zero effective weights, or a distribution
 with no positive mass remaining after weighting raise `ValueError`.
 
-Thresholds and weights belong to the module, separately for each output. Changing
+Thresholds, cuts, and Choice weights belong to the module, separately for each output. Changing
 them does not alter shared types, previous results, or the provider request, so
 cached answers can be reused. No optimizer is included here.
 
@@ -145,14 +151,31 @@ module composition, `named_parameters()`, callbacks, traces, `batch`, and `acall
 `named_predictors()` excludes it, so predictor-specific optimizers can target the
 `Predict` leaves of a mixed program without attaching demonstrations to `Decide`.
 It validates required inputs and rejects unknown
-inputs and unsupported outputs. Signature task instructions and field descriptions
-are included in each provider question. `Decide` has no demonstration configuration;
+inputs and unsupported outputs. Shared signature instructions and input descriptions
+are sent once in `state.instructions` and `state.input_fields`. Input values live
+under `state.inputs`, avoiding collisions with context keys; explicit references
+in question text should use paths such as `inputs.ticket`. `Decide` has no demonstration configuration;
 demonstration-based optimizers target `Predict`, not `Decide`.
+
+Per-field `assess.instructions` and `assess.criteria` are JSON overrides owned by
+the module, not new `OutputField` arguments. Missing entries use the signature's
+field descriptions and declared type rubric/options. Instructions may be a string,
+object, array, or null. They are sent unchanged as each question's `instructions`;
+their inner keys are never merged or interpreted specially. Without an override,
+the field description becomes the question's instructions.
+
+Criteria must match the field: optional `true`/`false` definitions for Noul,
+exact string option labels for Choice, or an ordered list matching Score levels.
+Each description may be a string, object, array, or null; nested JSON is preserved.
+For example, `assess.criteria["urgent"] = {"true": {"what": "Needs action", "examples": ["Outage"]}}`.
+Validation runs before inference, saving, and loading. Invalid loads leave the module unchanged.
+These overrides affect Decide requests only; Predict continues to render the shared
+signature and decision-type descriptions through its adapter.
 
 A per-call `signature=` override may change instructions and field descriptions,
 but must preserve output names, value types, and declared Choice options/Score
 rubrics. Equivalent native/rich forms are allowed when they resolve to the same
-decision definition. Existing thresholds and weights remain in effect. Construct
+decision definition. Explicit JSON overrides, thresholds, cuts, and Choice weights remain in effect. Construct
 a new `Decide` to change the answer space; incompatible overrides fail before
 any provider request.
 
@@ -164,7 +187,8 @@ restored.load("assess.json")
 ```
 
 State-only loading requires the same signature architecture, as with `Predict`.
-Saved state contains only `signature`, `thresholds`, `weights`, and `client`.
+Saved state contains `signature`, `instructions`, `criteria`, `thresholds`, `cuts`,
+`weights` (Choice only), and `client`. Shared signature instructions are stored once.
 `reset()` preserves configuration because there is no demonstration or training
 state to clear. `reset_copy()` makes an independent copy with the same settings,
 so predictor-specific optimizers do not erase tuned decision parameters.

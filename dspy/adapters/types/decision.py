@@ -55,8 +55,11 @@ class Score(_Decision):
 
     Declare ``Score[(0, "poor"), (2, "fair"), (10, "excellent")]``. Anchors must
     be finite and strictly increasing. Predict generates value and confidence;
-    Decide averages its per-field numeric weights using provider probabilities.
+    Decide averages the fixed declared anchors using provider probabilities.
     ``probabilities`` retains the raw distribution, keyed by rubric index.
+    ``level`` is the zero-based ordinal selected by Decide's cuts on the mean
+    level index. It does not change the continuous value or provider confidence.
+    Predict generates neither probabilities nor level.
 
     ``Annotated[float, Score[...]]`` uses the same rubric but returns a native
     float instead of a rich result. Bare float has no rubric for Decide.
@@ -64,6 +67,7 @@ class Score(_Decision):
 
     value: float = Field(allow_inf_nan=False)
     probabilities: SkipJsonSchema[dict[int, Probability] | None] = None
+    level: SkipJsonSchema[int | None] = Field(default=None, ge=0, strict=True)
     options: ClassVar[tuple] = ()
 
     @classmethod

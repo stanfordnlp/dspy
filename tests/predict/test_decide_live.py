@@ -177,12 +177,14 @@ def test_live_distribution_reinterpretation(client):
     # Replay the actual live evidence to isolate local interpretation from model variability.
     module.client = lambda **_: raw
     module.thresholds["urgent"] = initial.urgent.probability
-    module.weights["severity"] = [0, 7, 10]
+    module.cuts["severity"] = [0.4, 1.7]
     boundary = module(ticket=CASES[2][1])
     assert boundary.urgent.value is True
     assert boundary.urgent.confidence == 0
     p = initial.severity.probabilities
-    assert boundary.severity.value == pytest.approx((7 * p[1] + 10 * p[2]) / sum(p.values()))
+    assert boundary.severity.value == initial.severity.value
+    position = (p[1] + 2 * p[2]) / sum(p.values())
+    assert boundary.severity.level == int(position >= 0.4) + int(position >= 1.7)
     assert boundary.severity.probabilities == p
     assert boundary.severity.confidence == initial.severity.confidence
     assert Severity.options[1][0] == 2
