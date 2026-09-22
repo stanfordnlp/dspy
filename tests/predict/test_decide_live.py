@@ -176,8 +176,8 @@ def test_live_distribution_reinterpretation(client):
     raw = client.history[-1]["response"]["answers"]
     # Replay the actual live evidence to isolate local interpretation from model variability.
     module.client = lambda **_: raw
-    module.thresholds["urgent"] = initial.urgent.probability
-    module.cuts["severity"] = [0.4, 1.7]
+    module.fields["urgent"]["threshold"] = initial.urgent.probability
+    module.fields["severity"]["cuts"] = [0.4, 1.7]
     boundary = module(ticket=CASES[2][1])
     assert boundary.urgent.value is True
     assert boundary.urgent.confidence == 0
@@ -188,7 +188,7 @@ def test_live_distribution_reinterpretation(client):
     assert boundary.severity.probabilities == p
     assert boundary.severity.confidence == initial.severity.confidence
     assert Severity.options[1][0] == 2
-    module.thresholds["urgent"] = math.nextafter(initial.urgent.probability, 1)
+    module.fields["urgent"]["threshold"] = math.nextafter(initial.urgent.probability, 1)
     if initial.urgent.probability < 1:
         assert module(ticket=CASES[2][1]).urgent.value is False
 
@@ -204,7 +204,7 @@ def test_live_choice_weighted_reinterpretation(client):
     # Use exactly the same live distribution in both forms, without another model draw.
     for rich in (True, False):
         weighted = Decide(signature(rich), client=lambda **_: raw)
-        weighted.weights["category"] = weights
+        weighted.fields["category"]["weights"] = weights
         result = weighted(ticket=ticket).category
         assert (result.value if rich else result) == other
         if rich:

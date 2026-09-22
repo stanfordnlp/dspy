@@ -54,9 +54,9 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     module = decide(True, client)
     with dspy.context(track_usage=True):
         first = module(text="x")
-        module.thresholds["flag"] = 0.9
-        module.cuts["rating"] = [0.5, 1.6]
-        module.weights["label"] = {"2": 0.1}
+        module.fields["flag"]["threshold"] = 0.9
+        module.fields["rating"]["cuts"] = [0.5, 1.6]
+        module.fields["label"]["weights"] = {"2": 0.1}
         second = module(text="x")
     assert first.flag.value is True
     assert second.flag.value is False
@@ -96,7 +96,7 @@ async def test_async_sdk_and_shared_cache(transport):
     asynchronous = await module.acall(text="x")
     synchronous = module(text="x")
     assert asynchronous.toDict() == synchronous.toDict()
-    module.weights["label"] = {"2": 0.1}
+    module.fields["label"]["weights"] = {"2": 0.1}
     assert (await module.acall(text="x")).label == "other"
     assert len(transport) == 1
     assert synchronous.rating == pytest.approx(6.7)

@@ -58,7 +58,7 @@ def test_native_rich_equivalence_and_request_mapping():
     client = FakeClient()
     native = decide(client=client)
     rich = decide(True, client)
-    native.thresholds["flag"] = rich.thresholds["flag"] = 0.7
+    native.fields["flag"]["threshold"] = rich.fields["flag"]["threshold"] = 0.7
     a, b = native(text="example"), rich(text="example")
     assert a.flag is b.flag.value is True
     assert a.rating == b.rating.value == pytest.approx(6.7)
@@ -102,7 +102,7 @@ def test_native_rich_equivalence_and_request_mapping():
 )
 def test_bool_boundary_and_confidence(p, value, confidence):
     module = Decide("text -> flag: dspy.experimental.Noul", client=FakeClient(p))
-    module.thresholds["flag"] = 0.75
+    module.fields["flag"]["threshold"] = 0.75
     result = module(text="x").flag
     assert result.value is value
     assert result.confidence == pytest.approx(confidence)
@@ -112,7 +112,7 @@ def test_bool_boundary_and_confidence(p, value, confidence):
 @pytest.mark.parametrize("threshold,p,value", [(0, 0, True), (1, 0.99, False), (1, 1, True)])
 def test_threshold_endpoints(threshold, p, value):
     module = Decide("text -> flag: bool", client=FakeClient(p))
-    module.thresholds["flag"] = threshold
+    module.fields["flag"]["threshold"] = threshold
     assert module(text="x").flag is value
 
 
@@ -144,7 +144,7 @@ def test_score_cuts_normalization_and_snapshot():
     client = FakeClient()
     module = decide(True, client)
     initial = module(text="x").rating
-    module.cuts["rating"] = [0.5, 1.6]
+    module.fields["rating"]["cuts"] = [0.5, 1.6]
     changed = module(text="x").rating
     assert initial.value == pytest.approx(6.7)  # Computed from probabilities, not raw SDK score.
     assert changed.value == initial.value
@@ -166,9 +166,9 @@ def test_score_cuts_normalization_and_snapshot():
 def test_choice_weights_selection_evidence_and_request(rich):
     client = FakeClient()
     module = decide(rich, client)
-    assert module.weights["label"] == {"2": 1.0, "other": 1.0}
+    assert module.fields["label"]["weights"] == {"2": 1.0, "other": 1.0}
     before = module(text="x").label
-    module.weights["label"] = {"2": 0.1}  # 0.8 * 0.1 < 0.2 * 1.0
+    module.fields["label"]["weights"] = {"2": 0.1}  # 0.8 * 0.1 < 0.2 * 1.0
     after = module(text="x").label
     assert (before.value if rich else before) == 2
     assert (after.value if rich else after) == "other"
@@ -176,7 +176,7 @@ def test_choice_weights_selection_evidence_and_request(rich):
     if rich:
         assert after.probabilities == before.probabilities == {"2": 0.8, "other": 0.2}
         assert after.confidence == before.confidence == 0.73
-    module.weights["label"] = {"2": 10, "other": 100}
+    module.fields["label"]["weights"] = {"2": 10, "other": 100}
     scaled = module(text="x").label
     assert (scaled.value if rich else scaled) == "other"
     assert Label.options == ((2, ""), ("other", ""))
@@ -185,7 +185,7 @@ def test_choice_weights_selection_evidence_and_request(rich):
 @pytest.mark.parametrize("weights", [{}, {"2": 1}, {"2": 0.25}, {"2": 0}])
 def test_choice_weights_defaults_ties_and_zero(weights):
     module = decide(True, FakeClient())
-    module.weights["label"] = weights
+    module.fields["label"]["weights"] = weights
     result = module(text="x").label
     # 0.8 * 0.25 == 0.2: the provider's selection wins the tie.
     assert result.value == ("other" if weights.get("2") == 0 else 2)
@@ -193,7 +193,7 @@ def test_choice_weights_defaults_ties_and_zero(weights):
 
 def test_choice_weighted_tie_prefers_provider_over_declaration_order():
     module = decide(True, FakeClient(choice="other"))
-    module.weights["label"] = {"other": 0.25}
+    module.fields["label"]["weights"] = {"other": 0.25}
     assert module(text="x").label.value == "other"  # 2 is declared first, but both weighted scores are 0.2.
 
 
@@ -213,7 +213,7 @@ def test_choice_weighted_tie_prefers_provider_over_declaration_order():
 def test_reject_invalid_choice_weights_before_request(weights):
     client = FakeClient()
     module = decide(client=client)
-    module.weights["label"] = weights
+    module.fields["label"]["weights"] = weights
     with pytest.raises(ValueError, match="Choice weights"):
         module(text="x")
     assert not client.calls
@@ -221,25 +221,25 @@ def test_reject_invalid_choice_weights_before_request(weights):
 
 def test_choice_weights_preserve_literal_types_and_json_state(tmp_path):
     module = Decide("text -> label: Literal[True, 1, None]", client=FakeClient(choice="True"))
-    module.weights["label"] = {"True": 0, "1": 2, "None": 0}
+    module.fields["label"]["weights"] = {"True": 0, "1": 2, "None": 0}
     result = module(text="x").label
     assert type(result) is int and result == 1
     module.client = None
     module.save(tmp_path / "choice.json")
     restored = Decide(module.signature)
     restored.load(tmp_path / "choice.json")
-    assert restored.weights == module.weights
+    assert restored.fields == module.fields
     restored.client = FakeClient(choice="True")
-    restored.weights["label"] = {"True": 0, "1": 0, "None": 2}
+    restored.fields["label"]["weights"] = {"True": 0, "1": 0, "None": 2}
     assert restored(text="x").label is None
-    assert module.weights["label"]["1"] == 2
+    assert module.fields["label"]["weights"]["1"] == 2
 
 
 def test_choice_weights_reject_zero_remaining_mass_and_tie_in_declaration_order():
     module = Decide("text -> label: Literal['a', 'b', 'c']")
     answers = {"label": {"choice": "c", "probabilities": {"c": 0.5, "b": 0.25, "a": 0.25}, "confidence": 0.7}}
     module.client = lambda **_: answers
-    module.weights["label"] = {"c": 0}
+    module.fields["label"]["weights"] = {"c": 0}
     assert module(text="x").label == "a"  # Neither tied option is the provider choice.
     answers["label"]["probabilities"] = {"c": 1, "b": 0, "a": 0}
     with pytest.raises(ValueError, match="no positive probability mass"):
@@ -262,24 +262,52 @@ def test_reject_unsupported(sig, match):
 
 
 @pytest.mark.parametrize(
-    "attribute,value",
+    "field,config",
     [
-        ("thresholds", {"flag": -0.1}),
-        ("thresholds", {"flag": float("nan")}),
-        ("thresholds", {"missing": 0.3}),
-        ("weights", {"rating": [0, 3]}),
+        ("flag", {"threshold": -0.1}),
+        ("flag", {"threshold": float("nan")}),
+        ("missing", {"threshold": 0.3}),
+        ("rating", {"cuts": [0.5, 1.5], "weights": [0, 3]}),
+        ("flag", {"threshold": 0.5, "cuts": [0.5]}),
+        ("label", {"weights": {}, "threshold": 0.5}),
+        ("flag", {"threshold": 0.5, "unknown": "typo"}),
+        ("rating", {}),
+        ("flag", None),
     ],
 )
-def test_reject_invalid_parameters(attribute, value):
+@pytest.mark.parametrize("operation", ["call", "save", "load"])
+def test_reject_invalid_parameters(field, config, operation, tmp_path):
     client = FakeClient()
     module = decide(client=client)
-    if attribute == "weights":
-        module.weights.update(value)
-    else:
-        setattr(module, attribute, value)
+    initial = copy.deepcopy(module.fields)
+    if operation == "load":
+        module.client = None
+        state = module.dump_state()
+        state["fields"][field] = config
+        with pytest.raises(ValueError):
+            module.load_state(state)
+        assert module.fields == initial
+        return
+    module.fields[field] = config
     with pytest.raises(ValueError):
-        module(text="x")
+        if operation == "call":
+            module(text="x")
+        else:
+            module.save(tmp_path / "invalid.json")
     assert not client.calls
+
+
+@pytest.mark.parametrize("fields", [None, [], {}, {"flag": {"threshold": 0.5}}])
+def test_invalid_field_map_load_is_atomic(fields):
+    module = decide(client=TypeSafe("jev-original"))
+    original = module.dump_state()
+    invalid = copy.deepcopy(original)
+    invalid["fields"] = fields
+    invalid["signature"]["instructions"] = "Do not apply this failed load."
+    invalid["client"]["model"] = "jev-replacement"
+    with pytest.raises(ValueError, match="fields"):
+        module.load_state(invalid)
+    assert module.dump_state() == original
 
 
 @pytest.mark.parametrize(
@@ -386,34 +414,25 @@ def test_defaults_and_input_errors():
 
 def test_copy_and_json_state_preserve_config(tmp_path):
     module = decide(True)
-    module.thresholds["flag"] = 0.7
-    module.cuts["rating"] = [0.4, 1.6]
-    module.weights["label"]["other"] = 2
+    module.fields["flag"]["threshold"] = 0.7
+    module.fields["rating"]["cuts"] = [0.4, 1.6]
+    module.fields["label"]["weights"]["other"] = 2
     with dspy.context(system_one=FakeClient()):
         before = module(text="next")
     duplicate = module.deepcopy()
-    duplicate.cuts["rating"][1] = 1.8
-    duplicate.weights["label"]["other"] = 9
-    duplicate.thresholds["flag"] = 0.3
-    assert module.cuts["rating"] == [0.4, 1.6]
-    assert module.weights["label"] == {"2": 1, "other": 2}
-    assert module.thresholds["flag"] == 0.7
-    assert decide(True).cuts["rating"] == [0.5, 1.5]
+    duplicate.fields["rating"]["cuts"][1] = 1.8
+    duplicate.fields["label"]["weights"]["other"] = 9
+    duplicate.fields["flag"]["threshold"] = 0.3
+    assert module.fields["rating"]["cuts"] == [0.4, 1.6]
+    assert module.fields["label"]["weights"] == {"2": 1, "other": 2}
+    assert module.fields["flag"]["threshold"] == 0.7
+    assert decide(True).fields["rating"]["cuts"] == [0.5, 1.5]
     path = tmp_path / "decide.json"
     module.save(path)
     restored = decide(True)
     restored.load(path)
-    assert restored.weights == module.weights
-    assert restored.thresholds == module.thresholds
-    assert set(module.dump_state()) == {
-        "signature",
-        "thresholds",
-        "weights",
-        "instructions",
-        "criteria",
-        "cuts",
-        "client",
-    }
+    assert restored.fields == module.fields
+    assert set(module.dump_state()) == {"signature", "fields", "client"}
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
 
@@ -438,28 +457,34 @@ def test_json_state_preserves_instructions_criteria_and_cuts(tmp_path):
         ],
         "label": {"2": {"what": "Known category", "examples": []}, "other": None},
     }
-    module.instructions = copy.deepcopy(instructions)
-    module.criteria = copy.deepcopy(criteria)
-    module.thresholds["flag"] = 0.7
-    module.cuts = {"rating": [0.4, 1.6]}
-    module.weights["label"] = {"2": 0.25, "other": 1.5}
+    for name in module.fields:
+        module.fields[name].update(
+            instructions=copy.deepcopy(instructions[name]), criteria=copy.deepcopy(criteria[name])
+        )
+    module.fields["flag"]["threshold"] = 0.7
+    module.fields["rating"]["cuts"] = [0.4, 1.6]
+    module.fields["label"]["weights"] = {"2": 0.25, "other": 1.5}
     path = tmp_path / "structured-decide.json"
     module.save(path)
 
     # Inspect the file as well as the loaded object: whole-program pickle or
     # reconstructing defaults must not conceal missing optimized state.
     state = json.loads(path.read_text())
-    assert state["instructions"] == instructions
-    assert state["criteria"] == criteria
-    assert state["cuts"] == {"rating": [0.4, 1.6]}
+    expected = {
+        "flag": {"instructions": instructions["flag"], "criteria": criteria["flag"], "threshold": 0.7},
+        "rating": {"instructions": instructions["rating"], "criteria": criteria["rating"], "cuts": [0.4, 1.6]},
+        "label": {
+            "instructions": instructions["label"],
+            "criteria": criteria["label"],
+            "weights": {"2": 0.25, "other": 1.5},
+        },
+    }
+    assert state["fields"] == expected
+    assert set(state) == {"signature", "fields", "client", "metadata"}
     restored = decide(True)
     restored.load(path)
     assert restored.signature.instructions == "Assess impact, not writing style."
-    assert restored.instructions == instructions
-    assert restored.criteria == criteria
-    assert restored.thresholds == {"flag": 0.7}
-    assert restored.cuts == {"rating": [0.4, 1.6]}
-    assert restored.weights["label"] == {"2": 0.25, "other": 1.5}
+    assert restored.fields == expected
     client = FakeClient()
     with dspy.context(system_one=client):
         before = module(text="x")
@@ -472,18 +497,35 @@ def test_json_state_preserves_instructions_criteria_and_cuts(tmp_path):
         assert client.calls[0][0]["instructions"] == "Assess impact, not writing style."
         assert question["criteria"] == criteria[name]
         assert not {"threshold", "cuts", "weights"} & question.keys()
-    restored.criteria["rating"][0]["examples"].append("Another example")
-    restored.instructions["flag"]["focus"].append("urgency")
-    restored.cuts["rating"][0] = 0.2
-    assert module.instructions == instructions
-    assert module.criteria == criteria
-    assert module.cuts == {"rating": [0.4, 1.6]}
+    restored.fields["rating"]["criteria"][0]["examples"].append("Another example")
+    restored.fields["flag"]["instructions"]["focus"].append("urgency")
+    restored.fields["rating"]["cuts"][0] = 0.2
+    assert module.fields == expected
+
+
+def test_field_overrides_preserve_absent_vs_null_and_signature_defaults(tmp_path):
+    module = decide()
+    module.fields["flag"].update(instructions=None, criteria=None)
+    path = tmp_path / "overrides.json"
+    module.save(path)
+    restored = decide()
+    restored.load(path)
+    assert restored.fields["flag"] == {"threshold": 0.5, "instructions": None, "criteria": None}
+    assert restored.fields["rating"] == {"cuts": [0.5, 1.5]}
+    override = restored.signature.with_updated_fields("rating", desc="Updated rubric question.")
+    client = FakeClient()
+    with dspy.context(system_one=client):
+        restored(text="x", signature=override)
+    questions = client.calls[0][1]
+    assert questions["flag"] == {"type": "noul", "instructions": None, "criteria": None}
+    assert questions["rating"]["instructions"] == "Updated rubric question."
+    assert questions["rating"]["criteria"] == ["bad", "fair", "great"]
 
 
 @pytest.mark.parametrize("cuts,level", [([0.5, 1.5], 2), ([0.5, 1.6], 1), ([0.5, 1.4], 2)])
 def test_score_cuts_select_level_without_changing_continuous_value(cuts, level):
     module = decide(True, FakeClient())
-    module.cuts["rating"] = cuts
+    module.fields["rating"]["cuts"] = cuts
     result = module(text="x").rating
     # Raw index expectation is 0*.1 + 1*.3 + 2*.6 = 1.5.
     assert result.level == level
@@ -494,7 +536,7 @@ def test_score_cuts_select_level_without_changing_continuous_value(cuts, level):
 def test_invalid_cuts_rejected_before_inference(cuts):
     client = FakeClient()
     module = decide(True, client)
-    module.cuts["rating"] = cuts
+    module.fields["rating"]["cuts"] = cuts
     with pytest.raises(ValueError, match="cuts"):
         module(text="x")
     assert client.calls == []
@@ -503,7 +545,7 @@ def test_invalid_cuts_rejected_before_inference(cuts):
 @pytest.mark.parametrize("entry", [{"nested": {1: "integer key"}}, {"nested": float("nan")}, {"nested": {"set"}}, 42])
 def test_instruction_json_validation_is_not_silently_coercive(entry):
     module = decide()
-    module.instructions["flag"] = entry
+    module.fields["flag"]["instructions"] = entry
     with pytest.raises(ValueError, match="instructions"):
         module.dump_state()
 
@@ -520,7 +562,6 @@ def test_instruction_json_validation_is_not_silently_coercive(entry):
         ("label", {"2": "Known", "other": None, "unknown": "Extra"}),
         ("rating", {"0": "bad", "1": "fair", "2": "great"}),
         ("rating", ["bad", "great"]),
-        ("missing", {"true": "Unknown output field"}),
     ],
 )
 def test_criteria_persistence_rejects_incompatible_field_shape(tmp_path, rich, operation, field, invalid):
@@ -532,15 +573,17 @@ def test_criteria_persistence_rejects_incompatible_field_shape(tmp_path, rich, o
         field: invalid,
     }
     if operation == "save":
-        module.criteria = criteria
+        for name, entry in criteria.items():
+            module.fields[name]["criteria"] = entry
         with pytest.raises(ValueError, match="criteria"):
             module.save(tmp_path / "invalid-criteria.json")
     else:
         state = module.dump_state()
-        state["criteria"] = criteria
+        for name, entry in criteria.items():
+            state["fields"][name]["criteria"] = entry
         with pytest.raises(ValueError, match="criteria"):
             module.load_state(state)
-        assert module.criteria == {}
+        assert all("criteria" not in config for config in module.fields.values())
 
 
 @pytest.mark.asyncio
@@ -572,7 +615,7 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
 
     program = Pipeline()
     decision = program.nodes["decision"]
-    decision.thresholds["flag"] = 0.9
+    decision.fields["flag"]["threshold"] = 0.9
     assert not isinstance(decision, dspy.Predict)
     assert decision.named_parameters() == [("self", decision)]
     assert not hasattr(decision, "demos")
@@ -583,12 +626,12 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
     )
     assert len(trained.explain.demos) == 1
     assert not hasattr(trained.nodes["decision"], "demos")
-    assert trained.nodes["decision"].thresholds == {"flag": 0.9}
+    assert trained.nodes["decision"].fields == {"flag": {"threshold": 0.9}}
     path = tmp_path / "mixed.json"
     trained.save(path)
     restored = Pipeline()
     restored.load(path)
-    assert restored.nodes["decision"].thresholds == {"flag": 0.9}
+    assert restored.nodes["decision"].fields == {"flag": {"threshold": 0.9}}
     assert len(restored.explain.demos) == 1
     trace = []
     with dspy.context(system_one=FakeClient(), lm=DummyLM([{"explanation": "Below threshold"}]), trace=trace):
@@ -599,21 +642,18 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
 
 def test_reset_copy_preserves_configuration_without_aliasing():
     module = decide(True, client=TypeSafe("jev-test"))
-    module.thresholds["flag"] = 0.9
-    module.cuts["rating"] = [0.4, 1.6]
-    module.weights["label"] = {"other": 3}
+    module.fields["flag"]["threshold"] = 0.9
+    module.fields["rating"]["cuts"] = [0.4, 1.6]
+    module.fields["label"]["weights"] = {"other": 3}
     reset = module.reset_copy()
-    assert reset.thresholds == {"flag": 0.9}
-    assert reset.weights == {"label": {"other": 3}}
-    assert reset.cuts == {"rating": [0.4, 1.6]}
+    expected = {"flag": {"threshold": 0.9}, "rating": {"cuts": [0.4, 1.6]}, "label": {"weights": {"other": 3}}}
+    assert reset.fields == expected
     assert reset.signature is module.signature
     assert reset.client.model == "jev-test"
-    reset.thresholds["flag"] = 0.5
-    reset.cuts["rating"][1] = 1.8
-    reset.weights["label"]["other"] = 1
-    assert module.thresholds == {"flag": 0.9}
-    assert module.weights == {"label": {"other": 3}}
-    assert module.cuts == {"rating": [0.4, 1.6]}
+    reset.fields["flag"]["threshold"] = 0.5
+    reset.fields["rating"]["cuts"][1] = 1.8
+    reset.fields["label"]["weights"]["other"] = 1
+    assert module.fields == expected
 
 
 def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
@@ -632,12 +672,11 @@ def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
 
 def test_full_program_save_load(tmp_path):
     module = decide(True, client=TypeSafe("jev-test"))
-    module.thresholds["flag"] = 0.7
-    module.weights["label"] = {"2": 0.1}
+    module.fields["flag"]["threshold"] = 0.7
+    module.fields["label"]["weights"] = {"2": 0.1}
     module.save(tmp_path / "program", save_program=True)
     restored = dspy.load(tmp_path / "program", allow_pickle=True)
-    assert restored.weights == module.weights
-    assert restored.thresholds == module.thresholds
+    assert restored.fields == module.fields
     assert restored.client.model == "jev-test"
     restored.client = FakeClient()
     assert restored(text="x").flag.confidence == pytest.approx(1 / 7)
@@ -646,11 +685,11 @@ def test_full_program_save_load(tmp_path):
 
 def test_thresholds_are_per_field_and_results_are_snapshots():
     module = Decide("text -> a: bool, b: dspy.experimental.Noul", client=FakeClient(0.6))
-    assert module.thresholds == {"a": 0.5, "b": 0.5}
-    module.thresholds["b"] = 0.8
+    assert module.fields == {"a": {"threshold": 0.5}, "b": {"threshold": 0.5}}
+    module.fields["b"]["threshold"] = 0.8
     before = module(text="x")
     assert before.a is True and before.b.value is False
-    module.thresholds["b"] = 0.4
+    module.fields["b"]["threshold"] = 0.4
     assert module(text="x").b.value is True
     assert before.b.value is False
     assert before.b.confidence == pytest.approx(0.25)
@@ -701,8 +740,8 @@ def test_signature_override_rejects_renamed_output():
 def test_signature_override_preserves_parameters_and_accepts_prompt_changes():
     client = FakeClient()
     module = decide(True, client)
-    module.thresholds["flag"] = 0.9
-    module.cuts["rating"] = [0.5, 1.6]
+    module.fields["flag"]["threshold"] = 0.9
+    module.fields["rating"]["cuts"] = [0.5, 1.6]
     override = module.signature.with_instructions("Assess carefully.").with_updated_fields(
         "rating", desc="New question."
     )
