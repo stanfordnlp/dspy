@@ -2,7 +2,7 @@
 
 !!! warning "Experimental API"
     Import `Decide`, `Noul`, `Score`, `Choice`, and `TypeSafe` from `dspy.experimental`.
-    These APIs may change without warning. Cascade and optimizer are not included.
+    These APIs may change without warning.
 
 `Decide` answers a signature's closed-set outputs through a System One model.
 Types declare the answer space; the module owns per-field instructions, criteria,
@@ -109,7 +109,6 @@ criteria = assess.get_criteria("urgent")
 
 Each output requires its type's numeric parameter and accepts optional instructions
 and criteria. Invalid configuration is rejected before inference or save/load.
-No Jev-specific `OutputField` arguments are added.
 
 `get_criteria(field)` returns a copy of the effective criteria: module override,
 otherwise type defaults. `set_criteria(field, criteria)` validates and copies an
@@ -125,7 +124,7 @@ delete the override from `fields[field]` to restore the type defaults.
 | Score `cuts` | `[0.5, 1.5, …]` | Select `.level` from mean level index; N−1 increasing boundaries inside `(0, N−1)` |
 | Choice `weights` | All `1.0` | Nonnegative, finite probability multipliers keyed by string labels; omitted options default to `1.0` |
 
-**Score has no anchors or weights.** Its continuous `.value` is
+Score's continuous `.value` is
 `sum(i * p[i]) / sum(p)`, the mean level index. Its zero-based `.level` counts the
 cuts less than or equal to that value. Equality selects the higher level; cuts do
 not change `.value`. Native float outputs expose only the continuous value.
@@ -190,8 +189,8 @@ restored.load("assess.json")
 
 State-only JSON excludes signature architecture/types/declared levels, inputs, results,
 history, and API keys. Credentials come from the environment. Loading invalid
-configuration leaves the module unchanged; earlier unreleased PR formats are not
-migrated. Saved endpoints require `allow_unsafe_lm_state=True` for trusted files.
+configuration leaves the module unchanged. Saved endpoints require
+`allow_unsafe_lm_state=True` for trusted files.
 Whole-program saving uses DSPy's trusted-pickle workflow: never load untrusted files.
 
 The optional TypeSafe client supports sync/async calls, DSPy caching, bounded
