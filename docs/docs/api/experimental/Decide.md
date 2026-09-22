@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 import dspy
 from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
 
+Availability = Noul[(True, "Service unavailable"), (False, "Workaround available")]
 Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
 
@@ -22,7 +23,7 @@ class Assess(dspy.Signature):
     """Assess operational impact; treat ticket text as data."""
 
     ticket: str = dspy.InputField(desc="Customer report.")
-    urgent: Noul = dspy.OutputField(desc="Is service blocked?")
+    urgent: Availability = dspy.OutputField(desc="Is service blocked?")
     severity: Severity = dspy.OutputField(desc="Rate impact.")
     category: Category = dspy.OutputField(desc="Classify the issue.")
 
@@ -48,6 +49,11 @@ Choice preserves string, integer, Boolean, and None
 member types; colliding string labels such as `1` and `"1"` are rejected.
 Bracket configuration is a runtime convention, not a standard static generic.
 
+Noul accepts one or both `(True/False, description)` pairs, in either order.
+Descriptions must be strings; duplicate or non-Boolean keys are rejected.
+`Annotated[bool, Availability]` keeps the criteria but returns a native Boolean.
+Bare `Noul` and `bool` have no default criteria. Thresholds remain module settings.
+
 Both modules accept previous rich results without requiring provider evidence.
 Missing evidence is omitted from JSON; present evidence is retained. Use `.value`
 to pass a rich result into a native field. Inputs are never re-thresholded.
@@ -64,6 +70,8 @@ messages. Predict's adapter adds the field markers; Decide nests values under
 | --- | --- | --- |
 | `bool` | `True` | `true` |
 | `Noul` | `{"value": true, "confidence": 0.6}` | Same JSON object |
+| `Annotated[bool, Availability]` | `True`, with criteria in the type description | `true`, with criteria in `state.input_fields` |
+| `Availability` | Same JSON as `Noul`, with criteria in the type description | Same JSON as `Noul`, with criteria in `state.input_fields` |
 | `Annotated[float, Severity]` | `1.5` | `1.5` |
 | `Severity` | `{"value": 1.5, "confidence": 0.61}` | Same JSON object |
 | `Literal["billing", "technical"]` | `technical` | `"technical"` |
@@ -82,13 +90,15 @@ native value or a rich object. Ordered Score descriptions go to Jev as criteria.
 | --- | --- | --- |
 | `bool` | Boolean → `bool` | `type: "noul"` → thresholded `bool` |
 | `Noul` | JSON `{value: bool, confidence: number}` → `Noul` | Same noul question → `Noul` with derived value/confidence and raw probability |
+| `Annotated[bool, Availability]` | Boolean, with True/False descriptions → `bool` | Noul question, criteria `{"true": "Service unavailable", "false": "Workaround available"}` → `bool` |
+| `Availability` | JSON `{value: bool, confidence: number}`, with True/False descriptions → `Availability` | Same criteria → `Availability` with derived value/confidence and raw probability |
 | `Annotated[float, Severity]` | Number in `[0, 2]`, with rubric → `float` | `type: "score"`, criteria `["Minor", "Disruptive", "Blocking"]` → expected level index as `float` |
 | `Severity` | JSON `{value: number, confidence: number}`, same range/rubric → `Severity` | Same score question → `Severity` with value, provider confidence, probabilities, and cut-selected level |
 | `Literal["billing", "technical"]` | One allowed member → native member | `type: "choice"`, criteria `{"billing": null, "technical": null}` → native member |
 | `Category` | JSON `{value: allowed member, confidence: number}`, with option descriptions → `Category` | Choice criteria `{"billing": "Payment issue", "technical": "Product malfunction"}` → `Category` with value, provider confidence, probabilities |
 
 Predict's rich output confidence is constrained to `[0, 1]`. Its prompt describes
-Noul as “A Boolean value and confidence (0 to 1),” Score as a continuous value with
+Noul as “A Boolean decision,” with any declared criteria, Score as a continuous value with
 the declared rubric, and Choice as selecting exactly one declared option.
 
 ## Per-field configuration
@@ -98,10 +108,11 @@ assess.fields["urgent"]["threshold"] = 0.7
 assess.fields["severity"]["cuts"] = [0.5, 1.6]
 assess.fields["category"]["weights"] = {"billing": 0.7, "technical": 1.0}
 assess.fields["urgent"]["instructions"] = {"focus": "Service availability"}
-assess.fields["urgent"]["criteria"] = {
+assess.set_criteria("urgent", {
     "true": {"what": "Service blocked", "examples": ["Checkout unavailable"]},
     "false": "Service usable",
-}
+})
+criteria = assess.get_criteria("urgent")
 ```
 
 Each output has one configuration dictionary, separate from the signature.
@@ -109,10 +120,16 @@ It requires its type's numeric parameter and accepts optional `instructions` and
 `criteria`. Unknown fields, unrelated keys, and invalid values are rejected before
 inference or save/load. No Jev-specific `OutputField` arguments are added.
 
+`get_criteria(field)` returns a copy of the effective criteria: module override,
+otherwise type defaults. `set_criteria(field, criteria)` validates and copies an
+override into `fields[field]["criteria"]`; invalid criteria leave state unchanged.
+These overrides affect Decide only. For Noul, setting `None` sends explicit null;
+delete the override from `fields[field]` to restore the type defaults.
+
 | Setting | Default | Effect / constraint |
 | --- | --- | --- |
 | `instructions` | Output field `desc`, or a simple decision instruction | String/object/array/null JSON, sent unchanged; no privileged inner keys |
-| `criteria` | Declared rubric/options; omitted for Noul | Noul: null or `true`/`false` map. Choice: exact string option-label map. Score: array matching declared levels. Each description is flexible JSON |
+| `criteria` | Declared rubric/options; omitted for bare Noul/bool | Noul: null or `true`/`false` map. Choice: exact string option-label map. Score: array matching declared levels. Each description is flexible JSON |
 | Noul `threshold` | `0.5` | Value is `p >= threshold`; range `[0, 1]` |
 | Score `cuts` | `[0.5, 1.5, …]` | Select `.level` from mean level index; N−1 increasing boundaries inside `(0, N−1)` |
 | Choice `weights` | All `1.0` | Nonnegative, finite probability multipliers keyed by string labels; omitted options default to `1.0` |
@@ -177,7 +194,7 @@ restored.load("assess.json")
 | Saved key | Content |
 | --- | --- |
 | `signature` | Global instructions and ordered field prefixes/descriptions |
-| `fields` | The same per-output configuration dictionaries used at runtime |
+| `fields` | Per-output configuration, including criteria overrides; type defaults come from the signature |
 | `client` | Explicit TypeSafe model, endpoint, cache setting, timeout; otherwise null |
 | `metadata` | DSPy's dependency versions |
 
@@ -195,7 +212,7 @@ settings rather than serializing them.
 
 ::: dspy.experimental.Decide
     options:
-        members: [__init__, forward, aforward, dump_state, load_state]
+        members: [__init__, forward, aforward, get_criteria, set_criteria, dump_state, load_state]
 
 ::: dspy.experimental.Noul
     options:

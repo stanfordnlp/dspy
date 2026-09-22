@@ -25,8 +25,9 @@ class Decide(Module, Parameter):
     """Answer a signature's closed-set outputs in one System One request.
 
     Declare outputs using Noul, Score["low", "medium", "high"], and
-    Choice[(value, description), ...]. Native bool, Literal, and
-    Annotated[float, Score[...]] return only the value. Bare float has no rubric.
+    Choice[(value, description), ...]. Native bool, Literal,
+    Annotated[bool, Noul[...]], and Annotated[float, Score[...]] return only the
+    value. Bare float has no rubric.
     Unsupported outputs raise; Decide never falls back to a generative LM.
 
     Each instance owns ``fields[name]`` configuration: a Boolean ``threshold``
@@ -57,7 +58,7 @@ class Decide(Module, Parameter):
         types = self._output_types(self.signature)
         self.fields = {}
         for name, kind in types.items():
-            if kind is Noul:
+            if issubclass(kind, Noul):
                 self.fields[name] = {"threshold": 0.5}
             elif issubclass(kind, Score):
                 self.fields[name] = {"cuts": [i + 0.5 for i in range(len(kind.options) - 1)]}
@@ -66,6 +67,27 @@ class Decide(Module, Parameter):
 
     def reset(self):
         """Keep configuration intact: Decide has no demonstration or training state to reset."""
+
+    def get_criteria(self, field: str):
+        """Return an independent copy of the effective criteria for an output field.
+
+        Explicit module overrides take precedence over type-declared defaults.
+        Bare Noul/bool has no default criteria and returns None.
+        """
+        return self._questions(self.signature, self._output_types(self.signature))[field].get("criteria")
+
+    def set_criteria(self, field: str, criteria):
+        """Validate and copy a criteria override without changing the signature.
+
+        Noul accepts a true/false map or None; Choice requires its option-label
+        map; Score requires an array matching its declared levels. Descriptions
+        may be strings, objects, arrays, or None. None explicitly sends null Noul
+        criteria; it does not restore the type defaults. Unknown fields raise
+        KeyError, invalid criteria raise ValueError, and neither changes state.
+        """
+        kind = self._output_types(self.signature)[field]
+        self._validate_question_config(field, kind, {"criteria": criteria})
+        self.fields[field]["criteria"] = copy.deepcopy(criteria)
 
     @staticmethod
     def _output_types(signature):
@@ -77,7 +99,7 @@ class Decide(Module, Parameter):
             if kind is None:
                 raise ValueError(
                     f"Unsupported Decide output {name!r}. Use Noul, Score[...], Choice[...], bool, Literal[...], "
-                    "or Annotated[float, Score[...]]. Bare float requires a rubric."
+                    "Annotated[bool, Noul[...]], or Annotated[float, Score[...]]. Bare float requires a rubric."
                 )
             types[name] = kind
         return types
@@ -87,7 +109,7 @@ class Decide(Module, Parameter):
             raise ValueError("Decide fields must match its declared output fields.")
         for name, kind in types.items():
             config = self.fields[name]
-            parameter = "threshold" if kind is Noul else "cuts" if issubclass(kind, Score) else "weights"
+            parameter = "threshold" if issubclass(kind, Noul) else "cuts" if issubclass(kind, Score) else "weights"
             if (
                 not isinstance(config, dict)
                 or parameter not in config
@@ -97,7 +119,7 @@ class Decide(Module, Parameter):
                     f"Invalid configuration for {name!r}: require {parameter!r}, with optional instructions and criteria."
                 )
             self._validate_question_config(name, kind, config)
-            if kind is Noul:
+            if issubclass(kind, Noul):
                 threshold = config["threshold"]
                 if type(threshold) not in (int, float) or not 0 <= threshold <= 1:
                     raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
@@ -141,7 +163,7 @@ class Decide(Module, Parameter):
                     raise ValueError(f"Invalid JSON in {label} for {name!r}.") from error
         if "criteria" in config:
             criteria = config["criteria"]
-            if kind is Noul:
+            if issubclass(kind, Noul):
                 valid = criteria is None or (isinstance(criteria, dict) and criteria.keys() <= {"true", "false"})
             elif issubclass(kind, Choice):
                 valid = isinstance(criteria, dict) and criteria.keys() == {str(v) for v, _ in kind.options}
@@ -162,8 +184,10 @@ class Decide(Module, Parameter):
             if desc == f"${{{name}}}":
                 desc = ""
             question = {"instructions": copy.deepcopy(config.get("instructions", desc or f"Decide `{name}`."))}
-            if kind is Noul:
+            if issubclass(kind, Noul):
                 question["type"] = "noul"
+                if kind.options:
+                    question["criteria"] = {str(v).lower(): desc for v, desc in kind.options}
             elif issubclass(kind, Score):
                 question.update(type="score", criteria=list(kind.options))
             else:
@@ -218,10 +242,10 @@ class Decide(Module, Parameter):
         for name, field in signature.output_fields.items():
             kind = types[name]
             answer = answers[name]
-            if kind is Noul:
+            if issubclass(kind, Noul):
                 probability = answer["noul"]
                 threshold = self.fields[name]["threshold"]
-                result = Noul(
+                result = kind(
                     value=probability >= threshold,
                     probability=probability,
                     confidence=abs(probability - threshold) / max(threshold, 1 - threshold),
