@@ -24,14 +24,14 @@ from dspy.utils.callback import BaseCallback
 class Decide(Module, Parameter):
     """Answer a signature's closed-set outputs in one System One request.
 
-    Declare outputs using Noul, Score[(number, description), ...], and
+    Declare outputs using Noul, Score["low", "medium", "high"], and
     Choice[(value, description), ...]. Native bool, Literal, and
     Annotated[float, Score[...]] return only the value. Bare float has no rubric.
     Unsupported outputs raise; Decide never falls back to a generative LM.
 
     Each instance owns ``fields[name]`` configuration: a Boolean ``threshold``
     (initially 0.5), or ``cuts`` for Score level selection, halfway between level
-    indices. Score values use the fixed declared anchors; cuts affect only .level.
+    indices. Score values average those indices; cuts affect only .level.
     Choice weights are nonnegative probability multipliers keyed by string
     option labels, initially 1.0. Missing option weights also default to 1.0.
     Weighted Choice selection preserves raw probabilities and provider confidence;
@@ -165,7 +165,7 @@ class Decide(Module, Parameter):
             if kind is Noul:
                 question["type"] = "noul"
             elif issubclass(kind, Score):
-                question.update(type="score", criteria=[desc for _, desc in kind.options])
+                question.update(type="score", criteria=list(kind.options))
             else:
                 question.update(type="choice", criteria={str(v): desc or None for v, desc in kind.options})
             if "criteria" in config:
@@ -228,16 +228,14 @@ class Decide(Module, Parameter):
                 )
             elif issubclass(kind, Score):
                 probabilities = answer["probabilities"]
-                anchors = [v for v, _ in kind.options]
-                if set(probabilities) != set(range(len(anchors))) or sum(probabilities.values()) <= 0:
+                if set(probabilities) != set(range(len(kind.options))) or sum(probabilities.values()) <= 0:
                     raise ValueError(f"Invalid Score distribution for {name!r}.")
-                value = sum(anchors[i] * p for i, p in probabilities.items()) / sum(probabilities.values())
-                position = sum(i * p for i, p in probabilities.items()) / sum(probabilities.values())
+                value = sum(i * p for i, p in probabilities.items()) / sum(probabilities.values())
                 result = kind(
                     value=value,
                     confidence=answer["confidence"],
                     probabilities=probabilities,
-                    level=sum(position >= cut for cut in self.fields[name]["cuts"]),
+                    level=sum(value >= cut for cut in self.fields[name]["cuts"]),
                 )
             else:
                 options = {str(v): v for v, _ in kind.options}

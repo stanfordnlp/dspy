@@ -8,7 +8,7 @@ import dspy
 from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
 from dspy.utils.callback import BaseCallback
 
-Rating = Score[(-2, "bad"), (3, "fair"), (10, "great")]
+Rating = Score["bad", "fair", "great"]
 Label = Choice[(2, ""), ("other", "")]
 
 
@@ -61,7 +61,7 @@ def test_native_rich_equivalence_and_request_mapping():
     native.fields["flag"]["threshold"] = rich.fields["flag"]["threshold"] = 0.7
     a, b = native(text="example"), rich(text="example")
     assert a.flag is b.flag.value is True
-    assert a.rating == b.rating.value == pytest.approx(6.7)
+    assert a.rating == b.rating.value == pytest.approx(1.5)
     assert a.label == b.label.value == 2
     assert type(a.label) is type(b.label.value) is int
     assert type(a.rating) is float
@@ -71,7 +71,7 @@ def test_native_rich_equivalence_and_request_mapping():
     assert b.rating.probabilities == {0: 0.1, 1: 0.3, 2: 0.6}
     assert b.label.confidence == 0.73  # Not max(probabilities).
     assert bool(b.flag) is True
-    assert float(b.rating) == pytest.approx(6.7)
+    assert float(b.rating) == pytest.approx(1.5)
     assert client.calls[0] == client.calls[1]
     state, questions = client.calls[0]
     assert state == {
@@ -146,19 +146,19 @@ def test_score_cuts_normalization_and_snapshot():
     initial = module(text="x").rating
     module.fields["rating"]["cuts"] = [0.5, 1.6]
     changed = module(text="x").rating
-    assert initial.value == pytest.approx(6.7)  # Computed from probabilities, not raw SDK score.
+    assert initial.value == pytest.approx(1.5)  # Computed from probabilities, not raw SDK score.
     assert changed.value == initial.value
     assert initial.level == 2
     assert changed.level == 1
     assert changed.confidence == initial.confidence == 0.61
-    assert Rating.options == ((-2, "bad"), (3, "fair"), (10, "great"))
+    assert Rating.options == ("bad", "fair", "great")
     assert client.calls[0] == client.calls[1]
     # The provider only promises approximate unit mass; normalization is explicit.
     answers = client(*client.calls[0])
     answers["rating"]["probabilities"] = {0: 0.099, 1: 0.297, 2: 0.594}
     with dspy.context(system_one=lambda **_: answers):
         result = decide(True)(text="x").rating
-    assert result.value == pytest.approx(6.7)
+    assert result.value == pytest.approx(1.5)
     assert sum(result.probabilities.values()) == pytest.approx(0.99)
 
 
@@ -529,7 +529,7 @@ def test_score_cuts_select_level_without_changing_continuous_value(cuts, level):
     result = module(text="x").rating
     # Raw index expectation is 0*.1 + 1*.3 + 2*.6 = 1.5.
     assert result.level == level
-    assert result.value == pytest.approx(6.7)
+    assert result.value == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize("cuts", [[0, 1.5], [0.5, 2], [1.5, 0.5], [0.5, 0.5], [0.5], [True, 1.5], [0.5, float("nan")]])
@@ -702,14 +702,14 @@ def test_batch_discovery_and_context(rich):
         results = module.batch([dspy.Example(text=str(i)).with_inputs("text") for i in range(3)], num_threads=2)
     assert len(results) == 3
     for result in results:
-        assert (result.rating.value if rich else result.rating) == pytest.approx(6.7)
+        assert (result.rating.value if rich else result.rating) == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize(
     "base,override",
     [
-        (Score[(0, "low"), (1, "high")], Score[(0, "low"), (10, "high")]),
-        (Rating, Score[(-2, "bad"), (4, "fair"), (10, "great")]),
+        (Score["low", "high"], Score["low", "medium", "high"]),
+        (Rating, Score["great", "fair", "bad"]),
         (Literal[True], Literal[1]),
         (Literal["a", "b"], Literal["a", "c"]),
         (bool, Literal[False, True]),
@@ -747,7 +747,7 @@ def test_signature_override_preserves_parameters_and_accepts_prompt_changes():
     )
     result = module(text="x", signature=override)
     assert result.flag.value is False
-    assert result.rating.value == pytest.approx(6.7)
+    assert result.rating.value == pytest.approx(1.5)
     assert result.rating.level == 1
     assert client.calls[0][0]["instructions"] == "Assess carefully."
     assert client.calls[0][1]["rating"]["instructions"] == "New question."
@@ -763,4 +763,4 @@ def test_signature_override_accepts_equivalent_types_and_native_form():
     for annotation in (equivalent, Annotated[float, equivalent]):
         override = module.signature.with_updated_fields("rating", type_=annotation)
         result = module(text="x", signature=override).rating
-        assert (result if type(result) is float else result.value) == pytest.approx(6.7)
+        assert (result if type(result) is float else result.value) == pytest.approx(1.5)

@@ -62,7 +62,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert second.flag.value is False
     assert first.flag.confidence == pytest.approx(0.6)
     assert second.flag.confidence == pytest.approx(1 / 9)
-    assert first.rating.value == pytest.approx(6.7)
+    assert first.rating.value == pytest.approx(1.5)
     assert second.rating.value == first.rating.value
     assert first.rating.level == 2
     assert second.rating.level == 1
@@ -99,7 +99,7 @@ async def test_async_sdk_and_shared_cache(transport):
     module.fields["label"]["weights"] = {"2": 0.1}
     assert (await module.acall(text="x")).label == "other"
     assert len(transport) == 1
-    assert synchronous.rating == pytest.approx(6.7)
+    assert synchronous.rating == pytest.approx(1.5)
 
 
 def test_cache_identity_and_controls(transport):
