@@ -168,3 +168,46 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def _compile_with_prediction_metric(metric, **kwargs):
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+    dspy.settings.configure(lm=DummyLM([{"output": "blue"}]))
+    bootstrap = BootstrapFewShot(metric=metric, max_bootstrapped_demos=1, max_labeled_demos=0, **kwargs)
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=trainset)
+    return [demo for _, predictor in compiled.named_predictors() for demo in predictor.demos]
+
+
+def test_prediction_score_false_is_not_bootstrapped():
+    # SemanticF1 and CompleteAndGrounded return Prediction(score=False) for a rejected
+    # trace. A Prediction with any field is truthy, so the score must be unwrapped
+    # before the acceptance check or the rejected trace is saved as a demo.
+    def rejecting_metric(example, prediction, trace=None):
+        return dspy.Prediction(score=False)
+
+    assert _compile_with_prediction_metric(rejecting_metric) == []
+
+
+def test_prediction_score_zero_is_not_bootstrapped():
+    def zero_metric(example, prediction, trace=None):
+        return dspy.Prediction(score=0.0)
+
+    assert _compile_with_prediction_metric(zero_metric) == []
+
+
+def test_prediction_score_true_is_bootstrapped():
+    def accepting_metric(example, prediction, trace=None):
+        return dspy.Prediction(score=True)
+
+    demos = _compile_with_prediction_metric(accepting_metric)
+    assert len(demos) == 1
+    assert demos[0].augmented is True
+
+
+def test_prediction_score_respects_explicit_threshold():
+    def low_metric(example, prediction, trace=None):
+        return dspy.Prediction(score=0.4)
+
+    assert _compile_with_prediction_metric(low_metric, metric_threshold=0.5) == []
+    assert len(_compile_with_prediction_metric(low_metric, metric_threshold=0.3)) == 1
