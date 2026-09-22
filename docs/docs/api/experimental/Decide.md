@@ -36,21 +36,10 @@ print(result.severity.value, result.severity.level, result.severity.confidence)
 # assess = dspy.Predict(Assess)
 ```
 
-| | `Predict` | `Decide` |
-| --- | --- | --- |
-| Execution | Adapter → generative LM → parsed values | TypeSafe → Jev evidence → local decoding |
-| Native input | Value | Value in shared state |
-| Rich input | Value, confidence, available evidence | Same structured value in shared state |
-| Native output | Generated value | Decoded value |
-| Rich output | Generated value + self-reported confidence | Decoded value + confidence + provider evidence |
+Predict uses an adapter and generative LM to produce values; Decide uses TypeSafe
+and Jev to obtain probability evidence, then decodes it locally.
 
 ## Native and rich types
-
-| Native annotation | Rich annotation | Rich result |
-| --- | --- | --- |
-| `bool` | `Noul` | `.value`, `.confidence`, optional `.probability` |
-| `Annotated[float, Severity]` | `Severity` | `.value`, `.confidence`, optional `.probabilities` and `.level` |
-| `Literal["billing", "technical"]` | `Category` | `.value`, `.confidence`, optional `.probabilities` |
 
 Native outputs return only the value. Bare `float` works with Predict but needs
 a Score rubric for Decide. Score anchors must be finite and strictly increasing;
@@ -63,6 +52,43 @@ Missing evidence is omitted from JSON; present evidence is retained. Use `.value
 to pass a rich result into a native field. Inputs are never re-thresholded.
 ChatAdapter and JSONAdapter request only value and confidence for rich outputs,
 not provider probabilities or Score `.level`.
+
+### Inputs: Python value → prompt or state
+
+Using `Severity` and `Category` above, these are example field contents, not entire
+messages. Predict's adapter adds the field markers; Decide nests values under
+`state.inputs[field]`. Both include type/rubric descriptions separately.
+
+| Annotation | Predict prompt value | Decide state value |
+| --- | --- | --- |
+| `bool` | `True` | `true` |
+| `Noul` | `{"value": true, "confidence": 0.6}` | Same JSON object |
+| `Annotated[float, Severity]` | `6.6` | `6.6` |
+| `Severity` | `{"value": 6.6, "confidence": 0.61}` | Same JSON object |
+| `Literal["billing", "technical"]` | `technical` | `"technical"` |
+| `Category` | `{"value": "technical", "confidence": 0.73}` | Same JSON object |
+
+Rich inputs also include `probability`, `probabilities`, and Score `level` when
+present. Use `.value` explicitly when passing a rich result to a native input.
+
+### Outputs: annotation → model contract → Python result
+
+Predict uses the annotation's schema to parse the generated value. Decide maps
+native and rich forms to the same Jev primitive, then returns either the decoded
+native value or a rich object. Numeric anchors stay local; descriptions go to Jev.
+
+| Annotation | Predict requests → returns | Decide question → returns |
+| --- | --- | --- |
+| `bool` | Boolean → `bool` | `type: "noul"` → thresholded `bool` |
+| `Noul` | JSON `{value: bool, confidence: number}` → `Noul` | Same noul question → `Noul` with derived value/confidence and raw probability |
+| `Annotated[float, Severity]` | Number in `[0, 10]`, with rubric → `float` | `type: "score"`, criteria `["Minor", "Disruptive", "Blocking"]` → expected anchor value as `float` |
+| `Severity` | JSON `{value: number, confidence: number}`, same range/rubric → `Severity` | Same score question → `Severity` with value, provider confidence, probabilities, and cut-selected level |
+| `Literal["billing", "technical"]` | One allowed member → native member | `type: "choice"`, criteria `{"billing": null, "technical": null}` → native member |
+| `Category` | JSON `{value: allowed member, confidence: number}`, with option descriptions → `Category` | Choice criteria `{"billing": "Payment issue", "technical": "Product malfunction"}` → `Category` with value, provider confidence, probabilities |
+
+Predict's rich output confidence is constrained to `[0, 1]`. Its prompt describes
+Noul as “A Boolean value and confidence (0 to 1),” Score as a continuous value with
+the declared rubric, and Choice as selecting exactly one declared option.
 
 ## Per-field configuration
 
