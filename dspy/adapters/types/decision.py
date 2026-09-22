@@ -43,7 +43,7 @@ class Noul(_Decision):
 
     @classmethod
     def description(cls):
-        return "A Boolean value and confidence (0 to 1). Inputs may also include provider P(True) as probability."
+        return "A Boolean value and confidence (0 to 1)."
 
     def __bool__(self):
         return self.value
