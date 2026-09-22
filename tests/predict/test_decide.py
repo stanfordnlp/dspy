@@ -1,4 +1,5 @@
 import copy
+import json
 from typing import Annotated, Literal, get_args
 
 import pytest
@@ -399,6 +400,90 @@ def test_copy_and_json_state_preserve_config(tmp_path):
     assert set(module.dump_state()) == {"signature", "thresholds", "weights", "client"}
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
+
+
+def test_json_state_preserves_instructions_criteria_and_cuts(tmp_path):
+    module = decide(True)
+    module.signature = module.signature.with_instructions("Assess impact, not writing style.")
+    instructions = {
+        "flag": {"question": "Is action needed?", "focus": ["impact", "timing"]},
+        "rating": ["Assess severity.", {"ignore": "tone"}],
+        "label": "Choose the applicable category.",
+    }
+    criteria = {
+        "flag": {
+            "true": {"what": "Needs action", "examples": [{"text": "Production is down"}]},
+            "false": None,
+        },
+        "rating": [
+            {"what": "bad", "not_for": "cosmetic", "examples": ["Data loss"]},
+            "fair",
+            {"what": "great", "custom": {"tags": ["resolved", "verified"]}},
+        ],
+        "label": {"2": {"what": "Known category", "examples": []}, "other": None},
+    }
+    module.instructions = copy.deepcopy(instructions)
+    module.criteria = copy.deepcopy(criteria)
+    module.thresholds["flag"] = 0.7
+    module.cuts = {"rating": [0.4, 1.6]}
+    module.weights["label"] = {"2": 0.25, "other": 1.5}
+    path = tmp_path / "structured-decide.json"
+    module.save(path)
+
+    # Inspect the file as well as the loaded object: whole-program pickle or
+    # reconstructing defaults must not conceal missing optimized state.
+    state = json.loads(path.read_text())
+    assert state["instructions"] == instructions
+    assert state["criteria"] == criteria
+    assert state["cuts"] == {"rating": [0.4, 1.6]}
+    restored = decide(True)
+    restored.load(path)
+    assert restored.signature.instructions == "Assess impact, not writing style."
+    assert restored.instructions == instructions
+    assert restored.criteria == criteria
+    assert restored.thresholds == {"flag": 0.7}
+    assert restored.cuts == {"rating": [0.4, 1.6]}
+    assert restored.weights["label"] == {"2": 0.25, "other": 1.5}
+    restored.criteria["rating"][0]["examples"].append("Another example")
+    restored.instructions["flag"]["focus"].append("urgency")
+    restored.cuts["rating"][0] = 0.2
+    assert module.instructions == instructions
+    assert module.criteria == criteria
+    assert module.cuts == {"rating": [0.4, 1.6]}
+
+
+@pytest.mark.parametrize("rich", [False, True])
+@pytest.mark.parametrize("operation", ["save", "load"])
+@pytest.mark.parametrize(
+    "field,invalid",
+    [
+        ("flag", ["yes", "no"]),
+        ("flag", {"yes": "Relevant"}),
+        ("label", ["Known", "Other"]),
+        ("label", {"2": "Known"}),
+        ("label", {"2": "Known", "other": None, "unknown": "Extra"}),
+        ("rating", {"0": "bad", "1": "fair", "2": "great"}),
+        ("rating", ["bad", "great"]),
+        ("missing", {"true": "Unknown output field"}),
+    ],
+)
+def test_criteria_persistence_rejects_incompatible_field_shape(tmp_path, rich, operation, field, invalid):
+    module = decide(rich)
+    criteria = {
+        "flag": {"true": "Relevant", "false": None},
+        "rating": ["bad", "fair", "great"],
+        "label": {"2": "Known", "other": None},
+        field: invalid,
+    }
+    if operation == "save":
+        module.criteria = criteria
+        with pytest.raises(ValueError, match="criteria"):
+            module.save(tmp_path / "invalid-criteria.json")
+    else:
+        state = module.dump_state()
+        state["criteria"] = criteria
+        with pytest.raises(ValueError, match="criteria"):
+            module.load_state(state)
 
 
 @pytest.mark.asyncio
