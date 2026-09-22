@@ -30,6 +30,11 @@ class _Decision(Type):
 class Noul(_Decision):
     """A Boolean value with confidence and optional provider true-probability.
 
+    Optionally declare ``Noul[(True, "blocked"), (False, "usable")]`` with one
+    or both outcome descriptions. ``Annotated[bool, Noul[...]]`` retains these
+    criteria while returning a native bool. Descriptions are shared by Predict
+    and Decide; thresholds belong to the module, not the type.
+
     Predict generates value and self-reported confidence. Decide derives value
     from the provider probability and its per-field threshold (default 0.5).
     Decide confidence is ``abs(p - threshold) / max(threshold, 1 - threshold)``:
@@ -38,10 +43,31 @@ class Noul(_Decision):
 
     value: bool = Field(strict=True)
     probability: SkipJsonSchema[Probability | None] = None
+    options: ClassVar[tuple] = ()
+
+    @classmethod
+    def __class_getitem__(cls, options):
+        options = _option_pairs(options)
+        if any(type(value) is not bool for value, _ in options) or len(dict(options)) != len(options):
+            raise ValueError("Noul criteria require distinct True/False values with string descriptions.")
+        return _noul_type(tuple(sorted(options, reverse=True)))
 
     @classmethod
     def description(cls):
-        return "A Boolean value and confidence (0 to 1)."
+        description = "A Boolean decision."
+        if cls.options:
+            description += " Criteria: " + json.dumps({str(v).lower(): desc for v, desc in cls.options}) + "."
+        return description
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source, handler):
+        return core_schema.bool_schema() if source is bool else handler(source)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, schema, handler):
+        result = handler(schema)
+        result["description"] = cls.description()
+        return result
 
     def __bool__(self):
         return self.value
@@ -145,6 +171,13 @@ def _option_pairs(options):
 
 
 @lru_cache(maxsize=256)
+def _noul_type(options):
+    result = create_model(f"Noul[{', '.join(repr(pair) for pair in options)}]", __base__=Noul)
+    result.options = options
+    return result
+
+
+@lru_cache(maxsize=256)
 def _score_type(options):
     result = create_model(
         f"Score[{', '.join(repr(description) for description in options)}]",
@@ -171,12 +204,12 @@ def decision_type(field):
     """Resolve a supported field to its rich type without changing its annotation."""
     annotation = field.annotation
     if annotation is bool:
-        return Noul
+        return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Noul)), Noul)
     if annotation is float:
         return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Score) and m.options), None)
     if get_origin(annotation) is Literal:
         return Choice[tuple((value, "") for value in get_args(annotation))]
     if isinstance(annotation, type) and issubclass(annotation, _Decision):
-        if annotation is Noul or getattr(annotation, "options", ()):
+        if issubclass(annotation, Noul) or getattr(annotation, "options", ()):
             return annotation
     return None

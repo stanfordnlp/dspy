@@ -145,6 +145,66 @@ def test_invalid_options(kind, options):
         kind[options]
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        ((1, "yes"), (False, "no")),
+        ((True, "yes"), (0, "no")),
+        ((True, "a"), (True, "b")),
+        (("true", "yes"),),
+        ((False, {"what": "no"}),),
+        (),
+    ],
+)
+def test_noul_rejects_invalid_criteria(options):
+    with pytest.raises(ValueError):
+        Noul[options]
+
+
+@pytest.mark.parametrize("rich", [False, True])
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
+    availability = Noul[(True, "Service unavailable"), (False, "Workaround available")]
+    assert availability is Noul[(False, "Workaround available"), (True, "Service unavailable")]
+    annotation = availability if rich else Annotated[bool, availability]
+    output_sig = dspy.Signature(
+        {"ticket": (str, dspy.InputField()), "unavailable": (annotation, dspy.OutputField(desc="Is service blocked?"))},
+        "Assess operational availability.",
+    )
+    value = availability(value=False, confidence=0.8) if rich else False
+    with dspy.context(lm=DummyLM([{"unavailable": value}], adapter=adapter), adapter=adapter):
+        result = dspy.Predict(output_sig)(ticket="Use the workaround.").unavailable
+    assert result == value
+    assert type(result) is (availability if rich else bool)
+    schema = _get_structured_outputs_response_format(output_sig).model_json_schema()
+    assert "Service unavailable" in json.dumps(schema)
+    assert ("confidence" in json.dumps(schema)) is rich
+    client = FakeClient(probability=0.3)
+    decided = Decide(output_sig, client=client)(ticket="Use the workaround.").unavailable
+    assert type(decided) is (availability if rich else bool)
+    assert (decided.value if rich else decided) is False
+    assert client.calls[-1][1]["unavailable"] == {
+        "type": "noul",
+        "instructions": "Is service blocked?",
+        "criteria": {"true": "Service unavailable", "false": "Workaround available"},
+    }
+
+    input_sig = dspy.Signature(
+        {"unavailable": (annotation, dspy.InputField()), "accept": (bool, dspy.OutputField())},
+        "Read availability without reassessing it.",
+    )
+    with dspy.context(lm=DummyLM([{"accept": True}], adapter=adapter), adapter=adapter):
+        assert dspy.Predict(input_sig)(unavailable=value).accept is True
+    for sig, inputs in ((output_sig, {"ticket": "Use the workaround."}), (input_sig, {"unavailable": value})):
+        prompt = adapter.format(sig, [], inputs)[0]["content"]
+        assert "Service unavailable" in prompt
+        assert "Workaround available" in prompt
+    Decide(input_sig, client=client)(unavailable=value)
+    state = client.calls[-1][0]
+    assert "Service unavailable" in state["input_fields"]
+    assert state["inputs"]["unavailable"] == (value.model_dump(mode="json") if rich else False)
+
+
 @pytest.mark.parametrize("levels,maximum", [(("Low", "High"), 1), (("Last", "Second", "Third", "First"), 3)])
 def test_score_level_order_bounds_and_fractional_values(levels, maximum):
     score = Score[levels]

@@ -412,6 +412,92 @@ def test_defaults_and_input_errors():
         decide(client=client)()
 
 
+@pytest.mark.parametrize("rich", [False, True])
+def test_configured_noul_criteria_and_persistence(tmp_path, rich):
+    availability = Noul[(False, "Workaround available")]
+    annotation = availability if rich else Annotated[bool, availability]
+    sig = signature(rich).with_updated_fields("flag", type_=annotation)
+    module = Decide(sig)
+    assert module.get_criteria("flag") == {"false": "Workaround available"}
+    assert module.fields["flag"] == {"threshold": 0.5}
+    module.fields["flag"]["threshold"] = 0.8
+    duplicate = module.deepcopy()
+    duplicate.set_criteria("flag", {"true": "Override"})
+    assert module.get_criteria("flag") == {"false": "Workaround available"}
+    module.save(tmp_path / "state.json")
+    restored = Decide(sig)
+    restored.load(tmp_path / "state.json")
+    module.save(tmp_path / "program", save_program=True)
+    whole = dspy.load(tmp_path / "program", allow_pickle=True)
+    client = FakeClient(probability=0.8)
+    with dspy.context(system_one=client):
+        for item in (module, restored, whole):
+            result = item(text="x").flag
+            assert (result.value if rich else result) is True
+            if rich:
+                assert isinstance(result, Noul)
+                assert result.options == ((False, "Workaround available"),)
+                assert result.confidence == 0
+            assert client.calls[-1][1]["flag"]["criteria"] == {"false": "Workaround available"}
+        native_sig = sig.with_updated_fields("flag", type_=Annotated[bool, availability])
+        assert module(text="x", signature=native_sig).flag is True
+        with pytest.raises(ValueError, match="preserve"):
+            module(text="x", signature=sig.with_updated_fields("flag", type_=Noul[(False, "Different meaning")]))
+
+
+def test_criteria_accessors_validate_copy_and_save_overrides(tmp_path):
+    module = decide(True)
+    assert module.get_criteria("flag") is None
+    assert module.get_criteria("rating") == ["bad", "fair", "great"]
+    assert module.get_criteria("label") == {"2": None, "other": None}
+    criteria = {
+        "flag": {"true": {"examples": ["Outage"]}},
+        "rating": ["Poor", {"examples": ["Partial"]}, "Excellent"],
+        "label": {"2": {"examples": ["Known"]}, "other": "Unknown"},
+    }
+    expected = copy.deepcopy(criteria)
+    for field, value in criteria.items():
+        module.set_criteria(field, value)
+        nested = value[1] if isinstance(value, list) else next(iter(value.values()))
+        nested["examples"].append("Not stored")
+        value.clear()
+        retrieved = module.get_criteria(field)
+        assert retrieved == expected[field]
+        nested = retrieved[1] if isinstance(retrieved, list) else next(iter(retrieved.values()))
+        nested["examples"].append("Not stored")
+        assert module.get_criteria(field) == expected[field]
+    for field, invalid in [
+        ("flag", {"yes": "Wrong key"}),
+        ("flag", {"true": {"bad": float("nan")}}),
+        ("rating", ["Wrong count"]),
+        ("label", {"2": "Missing option"}),
+    ]:
+        with pytest.raises(ValueError):
+            module.set_criteria(field, invalid)
+        assert module.get_criteria(field) == expected[field]
+    for field in ("text", "missing"):
+        with pytest.raises(KeyError):
+            module.get_criteria(field)
+        with pytest.raises(KeyError):
+            module.set_criteria(field, None)
+    assert Decide(module.signature).get_criteria("flag") is None
+    module.save(tmp_path / "criteria.json")
+    restored = decide(True)
+    restored.load(tmp_path / "criteria.json")
+    client = FakeClient()
+    with dspy.context(system_one=client):
+        restored(text="x")
+    for field, value in expected.items():
+        assert restored.get_criteria(field) == value
+        assert client.calls[-1][1][field]["criteria"] == value
+    configured = Decide(signature(True).with_updated_fields("flag", type_=Noul[(True, "Default")]))
+    configured.set_criteria("flag", None)
+    assert configured.get_criteria("flag") is None
+    with dspy.context(system_one=client):
+        configured(text="x")
+    assert client.calls[-1][1]["flag"]["criteria"] is None
+
+
 def test_copy_and_json_state_preserve_config(tmp_path):
     module = decide(True)
     module.fields["flag"]["threshold"] = 0.7
