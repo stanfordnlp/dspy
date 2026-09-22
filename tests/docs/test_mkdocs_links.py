@@ -1,7 +1,7 @@
 import os
 
 
-def test_nav_files_exist():
+def test_nav_sources_exist():
     # Read mkdocs.yml
     docs_dir = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "docs")
     yaml_path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "mkdocs.yml")
@@ -25,10 +25,13 @@ def test_nav_files_exist():
             if md_file.endswith(".md"):
                 md_files.append(md_file)
 
-    # Check if files exist
+    # Notebook and Python pages are converted to Markdown in the disposable
+    # Zensical project, so their nav entries name the generated .md path.
     missing = []
     for file in md_files:
-        if not os.path.exists(os.path.join(docs_dir, file)):
+        source = os.path.join(docs_dir, file)
+        generated_sources = [os.path.splitext(source)[0] + suffix for suffix in (".ipynb", ".py")]
+        if not os.path.exists(source) and not any(os.path.exists(candidate) for candidate in generated_sources):
             missing.append(file)
 
     print("\nChecking files in:", docs_dir)
