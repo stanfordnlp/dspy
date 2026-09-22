@@ -54,17 +54,10 @@ Descriptions must be strings; duplicate or non-Boolean keys are rejected.
 `Annotated[bool, Availability]` keeps the criteria but returns a native Boolean.
 Bare `Noul` and `bool` have no default criteria. Thresholds remain module settings.
 
-Both modules accept previous rich results without requiring provider evidence.
-Missing evidence is omitted from JSON; present evidence is retained. Use `.value`
-to pass a rich result into a native field. Inputs are never re-thresholded.
-ChatAdapter and JSONAdapter request only value and confidence for rich outputs,
-not provider probabilities or Score `.level`.
-
 ### Inputs: Python value → prompt or state
 
-Using `Severity` and `Category` above, these are example field contents, not entire
-messages. Predict's adapter adds the field markers; Decide nests values under
-`state.inputs[field]`. Both include type/rubric descriptions separately.
+Example field contents: Predict adds adapter markers; Decide nests values under
+`state.inputs[field]`. Both include type descriptions separately.
 
 | Annotation | Predict prompt value | Decide state value |
 | --- | --- | --- |
@@ -78,13 +71,13 @@ messages. Predict's adapter adds the field markers; Decide nests values under
 | `Category` | `{"value": "technical", "confidence": 0.73}` | Same JSON object |
 
 Rich inputs also include `probability`, `probabilities`, and Score `level` when
-present. Use `.value` explicitly when passing a rich result to a native input.
+present; missing evidence is omitted. Inputs are never re-thresholded.
+Use `.value` when passing a rich result to a native input.
 
 ### Outputs: annotation → model contract → Python result
 
-Predict uses the annotation's schema to parse the generated value. Decide maps
-native and rich forms to the same Jev primitive, then returns either the decoded
-native value or a rich object. Ordered Score descriptions go to Jev as criteria.
+Predict parses generated values against the annotation's schema. Decide maps
+native and rich annotations to the same Jev primitive.
 
 | Annotation | Predict requests → returns | Decide question → returns |
 | --- | --- | --- |
@@ -97,9 +90,8 @@ native value or a rich object. Ordered Score descriptions go to Jev as criteria.
 | `Literal["billing", "technical"]` | One allowed member → native member | `type: "choice"`, criteria `{"billing": null, "technical": null}` → native member |
 | `Category` | JSON `{value: allowed member, confidence: number}`, with option descriptions → `Category` | Choice criteria `{"billing": "Payment issue", "technical": "Product malfunction"}` → `Category` with value, provider confidence, probabilities |
 
-Predict's rich output confidence is constrained to `[0, 1]`. Its prompt describes
-Noul as “A Boolean decision,” with any declared criteria, Score as a continuous value with
-the declared rubric, and Choice as selecting exactly one declared option.
+ChatAdapter and JSONAdapter request confidence in `[0, 1]` for rich outputs,
+but never provider evidence or Score `.level`.
 
 ## Per-field configuration
 
@@ -115,10 +107,9 @@ assess.set_criteria("urgent", {
 criteria = assess.get_criteria("urgent")
 ```
 
-Each output has one configuration dictionary, separate from the signature.
-It requires its type's numeric parameter and accepts optional `instructions` and
-`criteria`. Unknown fields, unrelated keys, and invalid values are rejected before
-inference or save/load. No Jev-specific `OutputField` arguments are added.
+Each output requires its type's numeric parameter and accepts optional instructions
+and criteria. Invalid configuration is rejected before inference or save/load.
+No Jev-specific `OutputField` arguments are added.
 
 `get_criteria(field)` returns a copy of the effective criteria: module override,
 otherwise type defaults. `set_criteria(field, criteria)` validates and copies an
@@ -160,10 +151,9 @@ evidence without changing shared types or previous results.
 | Field description / module override | `questions[name].instructions` |
 | Type rubric/options / module override | `questions[name].criteria` |
 
-Overrides apply only to Decide; Predict continues to render the signature and type
-descriptions. Per-call `signature=` may change instructions/descriptions or switch
-between equivalent native/rich types, but must preserve output names and answer
-spaces. Use a new Decide for different options or ordered levels.
+Per-call `signature=` may change instructions/descriptions or switch between
+equivalent native/rich types, but must preserve output names and answer spaces.
+Use a new Decide for different options or ordered levels.
 
 ## Confidence depends on its source
 

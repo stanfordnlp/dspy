@@ -74,7 +74,8 @@ class Decide(Module, Parameter):
         Explicit module overrides take precedence over type-declared defaults.
         Bare Noul/bool has no default criteria and returns None.
         """
-        return self._questions(self.signature, self._output_types(self.signature))[field].get("criteria")
+        kind = self._output_types(self.signature)[field]
+        return self._question(field, self.signature.output_fields[field], kind).get("criteria")
 
     def set_criteria(self, field: str, criteria):
         """Validate and copy a criteria override without changing the signature.
@@ -175,27 +176,23 @@ class Decide(Module, Parameter):
             if any(not isinstance(entry, (str, dict, list, type(None))) for entry in entries):
                 raise ValueError(f"Invalid criteria description for {name!r}.")
 
-    def _questions(self, signature, types):
-        questions = {}
-        for name, field in signature.output_fields.items():
-            kind = types[name]
-            config = self.fields[name]
-            desc = field.json_schema_extra.get("desc", "")
-            if desc == f"${{{name}}}":
-                desc = ""
-            question = {"instructions": copy.deepcopy(config.get("instructions", desc or f"Decide `{name}`."))}
-            if issubclass(kind, Noul):
-                question["type"] = "noul"
-                if kind.options:
-                    question["criteria"] = {str(v).lower(): desc for v, desc in kind.options}
-            elif issubclass(kind, Score):
-                question.update(type="score", criteria=list(kind.options))
-            else:
-                question.update(type="choice", criteria={str(v): desc or None for v, desc in kind.options})
-            if "criteria" in config:
-                question["criteria"] = copy.deepcopy(config["criteria"])
-            questions[name] = question
-        return questions
+    def _question(self, name, field, kind):
+        config = self.fields[name]
+        desc = field.json_schema_extra.get("desc", "")
+        if desc == f"${{{name}}}":
+            desc = ""
+        question = {"instructions": copy.deepcopy(config.get("instructions", desc or f"Decide `{name}`."))}
+        if issubclass(kind, Noul):
+            question["type"] = "noul"
+            if kind.options:
+                question["criteria"] = {str(v).lower(): desc for v, desc in kind.options}
+        elif issubclass(kind, Score):
+            question.update(type="score", criteria=list(kind.options))
+        else:
+            question.update(type="choice", criteria={str(v): desc or None for v, desc in kind.options})
+        if "criteria" in config:
+            question["criteria"] = copy.deepcopy(config["criteria"])
+        return question
 
     def _prepare(self, kwargs):
         trace = kwargs.pop("_trace", True)
@@ -210,7 +207,7 @@ class Decide(Module, Parameter):
             declared = self._output_types(self.signature)
             if types.keys() != declared.keys() or any(
                 kind.model_fields["value"].annotation != declared[name].model_fields["value"].annotation
-                or getattr(kind, "options", ()) != getattr(declared[name], "options", ())
+                or kind.options != declared[name].options
                 for name, kind in types.items()
             ):
                 raise ValueError(
@@ -229,7 +226,7 @@ class Decide(Module, Parameter):
             inputs[name] = TypeAdapter(field.rebuild_annotation()).validate_python(value)
         if kwargs:
             raise ValueError(f"Unexpected Decide inputs: {sorted(kwargs)}.")
-        questions = self._questions(signature, types)
+        questions = {name: self._question(name, field, types[name]) for name, field in signature.output_fields.items()}
         state = {
             "instructions": signature.instructions,
             "input_fields": get_field_description_string(signature.input_fields),
