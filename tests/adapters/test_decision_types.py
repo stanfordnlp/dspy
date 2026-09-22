@@ -106,7 +106,7 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
         assert "technical" in prompt
     client = FakeClient()
     module = Decide(signature, client=client)
-    module.thresholds["accept"] = 0.99
+    module.fields["accept"]["threshold"] = 0.99
     assert module(**values).accept is False
     state, questions = client.calls[0]
     assert set(questions) == {"accept"}  # Inputs are not additional questions.

@@ -29,8 +29,8 @@ class Decide(Module, Parameter):
     Annotated[float, Score[...]] return only the value. Bare float has no rubric.
     Unsupported outputs raise; Decide never falls back to a generative LM.
 
-    Each instance owns ``thresholds`` (one per Boolean output, initially 0.5)
-    and ``cuts`` for Score level selection, initially halfway between level
+    Each instance owns ``fields[name]`` configuration: a Boolean ``threshold``
+    (initially 0.5), or ``cuts`` for Score level selection, halfway between level
     indices. Score values use the fixed declared anchors; cuts affect only .level.
     Choice weights are nonnegative probability multipliers keyed by string
     option labels, initially 1.0. Missing option weights also default to 1.0.
@@ -55,17 +55,14 @@ class Decide(Module, Parameter):
         self.signature = ensure_signature(signature)
         self.client = client
         types = self._output_types(self.signature)
-        self.thresholds = {name: 0.5 for name, kind in types.items() if kind is Noul}
-        self.weights = {
-            name: {str(v): 1.0 for v, _ in kind.options} for name, kind in types.items() if issubclass(kind, Choice)
-        }
-        self.instructions = {}
-        self.criteria = {}
-        self.cuts = {
-            name: [i + 0.5 for i in range(len(kind.options) - 1)]
-            for name, kind in types.items()
-            if issubclass(kind, Score)
-        }
+        self.fields = {}
+        for name, kind in types.items():
+            if kind is Noul:
+                self.fields[name] = {"threshold": 0.5}
+            elif issubclass(kind, Score):
+                self.fields[name] = {"cuts": [i + 0.5 for i in range(len(kind.options) - 1)]}
+            else:
+                self.fields[name] = {"weights": {str(v): 1.0 for v, _ in kind.options}}
 
     def reset(self):
         """Keep configuration intact: Decide has no demonstration or training state to reset."""
@@ -86,32 +83,55 @@ class Decide(Module, Parameter):
         return types
 
     def _validate_parameters(self, types):
-        self._validate_question_config(types)
-        if set(self.thresholds) != {name for name, kind in types.items() if kind is Noul}:
-            raise ValueError("Decide thresholds must match its Boolean output fields.")
-        for name, threshold in self.thresholds.items():
-            if type(threshold) not in (int, float) or not 0 <= threshold <= 1:
-                raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
-        if set(self.weights) != {name for name, kind in types.items() if issubclass(kind, Choice)}:
-            raise ValueError("Decide weights must match its Choice output fields.")
-        for name, weights in self.weights.items():
-            labels = {str(v) for v, _ in types[name].options}
+        if not isinstance(self.fields, dict) or self.fields.keys() != types.keys():
+            raise ValueError("Decide fields must match its declared output fields.")
+        for name, kind in types.items():
+            config = self.fields[name]
+            parameter = "threshold" if kind is Noul else "cuts" if issubclass(kind, Score) else "weights"
             if (
-                not isinstance(weights, dict)
-                or not set(weights) <= labels
-                or any(type(w) not in (int, float) or not 0 <= w < math.inf for w in weights.values())
-                or not any(weights.get(label, 1.0) > 0 for label in labels)
+                not isinstance(config, dict)
+                or parameter not in config
+                or not config.keys() <= {"instructions", "criteria", parameter}
             ):
                 raise ValueError(
-                    f"Choice weights for {name!r} must map known string labels to finite, nonnegative numbers "
-                    "with at least one positive effective weight."
+                    f"Invalid configuration for {name!r}: require {parameter!r}, with optional instructions and criteria."
                 )
+            self._validate_question_config(name, kind, config)
+            if kind is Noul:
+                threshold = config["threshold"]
+                if type(threshold) not in (int, float) or not 0 <= threshold <= 1:
+                    raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
+            elif issubclass(kind, Score):
+                cuts = config["cuts"]
+                if (
+                    not 2 <= len(kind.options) <= 10
+                    or not isinstance(cuts, list)
+                    or len(cuts) != len(kind.options) - 1
+                    or any(type(c) not in (int, float) or not 0 < c < len(kind.options) - 1 for c in cuts)
+                    or any(a >= b for a, b in itertools.pairwise(cuts))
+                ):
+                    raise ValueError(
+                        f"Invalid cuts for {name!r}: require ordered boundaries inside the Score index range."
+                    )
+            else:
+                weights = config["weights"]
+                labels = {str(v) for v, _ in kind.options}
+                if (
+                    not isinstance(weights, dict)
+                    or not set(weights) <= labels
+                    or any(type(w) not in (int, float) or not 0 <= w < math.inf for w in weights.values())
+                    or not any(weights.get(label, 1.0) > 0 for label in labels)
+                ):
+                    raise ValueError(
+                        f"Choice weights for {name!r} must map known string labels to finite, nonnegative numbers "
+                        "with at least one positive effective weight."
+                    )
 
-    def _validate_question_config(self, types):
-        for label, entries in (("instructions", self.instructions), ("criteria", self.criteria)):
-            if not isinstance(entries, dict) or not entries.keys() <= types.keys():
-                raise ValueError(f"Decide {label} must map declared output fields to JSON content.")
-            for name, entry in entries.items():
+    @staticmethod
+    def _validate_question_config(name, kind, config):
+        for label in ("instructions", "criteria"):
+            if label in config:
+                entry = config[label]
                 if not isinstance(entry, (str, dict, list, type(None))):
                     raise ValueError(f"Invalid {label} for {name!r}: expected a string, object, array, or null.")
                 try:
@@ -119,8 +139,8 @@ class Decide(Module, Parameter):
                     json.dumps(entry, allow_nan=False)
                 except (TypeError, ValueError) as error:
                     raise ValueError(f"Invalid JSON in {label} for {name!r}.") from error
-        for name, criteria in self.criteria.items():
-            kind = types[name]
+        if "criteria" in config:
+            criteria = config["criteria"]
             if kind is Noul:
                 valid = criteria is None or (isinstance(criteria, dict) and criteria.keys() <= {"true", "false"})
             elif issubclass(kind, Choice):
@@ -132,36 +152,24 @@ class Decide(Module, Parameter):
             entries = criteria.values() if isinstance(criteria, dict) else criteria or []
             if any(not isinstance(entry, (str, dict, list, type(None))) for entry in entries):
                 raise ValueError(f"Invalid criteria description for {name!r}.")
-        score_types = {name: kind for name, kind in types.items() if issubclass(kind, Score)}
-        if not isinstance(self.cuts, dict) or self.cuts.keys() != score_types.keys():
-            raise ValueError("Decide cuts must match its Score output fields.")
-        for name, kind in score_types.items():
-            cuts = self.cuts[name]
-            if (
-                not 2 <= len(kind.options) <= 10
-                or not isinstance(cuts, list)
-                or len(cuts) != len(kind.options) - 1
-                or any(type(c) not in (int, float) or not 0 < c < len(kind.options) - 1 for c in cuts)
-                or any(a >= b for a, b in itertools.pairwise(cuts))
-            ):
-                raise ValueError(f"Invalid cuts for {name!r}: require ordered boundaries inside the Score index range.")
 
     def _questions(self, signature, types):
         questions = {}
         for name, field in signature.output_fields.items():
             kind = types[name]
+            config = self.fields[name]
             desc = field.json_schema_extra.get("desc", "")
             if desc == f"${{{name}}}":
                 desc = ""
-            question = {"instructions": copy.deepcopy(self.instructions.get(name, desc or f"Decide `{name}`."))}
+            question = {"instructions": copy.deepcopy(config.get("instructions", desc or f"Decide `{name}`."))}
             if kind is Noul:
                 question["type"] = "noul"
             elif issubclass(kind, Score):
                 question.update(type="score", criteria=[desc for _, desc in kind.options])
             else:
                 question.update(type="choice", criteria={str(v): desc or None for v, desc in kind.options})
-            if name in self.criteria:
-                question["criteria"] = copy.deepcopy(self.criteria[name])
+            if "criteria" in config:
+                question["criteria"] = copy.deepcopy(config["criteria"])
             questions[name] = question
         return questions
 
@@ -212,7 +220,7 @@ class Decide(Module, Parameter):
             answer = answers[name]
             if kind is Noul:
                 probability = answer["noul"]
-                threshold = self.thresholds[name]
+                threshold = self.fields[name]["threshold"]
                 result = Noul(
                     value=probability >= threshold,
                     probability=probability,
@@ -229,7 +237,7 @@ class Decide(Module, Parameter):
                     value=value,
                     confidence=answer["confidence"],
                     probabilities=probabilities,
-                    level=sum(position >= cut for cut in self.cuts[name]),
+                    level=sum(position >= cut for cut in self.fields[name]["cuts"]),
                 )
             else:
                 options = {str(v): v for v, _ in kind.options}
@@ -240,7 +248,7 @@ class Decide(Module, Parameter):
                 ):
                     raise ValueError(f"Invalid Choice answer for {name!r}.")
                 selected = answer["choice"]
-                weights = self.weights[name]
+                weights = self.fields[name]["weights"]
                 if any(w != 1 for w in weights.values()):
                     scores = {label: answer["probabilities"][label] * weights.get(label, 1.0) for label in options}
                     # Preserve the provider choice on ties; otherwise use declaration order.
@@ -278,11 +286,7 @@ class Decide(Module, Parameter):
             )
         return {
             "signature": self.signature.dump_state(),
-            "thresholds": copy.deepcopy(self.thresholds),
-            "weights": copy.deepcopy(self.weights),
-            "instructions": copy.deepcopy(self.instructions),
-            "criteria": copy.deepcopy(self.criteria),
-            "cuts": copy.deepcopy(self.cuts),
+            "fields": copy.deepcopy(self.fields),
             "client": self.client.dump_state() if self.client is not None else None,
         }
 
@@ -291,8 +295,7 @@ class Decide(Module, Parameter):
         client_state = state.pop("client", None)
         restored = copy.copy(self)
         restored.signature = self.signature.load_state(state["signature"])
-        for name in ("thresholds", "weights", "instructions", "criteria", "cuts"):
-            setattr(restored, name, state[name])
+        restored.fields = state["fields"]
         restored.client = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         restored._validate_parameters(self._output_types(restored.signature))
         self.__dict__.update(restored.__dict__)
