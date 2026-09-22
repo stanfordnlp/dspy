@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 import dspy
 from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
 
-Severity = Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
+Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
 
 class Assess(dspy.Signature):
@@ -42,8 +42,9 @@ and Jev to obtain probability evidence, then decodes it locally.
 ## Native and rich types
 
 Native outputs return only the value. Bare `float` works with Predict but needs
-a Score rubric for Decide. Score anchors must be finite and strictly increasing;
-Decide supports 2–10 levels. Choice preserves string, integer, Boolean, and None
+a Score rubric for Decide. Declare Score descriptions in increasing level order;
+the value ranges from 0 to N−1, and Decide supports 2–10 levels.
+Choice preserves string, integer, Boolean, and None
 member types; colliding string labels such as `1` and `"1"` are rejected.
 Bracket configuration is a runtime convention, not a standard static generic.
 
@@ -63,8 +64,8 @@ messages. Predict's adapter adds the field markers; Decide nests values under
 | --- | --- | --- |
 | `bool` | `True` | `true` |
 | `Noul` | `{"value": true, "confidence": 0.6}` | Same JSON object |
-| `Annotated[float, Severity]` | `6.6` | `6.6` |
-| `Severity` | `{"value": 6.6, "confidence": 0.61}` | Same JSON object |
+| `Annotated[float, Severity]` | `1.5` | `1.5` |
+| `Severity` | `{"value": 1.5, "confidence": 0.61}` | Same JSON object |
 | `Literal["billing", "technical"]` | `technical` | `"technical"` |
 | `Category` | `{"value": "technical", "confidence": 0.73}` | Same JSON object |
 
@@ -75,13 +76,13 @@ present. Use `.value` explicitly when passing a rich result to a native input.
 
 Predict uses the annotation's schema to parse the generated value. Decide maps
 native and rich forms to the same Jev primitive, then returns either the decoded
-native value or a rich object. Numeric anchors stay local; descriptions go to Jev.
+native value or a rich object. Ordered Score descriptions go to Jev as criteria.
 
 | Annotation | Predict requests → returns | Decide question → returns |
 | --- | --- | --- |
 | `bool` | Boolean → `bool` | `type: "noul"` → thresholded `bool` |
 | `Noul` | JSON `{value: bool, confidence: number}` → `Noul` | Same noul question → `Noul` with derived value/confidence and raw probability |
-| `Annotated[float, Severity]` | Number in `[0, 10]`, with rubric → `float` | `type: "score"`, criteria `["Minor", "Disruptive", "Blocking"]` → expected anchor value as `float` |
+| `Annotated[float, Severity]` | Number in `[0, 2]`, with rubric → `float` | `type: "score"`, criteria `["Minor", "Disruptive", "Blocking"]` → expected level index as `float` |
 | `Severity` | JSON `{value: number, confidence: number}`, same range/rubric → `Severity` | Same score question → `Severity` with value, provider confidence, probabilities, and cut-selected level |
 | `Literal["billing", "technical"]` | One allowed member → native member | `type: "choice"`, criteria `{"billing": null, "technical": null}` → native member |
 | `Category` | JSON `{value: allowed member, confidence: number}`, with option descriptions → `Category` | Choice criteria `{"billing": "Payment issue", "technical": "Product malfunction"}` → `Category` with value, provider confidence, probabilities |
@@ -116,10 +117,11 @@ inference or save/load. No Jev-specific `OutputField` arguments are added.
 | Score `cuts` | `[0.5, 1.5, …]` | Select `.level` from mean level index; N−1 increasing boundaries inside `(0, N−1)` |
 | Choice `weights` | All `1.0` | Nonnegative, finite probability multipliers keyed by string labels; omitted options default to `1.0` |
 
-**Score has no tunable weights.** Its continuous value is
-`sum(p[i] * anchors[i]) / sum(p)`. Its zero-based `.level` counts the cuts less than
-or equal to `sum(i * p[i]) / sum(p)`. Equality selects the higher level; cuts do
+**Score has no anchors or weights.** Its continuous `.value` is
+`sum(i * p[i]) / sum(p)`, the mean level index. Its zero-based `.level` counts the
+cuts less than or equal to that value. Equality selects the higher level; cuts do
 not change `.value`. Native float outputs expose only the continuous value.
+For probabilities `[0.1, 0.3, 0.6]`, `.value` is `1.5`; cuts `[0.5, 1.6]` select `.level = 1`.
 
 Choice selects by `probability[label] * weight[label]`; raw probabilities are
 unchanged. All-unit weights retain the provider choice. Weighted ties prefer the
@@ -139,12 +141,12 @@ evidence without changing shared types or previous results.
 | Validated runtime inputs | JSON under `state.inputs`; explicit paths use `inputs.ticket` |
 | Each output name and type | `questions[name]` with `type: "noul"`, `"score"`, or `"choice"` |
 | Field description / module override | `questions[name].instructions` |
-| Type rubric/options / module override | `questions[name].criteria`; numeric anchors remain local |
+| Type rubric/options / module override | `questions[name].criteria` |
 
 Overrides apply only to Decide; Predict continues to render the signature and type
 descriptions. Per-call `signature=` may change instructions/descriptions or switch
 between equivalent native/rich types, but must preserve output names and answer
-spaces. Use a new Decide for different options or anchors.
+spaces. Use a new Decide for different options or ordered levels.
 
 ## Confidence depends on its source
 
@@ -179,7 +181,7 @@ restored.load("assess.json")
 | `client` | Explicit TypeSafe model, endpoint, cache setting, timeout; otherwise null |
 | `metadata` | DSPy's dependency versions |
 
-State-only JSON excludes signature architecture/types/anchors, inputs, results,
+State-only JSON excludes signature architecture/types/declared levels, inputs, results,
 history, and API keys. Credentials come from the environment. Loading invalid
 configuration leaves the module unchanged; earlier unreleased PR formats are not
 migrated. Saved endpoints require `allow_unsafe_lm_state=True` for trusted files.

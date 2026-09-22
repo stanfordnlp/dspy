@@ -1,8 +1,6 @@
 """Decision values shared by System One predictors and generative LMs."""
 
-import itertools
 import json
-import math
 from functools import lru_cache
 from typing import Annotated, ClassVar, Literal, get_args, get_origin
 
@@ -53,9 +51,9 @@ class Noul(_Decision):
 class Score(_Decision):
     """A continuous score with a declared rubric and confidence.
 
-    Declare ``Score[(0, "poor"), (2, "fair"), (10, "excellent")]``. Anchors must
-    be finite and strictly increasing. Predict generates value and confidence;
-    Decide averages the fixed declared anchors using provider probabilities.
+    Declare ``Score["poor", "fair", "excellent"]`` in increasing order.
+    Predict generates a continuous value from 0 to N-1 and confidence;
+    Decide averages the level indices using provider probabilities.
     ``probabilities`` retains the raw distribution, keyed by rubric index.
     ``level`` is the zero-based ordinal selected by Decide's cuts on the mean
     level index. It does not change the continuous value or provider confidence.
@@ -72,19 +70,16 @@ class Score(_Decision):
 
     @classmethod
     def __class_getitem__(cls, options):
-        options = _option_pairs(options)
-        anchors = [value for value, _ in options]
-        if (
-            len(anchors) < 2
-            or any(type(v) not in (int, float) or not math.isfinite(v) for v in anchors)
-            or any(a >= b for a, b in itertools.pairwise(anchors))
-        ):
-            raise ValueError("Score requires at least two finite, strictly increasing numeric anchors.")
+        if not isinstance(options, tuple) or len(options) < 2 or any(not isinstance(v, str) for v in options):
+            raise ValueError("Score requires at least two ordered level descriptions, e.g. Score['poor', 'excellent'].")
         return _score_type(options)
 
     @classmethod
     def description(cls):
-        return "Continuous score; intermediate values are allowed. Rubric: " + json.dumps(cls.options) + "."
+        return (
+            f"Continuous score from 0 to {len(cls.options) - 1}; intermediate values are allowed. "
+            "Rubric (level index, description): " + json.dumps(list(enumerate(cls.options))) + "."
+        )
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):
@@ -92,7 +87,7 @@ class Score(_Decision):
             # Pydantic calls this hook when this configured type is Annotated metadata.
             if not cls.options:
                 raise ValueError("A native Score requires a configured rubric.")
-            return core_schema.float_schema(ge=cls.options[0][0], le=cls.options[-1][0], allow_inf_nan=False)
+            return core_schema.float_schema(ge=0, le=len(cls.options) - 1, allow_inf_nan=False)
         return handler(source)
 
     @classmethod
@@ -152,9 +147,9 @@ def _option_pairs(options):
 @lru_cache(maxsize=256)
 def _score_type(options):
     result = create_model(
-        f"Score[{', '.join(repr(pair) for pair in options)}]",
+        f"Score[{', '.join(repr(description) for description in options)}]",
         __base__=Score,
-        value=(float, Field(ge=options[0][0], le=options[-1][0], allow_inf_nan=False)),
+        value=(float, Field(ge=0, le=len(options) - 1, allow_inf_nan=False)),
     )
     result.options = options
     return result

@@ -10,7 +10,7 @@ from dspy.experimental import Choice, Decide, Noul, Score
 from dspy.utils.dummies import DummyLM
 from tests.predict.test_decide import FakeClient
 
-Severity = Score[(0, "Minor"), (2, "Disruptive"), (10, "Blocking")]
+Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
 
 
@@ -45,11 +45,11 @@ def decision_signature(rich, direction):
 
 def decision_values(rich, evidence=False):
     if not rich:
-        return {"urgent": True, "severity": 6.6, "category": "technical"}
+        return {"urgent": True, "severity": 1.5, "category": "technical"}
     return {
         "urgent": Noul(value=True, confidence=0.6, **({"probability": 0.8} if evidence else {})),
         "severity": Severity(
-            value=6.6, confidence=0.61, **({"probabilities": {0: 0.1, 1: 0.3, 2: 0.6}} if evidence else {})
+            value=1.5, confidence=0.61, **({"probabilities": {0: 0.1, 1: 0.3, 2: 0.6}} if evidence else {})
         ),
         "category": Category(
             value="technical",
@@ -83,7 +83,7 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
     else:
         assert "confidence" not in json.dumps(schema)
         assert schema["properties"]["severity"]["minimum"] == 0
-        assert schema["properties"]["severity"]["maximum"] == 10
+        assert schema["properties"]["severity"]["maximum"] == 2
         assert schema["properties"]["category"]["enum"] == ["billing", "technical"]
 
 
@@ -102,7 +102,7 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
         prompt = messages[-1]["content"]
         assert ('"confidence"' in prompt) is rich
         assert ('"probabilities"' in prompt) is (rich and evidence)
-        assert "6.6" in prompt
+        assert "1.5" in prompt
         assert "technical" in prompt
     client = FakeClient()
     module = Decide(signature, client=client)
@@ -117,10 +117,11 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
 
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
-def test_score_range_is_enforced_for_native_and_rich(adapter, rich):
+@pytest.mark.parametrize("invalid", [-0.1, 2.1])
+def test_score_range_is_enforced_for_native_and_rich(adapter, rich, invalid):
     sig = decision_signature(rich, "output")
     values = decision_values(False)
-    values["severity"] = 11
+    values["severity"] = invalid
     if rich:
         values = {name: {"value": value, "confidence": 0.7} for name, value in values.items()}
     completion = adapter.format_assistant_message_content(sig, values)
@@ -131,10 +132,10 @@ def test_score_range_is_enforced_for_native_and_rich(adapter, rich):
 @pytest.mark.parametrize(
     "kind,options",
     [
-        (Score, ((2, "a"), (1, "b"))),
-        (Score, ((1, "a"), (1, "b"))),
-        (Score, ((0, "a"), (float("nan"), "b"))),
-        (Score, ((0, "a"),)),
+        (Score, ((0, "a"), (1, "b"))),  # Removed anchor syntax.
+        (Score, ("a", 1)),
+        (Score, ("a",)),
+        (Score, "a"),
         (Choice, ((1, "a"), ("1", "b"))),
         (Choice, (([], "bad"),)),
     ],
@@ -142,6 +143,24 @@ def test_score_range_is_enforced_for_native_and_rich(adapter, rich):
 def test_invalid_options(kind, options):
     with pytest.raises(ValueError):
         kind[options]
+
+
+@pytest.mark.parametrize("levels,maximum", [(("Low", "High"), 1), (("Last", "Second", "Third", "First"), 3)])
+def test_score_level_order_bounds_and_fractional_values(levels, maximum):
+    score = Score[levels]
+    assert score.options == levels
+    assert json.dumps(list(enumerate(levels))) in score.description()
+    for rich in (False, True):
+        adapter = TypeAdapter(score if rich else Annotated[float, score])
+        schema = adapter.json_schema()
+        value_schema = schema["properties"]["value"] if rich else schema
+        assert value_schema["minimum"] == 0
+        assert value_schema["maximum"] == maximum
+        for value in (0, 0.25, maximum):
+            result = adapter.validate_python({"value": value, "confidence": 0.7} if rich else value)
+            assert (result.value if rich else result) == value
+        with pytest.raises(ValidationError):
+            adapter.validate_python({"value": maximum + 0.1, "confidence": 0.7} if rich else maximum + 0.1)
 
 
 def test_choice_type_cache_preserves_bool_vs_int():
@@ -152,7 +171,7 @@ def test_choice_type_cache_preserves_bool_vs_int():
     assert type(boolean(value=True, confidence=0.5).value) is bool
 
 
-@pytest.mark.parametrize("kind,value", [(Noul, True), (Severity, 4.2), (Category, "technical")])
+@pytest.mark.parametrize("kind,value", [(Noul, True), (Severity, 1.2), (Category, "technical")])
 def test_rich_confidence_required_and_serialization(kind, value):
     with pytest.raises(ValidationError):
         kind(value=value)
