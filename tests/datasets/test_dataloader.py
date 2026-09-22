@@ -57,3 +57,19 @@ def test_from_pandas_empty_dataframe():
     import pandas as pd
 
     assert DataLoader().from_pandas(pd.DataFrame(columns=["id", "score"])) == []
+
+
+@pytest.mark.parametrize("fields", [None, ["id"], ["score", "id"]])
+def test_from_pandas_preserves_duplicate_column_labels(fields):
+    import pandas as pd
+
+    df = pd.DataFrame({"first": [2**53 + 1], "second": [2**53 + 3], "score": [0.5]}, index=[7])
+    df.columns = ["id", "id", "score"]
+
+    examples = DataLoader().from_pandas(df, fields=fields)
+
+    assert len(examples) == 1
+    pd.testing.assert_series_equal(
+        examples[0].id, pd.Series([2**53 + 1, 2**53 + 3], index=["id", "id"], name=7, dtype=object)
+    )
+    assert list(examples[0].keys()) == list(dict.fromkeys(df.columns if fields is None else fields))

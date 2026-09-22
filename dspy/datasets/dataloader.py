@@ -84,10 +84,10 @@ class DataLoader(Dataset):
         if fields is None:
             fields = list(df.columns)
 
-        # Keep the index in the tuples so an empty field selection still yields one example per row.
+        # Object dtype preserves individual values when iterrows combines numeric columns.
         return [
-            dspy.Example(dict(zip(fields, row[1:], strict=True))).with_inputs(*input_keys)
-            for row in df[fields].itertuples(name=None)
+            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+            for _, row in df.astype(object).iterrows()
         ]
 
     def from_json(
