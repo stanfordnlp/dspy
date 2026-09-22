@@ -74,33 +74,25 @@ def test_native_rich_equivalence_and_request_mapping():
     assert float(b.rating) == pytest.approx(6.7)
     assert client.calls[0] == client.calls[1]
     state, questions = client.calls[0]
-    assert state == {"text": "example"}
+    assert state == {
+        "instructions": "Assess the document.",
+        "input_fields": "1. `text` (str):",
+        "inputs": {"text": "example"},
+    }
     assert questions == {
         "flag": {
             "type": "noul",
-            "instructions": {
-                "question": "Is it relevant?",
-                "task": "Assess the document.",
-                "inputs": "1. `text` (str):",
-            },
+            "instructions": "Is it relevant?",
         },
         "rating": {
             "type": "score",
             "criteria": ["bad", "fair", "great"],
-            "instructions": {
-                "question": "Rate usefulness.",
-                "task": "Assess the document.",
-                "inputs": "1. `text` (str):",
-            },
+            "instructions": "Rate usefulness.",
         },
         "label": {
             "type": "choice",
             "criteria": {"2": None, "other": None},
-            "instructions": {
-                "question": "Decide `label`.",
-                "task": "Assess the document.",
-                "inputs": "1. `text` (str):",
-            },
+            "instructions": "Decide `label`.",
         },
     }
 
@@ -148,14 +140,16 @@ def test_literal_membership_and_exact_type(options, selected, expected, rich):
     assert type(value) is type(expected)
 
 
-def test_score_weights_normalization_and_snapshot():
+def test_score_cuts_normalization_and_snapshot():
     client = FakeClient()
     module = decide(True, client)
     initial = module(text="x").rating
-    module.weights["rating"] = [0, 2, 8]
+    module.cuts["rating"] = [0.5, 1.6]
     changed = module(text="x").rating
     assert initial.value == pytest.approx(6.7)  # Computed from probabilities, not raw SDK score.
-    assert changed.value == pytest.approx(5.4)
+    assert changed.value == initial.value
+    assert initial.level == 2
+    assert changed.level == 1
     assert changed.confidence == initial.confidence == 0.61
     assert Rating.options == ((-2, "bad"), (3, "fair"), (10, "great"))
     assert client.calls[0] == client.calls[1]
@@ -274,12 +268,6 @@ def test_reject_unsupported(sig, match):
         ("thresholds", {"flag": float("nan")}),
         ("thresholds", {"missing": 0.3}),
         ("weights", {"rating": [0, 3]}),
-        ("weights", {"rating": [-2, float("inf"), 10]}),
-        ("weights", {"rating": [-2, float("nan"), 10]}),
-        ("weights", {"rating": [-2, True, 10]}),
-        ("weights", {"rating": [-2, 3, 11]}),
-        ("weights", {"rating": [0, 9, 2]}),
-        ("weights", {"rating": [-3, 2, 10]}),
     ],
 )
 def test_reject_invalid_parameters(attribute, value):
@@ -361,6 +349,26 @@ async def test_async_and_client_resolution():
     assert len(global_client.calls) == len(explicit.calls) == 1
 
 
+@pytest.mark.asyncio
+async def test_shared_instructions_do_not_collide_with_input_names():
+    class Sig(dspy.Signature):
+        """Shared task context."""
+
+        inputs: str = dspy.InputField()
+        flag: bool = dspy.OutputField(desc="Is `inputs.inputs` actionable?")
+
+    client = FakeClient()
+    module = Decide(Sig, client=client)
+    module(inputs="User content")
+    await module.acall(inputs="User content")
+    assert client.calls[0] == client.calls[1]
+    state, questions = client.calls[0]
+    assert state["instructions"] == "Shared task context."
+    assert state["inputs"] == {"inputs": "User content"}
+    assert questions["flag"]["instructions"] == "Is `inputs.inputs` actionable?"
+    assert "Shared task context." not in json.dumps(questions)
+
+
 def test_defaults_and_input_errors():
     class Sig(dspy.Signature):
         text: str = dspy.InputField(default="default")
@@ -369,7 +377,7 @@ def test_defaults_and_input_errors():
     client = FakeClient()
     module = Decide(Sig, client=client)
     assert module().flag is True
-    assert client.calls[0][0] == {"text": "default"}
+    assert client.calls[0][0]["inputs"] == {"text": "default"}
     with pytest.raises(ValueError, match="Unexpected"):
         module(other=1)
     with pytest.raises(ValueError, match="Missing"):
@@ -379,25 +387,33 @@ def test_defaults_and_input_errors():
 def test_copy_and_json_state_preserve_config(tmp_path):
     module = decide(True)
     module.thresholds["flag"] = 0.7
-    module.weights["rating"] = [-2, 1, 10]
+    module.cuts["rating"] = [0.4, 1.6]
     module.weights["label"]["other"] = 2
     with dspy.context(system_one=FakeClient()):
         before = module(text="next")
     duplicate = module.deepcopy()
-    duplicate.weights["rating"][1] = 4
+    duplicate.cuts["rating"][1] = 1.8
     duplicate.weights["label"]["other"] = 9
     duplicate.thresholds["flag"] = 0.3
-    assert module.weights["rating"] == [-2, 1, 10]
+    assert module.cuts["rating"] == [0.4, 1.6]
     assert module.weights["label"] == {"2": 1, "other": 2}
     assert module.thresholds["flag"] == 0.7
-    assert decide(True).weights["rating"] == [-2, 3, 10]
+    assert decide(True).cuts["rating"] == [0.5, 1.5]
     path = tmp_path / "decide.json"
     module.save(path)
     restored = decide(True)
     restored.load(path)
     assert restored.weights == module.weights
     assert restored.thresholds == module.thresholds
-    assert set(module.dump_state()) == {"signature", "thresholds", "weights", "client"}
+    assert set(module.dump_state()) == {
+        "signature",
+        "thresholds",
+        "weights",
+        "instructions",
+        "criteria",
+        "cuts",
+        "client",
+    }
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
 
@@ -444,12 +460,52 @@ def test_json_state_preserves_instructions_criteria_and_cuts(tmp_path):
     assert restored.thresholds == {"flag": 0.7}
     assert restored.cuts == {"rating": [0.4, 1.6]}
     assert restored.weights["label"] == {"2": 0.25, "other": 1.5}
+    client = FakeClient()
+    with dspy.context(system_one=client):
+        before = module(text="x")
+        after = restored(text="x")
+    assert before.toDict() == after.toDict()
+    assert client.calls[0] == client.calls[1]
+    for name in instructions:
+        question = client.calls[0][1][name]
+        assert question["instructions"] == instructions[name]
+        assert client.calls[0][0]["instructions"] == "Assess impact, not writing style."
+        assert question["criteria"] == criteria[name]
+        assert not {"threshold", "cuts", "weights"} & question.keys()
     restored.criteria["rating"][0]["examples"].append("Another example")
     restored.instructions["flag"]["focus"].append("urgency")
     restored.cuts["rating"][0] = 0.2
     assert module.instructions == instructions
     assert module.criteria == criteria
     assert module.cuts == {"rating": [0.4, 1.6]}
+
+
+@pytest.mark.parametrize("cuts,level", [([0.5, 1.5], 2), ([0.5, 1.6], 1), ([0.5, 1.4], 2)])
+def test_score_cuts_select_level_without_changing_continuous_value(cuts, level):
+    module = decide(True, FakeClient())
+    module.cuts["rating"] = cuts
+    result = module(text="x").rating
+    # Raw index expectation is 0*.1 + 1*.3 + 2*.6 = 1.5.
+    assert result.level == level
+    assert result.value == pytest.approx(6.7)
+
+
+@pytest.mark.parametrize("cuts", [[0, 1.5], [0.5, 2], [1.5, 0.5], [0.5, 0.5], [0.5], [True, 1.5], [0.5, float("nan")]])
+def test_invalid_cuts_rejected_before_inference(cuts):
+    client = FakeClient()
+    module = decide(True, client)
+    module.cuts["rating"] = cuts
+    with pytest.raises(ValueError, match="cuts"):
+        module(text="x")
+    assert client.calls == []
+
+
+@pytest.mark.parametrize("entry", [{"nested": {1: "integer key"}}, {"nested": float("nan")}, {"nested": {"set"}}, 42])
+def test_instruction_json_validation_is_not_silently_coercive(entry):
+    module = decide()
+    module.instructions["flag"] = entry
+    with pytest.raises(ValueError, match="instructions"):
+        module.dump_state()
 
 
 @pytest.mark.parametrize("rich", [False, True])
@@ -484,6 +540,7 @@ def test_criteria_persistence_rejects_incompatible_field_shape(tmp_path, rich, o
         state["criteria"] = criteria
         with pytest.raises(ValueError, match="criteria"):
             module.load_state(state)
+        assert module.criteria == {}
 
 
 @pytest.mark.asyncio
@@ -543,18 +600,20 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
 def test_reset_copy_preserves_configuration_without_aliasing():
     module = decide(True, client=TypeSafe("jev-test"))
     module.thresholds["flag"] = 0.9
-    module.weights["rating"] = [-2, 0, 8]
+    module.cuts["rating"] = [0.4, 1.6]
     module.weights["label"] = {"other": 3}
     reset = module.reset_copy()
     assert reset.thresholds == {"flag": 0.9}
-    assert reset.weights == {"rating": [-2, 0, 8], "label": {"other": 3}}
+    assert reset.weights == {"label": {"other": 3}}
+    assert reset.cuts == {"rating": [0.4, 1.6]}
     assert reset.signature is module.signature
     assert reset.client.model == "jev-test"
     reset.thresholds["flag"] = 0.5
-    reset.weights["rating"][1] = 1
+    reset.cuts["rating"][1] = 1.8
     reset.weights["label"]["other"] = 1
     assert module.thresholds == {"flag": 0.9}
-    assert module.weights == {"rating": [-2, 0, 8], "label": {"other": 3}}
+    assert module.weights == {"label": {"other": 3}}
+    assert module.cuts == {"rating": [0.4, 1.6]}
 
 
 def test_explicit_client_state_omits_key_and_gates_endpoint(tmp_path):
@@ -643,15 +702,16 @@ def test_signature_override_preserves_parameters_and_accepts_prompt_changes():
     client = FakeClient()
     module = decide(True, client)
     module.thresholds["flag"] = 0.9
-    module.weights["rating"] = [0, 2, 8]
+    module.cuts["rating"] = [0.5, 1.6]
     override = module.signature.with_instructions("Assess carefully.").with_updated_fields(
         "rating", desc="New question."
     )
     result = module(text="x", signature=override)
     assert result.flag.value is False
-    assert result.rating.value == pytest.approx(5.4)
-    assert client.calls[0][1]["rating"]["instructions"]["task"] == "Assess carefully."
-    assert client.calls[0][1]["rating"]["instructions"]["question"] == "New question."
+    assert result.rating.value == pytest.approx(6.7)
+    assert result.rating.level == 1
+    assert client.calls[0][0]["instructions"] == "Assess carefully."
+    assert client.calls[0][1]["rating"]["instructions"] == "New question."
     assert module.signature.instructions == "Assess the document."
 
 

@@ -110,8 +110,8 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
     assert module(**values).accept is False
     state, questions = client.calls[0]
     assert set(questions) == {"accept"}  # Inputs are not additional questions.
-    assert state == {name: v.model_dump(mode="json") if rich else v for name, v in values.items()}
-    assert "Minor" in questions["accept"]["instructions"]["inputs"]
+    assert state["inputs"] == {name: v.model_dump(mode="json") if rich else v for name, v in values.items()}
+    assert "Minor" in state["input_fields"]
     assert values["urgent"].value is True if rich else values["urgent"] is True
 
 

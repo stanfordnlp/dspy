@@ -55,7 +55,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     with dspy.context(track_usage=True):
         first = module(text="x")
         module.thresholds["flag"] = 0.9
-        module.weights["rating"] = [0, 2, 8]
+        module.cuts["rating"] = [0.5, 1.6]
         module.weights["label"] = {"2": 0.1}
         second = module(text="x")
     assert first.flag.value is True
@@ -63,7 +63,9 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert first.flag.confidence == pytest.approx(0.6)
     assert second.flag.confidence == pytest.approx(1 / 9)
     assert first.rating.value == pytest.approx(6.7)
-    assert second.rating.value == pytest.approx(5.4)
+    assert second.rating.value == first.rating.value
+    assert first.rating.level == 2
+    assert second.rating.level == 1
     assert first.label.value == 2
     assert second.label.value == "other"
     assert second.label.probabilities == first.label.probabilities == {"2": 0.8, "other": 0.2}
@@ -73,10 +75,15 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     assert len(transport) == 1
     url, body = transport[0]
     assert url == "https://example.test/v1/systemone"
-    assert body["state"] == {"text": "x"}
+    assert body["state"] == {
+        "instructions": "Assess the document.",
+        "input_fields": "1. `text` (str):",
+        "inputs": {"text": "x"},
+    }
     assert body["questions"]["rating"]["criteria"] == ["bad", "fair", "great"]
     assert "thresholds" not in json.dumps(body)
     assert "weights" not in json.dumps(body)
+    assert "cuts" not in json.dumps(body)
     assert "test-only" not in json.dumps(client.history)
     assert [h["cache_hit"] for h in client.history] == [False, True]
     first.rating.probabilities[0] = 0.99
