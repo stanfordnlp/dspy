@@ -1921,6 +1921,32 @@ class TestRLMSubDspy:
         assert result.answer == "42"
         assert caller.call_history[0][0] == facade.SHIM_SETUP
         assert "Sub-agents (dspy)" in seen[0].instructions
+        # No factory exists for the caller's backend, so nested code-executing sub-agents are not offered.
+        assert "unavailable in this REPL" in seen[0].instructions
+        assert 'dspy.RLM("context, query -> answer")' not in seen[0].instructions
+
+    def test_factory_interpreter_offers_nested_rlm(self):
+        factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
+        rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
+
+        assert rlm(query="q").answer == "42"
+        assert 'dspy.RLM("context, query -> answer")' in seen[0].instructions
+        assert "unavailable in this REPL" not in seen[0].instructions
+
+    def test_caller_owned_facade_refuses_code_executing_sub_agents(self):
+        rlm = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
+        invocation = rlm._facade_invocation(_LLMCallBudget(rlm.max_llm_calls), caller_owned=True)
+
+        # Running them on the configured factory would put nested code on a different backend.
+        for kind in ("RLM", "CodeAct", "ProgramOfThought"):
+            with pytest.raises(CodeInterpreterError, match="no factory for its backend"):
+                invocation.construct(kind, "q -> a", kind.lower())
+        assert invocation._predictors == {}
+
+        invocation.construct("Predict", "q -> a", "plain")
+        invocation.construct("ReActV2", "q -> a", "agent", {"tools": []})
+        assert set(invocation._predictors) == {"plain", "agent"}
 
     def test_factory_capability_does_not_advertise_sub_agents_to_a_plain_caller_interpreter(self):
         from dspy.primitives import facade

@@ -79,19 +79,29 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
-SUB_AGENT_INSTRUCTIONS = """
+_SUB_AGENT_HEAD = """
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
 - `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
   Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host.
+"""
+_NO_DSPY_CONFIGURE = "Never call `dspy.configure(...)`: the LM configuration is already provided."
+# Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
+SUB_AGENT_INSTRUCTIONS = _SUB_AGENT_HEAD + f"""\
 - `dspy.RLM("context, query -> answer")(context=..., query=...)` - a recursive sub-agent with its own
   REPL on the same interpreter backend as yours; it cannot be given another `interpreter_factory`.
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
   structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
-recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
+recursive subtasks. {_NO_DSPY_CONFIGURE}
+"""
+# For a caller-owned interpreter: RLM has no factory for that backend, so the facade refuses
+# code-executing sub-agents rather than run them on a different one.
+NON_EXECUTING_SUB_AGENT_INSTRUCTIONS = _SUB_AGENT_HEAD + f"""\
+Sub-agents that execute code (`dspy.RLM`, `dspy.CodeAct`, `dspy.ProgramOfThought`) are unavailable in this REPL.
+Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured or tool-using subtasks.
+{_NO_DSPY_CONFIGURE}
 """
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
@@ -395,7 +405,10 @@ class RLM(Module):
         factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
         self._initial_execution_instructions = execution_instructions
-        self._initial_interpreter_rules = self._format_interpreter_rules(execution_instructions, self._sub_dspy)
+        self._initial_sub_agent_rules = SUB_AGENT_INSTRUCTIONS if self._sub_dspy else ""
+        self._initial_interpreter_rules = self._format_interpreter_rules(
+            execution_instructions, self._initial_sub_agent_rules
+        )
         interpreter_rules = self._initial_interpreter_rules
 
         action_sig = (
@@ -435,9 +448,9 @@ class RLM(Module):
         return InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_or_factory)
 
     @staticmethod
-    def _format_interpreter_rules(execution_instructions: str, sub_dspy: bool) -> str:
+    def _format_interpreter_rules(execution_instructions: str, sub_agent_rules: str) -> str:
         rules = f"\nExecution environment:\n{execution_instructions}\n" if execution_instructions else ""
-        return rules + SUB_AGENT_INSTRUCTIONS if sub_dspy else rules
+        return rules + sub_agent_rules
 
     @staticmethod
     def _get_execution_instructions(factory: Callable[[], CodeInterpreter]) -> str:
@@ -446,10 +459,10 @@ class RLM(Module):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         return execution_instructions
 
-    def _action_signature_for_current_factory(self, sub_dspy: bool) -> type[Signature]:
+    def _action_signature_for_current_factory(self, sub_agent_rules: str) -> type[Signature]:
         """Return an action signature whose runtime guidance matches the active interpreter.
 
-        ``sub_dspy`` says whether this invocation's interpreter hosts the facade.
+        ``sub_agent_rules`` is the sub-agent guidance for this invocation's interpreter (see ``_setup_facade``).
         """
         factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
@@ -459,12 +472,15 @@ class RLM(Module):
 
         # Same runtime as at construction: no derived signature per iteration, and an
         # optimizer's revised instructions stay untouched.
-        if execution_instructions == self._initial_execution_instructions and sub_dspy == self._sub_dspy:
+        if (
+            execution_instructions == self._initial_execution_instructions
+            and sub_agent_rules == self._initial_sub_agent_rules
+        ):
             return current_signature
 
         # Replace only DSPy's own fragment, so an override cannot stack on stale guidance.
         current_instructions = current_signature.instructions
-        current_rules = self._format_interpreter_rules(execution_instructions, sub_dspy)
+        current_rules = self._format_interpreter_rules(execution_instructions, sub_agent_rules)
         if self._initial_interpreter_rules and self._initial_interpreter_rules in current_instructions:
             instructions = current_instructions.replace(self._initial_interpreter_rules, current_rules, 1)
         elif current_rules:
@@ -574,20 +590,26 @@ class RLM(Module):
         lm = self._host_lm()
         return None if lm is None else SandboxLM(lm, budget.reserve)
 
-    def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
-        """Host side of the dspy facade for one forward."""
-        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
+    def _facade_invocation(self, budget: _LLMCallBudget, *, caller_owned: bool = False) -> FacadeInvocation:
+        """Host side of the dspy facade for one forward.
 
-    def _setup_facade(self, repl: CodeInterpreter, budget: _LLMCallBudget) -> bool:
-        """Install the facade if this invocation's interpreter declares SUB_DSPY; return whether it did."""
+        Code-executing sub-agents get the factory that made this forward's interpreter. A caller-owned
+        interpreter came from no factory, and no factory can be derived from a live instance and its
+        configuration, so there the facade gets none and refuses those sub-agents.
+        """
+        factory = None if caller_owned else self._interpreter_factory
+        return FacadeInvocation(self._user_tools, factory, None, lm=self._sandbox_host_lm(budget))
+
+    def _setup_facade(self, repl: CodeInterpreter, budget: _LLMCallBudget, *, caller_owned: bool) -> str:
+        """Install the facade if this invocation's interpreter declares SUB_DSPY; return its sub-agent guidance."""
         if not self._declares_sub_dspy(repl):
-            return False
+            return ""
         if not self._sub_dspy:
             # Construction validated against the factory; a caller-owned interpreter or a
             # dspy.context factory can host the facade anyway, so its names must be free too.
             self._validate_namespace(self._user_tools, sub_dspy=True)
-        self._facade_invocation(budget).install(repl)
-        return True
+        self._facade_invocation(budget, caller_owned=caller_owned).install(repl)
+        return NON_EXECUTING_SUB_AGENT_INSTRUCTIONS if caller_owned else SUB_AGENT_INSTRUCTIONS
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -782,14 +804,14 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
-        sub_dspy: bool,
+        sub_agent_rules: str,
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
         action = self.generate_action(
-            signature=self._action_signature_for_current_factory(sub_dspy),
+            signature=self._action_signature_for_current_factory(sub_agent_rules),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -819,8 +841,9 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance. Code-executing sub-agents built through the sandbox dspy facade still get their
-                own interpreters from ``interpreter_factory``; a live instance cannot be copied into a factory.
+                this RLM instance. RLM has no factory for a caller-owned interpreter's backend, so sub-agents that
+                execute code (``RLM``, ``CodeAct``, ``ProgramOfThought``) are unavailable through its sandbox dspy
+                facade; the other sub-agents work as usual.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -838,13 +861,13 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            sub_dspy = self._setup_facade(repl, budget)
+            sub_agent_rules = self._setup_facade(repl, budget, caller_owned=interpreter is not None)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names, sub_dspy
+                    repl, variables, history, iteration, regular_args, output_field_names, sub_agent_rules
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -882,12 +905,12 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
-        sub_dspy: bool,
+        sub_agent_rules: str,
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            signature=self._action_signature_for_current_factory(sub_dspy),
+            signature=self._action_signature_for_current_factory(sub_agent_rules),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -913,8 +936,9 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance. Code-executing sub-agents built through the sandbox dspy facade still get their
-                own interpreters from ``interpreter_factory``; a live instance cannot be copied into a factory.
+                this RLM instance. RLM has no factory for a caller-owned interpreter's backend, so sub-agents that
+                execute code (``RLM``, ``CodeAct``, ``ProgramOfThought``) are unavailable through its sandbox dspy
+                facade; the other sub-agents work as usual.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -932,13 +956,13 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            sub_dspy = self._setup_facade(repl, budget)
+            sub_agent_rules = self._setup_facade(repl, budget, caller_owned=interpreter is not None)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names, sub_dspy
+                    repl, variables, history, iteration, regular_args, output_field_names, sub_agent_rules
                 )
                 if isinstance(result, Prediction):
                     return result
