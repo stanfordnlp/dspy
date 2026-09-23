@@ -1,18 +1,18 @@
 import logging
 import os
-from pathlib import Path
+from typing import Any
 
-import litellm
-
+from dspy.clients._litellm import get_litellm
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
+from dspy.utils.caching import default_cache_dir
 
 logger = logging.getLogger(__name__)
 
-DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+DISK_CACHE_DIR = default_cache_dir()
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
 
@@ -22,6 +22,8 @@ def configure_cache(
     disk_cache_dir: str | None = DISK_CACHE_DIR,
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
     memory_max_entries: int = 1000000,
+    restrict_pickle: bool = False,
+    safe_types: list[type[Any]] | None = None,
 ):
     """Configure the cache for DSPy.
 
@@ -32,6 +34,9 @@ def configure_cache(
         disk_size_limit_bytes: The size limit of the on-disk cache.
         memory_max_entries: The maximum number of entries in the in-memory cache. To allow the cache to grow without
                             bounds, set this parameter to `math.inf` or a similar value.
+        restrict_pickle: When True, restrict pickle deserialization to a known-safe
+            set of types. When False (default), use unrestricted pickle.
+        safe_types: Additional types to allow when restrict_pickle is True.
     """
 
     DSPY_CACHE = Cache(
@@ -40,20 +45,21 @@ def configure_cache(
         disk_cache_dir,
         disk_size_limit_bytes,
         memory_max_entries,
+        restrict_pickle=restrict_pickle,
+        safe_types=safe_types,
     )
 
     import dspy
 
-    # Update the reference to point to the new cache
-    dspy.cache = DSPY_CACHE
+    # Hold the lock the lazy build holds, or a concurrent first read of `dspy.cache` overwrites this cache
+    # with the default one it was already building.
+    with dspy._cache_lock:
+        dspy.cache = DSPY_CACHE
 
-
-litellm.telemetry = False
-litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
 
 
 def _get_dspy_cache():
-    disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+    disk_cache_dir = default_cache_dir()
     disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
 
     try:
@@ -77,17 +83,11 @@ def _get_dspy_cache():
     return _dspy_cache
 
 
-DSPY_CACHE = _get_dspy_cache()
-
-if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
-    # Accessed at run time by litellm; i.e., fine to keep after import
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-
-
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
     # Litellm uses a global logger called `verbose_logger` to control all loggings.
-    from litellm._logging import verbose_logger
+    litellm = get_litellm(feature="LiteLLM logging")
+    verbose_logger = litellm._logging.verbose_logger
 
     numeric_logging_level = getattr(logging, level)
 
@@ -97,17 +97,17 @@ def configure_litellm_logging(level: str = "ERROR"):
 
 
 def enable_litellm_logging():
+    litellm = get_litellm(feature="LiteLLM logging")
     litellm.suppress_debug_info = False
+    litellm._dspy_logging_configured = True
     configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
+    litellm = get_litellm(feature="LiteLLM logging")
     litellm.suppress_debug_info = True
+    litellm._dspy_logging_configured = True
     configure_litellm_logging("ERROR")
-
-
-# By default, we disable LiteLLM logging for clean logging
-disable_litellm_logging()
 
 __all__ = [
     "BaseLM",

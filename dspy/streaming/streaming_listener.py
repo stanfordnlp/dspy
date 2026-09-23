@@ -1,11 +1,10 @@
+from __future__ import annotations
+
 import inspect
 import re
 from collections import defaultdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any
-
-import jiter
-from litellm import ModelResponseStream
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
@@ -13,8 +12,13 @@ from dspy.adapters.types import Type
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
+from dspy.utils.lazy_import import require
+
+jiter = require("jiter")
 
 if TYPE_CHECKING:
+    from litellm import ModelResponseStream
+
     from dspy.primitives.module import Module
 
 ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
@@ -224,7 +228,7 @@ class StreamListener:
                 # the end_identifier for all LMs.
                 token = self.field_end_queue.get()
 
-            # TODO: Put adapter streaming handling into individial classes, e.g., `JSONAdapterStreamListener`,
+            # TODO: Put adapter streaming handling into individual classes, e.g., `JSONAdapterStreamListener`,
             # `ChatAdapterStreamListener`, `XMLAdapterStreamListener` instead of having many adhoc code in the
             # `StreamListener` class.
             if isinstance(settings.adapter, JSONAdapter):
@@ -368,7 +372,7 @@ class StreamListener:
 
 
 def find_predictor_for_stream_listeners(
-    program: "Module", stream_listeners: list[StreamListener]
+    program: Module, stream_listeners: list[StreamListener]
 ) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
@@ -385,7 +389,7 @@ def find_predictor_for_stream_listeners(
         field_name_to_named_predictor[listener.signature_field_name] = None
 
     for name, predictor in predictors:
-        for field_name, field_info in predictor.signature.output_fields.items():
+        for field_name in predictor.signature.output_fields:
             if field_name not in field_name_to_named_predictor:
                 continue
 

@@ -1,6 +1,8 @@
+import pickle
 from types import UnionType
 from typing import Any, Optional, Union
 
+import cloudpickle
 import pydantic
 import pytest
 
@@ -55,11 +57,45 @@ def test_signature_parsing():
     assert "output" in signature.output_fields
 
 
+def test_duplicate_input_output_field_names_raise():
+    with pytest.raises(ValueError, match="distinct names"):
+        Signature("value -> value")
+
+
 def test_with_signature():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_instructions("This is a test")
     assert signature2.instructions == "This is a test"
     assert signature1 is not signature2, "The type should be immutable"
+
+
+def test_append_instructions():
+    class MySig(Signature):
+        """Translate to French."""
+
+        input_text: str = InputField()
+        output_text: str = OutputField()
+
+    new_sig = MySig.append_instructions("Use a formal register.")
+    assert new_sig.instructions == "Translate to French.\n\nUse a formal register."
+    assert MySig.instructions == "Translate to French.", "The original should be unchanged"
+    assert MySig is not new_sig, "The type should be immutable"
+    assert list(new_sig.input_fields.keys()) == ["input_text"]
+    assert list(new_sig.output_fields.keys()) == ["output_text"]
+
+
+def test_append_instructions_chains():
+    sig = Signature("input1 -> output1", "Base instructions.")
+    chained = sig.append_instructions("Step one.").append_instructions("Step two.")
+    assert chained.instructions == "Base instructions.\n\nStep one.\n\nStep two."
+
+
+def test_append_instructions_preserves_default_instructions():
+    sig = Signature("input1 -> output1")
+    base_instructions = sig.instructions
+    appended = sig.append_instructions("Extra detail.")
+    assert appended.instructions == f"{base_instructions}\n\nExtra detail."
+    assert sig.instructions == base_instructions, "The original should be unchanged"
 
 
 def test_with_updated_field():
@@ -573,3 +609,32 @@ def test_pep604_union_type_with_custom_types():
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)
     assert pred.output == "processed"
+
+
+def test_signature_cloudpickle_roundtrip():
+    class MySignature(Signature):
+        """Answer the question."""
+        context: list[str] = InputField()
+        question: str = InputField()
+        answer: str = OutputField()
+
+    data = cloudpickle.dumps(MySignature)
+    loaded = pickle.loads(data)
+
+    assert loaded.__name__ == "MySignature"
+    assert list(loaded.input_fields.keys()) == ["context", "question"]
+    assert list(loaded.output_fields.keys()) == ["answer"]
+    assert loaded.instructions == "Answer the question."
+
+
+def test_predict_cloudpickle_roundtrip():
+    class QA(Signature):
+        """Answer the question."""
+        question: str = InputField()
+        answer: str = OutputField()
+
+    predict = dspy.Predict(QA)
+    data = cloudpickle.dumps(predict)
+    loaded = pickle.loads(data)
+
+    assert list(loaded.signature.fields.keys()) == ["question", "answer"]

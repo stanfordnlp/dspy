@@ -1,23 +1,29 @@
+import json
 import logging
-from typing import TYPE_CHECKING, Any, get_origin
+from typing import Any, get_origin
 
 import json_repair
-import litellm
 
+from dspy.adapters._legacy_type_markers import (
+    _expand_legacy_custom_type_markers_in_chat_message,
+)
 from dspy.adapters.types import History, Type
-from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
-from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
+from dspy.adapters.utils import apply_output_field_defaults, serialize_for_json
+from dspy.clients._deprecation import adapter_message_call
+from dspy.clients.base_lm import BaseLM
+from dspy.clients.capabilities import with_capability_planning
 from dspy.experimental import Citations
+from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from dspy.clients.lm import LM
-
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+_TOOL_CALL_RESULTS_SIGNATURE = Signature({"tool_call_results": (ToolCallResults, InputField())})
 
 
 class Adapter:
@@ -42,6 +48,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        parallel_tool_calls: bool | None = None,
     ):
         """
         Args:
@@ -53,9 +60,12 @@ class Adapter:
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
                 (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+            parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
+                calling is active. If None, the adapter does not set the provider option. Defaults to None.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
+        self.parallel_tool_calls = parallel_tool_calls
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -67,12 +77,21 @@ class Adapter:
 
     def _call_preprocess(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
     ) -> type[Signature]:
-        if self.use_native_function_calling:
+        # TODO(adapters-plan): This remains the pre-normalized planning hook. It
+        # mutates `lm_kwargs` and returns only the render signature, which loses
+        # information we will need for plan-driven rendering/parsing. The next
+        # stacked PR should replace this with an explicit `_AdapterPlan` that
+        # records deleted fields, native tools, native output fields, inserted
+        # messages/parts, and LM config patches.
+        if not self.use_native_function_calling:
+            for key in ("tools", "tool_choice", "parallel_tool_calls"):
+                lm_kwargs.pop(key, None)
+        else:
             tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
             tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
 
@@ -83,29 +102,31 @@ class Adapter:
                     "input field with type `list[dspy.Tool]`."
                 )
 
-            if tool_call_output_field_name and litellm.supports_function_calling(model=lm.model):
+            if tool_call_output_field_name and lm.supports_function_calling:
                 tools = inputs[tool_call_input_field_name]
                 tools = tools if isinstance(tools, list) else [tools]
 
-                litellm_tools = []
-                for tool in tools:
-                    litellm_tools.append(tool.format_as_litellm_function_call())
+                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
 
-                lm_kwargs["tools"] = litellm_tools
+                lm_kwargs["tools"] = lm_tools
+                if self.parallel_tool_calls is not None and lm_kwargs.get("parallel_tool_calls") is None:
+                    lm_kwargs["parallel_tool_calls"] = self.parallel_tool_calls
 
-                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
-                signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
-                )
+                signature = signature.delete(tool_call_output_field_name)
+                signature = signature.delete(tool_call_input_field_name)
+            elif tool_call_output_field_name:
+                for key in ("tools", "tool_choice", "parallel_tool_calls"):
+                    lm_kwargs.pop(key, None)
 
-                return signature_for_native_function_calling
-
+        # TODO(adapters-plan): Built-in/native response planning should move out
+        # of `Type.adapt_to_native_lm_feature()` and into adapter-owned planning
+        # renderers. Keep this compatibility hook for this boundary-only PR.
         # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
-                and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
+                and issubclass(field.annotation, Type)
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
@@ -116,7 +137,7 @@ class Adapter:
         processed_signature: type[Signature],
         original_signature: type[Signature],
         outputs: list[dict[str, Any] | str],
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         values = []
@@ -129,37 +150,43 @@ class Adapter:
             text = output
 
             if isinstance(output, dict):
-                text = output["text"]
+                text = output.get("text")
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
-            if text:
+            if text and not (tool_calls and tool_call_output_field_name):
                 value = self.parse(processed_signature, text)
-                for field_name in original_signature.output_fields.keys():
-                    if field_name not in value:
-                        # We need to set the field not present in the processed signature to None for consistency.
-                        value[field_name] = None
+            elif tool_calls and tool_call_output_field_name:
+                try:
+                    value = self.parse(processed_signature, text) if text and processed_signature.output_fields else {}
+                except AdapterParseError:
+                    value = {}
             else:
-                value = {}
-                for field_name in original_signature.output_fields.keys():
-                    value[field_name] = None
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=original_signature,
+                    lm_response=str(output),
+                    message="The LM returned an empty or null response.",
+                )
+
+            # Fields removed for native features are absent from the processed parse
+            value = apply_output_field_defaults(original_signature, value)
+            for field_name in original_signature.output_fields:
+                value.setdefault(field_name, None)
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
+                tool_calls = [_provider_tool_call_to_tool_call_dict(tool_call) for tool_call in tool_calls]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
+            # TODO(adapter-types): Once `Type.parse_lm_output(context, output)` is
+            # the real normalized hook, this should not call the legacy
+            # provider-shaped `parse_lm_response()` directly.
             # Parse custom types that does not rely on the `Adapter.parse()` method
             for name, field in original_signature.output_fields.items():
                 if (
                     isinstance(field.annotation, type)
-                    and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
+                    and issubclass(field.annotation, Type)
                 ):
                     parsed_value = field.annotation.parse_lm_response(output)
                     if parsed_value is not None:
@@ -172,9 +199,10 @@ class Adapter:
 
         return values
 
+    @with_capability_planning
     def __call__(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -197,23 +225,30 @@ class Adapter:
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = lm(messages=inputs, **lm_kwargs)
+        messages = self.format(processed_signature, demos, inputs)
+        if lm_kwargs.get("parallel_tool_calls") is not None:
+            lm_kwargs.setdefault("tool_choice", "auto")
+        # TODO(3.5): build Request and parse Response directly; remove this marker.
+        with adapter_message_call(lm, messages):
+            outputs = lm(messages=messages, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
+    @with_capability_planning
     async def acall(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        messages = self.format(processed_signature, demos, inputs)
+        if lm_kwargs.get("parallel_tool_calls") is not None:
+            lm_kwargs.setdefault("tool_choice", "auto")
+        # TODO(3.5): share the canonical request/response boundary with __call__.
+        with adapter_message_call(lm, messages):
+            outputs = await lm.acall(messages=messages, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     def format(
@@ -283,14 +318,15 @@ class Adapter:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
             messages.extend(conversation_history)
-            messages.append({"role": "user", "content": content})
+            if content:
+                messages.append({"role": "user", "content": content})
         else:
             # Only current input
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
-            messages.append({"role": "user", "content": content})
+            if content:
+                messages.append({"role": "user", "content": content})
 
-        messages = split_message_content_for_custom_types(messages)
-        return messages
+        return [_expand_legacy_custom_type_markers_in_chat_message(message) for message in messages]
 
     def format_system_message(self, signature: type[Signature]) -> str:
         """Format the system message for the LM call.
@@ -490,7 +526,7 @@ class Adapter:
             inputs: The input arguments to the DSPy module.
 
         Returns:
-            A list of multiturn messages.
+            A list of multiturn messages as expected by the LM.
         """
         conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
 
@@ -499,18 +535,63 @@ class Adapter:
 
         messages = []
         for message in conversation_history:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": self.format_user_message_content(signature, message),
-                }
+            tool_call_field_name, tool_calls = _tool_calls_from_message(message)
+            tool_call_results = (
+                ToolCallResults.model_validate(tool_calls.tool_call_results)
+                if tool_calls is not None and tool_calls.tool_call_results is not None
+                else None
             )
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": self.format_assistant_message_content(signature, message),
-                }
-            )
+
+            user_content = self.format_user_message_content(signature, message)
+            if user_content:
+                messages.append({"role": "user", "content": user_content})
+
+            if self.use_native_function_calling and tool_calls is not None:
+                content_signature = signature
+                for name, field in signature.output_fields.items():
+                    if field.annotation == ToolCalls or message.get(name) is None:
+                        content_signature = content_signature.delete(name)
+
+                content = (
+                    self.format_assistant_message_content(content_signature, message)
+                    if content_signature.output_fields
+                    else ""
+                )
+
+                if tool_call_results is not None:
+                    tool_call_ids = [tool_call.id for tool_call in tool_calls.tool_calls]
+                    result_ids = [result.call_id for result in tool_call_results.tool_call_results]
+                    if tool_call_ids != result_ids or not all(tool_call_ids):
+                        tool_call_results = None
+
+                if content or tool_call_results is not None:
+                    assistant_message: dict[str, Any] = {"role": "assistant", "content": content or None}
+                    if tool_call_results is not None:
+                        assistant_message["tool_calls"] = [
+                            _tool_call_as_openai_message_tool_call(tool_call) for tool_call in tool_calls.tool_calls
+                        ]
+                    messages.append(assistant_message)
+
+                if tool_call_results is not None:
+                    for result in tool_call_results.tool_call_results:
+                        content = _tool_result_content(result.value)
+                        messages.append(
+                            {"role": "tool", "tool_call_id": result.call_id, "name": result.name, "content": content}
+                        )
+                continue
+
+            assistant_values = message
+            if tool_call_field_name is not None and tool_call_results is not None:
+                assistant_values = dict(message)
+                assistant_values[tool_call_field_name] = tool_calls.model_copy(update={"tool_call_results": None})
+
+            assistant_content = self.format_assistant_message_content(signature, assistant_values)
+            if assistant_content:
+                messages.append({"role": "assistant", "content": assistant_content})
+            if tool_call_results is not None:
+                result_input = {"tool_call_results": tool_call_results}
+                content = self.format_user_message_content(_TOOL_CALL_RESULTS_SIGNATURE, result_input)
+                messages.append({"role": "user", "content": content})
 
         # Remove the history field from the inputs
         del inputs[history_field_name]
@@ -530,3 +611,55 @@ class Adapter:
             A dictionary of the output fields.
         """
         raise NotImplementedError
+
+
+def _provider_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _provider_tool_call_to_tool_call_dict(tool_call: Any) -> dict[str, Any]:
+    function = _provider_value(tool_call, "function", {}) or {}
+    # Responses API tool calls carry `arguments` at the top level rather than
+    # under `function`.
+    arguments = _provider_value(function, "arguments", None) or _provider_value(tool_call, "arguments", {})
+    if isinstance(arguments, str):
+        parsed_arguments = json_repair.loads(arguments)
+    elif isinstance(arguments, dict):
+        parsed_arguments = arguments
+    else:
+        parsed_arguments = {}
+
+    return {
+        # Responses API items carry both an item `id` ("fc_...") and the
+        # `call_id` that tool results must reference; prefer `call_id`.
+        "id": _provider_value(tool_call, "call_id") or _provider_value(tool_call, "id"),
+        "name": _provider_value(function, "name") or _provider_value(tool_call, "name"),
+        "args": parsed_arguments,
+    }
+
+
+def _tool_calls_from_message(message: dict[str, Any]) -> tuple[str | None, ToolCalls | None]:
+    for name, value in message.items():
+        if isinstance(value, ToolCalls) or (isinstance(value, dict) and "tool_calls" in value):
+            return name, ToolCalls.model_validate(value)
+    return None, None
+
+
+def _tool_result_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+
+    return json.dumps(serialize_for_json(value), ensure_ascii=False)
+
+
+def _tool_call_as_openai_message_tool_call(tool_call: ToolCalls.ToolCall) -> dict[str, Any]:
+    return {
+        "id": tool_call.id,
+        "type": "function",
+        "function": {
+            "name": tool_call.name,
+            "arguments": json.dumps(serialize_for_json(tool_call.args), ensure_ascii=False),
+        },
+    }

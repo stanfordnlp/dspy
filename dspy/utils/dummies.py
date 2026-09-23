@@ -1,17 +1,19 @@
+from __future__ import annotations
+
 import random
 from collections import defaultdict
 from typing import Any
 
-import numpy as np
-
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
-from dspy.clients.lm import LM
+from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
-from dspy.utils.callback import with_callbacks
+from dspy.utils.lazy_import import require
+
+np = require("numpy")
 
 
-class DummyLM(LM):
+class DummyLM(BaseLM):
     """Dummy language model for unit testing purposes.
 
     Three modes of operation:
@@ -21,7 +23,7 @@ class DummyLM(LM):
     If a list of dictionaries is provided, the dummy model will return the next dictionary
     in the list for each request, formatted according to the `format_field_with_value` function.
 
-    Example:
+    Examples:
 
     ```
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
@@ -67,18 +69,32 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: list[dict[str, Any]] | dict[str, dict[str, Any]], follow_examples: bool = False, adapter=None):
+    def __init__(
+        self,
+        answers: list[dict[str, Any]] | dict[str, dict[str, Any]],
+        follow_examples: bool = False,
+        reasoning: bool = False,
+        adapter=None,
+    ):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
         self.follow_examples = follow_examples
+        self.reasoning = reasoning
 
         # Set adapter, defaulting to ChatAdapter
         if adapter is None:
             from dspy.adapters.chat_adapter import ChatAdapter
             adapter = ChatAdapter()
         self.adapter = adapter
+
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
+
+        self._engine_spec = DummyEngine(self)
+        self._async_engine_spec = AsyncDummyEngine(self._engine_spec)
+        # DummyLM has always consumed scripted answers even for repeated calls.
+        self._cache_responses = False
 
     def _use_example(self, messages):
         # find all field names
@@ -97,53 +113,38 @@ class DummyLM(LM):
             if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
                 return output["content"]
 
-    @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        def format_answer_fields(field_names_and_values: dict[str, Any]):
-            fields_with_values = {
-                FieldInfoWithName(name=field_name, info=OutputField()): value
-                for field_name, value in field_names_and_values.items()
-            }
-            # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
-            # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
-            adapter = self.adapter
+    def _format_answer_fields(self, field_names_and_values: dict[str, Any]):
+        fields_with_values = {
+            FieldInfoWithName(name=field_name, info=OutputField()): value
+            for field_name, value in field_names_and_values.items()
+        }
+        # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
+        # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
+        adapter = self.adapter
 
-            # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
-            try:
-                return adapter.format_field_with_value(fields_with_values, role="assistant")
-            except TypeError:
-                # Fallback for adapters that don't support role parameter (like ChatAdapter)
-                return adapter.format_field_with_value(fields_with_values)
+        # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
+        try:
+            return adapter.format_field_with_value(fields_with_values, role="assistant")
+        except TypeError:
+            # Fallback for adapters that don't support role parameter (like ChatAdapter)
+            return adapter.format_field_with_value(fields_with_values)
 
-        # Build the request.
-        outputs = []
-        for _ in range(kwargs.get("n", 1)):
-            messages = messages or [{"role": "user", "content": prompt}]
-            kwargs = {**self.kwargs, **kwargs}
+    def forward(self, prompt=None, messages=None, **kwargs):
+        from dspy.clients.execution import execute, prepare
 
-            if self.follow_examples:
-                outputs.append(self._use_example(messages))
-            elif isinstance(self.answers, dict):
-                outputs.append(
-                    next(
-                        (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
-                        "No more responses",
-                    )
-                )
-            else:
-                outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
+        return execute(self, prepare(self, prompt, messages, kwargs, direct=True)).provider_response()
 
-            # Logging, with removed api key & where `cost` is None on cache hit.
-            kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
-            entry = {**entry, "outputs": outputs, "usage": 0}
-            entry = {**entry, "cost": 0}
-            self.update_history(entry)
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        # Preserve the historical subclass extension point on async calls.
+        return self.forward(prompt=prompt, messages=messages, **kwargs)
 
-        return outputs
+    def copy(self, **kwargs):
+        from dspy.clients.engines.dummy_engine import AsyncDummyEngine, DummyEngine
 
-    async def acall(self, prompt=None, messages=None, **kwargs):
-        return self.__call__(prompt=prompt, messages=messages, **kwargs)
+        copied = super().copy(**kwargs)
+        copied._engine_spec = DummyEngine(copied)
+        copied._async_engine_spec = AsyncDummyEngine(copied._engine_spec)
+        return copied
 
     def get_convo(self, index):
         """Get the prompt + answer from the ith message."""

@@ -211,7 +211,7 @@ the screenshot below:
 
 ### Model Compatibility
 
-Native function calling automatically detects model support using `litellm.supports_function_calling()`. If the model doesn't support native function calling, DSPy will fall back to manual text-based parsing even when `use_native_function_calling=True` is set.
+Native function calling automatically checks whether the LM supports it. DSPy's built-in [`dspy.LM`][dspy.LM] uses LiteLLM for this, and custom [`dspy.BaseLM`][dspy.BaseLM] implementations can override `supports_function_calling` to opt in. If the model does not support native function calling, DSPy falls back to manual text-based parsing even when `use_native_function_calling=True` is set.
 
 ## Async Tools
 

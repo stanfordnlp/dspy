@@ -4,7 +4,7 @@ import inspect
 import json
 import types
 from collections.abc import Mapping
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -12,8 +12,54 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import Type as DspyType
+from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
+
+if TYPE_CHECKING:
+    from dspy.signatures.signature import Signature
+
+
+def annotation_allows_none(annotation: Any) -> bool:
+    """Whether the annotation admits None (e.g. `str | None`, `Optional[str]`, `None`)."""
+    if annotation is None or annotation is type(None):
+        return True
+
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    if origin is Annotated:
+        return bool(args) and annotation_allows_none(args[0])
+
+    if origin is Union or origin is types.UnionType:
+        return any(annotation_allows_none(arg) for arg in args)
+
+    return False
+
+
+def apply_output_field_defaults(signature: "type[Signature]", fields: dict[str, Any]) -> dict[str, Any]:
+    """
+    Fill output fields that are missing from a parsed LM response, in signature order.
+
+    An output field is optional when it declares a default, a default factory, or an annotation
+    that allows None; a missing optional field takes that fallback (in that order of precedence).
+    """
+    completed = {}
+    for name, field_info in signature.output_fields.items():
+        if name in fields:
+            completed[name] = fields[name]
+        elif not field_info.is_required():
+            completed[name] = field_info.get_default(call_default_factory=True)
+        elif annotation_allows_none(field_info.annotation):
+            completed[name] = None
+    return completed
+
+
+def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
+    try:
+        return inspect.isclass(annotation) and issubclass(annotation, expected_base)
+    except TypeError:
+        return False
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -91,7 +137,7 @@ def translate_field_type(field_name, field_info):
         desc = "must be True or False"
     elif field_type in (int, float):
         desc = f"must be a single {field_type.__name__} value"
-    elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
+    elif _annotation_is_subclass(field_type, enum.Enum):
         enum_vals = "; ".join(str(member.value) for member in field_type)
         desc = f"must be one of: {enum_vals}"
     elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
@@ -100,6 +146,9 @@ def translate_field_type(field_name, field_info):
             # literal or returning a value of the form 'Literal[<selected_value>]'
             f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
         )
+    elif _annotation_is_subclass(field_type, Code) and field_type.description():
+        # Code has a rich type description already; avoid duplicating its large schema block.
+        desc = ""
     else:
         desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
 
@@ -159,7 +208,8 @@ def parse_value(value, annotation):
             if v in allowed:
                 return v
 
-        raise ValueError(f"{value!r} is not one of {allowed!r}")
+            # Coerce string forms of non-string members (e.g. "2" for Literal[1, 2, 3]) below.
+            value = v
 
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
@@ -178,11 +228,11 @@ def parse_value(value, annotation):
     try:
         return TypeAdapter(annotation).validate_python(candidate)
     except pydantic.ValidationError as e:
-        if inspect.isclass(annotation) and issubclass(annotation, DspyType):
+        if _annotation_is_subclass(annotation, DspyType):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
                 return TypeAdapter(annotation).validate_python(value)
-            except Exception:
+            except pydantic.ValidationError:
                 raise e
         raise
 

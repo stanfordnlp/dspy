@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -92,6 +92,36 @@ def test_callable_embedding(cache):
     np.testing.assert_allclose(result, expected_embeddings)
 
 
+def test_callable_numpy_embedding_persists_to_disk(cache, tmp_path):
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache_safe", restrict_pickle=True)
+
+    inputs = ["hello", "world"]
+    expected_embeddings = np.array(
+        [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+
+    embedding_fn = MagicMock(return_value=expected_embeddings)
+    embedding = Embedder(embedding_fn)
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+    dspy.cache.reset_memory_cache()
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+
 def test_invalid_model_type():
     # Test that invalid model type raises ValueError
     with pytest.raises(ValueError):
@@ -121,3 +151,49 @@ async def test_async_embedding():
 
         assert len(result) == len(inputs)
         np.testing.assert_allclose(result, mock_embeddings)
+
+
+def test_call_caching_false_overrides_instance_true(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.embedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=True)
+        embedding(inputs)
+        embedding(inputs, caching=False)
+        assert mock_litellm.call_count == 2
+
+
+def test_call_caching_true_overrides_instance_false(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.embedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=False)
+        embedding(inputs, caching=True)
+        embedding(inputs, caching=True)
+        assert mock_litellm.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_acall_caching_false_overrides_instance_true(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.aembedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=True)
+        await embedding.acall(inputs)
+        await embedding.acall(inputs, caching=False)
+        assert mock_litellm.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_acall_caching_true_overrides_instance_false(cache):
+    model = "text-embedding-ada-002"
+    inputs = ["hello"]
+    with patch("litellm.aembedding") as mock_litellm:
+        mock_litellm.return_value = MockEmbeddingResponse([[0.1, 0.2, 0.3]])
+        embedding = Embedder(model, caching=False)
+        await embedding.acall(inputs, caching=True)
+        await embedding.acall(inputs, caching=True)
+        assert mock_litellm.call_count == 1

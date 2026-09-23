@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
@@ -20,11 +21,11 @@ def test_forbid_configure_call_in_child_thread():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     def worker():
-        with pytest.raises(RuntimeError, match="Cannot call dspy.configure"):
+        with pytest.raises(RuntimeError, match="dspy.settings can only be changed by the thread"):
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(worker)
+        executor.submit(worker).result()
 
 
 def test_dspy_context():
@@ -47,21 +48,21 @@ def test_dspy_context_parallel():
             assert len(dspy.settings.callbacks) == 0
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        executor.map(worker, range(3))
+        list(executor.map(worker, range(3)))
 
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert len(dspy.settings.callbacks) == 1
 
 
 def test_dspy_context_with_dspy_parallel():
-    dspy.configure(lm=dspy.LM("openai/gpt-4o", cache=False), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM("openai/gpt-4o", engine="litellm", cache=False), adapter=dspy.ChatAdapter())
 
     class MyModule(dspy.Module):
         def __init__(self):
             self.predict = dspy.Predict("question -> answer")
 
         def forward(self, question: str) -> str:
-            lm = dspy.LM("openai/gpt-4o-mini", cache=False) if "France" in question else dspy.settings.lm
+            lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False) if "France" in question else dspy.settings.lm
             with dspy.context(lm=lm):
                 time.sleep(1)
                 assert dspy.settings.lm.model == lm.model
@@ -103,9 +104,9 @@ async def test_dspy_context_with_async_task_group():
 
         async def aforward(self, question: str) -> str:
             lm = (
-                dspy.LM("openai/gpt-4o-mini", cache=False)
+                dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
                 if "France" in question
-                else dspy.LM("openai/gpt-4o", cache=False)
+                else dspy.LM("openai/gpt-4o", engine="litellm", cache=False)
             )
             with dspy.context(lm=lm, trace=[]):
                 await asyncio.sleep(1)
@@ -116,7 +117,7 @@ async def test_dspy_context_with_async_task_group():
 
     module = MyModule()
 
-    with dspy.context(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter()):
+    with dspy.context(lm=dspy.LM("openai/gpt-4.1", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
         with mock.patch("litellm.acompletion") as mock_completion:
             mock_completion.return_value = ModelResponse(
                 choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
@@ -139,14 +140,18 @@ async def test_dspy_context_with_async_task_group():
         assert results[2].answer == "Paris"
         assert results[3].answer == "Paris"
 
-        # Verify mock was called correctly
+        # Concurrent calls can arrive in any order. Check the association,
+        # not just model counts, so leaked task-local settings still fail.
         assert mock_completion.call_count == 4
-        # France question uses gpt-4o-mini
-        assert mock_completion.call_args_list[0].kwargs["model"] == "openai/gpt-4o-mini"
-        assert mock_completion.call_args_list[1].kwargs["model"] == "openai/gpt-4o-mini"
-        # Germany question uses gpt-4o
-        assert mock_completion.call_args_list[2].kwargs["model"] == "openai/gpt-4o"
-        assert mock_completion.call_args_list[3].kwargs["model"] == "openai/gpt-4o"
+        seen = {"France": 0, "Germany": 0}
+        for call in mock_completion.call_args_list:
+            content = call.kwargs["messages"][-1]["content"]
+            country = "France" if "France" in content else "Germany"
+            assert country in content
+            expected = "openai/gpt-4o-mini" if country == "France" else "openai/gpt-4o"
+            assert call.kwargs["model"] == expected
+            seen[country] += 1
+        assert seen == {"France": 2, "Germany": 2}
 
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4.1"
@@ -190,4 +195,74 @@ async def test_dspy_configure_allowance_async():
 
     await asyncio.gather(foo1(), foo2(), foo3())
 
-    foo4()
+    await foo4()
+
+
+def test_dspy_settings_save_load(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    dspy.settings.save(tmp_path / "settings.pkl")
+    dspy.configure(lm=None, adapter=None, callbacks=None)
+
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl", allow_pickle=True)
+    dspy.configure(**loaded_settings)
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert isinstance(dspy.settings.adapter, dspy.JSONAdapter)
+    assert len(dspy.settings.callbacks) == 1
+
+
+def test_dspy_settings_save_exclude_keys(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), track_usage=True)
+
+    dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "track_usage"])
+    dspy.configure(lm=None, adapter=None, track_usage=False)
+
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl", allow_pickle=True)
+    dspy.configure(**loaded_settings)
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert dspy.settings.adapter is None
+    assert not dspy.settings.track_usage
+
+
+
+def test_settings_save_with_extra_modules(tmp_path):
+    # Create a temporary Python file with our custom module
+    custom_module_path = tmp_path / "custom_module.py"
+    with open(custom_module_path, "w") as f:
+        f.write(
+            """
+def callback(x):
+    return x + 1
+"""
+        )
+
+    # Add the tmp_path to Python path so we can import the module
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_module
+
+        dspy.configure(callbacks=[custom_module.callback])
+
+        settings_path = tmp_path / "settings.pkl"
+        sys.path.insert(0, str(tmp_path))
+
+        dspy.configure(callbacks=[custom_module.callback])
+        dspy.settings.save(settings_path, modules_to_serialize=[custom_module])
+
+        # Remove the custom module again to simulate it not being available at load time
+        sys.modules.pop("custom_module", None)
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        dspy.configure(callbacks=None)
+
+        # Loading should now succeed and preserve the adapter instance
+        loaded_settings = dspy.load_settings(settings_path, allow_pickle=True)
+        dspy.settings.configure(**loaded_settings)
+
+        assert dspy.settings.callbacks[0](3) == 4
+
+    finally:
+        # Only need to clean up sys.path
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))

@@ -1,30 +1,243 @@
+"""
+Local interpreter for secure Python code execution using Deno/Pyodide.
+
+This module provides PythonInterpreter, which runs Python code in a sandboxed
+WASM environment using Deno and Pyodide. It implements the Interpreter
+protocol defined in interpreter.py.
+"""
+
+import asyncio
+import dataclasses
+import functools
+import inspect
 import json
+import keyword
 import logging
+import math
 import os
+import re
+import secrets
+import shutil
 import subprocess
+import threading
 from os import PathLike
-from types import TracebackType
-from typing import Any
+from typing import Any, Callable, NoReturn
+
+from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError, to_jsonable_python
+
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeExecutionError, CodeInterpreterError, FinalOutput
+from dspy.utils.callback import BaseCallback, with_callbacks
+
+__all__ = ["PythonInterpreter", "FinalOutput", "CodeExecutionError", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
-class InterpreterError(RuntimeError):
-    pass
+# Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
+# injection for strings above 100MB to stay safely below this limit.
+LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+MIN_DENO_VERSION = (2, 0, 0)
+MAX_DENO_VERSION = (3, 0, 0)
+DENO_PROBE_TIMEOUT_SECONDS = 10
+
+# =============================================================================
+# JSON-RPC 2.0 Helpers
+# =============================================================================
+
+# JSON-RPC 2.0 protocol errors
+JSONRPC_PROTOCOL_ERRORS = {
+    "ParseError": -32700,
+    "InvalidRequest": -32600,
+    "MethodNotFound": -32601,
+}
+
+# Application errors (range: -32000 to -32099)
+JSONRPC_APP_ERRORS = {
+    "SyntaxError": -32000,
+    "NameError": -32001,
+    "TypeError": -32002,
+    "ValueError": -32003,
+    "AttributeError": -32004,
+    "IndexError": -32005,
+    "KeyError": -32006,
+    "RuntimeError": -32007,
+    "CodeInterpreterError": -32008,
+    "Unknown": -32099,
+}
+
+
+def _canonicalize_path(path: PathLike | str) -> str:
+    """Resolve symlinks so the path matches what Deno's permission check sees.
+
+    Deno does string-prefix matching against the realpath of the accessed file
+    (denoland/deno#9607), so --allow-read / --allow-write entries must be
+    realpath'd or reads through a symlink (including DENO_DIR) are denied.
+    """
+    return os.path.realpath(os.path.expanduser(os.fspath(path)))
+
+
+def _paths_overlap(first: str, second: str) -> bool:
+    first, second = (os.path.normcase(path).rstrip(os.sep) for path in (first, second))
+    return first == second or first.startswith(second + os.sep) or second.startswith(first + os.sep)
+
+
+def _find_deno_executable() -> str:
+    """Prefer the Deno binary managed by the optional Python package."""
+    try:
+        from deno import find_deno_bin
+    except ImportError:
+        return shutil.which("deno") or "deno"
+
+    try:
+        return find_deno_bin()
+    except FileNotFoundError:
+        return shutil.which("deno") or "deno"
+
+
+def _deno_subprocess_env() -> dict[str, str]:
+    """Build an environment that prevents ambient package.json discovery."""
+    env = os.environ.copy()
+    env["DENO_NO_PACKAGE_JSON"] = "1"
+    return env
+
+
+def _get_deno_version(deno_executable: str) -> tuple[int, int, int] | None:
+    try:
+        result = subprocess.run(
+            [deno_executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_deno_subprocess_env(),
+            timeout=DENO_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    match = re.match(r"deno (\d+)\.(\d+)\.(\d+)", result.stdout)
+    return tuple(map(int, match.groups())) if match else None
+
+
+def _validate_deno_version(deno_executable: str) -> None:
+    version = _get_deno_version(deno_executable)
+    if version is None:
+        raise CodeInterpreterError(
+            f"Unable to determine the Deno version from {deno_executable!r}. "
+            "PythonInterpreter requires Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
+
+    if not (MIN_DENO_VERSION <= version < MAX_DENO_VERSION):
+        version_text = ".".join(map(str, version))
+        raise CodeInterpreterError(
+            f"Unsupported Deno version {version_text}. PythonInterpreter supports Deno >=2.0.0,<3.0.0. "
+            'Install a compatible runtime with `pip install "dspy[deno]"`, or pass a custom `deno_command`.'
+        )
+
+
+def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
+    """Create a JSON-RPC 2.0 request (expects response)."""
+    return json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": id})
+
+
+def _jsonrpc_notification(method: str, params: dict | None = None) -> str:
+    """Create a JSON-RPC 2.0 notification (no response expected)."""
+    msg = {"jsonrpc": "2.0", "method": method}
+    if params:
+        msg["params"] = params
+    return json.dumps(msg)
+
+
+def _jsonrpc_result(result: Any, id: int | str) -> str:
+    """Create a JSON-RPC 2.0 success response."""
+    return json.dumps({"jsonrpc": "2.0", "result": result, "id": id})
+
+
+def _jsonrpc_error(code: int, message: str, id: int | str, data: dict | None = None) -> str:
+    """Create a JSON-RPC 2.0 error response."""
+    err = {"code": code, "message": message}
+    if data:
+        err["data"] = data
+    return json.dumps({"jsonrpc": "2.0", "error": err, "id": id})
+
+
+def _await_in_sync(coroutine: Any) -> Any:
+    """Run a coroutine to completion from a sync caller."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None:
+        return asyncio.run(coroutine)
+    return loop.run_until_complete(coroutine)
+
+
+def _dump_pydantic(value: BaseModel) -> Any:
+    """Dump a Pydantic model to JSON-compatible values."""
+    try:
+        return value.model_dump(mode="json")
+    except PydanticSerializationError as e:
+        raise CodeInterpreterError(f"Unable to serialize {type(value).__name__} as JSON: {e}") from e
+
+
+def _make_jsonable(value: Any) -> Any:
+    """Recursively convert structured types to JSON-serializable values.
+
+    Handles Pydantic BaseModel, dataclasses, and namedtuples so that
+    ``json.dumps()`` can serialize tool results without falling back to
+    ``str()``. Anything else JSON-mode serializable (datetimes, enums, UUIDs,
+    sets, ...) is converted the way it would serialize into a JSON body.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, BaseModel):
+        return _make_jsonable(_dump_pydantic(value))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        try:
+            return _make_jsonable(dataclasses.asdict(value))
+        except Exception:
+            return value  # fall through to json.dumps/str fallback
+    if isinstance(value, tuple) and hasattr(value, "_fields") and hasattr(value, "_asdict"):
+        return _make_jsonable(value._asdict())
+    if isinstance(value, dict):
+        return {k: _make_jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_make_jsonable(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_make_jsonable(v) for v in value)
+    try:
+        return to_jsonable_python(value)
+    except PydanticSerializationError:
+        return value
 
 
 class PythonInterpreter:
-    r"""
-    PythonInterpreter that runs code in a sandboxed environment using Deno and Pyodide.
+    """Local interpreter for secure Python execution using Deno and Pyodide.
+
+    Implements the Interpreter protocol for secure code execution in a
+    WASM-based sandbox. Code runs in an isolated Pyodide environment with
+    no access to the host filesystem, network, or environment by default.
 
     Prerequisites:
-    - Deno (https://docs.deno.com/runtime/getting_started/installation/).
+        Install the managed Deno runtime with ``pip install "dspy[deno]"``, or
+        install a compatible Deno 2.x release system-wide.
 
-    Example Usage:
-    ```python
-    code_string = "print('Hello'); 1 + 2"
-    with PythonInterpreter() as interp:
-        output = interp(code_string) # If final statement is non-None, prints the numeric result, else prints captured output
-    ```
+    Examples:
+        ```python
+        # Basic execution
+        with PythonInterpreter() as interp:
+            result = interp("print(1 + 2)")  # Returns "3"
+
+        # With host-side tools
+        def my_tool(question: str) -> str:
+            return "answer"
+
+        with PythonInterpreter(tools={"my_tool": my_tool}) as interp:
+            result = interp("print(my_tool(question='test'))")
+        ```
     """
 
     def __init__(
@@ -35,47 +248,76 @@ class PythonInterpreter:
         enable_env_vars: list[str] | None = None,
         enable_network_access: list[str] | None = None,
         sync_files: bool = True,
+        tools: dict[str, Callable[..., str]] | None = None,
+        output_fields: list[dict] | None = None,
+        callbacks: list[BaseCallback] | None = None,
     ) -> None:
         """
         Args:
             deno_command: command list to launch Deno.
-            enable_read_paths: Files or directories to allow reading from in the sandbox. 
-            enable_write_paths: Files or directories to allow writing to in the sandbox. 
+            enable_read_paths: Files or directories to allow reading from in the sandbox.
+            enable_write_paths: Files or directories to allow writing to in the sandbox.
                 All write paths will also be able to be read from for mounting.
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
             sync_files: If set, syncs changes within the sandbox back to original files after execution.
+            tools: Dictionary mapping tool names to callable functions.
+                   Each function should accept keyword arguments and return a string.
+                   Tools are callable directly from sandbox code by name.
+            output_fields: List of output field definitions for typed SUBMIT signature.
+                   Each dict should have 'name' and optionally 'type' keys.
+            callbacks: Optional instance-level callback handlers.
         """
         if isinstance(deno_command, dict):
-            deno_command = None  # no-op, just a guard in case someone passes a dict
+            raise TypeError("deno_command must be a list of strings, not a dict")
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
+        mounts = {}
+        for path in [*self.enable_read_paths, *self.enable_write_paths]:
+            if path:
+                virtual_path = os.path.basename(os.fspath(path))
+                host_path = _canonicalize_path(path)
+                if virtual_path in mounts and mounts[virtual_path] != host_path:
+                    raise CodeInterpreterError("Mounted files must have unique basenames inside the sandbox.")
+                mounts[virtual_path] = host_path
         self.enable_env_vars = enable_env_vars or []
         self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
+        self.tools = dict(tools) if tools else {}
+        self.output_fields = output_fields
+        self.callbacks = list(callbacks or [])
+        self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
+        self._uses_default_deno_command = not deno_command
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ["deno", "run"]
-
-            # Allow reading runner.js and explicitly enabled paths
-            allowed_read_paths = [self._get_runner_path()]
+            deno_executable = _find_deno_executable()
+            args = [
+                deno_executable,
+                "run",
+                "--no-config",
+                "--no-lock",
+                "--node-modules-dir=false",
+            ]
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
-            deno_dir = self._get_deno_dir()
-            if deno_dir:
-                allowed_read_paths.append(deno_dir)
-
-            if self.enable_read_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_read_paths)
-            if self.enable_write_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
+            deno_dir = self._get_deno_dir(deno_executable)
+            protected = [_canonicalize_path(self._get_runner_path()), *([_canonicalize_path(deno_dir)] if deno_dir else [])]
+            if any(_paths_overlap(_canonicalize_path(path), item) for path in self.enable_write_paths for item in protected):
+                raise CodeInterpreterError("Write paths cannot overlap PythonInterpreter runtime files.")
+            raw_read_paths = [
+                self._get_runner_path(),
+                *([deno_dir] if deno_dir else []),
+                *self.enable_read_paths,
+                *self.enable_write_paths,
+            ]
+            allowed_read_paths = [_canonicalize_path(p) for p in raw_read_paths]
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
-            self._env_arg  = ""
+            self._env_arg = ""
             if self.enable_env_vars:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]
                 args.append("--allow-env=" + ",".join(user_vars))
@@ -83,45 +325,97 @@ class PythonInterpreter:
             if self.enable_network_access:
                 args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
             if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+                args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
 
-            args.append(self._get_runner_path())
+            args.append(_canonicalize_path(self._get_runner_path()))
 
-            # For runner.js to load in env vars
-            if self._env_arg:
-                args.append(self._env_arg)
+            # For runner.js to load in env vars and revoke cache access after startup
+            args.append(self._env_arg)
+            if deno_dir:
+                args.append(f"--dspy-deno-dir={_canonicalize_path(deno_dir)}")
             self.deno_command = args
 
         self.deno_process = None
         self._mounted_files = False
+        self._last_diagnostic: str | None = None
+        self._owner_thread: int | None = None
+        self._handling_tool_call = False
+        self._pending_large_vars = {}
+        self._session_ended = False
 
-    _deno_dir_cache = None
+    execution_instructions = (
+        "Python runs in Pyodide/WebAssembly. State persists across executions, but subprocesses and native "
+        "extensions are unavailable. Python standard libraries such as re, json, collections, and math are available. "
+        "Host filesystem, environment, and network access require explicit permission."
+    )
 
-    @classmethod
-    def _get_deno_dir(cls) -> str | None:
-        if cls._deno_dir_cache:
-            return cls._deno_dir_cache
+    def _check_session_active(self) -> None:
+        if self._session_ended:
+            raise CodeInterpreterError(
+                "PythonInterpreter session has ended; create a new interpreter for a fresh session."
+            )
 
-        if "DENO_DIR" in os.environ:
-            cls._deno_dir_cache = os.environ["DENO_DIR"]
-            return cls._deno_dir_cache
+    def _raise_terminal_error(self, message: str, cause: Exception | None = None) -> NoReturn:
+        """End an unusable interpreter session and report its process/protocol failure."""
+        self._session_ended = True
+        if self.deno_process is not None and self.deno_process.poll() is None:
+            try:
+                self.deno_process.terminate()
+            except ProcessLookupError:
+                pass
+            self.deno_process.wait()
 
+        error = CodeInterpreterError(message)
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _write_message(self, message: str, context: str) -> None:
         try:
-            # Attempt to find deno in path or use just "deno"
-            # We can't easily know which 'deno' will be used if not absolute, but 'deno' is a safe bet
+            self.deno_process.stdin.write(message + "\n")
+            self.deno_process.stdin.flush()
+        except BrokenPipeError as e:
+            self._raise_terminal_error(
+                f"Deno process stopped {context}; interpreter state was lost. "
+                "Create a new interpreter for a fresh session.",
+                e,
+            )
+
+    def _check_thread_ownership(self) -> None:
+        """Ensure this interpreter is only used from a single thread."""
+        current_thread = threading.current_thread().ident
+        if self._owner_thread is None:
+            self._owner_thread = current_thread
+        elif self._owner_thread != current_thread:
+            raise RuntimeError(
+                "PythonInterpreter is not thread-safe and cannot be shared across threads. "
+                "Create a separate interpreter instance for each thread."
+            )
+
+    @staticmethod
+    def _get_deno_dir(deno_executable: str = "deno") -> str | None:
+        if "DENO_DIR" in os.environ:
+            return os.environ["DENO_DIR"]
+
+        return PythonInterpreter._query_deno_dir(deno_executable)
+
+    @staticmethod
+    @functools.cache
+    def _query_deno_dir(deno_executable: str) -> str | None:
+        try:
             result = subprocess.run(
-                ["deno", "info", "--json"],
+                [deno_executable, "info", "--json"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                env=_deno_subprocess_env(),
+                timeout=DENO_PROBE_TIMEOUT_SECONDS,
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
-                cls._deno_dir_cache = info.get("denoDir")
-                return cls._deno_dir_cache
+                return info.get("denoDir")
         except Exception:
             logger.warning("Unable to find the Deno cache dir.")
-            pass
 
         return None
 
@@ -147,134 +441,436 @@ class PythonInterpreter:
                     open(path, "a").close()
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
-            virtual_path = f"/sandbox/{os.path.basename(path)}"
-            mount_msg = json.dumps({"mount_file": str(path), "virtual_path": virtual_path})
-            self.deno_process.stdin.write(mount_msg + "\n")
-            self.deno_process.stdin.flush()
+            # Virtual path keeps the user's basename so sandbox code refers to the
+            # file by the name passed in; host_path is realpath'd so Deno's
+            # permission check matches the canonical entries in --allow-read.
+            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
+            host_path = _canonicalize_path(path)
+            self._send_request("mount_file", {"host_path": host_path, "virtual_path": virtual_path}, f"mounting {path}")
         self._mounted_files = True
 
     def _sync_files(self):
         if not self.enable_write_paths or not self.sync_files:
             return
         for path in self.enable_write_paths:
-            virtual_path = f"/sandbox/{os.path.basename(path)}"
-            sync_msg = json.dumps({
-                "sync_file": virtual_path,
-                "host_file": str(path)
-            })
-            self.deno_process.stdin.write(sync_msg + "\n")
-            self.deno_process.stdin.flush()
+            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
+            host_path = _canonicalize_path(path)
+            sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": host_path})
+            self._write_message(sync_msg, "while syncing files")
 
+    def _extract_parameters(self, fn: Callable) -> list[dict]:
+        """Extract parameter info from a callable for sandbox registration."""
+        sig = inspect.signature(fn)
+        params = []
+        for name, param in sig.parameters.items():
+            p = {"name": name}
+            # Only include type for simple types that work in function signatures
+            # Complex types like Union, Optional, etc. are not included
+            if param.annotation != inspect.Parameter.empty:
+                if param.annotation in SIMPLE_TYPES:
+                    p["type"] = param.annotation.__name__
+            if param.default != inspect.Parameter.empty:
+                p["default"] = param.default
+            params.append(p)
+        return params
+
+    def _register_tools(self) -> None:
+        """Register tools and output fields with the sandbox."""
+        if self._tools_registered:
+            return
+
+        # Build registration params with typed tool signatures
+        params = {}
+
+        if self.tools:
+            tools_info = []
+            for name, fn in self.tools.items():
+                tools_info.append({
+                    "name": name,
+                    "parameters": self._extract_parameters(fn)
+                })
+            params["tools"] = tools_info
+
+        if self.output_fields:
+            params["outputs"] = self.output_fields
+
+        # Skip if nothing to register
+        if not params:
+            self._tools_registered = True
+            return
+
+        self._send_request("register", params, "registering tools/outputs")
+        self._tools_registered = True
+
+    def _handle_tool_call(self, request: dict) -> None:
+        """Handle a tool call request from the sandbox."""
+        request_id = request["id"]
+        params = request.get("params", {})
+        tool_name = params.get("name")
+        kwargs = params.get("kwargs", {})
+
+        try:
+            self._handling_tool_call = True
+            try:
+                result = self.invoke_tool(tool_name, kwargs)
+            finally:
+                self._handling_tool_call = False
+            result = _make_jsonable(result)
+            if result is None or isinstance(result, str):
+                response = _jsonrpc_result({"value": str(result) if result is not None else "", "type": "string"}, request_id)
+            else:
+                try:
+                    response = _jsonrpc_result({"value": json.dumps(result, allow_nan=False), "type": "json"}, request_id)
+                except (TypeError, ValueError):
+                    response = _jsonrpc_result({"value": str(result), "type": "string"}, request_id)
+        except Exception as e:
+            error_type = type(e).__name__
+            error_code = JSONRPC_APP_ERRORS.get(error_type, JSONRPC_APP_ERRORS["Unknown"])
+            response = _jsonrpc_error(error_code, str(e), request_id, {"type": error_type})
+
+        self._write_message(response, "while returning a tool result")
+
+    @with_callbacks
+    def invoke_tool(self, tool_name: str, kwargs: dict[str, Any]) -> Any:
+        if tool_name not in self.tools:
+            raise CodeInterpreterError(f"Unknown tool: {tool_name}")
+        result = self.tools[tool_name](**kwargs)
+        return _await_in_sync(result) if asyncio.iscoroutine(result) else result
 
     def _ensure_deno_process(self) -> None:
-        if self.deno_process is None or self.deno_process.poll() is not None:
+        self._check_session_active()
+
+        if self.deno_process is not None:
+            exit_code = self.deno_process.poll()
+            if exit_code is None:
+                return
+            self._raise_terminal_error(
+                f"Deno process exited (code {exit_code}); interpreter state was lost. "
+                "Create a new interpreter for a fresh session."
+            )
+
+        self.start()
+
+    def _spawn_process(self) -> None:
+        if self._uses_default_deno_command:
+            _validate_deno_version(self.deno_command[0])
+
+        try:
+            self.deno_process = subprocess.Popen(
+                self.deno_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="UTF-8",
+                env=_deno_subprocess_env() if self._uses_default_deno_command else os.environ.copy(),
+            )
+        except FileNotFoundError as e:
+            install_instructions = (
+                "Deno executable not found. Install DSPy's managed Deno runtime with:\n"
+                '> pip install "dspy[deno]"\n'
+                "Alternatively, install Deno system-wide:\n"
+                "> curl -fsSL https://deno.land/install.sh | sh\n"
+                "*or*, on macOS with Homebrew:\n"
+                "> brew install deno\n"
+                "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
+            )
+            raise CodeInterpreterError(install_instructions) from e
+        self._health_check()
+
+    _MAX_SKIP_LINES = 100
+
+    def _read_response_line(self, context: str) -> str:
+        """Read one stdout line from Deno or raise a process-level error."""
+        response_line = self.deno_process.stdout.readline().strip()
+        if response_line:
+            return response_line
+
+        diagnostic = f" (last sandbox diagnostic: {self._last_diagnostic})" if self._last_diagnostic else ""
+        exit_code = self.deno_process.poll()
+        if exit_code is not None:
+            stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+            self._raise_terminal_error(f"Deno exited (code {exit_code}) {context}: {stderr}{diagnostic}")
+        self._raise_terminal_error(f"No response {context}{diagnostic}")
+
+    def _parse_response_line(self, response_line: str, context: str) -> dict | None:
+        """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
+        if not response_line.startswith("{"):
+            logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
+            return None
+
+        try:
+            return json.loads(response_line)
+        except json.JSONDecodeError:
+            logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
+            return None
+
+    def _next_request_id(self) -> str:
+        self._last_diagnostic = None
+        return secrets.token_hex(16)
+
+    def _handle_out_of_band_message(self, msg: dict, context: str) -> bool:
+        """Consume a message that is not a response to any request (a notification
+        or an unsolicited id-less error), returning True so the caller keeps
+        reading for the real response. Protocol errors with no id are terminal.
+        """
+        if "method" in msg and "id" not in msg:
+            payload, level = msg.get("params"), logging.DEBUG
+        elif "error" in msg and msg.get("id") is None:
+            payload, level = msg["error"], logging.WARNING
+            if isinstance(payload, dict) and payload.get("code") in JSONRPC_PROTOCOL_ERRORS.values():
+                self._raise_terminal_error(f"Protocol error {context}: {payload.get('message', msg)}")
+        else:
+            return False
+
+        self._last_diagnostic = (payload.get("message") if isinstance(payload, dict) else None) or str(msg)
+        logger.log(level, "Skipping out-of-band sandbox message %s: %s", context, self._last_diagnostic)
+        return True
+
+    def _send_request(self, method: str, params: dict, context: str) -> dict:
+        """Send a JSON-RPC request and return the parsed response.
+
+        Non-JSON lines (e.g. Pyodide package loading messages) are skipped,
+        up to ``_MAX_SKIP_LINES`` to prevent unbounded blocking.
+        """
+        request_id = self._next_request_id()
+        msg = _jsonrpc_request(method, params, request_id)
+        self._write_message(msg, context)
+
+        skipped = 0
+        while skipped <= self._MAX_SKIP_LINES:
+            response_line = self._read_response_line(context)
+            response = self._parse_response_line(response_line, context)
+            if response is None or self._handle_out_of_band_message(response, context):
+                skipped += 1
+                continue
+
+            if response.get("id") != request_id:
+                self._raise_terminal_error(
+                    f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}"
+                )
+            if "error" in response:
+                error = response["error"]
+                if not isinstance(error, dict):
+                    self._raise_terminal_error(f"Malformed error response {context}: {response}")
+                self._raise_terminal_error(f"Error {context}: {error.get('message', 'Unknown error')}")
+            if "result" not in response:
+                self._raise_terminal_error(f"Unexpected response {context}: {response}")
+            return response
+
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) {context}")
+
+    def _health_check(self) -> None:
+        """Verify the subprocess is alive by executing a simple expression."""
+        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
+        result = response["result"]
+        if not isinstance(result, dict) or result.get("output", "").strip() != "2":
+            self._raise_terminal_error(f"Unexpected ping response: {response}")
+
+    def _to_json_compatible(self, value: Any) -> Any:
+        """Recursively convert Python values to JSON-compatible types."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        elif isinstance(value, BaseModel):
+            return self._to_json_compatible(_dump_pydantic(value))
+        elif isinstance(value, dict):
+            return {k: self._to_json_compatible(v) for k, v in value.items()}
+        elif isinstance(value, (list, tuple)):
+            return [self._to_json_compatible(v) for v in value]
+        elif isinstance(value, set):
             try:
-                self.deno_process = subprocess.Popen(
-                    self.deno_command,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="UTF-8",
-                    env=os.environ.copy()
-                )
-            except FileNotFoundError as e:
-                install_instructions = (
-                    "Deno executable not found. Please install Deno to proceed.\n"
-                    "Installation instructions:\n"
-                    "> curl -fsSL https://deno.land/install.sh | sh\n"
-                    "*or*, on macOS with Homebrew:\n"
-                    "> brew install deno\n"
-                    "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
-                )
-                raise InterpreterError(install_instructions) from e
+                return sorted(self._to_json_compatible(v) for v in value)
+            except TypeError:
+                return [self._to_json_compatible(v) for v in value]
+        else:
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._to_json_compatible(coerced)
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
-        # Insert Python assignments for each variable at the top of the code
-        injected_lines = []
-        for key, value in variables.items():
-            if not key.isidentifier():
-                raise InterpreterError(f"Invalid variable name: '{key}'")
-            python_value = self._serialize_value(value)
-            injected_lines.append(f"{key} = {python_value}")
-        injected_code = "\n".join(injected_lines) + "\n" + code
-        return injected_code
+        """Insert Python assignments for each variable at the top of the code."""
+        for key in variables:
+            if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
+                raise CodeInterpreterError(f"Invalid variable name: '{key}'")
+
+        large_vars = {}
+        small_assignments = []
+        for k, v in variables.items():
+            serialized = self._serialize_value(v)
+            if len(serialized) > LARGE_VAR_THRESHOLD:
+                large_vars[k] = json.dumps(self._to_json_compatible(v))
+            else:
+                small_assignments.append(f"{k} = {serialized}")
+
+        self._pending_large_vars = large_vars
+
+        if large_vars:
+            large_assignments = [f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())" for k in large_vars]
+            assignments = ["import json"] + small_assignments + large_assignments
+        else:
+            assignments = small_assignments
+
+        return "\n".join(assignments) + "\n" + code if assignments else code
 
     def _serialize_value(self, value: Any) -> str:
-        # Basic safe serialization
-        if isinstance(value, str):
-            return repr(value)
-        elif isinstance(value, (int, float, bool)):
-            return str(value)
-        elif value is None:
-            return "None"
-        elif isinstance(value, list) or isinstance(value, dict):
-            return json.dumps(value)
-        else:
-            raise InterpreterError(f"Unsupported value type: {type(value).__name__}")
+        """Serialize a Python value to a Python literal string for injection.
 
+        Sets and tuples are converted to lists for JSON round-trip compatibility,
+        since the sandbox returns values via JSON which doesn't support these types.
+        """
+        if value is None:
+            return "None"
+        elif isinstance(value, str):
+            return repr(value)
+        elif isinstance(value, bool):
+            # Must check bool before int since bool is a subclass of int
+            return "True" if value else "False"
+        elif isinstance(value, float) and not math.isfinite(value):
+            # str(inf/-inf/nan) returns bare words ("inf", "nan") that are not valid
+            # Python literals; wrap them so they evaluate correctly in the sandbox.
+            return f"float('{value}')"
+        elif isinstance(value, (int, float)):
+            return str(value)
+        elif isinstance(value, BaseModel):
+            return self._serialize_value(_dump_pydantic(value))
+        elif isinstance(value, (list, tuple)):
+            # Tuples become lists for JSON compatibility
+            items = ", ".join(self._serialize_value(item) for item in value)
+            return f"[{items}]"
+        elif isinstance(value, dict):
+            items = ", ".join(
+                f"{self._serialize_value(k)}: {self._serialize_value(v)}"
+                for k, v in value.items()
+            )
+            return f"{{{items}}}"
+        elif isinstance(value, set):
+            # Sets become sorted lists (or unsorted if mixed types) for JSON compatibility
+            try:
+                sorted_items = sorted(value)
+            except TypeError:
+                sorted_items = list(value)
+            items = ", ".join(self._serialize_value(item) for item in sorted_items)
+            return f"[{items}]"
+        else:
+            try:
+                coerced = to_jsonable_python(value)
+            except PydanticSerializationError:
+                raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}") from None
+            return self._serialize_value(coerced)
+
+    def _inject_large_var(self, name: str, value: str) -> None:
+        """Inject a large variable via the virtual filesystem."""
+        self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
+
+    @with_callbacks
     def execute(
         self,
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
+        if self._handling_tool_call:
+            raise CodeInterpreterError("PythonInterpreter cannot execute recursively from one of its tools.")
+        self._check_session_active()
+        self._check_thread_ownership()
         variables = variables or {}
         code = self._inject_variables(code, variables)
         self._ensure_deno_process()
         self._mount_files()
+        self._register_tools()
 
-        # Send the code as JSON
-        input_data = json.dumps({"code": code})
-        try:
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
-        except BrokenPipeError:
-            # If the process died, restart and try again once
+        for name, value in self._pending_large_vars.items():
+            self._inject_large_var(name, value)
+
+        # Send the code as JSON-RPC request
+        execute_request_id = self._next_request_id()
+        input_data = _jsonrpc_request("execute", {"code": code}, execute_request_id)
+        self._write_message(input_data, "during execution")
+
+        # Read and handle messages until we get the final output.
+        # Loop is needed because tool calls require back-and-forth communication.
+        skipped = 0
+        while skipped <= self._MAX_SKIP_LINES:
+            output_line = self._read_response_line("during execution")
+            msg = self._parse_response_line(output_line, "during execution")
+            if msg is None:
+                skipped += 1
+                continue
+
+            # Handle incoming requests (tool calls from sandbox)
+            if "method" in msg:
+                if msg["method"] == "tool_call":
+                    self._handle_tool_call(msg)
+                    continue
+
+            if self._handle_out_of_band_message(msg, "during execution"):
+                skipped += 1
+                continue
+
+            # Handle success response
+            if "result" in msg:
+                if msg.get("id") != execute_request_id:
+                    self._raise_terminal_error(
+                        f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
+                    )
+                result = msg["result"]
+                if not isinstance(result, dict):
+                    self._raise_terminal_error(f"Malformed execution result: {msg}")
+                self._sync_files()
+                # Check for SUBMIT (encoded as success with "final" field)
+                if "final" in result:
+                    return FinalOutput(result["final"])
+                return result.get("output", None)
+
+            # Handle error response
+            if "error" in msg:
+                if msg.get("id") != execute_request_id:
+                    self._raise_terminal_error(
+                        f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}"
+                    )
+                error = msg["error"]
+                if not isinstance(error, dict):
+                    self._raise_terminal_error(f"Malformed execution error: {msg}")
+                error_code = error.get("code", JSONRPC_APP_ERRORS["Unknown"])
+                error_message = error.get("message", "Unknown error")
+                error_data = error.get("data", {})
+                if not isinstance(error_data, dict):
+                    self._raise_terminal_error(f"Malformed execution error data: {msg}")
+                error_type = error_data.get("type", "Error")
+
+                if error_code == JSONRPC_APP_ERRORS["SyntaxError"]:
+                    raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
+                if error_code in JSONRPC_APP_ERRORS.values():
+                    raise CodeExecutionError(f"{error_type}: {error_data.get('args') or error_message}")
+                self._raise_terminal_error(f"{error_type}: {error_data.get('args') or error_message}")
+
+            # Unexpected message format - neither a recognized method nor a response
+            self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")
+
+        self._raise_terminal_error(f"Too many skipped lines ({skipped}) during execution")
+
+    @with_callbacks
+    def start(self) -> None:
+        """Initialize the Deno/Pyodide sandbox.
+
+        This pre-warms the sandbox by starting the Deno subprocess.
+        Can be called explicitly for pooling, or will be called lazily
+        on first execute().
+
+        Idempotent while the session is active. A stopped or shut-down session
+        cannot be restarted because its Python state cannot be reconstructed.
+        """
+        if self.deno_process is None:
+            self._check_session_active()
+            self._spawn_process()
+        else:
             self._ensure_deno_process()
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
-
-        # Read one JSON line from stdout
-        output_line = self.deno_process.stdout.readline().strip()
-        if not output_line:
-            # Possibly the subprocess died or gave no output
-            err_output = self.deno_process.stderr.read()
-            raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
-
-        # Parse that line as JSON
-        try:
-            result = json.loads(output_line)
-        except json.JSONDecodeError:
-            # If not valid JSON, just return raw text
-            result = {"output": output_line}
-
-        # If we have an error, determine if it's a SyntaxError or other error using error.errorType.
-        if "error" in result:
-            error_msg = result["error"]
-            error_type = result.get("errorType", "Sandbox Error")
-            if error_type == "FinalAnswer":
-                # The `FinalAnswer` trick to receive output from the sandbox interpreter,
-                # just simply replace the output with the arguments.
-                result["output"] = result.get("errorArgs", None)
-            elif error_type == "SyntaxError":
-                raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
-            else:
-                raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
-
-        # If there's no error or got `FinalAnswer`, return the "output" field
-        self._sync_files()
-        return result.get("output", None)
 
     def __enter__(self):
         return self
 
-    # All exception fields are ignored and the runtime will automatically re-raise the exception
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_val: BaseException | None,
-        _exc_tb: TracebackType | None,
-    ):
+    def __exit__(self, *_):
         self.shutdown()
 
     def __call__(
@@ -284,11 +880,17 @@ class PythonInterpreter:
     ) -> Any:
         return self.execute(code, variables)
 
+    @with_callbacks
     def shutdown(self) -> None:
+        session_was_active = not self._session_ended
+        self._session_ended = True
         if self.deno_process and self.deno_process.poll() is None:
-            shutdown_message = json.dumps({"shutdown": True}) + "\n"
-            self.deno_process.stdin.write(shutdown_message)
-            self.deno_process.stdin.flush()
-            self.deno_process.stdin.close()
+            if session_was_active:
+                self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
+                self.deno_process.stdin.flush()
+                self.deno_process.stdin.close()
+            else:
+                self.deno_process.terminate()
             self.deno_process.wait()
-            self.deno_process = None
+        self.deno_process = None
+        self._owner_thread = None

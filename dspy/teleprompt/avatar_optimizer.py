@@ -28,23 +28,18 @@ Task:
 (3) Lastly, specify the modification in tools used that can lead to improved performance on the negative inputs."""
 
     instruction: str = dspy.InputField(
-        prefix="Instruction: ",
         desc="Instruction for the actor to execute the task",
     )
     actions: list[str] = dspy.InputField(
-        prefix="Actions: ",
         desc="Actions actor can take to complete the task",
     )
     pos_input_with_metrics: list[EvalResult] = dspy.InputField(
-        prefix="Positive Inputs: ",
         desc="Positive inputs along with their score on a evaluation metric and actions taken",
     )
     neg_input_with_metrics: list[EvalResult] = dspy.InputField(
-        prefix="Negative Inputs: ",
         desc="Negative inputs along with their score on a evaluation metric and actions taken",
     )
     feedback: str = dspy.OutputField(
-        prefix="Feedback: ",
         desc="Feedback for the actor to improve the performance of negative inputs",
     )
 
@@ -59,15 +54,12 @@ Your task is to incorporate the feedback and generate a detailed instruction for
 Make sure that the new instruction talks about how to use the tools effectively and should be no more than 3 paragraphs long. The previous instruction contains general guidelines that you must retain in the new instruction."""
 
     previous_instruction: str = dspy.InputField(
-        prefix="Previous Instruction: ",
         desc="Previous instruction for the actor to execute the task",
     )
     feedback: str = dspy.InputField(
-        prefix="Feedback: ",
         desc="Feedback for the actor to improve the performance of negative inputs",
     )
     new_instruction: str = dspy.OutputField(
-        prefix="New Instruction: ",
         desc="New instruction for the actor to execute the task",
     )
 

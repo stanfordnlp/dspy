@@ -7,6 +7,7 @@ from pathlib import Path
 import cloudpickle
 import orjson
 
+from dspy.utils.pickle_by_value import serialize_by_value
 from dspy.utils.saving import get_dependency_versions
 
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
@@ -156,10 +157,18 @@ class BaseModule:
     def dump_state(self, json_mode=True):
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
-    def load_state(self, state):
-        for name, param in self.named_parameters():
-            param.load_state(state[name])
+    def load_state(self, state, *, allow_unsafe_lm_state=False):
+        from dspy import Module
 
+        def _apply(module):
+            for name, param in module.named_parameters():
+                if isinstance(param, Module):
+                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+                else:
+                    param.load_state(state[name])
+
+        _apply(self.deepcopy())  # trial run raises before self is touched
+        _apply(self)
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
@@ -205,11 +214,7 @@ class BaseModule:
             logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
                           'this, prefer saving using json format using module.save("module.json").')
             try:
-                modules_to_serialize = modules_to_serialize or []
-                for module in modules_to_serialize:
-                    cloudpickle.register_pickle_by_value(module)
-
-                with open(path / "program.pkl", "wb") as f:
+                with serialize_by_value(modules_to_serialize), open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
             except Exception as e:
                 raise RuntimeError(
@@ -243,7 +248,7 @@ class BaseModule:
         else:
             raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
-    def load(self, path, allow_pickle=False):
+    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False):
         """Load the saved module. You may also want to check out dspy.load, if you want to
         load an entire program, not just the state for an existing program.
 
@@ -251,6 +256,9 @@ class BaseModule:
             path (str): Path to the saved state file, which should be a .json or a .pkl file
             allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
                 This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
+            allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
+                `api_base`, `base_url`, and `model_list`) from loaded state and allows importing custom LM classes.
+                Enable only for trusted files.
         """
         path = Path(path)
 
@@ -278,4 +286,4 @@ class BaseModule:
                     "on the loaded model, please consider loading the model in the same environment as the "
                     "saving environment."
                 )
-        self.load_state(state)
+        self.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)

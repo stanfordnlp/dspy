@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from typing import Any
 from unittest import mock
@@ -37,6 +38,15 @@ class DictDummyLM(dspy.clients.lm.LM):
 
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
+
+
+def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    correct = float(example.output == prediction.output)
+    return dspy.Prediction(
+        score=(correct + 1.0) / 2,
+        objective_scores={"correctness": correct, "incorrectness": 1.0 - correct},
+        feedback="Return the expected answer.",
+    )
 
 
 def bad_metric(example, prediction):
@@ -87,6 +97,92 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection
     assert captured_kwargs["callback_metadata"] == expected_callback_metadata
 
 
+def test_gepa_adapter_evaluate_keeps_outputs_aligned_when_program_crashes(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class CrashingModule(dspy.Module):
+        def forward(self, **kwargs):
+            if kwargs["input"] == "crash":
+                raise RuntimeError("boom")
+            return dspy.Prediction(output=kwargs["input"])
+
+    def always_one_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+        return 1.0
+
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=always_one_metric,
+        feedback_map={},
+        failure_score=-0.5,
+    )
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: CrashingModule(),
+    )
+
+    batch = [
+        Example(input="first", output="first").with_inputs("input"),
+        Example(input="crash", output="crash").with_inputs("input"),
+        Example(input="third", output="third").with_inputs("input"),
+    ]
+
+    with dspy.context(max_errors=100):
+        result = adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
+
+    # gepa's valset evaluation indexes outputs and scores by batch position, so a
+    # crashed example must keep its slot rather than shrinking the lists.
+    assert len(result.outputs) == 3
+    assert len(result.scores) == 3
+    assert result.outputs[0].output == "first"
+    assert result.outputs[1] is None
+    assert result.outputs[2].output == "third"
+    assert result.scores == [1.0, -0.5, 1.0]
+    assert [t["example_ind"] for t in result.trajectories] == [0, 2]
+
+
+def test_gepa_adapter_forwards_sparse_objective_scores():
+    from dspy.teleprompt.gepa import gepa_utils
+
+    adapter = gepa_utils.DspyAdapter(SimpleModule("input -> output"), multi_objective_metric, {})
+    evaluation = adapter._make_evaluation_batch(
+        outputs=[None, None],
+        raw_scores=[
+            dspy.Prediction(score=0.75, objective_scores={"quality": 1.0, "cost": 0.5}),
+            dspy.Prediction(score=0.25),
+        ],
+        trajectories=None,
+    )
+
+    assert evaluation.scores == [0.75, 0.25]
+    assert evaluation.objective_scores == [{"quality": 1.0, "cost": 0.5}, {}]
+
+
+def test_gepa_flex_evaluation_forwards_metric_objective_scores(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_flex_utils
+
+    example = Example(input="question", output="answer")
+    prediction = dspy.Prediction(output="answer")
+    monkeypatch.setattr(
+        gepa_flex_utils.bootstrap_trace_module,
+        "bootstrap_trace_data",
+        lambda **kwargs: [{"example_ind": 0, "example": example, "prediction": prediction, "trace": []}],
+    )
+
+    evaluation = gepa_flex_utils.evaluate_with_trace(
+        program=SimpleModule("input -> output"),
+        batch=[example],
+        metric_fn=multi_objective_metric,
+        num_threads=1,
+        failure_score=0.0,
+        callback_metadata={},
+        capture_traces=True,
+    )
+
+    assert evaluation.scores == [1.0]
+    assert evaluation.objective_scores == [{"correctness": 1.0, "incorrectness": 0.0}]
+
+
 @pytest.fixture
 def mock_mlflow():
     mock_mlflow = mock.MagicMock()
@@ -135,8 +231,8 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
     class TimeReader(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.hour_predictor = dspy.ChainOfThought("clock_photo: dspy.Image -> hour: int")
-            self.minute_predictor = dspy.ChainOfThought("clock_photo: dspy.Image -> minute: int")
+            self.hour_predictor = dspy.Predict("clock_photo: dspy.Image -> reasoning: str, hour: int")
+            self.minute_predictor = dspy.Predict("clock_photo: dspy.Image -> reasoning: str, minute: int")
 
             self.parallel = dspy.Parallel(num_threads=2)
 
@@ -188,7 +284,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg/500px-Pendulum_clock_by_Jacob_Kock%2C_antique_furniture_photography%2C_IMG_0931_edit.jpg",
-                download=False,
             ),
             hour=8,
             minute=18,
@@ -196,7 +291,6 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
         Example(
             clock_photo=dspy.Image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Telechron_clock_2H07-Br_Administrator.JPG/960px-Telechron_clock_2H07-Br_Administrator.JPG",
-                download=False,
             ),
             hour=4,
             minute=16,
@@ -204,14 +298,26 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
     ]
     o = optimizer.compile(student, trainset=trainset, valset=trainset)
 
-    assert o.hour_predictor.predict.signature.instructions == "Task\n- Input: clock_photo (an image of an analog clock)\n- Output: hour (an integer 1\u201312). Output only the hour number with no extra text.\n\nGoal\n- Determine the correct hour by accurately identifying the hour hand and its position relative to the hour marks, taking into account the minute hand\u2019s position (since the hour hand moves continuously between numbers).\n\nStep-by-step procedure\n1) Find the dial and pivot\n- Locate the clock face and the central pivot where all hands originate.\n- Ignore decorative elements that do not originate at the central pivot (e.g., ornaments, shadows, reflections).\n\n2) Determine the 12 o\u2019clock direction\n- Prefer the numeral \u201c12\u201d if visible. Otherwise use the upright orientation of numerals or the topmost marker.\n- If the photo is rotated, mentally rotate so numerals read upright: 12 at top, 3 right, 6 bottom, 9 left.\n\n3) Identify the hands correctly (do not assume a default \u201c10:10\u201d)\n- Second hand: thinnest, often with a counterweight, may span very long; ignore for the hour.\n- Minute hand: longest, usually reaches or nearly reaches the outer minute tick marks.\n- Hour hand: shortest, usually thicker, typically ends well inside the numerals.\n- If ambiguous, classify by tip distance from center: minute \u2265 hour. Use the piece actually anchored at the pivot, not its shadow.\n\n4) Measure positions (angles)\n- Measure each hand\u2019s angle clockwise from 12 o\u2019clock.\n- Minute angle \u03b8m \u2248 position of the minute hand; hour angle \u03b8h \u2248 position of the hour hand.\n\n5) Use minute-hand position to validate the hour-hand location\n- The hour hand advances 0.5\u00b0 per minute (i.e., 1/12 of the distance between hour marks every 5 minutes).\n- Sanity check examples:\n  - ~15 minutes past: hour hand \u2248 1/4 of the way from the current hour toward the next.\n  - ~30 minutes: \u2248 halfway.\n  - ~45 minutes: \u2248 3/4 of the way.\n- If this relationship doesn\u2019t hold, you likely swapped hour and minute hands\u2014re-identify them.\n\n6) Determine the hour\n- Compute the \u201clast passed\u201d hour: H = floor((\u03b8h mod 360) / 30). Map 0 to 12 (i.e., if floor(...) = 0, H = 12).\n- Do not round up to the next hour. The correct hour is the number the hour hand has most recently passed, not the one it is approaching.\n- If the hour hand appears exactly on an hour mark but the minute hand is not at 12, treat it as still between hours and choose the lower (last passed) hour.\n\n7) Edge cases and robustness\n- Stylized or missing numerals: rely on the 12/3/6/9 axes and tick marks rather than numeral shapes.\n- Roman numerals: \u201c4\u201d may be IIII; positions are unchanged.\n- Ignore mirrored effects, reflections, and shadows; only consider hands anchored at the pivot.\n- Overlap times: if hands nearly overlap, use \u03b8m to ensure the hour hand offset matches 0.5\u00b0 per minute.\n- Return 12, not 0, when appropriate (e.g., just after 12:00).\n\nOutput format\n- Provide only: hour as an integer in [1,12], with no additional text.\n\nCommon error prevention (from prior mistakes)\n- Do not confuse the minute hand for the hour hand; verify by length and reach to the outer tick marks.\n- Do not infer times like \u201c10:10\u201d by default; always read from the actual hand angles.\n- Ensure the hour chosen matches the \u201clast passed\u201d number given the minute hand\u2019s position (e.g., at ~:16, the hour hand must be just past the hour, not near 1 when the minute hand is at 3)."
-    assert o.minute_predictor.predict.signature.instructions == "Task: From the image field clock_photo (an analog clock), output the minute value as an integer from 0\u201359 in the field minute. Output only the minute number\u2014no text or other fields.\n\nWhat to analyze\n- Clock face orientation: Identify where \u201c12\u201d is on the dial. Use the numerals (Arabic or Roman, stylized fonts) or the positions of 3, 6, 9, 12 to set the reference. If the photo is tilted, measure angles relative to the clock face, not the image frame.\n- Hands identification (do not confuse them):\n  - Minute hand: typically the longest solid hand reaching near the minute ticks/outer ring; thicker than the second hand; often has a pronounced pointer tip.\n  - Hour hand: shorter and thicker, typically ends near the numerals.\n  - Second hand (if present): the thinnest, often the longest, usually with a counterweight; ignore it for minute reading.\n  - If two non-second hands look similar, the one whose tip reaches closer to the minute tick ring is the minute hand.\n- Ticks and numerals: Each numeral-to-numeral segment equals 5 minutes. If minute tick marks exist, use them. If not, divide each numeral interval evenly into five.\n\nHow to compute the minute\n1. Locate the clock center and the minute hand\u2019s tip.\n2. Determine the angle of the minute hand from the 12 o\u2019clock direction, increasing clockwise.\n3. Convert angle to minutes: minute_estimate = (angle_from_12 / 6). Round to the nearest whole minute.\n   - Mapping: 12 \u2192 0, 1 \u2192 5, 2 \u2192 10, 3 \u2192 15, 4 \u2192 20, 5 \u2192 25, 6 \u2192 30, 7 \u2192 35, 8 \u2192 40, 9 \u2192 45, 10 \u2192 50, 11 \u2192 55.\n   - If the tip is slightly past a numeral (e.g., just past 3), do not snap to the numeral; round to the nearest minute (e.g., 16 instead of 15).\n4. Consistency check with the hour hand (useful to avoid off-by-one and hand mix-ups):\n   - The hour hand moves continuously: it advances 0.5 degrees per minute (i.e., 1/12 of the way to the next numeral every 5 minutes).\n   - If your minute_estimate is an exact multiple of 5 but the hour hand is clearly between hour markers (not aligned with an hour), re-examine: the minute hand is likely slightly past the numeral; adjust to the nearest minute accordingly.\n   - If the minute hand choice is ambiguous, infer the minute from the hour hand\u2019s fraction toward the next hour: minute \u2248 fraction_between_hour_markers \u00d7 60, then choose the hand assignment that matches this.\n5. Edge cases:\n   - Overlapping hands: Look at which tip extends farther toward the tick ring to identify the minute hand.\n   - Strong perspective or glare: Use the line from center to the visible tip; ignore reflections.\n   - No minute ticks: Evenly interpolate between numerals.\n   - Subdials or decorative elements (e.g., pendulum windows) are not the minute indicator; use the main dial only.\n\nOutput format\n- Return only the integer minute value (0\u201359) in the minute field.\n- If the angle computes to 60, output 0.\n\nError prevention reminders\n- Do not treat the hour hand as the minute hand.\n- Do not use the second hand to compute minutes.\n- Do not assume the minute hand is exactly on a numeral\u2014check for slight offsets and round to the nearest minute.\n- Ensure the final minute agrees with the hour hand\u2019s position trend (hour hand slightly past an hour implies minutes > 0)."
+    assert o.hour_predictor.signature.instructions == "Task\n- Input: clock_photo (an image of an analog clock)\n- Output: hour (an integer 1\u201312). Output only the hour number with no extra text.\n\nGoal\n- Determine the correct hour by accurately identifying the hour hand and its position relative to the hour marks, taking into account the minute hand\u2019s position (since the hour hand moves continuously between numbers).\n\nStep-by-step procedure\n1) Find the dial and pivot\n- Locate the clock face and the central pivot where all hands originate.\n- Ignore decorative elements that do not originate at the central pivot (e.g., ornaments, shadows, reflections).\n\n2) Determine the 12 o\u2019clock direction\n- Prefer the numeral \u201c12\u201d if visible. Otherwise use the upright orientation of numerals or the topmost marker.\n- If the photo is rotated, mentally rotate so numerals read upright: 12 at top, 3 right, 6 bottom, 9 left.\n\n3) Identify the hands correctly (do not assume a default \u201c10:10\u201d)\n- Second hand: thinnest, often with a counterweight, may span very long; ignore for the hour.\n- Minute hand: longest, usually reaches or nearly reaches the outer minute tick marks.\n- Hour hand: shortest, usually thicker, typically ends well inside the numerals.\n- If ambiguous, classify by tip distance from center: minute \u2265 hour. Use the piece actually anchored at the pivot, not its shadow.\n\n4) Measure positions (angles)\n- Measure each hand\u2019s angle clockwise from 12 o\u2019clock.\n- Minute angle \u03b8m \u2248 position of the minute hand; hour angle \u03b8h \u2248 position of the hour hand.\n\n5) Use minute-hand position to validate the hour-hand location\n- The hour hand advances 0.5\u00b0 per minute (i.e., 1/12 of the distance between hour marks every 5 minutes).\n- Sanity check examples:\n  - ~15 minutes past: hour hand \u2248 1/4 of the way from the current hour toward the next.\n  - ~30 minutes: \u2248 halfway.\n  - ~45 minutes: \u2248 3/4 of the way.\n- If this relationship doesn\u2019t hold, you likely swapped hour and minute hands\u2014re-identify them.\n\n6) Determine the hour\n- Compute the \u201clast passed\u201d hour: H = floor((\u03b8h mod 360) / 30). Map 0 to 12 (i.e., if floor(...) = 0, H = 12).\n- Do not round up to the next hour. The correct hour is the number the hour hand has most recently passed, not the one it is approaching.\n- If the hour hand appears exactly on an hour mark but the minute hand is not at 12, treat it as still between hours and choose the lower (last passed) hour.\n\n7) Edge cases and robustness\n- Stylized or missing numerals: rely on the 12/3/6/9 axes and tick marks rather than numeral shapes.\n- Roman numerals: \u201c4\u201d may be IIII; positions are unchanged.\n- Ignore mirrored effects, reflections, and shadows; only consider hands anchored at the pivot.\n- Overlap times: if hands nearly overlap, use \u03b8m to ensure the hour hand offset matches 0.5\u00b0 per minute.\n- Return 12, not 0, when appropriate (e.g., just after 12:00).\n\nOutput format\n- Provide only: hour as an integer in [1,12], with no additional text.\n\nCommon error prevention (from prior mistakes)\n- Do not confuse the minute hand for the hour hand; verify by length and reach to the outer tick marks.\n- Do not infer times like \u201c10:10\u201d by default; always read from the actual hand angles.\n- Ensure the hour chosen matches the \u201clast passed\u201d number given the minute hand\u2019s position (e.g., at ~:16, the hour hand must be just past the hour, not near 1 when the minute hand is at 3)."
+    assert o.minute_predictor.signature.instructions == "Task: From the image field clock_photo (an analog clock), output the minute value as an integer from 0\u201359 in the field minute. Output only the minute number\u2014no text or other fields.\n\nWhat to analyze\n- Clock face orientation: Identify where \u201c12\u201d is on the dial. Use the numerals (Arabic or Roman, stylized fonts) or the positions of 3, 6, 9, 12 to set the reference. If the photo is tilted, measure angles relative to the clock face, not the image frame.\n- Hands identification (do not confuse them):\n  - Minute hand: typically the longest solid hand reaching near the minute ticks/outer ring; thicker than the second hand; often has a pronounced pointer tip.\n  - Hour hand: shorter and thicker, typically ends near the numerals.\n  - Second hand (if present): the thinnest, often the longest, usually with a counterweight; ignore it for minute reading.\n  - If two non-second hands look similar, the one whose tip reaches closer to the minute tick ring is the minute hand.\n- Ticks and numerals: Each numeral-to-numeral segment equals 5 minutes. If minute tick marks exist, use them. If not, divide each numeral interval evenly into five.\n\nHow to compute the minute\n1. Locate the clock center and the minute hand\u2019s tip.\n2. Determine the angle of the minute hand from the 12 o\u2019clock direction, increasing clockwise.\n3. Convert angle to minutes: minute_estimate = (angle_from_12 / 6). Round to the nearest whole minute.\n   - Mapping: 12 \u2192 0, 1 \u2192 5, 2 \u2192 10, 3 \u2192 15, 4 \u2192 20, 5 \u2192 25, 6 \u2192 30, 7 \u2192 35, 8 \u2192 40, 9 \u2192 45, 10 \u2192 50, 11 \u2192 55.\n   - If the tip is slightly past a numeral (e.g., just past 3), do not snap to the numeral; round to the nearest minute (e.g., 16 instead of 15).\n4. Consistency check with the hour hand (useful to avoid off-by-one and hand mix-ups):\n   - The hour hand moves continuously: it advances 0.5 degrees per minute (i.e., 1/12 of the way to the next numeral every 5 minutes).\n   - If your minute_estimate is an exact multiple of 5 but the hour hand is clearly between hour markers (not aligned with an hour), re-examine: the minute hand is likely slightly past the numeral; adjust to the nearest minute accordingly.\n   - If the minute hand choice is ambiguous, infer the minute from the hour hand\u2019s fraction toward the next hour: minute \u2248 fraction_between_hour_markers \u00d7 60, then choose the hand assignment that matches this.\n5. Edge cases:\n   - Overlapping hands: Look at which tip extends farther toward the tick ring to identify the minute hand.\n   - Strong perspective or glare: Use the line from center to the visible tip; ignore reflections.\n   - No minute ticks: Evenly interpolate between numerals.\n   - Subdials or decorative elements (e.g., pendulum windows) are not the minute indicator; use the main dial only.\n\nOutput format\n- Return only the integer minute value (0\u201359) in the minute field.\n- If the angle computes to 60, output 0.\n\nError prevention reminders\n- Do not treat the hour hand as the minute hand.\n- Do not use the second hand to compute minutes.\n- Do not assume the minute hand is exactly on a numeral\u2014check for slight offsets and round to the nearest minute.\n- Ensure the final minute agrees with the hour hand\u2019s position trend (hour hand slightly past an hour implies minutes > 0)."
 
 
 def test_metric_requires_feedback_signature():
     reflection_lm = DictDummyLM([])
     with pytest.raises(TypeError):
         dspy.GEPA(metric=bad_metric, reflection_lm=reflection_lm, max_metric_calls=1)
+
+
+def test_reflection_prompt_template_in_gepa_kwargs_raises():
+    """reflection_prompt_template via gepa_kwargs is unsupported: DspyAdapter owns propose_new_texts."""
+    reflection_lm = DictDummyLM([])
+    with pytest.raises(ValueError, match="reflection_prompt_template"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=1,
+            gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_param>\n\nExamples: <side_info>"},
+        )
 
 
 def any_metric(
@@ -521,3 +627,215 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def test_track_stats_result_structure():
+    """
+    Verify DspyGEPAResult fields have the correct types from GEPA 0.1.1:
+    - val_subscores is list[dict[DataId, float]] (not list[list[float]])
+    - per_val_instance_best_candidates is dict[DataId, set[int]] (not list[set[int]])
+    - best_candidate returns a Module
+    - highest_score_achieved_per_val_task works without errors
+    - to_dict() serializes per_val_instance_best_candidates as a dict
+    """
+    from dspy.teleprompt.gepa.gepa import DspyGEPAResult
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    dr = prog.detailed_results
+    assert isinstance(dr, DspyGEPAResult)
+
+    # val_subscores: list[dict[DataId, float]]
+    assert isinstance(dr.val_subscores, list)
+    for subscores in dr.val_subscores:
+        assert isinstance(subscores, dict), f"Expected dict, got {type(subscores)}"
+        for val, score in subscores.items():
+            assert isinstance(score, (int, float))
+
+    # per_val_instance_best_candidates: dict[DataId, set[int]]
+    assert isinstance(dr.per_val_instance_best_candidates, dict), (
+        f"Expected dict, got {type(dr.per_val_instance_best_candidates)}"
+    )
+    for val_id, best_set in dr.per_val_instance_best_candidates.items():
+        assert isinstance(best_set, set)
+
+    # best_candidate returns a Module
+    assert isinstance(dr.best_candidate, dspy.Module), (
+        f"Expected Module, got {type(dr.best_candidate)}"
+    )
+
+    # highest_score_achieved_per_val_task works and returns one float per val instance
+    scores = dr.highest_score_achieved_per_val_task
+    assert isinstance(scores, dict)
+    assert len(scores) == len(dr.per_val_instance_best_candidates)
+    for val_id, s in scores.items():
+        assert val_id in dr.per_val_instance_best_candidates
+        assert isinstance(s, (int, float))
+
+    # to_dict() serializes per_val_instance_best_candidates as a dict (not a list)
+    d = dr.to_dict()
+    assert isinstance(d["per_val_instance_best_candidates"], dict), (
+        f"Expected dict in to_dict output, got {type(d['per_val_instance_best_candidates'])}"
+    )
+    for val_id, best_list in d["per_val_instance_best_candidates"].items():
+        assert isinstance(best_list, list)
+
+
+def test_multi_objective_frontier_results():
+    from gepa.strategies.candidate_selector import select_program_candidate_from_pareto_front
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=multi_objective_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        gepa_kwargs={"frontier_type": "objective"},
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+
+    result = optimizer.compile(student, trainset=trainset, valset=trainset).detailed_results
+
+    assert result.val_aggregate_subscores is not None
+    assert result.per_objective_best_candidates is not None
+    assert result.objective_pareto_front is not None
+    assert result.per_objective_best_candidates == {"correctness": {1}, "incorrectness": {0}}
+    assert result.objective_pareto_front == {"correctness": 0.5, "incorrectness": 1.0}
+    serialized = result.to_dict()
+    assert serialized["val_aggregate_subscores"] == result.val_aggregate_subscores
+    assert serialized["per_objective_best_candidates"] == {"correctness": [1], "incorrectness": [0]}
+    assert serialized["objective_pareto_front"] == result.objective_pareto_front
+    selected_parents = {
+        select_program_candidate_from_pareto_front(
+            result.per_objective_best_candidates,
+            result.val_aggregate_scores,
+            random.Random(seed),
+        )
+        for seed in range(10)
+    }
+    assert selected_parents == {0, 1}
+
+
+def test_track_best_outputs_result_structure():
+    """
+    Verify best_outputs_valset has the correct type from GEPA 0.1.1:
+    dict[DataId, list[tuple[int, Prediction]]] (not list[list[tuple[...]]])
+    """
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        track_best_outputs=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    best_outputs = prog.detailed_results.best_outputs_valset
+    assert best_outputs is not None
+    assert isinstance(best_outputs, dict), f"Expected dict, got {type(best_outputs)}"
+    for val_id, entries in best_outputs.items():
+        assert isinstance(entries, list)
+        for cand_idx, output in entries:
+            assert isinstance(cand_idx, int)
+
+
+def test_gepa_rejects_unsupported_reflection_cost_budget():
+    dspy.GEPA(
+        metric=simple_metric,
+        max_metric_calls=1,
+        reflection_lm=DummyLM([]),
+        gepa_kwargs={"max_reflection_cost": None},
+    )
+
+    with pytest.raises(ValueError, match="max_reflection_cost"):
+        dspy.GEPA(
+            metric=simple_metric,
+            max_metric_calls=1,
+            reflection_lm=DummyLM([]),
+            gepa_kwargs={"max_reflection_cost": 1.0},
+        )
+
+
+def test_adapter_state_round_trips_rng():
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, rng=random.Random(42))
+    state = adapter.get_adapter_state()
+    expected = adapter.rng.random()
+    adapter.rng.random()
+    adapter.set_adapter_state(state)
+    assert adapter.rng.random() == expected
+
+
+def test_batch_evaluate_is_parallel_and_preserves_context():
+    from gepa import EvaluationBatch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+    from dspy.utils.callback_context import ACTIVE_CALL_ID
+
+    adapter = DspyAdapter(SimpleModule("input -> output"), simple_metric, {}, num_threads=4)
+    barrier = threading.Barrier(2)
+    trace_modes = []
+    thread_budgets = []
+
+    def evaluate(batch, candidate, capture_traces=False, num_threads=None):
+        if capture_traces:
+            barrier.wait(timeout=1)
+        trace_modes.append(capture_traces)
+        thread_budgets.append(num_threads)
+        return EvaluationBatch(outputs=[(candidate, dspy.settings.lm, ACTIVE_CALL_ID.get())], scores=[1.0])
+
+    adapter.evaluate = evaluate
+    lm = DummyLM([])
+    token = ACTIVE_CALL_ID.set("parent")
+    try:
+        with dspy.context(lm=lm):
+            results = adapter.batch_evaluate([("first", []), ("second", [])])
+    finally:
+        ACTIVE_CALL_ID.reset(token)
+
+    assert [result.outputs[0] for result in results] == [("first", lm, "parent"), ("second", lm, "parent")]
+
+    adapter.batch_evaluate([("first", [])], capture_traces=False)
+    assert trace_modes == [True, True, False]
+    assert thread_budgets == [2, 2, 4]
+
+    adapter.num_threads = 8
+    adapter.batch_evaluate([("first", []), ("second", []), ("third", [])], capture_traces=False)
+    assert trace_modes == [True, True, False, False, False, False]
+    assert sorted(thread_budgets[-3:]) == [2, 3, 3]
+    assert sum(thread_budgets[-3:]) == 8

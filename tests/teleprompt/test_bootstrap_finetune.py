@@ -19,6 +19,22 @@ examples = [
 trainset = [examples[0]]
 
 
+class TraceIdentityAdapter(dspy.ChatAdapter):
+    def format_finetune_data(self, signature, demos, inputs, outputs):
+        return {"inputs": inputs, "outputs": outputs}
+
+
+def make_two_predictor_trace():
+    return [
+        {
+            "trace": [
+                (Predict("input -> output"), {"input": "predictor-0"}, {"output": "zero"}),
+                (Predict("input -> output"), {"input": "predictor-1"}, {"output": "one"}),
+            ]
+        }
+    ]
+
+
 def test_bootstrap_finetune_initialization():
     """Test BootstrapFinetune initialization with various parameters."""
     bootstrap = BootstrapFinetune(metric=simple_metric)
@@ -79,3 +95,30 @@ def test_error_handling_missing_lm():
     except ValueError as e:
         assert "does not have an LM assigned" in str(e)
         assert "set_lm" in str(e)
+
+
+def test_prepare_finetune_data_filters_to_requested_predictor():
+    bootstrap = BootstrapFinetune(adapter=TraceIdentityAdapter(), exclude_demos=True)
+
+    data, _ = bootstrap._prepare_finetune_data(
+        trace_data=make_two_predictor_trace(),
+        lm=DummyLM([]),
+        pred_ind=1,
+    )
+
+    assert data == [{"inputs": {"input": "predictor-1"}, "outputs": {"output": "one"}}]
+
+
+def test_prepare_finetune_data_includes_all_predictors_without_filter():
+    bootstrap = BootstrapFinetune(adapter=TraceIdentityAdapter(), exclude_demos=True)
+
+    data, _ = bootstrap._prepare_finetune_data(
+        trace_data=make_two_predictor_trace(),
+        lm=DummyLM([]),
+        pred_ind=None,
+    )
+
+    assert sorted(data, key=lambda item: item["inputs"]["input"]) == [
+        {"inputs": {"input": "predictor-0"}, "outputs": {"output": "zero"}},
+        {"inputs": {"input": "predictor-1"}, "outputs": {"output": "one"}},
+    ]

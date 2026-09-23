@@ -18,7 +18,6 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 One of the key insights behind GEPA is its ability to leverage domain-specific textual feedback. Users should provide a feedback function as the GEPA metric, which has the following call signature:
@@ -36,7 +35,6 @@ One of the key insights behind GEPA is its ability to leverage domain-specific t
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 When `track_stats=True`, GEPA returns detailed results about all of the proposed candidates, and metadata about the optimization run. The results are available in the `detailed_results` attribute of the optimized program returned by GEPA, and has the following type:
@@ -52,7 +50,6 @@ When `track_stats=True`, GEPA returns detailed results about all of the proposed
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 ## Usage Examples
@@ -70,6 +67,29 @@ highest_score_achieved_per_task = new_prog.detailed_results.highest_score_achiev
 best_outputs = new_prog.detailed_results.best_outputs_valset
 ```
 
+### Objective-Aware Frontier Tracking
+
+Metrics can return named `objective_scores` alongside the scalar score and feedback:
+
+```python
+def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+    quality = measure_quality(gold, pred)
+    privacy = measure_privacy(gold, pred)
+    return dspy.Prediction(
+        score=(quality + privacy) / 2,
+        objective_scores={"quality": quality, "privacy": privacy},
+        feedback="...",
+    )
+
+gepa = dspy.GEPA(metric=metric, gepa_kwargs={"frontier_type": "objective"}, track_stats=True)
+```
+
+`frontier_type` can be `"instance"` (the default), `"objective"`, `"hybrid"` (both instance and objective),
+or `"cartesian"` (each validation-instance/objective pair). The scalar score still gates acceptance and determines
+the final candidate; objectives only affect parent and merge selection. Each objective is maximized and averaged
+over examples that report it. Predictor-level objective scores are ignored. `objective_pareto_front` contains the
+independent maximum for each objective, not nondominated objective vectors.
+
 ## How Does GEPA Work?
 
 ### 1. **Reflective Prompt Mutation**
@@ -86,7 +106,7 @@ Rather than evolving just the _best_ global candidate (which leads to local opti
 
 ### Algorithm Summary
 
-1. **Initialize** the candidate pool with the the unoptimized program.
+1. **Initialize** the candidate pool with the unoptimized program.
 2. **Iterate**:
    - **Sample a candidate** (from Pareto frontier).
    - **Sample a minibatch** from the train set.
@@ -116,12 +136,6 @@ Practical Recipe for GEPA-Friendly Feedback:
 - **Document Retrieval** (e.g., HotpotQA): List correctly retrieved, incorrect, or missed documents, beyond mere Recall/F1 scores.
 - **Multi-Objective Tasks** (e.g., PUPA): Decompose aggregate scores to reveal contributions from each objective, highlighting tradeoffs (e.g., quality vs. privacy).
 - **Stacked Pipelines** (e.g., code generation: parse → compile → run → profile → evaluate): Expose stage-specific failures; natural-language traces often suffice for LLM self-correction.
-
-## Tool Optimization with GEPA
-
-When `enable_tool_optimization=True`, GEPA jointly optimizes `dspy.ReAct` modules with the tools - GEPA updates predictor instructions and tool descriptions/argument descriptions together, based on execution traces and feedback, instead of keeping tool behavior fixed.
-
-For details, examples, and the underlying design (tool discovery, naming requirements, and interaction with custom instruction proposers), see [Tool Optimization](GEPA_Advanced.md#tool-optimization).
 
 ## Custom Instruction Proposal
 

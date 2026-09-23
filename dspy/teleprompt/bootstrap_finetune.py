@@ -176,11 +176,13 @@ class BootstrapFinetune(FinetuneTeleprompter):
         adapter = self.adapter[lm] or settings.adapter or ChatAdapter()
         data_format = infer_data_format(adapter)
         for item in trace_data:
-            for pred_ind, _ in enumerate(item["trace"]):
-                include_data = pred_ind is None or pred_ind == pred_ind
-                if include_data:
+            for trace_pred_ind, _ in enumerate(item["trace"]):
+                if pred_ind is None or trace_pred_ind == pred_ind:
                     call_data = build_call_data_from_trace(
-                        trace=item["trace"], pred_ind=pred_ind, adapter=adapter, exclude_demos=self.exclude_demos
+                        trace=item["trace"],
+                        pred_ind=trace_pred_ind,
+                        adapter=adapter,
+                        exclude_demos=self.exclude_demos,
                     )
                     data.append(call_data)
 
@@ -269,7 +271,7 @@ def prepare_teacher(student: Module, teacher: Module | None = None) -> Module:
     if teacher is None:
         return student
 
-    # Ensuring that the student and teacher are are structurally equivalent
+    # Ensuring that the student and teacher are structurally equivalent
     assert_structural_equivalency(student, teacher)
 
     # Ensuring that the student and teacher programs do not share predictors
@@ -284,7 +286,7 @@ def assert_structural_equivalency(program1: object, program2: object):
 
     num1 = len(program1.predictors())
     num2 = len(program2.predictors())
-    err = f"Structurally equivalent programs must have the the number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
+    err = f"Structurally equivalent programs must have the same number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
     assert num1 == num2, err
 
     pzip = zip(program1.named_predictors(), program2.named_predictors(), strict=False)

@@ -30,18 +30,13 @@ class DescribeProgram(dspy.Signature):
         """Below is some pseudo-code for a pipeline that solves tasks with calls to language models. Please describe what type of task this program appears to be designed to solve, and how it appears to work."""
     )
     program_code = dspy.InputField(
-        format=str,
         desc="Pseudocode for a language model program designed to solve a particular task.",
-        prefix="PROGRAM CODE:",
     )
     program_example = dspy.InputField(
-        format=str,
         desc="An example of the program in use.",
-        prefix="EXAMPLE OF PROGRAM IN USE:",
     )
     program_description = dspy.OutputField(
         desc="Describe what task the program is designed to solve, and how it goes about solving this task.",
-        prefix="SUMMARY OF PROGRAM ABOVE:",
     )
 
 
@@ -50,25 +45,19 @@ class DescribeModule(dspy.Signature):
         """Below is some pseudo-code for a pipeline that solves tasks with calls to language models. Please describe the purpose of one of the specified module in this pipeline."""
     )
     program_code = dspy.InputField(
-        format=str,
         desc="Pseudocode for a language model program designed to solve a particular task.",
-        prefix="PROGRAM CODE:",
     )
     program_example = dspy.InputField(
-        format=str,
         desc="An example of the program in use.",
-        prefix="EXAMPLE OF PROGRAM IN USE:",
     )
     program_description = dspy.InputField(
         desc="Summary of the task the program is designed to solve, and how it goes about solving it.",
-        prefix="SUMMARY OF PROGRAM ABOVE:",
     )
     module = dspy.InputField(
-        desc="The module in the program that we want to describe.", prefix="MODULE:",
+        desc="The module in the program that we want to describe.",
     )
     module_description = dspy.OutputField(
         desc="Description of the module's role in the broader program.",
-        prefix="MODULE DESCRIPTION:",
     )
 
 
@@ -86,47 +75,36 @@ def generate_instruction_class(
         if use_dataset_summary:
             dataset_description = dspy.InputField(
                 desc="A description of the dataset that we are using.",
-                prefix="DATASET SUMMARY:",
             )
         if program_aware:
             program_code = dspy.InputField(
-                format=str,
                 desc="Language model program designed to solve a particular task.",
-                prefix="PROGRAM CODE:",
             )
             program_description = dspy.InputField(
                 desc="Summary of the task the program is designed to solve, and how it goes about solving it.",
-                prefix="PROGRAM DESCRIPTION:",
             )
             module = dspy.InputField(
-                desc="The module to create an instruction for.", prefix="MODULE:",
+                desc="The module to create an instruction for.",
             )
             module_description = dspy.InputField(
-                desc="Description of the module to create an instruction for.", prefix="MODULE DESCRIPTION:",
+                desc="Description of the module to create an instruction for.",
             )
         task_demos = dspy.InputField(
-            format=str,
             desc="Example inputs/outputs of our module.",
-            prefix="TASK DEMO(S):",
         )
         if use_instruct_history:
             previous_instructions = dspy.InputField(
-                format=str,
                 desc="Previous instructions we've attempted, along with their associated scores.",
-                prefix="PREVIOUS INSTRUCTIONS:",
             )
         basic_instruction = dspy.InputField(
-            format=str, desc="Basic instruction.", prefix="BASIC INSTRUCTION:",
+            desc="Basic instruction.",
         )
         if use_tip:
             tip = dspy.InputField(
-                format=str,
                 desc="A suggestion for how to go about generating the new instruction.",
-                prefix="TIP:",
             )
         proposed_instruction = dspy.OutputField(
             desc="Propose an instruction that will be used to prompt a Language Model to perform this task.",
-            prefix="PROPOSED INSTRUCTION:",
         )
 
     return dspy.Predict(GenerateSingleModuleInstruction)

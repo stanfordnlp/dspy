@@ -35,7 +35,7 @@ Different optimizers in DSPy will tune your program's quality by **synthesizing 
 
 ## What DSPy Optimizers are currently available?
 
-Optimizers can be accessed via `from dspy.teleprompt import *`.
+Optimizers can be accessed as `dspy.<OptimizerName>` (e.g., `dspy.MIPROv2`, `dspy.BootstrapFewShot`).
 
 ### Automatic Few-Shot Learning
 
@@ -73,6 +73,10 @@ This optimizer is used to fine-tune the underlying LLM(s).
 
 10. [**`Ensemble`**](../../api/optimizers/Ensemble.md): Ensembles a set of DSPy programs and either uses the full set or randomly samples a subset into a single program.
 
+### Meta-Optimizers
+
+11. [**`BetterTogether`**](../../api/optimizers/BetterTogether.md): A meta-optimizer that combines prompt optimization and weight optimization (fine-tuning) in configurable sequences. Prompt optimization can discover effective task decompositions and reasoning strategies, while weight optimization can specialize the model to execute these patterns more efficiently. Using these approaches together in sequences (e.g., prompt → weight → prompt) may allow each to build on the improvements made by the other. Empirically, this approach often outperforms either strategy alone. 
+
 
 ## Which optimizer should I use?
 
@@ -93,13 +97,13 @@ They all share this general interface, with some differences in the keyword argu
 Let's see this with the most common one, `BootstrapFewShotWithRandomSearch`.
 
 ```python
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+import dspy
 
 # Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 8-shot examples of your program's steps.
 # The optimizer will repeat this 10 times (plus some initial attempts) before selecting its best attempt on the devset.
 config = dict(max_bootstrapped_demos=4, max_labeled_demos=4, num_candidate_programs=10, num_threads=4)
 
-teleprompter = BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
+teleprompter = dspy.BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
 optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINSET_HERE)
 ```
 

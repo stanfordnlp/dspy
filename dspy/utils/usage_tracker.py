@@ -32,21 +32,37 @@ class UsageTracker:
                 result[key] = value
         return result
 
+    @staticmethod
+    def _is_summable(value: Any) -> bool:
+        """Whether a usage value is a count that can be added across entries.
+
+        `bool` is excluded even though it is an `int` subclass: providers report flags
+        (such as OpenRouter's `is_byok`) alongside token counts, and summing those would
+        turn a flag into a meaningless tally.
+        """
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
     def _merge_usage_entries(
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
-            return dict(usage_entry2)
+            return dict(usage_entry2 or {})
         if usage_entry2 is None or len(usage_entry2) == 0:
-            return dict(usage_entry1)
+            return dict(usage_entry1 or {})
 
-        result = dict(usage_entry2)
-        for k, v in usage_entry1.items():
+        result = dict(usage_entry1)
+        for k, v in usage_entry2.items():
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
-            elif current_v is not None or v is not None:
-                result[k] = (current_v or 0) + (v or 0)
+            elif current_v is None:
+                if v is not None:
+                    result[k] = v
+            elif self._is_summable(current_v) and self._is_summable(v):
+                result[k] = current_v + v
+            # Otherwise keep `current_v` as-is. `usage` is not guaranteed to hold only
+            # counts: both litellm's `Usage` and dspy's `LMUsage` allow extra fields, so
+            # whatever a provider reports flows through verbatim.
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
@@ -67,8 +83,18 @@ class UsageTracker:
 
 @contextmanager
 def track_usage() -> Generator[UsageTracker, None, None]:
-    """Context manager for tracking LM usage."""
+    """Context manager for tracking LM usage.
+
+    When nested, the child will roll-up recorded usage into the parent upon exit.
+    Note that usage added after the scope exit will not be recorded in the parent.
+    """
     tracker = UsageTracker()
 
+    parent = settings.usage_tracker
     with settings.context(usage_tracker=tracker):
-        yield tracker
+        try:
+            yield tracker
+        finally:
+            if parent is not None:
+                for lm, entries in tracker.usage_data.items():
+                    parent.usage_data[lm].extend(entries)

@@ -55,7 +55,7 @@ This flexibility allows for customized tailoring of the `Example` object for dif
 When you call `with_inputs()`, you get a new copy of the example. The original object is kept unchanged.
 
 
-## Element Access and Updation
+## Element Access and Updates
 
 Values can be accessed using the `.`(dot) operator. You can access the value of key `name` in defined object `Example(name="John Doe", job="sleep")` through `object.name`. 
 

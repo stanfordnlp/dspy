@@ -6,9 +6,11 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
-from dspy.clients import LM
+from dspy.clients._deprecation import adapter_message_call
+from dspy.clients.base_lm import BaseLM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
+from dspy.utils.exceptions import AdapterParseError
 
 """
 NOTE/TODO/FIXME:
@@ -27,7 +29,7 @@ class TwoStepAdapter(Adapter):
     This class is particularly useful when interacting with reasoning models as the main LM since reasoning models
     are known to struggle with structured outputs.
 
-    Example:
+    Examples:
     ```
     import dspy
     lm = dspy.LM(model="openai/o3-mini", max_tokens=16000, temperature = 1.0)
@@ -39,10 +41,10 @@ class TwoStepAdapter(Adapter):
     ```
     """
 
-    def __init__(self, extraction_model: LM, **kwargs):
+    def __init__(self, extraction_model: BaseLM, **kwargs):
         super().__init__(**kwargs)
-        if not isinstance(extraction_model, LM):
-            raise ValueError("extraction_model must be an instance of LM")
+        if not isinstance(extraction_model, BaseLM):
+            raise ValueError("extraction_model must be an instance of dspy.BaseLM")
         self.extraction_model = extraction_model
 
     def format(
@@ -100,12 +102,17 @@ class TwoStepAdapter(Adapter):
             )
             return parsed_result[0]
 
-        except Exception as e:
-            raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
+        except AdapterParseError as e:
+            raise AdapterParseError(
+                adapter_name="TwoStepAdapter",
+                signature=signature,
+                lm_response=completion,
+                message=f"Failed to parse response from the original completion: {e}",
+            ) from e
 
     async def acall(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -113,7 +120,9 @@ class TwoStepAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
 
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        # TODO(3.5): use Request/Response for both the main and extraction calls.
+        with adapter_message_call(lm, inputs):
+            outputs = await lm.acall(messages=inputs, **lm_kwargs)
         # The signature is supposed to be "text -> {original output fields}"
         extractor_signature = self._create_extractor_signature(signature)
 
@@ -141,8 +150,13 @@ class TwoStepAdapter(Adapter):
                 )
                 value = value[0]
 
-            except Exception as e:
-                raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+            except AdapterParseError as e:
+                raise AdapterParseError(
+                    adapter_name="TwoStepAdapter",
+                    signature=signature,
+                    lm_response=str(output),
+                    message=f"Failed to parse response from the original completion: {e}",
+                ) from e
 
             if tool_calls and tool_call_output_field_name:
                 tool_calls = [

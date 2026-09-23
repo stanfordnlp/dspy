@@ -4,6 +4,19 @@ from dspy.teleprompt.teleprompt import Teleprompter
 from .bootstrap import BootstrapFewShot
 
 
+def _import_optuna():
+    try:
+        import optuna
+    except ModuleNotFoundError as exc:
+        if exc.name == "optuna":
+            raise ImportError(
+                "BootstrapFewShotWithOptuna requires optional dependency 'optuna'. "
+                "Install it with `pip install dspy[optuna]`."
+            ) from exc
+        raise
+    return optuna
+
+
 class BootstrapFewShotWithOptuna(Teleprompter):
     def __init__(
         self,
@@ -53,7 +66,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         return result.score
 
     def compile(self, student, *, teacher=None, max_demos, trainset, valset=None):
-        import optuna
+        optuna = _import_optuna()
         self.trainset = trainset
         self.valset = valset or trainset
         self.student = student.reset_copy()

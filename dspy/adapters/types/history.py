@@ -18,7 +18,7 @@ class History(pydantic.BaseModel):
 
     Then the history should be a list of dictionaries with keys "question" and "answer".
 
-    Example:
+    Examples:
         ```
         import dspy
 

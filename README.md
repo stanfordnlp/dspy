@@ -35,7 +35,7 @@ To install the very latest from `main`:
 
 ```bash
 pip install git+https://github.com/stanfordnlp/dspy.git
-````
+```
 
 
 

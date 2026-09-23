@@ -62,8 +62,11 @@ class BootstrapFewShot(Teleprompter):
                 Defaults to 4.
             max_labeled_demos (int): Maximum number of labeled demonstrations to include.
                 Defaults to 16.
-            max_rounds (int): Number of iterations to attempt generating the required bootstrap
-                examples. If unsuccessful after `max_rounds`, the program ends. Defaults to 1.
+            max_rounds (int): Maximum number of bootstrap attempts per training example.
+                Each round after the first uses a fresh rollout with ``temperature=1.0``
+                to bypass caches and gather diverse traces. If a successful bootstrap is
+                found on any round, the example is accepted and the optimizer moves to the
+                next one. Defaults to 1.
             max_errors (Optional[int]): Maximum number of errors until program ends.
                 If ``None``, inherits from ``dspy.settings.max_errors``.
         """
@@ -263,7 +266,7 @@ class BootstrapFewShot(Teleprompter):
             sample_size = min(self.max_labeled_demos - len(augmented_demos), len(raw_demos))
             sample_size = max(0, sample_size)
 
-            raw_demos = rng.sample(raw_demos, sample_size)
-            predictor.demos = augmented_demos + raw_demos
+            sampled_demos = rng.sample(raw_demos, sample_size)
+            predictor.demos = augmented_demos + sampled_demos
 
         return self.student

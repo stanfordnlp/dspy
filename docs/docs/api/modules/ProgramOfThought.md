@@ -1,5 +1,9 @@
 # dspy.ProgramOfThought
 
+!!! warning "Deprecated"
+
+    `ProgramOfThought` is deprecated and will be removed in DSPy 3.5. [`RLM`](RLM.md) is the preferred replacement.
+
 <!-- START_API_REF -->
 ::: dspy.ProgramOfThought
     handler: python
@@ -32,5 +36,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->

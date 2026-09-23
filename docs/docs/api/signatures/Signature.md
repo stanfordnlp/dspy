@@ -6,6 +6,7 @@
     options:
         members:
             - append
+            - append_instructions
             - delete
             - dump_state
             - equals
@@ -22,5 +23,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->

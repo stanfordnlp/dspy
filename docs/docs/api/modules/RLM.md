@@ -1,0 +1,318 @@
+# dspy.RLM
+
+`RLM` (Recursive Language Model) is a DSPy module that lets LLMs programmatically explore large contexts through a sandboxed Python REPL. Instead of feeding huge contexts directly into the prompt, RLM treats context as external data that the LLM examines via code execution and recursive sub-LLM calls.
+
+This implements the approach described in ["Recursive Language Models" (Zhang, Kraska, Khattab, 2025)](https://arxiv.org/abs/2512.24601).
+
+## When to Use RLM
+
+As contexts grow, LLM performance degrades — a phenomenon known as [context rot](https://research.trychroma.com/context-rot). RLMs address this by separating the _variable space_ (information stored in the REPL) from the _token space_ (what the LLM actually processes). The LLM dynamically loads only the context it needs, when it needs it.
+
+Use RLM when:
+
+- Your context is **too large** to fit in the LLM's context window effectively
+- The task benefits from **programmatic exploration** (searching, filtering, aggregating, chunking)
+- You need the LLM to decide **how to decompose** the problem, not you
+
+## Basic Usage
+
+```python
+import dspy
+
+dspy.configure(lm=dspy.LM("openai/gpt-5"))
+
+# Create an RLM module
+rlm = dspy.RLM("context, query -> answer")
+
+# Call it like any other module
+result = rlm(
+    context="...very long document or data...",
+    query="What is the total revenue mentioned?"
+)
+print(result.answer)
+```
+
+## Deno Installation
+
+RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
+
+Install DSPy's managed Deno runtime with `pip install "dspy[deno]"`. See the
+[`PythonInterpreter` installation guide](../tools/PythonInterpreter.md#deno-installation) for supported platforms,
+system-Deno fallback instructions, and dependency-isolation details.
+
+Then you can run `dspy.RLM`.
+
+You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
+
+
+## How It Works
+
+RLM operates in an iterative REPL loop:
+
+1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
+2. The LLM writes **Python code** to explore the data (print samples, search, filter)
+3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
+4. The LLM can call `llm_query(prompt)` to run **sub-LLM calls** for semantic analysis on snippets
+5. When done, the LLM calls `SUBMIT(output)` to return the final answer
+
+#### What the LLM sees (step-by-step trace):
+
+##### Step 1: Initial Metadata (no direct access to full context)
+```python
+# Step 1: Peek at the data
+print(context[:2000])
+```
+_Output shown to the LLM:_
+```
+[Preview of the first 2000 characters of the document]
+```
+
+##### Step 2: Write Code to Explore Context
+```python
+# Step 2: Search for relevant sections
+import re
+matches = re.findall(r'revenue.*?\$[\d,]+', context, re.IGNORECASE)
+print(matches)
+```
+_Output shown to the LLM:_
+```
+['Revenue in Q4: $5,000,000', 'Total revenue: $20,000,000']
+```
+
+##### Step 3: Trigger Sub-LLM Calls
+```python
+# Step 3: Use sub-LLM for semantic extraction
+result = llm_query(f"Extract the total revenue from: {matches[1]}")
+print(result)
+```
+_Output shown to the LLM:_
+```
+$20,000,000
+```
+
+##### Step 4: Submit Final Answer
+```python
+# Step 4: Return final answer
+SUBMIT(result)
+```
+_Output shown to the user:_
+```
+$20,000,000
+```
+
+## Constructor Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `signature` | `str \| Signature` | required | Defines inputs and outputs (e.g., `"context, query -> answer"`) |
+| `max_iters` | `int` | `20` | Maximum REPL interaction loops before fallback extraction |
+| `max_llm_calls` | `int` | `50` | Maximum `llm_query`/`llm_query_batched` calls per execution |
+| `max_output_chars` | `int` | `10_000` | Maximum characters to include from REPL output |
+| `verbose` | `bool` | `False` | Log detailed execution info |
+| `tools` | `list[Union[Callable, dspy.Tool]]` | `None` | Additional tool functions callable from interpreter code |
+| `sub_lm` | `dspy.LM` | `None` | LM for sub-queries. Defaults to `dspy.settings.lm`. Use a cheaper model here. |
+| `interpreter_factory` | `Callable[[], CodeInterpreter]` | `PythonInterpreter` | Creates one interpreter per invocation. RLM shuts down each returned interpreter. `dspy.configure(interpreter_factory=...)` replaces the default. A factory passed to the constructor wins, unless it is `PythonInterpreter`. May expose an optional `execution_instructions` string for the action prompt. |
+
+## Built-in Tools
+
+Inside the REPL, the LLM has access to:
+
+| Tool | Description |
+|------|-------------|
+| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
+| `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
+| `print()` | Print output (required to see results) |
+| `SUBMIT(...)` | Submit final output and end execution |
+| Standard library | `re`, `json`, `collections`, `math`, etc. |
+
+## Examples
+
+### Long Document Q&A
+
+```python
+import dspy
+
+dspy.configure(lm=dspy.LM("openai/gpt-5"))
+
+rlm = dspy.RLM("document, question -> answer", max_iters=10)
+
+with open("large_report.txt") as f:
+    document = f.read()  # 500K+ characters
+
+result = rlm(
+    document=document,
+    question="What were the key findings from Q3?"
+)
+print(result.answer)
+```
+
+### Using a Cheaper Sub-LM
+
+```python
+import dspy
+
+main_lm = dspy.LM("openai/gpt-5")
+cheap_lm = dspy.LM("openai/gpt-5-nano")
+
+dspy.configure(lm=main_lm)
+
+# Root LM (gpt-5) decides strategy; sub-LM (gpt-5-nano) handles extraction
+rlm = dspy.RLM("data, query -> summary", sub_lm=cheap_lm)
+```
+
+### Multiple Typed Outputs
+
+```python
+rlm = dspy.RLM("logs -> error_count: int, critical_errors: list[str]")
+
+result = rlm(logs=server_logs)
+print(f"Found {result.error_count} errors")
+print(f"Critical: {result.critical_errors}")
+```
+
+### Custom Tools
+
+```python
+def fetch_metadata(doc_id: str) -> str:
+    """Fetch metadata for a document ID."""
+    return database.get_metadata(doc_id)
+
+rlm = dspy.RLM(
+    "documents, query -> answer",
+    tools=[fetch_metadata]
+)
+```
+
+### Configuring the Interpreter
+
+Pass the interpreter class directly when it needs no arguments. For configured construction, use any zero-argument callable, such as `functools.partial`:
+
+```python
+from functools import partial
+
+rlm = dspy.RLM(
+    "context, query -> answer",
+    interpreter_factory=partial(
+        dspy.PythonInterpreter,
+        enable_network_access=["example.com"],
+    ),
+)
+```
+
+One call puts the same interpreter behind every code-executing module in the program. Each invocation reads the setting, so `dspy.context(interpreter_factory=...)` scopes the choice and `dspy.configure(...)` reaches modules built before the call. A factory passed to a constructor still wins, unless it is `PythonInterpreter`:
+
+```python
+dspy.configure(interpreter_factory=MyInterpreter)
+```
+
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+
+If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
+which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
+along with the rest of the action policy. Factory classes and configured callable provider objects can expose this
+metadata; anonymous factories without it continue to use the generic action prompt. RLM refreshes these instructions
+for each action call, so a `dspy.context(interpreter_factory=...)` override keeps the prompt aligned with the runtime
+that executes the generated code.
+
+### Custom Sandbox-Serializable Inputs
+
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+
+```python
+class DataFrame(dspy.SandboxSerializable):
+    def sandbox_setup(self) -> str:
+        return "import pandas as pd\nimport base64\nimport io"
+
+    def to_sandbox(self) -> bytes:
+        return base64.b64encode(self.data.to_parquet(index=False))
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = pd.read_parquet(io.BytesIO(base64.b64decode({data_expr})))"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"DataFrame: {self.data.shape[0]} rows x {self.data.shape[1]} columns"
+```
+
+`SandboxSerializable` also defines a Pydantic schema hook so subclasses can be used directly in DSPy signatures, for example `data: DataFrame = dspy.InputField()`. The hook is intentionally pass-through: Pydantic accepts the object as-is and serializes it with `str(value)` for schema/metadata purposes. RLM's real sandbox transport still comes from `to_sandbox()` and `sandbox_assignment()`.
+
+### Async Execution
+
+```python
+import asyncio
+
+rlm = dspy.RLM("context, query -> answer")
+
+async def process():
+    result = await rlm.acall(context=data, query="Summarize this")
+    return result.answer
+
+answer = asyncio.run(process())
+```
+
+### Inspecting the Trajectory
+
+```python
+result = rlm(context=data, query="Find the magic number")
+
+# See what code the LLM executed
+for step in result.trajectory:
+    print(f"Code:\n{step['code']}")
+    print(f"Output:\n{step['output']}\n")
+```
+
+## Output
+
+RLM returns a `Prediction` with:
+
+- **Output fields** from your signature (e.g., `result.answer`)
+- **`trajectory`**: List of dicts with `reasoning`, `code`, `output` for each step
+- **`final_reasoning`**: The LLM's reasoning on the final step
+
+## Notes
+
+!!! warning "Experimental"
+    RLM is marked as experimental. The API may change in future releases.
+
+!!! note "Thread Safety"
+    `interpreter_factory` may be called concurrently and must return a fresh interpreter each time. An interpreter passed as the first positional argument to `rlm(...)` or `rlm.acall(...)` is caller-owned and may be reused only for sequential calls to the same RLM instance. `PythonInterpreter` must also stay on the thread where it was first used.
+
+!!! note "Interpreter Requirements"
+    RLM defaults to `PythonInterpreter`, which requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.
+    `LocalInterpreter` requires no additional runtime and provides a separate CPython process, but it is not a
+    security sandbox: generated code retains the host user's files, environment, credentials, network, and process
+    authority.
+
+## API Reference
+
+<!-- START_API_REF -->
+::: dspy.RLM
+    handler: python
+    options:
+        members:
+            - __init__
+            - __call__
+            - forward
+            - aforward
+            - tools
+            - batch
+            - deepcopy
+            - dump_state
+            - get_lm
+            - load
+            - load_state
+            - named_parameters
+            - named_predictors
+            - parameters
+            - predictors
+            - reset_copy
+            - save
+            - set_lm
+        show_source: true
+        show_root_heading: true
+        heading_level: 3
+        docstring_style: google
+        show_root_full_path: true
+        show_object_full_path: false
+        separate_signature: false
+        inherited_members: true
+<!-- END_API_REF -->

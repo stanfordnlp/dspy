@@ -13,12 +13,12 @@ By default, GEPA uses the built-in instruction proposer from the [GEPA library](
 ````
 I provided an assistant with the following instructions to perform a task for me:
 ```
-<curr_instructions>
+<curr_param>
 ```
 
 The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
 ```
-<inputs_outputs_feedback>
+<side_info>
 ```
 
 Your task is to write a new instruction for the assistant.
@@ -32,8 +32,9 @@ Provide the new instructions within ``` blocks.
 
 This template is automatically filled with:
 
-- `<curr_instructions>`: The current instruction being optimized
-- `<inputs_outputs_feedback>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
+- `<curr_param>`: The current instruction being optimized
+- `<side_info>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
+
 
 Example of default behavior:
 
@@ -319,6 +320,82 @@ gepa = dspy.GEPA(
 - **Mind data serialization**: Serializing everything to strings might not be ideal - handle complex input types (like `dspy.Image`) by maintaining their structure for better LM processing
 - **Test thoroughly**: Test your custom proposer with representative failure cases
 
+## Custom Code Proposers
+
+### What is code_proposer?
+
+`code_proposer` lets you supply your own function for rewriting the source code of a [`dspy.Flex`](../../../diving-deeper/flex.md) submodule during GEPA optimization. GEPA calls it each reflection round with the current source and the examples it ran on, and it returns a revised `dspy.Module` class.
+
+DSPy's GEPA adapter sorts the optimizable parts of a program into two kinds of component. A **code component** is a `Flex` submodule, and its optimizable value is a whole `dspy.Module` source. An **instruction component** is any other predictor, and its value is an instruction string. `code_proposer` replaces the default proposer for code components, and `instruction_proposer` replaces it for instruction components. You can set either one without the other.
+
+### The contract
+
+A code proposer is a callable taking five keyword arguments:
+
+| Argument | Meaning |
+|---|---|
+| `candidate` | A dict keyed by component name. Each value is that component's current value: the module source for a `Flex`, or the instruction string for an ordinary predictor. |
+| `reflective_dataset` | A dict keyed by component name. Each value is the list of reflective records for that component from this round's minibatch. Each record is a dict with `Inputs`, `Generated Outputs`, and `Feedback`. |
+| `components_to_update` | A list of the component names to rewrite this round, filtered to `Flex` submodules. |
+| `task_descriptions` | A dict keyed by component name. Each value is a text rendering of that `Flex`'s signature: its name, objective, and input and output fields. |
+| `context_blurbs` | A dict keyed by component name. Each value is a text block listing the tools passed to that `Flex` and the sandbox rules for using them. |
+
+Note that `candidate` carries **every** component, including instruction components you aren't being asked to touch. `reflective_dataset` covers only the components the component selector picked this round, and omits a code component that produced no records. `components_to_update` is the authoritative list; use `reflective_dataset.get(name, [])` rather than indexing.
+
+A code proposer returns a dict keyed by component name. Each value is the **complete replacement source** for that component. The source is one `dspy.Module` subclass that defines `forward`. An `__init__` is optional and is needed only if the module constructs predictors. Do not return a patch or a partial class.
+
+Four things to know:
+
+- **Records are whole-program, not per-predictor.** A `Flex`'s own predictors are part of what gets rewritten, so its reflective records hold the module's inputs, its final prediction, and the metric feedback, under the keys `Inputs`, `Generated Outputs`, and `Feedback`. Every example in the minibatch is included, not just the low-scoring ones; GEPA skips reflection only when the whole minibatch scores perfectly.
+- **Strip markdown fences.** Whatever you return is bound as source verbatim. The built-in proposer strips fences from the LM's output; a fenced string returned from yours raises `SyntaxError` when GEPA binds it.
+- **You own your failures.** The built-in proposer falls back to the original source when a proposal fails (except LM errors, which propagate). A custom proposer that raises propagates unconditionally — return `candidate[name]` unchanged if you want the same fallback.
+- **A bad proposal is safe, just wasteful.** Source that doesn't parse is scored at the failure score and the search continues; it costs a step, not the run.
+
+Your proposer runs inside the `reflection_lm` context, so a bare `dspy.Predict` inside it uses the reflection LM with no extra wiring. To use a different model, wrap your calls in `dspy.context(lm=...)`. Note that `code_proposer` does not by itself satisfy GEPA's reflection-provider requirement: you still need to pass `reflection_lm` (or an `instruction_proposer`).
+
+### Example
+
+````python
+import dspy
+
+class ProposeCode(dspy.Signature):
+    """Rewrite the module to fix the observed failures."""
+    task_description: str = dspy.InputField()
+    current_source: str = dspy.InputField()
+    failures: str = dspy.InputField()
+    revised_source: str = dspy.OutputField(desc="One complete dspy.Module subclass.")
+
+def _unfence(src):
+    src = src.strip()
+    if src.startswith("```"):          # drop a ```python ... ``` wrapper
+        src = src.split("\n", 1)[-1].rsplit("```", 1)[0]
+    return src.strip()
+
+def my_code_proposer(*, candidate, reflective_dataset, components_to_update,
+                     task_descriptions, context_blurbs):
+    propose = dspy.Predict(ProposeCode)
+    proposals = {}
+    for name in components_to_update:
+        failures = "\n\n".join(
+            f"Inputs: {r['Inputs']}\nOutputs: {r['Generated Outputs']}\nFeedback: {r['Feedback']}"
+            for r in reflective_dataset.get(name, [])
+        )
+        out = propose(
+            task_description=task_descriptions.get(name, name),
+            current_source=candidate[name],
+            failures=failures,
+        )
+        proposals[name] = _unfence(out.revised_source)
+    return proposals
+
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5"),
+    code_proposer=my_code_proposer,
+    auto="medium",
+)
+````
+
 ## Custom Component Selection
 
 ### What is component_selector?
@@ -442,147 +519,4 @@ gepa = dspy.GEPA(
     instruction_proposer=WordLimitProposer(max_words=500),
     auto="medium"
 )
-```
-
-## Tool Optimization
-
-### What is enable_tool_optimization?
-
-When `enable_tool_optimization=True`, GEPA jointly optimizes `dspy.ReAct` modules: predictor instructions and tool descriptions and argument descriptions are updated together, instead of being tuned in isolation. This lets the model learn better patterns for when to call a tool and how to use it from the same execution traces and feedback that drive core GEPA.
-
-### Usage and constraints
-
-- **Expose tools as `dspy.Tool` in signatures and examples.** GEPA only optimizes tools that are represented as `dspy.Tool` and actually passed as `dspy.Tool` objects into your modules.
-- **Treat `Tool.name` as a stable identifier.** `Tool.name` is the tool's name, and GEPA uses it to attach improved descriptions and argument descriptions. If you reuse the same `Tool.name` for different tools, they will share the same text updates.
-- **Avoid custom tools named `"finish"`.** The built-in ReAct `"finish"` tool is reserved and excluded from optimization. Custom tools with the name `"finish"` are also not optimized.
-- **Custom instruction proposers handle all modules and tool updates.** When you provide an `instruction_proposer`, GEPA routes every optimized module through your proposer instead of the built-in instruction proposer. If `enable_tool_optimization=True`, modules that call tools are still included, and your proposer is also responsible for updating their tool descriptions and argument descriptions.
-
-### Tool Module Optimization Prompt
-
-GEPA uses `ToolProposer` to optimize ReAct modules when `enable_tool_optimization=True`. For each module, the proposer builds a dynamic signature from the base `GenerateImprovedToolModuleDescriptionsFromFeedback` signature shown below, then appends output fields for each tool description and each tool argument description in that module. For ReAct modules, the proposer also appends input and output fields for the extract instruction.
-
-```python
-class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
-    """I provided an assistant with predictor instructions and tool descriptions,
-    but its performance needs improvement based on the examples_with_feedback below.
-
-    Your task is to propose better predictor instructions, tool descriptions, and
-    tool argument descriptions that address the issues shown in these examples.
-    Focus on reinforcing patterns that clearly improve the assistant's performance
-    on similar tasks, rather than rewriting everything from scratch unless necessary.
-    These components are progressively optimized - refine only what needs to change.
-
-    Analyze the examples_with_feedback to identify success and failure patterns,
-    and write improved instructions and descriptions at their appropriate level
-    of abstraction and/or specificity, so that each layer plays a clear,
-    complementary role without unnecessary repetition or verbosity unless
-    redundancy clearly helps the assistant's performance.
-    """
-
-    current_predictor_instruction = dspy.InputField(
-        desc="Current instruction guiding the predictor"
-    )
-    current_tools = dspy.InputField(
-        annotation=list[dspy.Tool],
-        desc="Available tools with their complete schemas"
-    )
-    examples_with_feedback = dspy.InputField(
-        desc="Execution examples with feedback showing successes and failures"
-    )
-
-    improved_predictor_instruction: str | None = dspy.OutputField(
-        desc="Improved instruction for the predictor",
-        default=None
-    )
-
-    # GEPA appends output fields dynamically for each tool and argument:
-    # - improved_tool_{name}_desc with desc="Improved description of tool '{name}'"
-    # - improved_tool_{name}_arg_{param}_desc with desc="Improved description of the argument '{param}' of tool '{name}'"
-    # For ReAct modules, GEPA also appends:
-    # - current_extract_instruction (input) with desc="Current instruction for extraction predictor"
-    # - improved_extract_instruction (output) with desc="Improved instruction for extraction"
-```
-
-The reflection LM uses this dynamically-built signature to jointly propose updates across predictor instructions, tool descriptions, and argument descriptions based on execution feedback. Updates are coordinated rather than made in isolation: the LM sees all current components together and can selectively update any subset by returning new text, or return `None` to keep a component unchanged.
-
-### How Tool Optimization Works
-
-When `enable_tool_optimization=True`, GEPA:
-
-1. **Discovers ReAct modules** - Identifies `dspy.ReAct` modules and their associated tools
-2. **Treats them as joint optimization units** - Instead of only optimizing predictor instructions, GEPA optimizes predictor instructions and tool descriptions together as a coordinated set; for ReAct this includes both the react and extract instructions
-3. **Routes to specialized proposer** - Separates components by type and routes them appropriately:
-   - **With custom `instruction_proposer`**: Your custom proposer receives both ReAct modules and plain predictors, and is responsible for updating all components
-   - **With default proposer**: Plain predictors use the default instruction proposer; ReAct modules use `ToolProposer`, which employs the dynamic signature mechanism described above
-4. **Optimizes jointly** - `ToolProposer` improves predictor instructions and tool descriptions together based on execution feedback, coordinating updates across all components rather than tuning them in isolation
-5. **Applies updates** - Improved instructions update predictor signatures; improved tool descriptions and argument descriptions update all `dspy.Tool` objects with matching tool names throughout the program
-
-Modules without tools (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA instruction-only optimization.
-
-### When to Use Tool Optimization
-
-Enable `enable_tool_optimization=True` when tools are central to your program's behavior and you want GEPA to jointly optimize predictor instructions and tool descriptions together. Common scenarios:
-
-1. **Wrong tool selection** - Predictor with `search` and `weather` tools keeps searching when it should check weather, or vice versa. GEPA refines predictor instructions and tool descriptions to clarify when to use each tool.
-
-2. **Underused tools** - Predictor responds "I don't know" without using available tools that could answer the question. GEPA improves predictor instructions to be more proactive about tool usage.
-
-3. **Tool call loops** - Agent keeps calling `web_search` multiple times with similar queries instead of synthesizing information. GEPA improves instructions to encourage synthesis and tool descriptions to clarify when searches are sufficient.
-
-4. **Extraction failures (ReAct)** - Agent executes tools correctly but fails to extract the final answer from the trajectory. GEPA improves extract instruction to better identify and format answers from tool outputs.
-
-5. **Multi-agent delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes instructions and tool descriptions across both parent and sub-agent modules for coherent delegation.
-
-See the usage example below for tool-using programs.
-
-### Usage Example
-
-```python
-import dspy
-
-def search_web(query: str) -> str:
-    return f"Search results for: {query}"
-
-def get_weather(city: str) -> str:
-    """Get the current weather for a city."""
-    return f"The weather in {city} is sunny and 75°F"
-
-# Create tools with basic descriptions
-search_tool = dspy.Tool(search_web, name="search_web", desc="Search tool")
-weather_tool = dspy.Tool(get_weather, name="get_weather", desc="Weather tool")
-
-program = dspy.ReAct("question -> answer", tools=[search_tool, weather_tool])
-
-# Enable tool optimization
-gepa = dspy.GEPA(
-    metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5-mini"),
-    enable_tool_optimization=True,
-    auto="medium"
-)
-
-optimized_program = gepa.compile(program, trainset=train_examples, valset=val_examples)
-```
-
-### Inspecting Optimized Programs
-
-View optimization results and metadata (requires `track_stats=True`):
-
-```python
-# High-level optimization metadata
-optimized_program.detailed_results
-```
-
-Access optimized instructions and tool descriptions directly:
-
-```python
-# Predictor instructions
-for name, predictor in optimized_program.named_predictors():
-    print(f"{name}: {predictor.signature.instructions}")
-
-# Tool descriptions and argument descriptions
-for tool_name, tool in optimized_program.tools.items():
-    print(f"{tool_name}: {tool.desc}")
-    for arg_name, arg_schema in tool.args.items():
-        print(f"  {arg_name}: {arg_schema.get('description', 'N/A')}")
 ```

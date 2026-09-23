@@ -3,10 +3,11 @@ import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
-from asyncer import syncify
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 
 @dataclass
@@ -47,7 +48,7 @@ def sync_send_to_stream(stream, message):
             return future.result()
     except RuntimeError:
         # Not in an event loop, safe to use a new event loop in this thread
-        return syncify(_send)()
+        return anyio.from_thread.run(_send)
 
 
 class StatusMessageProvider:
@@ -57,7 +58,7 @@ class StatusMessageProvider:
     and override its methods to define specific status messages for different stages of program execution,
     each method must return a string.
 
-    Example:
+    Examples:
     ```python
     class MyStatusMessageProvider(StatusMessageProvider):
         def lm_start_status_message(self, instance, inputs):
@@ -117,7 +118,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
@@ -145,7 +146,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
@@ -173,7 +174,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         outputs: dict[str, Any] | None,
-        exception: Exception | None = None,
+        exception: BaseException | None = None,
     ):
         stream = settings.send_stream
         if stream is None:

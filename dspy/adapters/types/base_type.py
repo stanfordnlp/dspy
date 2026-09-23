@@ -4,10 +4,12 @@ from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
 
 import json_repair
 import pydantic
-from litellm import ModelResponseStream
+
+from dspy.clients.base_lm import BaseLM
 
 if TYPE_CHECKING:
-    from dspy.clients.lm import LM
+    from litellm import ModelResponseStream
+
     from dspy.signatures.signature import Signature
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
@@ -20,7 +22,7 @@ class Type(pydantic.BaseModel):
     This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
     return a list of dictionaries (same as the Array of content parts in the OpenAI API user message's content field).
 
-    Example:
+    Examples:
 
         ```python
         class Image(Type):
@@ -79,7 +81,7 @@ class Type(pydantic.BaseModel):
         cls,
         signature: type["Signature"],
         field_name: str,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
         """Adapt the custom type to the native LM feature if possible.
@@ -105,7 +107,7 @@ class Type(pydantic.BaseModel):
         return False
 
     @classmethod
-    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+    def parse_stream_chunk(cls, chunk: "ModelResponseStream") -> Optional["Type"]:
         """
         Parse a stream chunk into the custom type.
 

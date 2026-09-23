@@ -1,7 +1,11 @@
-from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
-mcp = FastMCP("test")
+try:
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:
+    from mcp.server import MCPServer
+
+mcp = MCPServer("test")
 
 
 class Profile(BaseModel):
@@ -21,7 +25,7 @@ def add(a: int, b: int) -> int:
 
 
 @mcp.tool()
-def hello(names: list[str]) -> str:
+def hello(names: list[str]) -> list[str]:
     """Greet people"""
     return [f"Hello, {name}!" for name in names]
 

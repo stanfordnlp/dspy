@@ -11,6 +11,7 @@
             - format
             - from_PIL
             - from_file
+            - from_path
             - from_url
             - is_streamable
             - parse_lm_response
@@ -24,5 +25,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->

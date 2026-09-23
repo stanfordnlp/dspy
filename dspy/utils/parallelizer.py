@@ -10,7 +10,12 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import tqdm
 
+from dspy.dsp.utils.settings import settings, thread_local_overrides
+from dspy.utils.callback_context import _bind_active_call_id
+
 logger = logging.getLogger(__name__)
+
+_UNSET = object()
 
 
 class ParallelExecutor:
@@ -25,11 +30,9 @@ class ParallelExecutor:
         straggler_limit=3,
     ):
         """
-        Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
-        Handles also straggler timeouts.
+        Propagates DSPy settings and callback ancestry into each task while isolating task-local changes,
+        irrespective of whether num_threads == 1 or > 1. Handles also straggler timeouts.
         """
-        from dspy.dsp.utils.settings import settings
-
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.disable_progress_bar = disable_progress_bar
@@ -46,7 +49,9 @@ class ParallelExecutor:
 
     def execute(self, function, data):
         tqdm.tqdm._instances.clear()
-        wrapped = self._wrap_function(function)
+        wrapped = self._wrap_function(_bind_active_call_id(function))
+        if self.num_threads == 1:
+            return self._execute_sequential(wrapped, data)
         return self._execute_parallel(wrapped, data)
 
     def _wrap_function(self, user_function):
@@ -68,8 +73,40 @@ class ParallelExecutor:
 
         return safe_func
 
+    def _execute_sequential(self, function, data):
+        """Execute items sequentially on the main thread."""
+        results = [_UNSET] * len(data)
+
+        pbar = tqdm.tqdm(
+            total=len(data),
+            dynamic_ncols=True,
+            disable=self.disable_progress_bar,
+            file=sys.stdout,
+        )
+
+        try:
+            for idx, item in enumerate(data):
+                if self.cancel_jobs.is_set():
+                    break
+
+                outcome = function(item)
+                self._process_outcome(results, idx, outcome)
+                self._report_progress(pbar, results, len(data))
+        except KeyboardInterrupt:
+            self.cancel_jobs.set()
+            logger.warning("SIGINT received. Cancelling.")
+            raise
+        finally:
+            pbar.close()
+
+        if self.cancel_jobs.is_set():
+            logger.warning("Execution cancelled due to errors or interruption.")
+            raise Exception("Execution cancelled due to errors or interruption.")
+
+        return [None if result is _UNSET else result for result in results]
+
     def _execute_parallel(self, function, data):
-        results = [None] * len(data)
+        results = [_UNSET] * len(data)
         job_cancelled = "cancelled"
 
         # We resubmit at most once per item.
@@ -86,8 +123,6 @@ class ParallelExecutor:
                 start_time_map[submission_id] = time.time()
 
             # Apply parent's thread-local overrides
-            from dspy.dsp.utils.settings import thread_local_overrides
-
             original = thread_local_overrides.get()
             new_overrides = {**original, **parent_overrides.copy()}
             if new_overrides.get("usage_tracker"):
@@ -109,7 +144,13 @@ class ParallelExecutor:
                 def handler(sig, frame):
                     self.cancel_jobs.set()
                     logger.warning("SIGINT received. Cancelling.")
-                    orig_handler(sig, frame)
+                    if callable(orig_handler):
+                        orig_handler(sig, frame)
+                    else:
+                        # SIG_DFL and SIG_IGN are enum sentinels, not functions.
+                        # While evaluation owns SIGINT it means cancellation;
+                        # restore the original disposition on leaving this scope.
+                        signal.default_int_handler(sig, frame)
 
                 signal.signal(signal.SIGINT, handler)
                 try:
@@ -122,8 +163,6 @@ class ParallelExecutor:
         executor = ThreadPoolExecutor(max_workers=self.num_threads)
         try:
             with interrupt_manager():
-                from dspy.dsp.utils.settings import thread_local_overrides
-
                 parent_overrides = thread_local_overrides.get().copy()
 
                 futures_map = {}
@@ -144,7 +183,7 @@ class ParallelExecutor:
                 )
 
                 def all_done():
-                    return all(r is not None for r in results)
+                    return all(result is not _UNSET for result in results)
 
                 while futures_set and not self.cancel_jobs.is_set():
                     if all_done():
@@ -157,26 +196,10 @@ class ParallelExecutor:
                         except Exception:
                             pass
                         else:
-                            if outcome != job_cancelled and results[index] is None:
-                                # Check if this is an exception
-                                if isinstance(outcome, Exception):
-                                    with self.error_lock:
-                                        self.failed_indices.append(index)
-                                        self.exceptions_map[index] = outcome
-                                    results[index] = None  # Keep None for failed examples
-                                else:
-                                    results[index] = outcome
+                            if outcome != job_cancelled and results[index] is _UNSET:
+                                self._process_outcome(results, index, outcome)
 
-                            # Update progress
-                            if self.compare_results:
-                                vals = [r[-1] for r in results if r is not None]
-                                self._update_progress(pbar, sum(vals), len(vals))
-                            else:
-                                self._update_progress(
-                                    pbar,
-                                    len([r for r in results if r is not None]),
-                                    len(data),
-                                )
+                            self._report_progress(pbar, results, len(data))
 
                     if all_done():
                         break
@@ -212,7 +235,28 @@ class ParallelExecutor:
             logger.warning("Execution cancelled due to errors or interruption.")
             raise Exception("Execution cancelled due to errors or interruption.")
 
-        return results
+        return [None if result is _UNSET else result for result in results]
+
+    def _process_outcome(self, results, idx, outcome):
+        """Store a single outcome and track errors."""
+        if isinstance(outcome, Exception):
+            with self.error_lock:
+                self.failed_indices.append(idx)
+                self.exceptions_map[idx] = outcome
+        else:
+            results[idx] = outcome
+
+    def _report_progress(self, pbar, results, total):
+        """Compute metrics and update the progress bar."""
+        if self.compare_results:
+            vals = [result[-1] for result in results if result is not _UNSET and result is not None]
+            self._update_progress(pbar, sum(vals), len(vals))
+        else:
+            self._update_progress(
+                pbar,
+                len([result for result in results if result is not _UNSET]),
+                total,
+            )
 
     def _update_progress(self, pbar, nresults, ntotal):
         if self.compare_results:

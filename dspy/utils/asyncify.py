@@ -1,7 +1,9 @@
+import functools
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-import asyncer
-from anyio import CapacityLimiter
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
@@ -20,7 +22,7 @@ def get_limiter():
 
     global _limiter
     if _limiter is None:
-        _limiter = CapacityLimiter(async_max_workers)
+        _limiter = anyio.CapacityLimiter(async_max_workers)
     elif _limiter.total_tokens != async_max_workers:
         _limiter.total_tokens = async_max_workers
 
@@ -58,8 +60,7 @@ def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
             finally:
                 thread_local_overrides.reset(token)
 
-        # Create a fresh asyncified callable each time, ensuring the latest context is used.
-        call_async = asyncer.asyncify(wrapped_program, abandon_on_cancel=True, limiter=get_limiter())
-        return await call_async(*args, **kwargs)
+        partial_f = functools.partial(wrapped_program, *args, **kwargs)
+        return await anyio.to_thread.run_sync(partial_f, abandon_on_cancel=True, limiter=get_limiter())
 
     return async_program

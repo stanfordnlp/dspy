@@ -10,7 +10,7 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
-from dspy.utils.callback import BaseCallback
+from dspy.utils.callback import ACTIVE_CALL_ID, BaseCallback
 from dspy.utils.dummies import DummyLM
 
 
@@ -54,6 +54,33 @@ def test_evaluate_call():
     )
     score = ev(program)
     assert score.score == 100.0
+
+
+def test_evaluate_single_thread_runs_in_main_thread():
+    """Evaluate with num_threads=1 should run in the main thread."""
+    dspy.configure(
+        lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}})
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+
+    execution_threads = []
+
+    original_metric = answer_exact_match
+
+    def tracking_metric(example, prediction, **kwargs):
+        execution_threads.append(threading.current_thread())
+        return original_metric(example, prediction, **kwargs)
+
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=devset,
+        metric=tracking_metric,
+        display_progress=False,
+        num_threads=1,
+    )
+    result = ev(program)
+    assert result.score == 100.0
+    assert all(t is threading.main_thread() for t in execution_threads)
 
 
 @pytest.mark.extra
@@ -103,40 +130,58 @@ def test_multithread_evaluate_call():
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
-    # slow LM that sleeps for 1 second before returning the answer
+    from dspy.utils import parallelizer
+
+    started = threading.Barrier(3, timeout=10)  # two workers and the main thread
+    release = threading.Event()
+    worker_finished = threading.Event()
+    pools = []
+    running = []
+    original_pool = parallelizer.ThreadPoolExecutor
+
+    def make_pool(*args, **kwargs):
+        pool = original_pool(*args, **kwargs)
+        pools.append(pool)
+        return pool
+
     class SlowLM(DummyLM):
         def __call__(self, *args, **kwargs):
-            import time
+            try:
+                started.wait()
+                if not release.wait(10):
+                    raise TimeoutError("Test did not release the evaluation worker")
+                return super().__call__(*args, **kwargs)
+            finally:
+                worker_finished.set()
 
-            time.sleep(1)
-            return super().__call__(*args, **kwargs)
+    def interrupt_when_running(futures, **kwargs):
+        running.extend(futures)
+        started.wait()
+        # Deliver a real SIGINT with the evaluation handler installed, without
+        # a timer thread that could signal an unrelated test later.
+        signal.raise_signal(signal.SIGINT)
+        pytest.fail("SIGINT did not interrupt evaluation")
 
+    monkeypatch.setattr(parallelizer, "ThreadPoolExecutor", make_pool)
+    monkeypatch.setattr(parallelizer, "wait", interrupt_when_running)
     dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
-
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
-    assert program(question="What is 1+1?").answer == "2"
-
-    # spawn a thread that will sleep for .1 seconds then send a KeyboardInterrupt
-    def sleep_then_interrupt():
-        import time
-
-        time.sleep(0.1)
-        import os
-
-        os.kill(os.getpid(), signal.SIGINT)
-
-    input_thread = threading.Thread(target=sleep_then_interrupt)
-    input_thread.start()
-
-    with pytest.raises(KeyboardInterrupt):
-        ev = Evaluate(
-            devset=devset,
-            metric=answer_exact_match,
-            display_progress=False,
-            num_threads=2,
-        )
-        ev(program)
+    ev = Evaluate(devset=devset, metric=answer_exact_match, display_progress=False, num_threads=2)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            ev(program)
+        # Cancellation must return while the LM calls are still blocked.
+        assert not worker_finished.is_set()
+        assert len(running) == 2 and all(future.running() for future in running)
+    finally:
+        started.abort()
+        release.set()
+        # Production intentionally uses shutdown(wait=False). The test owns
+        # these workers and must drain them before fixtures/patches are reset.
+        for pool in pools:
+            pool.shutdown(wait=True, cancel_futures=True)
+    assert all(future.done() for future in running)
 
 
 def test_evaluate_call_wrong_answer():
@@ -259,6 +304,44 @@ def test_evaluate_callback():
     assert callback.start_call_count == 1
     assert callback.end_call_outputs.score == 100.0
     assert callback.end_call_count == 1
+
+
+def test_parallel_program_callbacks_are_children_of_evaluate_callback():
+    class LineageCallback(BaseCallback):
+        def __init__(self):
+            self.evaluate_call_id = None
+            self.module_parent_call_ids = []
+            self.lock = threading.Lock()
+
+        def on_evaluate_start(self, call_id, instance, inputs):
+            self.evaluate_call_id = call_id
+
+        def on_module_start(self, call_id, instance, inputs):
+            with self.lock:
+                self.module_parent_call_ids.append(ACTIVE_CALL_ID.get())
+
+    callback = LineageCallback()
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        ),
+        callbacks=[callback],
+    )
+    evaluator = Evaluate(
+        devset=[new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")],
+        metric=answer_exact_match,
+        num_threads=2,
+        display_progress=False,
+    )
+
+    evaluator(Predict("question -> answer"))
+
+    assert callback.evaluate_call_id is not None
+    assert callback.module_parent_call_ids == [callback.evaluate_call_id, callback.evaluate_call_id]
+
 
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
@@ -395,4 +478,15 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
+
+
+def test_evaluate_raises_on_empty_devset():
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=[],
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    with pytest.raises(ValueError, match="devset"):
+        ev(program)
 

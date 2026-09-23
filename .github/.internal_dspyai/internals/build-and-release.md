@@ -11,7 +11,8 @@ At a high level, the workflow works as follows:
 3. Builds and publishes a release on [test-pypi](https://test.pypi.org/project/dspy-ai-test/)
 4. Uses the test-pypi release to run build_utils/tests/intro.py with the new release as an integration test. Note intro.py is a copy of the intro notebook.
 5. Assuming the test runs successfully, it pushes a release to [pypi](https://pypi.org/project/dspy-ai/). If not, the user can delete the tag, make the fixes and then push the tag again. Versioning for multiple releases to test-pypi with the same tag version is taken care of by the workflow by appending a pre-release identifier, so the user only needs to consider the version for pypi. 
-6. (Currently manual) the user creates a release and includes release notes, as described in docs/docs/release-checklist.md
+6. A PR is automatically opened to bump version metadata on `main`.
+7. (Currently manual) the user creates a release and includes release notes, as described in docs/docs/release-checklist.md
 
 ## Implementation Details
 
@@ -20,6 +21,7 @@ The workflow executes a series of jobs in sequence:
 - build-and-publish-test-pypi
 - test-intro-script
 - build-and-publish-pypi
+- open-main-version-bump-pr
 
 #### extract-tag
 Extracts the tag pushed to the commit. This tag is expected to be the version of the new deployment. 
@@ -55,5 +57,7 @@ Builds and publishes the package to pypi.
 1. Builds the binary wheel
 1. Publishes the package to pypi.
 
+#### open-main-version-bump-pr
+Opens a PR against `main` to update version metadata after a successful publish. This ensures that `pyproject.toml`, `__metadata__.py`, and the `dspy-ai` wrapper package all reflect the latest published version on the default branch.
 
 \* The package name is updated by the workflow to allow the same files to be used to build both the pypi and test-pypi packages.

@@ -1,11 +1,13 @@
 import re
 
-import litellm
 import pytest
 from pydantic import BaseModel
 
 import dspy
+import dspy.adapters.base as adapter_base
+import dspy.adapters.utils as adapter_utils
 from dspy.utils.dummies import DummyLM
+from dspy.utils.exceptions import ContextWindowExceededError
 
 
 @pytest.mark.extra
@@ -131,6 +133,52 @@ def test_tool_calling_with_pydantic_args():
     assert outputs.trajectory == expected_trajectory
 
 
+def test_react_with_tools_skips_native_response_issubclass_for_generic_alias(monkeypatch):
+    def get_user_info(name: str):
+        return {"name": name}
+
+    class CustomerService(dspy.Signature):
+        user_request: str = dspy.InputField()
+        process_result: str = dspy.OutputField()
+
+    react = dspy.ReAct(CustomerService, tools=[get_user_info])
+    problem_annotation = react.react.signature.output_fields["next_tool_args"].annotation
+
+    def guarded_issubclass(cls, class_or_tuple):
+        if cls == problem_annotation:
+            raise TypeError("issubclass() arg 1 must be a class")
+        return issubclass(cls, class_or_tuple)
+
+    monkeypatch.setattr(adapter_base, "issubclass", guarded_issubclass, raising=False)
+    monkeypatch.setattr(adapter_utils, "issubclass", guarded_issubclass, raising=False)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should look up the user first.",
+                "next_tool_name": "get_user_info",
+                "next_tool_args": {"name": "Adam"},
+            },
+            {
+                "next_thought": "I have the information I need, so I can finish now.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "I fetched the user profile and can answer the request.",
+                "process_result": "Resolved Adam's request.",
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm):
+        result = react(user_request="Help me, my name is Adam")
+
+    assert result.process_result == "Resolved Adam's request."
+    assert result.trajectory["tool_name_0"] == "get_user_info"
+    assert result.trajectory["tool_args_0"] == {"name": "Adam"}
+
+
 def test_tool_calling_without_typehint():
     def foo(a, b):
         """Add two numbers."""
@@ -187,7 +235,7 @@ def test_trajectory_truncation():
             )
         elif call_count == 3:
             # The 3rd call raises context window exceeded error
-            raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+            raise ContextWindowExceededError()
         else:
             # The 4th call finishes
             return dspy.Prediction(next_thought="Final thought", next_tool_name="finish", next_tool_args={})
@@ -204,6 +252,45 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
+def test_truncate_trajectory_raises_on_single_tool_call():
+    # A trajectory with exactly one tool call has 4 keys (thought, tool_name, tool_args,
+    # observation). Per truncate_trajectory's own docstring/error message, this is the
+    # smallest trajectory that cannot be truncated further, so it must raise instead of
+    # silently popping every key and returning an empty trajectory.
+    react = dspy.ReAct("input_text -> output_text", tools=[])
+    trajectory = {
+        "thought_0": "Thought 0",
+        "tool_name_0": "finish",
+        "tool_args_0": {},
+        "observation_0": "Completed.",
+    }
+
+    with pytest.raises(ContextWindowExceededError):
+        react.truncate_trajectory(trajectory)
+
+
+def test_truncation_exhausted_raises_context_window_exceeded_error():
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    def always_exceed(**kwargs):
+        raise ContextWindowExceededError()
+
+    trajectory = {}
+    for i in range(4):
+        trajectory[f"thought_{i}"] = f"Thought {i}"
+        trajectory[f"tool_name_{i}"] = "echo"
+        trajectory[f"tool_args_{i}"] = {"text": f"Text {i}"}
+        trajectory[f"observation_{i}"] = f"Echoed: Text {i}"
+
+    with pytest.raises(ContextWindowExceededError, match="even after 3 attempts") as exc_info:
+        react._call_with_potential_trajectory_truncation(always_exceed, trajectory, input_text="test input")
+
+    assert isinstance(exc_info.value.__cause__, ContextWindowExceededError)
+
+
 @pytest.mark.asyncio
 async def test_context_window_exceeded_after_retries():
     def echo(text: str) -> str:
@@ -212,7 +299,7 @@ async def test_context_window_exceeded_after_retries():
     react = dspy.ReAct("input_text -> output_text", tools=[echo])
 
     def mock_react(**kwargs):
-        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+        raise ContextWindowExceededError()
 
     # Test sync version
     extract_calls = []
@@ -235,7 +322,7 @@ async def test_context_window_exceeded_after_retries():
     async_extract_calls = []
 
     async def mock_react_async(**kwargs):
-        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+        raise ContextWindowExceededError()
 
     async def mock_extract_async(**kwargs):
         async_extract_calls.append(kwargs)
@@ -298,6 +385,30 @@ def test_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_tool_error_observation_format():
+    def failing_tool():
+        raise ValueError("tool blew up")
+
+    react = dspy.ReAct("question -> answer", tools=[failing_tool])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I will call the tool.",
+                "next_tool_name": "failing_tool",
+                "next_tool_args": {},
+            },
+            {"reasoning": "The tool failed.", "answer": "n/a"},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(question="What happens?", max_iters=1)
+    obs = outputs.trajectory["observation_0"]
+
+    assert obs.startswith("Execution error in failing_tool: \nTraceback (most recent call last):")
+    assert obs.endswith("ValueError: tool blew up")
 
 
 @pytest.mark.asyncio

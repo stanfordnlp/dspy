@@ -1,7 +1,8 @@
-import numpy as np
-
 from dspy.clients import Embedder
 from dspy.primitives import Example
+from dspy.utils.lazy_import import require
+
+np = require("numpy")
 
 
 class KNN:
@@ -14,7 +15,7 @@ class KNN:
             trainset: List of training examples to search through
             vectorizer: The `Embedder` to use for vectorization
 
-        Example:
+        Examples:
             ```python
             import dspy
             from sentence_transformers import SentenceTransformer

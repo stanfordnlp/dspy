@@ -7,61 +7,74 @@ repo_name: stanfordnlp/dspy
 
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
+site_dir: "site/"
 
 nav:
-    - Get Started: index.md
-    - Learn DSPy:
-        - Learning DSPy: learn/index.md
-        - DSPy Programming:
-            - Programming Overview: learn/programming/overview.md
-            - Language Models: learn/programming/language_models.md
-            - Signatures: learn/programming/signatures.md
-            - Modules: learn/programming/modules.md
-            - Adapters: learn/programming/adapters.md
-            - Tools: learn/programming/tools.md
-            - MCP: learn/programming/mcp.md
-        - DSPy Evaluation:
-            - Evaluation Overview: learn/evaluation/overview.md
-            - Data Handling: learn/evaluation/data.md
-            - Metrics: learn/evaluation/metrics.md
-        - DSPy Optimization:
-            - Optimization Overview: learn/optimization/overview.md
-            - Optimizers: learn/optimization/optimizers.md
+    - Overview: index.md
+    - Getting Started:
+        - Program, don't prompt: getting-started/program-dont-prompt.md
+        - Setting up DSPy: getting-started/installation.md
+        - Your first program: getting-started/first-program.md
+        - Expanding signatures: getting-started/expanding-signatures.md
+        - Class-based signatures: getting-started/class-based-signatures.md
+        - Changing modules: getting-started/changing-modules.md
+        - Tools with ReAct: getting-started/react-and-tools.md
+        - Composing modules: getting-started/composing-modules.md
+        - Metrics: getting-started/metrics.md
+        - GEPA optimization: getting-started/gepa-optimization.md
+        - Saving and loading: getting-started/saving-and-loading.md
+        - Where to go next: getting-started/where-to-go-next.md
+    - Diving Deeper:
+        - Signatures in depth: diving-deeper/signatures-in-depth.md
+        - "Modules: composing your own": diving-deeper/modules.md
+        - Built-in module variants: diving-deeper/built-in-module-variants.md
+        - "RLM: exploring large contexts with code": diving-deeper/rlm.md
+        - "Flex: optimizable module code": diving-deeper/flex.md
+        - Tools and MCP: diving-deeper/tools.md
+        - ReAct and ReActV2: diving-deeper/react.md
+        - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
+        - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
+        - GEPA in depth: diving-deeper/gepa-in-depth.md
+        - BootstrapFewShot family: diving-deeper/bootstrap-fewshot-family.md
+        - "Adapters: how signatures become prompts": diving-deeper/adapters.md
+        - "Settings and context()": diving-deeper/settings-and-context.md
+        - Saving and loading: diving-deeper/saving-and-loading.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
             - Overview: tutorials/build_ai_program/index.md
             - Managing Conversation History: tutorials/conversation_history/index.md
-            - Building AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
-            - Building AI Applications by Customizing DSPy Modules: tutorials/custom_module/index.ipynb
-            - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
-            - Building RAG as Agent: tutorials/agents/index.ipynb
-            - Entity Extraction: tutorials/entity_extraction/index.ipynb
+            - Building AI Agents with DSPy: tutorials/customer_service_agent/index.md
+            - Building AI Applications by Customizing DSPy Modules: tutorials/custom_module/index.md
+            - Retrieval-Augmented Generation (RAG): tutorials/rag/index.md
+            - Building RAG as Agent: tutorials/agents/index.md
+            - Entity Extraction: tutorials/entity_extraction/index.md
             - Classification: tutorials/classification/index.md
-            - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
+            - Multi-Hop RAG: tutorials/multihop_search/index.md
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
-            - Program Of Thought: tutorials/program_of_thought/index.ipynb
-            - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
-            - Audio: tutorials/audio/index.ipynb
+            - Program Of Thought: tutorials/program_of_thought/index.md
+            - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.md
+            - Audio: tutorials/audio/index.md
         - Optimize AI Programs with DSPy:
             - Overview: tutorials/optimize_ai_program/index.md
-            - Math Reasoning: tutorials/math/index.ipynb
-            - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
-            - Advanced Tool Use: tutorials/tool_use/index.ipynb
-            - Finetuning Agents: tutorials/games/index.ipynb
+            - Math Reasoning: tutorials/math/index.md
+            - Classification Finetuning: tutorials/classification_finetuning/index.md
+            - Advanced Tool Use: tutorials/tool_use/index.md
+            - Finetuning Agents: tutorials/games/index.md
         - Reflective Prompt Evolution with dspy.GEPA:
             - Overview: tutorials/gepa_ai_program/index.md
-            - GEPA for AIME (Math): tutorials/gepa_aime/index.ipynb
-            - GEPA for Structured Information Extraction for Enterprise Tasks: tutorials/gepa_facilitysupportanalyzer/index.ipynb
-            - GEPA for Privacy-Conscious Delegation: tutorials/gepa_papillon/index.ipynb
-            - GEPA for Code Backdoor Classification (AI control): tutorials/gepa_trusted_monitor/index.ipynb
+            - GEPA for AIME (Math): tutorials/gepa_aime/index.md
+            - GEPA for Structured Information Extraction for Enterprise Tasks: tutorials/gepa_facilitysupportanalyzer/index.md
+            - GEPA for Privacy-Conscious Delegation: tutorials/gepa_papillon/index.md
+            - GEPA for Code Backdoor Classification (AI control): tutorials/gepa_trusted_monitor/index.md
         - Experimental RL Optimization for DSPy:
             - Overview: tutorials/rl_ai_program/index.md
-            - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
-            - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
+            - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.md
+            - RL for Multi-Hop Research: tutorials/rl_multihop/index.md
         - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
+            - Custom LM Engines: tutorials/custom_lm_engines/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
             - Cache: tutorials/cache/index.md
@@ -78,23 +91,17 @@ nav:
             - Email Information Extraction: tutorials/email_extraction/index.md
             - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
             - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
-    - DSPy in Production: production/index.md
-    - Community:
-        - Community Resources: community/community-resources.md
-        - Use Cases: community/use-cases.md
-        - Contributing: community/how-to-contribute.md
-    - FAQ:
-        - FAQ: faqs.md
-        - Cheatsheet: cheatsheet.md
-
     - API Reference:
         - API Reference: api/index.md
         - Adapters:
+            - api/adapters/index.md
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
+            - XMLAdapter: api/adapters/XMLAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
             - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:
+            - api/evaluation/index.md
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
             - EvaluationResult: api/evaluation/EvaluationResult.md
@@ -102,23 +109,31 @@ nav:
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
         - Experimental:
+            - api/experimental/index.md
             - Citations: api/experimental/Citations.md
             - Document: api/experimental/Document.md
         - Models:
+            - api/models/index.md
+            - BaseLM: api/models/BaseLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
+            - api/modules/index.md
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - CodeAct: api/modules/CodeAct.md
+            - Flex: api/modules/Flex.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
             - Predict: api/modules/Predict.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
+            - ReActV2: api/modules/ReActV2.md
             - Refine: api/modules/Refine.md
+            - RLM: api/modules/RLM.md
         - Optimizers:
+            - api/optimizers/index.md
             - GEPA:
                 - 1. GEPA Overview: api/optimizers/GEPA/overview.md
                 - 2. GEPA Advanced: api/optimizers/GEPA/GEPA_Advanced.md
@@ -136,6 +151,7 @@ nav:
             - MIPROv2: api/optimizers/MIPROv2.md
             - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
+            - api/primitives/index.md
             - Audio: api/primitives/Audio.md
             - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
@@ -145,14 +161,21 @@ nav:
             - Tool: api/primitives/Tool.md
             - ToolCalls: api/primitives/ToolCalls.md
         - Signatures:
+            - api/signatures/index.md
             - InputField: api/signatures/InputField.md
             - OutputField: api/signatures/OutputField.md
             - Signature: api/signatures/Signature.md
         - Tools:
+            - api/tools/index.md
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
+            - LocalInterpreter: api/tools/LocalInterpreter.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - api/utils/index.md
+            - Errors: api/utils/Errors.md
+            - configure: api/utils/configure.md
+            - context: api/utils/context.md
             - StatusMessage: api/utils/StatusMessage.md
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - StreamListener: api/utils/StreamListener.md
@@ -165,17 +188,28 @@ nav:
             - inspect_history: api/utils/inspect_history.md
             - load: api/utils/load.md
             - streamify: api/utils/streamify.md
+    - Community:
+        - Use Cases: community/use-cases.md
+        - Built with DSPy: community/built-with-dspy.md
+        - Resources: community/community-resources.md
+        - Contributing: community/how-to-contribute.md
+        - Normalized LM API Migration: community/normalized-lm-api-migration.md
+    - FAQ:
+        - FAQ: faqs.md
+        - Cheatsheet: cheatsheet.md
 
 theme:
-    name: material
+    variant: classic
     custom_dir: overrides
+    font:
+        text: Inter
+        code: Fira Mono
     features:
         - navigation.tabs
         - navigation.path
         - navigation.indexes
         - navigation.expand
         - toc.follow
-        - toc.integrate
         - navigation.top
         - search.suggest
         - search.highlight
@@ -183,7 +217,6 @@ theme:
         - content.code.annotation
         - content.code.copy
         - navigation.footer
-        - content.action.edit
     language: en
     palette:
         - scheme: default
@@ -202,17 +235,18 @@ theme:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/dspy_logo.png
+    logo: static/dspy-logo.svg
     favicon: static/img/logo.png
 
 extra_css:
     - stylesheets/extra.css
 
 plugins:
-    - social
     - search:
         lang: en
         separator: '[\s\-\.]+'
+    - minify:
+        minify_html: true
     - mkdocstrings:
         handlers:
             python:
@@ -232,18 +266,10 @@ plugins:
                     annotations_path: brief
                     docstring_section_style: table
                     merge_init_into_class: true
-                    rendering:
-                        show_if_no_docstring: true
-                        show_warnings: false
-                        html_meta: false
-    - mkdocs-jupyter:
-        ignore_h1_titles: true
     - redirects:
         redirect_maps:
             # Redirect /intro/ to the main page
             "intro/index.md": "index.md"
-            "intro.md": "index.md"
-            
             "deep-dive/optimizers/bootstrap-fewshot.md": "api/optimizers/BootstrapFewShot.md"
             "deep-dive/optimizers/bfrs.md": "api/optimizers/BootstrapFewShotWithRandomSearch.md"
             "deep-dive/optimizers/BootstrapFinetune.md": "api/optimizers/BootstrapFinetune.md"
@@ -252,46 +278,47 @@ plugins:
             "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
             "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
             "api/optimizers/GEPA/index.md": "api/optimizers/GEPA/overview.md"
+            "diving-deeper/tools-react-and-mcp.md": "diving-deeper/react.md"
+            "docs/quick-start/getting-started-01.md": "tutorials/rag/index.md"
+            "docs/quick-start/getting-started-02.md": "tutorials/rag/index.md"
+            "quick-start/getting-started-01.md": "tutorials/rag/index.md"
+            "quick-start/getting-started-02.md": "tutorials/rag/index.md"
+            "community/community-ports.md": "community/built-with-dspy.md"
+            "production/companies.md": "community/use-cases.md"
 
-            "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-            "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
-            "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
-            "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
-    - llmstxt:
-        markdown_description: >
-          DSPy is the framework for programming—rather than prompting—language models.
-          DSPy unifies techniques for prompting, fine-tuning, reasoning, tool use, and evaluation of LMs.
-          It provides a systematic approach to building AI applications through composable modules, 
-          optimization techniques, and evaluation frameworks.
-        sections:
-          Getting Started:
-            - index.md: DSPy overview and quick start guide
-            - cheatsheet.md: DSPy cheatsheet for quick reference
-          Core Concepts:
-            - learn/programming/overview.md: Programming paradigm and philosophy
-            - learn/programming/signatures.md: Signatures - declarative input/output specifications
-            - learn/programming/modules.md: Modules - composable AI components
-            - learn/programming/language_models.md: Language model interfaces and configuration
-          Essential Tutorials:
-            - tutorials/rag/index.ipynb: Retrieval-Augmented Generation (RAG) tutorial
-            - tutorials/classification/index.md: Classification with DSPy
-            - tutorials/agents/index.ipynb: Building AI agents with DSPy
-          Optimization:
-            - learn/optimization/overview.md: Optimization techniques overview
-            - tutorials/optimize_ai_program/index.md: Guide to optimizing AI programs
-            - api/optimizers/BootstrapFewShot.md: Bootstrap few-shot optimizer
-          Key Modules API:
-            - api/modules/Predict.md: Basic prediction module
-            - api/modules/ChainOfThought.md: Chain of thought reasoning
-            - api/modules/ReAct.md: ReAct agent module
-          Core API Reference:
-            - api/signatures/Signature.md: Signature system documentation
-            - api/primitives/Example.md: Example primitive for training data
-          Production:
-            - tutorials/deployment/index.md: Production deployment guide
-            - tutorials/observability/index.md: Debugging and observability
+            # Redirect old learn/ pages to the new Getting Started tutorial
+            "learn/index.md": "getting-started/program-dont-prompt.md"
+            "learn/programming/overview.md": "getting-started/first-program.md"
+            "learn/programming/language_models.md": "getting-started/installation.md"
+            "learn/programming/signatures.md": "getting-started/expanding-signatures.md"
+            "learn/programming/modules.md": "getting-started/changing-modules.md"
+            "learn/programming/adapters.md": "getting-started/first-program.md"
+            "learn/programming/tools.md": "getting-started/react-and-tools.md"
+            "learn/programming/mcp.md": "getting-started/react-and-tools.md"
+            "learn/evaluation/overview.md": "getting-started/metrics.md"
+            "learn/evaluation/data.md": "getting-started/metrics.md"
+            "learn/evaluation/metrics.md": "getting-started/metrics.md"
+            "learn/optimization/overview.md": "getting-started/gepa-optimization.md"
+            "learn/optimization/optimizers.md": "getting-started/gepa-optimization.md"
+
+            # Redirect old numbered Getting Started URLs to the new kebab-case paths
+            "getting_started/01_program_dont_prompt.md": "getting-started/program-dont-prompt.md"
+            "getting_started/02_installation.md": "getting-started/installation.md"
+            "getting_started/03_first_program.md": "getting-started/first-program.md"
+            "getting_started/04_expanding_signatures.md": "getting-started/expanding-signatures.md"
+            "getting_started/05_class_based_signatures.md": "getting-started/class-based-signatures.md"
+            "getting_started/06_changing_modules.md": "getting-started/changing-modules.md"
+            "getting_started/07_react_and_tools.md": "getting-started/react-and-tools.md"
+            "getting_started/08_composing_modules.md": "getting-started/composing-modules.md"
+            "getting_started/09_metrics.md": "getting-started/metrics.md"
+            "getting_started/10_gepa_optimization.md": "getting-started/gepa-optimization.md"
+            "getting_started/11_saving_and_loading.md": "getting-started/saving-and-loading.md"
+            "getting_started/12_where_to_go_next.md": "getting-started/where-to-go-next.md"
 
 extra:
+    version:
+        provider: mike
+        alias: true
     social:
         - icon: fontawesome/brands/github
           link: https://github.com/stanfordnlp/dspy
@@ -301,8 +328,10 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
+    - "js/hero-interactive.js"
 
 markdown_extensions:
+    - smarty
     - toc:
         permalink: true
         toc_depth: 3
@@ -321,9 +350,6 @@ markdown_extensions:
     - pymdownx.mark
     - attr_list
     - md_in_html
-    - pymdownx.emoji:
-        emoji_index: !!python/name:material.extensions.emoji.twemoji
-        emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
+    &copy; 2026 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>

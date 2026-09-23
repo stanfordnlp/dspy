@@ -1,7 +1,10 @@
+import threading
 import time
+from unittest import mock
 
 import pytest
 
+from dspy.utils.callback import ACTIVE_CALL_ID
 from dspy.utils.parallelizer import ParallelExecutor
 
 
@@ -15,6 +18,21 @@ def test_worker_threads_independence():
     results = executor.execute(task, data)
 
     assert results == [2, 4, 6, 8, 10]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_workers_inherit_active_callback_call_id(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads)
+
+    for parent_call_id in ["first-parent", "second-parent"]:
+        token = ACTIVE_CALL_ID.set(parent_call_id)
+        try:
+            observed_call_ids = executor.execute(lambda _: ACTIVE_CALL_ID.get(), range(5))
+
+            assert observed_call_ids == [parent_call_id] * 5
+            assert ACTIVE_CALL_ID.get() == parent_call_id
+        finally:
+            ACTIVE_CALL_ID.reset(token)
 
 
 def test_parallel_execution_speed():
@@ -83,3 +101,97 @@ def test_parallel_executor_tracks_failed_indices_and_exceptions():
     assert str(executor.exceptions_map[2]) == "test error for 3"
     assert isinstance(executor.exceptions_map[4], RuntimeError)
     assert str(executor.exceptions_map[4]) == "test error for 5"
+
+
+def test_sequential_execution_runs_on_main_thread():
+    """With num_threads=1, all work should run on the main thread (not in a ThreadPoolExecutor)."""
+    execution_threads = []
+
+    def task(item):
+        execution_threads.append(threading.current_thread())
+        return item * 2
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=1)
+    results = executor.execute(task, data)
+
+    assert results == [2, 4, 6, 8, 10]
+    assert all(t is threading.main_thread() for t in execution_threads)
+
+
+def test_sequential_max_errors_not_met():
+    """Sequential execution should handle errors without crashing when max_errors is not reached."""
+    def task(item):
+        if item == 3:
+            raise ValueError("Intentional error")
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=1, max_errors=2)
+
+    results = executor.execute(task, data)
+
+    assert results == [1, 2, None, 4, 5]
+
+
+def test_sequential_max_errors_exceeded():
+    """Sequential execution should cancel when max_errors is reached."""
+    def task(item):
+        if item == 3:
+            raise ValueError("Intentional error")
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=1, max_errors=1)
+
+    with pytest.raises(Exception, match="Execution cancelled due to errors or interruption."):
+        executor.execute(task, data)
+
+
+def test_sequential_tracks_failed_indices_and_exceptions():
+    """Sequential execution should track failed indices and exception objects."""
+    def task(item):
+        if item == 3:
+            raise ValueError("test error for 3")
+        if item == 5:
+            raise RuntimeError("test error for 5")
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=1, max_errors=3)
+
+    results = executor.execute(task, data)
+
+    assert results == [1, 2, None, 4, None]
+
+    assert sorted(executor.failed_indices) == [2, 4]
+
+    assert len(executor.exceptions_map) == 2
+    assert isinstance(executor.exceptions_map[2], ValueError)
+    assert str(executor.exceptions_map[2]) == "test error for 3"
+    assert isinstance(executor.exceptions_map[4], RuntimeError)
+    assert str(executor.exceptions_map[4]) == "test error for 5"
+
+
+def test_sequential_compare_results():
+    """Sequential execution should track and display comparison metrics correctly."""
+    def task(item):
+        return item, item > 2  # (result, score)
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=1, compare_results=True, disable_progress_bar=True)
+    results = executor.execute(task, data)
+
+    assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
+def test_none_returning_tasks_are_counted_as_complete(num_threads):
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=num_threads, disable_progress_bar=True)
+
+    with mock.patch.object(executor, "_update_progress") as update_progress:
+        results = executor.execute(lambda _: None, data)
+
+    assert results == [None] * len(data)
+    assert update_progress.call_args == mock.call(mock.ANY, len(data), len(data))

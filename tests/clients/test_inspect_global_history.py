@@ -1,8 +1,11 @@
+from io import StringIO
+
 import pytest
 
 import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
 from dspy.utils.dummies import DummyLM
+from dspy.utils.inspect_history import pretty_print_history
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +33,65 @@ def test_inspect_history_basic(capsys):
     assert all("messages" in entry for entry in history)
 
 
+def test_inspect_history_renders_message_tool_calls():
+    out = StringIO()
+    history = [
+        {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "search", "arguments": '{"query":"cats"}'},
+                        }
+                    ],
+                },
+                {"role": "tool", "content": "cat result", "tool_call_id": "call_1", "name": "search"},
+            ],
+            "outputs": [{"text": "done"}],
+            "timestamp": "now",
+        }
+    ]
+
+    pretty_print_history(history, n=1, file=out)
+
+    text = out.getvalue()
+    assert "Assistant message:" in text
+    assert "Tool calls:" in text
+    assert 'search: {"query": "cats"}' in text
+    assert "Tool message:" in text
+    assert "cat result" in text
+
+
+def test_inspect_history_renders_output_tool_calls_without_text():
+    out = StringIO()
+    history = [
+        {
+            "messages": [{"role": "user", "content": "Find cats"}],
+            "outputs": [
+                {
+                    "tool_calls": [
+                        {"name": "lookup", "arguments": {"query": "cats"}},
+                        {"name": "search", "args": {"query": "dogs"}},
+                    ]
+                }
+            ],
+            "timestamp": "now",
+        }
+    ]
+
+    pretty_print_history(history, n=1, file=out)
+
+    text = out.getvalue()
+    assert "Response:" not in text
+    assert "Tool calls:" in text
+    assert 'lookup: {"query": "cats"}' in text
+    assert 'search: {"query": "dogs"}' in text
+
+
 def test_inspect_history_with_n(capsys):
     """Test that inspect_history works with n
     Random failures in this test most likely mean you are printing messages somewhere
@@ -45,7 +107,7 @@ def test_inspect_history_with_n(capsys):
 
     dspy.inspect_history(n=2)
     # Test getting last 2 entries
-    out, err = capsys.readouterr()
+    out, _err = capsys.readouterr()
     assert "First" not in out
     assert "Second" in out
     assert "Third" in out

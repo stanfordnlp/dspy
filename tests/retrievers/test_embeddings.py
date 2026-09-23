@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
 
-from dspy.retrievers.embeddings import Embeddings
+from dspy.retrievers.embeddings import Embeddings, EmbeddingsWithScores
 
 
 def dummy_corpus():
@@ -132,3 +132,38 @@ def test_embeddings_from_saved():
 def test_embeddings_load_nonexistent_path():
     with pytest.raises((FileNotFoundError, OSError)):
         Embeddings.from_saved("/nonexistent/path", dummy_embedder)
+
+
+def test_embeddings_with_scores_basic_search():
+    corpus = dummy_corpus()
+    retriever = EmbeddingsWithScores(corpus=corpus, embedder=dummy_embedder, k=2)
+
+    result = retriever("A dog is barking.")
+
+    assert result.passages == ["The dog barked at the mailman.", "The cat sat on the mat."]
+    assert result.indices == [1, 0]
+    assert result.scores == pytest.approx([1.0, 0.0])
+
+
+def test_embeddings_with_scores_save_load():
+    corpus = dummy_corpus()
+    original_retriever = EmbeddingsWithScores(
+        corpus=corpus,
+        embedder=dummy_embedder,
+        k=2,
+        normalize=False,
+        brute_force_threshold=1000,
+    )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        save_path = os.path.join(temp_dir, "test_embeddings_with_scores")
+
+        original_retriever.save(save_path)
+        loaded_retriever = EmbeddingsWithScores.from_saved(save_path, dummy_embedder)
+
+        original_result = original_retriever("cat sitting")
+        loaded_result = loaded_retriever("cat sitting")
+
+        assert loaded_result.passages == original_result.passages
+        assert loaded_result.indices == original_result.indices
+        assert loaded_result.scores == pytest.approx(original_result.scores)

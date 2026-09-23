@@ -21,7 +21,7 @@ class KNNFewShot(Teleprompter):
             vectorizer: The `Embedder` to use for vectorization
             **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
 
-        Example:
+        Examples:
             ```python
             import dspy
             from sentence_transformers import SentenceTransformer

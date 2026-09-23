@@ -65,7 +65,7 @@ def known_failing_models(models: list[str]):
 @contextmanager
 def judge_dspy_configuration(**extra_judge_config):
     """
-    Context manager to temporarily configure the DSPy to use the the judge model
+    Context manager to temporarily configure DSPy to use the judge model
     from `reliability_conf.yaml`.
 
     Args:

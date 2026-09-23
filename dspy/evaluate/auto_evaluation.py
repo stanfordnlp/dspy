@@ -1,5 +1,6 @@
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.primitives import Module
+from dspy.primitives.prediction import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
 
@@ -33,11 +34,19 @@ class DecompositionalSemanticRecallPrecision(Signature):
 
 
 def f1_score(precision, recall):
+    """Compute the F1 score from precision and recall, clamping both to [0, 1]."""
     precision, recall = max(0.0, min(1.0, precision)), max(0.0, min(1.0, recall))
     return 0.0 if precision + recall == 0 else 2 * (precision * recall) / (precision + recall)
 
 
 class SemanticF1(Module):
+    """Computes semantic F1 between a prediction and ground truth via LLM-based precision/recall.
+
+    Args:
+        threshold: Minimum F1 score to accept during optimization. Defaults to 0.66.
+        decompositional: If True, uses DecompositionalSemanticRecallPrecision. Defaults to False.
+    """
+
     def __init__(self, threshold=0.66, decompositional=False):
         self.threshold = threshold
 
@@ -50,8 +59,7 @@ class SemanticF1(Module):
         scores = self.module(question=example.question, ground_truth=example.response, system_response=pred.response)
         score = f1_score(scores.precision, scores.recall)
 
-        return score if trace is None else score >= self.threshold
-
+        return Prediction(score=score if trace is None else score >= self.threshold)
 
 
 ###########
@@ -72,7 +80,6 @@ class AnswerCompleteness(Signature):
     completeness: float = OutputField(desc="fraction (out of 1.0) of ground truth covered by the system response")
 
 
-
 class AnswerGroundedness(Signature):
     """
     Estimate the groundedness of a system's responses, against real retrieved documents written by people.
@@ -83,20 +90,34 @@ class AnswerGroundedness(Signature):
     question: str = InputField()
     retrieved_context: str = InputField()
     system_response: str = InputField()
-    system_response_claims: str = OutputField(desc="enumeration of non-trivial or check-worthy claims in the system response")
+    system_response_claims: str = OutputField(
+        desc="enumeration of non-trivial or check-worthy claims in the system response"
+    )
     discussion: str = OutputField(desc="discussion of how supported the claims are by the retrieved context")
-    groundedness: float = OutputField(desc="fraction (out of 1.0) of system response supported by the retrieved context")
+    groundedness: float = OutputField(
+        desc="fraction (out of 1.0) of system response supported by the retrieved context"
+    )
 
 
 class CompleteAndGrounded(Module):
+    """Combines answer completeness and groundedness into a single score.
+
+    Args:
+        threshold: Minimum score to accept during optimization. Defaults to 0.66.
+    """
+
     def __init__(self, threshold=0.66):
         self.threshold = threshold
         self.completeness_module = ChainOfThought(AnswerCompleteness)
         self.groundedness_module = ChainOfThought(AnswerGroundedness)
 
     def forward(self, example, pred, trace=None):
-        completeness = self.completeness_module(question=example.question, ground_truth=example.response, system_response=pred.response)
-        groundedness = self.groundedness_module(question=example.question, retrieved_context=pred.context, system_response=pred.response)
+        completeness = self.completeness_module(
+            question=example.question, ground_truth=example.response, system_response=pred.response
+        )
+        groundedness = self.groundedness_module(
+            question=example.question, retrieved_context=pred.context, system_response=pred.response
+        )
         score = f1_score(groundedness.groundedness, completeness.completeness)
 
-        return score if trace is None else score >= self.threshold
+        return Prediction(score=score if trace is None else score >= self.threshold)

@@ -63,7 +63,7 @@ class Refine(Module):
             threshold (float): The threshold for the reward function.
             fail_count (Optional[int], optional): The number of times the module can fail before raising an error
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -120,7 +120,7 @@ class Refine(Module):
 
                         class WrapperAdapter(adapter.__class__):
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
+                                inputs["hint_"] = advice.get(signature2name.get(signature), "N/A")  # noqa: B023
                                 signature = signature.append(
                                     "hint_", InputField(desc="A hint to the module from an earlier run")
                                 )
