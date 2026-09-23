@@ -174,10 +174,24 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 
 [[ ## answers ## ]]
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+{answers}
+# note: the value you produce must adhere to the JSON schema:
+{
+  "type": "array",
+  "items": {
+    "type": "string"
+  }
+}
 
 [[ ## scores ## ]]
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+{scores}
+# note: the value you produce must adhere to the JSON schema:
+{
+  "type": "array",
+  "items": {
+    "type": "number"
+  }
+}
 
 [[ ## completed ## ]]
 In adhering to this structure, your objective is:\x20
@@ -231,25 +245,26 @@ def test_chat_adapter_format_exact_messages_with_nested_pydantic_models():
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `person` (Person):\n'
-                 'Your output fields are:\n'
-                 '1. `summary` (Summary):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## person ## ]]\n'
-                 '{person}\n'
-                 '\n'
-                 '[[ ## summary ## ]]\n'
-                 '{summary}        # note: the value you produce must adhere to the JSON schema: '
+      "content": "Your input fields are:\n"
+                 "1. `person` (Person):\n"
+                 "Your output fields are:\n"
+                 "1. `summary` (Summary):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## person ## ]]\n"
+                 "{person}\n"
+                 "\n"
+                 "[[ ## summary ## ]]\n"
+                 "{summary}\n# note: the value you produce must adhere to the JSON schema:\n"
+                 + json.dumps(json.loads(
                  '{"type": "object", "properties": {"headline": {"type": "string", "title": '
                  '"Headline"}, "score": {"type": "number", "title": "Score"}}, "required": '
-                 '["headline", "score"], "title": "Summary"}\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Given the fields `person`, produce the fields `summary`.'},
+                 '["headline", "score"], "title": "Summary"}'), indent=2) + "\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `person`, produce the fields `summary`."},
      {"role": "user",
       "content": '[[ ## person ## ]]\n'
                  '{"name": "Ada", "address": {"city": "London", "country": "UK"}, "tags": ["math", '
@@ -602,41 +617,42 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `tools` (list[Tool]): \n'
-                 '4. `profile` (Profile): \n'
-                 '5. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `answer` (AnswerCard):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
-                 '\n'
-                 '[[ ## image ## ]]\n'
-                 '{image}\n'
-                 '\n'
-                 '[[ ## tools ## ]]\n'
-                 '{tools}\n'
-                 '\n'
-                 '[[ ## profile ## ]]\n'
-                 '{profile}\n'
-                 '\n'
-                 '[[ ## question ## ]]\n'
-                 '{question}\n'
-                 '\n'
-                 '[[ ## answer ## ]]\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `image` (Image): \n"
+                 "3. `tools` (list[Tool]): \n"
+                 "4. `profile` (Profile): \n"
+                 "5. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (AnswerCard):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## history ## ]]\n"
+                 "{history}\n"
+                 "\n"
+                 "[[ ## image ## ]]\n"
+                 "{image}\n"
+                 "\n"
+                 "[[ ## tools ## ]]\n"
+                 "{tools}\n"
+                 "\n"
+                 "[[ ## profile ## ]]\n"
+                 "{profile}\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n# note: the value you produce must adhere to the JSON schema:\n"
+                 + json.dumps(json.loads(
                  '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
                  '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Answer using all supplied context.'},
+                 '"required": ["answer", "sources"], "title": "AnswerCard"}'), indent=2) + "\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Answer using all supplied context."},
      {"role": "user",
       "content": [{"type": "text",
                    "text": "This is an example of the task, though some input or output fields are not "
@@ -774,20 +790,21 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `citations` (Citations): \n'
-                 '    Type description of Citations: Citations with quoted text and source references. '
-                 'Include the exact text being cited and information about its source.\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## question ## ]]\n'
-                 '{question}\n'
-                 '\n'
-                 '[[ ## citations ## ]]\n'
-                 '{citations}        # note: the value you produce must adhere to the JSON schema: '
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `citations` (Citations): \n"
+                 "    Type description of Citations: Citations with quoted text and source references. "
+                 "Include the exact text being cited and information about its source.\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## citations ## ]]\n"
+                 "{citations}\n# note: the value you produce must adhere to the JSON schema:\n"
+                 + json.dumps(json.loads(
                  '{"type": "object", "$defs": {"Citation": {"type": "object", "description": '
                  '"Individual citation with character location information.", "properties": {"type": '
                  '{"type": "string", "default": "char_location", "title": "Type"}, "cited_text": '
@@ -825,11 +842,11 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
                  'in result.citations.citations:\\n            print(citation.format())\\n        '
                  '```\\n    ", "properties": {"citations": {"type": "array", "items": {"$ref": '
                  '"#/$defs/Citation"}, "title": "Citations"}}, "required": ["citations"], "title": '
-                 '"Citations"}\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Given the fields `question`, produce the fields `citations`.'},
+                 '"Citations"}'), ensure_ascii=False, indent=2) + "\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, produce the fields `citations`."},
      {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
      {"role": "assistant",
       "content": '[[ ## citations ## ]]\n'
@@ -1577,12 +1594,13 @@ def test_chat_adapter_format_exact_messages_with_non_native_tool_history():
             "{next_thought}\n"
             "\n"
             "[[ ## tool_calls ## ]]\n"
-            '{tool_calls}        # note: the value you produce must adhere to the JSON schema: {"type": "object", '
+            '{tool_calls}\n# note: the value you produce must adhere to the JSON schema:\n'
+            + json.dumps(json.loads('{"type": "object", '
             '"$defs": {"ToolCall": {"type": "object", "properties": {"args": {"type": "object", '
             '"additionalProperties": true, "title": "Args"}, "name": {"type": "string", "title": "Name"}}, '
             '"required": ["name", "args"], "title": "ToolCall"}}, "properties": {"tool_calls": {"type": "array", '
             '"items": {"$ref": "#/$defs/ToolCall"}, "title": "Tool Calls"}}, "required": ["tool_calls"], "title": '
-            '"ToolCalls"}\n'
+            '"ToolCalls"}'), indent=2) + "\n"
             "\n"
             "[[ ## completed ## ]]\n"
             "In adhering to this structure, your objective is: \n"
@@ -1852,74 +1870,75 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
     )
 
     expected_messages = [{"role": "system",
-      "content": 'Your input fields are:\n'
-                 '1. `history` (History): \n'
-                 '2. `image` (Image): \n'
-                 '3. `audio` (Audio): \n'
-                 '4. `file` (File): \n'
-                 '5. `document` (Document): \n'
-                 '    Type description of Document: A document containing text content that can be '
-                 'referenced and cited. Include the full text content and optionally a title for '
-                 'proper referencing.\n'
-                 '6. `event` (Event): \n'
-                 '    Type description of Event: An event block.\n'
-                 '7. `tools` (list[Tool]): \n'
-                 '8. `profile` (Profile): \n'
-                 '9. `context` (str): \n'
-                 '10. `question` (str):\n'
-                 'Your output fields are:\n'
-                 '1. `answer` (AnswerCard): \n'
+      "content": "Your input fields are:\n"
+                 "1. `history` (History): \n"
+                 "2. `image` (Image): \n"
+                 "3. `audio` (Audio): \n"
+                 "4. `file` (File): \n"
+                 "5. `document` (Document): \n"
+                 "    Type description of Document: A document containing text content that can be "
+                 "referenced and cited. Include the full text content and optionally a title for "
+                 "proper referencing.\n"
+                 "6. `event` (Event): \n"
+                 "    Type description of Event: An event block.\n"
+                 "7. `tools` (list[Tool]): \n"
+                 "8. `profile` (Profile): \n"
+                 "9. `context` (str): \n"
+                 "10. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "1. `answer` (AnswerCard): \n"
                  "2. `verdict` (Literal['yes', 'no']): \n"
-                 '3. `confidence` (float):\n'
-                 'All interactions will be structured in the following way, with the appropriate '
-                 'values filled in.\n'
-                 '\n'
-                 '[[ ## history ## ]]\n'
-                 '{history}\n'
-                 '\n'
-                 '[[ ## image ## ]]\n'
-                 '{image}\n'
-                 '\n'
-                 '[[ ## audio ## ]]\n'
-                 '{audio}\n'
-                 '\n'
-                 '[[ ## file ## ]]\n'
-                 '{file}\n'
-                 '\n'
-                 '[[ ## document ## ]]\n'
-                 '{document}\n'
-                 '\n'
-                 '[[ ## event ## ]]\n'
-                 '{event}\n'
-                 '\n'
-                 '[[ ## tools ## ]]\n'
-                 '{tools}\n'
-                 '\n'
-                 '[[ ## profile ## ]]\n'
-                 '{profile}\n'
-                 '\n'
-                 '[[ ## context ## ]]\n'
-                 '{context}\n'
-                 '\n'
-                 '[[ ## question ## ]]\n'
-                 '{question}\n'
-                 '\n'
-                 '[[ ## answer ## ]]\n'
-                 '{answer}        # note: the value you produce must adhere to the JSON schema: '
+                 "3. `confidence` (float):\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "[[ ## history ## ]]\n"
+                 "{history}\n"
+                 "\n"
+                 "[[ ## image ## ]]\n"
+                 "{image}\n"
+                 "\n"
+                 "[[ ## audio ## ]]\n"
+                 "{audio}\n"
+                 "\n"
+                 "[[ ## file ## ]]\n"
+                 "{file}\n"
+                 "\n"
+                 "[[ ## document ## ]]\n"
+                 "{document}\n"
+                 "\n"
+                 "[[ ## event ## ]]\n"
+                 "{event}\n"
+                 "\n"
+                 "[[ ## tools ## ]]\n"
+                 "{tools}\n"
+                 "\n"
+                 "[[ ## profile ## ]]\n"
+                 "{profile}\n"
+                 "\n"
+                 "[[ ## context ## ]]\n"
+                 "{context}\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "[[ ## answer ## ]]\n"
+                 "{answer}\n# note: the value you produce must adhere to the JSON schema:\n"
+                 + json.dumps(json.loads(
                  '{"type": "object", "properties": {"answer": {"type": "string", "title": "Answer"}, '
                  '"sources": {"type": "array", "items": {"type": "string"}, "title": "Sources"}}, '
-                 '"required": ["answer", "sources"], "title": "AnswerCard"}\n'
-                 '\n'
-                 '[[ ## verdict ## ]]\n'
-                 '{verdict}        # note: the value you produce must exactly match (no extra '
-                 'characters) one of: yes; no\n'
-                 '\n'
-                 '[[ ## confidence ## ]]\n'
-                 '{confidence}        # note: the value you produce must be a single float value\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'
-                 'In adhering to this structure, your objective is: \n'
-                 '        Answer carefully using every available signal.'},
+                 '"required": ["answer", "sources"], "title": "AnswerCard"}'), indent=2) + "\n"
+                 "\n"
+                 "[[ ## verdict ## ]]\n"
+                 "{verdict}        # note: the value you produce must exactly match (no extra "
+                 "characters) one of: yes; no\n"
+                 "\n"
+                 "[[ ## confidence ## ]]\n"
+                 "{confidence}        # note: the value you produce must be a single float value\n"
+                 "\n"
+                 "[[ ## completed ## ]]\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Answer carefully using every available signal."},
      {"role": "user",
       "content": [{"type": "text",
                    "text": "This is an example of the task, though some input or output fields are not "
@@ -2737,10 +2756,24 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 
 [[ ## answers ## ]]
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+{answers}
+# note: the value you produce must adhere to the JSON schema:
+{
+  "type": "array",
+  "items": {
+    "type": "string"
+  }
+}
 
 [[ ## scores ## ]]
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+{scores}
+# note: the value you produce must adhere to the JSON schema:
+{
+  "type": "array",
+  "items": {
+    "type": "number"
+  }
+}
 
 [[ ## completed ## ]]
 In adhering to this structure, your objective is:\x20

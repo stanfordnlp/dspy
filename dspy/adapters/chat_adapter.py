@@ -129,7 +129,9 @@ class ChatAdapter(Adapter):
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
             return self.format_field_with_value(
                 fields_with_values={
-                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
+                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(
+                        field_name, field_info, schema_indent=2
+                    )
                     for field_name, field_info in fields.items()
                 },
             )

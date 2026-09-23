@@ -128,7 +128,7 @@ def _get_json_schema(field_type):
     return schema
 
 
-def translate_field_type(field_name, field_info):
+def translate_field_type(field_name, field_info, *, schema_indent=None):
     field_type = field_info.annotation
 
     if get_dspy_field_type(field_info) == "input" or field_type is str or field_type is Reasoning:
@@ -150,7 +150,10 @@ def translate_field_type(field_name, field_info):
         # Code has a rich type description already; avoid duplicating its large schema block.
         desc = ""
     else:
-        desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
+        schema = json.dumps(_get_json_schema(field_type), ensure_ascii=False, indent=schema_indent)
+        if schema_indent is not None:
+            return f"{{{field_name}}}\n# note: the value you produce must adhere to the JSON schema:\n{schema}"
+        desc = f"must adhere to the JSON schema: {schema}"
 
     desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
     return f"{{{field_name}}}{desc}"

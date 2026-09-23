@@ -70,6 +70,19 @@ def test_backend_equivalence(adapter):
     assert a.label.confidence == 0.73
     prompt = json.dumps(lm.lm.history[-1]["messages"])
     assert "relevance" in prompt and "examples" in prompt
+    system = lm.lm.history[-1]["messages"][0]["content"]
+    for name, question in jev.lm.calls[-1]["questions"].items():
+        # Decision descriptions are real multiline JSON in both adapter prompts.
+        description = system.split(f"`{name}` (", 1)[1].split("): \n", 1)[1]
+        assert description.startswith('{\n  "instructions": ')
+        assert json.JSONDecoder().raw_decode(description)[0] == question
+        if type(adapter) is dspy.ChatAdapter:
+            marker = f"{{{name}}}\n# note: the value you produce must adhere to the JSON schema:\n"
+            schema_text = system.split(marker, 1)[1]
+            assert schema_text.startswith('{\n  "type": "object",\n')
+            schema = json.JSONDecoder().raw_decode(schema_text)[0]
+            assert schema["required"] == (["noul"] if name == "flag" else ["probabilities", "confidence"])
+            assert schema["additionalProperties"] is False
 
 
 @pytest.mark.asyncio

@@ -69,7 +69,7 @@ class DecisionAdapter:
             return {"state": state, "questions": questions}
         for name, kind in types.items():
             signature = signature.with_updated_fields(
-                name, type_=evidence_type(kind), desc=json.dumps(questions[name], ensure_ascii=False)
+                name, type_=evidence_type(kind), desc="\n" + json.dumps(questions[name], ensure_ascii=False, indent=2)
             )
         # Labeled demonstrations need not contain distributions. Keep them as
         # task examples in the instructions, rather than fabricating evidence.
