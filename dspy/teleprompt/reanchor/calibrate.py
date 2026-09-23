@@ -106,11 +106,17 @@ def calibrate(
                 report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
                 continue
             if "threshold" in config:
+                # The starting threshold stays unless a grid value scores strictly better.
+                start = config["threshold"]
+                base = score()
                 scores = {}
                 for t in THRESHOLDS:
                     config["threshold"] = t
-                    scores[t] = score()
+                    scores[t] = base if t == start else score()
                 best = max(scores, key=lambda t: (scores[t], -abs(t - 0.5)))
+                if scores[best] <= base:
+                    best = start
+                    scores[start] = base
                 config["threshold"] = best
                 report.append(
                     {
@@ -119,6 +125,7 @@ def calibrate(
                         "parameter": "threshold",
                         "value": best,
                         "train_score": round(scores[best], 4),
+                        "train_score_at_start": round(base, 4),
                         "train_score_at_default": round(scores[0.5], 4),
                     }
                 )

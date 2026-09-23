@@ -26,6 +26,17 @@ def test_a_leaning_noul_gets_a_threshold_between_its_piles(system_one):
     assert report[0]["train_score_at_default"] == 0.5 and report[0]["train_score"] == 1.0
 
 
+def test_a_starting_threshold_off_the_grid_stays_when_no_grid_value_beats_it(system_one):
+    # 0.73 splits 0.74 from 0.72; no grid value does.
+    system_one(lambda state, name, q: noul(0.74 if state["inputs"]["pair"] == "same" else 0.72))
+    program = Decide(Match)
+    program.fields["match"]["threshold"] = 0.73
+    train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 4]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
+    assert program.fields["match"]["threshold"] == 0.73
+    assert report[0]["train_score_at_start"] == 1.0 and report[0]["train_score"] == 1.0
+
+
 class Kind(dspy.Signature):
     item: str = dspy.InputField()
     kind: Literal["x", "y"] = dspy.OutputField()
