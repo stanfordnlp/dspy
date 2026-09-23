@@ -343,3 +343,43 @@ def test_rlm_does_not_warn_for_native_outputs_or_rich_inputs():
         warnings.simplefilter("always")
         dspy.RLM(signature)
     assert not recorded
+
+
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+@pytest.mark.parametrize("annotation,value", [
+    (list[Noul], [{"value": False, "confidence": 0.8, "probability": 0.9}]),
+    (list[Rating], [{"value": 0.1, "confidence": 0.6}]),
+    (list[Label], [{"value": "other", "confidence": 0.7}]),
+    (list[Annotated[bool, Noul]], [False]),
+    (dict[str, list[Noul]], {"items": [{"value": True, "confidence": 0.4}]}),
+])
+@pytest.mark.asyncio
+async def test_predict_warns_for_nested_decision_outputs(adapter, annotation, value):
+    signature = dspy.Signature({"answer": (annotation, dspy.OutputField())})
+    lm = DummyLM([{"answer": value}] * 2, adapter=adapter)
+    module = dspy.Predict(signature, lm=lm)
+    with dspy.context(adapter=adapter):
+        with pytest.warns(UserWarning, match="not implemented for nested output 'answer'") as recorded:
+            result = module()
+        assert len(recorded) == 1
+        with pytest.warns(UserWarning, match="not implemented for nested output 'answer'"):
+            assert (await module.acall()).answer == result.answer
+    assert len(lm.history) == 2  # Warning does not prevent inference.
+    if annotation == list[Noul]:
+        assert result.answer[0].value is False
+        assert result.answer[0].probability == 0.9  # No evidence decoding for nested values.
+
+
+def test_predict_does_not_warn_for_nested_inputs_or_top_level_decision_outputs():
+    signature = dspy.Signature({
+        "prior": (list[Noul], dspy.InputField()),
+        "flag": (Noul, dspy.OutputField(desc="Is it relevant?")),
+        "labels": (list[str], dspy.OutputField()),
+    })
+    lm = DummyLM([{"flag": {"noul": 0.8}, "labels": ["a"]}])
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        result = dspy.Predict(signature, lm=lm)(prior=[Noul(value=False, confidence=0.6)])
+    assert not recorded
+    assert result.flag.value is True
+    assert result["labels"] == ["a"]

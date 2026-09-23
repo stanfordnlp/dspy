@@ -2,12 +2,13 @@
 
 import copy
 import json
+import warnings
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.types.decision import Noul, Probability, Score
+from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 
 
 @lru_cache(maxsize=256)
@@ -33,6 +34,17 @@ def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
     """Resolve backend translation before a chat adapter starts capability planning."""
     system_one = getattr(lm, "supports_decision_requests", False) is True
     state = DecisionState(signature, fields, system_one=system_one, declared_signature=declared_signature)
+    for name, field in signature.output_fields.items():
+        if name not in state.types and any(
+            kind.extract_custom_type_from_annotation(field.rebuild_annotation()) for kind in (Noul, Choice, Score)
+        ):
+            warnings.warn(
+                f"Decision evidence decoding is not implemented for nested output {name!r}. "
+                "The LM generates values and confidence directly; thresholds, cuts, and weights are not applied. "
+                "Use top-level decision output fields instead.",
+                UserWarning,
+                stacklevel=2,
+            )
     return DecisionAdapter(adapter, state, system_one) if state.types else adapter
 
 

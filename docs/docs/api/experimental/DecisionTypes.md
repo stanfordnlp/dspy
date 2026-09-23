@@ -199,6 +199,13 @@ Predict reset behavior. Trace/training records are not sent as task context.
 TypeSafe accepts closed-set decision outputs, not free-form text generation.
 Unsupported generation options and decision streaming raise explicitly.
 
+**Nested LM decision outputs do not use evidence decoding.** Predict warns
+when called with output containers such as `list[Noul]`, `list[Score[...]]`,
+or `dict[str, Choice[...]]`. The LM generates values and confidence directly;
+thresholds, cuts, and weights are not applied. Execution remains allowed, but
+use top-level decision output fields for evidence-derived results. Containers
+of existing rich values remain supported as inputs without this warning.
+
 **RLM decision outputs are unsupported.** RLM warns when its output
 annotations contain Noul, Choice, or Score, including decision-annotated native
 types. `SUBMIT` does not apply shared evidence decoding and can return values
