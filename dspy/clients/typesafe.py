@@ -89,7 +89,7 @@ class TypeSafe:
         usage = {} if cache_hit else response["usage"]
         if settings.usage_tracker and usage:
             settings.usage_tracker.add_usage(response["model"], usage)
-        if not settings.disable_history and settings.max_history_size > 0:
+        if not settings.disable_history:
             record_history(
                 self,
                 {

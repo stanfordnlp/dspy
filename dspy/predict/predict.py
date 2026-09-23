@@ -295,8 +295,8 @@ class Predict(Module, Parameter):
 
     def set_criteria(self, field, criteria):
         """Validate and copy experimental per-field decision criteria."""
-        state = DecisionState(self.signature, {**self.fields, field: self.fields.get(field, {})})
-        state.set_criteria(field, criteria)
+        proposed = {**self.fields, field: {**self.fields.get(field, {}), "criteria": criteria}}
+        state = DecisionState(self.signature, proposed)
         self.fields.setdefault(field, {})["criteria"] = state.fields[field]["criteria"]
 
     def update_config(self, **kwargs):

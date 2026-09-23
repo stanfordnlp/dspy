@@ -124,6 +124,24 @@ def test_cache_identity_and_controls(transport):
     assert len(client.history) == 1
 
 
+@pytest.mark.parametrize("disabled", [False, True])
+@pytest.mark.asyncio
+async def test_zero_local_history_limit_preserves_global_history(transport, monkeypatch, disabled):
+    from dspy.clients import base_lm
+
+    history = []
+    monkeypatch.setattr(base_lm, "GLOBAL_HISTORY", history)
+    client = TypeSafe("jev-test", api_key="test-only")
+    module = predict(client=client)
+    with dspy.context(max_history_size=0, disable_history=disabled):
+        module(text="x")
+        await module.acall(text="x")
+    assert client.history == module.history == []
+    assert len(history) == (0 if disabled else 2)
+    if not disabled:
+        assert [entry["cache_hit"] for entry in history] == [False, True]
+
+
 def test_client_copy_and_environment(monkeypatch, transport):
     monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-environment")
     monkeypatch.setenv("TYPESAFE_BASE_URL", "https://environment.test/")

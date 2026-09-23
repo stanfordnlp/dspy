@@ -65,20 +65,13 @@ class DecisionState:
         Bare Noul/bool has no default criteria and returns None.
         """
         kind = self.types[field]
-        return self._question(field, self.signature.output_fields[field], kind).get("criteria")
-
-    def set_criteria(self, field: str, criteria):
-        """Validate and copy a criteria override without changing the signature.
-
-        Noul accepts a true/false map or None; Choice requires its option-label
-        map; Score requires an array matching its declared levels. Descriptions
-        may be strings, objects, arrays, or None. None explicitly sends null Noul
-        criteria; it does not restore the type defaults. Unknown fields raise
-        KeyError, invalid criteria raise ValueError, and neither changes state.
-        """
-        kind = self.types[field]
-        self._validate_question_config(field, kind, {"criteria": criteria})
-        self.fields[field]["criteria"] = copy.deepcopy(criteria)
+        if "criteria" in self.fields[field]:
+            return copy.deepcopy(self.fields[field]["criteria"])
+        if issubclass(kind, Noul):
+            return {str(v).lower(): desc for v, desc in kind.options} if kind.options else None
+        if issubclass(kind, Score):
+            return list(kind.options)
+        return {str(v): desc or None for v, desc in kind.options}
 
     def _validate_parameters(self):
         for name, kind in self.types.items():
@@ -157,16 +150,10 @@ class DecisionState:
         if "instructions" not in config and not (desc and desc.strip()):
             raise ValueError(f"Decision output {name!r} requires an OutputField(desc=...) or explicit instructions.")
         question = {"instructions": copy.deepcopy(config.get("instructions", desc))}
-        if issubclass(kind, Noul):
-            question["type"] = "noul"
-            if kind.options:
-                question["criteria"] = {str(v).lower(): desc for v, desc in kind.options}
-        elif issubclass(kind, Score):
-            question.update(type="score", criteria=list(kind.options))
-        else:
-            question.update(type="choice", criteria={str(v): desc or None for v, desc in kind.options})
-        if "criteria" in config:
-            question["criteria"] = copy.deepcopy(config["criteria"])
+        question["type"] = "noul" if issubclass(kind, Noul) else "score" if issubclass(kind, Score) else "choice"
+        criteria = self.get_criteria(name)
+        if criteria is not None or "criteria" in config:
+            question["criteria"] = criteria
         return question
 
     def _decode(self, answers):
@@ -195,20 +182,19 @@ class DecisionState:
                 )
             else:
                 options = {str(v): v for v, _ in kind.options}
+                probabilities = answer["probabilities"]
                 if (
-                    answer["choice"] not in options
-                    or set(answer["probabilities"]) != set(options)
-                    or sum(answer["probabilities"].values()) <= 0
+                    set(probabilities) != set(options)
+                    or sum(probabilities.values()) <= 0
                 ):
                     raise ValueError(f"Invalid Choice answer for {name!r}.")
-                selected = answer["choice"]
+                raw_winner = max(options, key=probabilities.get)
                 weights = self.fields[name]["weights"]
-                if any(w != 1 for w in weights.values()):
-                    scores = {label: answer["probabilities"][label] * weights.get(label, 1.0) for label in options}
-                    # Preserve the provider choice on ties; otherwise use declaration order.
-                    selected = max(scores, key=lambda label: (scores[label], label == answer["choice"]))
-                    if scores[selected] <= 0:
-                        raise ValueError(f"Choice weights for {name!r} leave no positive probability mass.")
+                scores = {label: probabilities[label] * weights.get(label, 1.0) for label in options}
+                # Weighted ties prefer the raw winner, then declaration order.
+                selected = max(scores, key=lambda label: (scores[label], label == raw_winner))
+                if scores[selected] <= 0:
+                    raise ValueError(f"Choice weights for {name!r} leave no positive probability mass.")
                 result = kind(
                     value=options[selected],
                     confidence=answer["confidence"],

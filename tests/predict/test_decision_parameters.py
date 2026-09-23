@@ -254,6 +254,10 @@ def test_invalid_parameters_rejected(field, config, operation, tmp_path):
         ("rating", {"probabilities": {0: 0.1, 1: 0.9}}),
         ("rating", {"probabilities": {0: 0, 1: 0, 2: 0}}),
         ("rating", {"probabilities": {0: -0.1, 1: 0.3, 2: 0.8}}),
+        ("rating", {"probabilities": {0.9: 0.1, 1.9: 0.3, 2.9: 0.6}}),
+        ("rating", {"probabilities": {False: 0.1, True: 0.3, 2: 0.6}}),
+        ("rating", {"probabilities": {"00": 0.1, "1": 0.3, "2": 0.6}}),
+        ("rating", {"probabilities": {0: 0.1, "0": 0.1, 1: 0.3, 2: 0.6}}),
         ("label", {"probabilities": {"unknown": 1}}),
         ("label", {"confidence": 1.2}),
     ],
@@ -377,6 +381,35 @@ def test_json_state_preserves_instructions_criteria_and_numeric_settings(tmp_pat
     restored.fields["flag"]["instructions"]["focus"].append("urgency")
     restored.fields["rating"]["cuts"][0] = 0.2
     assert module.fields == expected
+
+
+@pytest.mark.parametrize(
+    "kind,expected",
+    [(Noul, None), (Noul[(True, "blocked")], {"true": "blocked"}),
+     (Rating, ["bad", "fair", "great"]), (Label, {"2": None, "other": None})],
+)
+def test_get_criteria_does_not_require_request_instructions(kind, expected):
+    sig = dspy.Signature({"flag": (kind, dspy.OutputField())})
+    module = dspy.Predict(sig)
+    assert module.get_criteria("flag") == expected
+    with pytest.raises(ValueError, match="requires an OutputField"):
+        module(lm=FakeClient())
+
+
+def test_set_criteria_validates_replacement_and_preserves_other_settings():
+    module = predict(True)
+    module.fields["flag"].update(threshold=0.8, criteria={"wrong": "invalid"})
+    before = copy.deepcopy(module.fields)
+    with pytest.raises(ValueError, match="criteria"):
+        module.set_criteria("flag", {"also_wrong": "invalid"})
+    assert module.fields == before
+    replacement = {"true": {"examples": ["Outage"]}}
+    module.set_criteria("flag", replacement)
+    replacement["true"]["examples"].clear()
+    assert module.get_criteria("flag") == {"true": {"examples": ["Outage"]}}
+    assert module.fields["flag"]["threshold"] == 0.8
+    assert module.fields["rating"] == before["rating"]
+    assert module.fields["label"] == before["label"]
 
 
 @pytest.mark.parametrize("rich", [False, True])

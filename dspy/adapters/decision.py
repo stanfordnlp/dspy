@@ -7,7 +7,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.types.decision import Choice, Noul, Probability, Score
+from dspy.adapters.types.decision import Noul, Probability, Score
 
 
 @lru_cache(maxsize=256)
@@ -91,15 +91,11 @@ class DecisionAdapter:
                     answer = answer.model_dump(by_alias=True)
                 answer = copy.deepcopy(answer)
                 if issubclass(kind, Score):
+                    keys = answer["probabilities"]
+                    labels = {str(i) for i in range(len(kind.options))}
+                    if any(type(k) not in (int, str) or str(k) not in labels for k in keys) or len(keys) != len(labels):
+                        raise ValueError(f"Invalid Score distribution for {name!r}.")
                     answer["probabilities"] = {int(k): v for k, v in answer["probabilities"].items()}
-                elif issubclass(kind, Choice):
-                    probabilities = answer["probabilities"]
-                    labels = [str(value) for value, _ in kind.options]
-                    if set(probabilities) != set(labels):
-                        raise ValueError(f"Invalid Choice distribution for {name!r}.")
-                    # Selection is derived for both backends. Ties use declared
-                    # option order, never response-object key order.
-                    answer["choice"] = max(labels, key=probabilities.get)
                 answers[name] = answer
             results.append({**completion, **self.state._decode(answers)})
         return results
