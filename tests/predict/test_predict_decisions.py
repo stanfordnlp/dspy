@@ -77,10 +77,9 @@ def test_backend_equivalence(adapter):
         assert description.startswith('{\n  "instructions": ')
         assert json.JSONDecoder().raw_decode(description)[0] == question
         if type(adapter) is dspy.ChatAdapter:
-            marker = f"{{{name}}}\n# note: the value you produce must adhere to the JSON schema:\n"
+            marker = f"{{{name}}}        # note: the value you produce must adhere to the JSON schema: "
             schema_text = system.split(marker, 1)[1]
-            assert schema_text.startswith('{\n  "type": "object",\n')
-            schema = json.JSONDecoder().raw_decode(schema_text)[0]
+            schema = json.loads(schema_text.splitlines()[0])
             assert schema["required"] == (["noul"] if name == "flag" else ["probabilities", "confidence"])
             assert schema["additionalProperties"] is False
 
