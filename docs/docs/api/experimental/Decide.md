@@ -43,8 +43,24 @@ print(result.severity.value, result.severity.level, result.severity.confidence)
 ```
 
 `lm=` can be bound to the predictor, supplied per call, or configured through
-`dspy.context(lm=...)`. ChatAdapter and JSONAdapter keep their normal formatting;
-TypeSafe automatically uses the System One request format.
+`dspy.configure(lm=...)` / `dspy.context(lm=...)`.
+
+```python
+dspy.configure(lm=TypeSafe("jev-latest"))
+assess = dspy.Predict(Assess)
+```
+
+TypeSafe is a standalone client, not an LM subclass or an execution engine.
+Its `supports_decision_requests = True` capability selects decision translation
+before any chat adapter's capability checks. Generative LMs continue through
+the configured ChatAdapter or JSONAdapter, including evidence decoding for rich
+outputs.
+
+Decision clients accept `state` and `questions` keyword arguments and return a
+field-to-evidence mapping; async calls use `acall` with the same contract.
+TypeSafe supports DSPy caching, usage tracking, LM callbacks, history, copying,
+and save/load. It does not support generation controls such as temperature or
+fine-tuning. A capability flag does not make generative optimizers compatible.
 
 ## Annotations and evidence
 

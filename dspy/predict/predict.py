@@ -176,12 +176,13 @@ class Predict(Module, Parameter):
                 f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
                 f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
             )
-        elif not isinstance(lm, BaseLM):
-            raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
+        elif not isinstance(lm, BaseLM) and getattr(lm, "supports_decision_requests", False) is not True:
+            raise ValueError(f"LM must be a dspy.BaseLM or a decision-request client, not {type(lm)}.")
 
         # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
-        temperature = config.get("temperature") or lm.kwargs.get("temperature")
-        num_generations = config.get("n") or lm.kwargs.get("n") or lm.kwargs.get("num_generations") or 1
+        defaults = getattr(lm, "kwargs", {})
+        temperature = config.get("temperature") or defaults.get("temperature")
+        num_generations = config.get("n") or defaults.get("n") or defaults.get("num_generations") or 1
 
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7

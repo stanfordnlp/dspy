@@ -32,11 +32,9 @@ def evidence_type(kind):
 
 def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
     """Resolve backend translation before a chat adapter starts capability planning."""
-    from dspy.clients.typesafe import TypeSafe
-
     if not isinstance(fields, dict):
         raise ValueError("Decision fields must be a mapping of output names to configuration.")
-    system_one = isinstance(lm, TypeSafe)
+    system_one = getattr(lm, "supports_decision_requests", False) is True
     selected = {}
     for name, field in signature.output_fields.items():
         if not system_one and name not in fields and not any(

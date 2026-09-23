@@ -231,3 +231,35 @@ def test_unsupported_options_and_streaming_fail_explicitly():
         with pytest.raises(NotImplementedError, match="Streaming"):
             module(text="x")
     assert module.lm.calls == []
+
+
+@pytest.mark.asyncio
+async def test_decision_capability_dispatches_before_chat_checks():
+    class DecisionClient:
+        supports_decision_requests = True
+
+        def __call__(self, state, questions):
+            assert state["inputs"] == {"text": "document"}
+            assert questions["rating"]["type"] == "score"
+            return copy.deepcopy(EVIDENCE)
+
+        async def acall(self, **kwargs):
+            return self(**kwargs)
+
+    class ForbiddenAdapter(dspy.ChatAdapter):
+        def __call__(self, *args, **kwargs):
+            pytest.fail("Decision requests must bypass chat adapters")
+
+        async def acall(self, *args, **kwargs):
+            pytest.fail("Async decision requests must bypass chat adapters")
+
+    client = DecisionClient()
+    with dspy.context(lm=client, adapter=ForbiddenAdapter()):
+        module = dspy.Predict(Assess)
+        result = module(text="document")
+        assert (await module.acall(text="document")).toDict() == result.toDict()
+        assert result.flag.value is True
+        assert result.rating.value == pytest.approx(1.5)
+        client.supports_decision_requests = False
+        with pytest.raises(ValueError, match="decision-request client"):
+            module(text="document")

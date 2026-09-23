@@ -5,14 +5,15 @@ import json
 import os
 
 import dspy
-from dspy.clients.base_lm import LM_CLASS_STATE_KEY, BaseLM
+from dspy.clients.base_lm import LM_CLASS_STATE_KEY, record_history
 from dspy.dsp.utils.settings import settings
 from dspy.utils.annotation import experimental
 from dspy.utils.callback import with_callbacks
+from dspy.utils.inspect_history import pretty_print_history
 
 
 @experimental
-class TypeSafe(BaseLM):
+class TypeSafe:
     """Call TypeSafe's System One API with DSPy's shared request cache.
 
     Install ``dspy[typesafe]`` to use this client. Model, API key, and endpoint
@@ -28,6 +29,8 @@ class TypeSafe(BaseLM):
         timeout: Per-operation timeout in seconds.
     """
 
+    supports_decision_requests = True
+
     def __init__(
         self,
         model: str | None = None,
@@ -36,13 +39,30 @@ class TypeSafe(BaseLM):
         base_url: str | None = None,
         cache: bool = True,
         timeout: float = 10.0,
+        callbacks=None,
     ):
-        super().__init__(model or os.getenv("TYPESAFE_DEFAULT_MODEL") or "jev-latest", cache=cache)
+        self.model = model or os.getenv("TYPESAFE_DEFAULT_MODEL") or "jev-latest"
+        self.callbacks = list(callbacks or [])
         self.base_url = (base_url or os.getenv("TYPESAFE_BASE_URL") or "https://api.typesafe.ai").rstrip("/")
         self.api_key = api_key
         self.cache = cache
         self.timeout = timeout
         self.history = []
+
+    def copy(self, **kwargs):
+        """Copy connection settings and callbacks, starting with empty history."""
+        state = self.dump_state()
+        state.pop(LM_CLASS_STATE_KEY)
+        return type(self)(**{**state, "api_key": self.api_key, "callbacks": self.callbacks, **kwargs})
+
+    def inspect_history(self, n=1, file=None):
+        pretty_print_history(self.history, n, file=file)
+
+    @classmethod
+    def load_state(cls, state):
+        state = dict(state)
+        state.pop(LM_CLASS_STATE_KEY, None)
+        return cls(**state)
 
     def dump_state(self):
         """Return reconstruction settings, without credentials or runtime history."""
@@ -70,7 +90,8 @@ class TypeSafe(BaseLM):
         if settings.usage_tracker and usage:
             settings.usage_tracker.add_usage(response["model"], usage)
         if not settings.disable_history and settings.max_history_size > 0:
-            self.update_history(
+            record_history(
+                self,
                 {
                     "request": copy.deepcopy(request),
                     "response": copy.deepcopy(response),
