@@ -44,8 +44,6 @@ class DecisionAdapter(Adapter):
     and Prediction construction remain Predict's responsibility.
     """
 
-    supports_demos = False
-
     def bind(self, signature):
         """Return independent per-predictor configuration for this signature."""
         bound = copy.copy(self)
@@ -186,7 +184,7 @@ class DecisionAdapter(Adapter):
             question["criteria"] = copy.deepcopy(config["criteria"])
         return question
 
-    def prepare_call(self, signature, backend, config, kwargs):
+    def prepare_call(self, signature, backend, config, demos, kwargs):
         """Resolve the backend and validate inputs without generative LM assumptions."""
         if config:
             raise ValueError("DecisionAdapter does not accept generative LM configuration.")
@@ -222,9 +220,9 @@ class DecisionAdapter(Adapter):
             inputs[name] = TypeAdapter(field.rebuild_annotation()).validate_python(value)
         if kwargs:
             raise ValueError(f"Unexpected Decide inputs: {sorted(kwargs)}.")
-        return client, {}, signature, [], {**inputs, "_trace": trace}
+        return client, {}, signature, demos, {**inputs, "_trace": trace}
 
-    def format(self, signature, inputs):
+    def format(self, signature, demos, inputs):
         types = self._output_types(signature)
         questions = {name: self._question(name, field, types[name]) for name, field in signature.output_fields.items()}
         state = {
@@ -232,6 +230,11 @@ class DecisionAdapter(Adapter):
             "input_fields": get_field_description_string(signature.input_fields),
             "inputs": serialize_object({name: inputs[name] for name in signature.input_fields}),
         }
+        if demos:
+            state["demos"] = [
+                serialize_object({name: demo[name] for name in signature.fields if name in demo})
+                for demo in demos
+            ]
         return state, questions
 
     def parse(self, signature, answers):
@@ -284,11 +287,11 @@ class DecisionAdapter(Adapter):
         return outputs
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        state, questions = self.format(signature, inputs)
+        state, questions = self.format(signature, demos, inputs)
         return [self.parse(signature, lm(state=state, questions=questions))]
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
-        state, questions = self.format(signature, inputs)
+        state, questions = self.format(signature, demos, inputs)
         return [self.parse(signature, await lm.acall(state=state, questions=questions))]
 
     def dump_predict_state(self, signature, backend, json_mode=True):

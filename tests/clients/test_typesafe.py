@@ -122,6 +122,25 @@ def test_cache_identity_and_controls(transport):
     assert len(client.history) == 1
 
 
+@pytest.mark.asyncio
+async def test_demos_change_cache_identity_but_calibration_does_not(transport):
+    client = TypeSafe("jev-demos", api_key="test-only")
+    module = decide(client=client)
+    module(text="current")
+    module.demos = [dspy.Example(text="example", flag=True)]
+    await module.acall(text="current")
+    module.fields["flag"]["threshold"] = 0.9
+    assert module(text="current").flag is False
+    module.demos[0].flag = False
+    await module.acall(text="current")
+    module(text="current", demos=[])
+    assert len(transport) == 3
+    assert "demos" not in transport[0][1]["state"]
+    assert transport[1][1]["state"]["demos"] == [{"text": "example", "flag": True}]
+    assert transport[2][1]["state"]["demos"] == [{"text": "example", "flag": False}]
+    assert [entry["cache_hit"] for entry in client.history] == [False, False, True, False, True]
+
+
 def test_client_copy_and_environment(monkeypatch, transport):
     monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-environment")
     monkeypatch.setenv("TYPESAFE_BASE_URL", "https://environment.test/")

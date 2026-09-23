@@ -1,3 +1,4 @@
+import copy
 import logging
 import random
 import types
@@ -80,11 +81,6 @@ class Predict(Module, Parameter):
             self.adapter = None
 
     @property
-    def supports_demos(self):
-        """Whether demo-oriented optimizers may train this predictor."""
-        return getattr(self.adapter, "supports_demos", True)
-
-    @property
     def fields(self):
         """Per-field configuration owned by a stateful adapter."""
         return self.adapter.fields
@@ -109,16 +105,12 @@ class Predict(Module, Parameter):
         self.adapter.set_criteria(self.signature, field, criteria)
 
     def reset(self):
-        if not self.supports_demos:
-            return
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
-        if hasattr(self.adapter, "dump_predict_state"):
-            return self.adapter.dump_predict_state(self.signature, self.lm, json_mode=json_mode)
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -135,8 +127,11 @@ class Predict(Module, Parameter):
             else:
                 state["demos"].append(demo.toDict())
 
-        state["signature"] = self.signature.dump_state()
-        state["lm"] = self.lm.dump_state() if self.lm else None
+        if hasattr(self.adapter, "dump_predict_state"):
+            state.update(self.adapter.dump_predict_state(self.signature, self.lm, json_mode=json_mode))
+        else:
+            state["signature"] = self.signature.dump_state()
+            state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
     def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
@@ -151,9 +146,11 @@ class Predict(Module, Parameter):
             Self to allow method chaining.
         """
         if hasattr(self.adapter, "load_predict_state"):
+            training_state = {key: copy.deepcopy(state.get(key, [])) for key in ("traces", "train", "demos")}
             self.signature, self.lm = self.adapter.load_predict_state(
                 self.signature, state, allow_unsafe_lm_state=allow_unsafe_lm_state,
             )
+            self.__dict__.update(training_state)
             return self
 
         excluded_keys = ["signature", "extended_signature", "lm"]
@@ -196,12 +193,12 @@ class Predict(Module, Parameter):
         return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
+        demos = kwargs.pop("demos", self.demos)
         if hasattr(self.adapter, "prepare_call"):
-            return self.adapter.prepare_call(self.signature, self.lm, self.config, kwargs)
+            return self.adapter.prepare_call(self.signature, self.lm, self.config, demos, kwargs)
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
         config = {**self.config, **kwargs.pop("config", {})}
 
         # Get the right LM to use.

@@ -173,13 +173,16 @@ numerically interchangeable, and Decide does not route based on confidence.
 
 ## Composition and persistence
 
-Decision predictors are actual `Predict` instances. They participate in callbacks,
-traces, batching, async calls, and `named_parameters()`, but not `named_predictors()`.
-The latter remains the discovery API for demo-trainable predictors: the adapter declares
-`supports_demos = False`. Decision predictors have no demonstrations, and `set_lm()`
-on a mixed program leaves their decision backend intact. Set their explicit backend
-with `.client` (an alias for `.lm`) instead.
-`reset()` preserves calibration and the backend; `reset_copy()` makes an independent copy.
+Decision predictors are actual `Predict` instances, including normal optimizer discovery.
+`predict.demos` is serialized into `state.demos`, using each demo's available signature
+fields and preserving rich values and evidence. Empty demos omit the key, preserving
+the no-demo request and cache identity. Per-call `demos=` overrides the stored list.
+LabeledFewShot and BootstrapFewShot can populate decision demonstrations normally.
+
+`reset()` clears demos, training state, and the explicit backend, as for any Predict;
+adapter-owned calibration remains intact. `reset_copy()` makes an independent copy.
+`set_lm()` also follows ordinary Predict semantics. In mixed programs, assign the
+appropriate backend to each predictor rather than replacing all backends with one LM.
 
 ```python
 assess.save("assess.json")
@@ -192,10 +195,11 @@ restored.load("assess.json")
 | `signature` | Global instructions and ordered field prefixes/descriptions |
 | `fields` | Per-output configuration, including criteria overrides; type defaults come from the signature |
 | `client` | Explicit TypeSafe model, endpoint, cache setting, timeout; otherwise null |
+| `demos`, `traces`, `train` | Ordinary Predict training state; legacy files default these to empty lists |
 | `metadata` | DSPy's dependency versions |
 
-State-only JSON excludes signature architecture/types/declared levels, inputs, results,
-history, and API keys. Credentials come from the environment. Loading invalid
+State-only JSON excludes signature architecture/types/declared levels, runtime inputs/results
+outside training state, history, and API keys. Credentials come from the environment. Loading invalid
 configuration leaves the module unchanged. Saved endpoints require
 `allow_unsafe_lm_state=True` for trusted files.
 Whole-program saving uses DSPy's trusted-pickle workflow: never load untrusted files.
@@ -212,13 +216,11 @@ settings rather than serializing them.
 The draft adds optional hooks without changing existing chat adapters:
 
 - `bind(signature)` returns independent per-predictor adapter configuration.
-- `prepare_call(signature, backend, config, kwargs)` resolves and validates the call,
+- `prepare_call(signature, backend, config, demos, kwargs)` resolves and validates the call,
   returning `(backend, config, signature, demos, inputs)` for Predict's existing pipeline.
 - `dump_predict_state` / `load_predict_state` preserve the decision state format and
   validate a load before changing live configuration. State files are loaded into
   a predictor constructed with the same adapter and signature architecture.
-- `supports_demos` controls demo state, reset, optimizer discovery, and mixed-program
-  generative LM assignment. Ordinary adapters default to `True`.
 
 `Predict` continues to own module callbacks, sync/async orchestration, streaming
 context, Prediction creation, and tracing. TypeSafe continues to own transport,
