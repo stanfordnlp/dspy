@@ -158,3 +158,43 @@ async def test_predict_demos_sdk_cache_history_and_usage(transport, monkeypatch)
     module.inspect_history(file=stream)
     assert "query" in stream.getvalue()
     assert "probabilities" in stream.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_standalone_client_callbacks_copy_and_reload(transport, tmp_path):
+    from dspy.utils.callback import BaseCallback
+
+    class Calls(BaseCallback):
+        def __init__(self):
+            self.events = []
+
+        def on_lm_start(self, **kwargs):
+            self.events.append("start")
+
+        def on_lm_end(self, **kwargs):
+            self.events.append("end")
+
+    callbacks = Calls()
+    client = TypeSafe("jev-test", base_url="https://original.test", callbacks=[callbacks])
+    assert not isinstance(client, dspy.BaseLM)
+    module = dspy.Predict(signature(True), lm=client)
+    first = module(text="x")
+    assert (await module.acall(text="x")).toDict() == first.toDict()
+    assert callbacks.events == ["start", "end", "start", "end"]
+    duplicate = client.copy(base_url="https://copy.test")
+    assert duplicate.history == []
+    duplicate.callbacks.clear()
+    assert client.callbacks == [callbacks]
+    assert len(client.history) == len(module.history) == 2
+    module(text="x", lm=duplicate)
+    assert len(transport) == 2  # Different endpoints must not share cached evidence.
+    path = tmp_path / "standalone.json"
+    module.save(path)
+    restored = dspy.Predict(signature(True))
+    restored.load(path, allow_unsafe_lm_state=True)
+    assert type(restored.lm) is TypeSafe
+    assert restored.lm.base_url == client.base_url
+    assert restored(text="x").toDict() == first.toDict()
+    assert len(transport) == 2
+    with pytest.raises(TypeError):
+        client.copy(temperature=0.7)
