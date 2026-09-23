@@ -1,5 +1,6 @@
 import copy
 import json
+import warnings
 from typing import Annotated, Literal
 
 import pytest
@@ -308,3 +309,24 @@ async def test_decision_outputs_require_description_before_inference(desc):
     module.fields["flag"]["instructions"] = {"question": "Is this relevant?"}
     result = module(text="x", lm=FakeTypeSafe())
     assert result.flag.value is True
+
+
+@pytest.mark.parametrize("kind", [Noul, Rating, Label, Annotated[bool, Noul],
+                                  Annotated[Literal[2, "other"], Label], list[Noul]])
+def test_rlm_warns_about_decision_outputs(kind):
+    signature = dspy.Signature({"answer": (kind, dspy.OutputField(desc="Assess relevance."))})
+    with pytest.warns(UserWarning, match="RLM support.*not implemented consistently") as recorded:
+        dspy.RLM(signature)
+    assert len(recorded) == 1
+
+
+def test_rlm_does_not_warn_for_native_outputs_or_rich_inputs():
+    signature = dspy.Signature({
+        "prior": (Noul, dspy.InputField()),
+        "flag": (bool, dspy.OutputField()),
+        "label": (Literal["a", "b"], dspy.OutputField()),
+    })
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        dspy.RLM(signature)
+    assert not recorded

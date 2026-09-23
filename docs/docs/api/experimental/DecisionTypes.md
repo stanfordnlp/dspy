@@ -197,6 +197,13 @@ Predict reset behavior. Trace/training records are not sent as task context.
 TypeSafe accepts closed-set decision outputs, not free-form text generation.
 Unsupported generation options and decision streaming raise explicitly.
 
+**RLM decision outputs are not supported yet.** RLM warns when its output
+annotations contain Noul, Choice, or Score, including decision-annotated native
+types. `SUBMIT` does not apply shared evidence decoding and can return values
+inconsistent with their probabilities. Forced extraction uses a different path.
+Use `Predict` for decision outputs until RLM has consistent decoding. The warning
+does not prevent execution; ordinary native RLM outputs are unaffected.
+
 Unsupported output annotations (such as `str`, `int`, bare `float`, lists,
 arbitrary Pydantic models, or optional decision types) raise `ValueError` when
 Predict is called with TypeSafe, before any provider request. Every output must
