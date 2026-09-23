@@ -32,8 +32,8 @@ class Noul(_Decision):
 
     Optionally declare ``Noul[(True, "blocked"), (False, "usable")]`` with one
     or both outcome descriptions. ``Annotated[bool, Noul[...]]`` retains these
-    criteria while returning a native bool. Descriptions are shared by Predict
-    and Decide; thresholds belong to the module, not the type.
+    criteria while returning a native bool. Thresholds belong to Predict,
+    not the type, and apply with both generative and decision backends.
 
     Predict obtains true-probability from the backend and derives value using
     its per-field threshold (default 0.5). Confidence is

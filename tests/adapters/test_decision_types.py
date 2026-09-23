@@ -7,9 +7,9 @@ from pydantic import TypeAdapter, ValidationError
 import dspy
 from dspy.adapters.decision import resolve_adapter
 from dspy.adapters.json_adapter import _get_structured_outputs_response_format
-from dspy.experimental import Choice, Decide, Noul, Score
+from dspy.experimental import Choice, Noul, Score
 from dspy.utils.dummies import DummyLM
-from tests.predict.test_decide import FakeClient
+from tests.predict.test_decision_parameters import FakeClient
 
 Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
@@ -18,7 +18,7 @@ Category = Choice[("billing", "Payment issue"), ("technical", "Product malfuncti
 def test_decision_apis_are_experimental_only():
     from dspy.experimental import TypeSafe
 
-    for api in (Choice, Decide, Noul, Score, TypeSafe):
+    for api in (Choice, Noul, Score, TypeSafe):
         assert getattr(dspy.experimental, api.__name__) is api
         assert not hasattr(dspy, api.__name__)
         assert "Experimental:" in api.__doc__
@@ -101,7 +101,7 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
 
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("evidence", [False, True])
-def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
+def test_inputs_to_both_backends_preserve_values_and_context(rich, evidence):
     signature = decision_signature(rich, "input")
     values = decision_values(rich, evidence)
     for adapter in (dspy.ChatAdapter(), dspy.JSONAdapter()):
@@ -117,7 +117,7 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
         assert "1.5" in prompt
         assert "technical" in prompt
     client = FakeClient()
-    module = Decide(signature, client=client)
+    module = dspy.Predict(signature, lm=client)
     module.fields["accept"]["threshold"] = 0.99
     assert module(**values).accept is False
     state, questions = client.calls[0]
@@ -174,7 +174,7 @@ def test_noul_rejects_invalid_criteria(options):
 
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
-def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
+def test_noul_criteria_in_both_backends_inputs_and_outputs(rich, adapter):
     availability = Noul[(True, "Service unavailable"), (False, "Workaround available")]
     assert availability is Noul[(False, "Workaround available"), (True, "Service unavailable")]
     annotation = availability if rich else Annotated[bool, availability]
@@ -191,9 +191,9 @@ def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
     assert "Service unavailable" in json.dumps(schema)
     assert ("confidence" in json.dumps(schema)) is rich
     client = FakeClient(probability=0.3)
-    decided = Decide(output_sig, client=client)(ticket="Use the workaround.").unavailable
-    assert type(decided) is (availability if rich else bool)
-    assert (decided.value if rich else decided) is False
+    result = dspy.Predict(output_sig, lm=client)(ticket="Use the workaround.").unavailable
+    assert type(result) is (availability if rich else bool)
+    assert (result.value if rich else result) is False
     assert client.calls[-1][1]["unavailable"] == {
         "type": "noul",
         "instructions": "Is service blocked?",
@@ -210,7 +210,7 @@ def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
         prompt = adapter.format(sig, [], inputs)[0]["content"]
         assert "Service unavailable" in prompt
         assert "Workaround available" in prompt
-    Decide(input_sig, client=client)(unavailable=value)
+    dspy.Predict(input_sig, lm=client)(unavailable=value)
     state = client.calls[-1][0]
     assert "Service unavailable" in state["input_fields"]
     assert state["inputs"]["unavailable"] == (value.model_dump(mode="json") if rich else False)
@@ -266,13 +266,13 @@ def test_rich_confidence_required_and_serialization(kind, value):
     assert result.model_dump(mode="json") == {"value": value, "confidence": 0.7}
 
 
-def test_decide_result_can_feed_predict_and_back():
-    source = Decide(decision_signature(True, "output"), client=FakeClient(choice="technical"))
+def test_jev_result_can_feed_llm_and_back():
+    source = dspy.Predict(decision_signature(True, "output"), lm=FakeClient(choice="technical"))
     result = source(ticket="Payment failed.")
     adapter = dspy.ChatAdapter()
     with dspy.context(lm=DummyLM([decision_evidence(True)], adapter=adapter), adapter=adapter):
         regenerated = dspy.Predict(decision_signature(True, "output"))(ticket="Payment failed.")
-    target = Decide(decision_signature(True, "input"), client=FakeClient())
+    target = dspy.Predict(decision_signature(True, "input"), lm=FakeClient())
     assert target(**dict(result.items())).accept is True
     assert target(**dict(regenerated.items())).accept is True
     with dspy.context(lm=DummyLM([{"accept": True}])):

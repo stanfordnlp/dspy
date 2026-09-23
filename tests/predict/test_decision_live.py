@@ -1,6 +1,6 @@
 """Opt-in, paid live checks; never run as part of ordinary CI.
 
-LM_FOR_TEST=openai/gpt-4.1-mini pytest --llm_call -s tests/predict/test_decide_live.py
+LM_FOR_TEST=azure/<deployment> pytest --llm_call -s tests/predict/test_decision_live.py
 Set TYPESAFE_API_KEY and the LM provider's credentials. For Azure, set
 LM_FOR_TEST to azure/<deployment> and configure AZURE_API_BASE/KEY.
 """
@@ -12,7 +12,8 @@ from typing import Literal
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
+from dspy.experimental import Choice, Noul, Score, TypeSafe
+from tests.predict.test_decision_parameters import FakeClient
 
 pytestmark = pytest.mark.llm_call
 
@@ -88,7 +89,7 @@ def client():
 
 def invoke(backend, sig, inputs, lm, client):
     if backend == "jev":
-        return Decide(sig, client=client)(**inputs)
+        return dspy.Predict(sig, lm=client)(**inputs)
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False) if backend == "chat" else dspy.JSONAdapter()
     with dspy.context(lm=lm, adapter=adapter):
         return dspy.Predict(sig)(**inputs)
@@ -165,11 +166,11 @@ def test_live_literal_types(backend, rich, expected, lm, client):
 
 
 def test_live_distribution_reinterpretation(client):
-    module = Decide(signature(True), client=client)
+    module = dspy.Predict(signature(True), lm=client)
     initial = module(ticket=CASES[2][1])
     raw = client.history[-1]["response"]["answers"]
     # Replay the actual live evidence to isolate local interpretation from model variability.
-    module.client = lambda **_: raw
+    module.lm = FakeClient(answers=raw)
     module.fields["urgent"]["threshold"] = initial.urgent.probability
     module.fields["severity"]["cuts"] = [0.4, 1.7]
     boundary = module(ticket=CASES[2][1])
@@ -188,7 +189,7 @@ def test_live_distribution_reinterpretation(client):
 
 
 def test_live_choice_weighted_reinterpretation(client):
-    module = Decide(signature(True), client=client)
+    module = dspy.Predict(signature(True), lm=client)
     ticket = "Checkout rejected a payment. It might be an incorrect charge or a software fault; neither is confirmed."
     initial = module(ticket=ticket).category
     raw = client.history[-1]["response"]["answers"]
@@ -197,7 +198,7 @@ def test_live_choice_weighted_reinterpretation(client):
     weights = {initial.value: 0.0, other: 1.0}
     # Use exactly the same live distribution in both forms, without another model draw.
     for rich in (True, False):
-        weighted = Decide(signature(rich), client=lambda **_: raw)
+        weighted = dspy.Predict(signature(rich), lm=FakeClient(answers=raw))
         weighted.fields["category"]["weights"] = weights
         result = weighted(ticket=ticket).category
         assert (result.value if rich else result) == other

@@ -189,5 +189,3 @@ Predict reset behavior. Trace/training records are not sent as task context.
 
 TypeSafe accepts closed-set decision outputs, not free-form text generation.
 Unsupported generation options and decision streaming raise explicitly.
-The standalone experimental `Decide` entry point remains available for existing
-programs; new programs can use `Predict` with `lm=TypeSafe(...)`.

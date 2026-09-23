@@ -6,7 +6,7 @@ import pytest
 
 import dspy
 from dspy.experimental import TypeSafe
-from tests.predict.test_decide import decide, signature
+from tests.predict.test_decision_parameters import predict, signature
 
 sdk = pytest.importorskip("typesafe_sdk")
 httpx = pytest.importorskip("httpx2")
@@ -52,7 +52,7 @@ def transport(monkeypatch):
 
 def test_real_sdk_request_cache_usage_and_local_parameters(transport):
     client = TypeSafe("jev-test", api_key="test-only", base_url="https://example.test")
-    module = decide(True, client)
+    module = predict(True, client)
     with dspy.context(track_usage=True):
         first = module(text="x")
         module.fields["flag"]["threshold"] = 0.9
@@ -80,6 +80,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
         "instructions": "Assess the document.",
         "input_fields": "1. `text` (str):",
         "inputs": {"text": "x"},
+        "demos": [],
     }
     assert body["questions"]["rating"]["criteria"] == ["bad", "fair", "great"]
     assert "thresholds" not in json.dumps(body)
@@ -93,7 +94,7 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
 
 @pytest.mark.asyncio
 async def test_async_sdk_and_shared_cache(transport):
-    module = decide(client=TypeSafe("jev-test", api_key="test-only"))
+    module = predict(client=TypeSafe("jev-test", api_key="test-only"))
     asynchronous = await module.acall(text="x")
     synchronous = module(text="x")
     assert asynchronous.toDict() == synchronous.toDict()
@@ -105,7 +106,7 @@ async def test_async_sdk_and_shared_cache(transport):
 
 def test_cache_identity_and_controls(transport):
     client = TypeSafe("jev-test", api_key="test-only", base_url="https://a.test")
-    module = decide(client=client)
+    module = predict(client=client)
     module(text="x")
     client.base_url = "https://b.test"
     module(text="x")
@@ -128,7 +129,7 @@ def test_client_copy_and_environment(monkeypatch, transport):
     monkeypatch.setenv("TYPESAFE_BASE_URL", "https://environment.test/")
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-environment-key")
     client = TypeSafe()
-    module = decide(client=client)
+    module = predict(client=client)
     assert module(text="x").flag is True
     assert transport[0][0] == "https://environment.test/v1/systemone"
     assert transport[0][1]["model"] == "jev-environment"
