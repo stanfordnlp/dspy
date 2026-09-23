@@ -126,12 +126,12 @@ def test_native_interface_and_ordinary_predict_are_preserved():
     class Native(dspy.Signature):
         text: str = dspy.InputField()
         flag: Annotated[bool, Noul] = dspy.OutputField()
-        rating: Annotated[float, Rating] = dspy.OutputField()
+        rating: Rating = dspy.OutputField()
         label: Label = dspy.OutputField()
 
     result = dspy.Predict(Native, lm=FakeTypeSafe())(text="x")
     assert type(result.flag) is bool and result.flag is True
-    assert type(result.rating) is float and result.rating == pytest.approx(1.5)
+    assert type(result.rating) is Rating and result.rating.value == pytest.approx(1.5)
     with dspy.context(lm=DummyLM([{"flag": False}])):
         assert dspy.Predict("text -> flag: bool")(text="x").flag is False
 
