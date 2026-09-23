@@ -65,7 +65,7 @@ class Predict(Module, Parameter):
         self.config = config
         self.reset()
         self.lm = self.config.pop("lm", None)
-        adapter = resolve_adapter(self.lm, None, self.signature, self.fields)
+        adapter = resolve_adapter(None, None, self.signature, self.fields)
         if adapter is not None:
             self.fields = adapter.state.fields
 

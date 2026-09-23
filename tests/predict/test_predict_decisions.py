@@ -136,6 +136,34 @@ def test_native_interface_and_ordinary_predict_are_preserved():
         assert dspy.Predict("text -> flag: bool")(text="x").flag is False
 
 
+@pytest.mark.parametrize("binding", ["constructor", "context", "assignment", "call"])
+@pytest.mark.asyncio
+async def test_native_decision_state_does_not_depend_on_client_binding(binding):
+    class Native(dspy.Signature):
+        text: str = dspy.InputField()
+        flag: bool = dspy.OutputField(desc="Is it relevant?")
+        label: Literal[2, "other"] = dspy.OutputField(desc="Classify the document.")
+
+    client = FakeTypeSafe()
+    with dspy.context(lm=client if binding == "context" else None):
+        module = dspy.Predict(Native, **({"lm": client} if binding == "constructor" else {}))
+        if binding == "assignment":
+            module.lm = client
+        kwargs = {"lm": client} if binding == "call" else {}
+        assert module.fields == {}
+        for result in (module(text="x", **kwargs), await module.acall(text="x", **kwargs)):
+            assert result.flag is True
+            assert result.label == 2 and type(result.label) is int
+        assert module.fields == {}
+        assert "fields" not in module.dump_state()
+
+    # A previous decision-client call must not silently opt native LM outputs into evidence schemas.
+    lm = DummyLM([{"flag": False, "label": "other"}] * 2)
+    for result in (module(text="x", lm=lm), await module.acall(text="x", lm=lm)):
+        assert result.flag is False
+        assert result.label == "other"
+
+
 def test_invalid_criteria_load_does_not_mutate_predict():
     module = configured_predict(TypeSafe("jev-test"))
     before = module.dump_state()

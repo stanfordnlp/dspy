@@ -118,7 +118,7 @@ def test_inputs_to_both_backends_preserve_values_and_context(rich, evidence):
         assert "technical" in prompt
     client = FakeClient()
     module = dspy.Predict(signature, lm=client)
-    module.fields["accept"]["threshold"] = 0.99
+    module.fields["accept"] = {"threshold": 0.99}
     assert module(**values).accept is False
     state, questions = client.calls[0]
     assert set(questions) == {"accept"}  # Inputs are not additional questions.

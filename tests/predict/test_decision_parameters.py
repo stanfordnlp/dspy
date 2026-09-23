@@ -57,8 +57,9 @@ def signature(rich=False):
 
 
 def predict(rich=False, client=None):
-    module = dspy.Predict(signature(rich), lm=client or FakeClient())
-    module.lm = client
+    module = dspy.Predict(signature(rich), lm=client)
+    if not rich:
+        module.fields.update(flag={"threshold": 0.5}, label={"weights": {"2": 1.0, "other": 1.0}})
     return module
 
 
@@ -447,6 +448,7 @@ async def test_output_override_preserves_answer_space(base, override):
     sig = signature().with_updated_fields("flag", type_=base)
     client = FakeClient()
     module = dspy.Predict(sig, lm=client)
+    module.fields.setdefault("flag", {})
     changed = sig.with_updated_fields("flag", type_=override)
     with pytest.raises(ValueError, match="preserve the answer space"):
         module(text="x", signature=changed)
@@ -458,8 +460,9 @@ async def test_output_override_preserves_answer_space(base, override):
 @pytest.mark.parametrize("kind", [str, int, float, Choice])
 def test_unsupported_decision_outputs_fail_before_request(kind):
     client = FakeClient()
+    module = dspy.Predict(signature().with_updated_fields("flag", type_=kind), lm=client)
     with pytest.raises(ValueError, match="Unsupported"):
-        dspy.Predict(signature().with_updated_fields("flag", type_=kind), lm=client)
+        module(text="x")
     assert not client.calls
 
 
