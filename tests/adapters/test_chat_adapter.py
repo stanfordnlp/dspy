@@ -764,7 +764,11 @@ def test_chat_adapter_format_exact_messages_with_base_custom_type_input():
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
 
-def test_chat_adapter_format_exact_messages_with_citations_output_demo():
+@pytest.mark.parametrize("schema_docstring", [None, 'Different indentation and "quoted" text.\n    Across Python versions.'])
+def test_chat_adapter_format_exact_messages_with_citations_output_demo(monkeypatch, schema_docstring):
+    if schema_docstring is not None:
+        monkeypatch.setattr(Citations, "__doc__", schema_docstring)
+
     class CitationSignature(dspy.Signature):
         question: str = dspy.InputField()
         citations: Citations = dspy.OutputField()
@@ -863,10 +867,13 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
                  "citations ## ]]` (must be formatted as a valid Python Citations), and then ending "
                  "with the marker for `[[ ## completed ## ]]`."}]
     def normalize_citations_schema_description(content):
+        # Python versions differ in docstring indentation. Normalize only the
+        # top-level schema description, preserving nested descriptions and layout.
         return re.sub(
-            r'"description": ".*?", "properties":',
-            '"description": "<CITATIONS_SCHEMA_DESCRIPTION>", "properties":',
+            r'^(  "description": )"(?:\\.|[^"\\])*"',
+            r'\1"<CITATIONS_SCHEMA_DESCRIPTION>"',
             content,
+            flags=re.MULTILINE,
         )
 
     messages[0]["content"] = normalize_citations_schema_description(messages[0]["content"])
