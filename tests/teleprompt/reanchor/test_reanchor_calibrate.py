@@ -247,5 +247,5 @@ def test_evidence_is_recorded_for_the_predictor_that_decoded_it(system_one):
     program(items=["d"])
     assert [(caller is program.judge, name) for caller, name, _ in log].count((True, "match")) == 3
     caller, name, evidence = log[-1]
-    assert caller is program.kind and name == "kind" and evidence["choice"] == "x"
+    assert caller is program.kind and name == "kind" and evidence["probabilities"] == {"x": 0.6, "y": 0.4}
     assert len(log) == 4

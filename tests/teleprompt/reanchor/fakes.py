@@ -65,8 +65,4 @@ def score(probabilities: dict[int, float], confidence: float = 0.8) -> dict:
 
 
 def choice(probabilities: dict[str, float], confidence: float = 0.7) -> dict:
-    return {
-        "choice": max(probabilities, key=probabilities.get),
-        "confidence": confidence,
-        "probabilities": probabilities,
-    }
+    return {"confidence": confidence, "probabilities": probabilities}

@@ -39,7 +39,8 @@ import math
 from typing import Any, Callable
 
 import dspy
-from dspy.adapters.decision import record_evidence, resolve_adapter
+from dspy.adapters.decision import record_evidence
+from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.predict.predict import Predict
 from dspy.utils.parallelizer import ParallelExecutor
@@ -74,17 +75,19 @@ def caches(predict: Predict) -> bool:
     return bool(enabled) and getattr(lm, "_cache_responses", True)
 
 
+def _state(predict: Predict, fields: dict) -> DecisionState:
+    system_one = getattr(resolved_lm(predict), "supports_decision_requests", False) is True
+    return DecisionState(predict.signature, fields, system_one=system_one)
+
+
 def evidenced(predict: Predict) -> set[str]:
     """The outputs the predictor currently decodes from probabilities."""
-    adapter = resolve_adapter(resolved_lm(predict), None, predict.signature, predict.fields)
-    return set(adapter.state.fields) if adapter is not None else set()
+    return set(_state(predict, predict.fields).types)
 
 
 def effective(predict: Predict, field: str) -> dict:
     """The output's full configuration: its stored overrides on top of its type's defaults."""
-    fields = {**predict.fields, field: predict.fields.get(field, {})}
-    adapter = resolve_adapter(resolved_lm(predict), None, predict.signature, fields)
-    return copy.deepcopy(adapter.state.fields[field])
+    return _state(predict, {**predict.fields, field: predict.fields.get(field, {})}).fields[field]
 
 
 def metric_value(metric: Callable, example, pred) -> float:
