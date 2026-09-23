@@ -147,8 +147,6 @@ _dspy.Tool = _dspy_tool
 for _k in ("Predict", "ChainOfThought", "RLM", "CodeAct", "ProgramOfThought", "ReAct", "ReActV2"):
     setattr(_dspy, _k, _dspy_make_ctor(_k))
 dspy = _dspy
-# Nested code-executing sub-agents take this in place of a real factory; the host substitutes its own.
-dspy_interpreter_factory = "__dspy_interpreter_factory__"
 
 # Register as the importable ``dspy`` only inside the sandbox, where the registered host tools are
 # present in globals(). A sandbox whose ``dspy`` is the host's own module image (the host process or a

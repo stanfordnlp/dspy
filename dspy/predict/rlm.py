@@ -28,7 +28,6 @@ from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import (
     SIMPLE_TYPES,
-    SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
@@ -81,14 +80,14 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
 # Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
-SUB_AGENT_INSTRUCTIONS = f"""
+SUB_AGENT_INSTRUCTIONS = """
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
 - `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
   Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host.
-- `dspy.RLM("context, query -> answer", interpreter_factory={SUB_DSPY_FACTORY_NAME})(context=..., query=...)` -
-  a recursive sub-agent with its own REPL; always pass the provided `{SUB_DSPY_FACTORY_NAME}`.
+- `dspy.RLM("context, query -> answer")(context=..., query=...)` - a recursive sub-agent with its own
+  REPL on the same interpreter backend as yours; it cannot be given another `interpreter_factory`.
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
   structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or

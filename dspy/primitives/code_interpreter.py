@@ -22,10 +22,6 @@ from dspy.utils.exceptions import DSPyError
 # Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
-# Sandbox global the dspy facade provides for nested code-executing sub-agents; the host substitutes its factory.
-SUB_DSPY_FACTORY_NAME = "dspy_interpreter_factory"
-
-
 class InterpreterCapability(enum.Flag):
     """Optional capabilities a CodeInterpreter implementation can declare.
 

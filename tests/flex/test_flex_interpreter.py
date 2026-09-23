@@ -28,7 +28,6 @@ import dspy
 from dspy.predict.flex import Flex, bridge
 from dspy.primitives import facade
 from dspy.primitives.code_interpreter import (
-    SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreterError,
     resolve_interpreter_factory,
@@ -231,7 +230,9 @@ def test_bridged_rlm_inherits_sub_dspy_capable_factory() -> None:
 
     sub_rlm = inv._predictors["rlm"]
     assert sub_rlm._interpreter_factory is factory
-    assert SUB_DSPY_FACTORY_NAME in sub_rlm.generate_action.signature.instructions
+    assert "Sub-agents (dspy)" in sub_rlm.generate_action.signature.instructions
+    with pytest.raises(CodeInterpreterError, match="cannot choose its interpreter_factory"):
+        inv.construct("RLM", "value: int -> result: int", "chosen", {"interpreter_factory": "LocalInterpreter"})
 
 
 def test_call_runs_predictor_via_host_lm() -> None:

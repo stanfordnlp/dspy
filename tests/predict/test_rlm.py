@@ -18,7 +18,6 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM, _LLMCallBudget, _strip_code_fences
 from dspy.primitives.code_interpreter import (
-    SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreterError,
     FinalOutput,
@@ -1861,7 +1860,7 @@ class TestRLMSubDspy:
         without = RLM("query -> answer", interpreter_factory=MockInterpreterFactory())
 
         assert "Sub-agents (dspy)" in with_facade.generate_action.signature.instructions
-        assert SUB_DSPY_FACTORY_NAME in with_facade.generate_action.signature.instructions
+        assert "interpreter_factory=" not in with_facade.generate_action.signature.instructions
         assert "Sub-agents (dspy)" not in without.generate_action.signature.instructions
 
     def test_facade_is_installed_only_with_the_capability(self):
@@ -1880,16 +1879,16 @@ class TestRLMSubDspy:
             assert ({facade.CONSTRUCT_TOOL, facade.CALL_TOOL} <= interpreter.tools.keys()) is installed
 
     def test_sub_dspy_reserves_sandbox_names(self):
-        def dspy_interpreter_factory() -> str:
-            """Tool colliding with the facade-provided factory name."""
+        def _dspy_helper() -> str:
+            """Tool colliding with the facade's internal prefix."""
             return ""
 
         with pytest.raises(ValueError, match="conflict"):
             RLM("dspy -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
         with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
-            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=SubDspyMockInterpreterFactory())
+            RLM("query -> answer", tools=[_dspy_helper], interpreter_factory=SubDspyMockInterpreterFactory())
         # Without the facade these names are ordinary.
-        RLM("dspy -> answer", tools=[dspy_interpreter_factory], interpreter_factory=MockInterpreterFactory())
+        RLM("dspy -> answer", tools=[_dspy_helper], interpreter_factory=MockInterpreterFactory())
 
 
 class TestRLMFacadeDspy:
@@ -1910,13 +1909,12 @@ class TestRLMFacadeDspy:
                     interpreter_factory=_InProcessInterpreter,
                 )
 
-        # The facade provides the factory name as a marker, so it is reserved here too.
+        # The factory is the host's to choose, so its old marker name is an ordinary tool name.
         def dspy_interpreter_factory() -> str:
             """Unrelated user tool."""
             return ""
 
-        with pytest.raises(ValueError, match="conflicts with built-in sandbox function"):
-            RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_InProcessInterpreter)
+        RLM("query -> answer", tools=[dspy_interpreter_factory], interpreter_factory=_InProcessInterpreter)
 
     def _facade_invocation(self, rlm):
         return rlm._facade_invocation(_LLMCallBudget(rlm.max_llm_calls))
@@ -1936,16 +1934,21 @@ class TestRLMFacadeDspy:
             invocation.call("missing")
 
     def test_facade_nested_rlm_gets_the_rlm_interpreter_factory(self):
-        from dspy.primitives import facade
-
         rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
         invocation = self._facade_invocation(rlm)
 
         invocation.construct("RLM", "q -> a", "nested")
-        invocation.construct("RLM", "q -> a", "marked", {"interpreter_factory": facade.FACTORY_MARKER})
-
         assert invocation._predictors["nested"]._interpreter_factory is _InProcessInterpreter
-        assert invocation._predictors["marked"]._interpreter_factory is _InProcessInterpreter
+
+    @pytest.mark.parametrize("requested", ["__dspy_interpreter_factory__", "LocalInterpreter", None])
+    def test_facade_sub_agents_cannot_choose_their_interpreter(self, requested):
+        rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)
+        invocation = self._facade_invocation(rlm)
+
+        for kind in ("RLM", "CodeAct", "ProgramOfThought", "Predict"):
+            with pytest.raises(CodeInterpreterError, match="cannot choose its interpreter_factory"):
+                invocation.construct(kind, "q -> a", "chosen", {"interpreter_factory": requested})
+        assert "chosen" not in invocation._predictors
 
     def test_facade_tool_markers_resolve_only_provided_tools(self):
         from dspy.primitives import facade

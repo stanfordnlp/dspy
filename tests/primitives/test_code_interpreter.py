@@ -4,7 +4,6 @@ import pytest
 
 import dspy
 from dspy.primitives.code_interpreter import (
-    SUB_DSPY_FACTORY_NAME,
     CodeExecutionError,
     CodeInterpreterError,
     InterpreterCapability,
@@ -33,11 +32,9 @@ def test_code_execution_error_is_dspy_error():
 
 def test_sub_dspy_contract_is_public():
     # A DSPy user writing a CodeInterpreter declares capabilities against this enum. The
-    # factory-name constant and the reader helper are deliberately module-level only.
+    # reader helper is deliberately module-level only.
     assert dspy.InterpreterCapability is InterpreterCapability
     assert dspy.InterpreterCapability.SUB_DSPY
-    assert SUB_DSPY_FACTORY_NAME == "dspy_interpreter_factory"
-    assert not hasattr(dspy, "SUB_DSPY_FACTORY_NAME")
     assert not hasattr(dspy, "interpreter_capabilities")
 
 
