@@ -50,17 +50,16 @@ dspy.configure(lm=TypeSafe("jev-latest"))
 assess = dspy.Predict(Assess)
 ```
 
-TypeSafe is a standalone client, not an LM subclass or an execution engine.
-Its `supports_decision_requests = True` capability selects decision translation
-before any chat adapter's capability checks. Generative LMs continue through
-the configured ChatAdapter or JSONAdapter, including evidence decoding for rich
-outputs.
+Predict selects the request format using the client's
+`supports_decision_requests` capability. TypeSafe receives decision requests;
+generative LMs use the configured ChatAdapter or JSONAdapter and return
+probability evidence for rich outputs.
 
 Decision clients accept `state` and `questions` keyword arguments and return a
 field-to-evidence mapping; async calls use `acall` with the same contract.
 TypeSafe supports DSPy caching, usage tracking, LM callbacks, history, copying,
-and save/load. It does not support generation controls such as temperature or
-fine-tuning. A capability flag does not make generative optimizers compatible.
+and save/load. Generation controls such as temperature and fine-tuning are
+unsupported.
 
 ## Annotations and evidence
 
@@ -197,11 +196,11 @@ Predict reset behavior. Trace/training records are not sent as task context.
 TypeSafe accepts closed-set decision outputs, not free-form text generation.
 Unsupported generation options and decision streaming raise explicitly.
 
-**RLM decision outputs are not supported yet.** RLM warns when its output
+**RLM decision outputs are unsupported.** RLM warns when its output
 annotations contain Noul, Choice, or Score, including decision-annotated native
 types. `SUBMIT` does not apply shared evidence decoding and can return values
 inconsistent with their probabilities. Forced extraction uses a different path.
-Use `Predict` for decision outputs until RLM has consistent decoding. The warning
+Use `Predict` for decision outputs. The warning
 does not prevent execution; ordinary native RLM outputs are unaffected.
 
 Unsupported output annotations (such as `str`, `int`, bare `float`, lists,
@@ -213,6 +212,6 @@ annotations. This restriction applies to outputs, not structured input data.
 
 Use TypeSafe through `Predict`, rather than calling chat adapters directly.
 Generation-specific wrappers such as `BestOfN` and `Refine`, generative optimizers,
-and fine-tuning are not supported merely by configuring TypeSafe as `lm`.
+and fine-tuning are unsupported with TypeSafe.
 Wrappers that assume LM generation settings can currently raise `AttributeError`
 rather than a capability-specific error.
