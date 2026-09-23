@@ -196,3 +196,16 @@ Predict reset behavior. Trace/training records are not sent as task context.
 
 TypeSafe accepts closed-set decision outputs, not free-form text generation.
 Unsupported generation options and decision streaming raise explicitly.
+
+Unsupported output annotations (such as `str`, `int`, bare `float`, lists,
+arbitrary Pydantic models, or optional decision types) raise `ValueError` when
+Predict is called with TypeSafe, before any provider request. Every output must
+be supported; there is no automatic fallback to a generative LM. The same
+signature can still be used with an ordinary LM when its adapter supports those
+annotations. This restriction applies to outputs, not structured input data.
+
+Use TypeSafe through `Predict`, rather than calling chat adapters directly.
+Generation-specific wrappers such as `BestOfN` and `Refine`, generative optimizers,
+and fine-tuning are not supported merely by configuring TypeSafe as `lm`.
+Wrappers that assume LM generation settings can currently raise `AttributeError`
+rather than a capability-specific error.
