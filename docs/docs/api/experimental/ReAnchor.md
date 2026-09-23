@@ -11,7 +11,8 @@ ReAnchor does not change any instructions, descriptions, or demos.
 You give ReAnchor a metric, a program, and training examples. The program can be
 a single `dspy.Predict` or any module that holds predictors with decision
 outputs. A decision output is a `Noul`, `Score`, or `Choice` output, or a native
-`bool` or `Literal` output.
+`bool` or `Literal` output. `RLM` does not support decision outputs, so ReAnchor
+does not support RLM programs either.
 
 ```python
 import dspy
@@ -98,6 +99,14 @@ tuned = ReAnchor(metric).compile(dspy.Predict(Match), trainset=trainset)
 
 A System One model such as Jev always returns probabilities, so this step does
 not apply there.
+
+## Errors
+
+ReAnchor stops at the first error from the program or the metric. On a
+generative LM, a malformed answer counts as an error. For example, `Predict`
+raises when a `Score` answer leaves out a probability for any level. Use a
+model that follows JSON schemas reliably, and set a client `timeout` that fits
+your backend's load.
 
 ## Results
 
