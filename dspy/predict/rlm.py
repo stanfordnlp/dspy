@@ -79,29 +79,19 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-_SUB_AGENT_HEAD = """
+# Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
+SUB_AGENT_INSTRUCTIONS = """
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
 - `dspy.Predict("question -> answer")(question=...)` or `dspy.ChainOfThought(...)` - single-step sub-agents.
 - `dspy.ReActV2("question -> answer", tools=[...])(question=...)` - a multi-step tool-using sub-agent.
   Only the provided tools listed above may be passed; functions you define in the REPL cannot cross to the host.
-"""
-_NO_DSPY_CONFIGURE = "Never call `dspy.configure(...)`: the LM configuration is already provided."
-# Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
-SUB_AGENT_INSTRUCTIONS = _SUB_AGENT_HEAD + f"""\
 - `dspy.RLM("context, query -> answer")(context=..., query=...)` - a recursive sub-agent with its own
   REPL on the same interpreter backend as yours; it cannot be given another `interpreter_factory`.
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
   structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
-recursive subtasks. {_NO_DSPY_CONFIGURE}
-"""
-# For a caller-owned interpreter: RLM has no factory for that backend, so the facade refuses
-# code-executing sub-agents rather than run them on a different one.
-NON_EXECUTING_SUB_AGENT_INSTRUCTIONS = _SUB_AGENT_HEAD + f"""\
-Sub-agents that execute code (`dspy.RLM`, `dspy.CodeAct`, `dspy.ProgramOfThought`) are unavailable in this REPL.
-Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured or tool-using subtasks.
-{_NO_DSPY_CONFIGURE}
+recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
 """
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
@@ -590,26 +580,24 @@ class RLM(Module):
         lm = self._host_lm()
         return None if lm is None else SandboxLM(lm, budget.reserve)
 
-    def _facade_invocation(self, budget: _LLMCallBudget, *, caller_owned: bool = False) -> FacadeInvocation:
-        """Host side of the dspy facade for one forward.
-
-        Code-executing sub-agents get the factory that made this forward's interpreter. A caller-owned
-        interpreter came from no factory, and no factory can be derived from a live instance and its
-        configuration, so there the facade gets none and refuses those sub-agents.
-        """
-        factory = None if caller_owned else self._interpreter_factory
-        return FacadeInvocation(self._user_tools, factory, None, lm=self._sandbox_host_lm(budget))
+    def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
+        """Host side of the dspy facade for one forward."""
+        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
 
     def _setup_facade(self, repl: CodeInterpreter, budget: _LLMCallBudget, *, caller_owned: bool) -> str:
-        """Install the facade if this invocation's interpreter declares SUB_DSPY; return its sub-agent guidance."""
-        if not self._declares_sub_dspy(repl):
+        """Install the facade into a factory-made interpreter that declares SUB_DSPY; return its sub-agent guidance.
+
+        Sub-agents need the interpreter factory: nested code-executing ones get their interpreters from it, and
+        a caller-owned instance came from no factory, so it runs RLM without the facade.
+        """
+        if caller_owned or not self._declares_sub_dspy(repl):
             return ""
         if not self._sub_dspy:
-            # Construction validated against the factory; a caller-owned interpreter or a
-            # dspy.context factory can host the facade anyway, so its names must be free too.
+            # Construction validated against the factory active then; a dspy.context factory
+            # can host the facade anyway, so its names must be free too.
             self._validate_namespace(self._user_tools, sub_dspy=True)
-        self._facade_invocation(budget, caller_owned=caller_owned).install(repl)
-        return NON_EXECUTING_SUB_AGENT_INSTRUCTIONS if caller_owned else SUB_AGENT_INSTRUCTIONS
+        self._facade_invocation(budget).install(repl)
+        return SUB_AGENT_INSTRUCTIONS
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -841,9 +829,8 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance. RLM has no factory for a caller-owned interpreter's backend, so sub-agents that
-                execute code (``RLM``, ``CodeAct``, ``ProgramOfThought``) are unavailable through its sandbox dspy
-                facade; the other sub-agents work as usual.
+                this RLM instance. Sub-agents need ``interpreter_factory``, so a caller-owned interpreter runs
+                without the sandbox dspy facade, even if it declares ``InterpreterCapability.SUB_DSPY``.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -936,9 +923,8 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance. RLM has no factory for a caller-owned interpreter's backend, so sub-agents that
-                execute code (``RLM``, ``CodeAct``, ``ProgramOfThought``) are unavailable through its sandbox dspy
-                facade; the other sub-agents work as usual.
+                this RLM instance. Sub-agents need ``interpreter_factory``, so a caller-owned interpreter runs
+                without the sandbox dspy facade, even if it declares ``InterpreterCapability.SUB_DSPY``.
             **input_args: Input values matching the signature's input fields.
 
         Returns:

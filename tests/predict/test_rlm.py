@@ -1907,68 +1907,42 @@ class TestRLMSubDspy:
         return Recording(), seen
 
     @pytest.mark.parametrize("use_async", [False, True])
-    def test_caller_interpreter_decides_sub_agents_for_its_invocation(self, use_async):
+    def test_caller_owned_interpreter_gets_no_sub_agents(self, use_async):
         import asyncio
 
         from dspy.primitives import facade
 
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=MockInterpreterFactory())
+        # Sub-agents need the factory, so a caller-owned instance runs plain RLM even if it could host them.
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspyMockInterpreterFactory())
         rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
-        caller = SubDspyMockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+        caller = SubDspyMockInterpreter(responses=[FinalOutput({"answer": "42"})])
 
         result = asyncio.run(rlm.acall(caller, query="q")) if use_async else rlm(caller, query="q")
 
         assert result.answer == "42"
-        assert caller.call_history[0][0] == facade.SHIM_SETUP
-        assert "Sub-agents (dspy)" in seen[0].instructions
-        # No factory exists for the caller's backend, so nested code-executing sub-agents are not offered.
-        assert "unavailable in this REPL" in seen[0].instructions
-        assert 'dspy.RLM("context, query -> answer")' not in seen[0].instructions
+        assert all(code != facade.SHIM_SETUP for code, _ in caller.call_history)
+        assert not {facade.CONSTRUCT_TOOL, facade.CALL_TOOL} & caller.tools.keys()
+        assert "Sub-agents (dspy)" not in seen[0].instructions
 
-    def test_factory_interpreter_offers_nested_rlm(self):
+    def test_factory_interpreter_offers_sub_agents_and_nested_rlm(self):
+        from dspy.primitives import facade
+
         factory = SubDspyMockInterpreterFactory(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iters=1, interpreter_factory=factory)
         rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
 
         assert rlm(query="q").answer == "42"
+        assert factory.instances[0].call_history[0][0] == facade.SHIM_SETUP
         assert 'dspy.RLM("context, query -> answer")' in seen[0].instructions
-        assert "unavailable in this REPL" not in seen[0].instructions
 
-    def test_caller_owned_facade_refuses_code_executing_sub_agents(self):
-        rlm = RLM("query -> answer", interpreter_factory=SubDspyMockInterpreterFactory())
-        invocation = rlm._facade_invocation(_LLMCallBudget(rlm.max_llm_calls), caller_owned=True)
-
-        # Running them on the configured factory would put nested code on a different backend.
-        for kind in ("RLM", "CodeAct", "ProgramOfThought"):
-            with pytest.raises(CodeInterpreterError, match="no factory for its backend"):
-                invocation.construct(kind, "q -> a", kind.lower())
-        assert invocation._predictors == {}
-
-        invocation.construct("Predict", "q -> a", "plain")
-        invocation.construct("ReActV2", "q -> a", "agent", {"tools": []})
-        assert set(invocation._predictors) == {"plain", "agent"}
-
-    def test_factory_capability_does_not_advertise_sub_agents_to_a_plain_caller_interpreter(self):
-        from dspy.primitives import facade
-
-        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspyMockInterpreterFactory())
-        rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
-        caller = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
-
-        assert rlm(caller, query="q").answer == "42"
-        assert all(code != facade.SHIM_SETUP for code, _ in caller.call_history)
-        assert "Sub-agents (dspy)" not in seen[0].instructions
-
-    def test_caller_interpreter_hosting_the_facade_reserves_its_names(self):
-        from dspy.primitives import facade
-
+    def test_caller_owned_interpreter_leaves_facade_names_to_inputs(self):
+        # No facade is installed into a caller-owned instance, so an input named `dspy` is just an input.
         rlm = RLM("dspy -> answer", max_iters=1, interpreter_factory=MockInterpreterFactory())
-        caller = SubDspyMockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm.generate_action = make_mock_predictor([{"reasoning": "Done", "code": "SUBMIT(dspy)"}])
+        caller = SubDspyMockInterpreter(responses=[FinalOutput({"answer": "value"})])
 
-        # An input named `dspy` would overwrite the installed facade, so the call is refused up front.
-        with pytest.raises(ValueError, match="conflict"):
-            rlm(caller, dspy="value")
-        assert all(code != facade.SHIM_SETUP for code, _ in caller.call_history)
+        assert rlm(caller, dspy="value").answer == "value"
+        assert caller.call_history[0][1] == {"dspy": "value"}
 
     def test_context_factory_hosting_the_facade_reserves_its_names(self):
         # Built while the active factory cannot host the facade, so `dspy` passes construction.

@@ -239,7 +239,7 @@ class FacadeInvocation:
     def __init__(
         self,
         tools: dict[str, Any],
-        interpreter_factory: Callable[[], Any] | None,
+        interpreter_factory: Callable[[], Any],
         max_predictor_calls: int | None,
         *,
         custom_types: dict[str, type] | None = None,
@@ -304,14 +304,8 @@ class FacadeInvocation:
                 "sandboxed code cannot choose its interpreter_factory."
             )
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
-        # A code-executing sub-predictor always runs its inner code on the host module's backend. With no
-        # factory for that backend (the host module runs on a caller-owned interpreter), it is refused.
+        # A code-executing sub-predictor always runs its inner code on the host module's backend.
         if _accepts_interpreter_factory(cls):
-            if self._interpreter_factory is None:
-                raise CodeInterpreterError(
-                    f"dspy.{kind} executes code, and this sandbox's interpreter was supplied by the caller, so "
-                    "there is no factory for its backend. Use a sub-agent that does not execute code."
-                )
             extra["interpreter_factory"] = self._interpreter_factory
         return cls(_resolve_signature(signature, self._custom_types), **extra)
 
