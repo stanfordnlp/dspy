@@ -72,12 +72,19 @@ fine-tuning. A capability flag does not make generative optimizers compatible.
 | `float` | Number | Unsupported; use `Score[...]` | `float` |
 | `Severity` | `{probabilities: {"0": p0, "1": p1, "2": p2}, confidence: c}` | Level distribution and confidence | Rich value, probabilities, level, confidence |
 | `Literal["billing", "technical"]` | Allowed member | Option distribution | Native member |
+| `Annotated[Literal["billing", "technical"], Category]` | Same Choice evidence | Same Choice evidence | Native member |
 | `Category` | `{probabilities: {"billing": p0, "technical": p1}, confidence: c}` | Option distribution and confidence | Rich value, probabilities, confidence |
 
 Bare native LLM outputs retain their ordinary behavior. Adding an entry to
 `predict.fields[name]` opts a compatible native output into evidence decoding.
 Rich/configured outputs use evidence decoding by default. LLMs do not generate
 their derived `.value` or `.level` independently.
+
+Use `Annotated[Literal[...], Choice[...]]` for native results with described
+criteria, or `Annotated[Literal[...], Choice]` to use the Literal members without
+descriptions. Configured Choice options must match the Literal's values and
+Python types; the Choice declaration determines tie order. This works for inputs
+and outputs, and output fields request evidence from either backend.
 
 Declare Score directly as `rating: Score["low", "medium", "high"]`; read
 `result.rating.value` or `float(result.rating)` for the continuous value.

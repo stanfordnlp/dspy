@@ -277,3 +277,69 @@ def test_jev_result_can_feed_llm_and_back():
     assert target(**dict(regenerated.items())).accept is True
     with dspy.context(lm=DummyLM([{"accept": True}])):
         assert dspy.Predict(decision_signature(True, "input"))(**dict(result.items())).accept is True
+
+
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+@pytest.mark.parametrize("selected", [1, True, None, "雪"])
+@pytest.mark.asyncio
+async def test_annotated_literal_evidence_criteria_and_native_types(adapter, selected, tmp_path):
+    choice = Choice[(1, "integer"), (True, "boolean"), (None, "missing"), ("雪", "snow")]
+    annotation = Annotated[Literal[1, True, None, "雪"], choice]
+    field = TypeAdapter(annotation)
+    assert type(field.validate_python(selected)) is type(selected)
+    with pytest.raises(ValidationError):
+        field.validate_python("unknown")
+    schema = field.json_schema()
+    assert "confidence" not in json.dumps(schema)
+    assert "snow" in schema["description"]
+    sig = dspy.Signature({"text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc="Choose a label."))})
+    probabilities = {str(v): 0.7 if type(v) is type(selected) and v == selected else 0.1 for v, _ in choice.options}
+    evidence = {"label": {"probabilities": probabilities, "confidence": 0.6}}
+    lm = DummyLM([evidence], adapter=adapter)
+    client = FakeClient(answers=evidence)
+    module = dspy.Predict(sig)
+    with dspy.context(adapter=adapter):
+        a, b = module(text="x", lm=lm).label, module(text="x", lm=client).label
+        assert type((await module.acall(text="x", lm=client)).label) is type(selected)
+    assert a == b == selected
+    assert type(a) is type(b) is type(selected)
+    assert client.calls[0][1]["label"]["criteria"] == {str(v): desc for v, desc in choice.options}
+    module.save(tmp_path / "annotated.json")
+    restored = dspy.Predict(sig)
+    restored.load(tmp_path / "annotated.json")
+    assert type(restored(text="x", lm=client).label) is type(selected)
+    input_sig = dspy.Signature({"label": (annotation, dspy.InputField()),
+                                "accept": (bool, dspy.OutputField(desc="Accept the label?"))})
+    inputs = FakeClient()
+    dspy.Predict(input_sig, lm=inputs)(label=selected)
+    assert type(inputs.calls[0][0]["inputs"]["label"]) is type(selected)
+    assert "snow" in inputs.calls[0][0]["input_fields"]
+    assert "snow" in adapter.format(input_sig, [], {"label": selected})[0]["content"]
+
+
+@pytest.mark.parametrize("literal", [Literal[1], Literal[True, "extra"], Literal["True"]])
+@pytest.mark.parametrize("field", [dspy.InputField, dspy.OutputField])
+def test_annotated_literal_rejects_mismatched_criteria(literal, field):
+    with pytest.raises(ValueError, match="Choice criteria must match"):
+        dspy.Signature({"label": (Annotated[literal, Choice[(True, "yes")]], field())})
+
+
+def test_bare_choice_metadata_uses_literal_members():
+    annotation = Annotated[Literal["a", "b"], Choice]
+    sig = dspy.Signature({"label": (annotation, dspy.OutputField(desc="Choose a label."))})
+    client = FakeClient(choice="b")
+    assert dspy.Predict(sig, lm=client)().label == "b"
+    assert client.calls[0][1]["label"]["criteria"] == {"a": None, "b": None}
+
+
+def test_annotated_choice_uses_criteria_order_and_saved_weights(tmp_path):
+    annotation = Annotated[Literal["a", "b"], Choice[("b", "second"), ("a", "first")]]
+    sig = dspy.Signature({"label": (annotation, dspy.OutputField(desc="Choose a label."))})
+    client = FakeClient(answers={"label": {"probabilities": {"a": 0.5, "b": 0.5}, "confidence": 0.4}})
+    module = dspy.Predict(sig)
+    assert module(lm=client).label == "b"
+    module.fields["label"]["weights"] = {"b": 0}
+    module.save(tmp_path / "weights.json")
+    restored = dspy.Predict(sig)
+    restored.load(tmp_path / "weights.json")
+    assert restored(lm=client).label == "a"

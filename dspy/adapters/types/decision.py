@@ -124,6 +124,9 @@ class Choice(_Decision):
     Declare ``Choice[("billing", "Payment issue"), ("technical", "Product bug")]``.
     Option values may be strings, integers, booleans, or None. Values retain
     their Python types; provider probability keys are their string labels.
+    ``Annotated[Literal[...], Choice[...]]`` supplies criteria and enables
+    evidence decoding while returning a native member. Both declarations must
+    contain the same typed values. Bare ``Choice`` metadata uses the Literal's values.
     """
 
     value: str | int | bool | None
@@ -144,7 +147,23 @@ class Choice(_Decision):
 
     @classmethod
     def description(cls):
+        if not cls.options:
+            return "Select exactly one of the declared Literal values."
         return "Select exactly one value. Options: " + json.dumps(cls.options) + "."
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source, handler):
+        if get_origin(source) is Literal:
+            values = get_args(source)
+            if cls.options and {(type(v), v) for v in values} != {(type(v), v) for v, _ in cls.options}:
+                raise ValueError("Choice criteria must match the Literal members, including their Python types.")
+        return handler(source)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, schema, handler):
+        result = handler(schema)
+        result["description"] = cls.description()
+        return result
 
 
 def _option_pairs(options):
@@ -196,6 +215,9 @@ def decision_type(field):
     if annotation is bool:
         return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Noul)), Noul)
     if get_origin(annotation) is Literal:
+        configured = next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Choice)), None)
+        if configured is not None and configured.options:
+            return configured
         return Choice[tuple((value, "") for value in get_args(annotation))]
     if isinstance(annotation, type) and issubclass(annotation, _Decision):
         if issubclass(annotation, Noul) or getattr(annotation, "options", ()):
