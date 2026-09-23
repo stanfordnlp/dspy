@@ -12,6 +12,8 @@ Use `dspy.context(...)` when you need a different LM, adapter, or flag for
 one part of your program without changing the process-wide defaults from
 [`dspy.configure`](configure.md). The block inherits every current setting,
 overrides only the keys you pass, and restores the originals when it exits.
+Values assigned directly to a module or predictor, including its LM and adapter,
+outrank context overrides.
 
 `dspy.context(...)` accepts the same settings as
 [`dspy.configure`](configure.md#settings).
@@ -48,6 +50,9 @@ with dspy.context(adapter=dspy.JSONAdapter()):
     result = qa(question="What is the capital of France?")
     print(result.answer)
 ```
+
+See [Adapter precedence](../../learn/programming/adapters.md#adapter-precedence)
+for the full resolution order.
 
 ### Enable async tool conversion temporarily
 

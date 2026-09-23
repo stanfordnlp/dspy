@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.base_lm import BaseLM, sanitize_lm_state
 from dspy.dsp.utils.settings import settings
 from dspy.predict.flex.bridge import BridgeRuntime
 from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
-from dspy.predict.predict import _sanitize_lm_state
 from dspy.primitives.code_interpreter import CodeInterpreter, _validate_interpreter_factory
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -102,7 +101,7 @@ class Flex(Module, Parameter):
             self._bind_code(module_src)
         lm_state = state.get("lm")
         if lm_state:
-            sanitized = _sanitize_lm_state(lm_state, allow_unsafe_lm_state)
+            sanitized = sanitize_lm_state(lm_state, allow_unsafe_lm_state)
             self.lm = (
                 BaseLM.load_state(sanitized, allow_custom_lm_class=allow_unsafe_lm_state) if sanitized else None
             )

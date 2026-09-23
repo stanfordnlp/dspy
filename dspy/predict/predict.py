@@ -7,9 +7,10 @@ from typing import Any, Literal, Union, get_args, get_origin
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.utils import annotation_allows_none
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.base_lm import BaseLM, sanitize_lm_state
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.module import Module
@@ -19,26 +20,6 @@ from dspy.utils.callback import BaseCallback
 from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 logger = logging.getLogger(__name__)
-
-UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
-
-
-def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
-    if allow_unsafe_lm_state:
-        return lm_state
-
-    unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
-
-    if not unsafe_keys:
-        return lm_state
-
-    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
-    logger.warning(
-        "Ignoring unsafe LM config key(s) during state load: %s. "
-        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
-        unsafe_keys,
-    )
-    return sanitized_lm_state
 
 
 class Predict(Module, Parameter):
@@ -60,6 +41,10 @@ class Predict(Module, Parameter):
 
                 predict = dspy.Predict("q -> a", rollout_id=1, temperature=1.0)
                 predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
+
+    Calls accept the reserved keyword arguments `lm` and `adapter` to override,
+    for a single invocation, the instance-level `self.lm`/`self.adapter` and the
+    globally configured values.
     """
 
     def __init__(
@@ -69,9 +54,9 @@ class Predict(Module, Parameter):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
-        self.adapter = adapter.bind(self.signature) if hasattr(adapter, "bind") else adapter
         self.config = config
         self.reset()
+        self.adapter = adapter.bind(self.signature) if hasattr(adapter, "bind") else adapter
         self.lm = backend
 
     def __setstate__(self, state):
@@ -106,6 +91,9 @@ class Predict(Module, Parameter):
 
     def reset(self):
         self.lm = None
+        # Signature-bound adapters carry calibrated program state, not just rendering configuration.
+        if not hasattr(getattr(self, "adapter", None), "bind"):
+            self.adapter = None
         self.traces = []
         self.train = []
         self.demos = []
@@ -127,45 +115,65 @@ class Predict(Module, Parameter):
             else:
                 state["demos"].append(demo.toDict())
 
+        state["signature"] = self.signature.dump_state()
         if hasattr(self.adapter, "dump_predict_state"):
             state.update(self.adapter.dump_predict_state(self.signature, self.lm, json_mode=json_mode))
         else:
-            state["signature"] = self.signature.dump_state()
             state["lm"] = self.lm.dump_state() if self.lm else None
+        state["adapter"] = self.adapter.dump_state() if self.adapter else None
         return state
 
-    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
+    def load_state(
+        self, state: dict, *, allow_unsafe_lm_state: bool = False, allow_custom_adapter_class: bool = False
+    ) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
             state: The saved state of a `Predict` object.
             allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
                 serialized LM state and allows importing custom LM classes. Enable only when loading trusted files.
+            allow_custom_adapter_class: If True, allows importing custom `Adapter` subclasses recorded
+                in the saved adapter state. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
         """
-        if hasattr(self.adapter, "load_predict_state"):
+        adapter_state = state.get("adapter")
+        adapter = (
+            Adapter.load_state(
+                adapter_state,
+                allow_custom_adapter_class=allow_custom_adapter_class,
+                allow_unsafe_lm_state=allow_unsafe_lm_state,
+            )
+            if adapter_state
+            else None
+        )
+        # Read legacy decision states with the adapter supplied by the receiving predictor.
+        if "adapter" not in state and hasattr(self.adapter, "load_predict_state"):
+            adapter = copy.deepcopy(self.adapter)
+        if hasattr(adapter, "load_predict_state"):
             training_state = {key: copy.deepcopy(state.get(key, [])) for key in ("traces", "train", "demos")}
-            self.signature, self.lm = self.adapter.load_predict_state(
+            self.signature, self.lm = adapter.load_predict_state(
                 self.signature, state, allow_unsafe_lm_state=allow_unsafe_lm_state,
             )
+            self.adapter = adapter
             self.__dict__.update(training_state)
             return self
 
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        excluded_keys = ["signature", "extended_signature", "lm", "adapter"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
 
         self.signature = self.signature.load_state(state["signature"])
-        sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
+        sanitized_lm_state = sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
         self.lm = (
             BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
             if sanitized_lm_state
             else None
         )
+        self.adapter = adapter
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -194,8 +202,16 @@ class Predict(Module, Parameter):
 
     def _forward_preprocess(self, **kwargs):
         demos = kwargs.pop("demos", self.demos)
-        if hasattr(self.adapter, "prepare_call"):
-            return self.adapter.prepare_call(self.signature, self.lm, self.config, demos, kwargs)
+        # Resolve once for both generative and non-generative backends.
+        adapter = kwargs.pop("adapter", self.adapter) or settings.adapter or ChatAdapter()
+        if hasattr(adapter, "prepare_call"):
+            if adapter is not self.adapter:
+                adapter = adapter.bind(self.signature)
+            backend = kwargs.pop("lm", self.lm)
+            lm, config, signature, demos, inputs = adapter.prepare_call(
+                self.signature, backend, self.config, demos, kwargs,
+            )
+            return lm, adapter, config, signature, demos, inputs
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -284,7 +300,7 @@ class Predict(Module, Parameter):
                 present,
                 missing,
             )
-        return lm, config, signature, demos, kwargs
+        return lm, adapter, config, signature, demos, kwargs
 
     def _forward_postprocess(self, completions, signature, **kwargs):
         pred = Prediction.from_completions(completions, signature=signature)
@@ -304,28 +320,25 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
-
-        adapter = self.adapter or settings.adapter or ChatAdapter()
+        lm, adapter, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         if self._should_stream():
-            with settings.context(caller_predict=self):
+            with settings.context(caller_predict=self, adapter=adapter):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
         else:
-            with settings.context(send_stream=None):
+            with settings.context(send_stream=None, adapter=adapter):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+        lm, adapter, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = self.adapter or settings.adapter or ChatAdapter()
         if self._should_stream():
-            with settings.context(caller_predict=self):
+            with settings.context(caller_predict=self, adapter=adapter):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
         else:
-            with settings.context(send_stream=None):
+            with settings.context(send_stream=None, adapter=adapter):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         return self._forward_postprocess(completions, signature, **kwargs)

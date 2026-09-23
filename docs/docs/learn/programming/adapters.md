@@ -16,10 +16,20 @@ The adapter system is responsible for:
 
 ## Configure Adapters
 
-You can use `dspy.configure(adapter=...)` to choose the adapter for the entire Python process, or
-`with dspy.context(adapter=...):` to only affect a certain namespace.
+A simple mental model: a Signature says *what* values go in and out; an Adapter decides *how* those
+values are formatted for the LM and read back. Most programs work well with the default
+`dspy.ChatAdapter`, so you only need to configure an adapter when you have a concrete formatting,
+structured-output, or model-compatibility reason to switch.
 
-If no adapter is specified in the DSPy workflow, each `dspy.Predict.__call__` defaults to using the `dspy.ChatAdapter`. Thus, the two code snippets below are equivalent:
+Adapters can be configured at several scopes, mirroring how LMs are configured:
+
+- **Process-wide**: `dspy.configure(adapter=...)` sets the default for the whole Python process.
+- **Block**: `with dspy.context(adapter=...):` overrides the setting inside one `with` block.
+- **Whole program**: `program.set_adapter(adapter)` configures every `dspy.Predict` inside a module.
+- **Individual predictor**: assign `predict.adapter = adapter` on one `dspy.Predict`.
+- **One call**: pass `adapter=...` when calling the module, e.g. `predict(question="...", adapter=...)`.
+
+If no adapter is specified anywhere, each `dspy.Predict.__call__` defaults to using the `dspy.ChatAdapter`. Thus, the two code snippets below are equivalent:
 
 ```python
 import dspy
@@ -41,6 +51,72 @@ dspy.configure(
 predict = dspy.Predict("question -> answer")
 result = predict(question="What is the capital of France?")
 ```
+
+### Adapter Precedence
+
+When a `dspy.Predict` runs, it resolves the adapter to use in this order:
+
+| Priority | Scope | How you set it |
+| --- | --- | --- |
+| 1 (highest) | One call | `predict(..., adapter=my_adapter)` |
+| 2 | This predictor | `predict.adapter = my_adapter` or `program.set_adapter(my_adapter)` |
+| 3 | Settings | `dspy.context(adapter=...)`, then `dspy.configure(adapter=...)` |
+| 4 (lowest) | Default | `dspy.ChatAdapter()` |
+
+This matches how the LM is resolved (`lm=` at call time, then `predict.lm`, then settings). Note
+that an adapter set on a predictor, e.g. via `set_adapter`, outranks both `dspy.configure` and
+`dspy.context`. Passing `adapter=None` at call time skips the predictor's own adapter and falls
+through to the settings value (or the default), just like `lm=None`.
+
+### Configure an Adapter per Program, Predictor, or Call
+
+`program.set_adapter(adapter)` walks the program and sets the adapter on every `dspy.Predict` it
+contains. This is useful when one program should format its prompts differently from the rest of
+your process:
+
+```python
+import dspy
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+program = dspy.ChainOfThought("question -> answer")
+program.set_adapter(dspy.JSONAdapter())
+
+result = program(question="What is the capital of France?")
+```
+
+`program.get_adapter()` returns the adapter the program is configured with. If different predictors
+inside the program hold different adapters, there is no single answer, so it raises a `ValueError`.
+
+You can also set the adapter on an individual predictor, or override it for a single call. The
+`adapter=` keyword is reserved, like `lm=`; it is never treated as a Signature input:
+
+```python
+import dspy
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+predict = dspy.Predict("question -> answer")
+
+# This predictor always uses JSONAdapter...
+predict.adapter = dspy.JSONAdapter()
+result = predict(question="What is the capital of France?")
+
+# ...except for this one call, which uses XMLAdapter.
+result = predict(question="What is the capital of France?", adapter=dspy.XMLAdapter())
+```
+
+Different predictors inside one program may hold different adapters when you truly need it, e.g.,
+one step targets a model that prefers JSON while the rest use the default. Start homogeneous; mix
+adapters only when a specific step needs it.
+
+An adapter attached to a predictor is part of the program's state: it is an inference strategy
+that can materially change behavior, and future optimizers may tune it automatically. Saving a
+program serializes each predictor's configured adapter (its concrete class and constructor
+configuration), and loading restores it. Predictors that inherit the adapter from settings save
+`adapter: null` and continue to inherit after loading. See
+[Saving and loading](../../diving-deeper/saving-and-loading.md) for the exact contract, including
+how custom adapter classes require a trusted opt-in at load time.
 
 ## Where Adapters Fit in the System
 

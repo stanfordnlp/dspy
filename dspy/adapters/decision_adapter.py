@@ -10,9 +10,10 @@ from pydantic import JsonValue, TypeAdapter
 from dspy.adapters.base import Adapter
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.adapters.utils import get_field_description_string
+from dspy.clients.base_lm import sanitize_lm_state
 from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
-from dspy.predict.predict import _sanitize_lm_state, serialize_object
+from dspy.predict.predict import serialize_object
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -44,10 +45,23 @@ class DecisionAdapter(Adapter):
     and Prediction construction remain Predict's responsibility.
     """
 
+    def __init__(self, *, fields=None, **kwargs):
+        super().__init__(**kwargs)
+        self.fields = copy.deepcopy(fields)
+
+    def dump_state(self):
+        state = super().dump_state()
+        state["fields"] = copy.deepcopy(self.fields)
+        return state
+
     def bind(self, signature):
         """Return independent per-predictor configuration for this signature."""
         bound = copy.copy(self)
         types = self._output_types(signature)
+        if self.fields is not None:
+            bound.fields = copy.deepcopy(self.fields)
+            bound._validate_parameters(types)
+            return bound
         bound.fields = {}
         for name, kind in types.items():
             if issubclass(kind, Noul):
@@ -301,8 +315,6 @@ class DecisionAdapter(Adapter):
                 "Saving an explicit Decide client requires dspy.experimental.TypeSafe; configure custom clients in settings."
             )
         return {
-            "signature": signature.dump_state(),
-            "fields": copy.deepcopy(self.fields),
             "client": backend.dump_state() if backend is not None else None,
         }
 
@@ -311,8 +323,9 @@ class DecisionAdapter(Adapter):
         client_state = state.pop("client", None)
         restored = copy.copy(self)
         signature = signature.load_state(state["signature"])
-        restored.fields = state["fields"]
-        backend = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
+        if "adapter" not in state:
+            restored.fields = state["fields"]
+        backend = TypeSafe(**sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         restored._validate_parameters(self._output_types(signature))
         self.__dict__.update(restored.__dict__)
         return signature, backend
