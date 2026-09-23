@@ -12,7 +12,6 @@ missing salient entities without increasing the summary length.
 
 from typing import Any, Callable
 
-from dspy.clients.base_lm import BaseLM
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.predict.predict import Predict
 from dspy.primitives.module import Module
@@ -32,44 +31,6 @@ class InitialSummary(Signature):
     article: str = InputField(desc="The article or document to summarize")
     target_length: int = InputField(desc="Target length of the summary in words (approximately)")
     summary: str = OutputField(desc="An initial entity-sparse summary that covers the main topic broadly")
-
-
-class IdentifyMissingEntities(Signature):
-    """Identify 1-3 informative entities missing from the current summary.
-
-    A Missing Entity is:
-    - Relevant: to the main story/topic
-    - Specific: descriptive yet concise (5 words or fewer)
-    - Novel: not already present in the current summary
-    - Faithful: present in the original article
-    """
-
-    article: str = InputField(desc="The original article or document")
-    current_summary: str = InputField(desc="The current summary to analyze")
-    missing_entities: list[str] = OutputField(
-        desc="1-3 informative entities from the article that are missing from the summary"
-    )
-
-
-class DensifySummary(Signature):
-    """Write a denser summary incorporating the missing entities.
-
-    Create a new summary that:
-    1. Includes ALL information from the previous summary
-    2. Incorporates the missing entities naturally
-    3. Maintains approximately the same length as the previous summary
-    4. Uses compression, fusion, and rewriting to make room for new entities
-
-    The new summary should be more informative while remaining coherent and readable.
-    """
-
-    article: str = InputField(desc="The original article or document")
-    previous_summary: str = InputField(desc="The previous summary to densify")
-    missing_entities: list[str] = InputField(desc="The entities to incorporate into the new summary")
-    target_length: int = InputField(desc="Target length of the summary in words (should match previous summary)")
-    denser_summary: str = OutputField(
-        desc="A denser summary that incorporates the missing entities while maintaining the same length"
-    )
 
 
 class DensificationStep(Signature):
@@ -321,47 +282,3 @@ class ChainOfDensityWithPreference(ChainOfDensity):
 
     def _extra_fields(self, selected_step: int) -> dict[str, Any]:
         return {"preferred_step": selected_step}
-
-
-# Convenience function for quick usage
-def chain_of_density(
-    article: str,
-    num_steps: int = 5,
-    target_length: int = 80,
-    lm: BaseLM | None = None,
-) -> Prediction:
-    """
-    Convenience function to generate a Chain of Density summary.
-
-    Args:
-        article: The text to summarize
-        num_steps: Number of densification iterations
-        target_length: Target summary length in words
-        lm: Optional language model to use
-
-    Returns:
-        Prediction with final_summary and intermediate summaries
-
-    Example:
-        ```python
-        result = chain_of_density(article, num_steps=5)
-        print(result.final_summary)
-        ```
-    """
-    cod = ChainOfDensity(num_steps=num_steps, target_length=target_length)
-
-    if lm is not None:
-        cod.set_lm(lm)
-
-    return cod(article=article)
-
-
-__all__ = [
-    "ChainOfDensity",
-    "ChainOfDensityWithPreference",
-    "chain_of_density",
-    "InitialSummary",
-    "DensifySummary",
-    "DensificationStep",
-    "IdentifyMissingEntities",
-]
