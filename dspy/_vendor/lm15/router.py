@@ -83,7 +83,7 @@ from .result import AsyncResponseStream, ResponseStream
 from .errors import AmbiguousModelError, NotConfiguredError, UnknownModelError
 from .models import ModelInfo, ModelRegistry
 from .providers import Credential
-from .registry import PROVIDERS, ProviderDefinition, canonical_provider as _canonical_provider
+from .registry import PROVIDERS, Compat, ProviderDefinition, canonical_provider as _canonical_provider
 from .adaptation import AdaptationPolicy, check_policy
 from .transports import Timeouts
 from .types import Request, Response, StreamEvent
@@ -158,8 +158,60 @@ ASYNC_ADAPTERS: Mapping[str, type] = MappingProxyType(
 )
 
 
-def _definition(provider: str) -> ProviderDefinition | None:
-    return PROVIDERS.get(provider)
+class _Table(Mapping[str, type]):
+    """What one router routes with: the adapter-owned classes of one
+    direction (sync or async) plus every bound definition it knows — the
+    registry's receipted entries and the config's declared ones
+    (``RouterConfig(providers=...)``).  A plain mapping of classes (the
+    module views, a test's fakes) means the registry alone."""
+
+    __slots__ = ("_adapters", "_aliases", "definitions", "is_async")
+
+    def __init__(self, adapters: Mapping[str, type], declared: tuple[ProviderDefinition, ...], *, is_async: bool) -> None:
+        self._adapters = adapters
+        self.definitions: Mapping[str, ProviderDefinition] = MappingProxyType(
+            {**PROVIDERS, **{d.id: d for d in declared}}
+        )
+        self.is_async = is_async
+        self._aliases: Mapping[str, str] = MappingProxyType(
+            {alias: d.id for d in declared for alias in d.aliases}
+        )
+
+    def __getitem__(self, key: str) -> type:
+        return self._adapters[key]
+
+    def __iter__(self):
+        return iter(self._adapters)
+
+    def __len__(self) -> int:
+        return len(self._adapters)
+
+    def alias(self, name: str) -> str | None:
+        """The provider id a declared alias names, or None."""
+        return self._aliases.get(name)
+
+
+def _table(adapters: Mapping[str, type], config: RouterConfig) -> Mapping[str, type]:
+    """``adapters`` as a router uses it: unchanged when nothing is declared
+    (the module views keep their identity), else wrapped with the config's
+    declared providers."""
+    if not config.providers:
+        return adapters
+    return _Table(adapters, config.providers, is_async=adapters is ASYNC_ADAPTERS)
+
+
+def _definitions(adapters: Mapping[str, type]) -> Mapping[str, ProviderDefinition]:
+    return adapters.definitions if isinstance(adapters, _Table) else PROVIDERS
+
+
+def _definition(provider: str, adapters: Mapping[str, type] | None = None) -> ProviderDefinition | None:
+    return _definitions(ADAPTERS if adapters is None else adapters).get(provider)
+
+
+def _declared(provider: str, adapters: Mapping[str, type]) -> bool:
+    """True when ``provider`` comes from ``RouterConfig(providers=...)``,
+    not the receipted registry."""
+    return provider not in PROVIDERS and provider in _definitions(adapters)
 
 
 def _credential_policy(provider: str, adapters: Mapping[str, type] | None = None) -> str:
@@ -173,7 +225,7 @@ def _credential_policy(provider: str, adapters: Mapping[str, type] | None = None
     substitute fake classes; a provider found there but not in the
     registry answers with its class manifest.
     """
-    definition = _definition(provider)
+    definition = _definition(provider, adapters)
     if definition is not None:
         return definition.credential_policy
     lookup = ADAPTERS if adapters is None else adapters
@@ -219,7 +271,7 @@ def _bound(provider: str, adapters: Mapping[str, type]) -> ProviderDefinition | 
     is adapter-owned (a key of ``adapters``) or unknown."""
     if provider in adapters:
         return None
-    definition = PROVIDERS.get(provider)
+    definition = _definitions(adapters).get(provider)
     return definition if definition is not None and definition.bound else None
 
 
@@ -227,15 +279,24 @@ def _routable(provider: str, adapters: Mapping[str, type]) -> bool:
     return provider in adapters or _bound(provider, adapters) is not None
 
 
+def _provider_id(name: str, adapters: Mapping[str, type]) -> str:
+    """A canonical input spelling → the provider it names: a declared
+    alias resolves to its provider; anything else is itself."""
+    if isinstance(adapters, _Table):
+        return adapters.alias(name) or name
+    return name
+
+
 def _adapter_for(provider: str, adapters: Mapping[str, type]) -> type:
     if provider in adapters:
         return adapters[provider]
-    definition = PROVIDERS[provider]  # bound entry: its dialect class
-    return definition.async_adapter if adapters is ASYNC_ADAPTERS else definition.adapter
+    definition = _definitions(adapters)[provider]  # bound entry: its dialect class
+    is_async = adapters.is_async if isinstance(adapters, _Table) else adapters is ASYNC_ADAPTERS
+    return definition.async_adapter if is_async else definition.adapter
 
 
 def _bound_ids(adapters: Mapping[str, type]) -> set[str]:
-    return {d.id for d in PROVIDERS.values() if d.bound and d.id not in adapters}
+    return {d.id for d in _definitions(adapters).values() if d.bound and d.id not in adapters}
 
 
 def _check_provider_keyed(config: RouterConfig, adapters: Mapping[str, type]) -> None:
@@ -310,9 +371,14 @@ class Resolution:
                                     # None for OAuth providers or when an
                                     # explicit api_keys entry overrides env
     model_info: ModelInfo | None = None  # catalog metadata when source == "catalog"
-    compat: str | None = None       # compat preset name when routed through
+    compat: str | Compat | None = None  # compat preset name when routed through
                                     # a bound registry entry (CHAT_PRESET_ROUTES
-                                    # or an Anthropic-dialect binding)
+                                    # or an Anthropic-dialect binding); the
+                                    # compat object for a declared provider
+    declared: bool = False          # provider from RouterConfig(providers=),
+                                    # not the receipted registry
+    credential_policy: str = "key"  # the provider's AccessPolicy.credential_policy
+    placeholder_key: str | None = None  # a keyless local server's default key
 
     def describe(self) -> str:
         """One-paragraph human-readable explanation of this resolution."""
@@ -326,11 +392,17 @@ class Resolution:
         elif self.source == "rule" and self.rule is not None:
             note = f" — {self.rule.note}" if self.rule.note else ""
             parts.append(f"via built-in rule prefix={self.rule.prefix!r}{note}")
-        if self.compat is not None:
+        if isinstance(self.compat, str):
             parts.append(f"compat preset {self.compat!r}")
+        elif self.compat is not None:
+            parts.append(f"compat {type(self.compat).__name__} object")
+        if self.declared:
+            parts.append("declared by RouterConfig(providers=...) — no lm15 receipts")
         parts.append(f"wire model {self.model!r}")
-        definition = _bound(self.provider, ADAPTERS)
-        policy = _credential_policy(self.provider)
+        # Pure data: the resolution carries its provider's credential facts
+        # (a declared provider is not in the module tables — greptile on
+        # dspy#10440, 2026-09-17).
+        policy = self.credential_policy
         if policy == "oauth-unless-explicit":
             # resolve() is pure (no file reads), so it describes the chain
             # rather than asserting a winner.
@@ -342,7 +414,7 @@ class Resolution:
             parts.append(f"key from ${self.env_key}")
         elif policy == "oauth":
             parts.append("local OAuth credential (no env key)")
-        elif definition is not None and definition.placeholder_key is not None:
+        elif self.placeholder_key is not None:
             parts.append("key from explicit api_keys or the preset's local-server default")
         else:
             parts.append("key from explicit api_keys")
@@ -377,6 +449,17 @@ class RouterConfig:
     the cloud doors (azure, bedrock, vertex): their URL is derived from
     ``settings`` (resource, region), and an entry for one is refused.
 
+    ``providers`` declares providers the registry does not list — a
+    gateway, a service lm15 has not receipted — as
+    :class:`~lm15.registry.ProviderDefinition` values
+    (``ProviderDefinition.chat(access, compat=OpenAIChatCompat(...))``).
+    They route like registry entries in every router built with this
+    config (``id:model``, ``id/model``, each alias likewise), take
+    ``api_keys``/``base_urls`` entries, and answer
+    ``Resolution.declared``: no live receipt backs them, and lm15 says so.
+    An id or alias that a registry entry or litellm prefix already spells
+    is refused: one string, one door.
+
     ``timeouts`` (:class:`lm15.Timeouts`) and ``max_connections`` shape the
     one transport the router builds and shares across its LMs; defaults
     are the provider SDKs' (connect 10 s, read/write/pool 600 s, 100
@@ -404,9 +487,11 @@ class RouterConfig:
     # record nothing), "refuse" (every adaptation is an error before the
     # wire).  Applied to every LM the router builds.
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
+    providers: tuple[ProviderDefinition, ...] = field(default=(), kw_only=True)
 
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
+        _check_declared(self.providers)
         if self.timeouts is not None and not isinstance(self.timeouts, Timeouts):
             raise TypeError(
                 f"RouterConfig(timeouts=...) takes lm15.Timeouts, got {type(self.timeouts).__name__}; "
@@ -441,6 +526,34 @@ class RouterConfig:
 # ------------------------------------------------------------- internals ----
 
 
+def _check_declared(providers: object) -> None:
+    """``RouterConfig(providers=...)``: definitions only, each spelling
+    (id and aliases) naming one door that nothing built in already names."""
+    if not isinstance(providers, tuple):
+        raise TypeError(
+            f"RouterConfig(providers=...) takes a tuple of ProviderDefinition, got {type(providers).__name__}"
+        )
+    taken: dict[str, str] = {}
+    for definition in providers:
+        if not isinstance(definition, ProviderDefinition):
+            raise TypeError(
+                f"RouterConfig(providers=...): {definition!r} is not a ProviderDefinition; "
+                "declare one with ProviderDefinition.chat(access, compat=...)"
+            )
+        for spelling in definition.spellings:
+            built_in = PROVIDERS[spelling].id if spelling in PROVIDERS else _LITELLM_CANONICAL.get(spelling)
+            if built_in is not None:
+                raise NotConfiguredError(
+                    f"RouterConfig(providers=...): {spelling!r} already names lm15's {built_in!r} door; "
+                    "a declared provider takes a new id and aliases"
+                )
+            if spelling in taken:
+                raise NotConfiguredError(
+                    f"RouterConfig(providers=...): {spelling!r} is spelled by both {taken[spelling]!r} and {definition.id!r}"
+                )
+            taken[spelling] = definition.id
+
+
 def _resolution(
     *,
     requested: str,
@@ -463,6 +576,9 @@ def _resolution(
         env_key=_env_key_for(provider, config, adapters),
         model_info=model_info,
         compat=definition.compat if definition is not None else None,
+        declared=_declared(provider, adapters),
+        credential_policy=_credential_policy(provider, adapters),
+        placeholder_key=definition.placeholder_key if definition is not None else None,
     )
 
 
@@ -482,7 +598,7 @@ def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> 
     # else matches either).
     object_provider = getattr(model, "provider", None)
     if isinstance(object_provider, str) and object_provider:
-        object_provider = _canonical_provider(object_provider)
+        object_provider = _provider_id(_canonical_provider(object_provider), adapters)
     else:
         object_provider = None
     if object_provider is not None and _routable(object_provider, adapters):
@@ -498,7 +614,7 @@ def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> 
     # Rung 1: explicit provider prefix (split on FIRST colon).
     if ":" in model:
         raw_head, rest = model.split(":", 1)
-        head = _canonical_provider(raw_head)
+        head = _provider_id(_canonical_provider(raw_head), adapters)
         if _routable(head, adapters) and rest:
             return _resolution(
                 requested=requested,
@@ -543,7 +659,7 @@ def _resolve(model: str, config: RouterConfig, adapters: Mapping[str, type]) -> 
                     providers=providers,
                 )
             info = narrowed[0]
-            catalog_provider = _canonical_provider(info.provider)
+            catalog_provider = _provider_id(_canonical_provider(info.provider), adapters)
             if not _routable(catalog_provider, adapters):
                 raise UnknownModelError(
                     f"model {model!r} resolved in the catalog to provider "
@@ -870,6 +986,12 @@ LITELLM_PROVIDER_PREFIXES: Mapping[str, str] = MappingProxyType({
     "azure": "azure-chat",
 })
 
+# The same prefixes in canonical spelling, for the collision check a
+# declared provider's spellings go through (`_check_declared`).
+_LITELLM_CANONICAL: Mapping[str, str] = MappingProxyType(
+    {_canonical_provider(prefix): provider for prefix, provider in LITELLM_PROVIDER_PREFIXES.items()}
+)
+
 # Keyword arguments of `create()` / `completion()` that configure the
 # CLIENT, not the request: refused with the lm15 place they belong.
 _CLIENT_KEYWORDS: Mapping[str, str] = MappingProxyType({
@@ -891,14 +1013,16 @@ _CLIENT_KEYWORDS: Mapping[str, str] = MappingProxyType({
 })
 
 
-def openai_chat_model_string(model: str) -> str:
+def openai_chat_model_string(model: str, *, providers: tuple[ProviderDefinition, ...] = ()) -> str:
     """The lm15 model string for a model string written for the OpenAI SDK
     or litellm (`playbooks/api-family.md` § Ingest):
 
     - an lm15 string (``provider:model``) is left alone;
     - litellm's ``provider/model`` maps its prefix through
       :data:`LITELLM_PROVIDER_PREFIXES` (only the first segment; a model
-      id may contain slashes itself: ``groq/openai/gpt-oss-20b``);
+      id may contain slashes itself: ``groq/openai/gpt-oss-20b``), or
+      through a declared provider's id and aliases (``providers``, the
+      config's ``RouterConfig(providers=...)``; either spelling);
     - a bare name routes by lm15's rules, except that OpenAI's models go
       to the Chat Completions door (``openai-chat:``) — the endpoint both
       libraries were using — not the Responses API.
@@ -909,9 +1033,16 @@ def openai_chat_model_string(model: str) -> str:
     if sep and rest:
         provider = LITELLM_PROVIDER_PREFIXES.get(head)
         if provider is None:
+            canonical = _canonical_provider(head)
+            for definition in providers:
+                if canonical in definition.spellings:
+                    provider = definition.id
+                    break
+        if provider is None:
+            known = sorted({*LITELLM_PROVIDER_PREFIXES, *(s for d in providers for s in d.spellings)})
             raise UnknownModelError(
                 f"could not read {model!r} as a litellm model string: {head!r} is not a provider prefix lm15 "
-                f"has a door for (known: {', '.join(sorted(LITELLM_PROVIDER_PREFIXES))}); write it as lm15's "
+                f"has a door for (known: {', '.join(known)}); write it as lm15's "
                 "provider:model instead",
                 model=model,
             )
@@ -942,6 +1073,7 @@ class LMRouter:
     """
 
     def __init__(self, config: RouterConfig = RouterConfig()) -> None:
+        self._adapters = _table(type(self)._adapters, config)
         _check_provider_keyed(config, self._adapters)
         self.config = config
         self._lms: dict[str, object] = {}
@@ -1040,7 +1172,7 @@ class LMRouter:
         litellm were using. Like ``resolve()``: no network, no credential
         invocation or secret values in the result — "which provider, which env var"
         before any key exists."""
-        resolution = self.resolve(openai_chat_model_string(model))
+        resolution = self.resolve(openai_chat_model_string(model, providers=self.config.providers))
         if resolution.source == "rule" and resolution.provider == "openai":
             resolution = self.resolve(f"openai-chat:{resolution.model}")
         return resolution
@@ -1107,6 +1239,7 @@ class AsyncLMRouter:
     """
 
     def __init__(self, config: RouterConfig = RouterConfig()) -> None:
+        self._adapters = _table(type(self)._adapters, config)
         _check_provider_keyed(config, self._adapters)
         self.config = config
         self._lms: dict[str, object] = {}

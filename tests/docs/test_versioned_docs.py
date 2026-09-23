@@ -2,6 +2,7 @@ import argparse
 import importlib.util
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,17 @@ from docs.scripts.build_docs import (
 from docs.scripts.publish_versioned_docs import publish_site, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
+
+
+def test_current_workflow_publishes_to_production_branch():
+    workflow = Path(".github/workflows/docs-push.yml").read_text()
+    checkout = workflow.split("      - name: Check out documentation deployment", 1)[1].split("      - name:", 1)[0]
+    publish = workflow.split("      - name: Publish Current through Mike", 1)[1]
+
+    assert "ref: master" in checkout
+    assert "--branch master" in publish
+    assert "push origin master" in publish
+    assert "versioned-docs" not in checkout + publish
 
 
 def make_site(root, content: str):
@@ -210,7 +222,23 @@ def test_mike_current_is_mutable_and_default(tmp_path):
     assert branch_file(repository, "versioned-docs", "current/index.html") == "second"
     assert "url=current/" in branch_file(repository, "versioned-docs", "index.html")
     assert 'location.replace("/current/guide/"' in branch_file(repository, "versioned-docs", "guide/index.html")
-    assert json.loads(branch_file(repository, "versioned-docs", "vercel.json"))["framework"] is None
+    host_config = json.loads(branch_file(repository, "versioned-docs", "vercel.json"))
+    assert host_config["framework"] is None
+    assert host_config["buildCommand"] == "true"
+    assert host_config["outputDirectory"] == "."
+    assert host_config["redirects"] == [
+        {
+            "source": r"/:version(\d+\.\d+(?:\.\d+(?:(?:a|b|rc)\d+)?)?)",
+            "destination": "/:version/",
+            "permanent": True,
+        },
+        {
+            "source": "/:path((?:.*/)?[^./]+)",
+            "destination": "/:path/",
+            "permanent": True,
+        },
+    ]
+    assert "trailingSlash" not in host_config
     production_inventory = subprocess.run(
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
     )

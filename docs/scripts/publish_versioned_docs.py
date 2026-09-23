@@ -20,7 +20,20 @@ HOST_CONFIG = (
     json.dumps(
         {
             "framework": None,
-            "trailingSlash": True,
+            "buildCommand": "true",
+            "outputDirectory": ".",
+            "redirects": [
+                {
+                    "source": "/:version(\\d+\\.\\d+(?:\\.\\d+(?:(?:a|b|rc)\\d+)?)?)",
+                    "destination": "/:version/",
+                    "permanent": True,
+                },
+                {
+                    "source": "/:path((?:.*/)?[^./]+)",
+                    "destination": "/:path/",
+                    "permanent": True,
+                },
+            ],
             "headers": [
                 {
                     "source": "/(.*).md",
@@ -172,7 +185,7 @@ def publish_site(
             alias_type=commands.AliasType.redirect,
             branch=branch,
             message=message,
-            set_props=[("renderer", "material"), ("package_source", package_source)],
+            set_props=[("renderer", "zensical"), ("package_source", package_source)],
         ):
             pass
         root = branch_file(repository, branch, "index.html")

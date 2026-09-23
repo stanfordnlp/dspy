@@ -9,6 +9,14 @@ server's quirks.  The router, the doctor, the vet surface dump (and
 through it the contract's support matrix) and the docs tables all read
 this table.  Nothing else lists providers.
 
+A third source of entries, with the same shape, is the caller:
+``RouterConfig(providers=(ProviderDefinition.chat(...), ...))`` declares a
+provider this table does not list (a hosted gateway, a service lm15 has
+not receipted yet).  A declared entry names its compat *object* rather
+than a preset name, is routable only through routers built with that
+config, and answers ``Resolution.declared`` — it carries no live receipt,
+and lm15 says so rather than pretend.
+
 Two kinds of entries share one shape:
 
 - **adapter-owned** — the dialect class carries its own manifest
@@ -69,6 +77,7 @@ from .providers import (
 )
 
 __all__ = [
+    "Compat",
     "Dialect",
     "ProviderDefinition",
     "PROVIDERS",
@@ -79,6 +88,18 @@ __all__ = [
 # The wire formats lm15 speaks.  A dialect is a class; a provider is a
 # dialect plus an access policy (plus a compat preset for the chat dialect).
 Dialect = Literal["openai-responses", "openai-chat", "anthropic", "gemini"]
+
+# A compat value: a preset name for a registry entry (validated against
+# the dialect's table below), or the object itself for a declared entry.
+Compat = OpenAIResponsesCompat | OpenAIChatCompat | AnthropicCompat
+
+# Per dialect: the compat class a bound entry may carry as an object, and
+# the sync/async classes that speak it.  A dialect absent here cannot bind.
+_DIALECTS: dict[str, tuple[type, type, type]] = {
+    "openai-responses": (OpenAIResponsesCompat, OpenAILM, AsyncOpenAILM),
+    "openai-chat": (OpenAIChatCompat, OpenAIChatLM, AsyncOpenAIChatLM),
+    "anthropic": (AnthropicCompat, AnthropicLM, AsyncAnthropicLM),
+}
 
 
 # Per dialect: the compat preset constructor and the preset → base URL table
@@ -106,7 +127,14 @@ class ProviderDefinition:
     ``access``          the credential chain, headers, surfaces and default
                         base URL (``lm15.access``); for a bound entry the
                         router passes this to the dialect constructor.
-    ``compat``          Chat Completions preset name (bound entries only).
+    ``compat``          compat preset name (bound registry entries), or the
+                        compat object itself (a declared entry, whose
+                        preset lives in the caller's code, not lm15's
+                        tables).
+    ``aliases``         extra input spellings of the provider, canonical
+                        form (``fireworks-ai`` for litellm's
+                        ``fireworks_ai/``); accepted as ``alias:model``
+                        and ``alias/model``, never emitted.
     ``placeholder_key`` the key a keyless local server accepts when nothing
                         is configured (AUTH-1 last rung); None otherwise.
     ``console_url``     where a human gets a key (docs, doctor hints).
@@ -119,10 +147,11 @@ class ProviderDefinition:
     adapter: type
     async_adapter: type
     access: AccessPolicy
-    compat: str | None = None
+    compat: str | Compat | None = None
     placeholder_key: str | None = None
     console_url: str | None = None
     note: str = ""
+    aliases: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.id != canonical_provider(self.id):
@@ -131,6 +160,37 @@ class ProviderDefinition:
             raise ValueError(f"{self.id}: access policy names provider {self.access.provider!r}")
         if self.placeholder_key is not None and self.access.env_keys:
             raise ValueError(f"{self.id}: a keyless local server declares no env_keys")
+        if not isinstance(self.aliases, tuple) or not all(isinstance(a, str) and a for a in self.aliases):
+            raise TypeError(f"{self.id}: aliases is a tuple of non-empty strings")
+        canonical = tuple(canonical_provider(a) for a in self.aliases)
+        if canonical != self.aliases:
+            raise ValueError(f"{self.id}: aliases are hyphenated: {canonical!r}")
+        if len(set(self.aliases)) != len(self.aliases) or self.id in self.aliases:
+            raise ValueError(f"{self.id}: aliases repeat a spelling")
+        if self.compat is not None and not isinstance(self.compat, str):
+            # A compat object: the dialect's own class, and a place to send
+            # the request (a bound entry has no preset table row to read a
+            # URL from; a hosted entry renders its host template).
+            if self.dialect not in _DIALECTS:
+                raise ValueError(f"{self.id}: dialect {self.dialect!r} takes no compat")
+            compat_cls = _DIALECTS[self.dialect][0]
+            if not isinstance(self.compat, compat_cls):
+                raise TypeError(
+                    f"{self.id}: compat for dialect {self.dialect!r} is a {compat_cls.__name__}, "
+                    f"got {type(self.compat).__name__}"
+                )
+            if not self.hosted and not self.access.base_url:
+                raise ValueError(f"{self.id}: a declared provider names its base_url on the access policy")
+            if not self.hosted and self.access.credential_policy != "key":
+                # The router binds a bound entry as cls(api_key=..., access=...,
+                # compat=...); the OAuth policies build self-resolving
+                # constructors that take no access policy, so a bound OAuth
+                # entry would silently lose its declaration.
+                raise ValueError(
+                    f"{self.id}: a declared provider is key-based; credential_policy "
+                    f"{self.access.credential_policy!r} needs its own adapter class"
+                )
+            return
         if self.hosted:
             # A cloud door (AUTH-10 host): the base URL is a template rendered
             # over the host settings at construction, so the compat-table URL
@@ -179,6 +239,74 @@ class ProviderDefinition:
     def base_url(self) -> str | None:
         return self.access.base_url
 
+    @property
+    def spellings(self) -> tuple[str, ...]:
+        """Every canonical input spelling: the id, then the aliases."""
+        return (self.id, *self.aliases)
+
+    # ─── declaring a provider (RouterConfig(providers=...)) ─────────────
+
+    @classmethod
+    def chat(
+        cls,
+        access: AccessPolicy,
+        *,
+        compat: OpenAIChatCompat | str,
+        aliases: tuple[str, ...] = (),
+        placeholder_key: str | None = None,
+        console_url: str | None = None,
+        note: str = "",
+    ) -> ProviderDefinition:
+        """A provider speaking the OpenAI Chat Completions wire: ``access``
+        names it (``AccessPolicy(provider=..., env_keys=..., base_url=...)``)
+        and ``compat`` describes the server's spellings
+        (:class:`~lm15.compat.OpenAIChatCompat`)."""
+        return cls._bound("openai-chat", access, compat=compat, aliases=aliases, placeholder_key=placeholder_key,
+                          console_url=console_url, note=note)
+
+    @classmethod
+    def responses(
+        cls,
+        access: AccessPolicy,
+        *,
+        compat: OpenAIResponsesCompat | str,
+        aliases: tuple[str, ...] = (),
+        console_url: str | None = None,
+        note: str = "",
+    ) -> ProviderDefinition:
+        """A provider speaking the OpenAI Responses wire."""
+        return cls._bound("openai-responses", access, compat=compat, aliases=aliases, console_url=console_url, note=note)
+
+    @classmethod
+    def anthropic(
+        cls,
+        access: AccessPolicy,
+        *,
+        compat: AnthropicCompat | str,
+        aliases: tuple[str, ...] = (),
+        console_url: str | None = None,
+        note: str = "",
+    ) -> ProviderDefinition:
+        """A provider speaking the Anthropic Messages wire."""
+        return cls._bound("anthropic", access, compat=compat, aliases=aliases, console_url=console_url, note=note)
+
+    @classmethod
+    def _bound(cls, dialect: Dialect, access: AccessPolicy, *, compat, aliases=(), placeholder_key=None,
+               console_url=None, note="") -> ProviderDefinition:
+        _, adapter, async_adapter = _DIALECTS[dialect]
+        return cls(
+            id=canonical_provider(access.provider),
+            dialect=dialect,
+            adapter=adapter,
+            async_adapter=async_adapter,
+            access=access,
+            compat=compat,
+            placeholder_key=placeholder_key,
+            console_url=console_url,
+            note=note,
+            aliases=tuple(aliases),
+        )
+
 
 def _adapter_owned(
     id: str,
@@ -207,16 +335,7 @@ def _responses_bound(
     console_url: str | None = None,
     note: str = "",
 ) -> ProviderDefinition:
-    return ProviderDefinition(
-        id=access.provider,
-        dialect="openai-responses",
-        adapter=OpenAILM,
-        async_adapter=AsyncOpenAILM,
-        access=access,
-        compat=compat,
-        console_url=console_url,
-        note=note,
-    )
+    return ProviderDefinition.responses(access, compat=compat, console_url=console_url, note=note)
 
 
 def _chat_bound(
@@ -227,17 +346,8 @@ def _chat_bound(
     console_url: str | None = None,
     note: str = "",
 ) -> ProviderDefinition:
-    return ProviderDefinition(
-        id=access.provider,
-        dialect="openai-chat",
-        adapter=OpenAIChatLM,
-        async_adapter=AsyncOpenAIChatLM,
-        access=access,
-        compat=compat or access.provider,
-        placeholder_key=placeholder_key,
-        console_url=console_url,
-        note=note,
-    )
+    return ProviderDefinition.chat(access, compat=compat or access.provider, placeholder_key=placeholder_key,
+                                   console_url=console_url, note=note)
 
 
 def _anthropic_bound(
@@ -247,16 +357,7 @@ def _anthropic_bound(
     console_url: str | None = None,
     note: str = "",
 ) -> ProviderDefinition:
-    return ProviderDefinition(
-        id=access.provider,
-        dialect="anthropic",
-        adapter=AnthropicLM,
-        async_adapter=AsyncAnthropicLM,
-        access=access,
-        compat=compat,
-        console_url=console_url,
-        note=note,
-    )
+    return ProviderDefinition.anthropic(access, compat=compat, console_url=console_url, note=note)
 
 
 def _hosted(
