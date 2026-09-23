@@ -2646,7 +2646,8 @@ def test_chat_adapter_toolcalls_vague_match():
         )
 
 
-def test_chat_adapter_native_reasoning():
+@mock.patch("litellm.supports_reasoning", return_value=True)
+def test_chat_adapter_native_reasoning(_supports_reasoning):
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
         reasoning: dspy.Reasoning = dspy.OutputField()
