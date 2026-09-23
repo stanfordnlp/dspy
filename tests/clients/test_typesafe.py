@@ -100,7 +100,7 @@ async def test_async_sdk_and_shared_cache(transport):
     module.fields["label"]["weights"] = {"2": 0.1}
     assert (await module.acall(text="x")).label == "other"
     assert len(transport) == 1
-    assert synchronous.rating == pytest.approx(1.5)
+    assert synchronous.rating.value == pytest.approx(1.5)
 
 
 def test_cache_identity_and_controls(transport):

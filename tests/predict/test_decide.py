@@ -43,7 +43,7 @@ def signature(rich=False):
         {
             "text": (str, dspy.InputField()),
             "flag": (Noul if rich else bool, dspy.OutputField(desc="Is it relevant?")),
-            "rating": (Rating if rich else Annotated[float, Rating], dspy.OutputField(desc="Rate usefulness.")),
+            "rating": (Rating, dspy.OutputField(desc="Rate usefulness.")),
             "label": (Label if rich else Literal[2, "other"], dspy.OutputField()),
         },
         "Assess the document.",
@@ -61,10 +61,10 @@ def test_native_rich_equivalence_and_request_mapping():
     native.fields["flag"]["threshold"] = rich.fields["flag"]["threshold"] = 0.7
     a, b = native(text="example"), rich(text="example")
     assert a.flag is b.flag.value is True
-    assert a.rating == b.rating.value == pytest.approx(1.5)
+    assert a.rating.value == b.rating.value == pytest.approx(1.5)
     assert a.label == b.label.value == 2
     assert type(a.label) is type(b.label.value) is int
-    assert type(a.rating) is float
+    assert type(a.rating) is Rating
     assert b.flag.confidence == pytest.approx(1 / 7)
     assert b.flag.probability == 0.8
     assert b.rating.confidence == 0.61
@@ -251,7 +251,7 @@ def test_choice_weights_reject_zero_remaining_mass_and_tie_in_declaration_order(
     [
         ("text -> answer", "Unsupported"),
         ("text -> answer: int", "Unsupported"),
-        ("text -> answer: float", "requires a rubric"),
+        ("text -> answer: float", "use Score"),
         ("text -> answer: dspy.experimental.Choice", "Unsupported"),
         ("text -> answer: Literal[1, '1']", "ambiguous"),
     ],
@@ -812,7 +812,7 @@ def test_batch_discovery_and_context(rich):
         results = module.batch([dspy.Example(text=str(i)).with_inputs("text") for i in range(3)], num_threads=2)
     assert len(results) == 3
     for result in results:
-        assert (result.rating.value if rich else result.rating) == pytest.approx(1.5)
+        assert result.rating.value == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize(
@@ -864,13 +864,13 @@ def test_signature_override_preserves_parameters_and_accepts_prompt_changes():
     assert module.signature.instructions == "Assess the document."
 
 
-def test_signature_override_accepts_equivalent_types_and_native_form():
+def test_signature_override_accepts_equivalent_score_types():
     # A separately built Pydantic class need not have the same identity (e.g. after cache eviction).
     from pydantic import create_model
 
     equivalent = create_model("EquivalentRating", __base__=Rating)
     module = decide(True, FakeClient())
-    for annotation in (equivalent, Annotated[float, equivalent]):
-        override = module.signature.with_updated_fields("rating", type_=annotation)
-        result = module(text="x", signature=override).rating
-        assert (result if type(result) is float else result.value) == pytest.approx(1.5)
+    override = module.signature.with_updated_fields("rating", type_=equivalent)
+    result = module(text="x", signature=override).rating
+    assert type(result) is equivalent
+    assert result.value == pytest.approx(1.5)

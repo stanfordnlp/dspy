@@ -27,7 +27,7 @@ def test_decision_apis_are_experimental_only():
 def decision_fields(rich):
     return {
         "urgent": Noul if rich else bool,
-        "severity": Severity if rich else Annotated[float, Severity],
+        "severity": Severity,
         "category": Category if rich else Literal["billing", "technical"],
     }
 
@@ -45,10 +45,8 @@ def decision_signature(rich, direction):
 
 
 def decision_values(rich, evidence=False):
-    if not rich:
-        return {"urgent": True, "severity": 1.5, "category": "technical"}
     return {
-        "urgent": Noul(value=True, confidence=0.6, **({"probability": 0.8} if evidence else {})),
+        "urgent": Noul(value=True, confidence=0.6, **({"probability": 0.8} if evidence else {})) if rich else True,
         "severity": Severity(
             value=1.5, confidence=0.61, **({"probabilities": {0: 0.1, 1: 0.3, 2: 0.6}} if evidence else {})
         ),
@@ -56,7 +54,7 @@ def decision_values(rich, evidence=False):
             value="technical",
             confidence=0.73,
             **({"probabilities": {"billing": 0.2, "technical": 0.8}} if evidence else {}),
-        ),
+        ) if rich else "technical",
     }
 
 
@@ -78,7 +76,7 @@ def test_predict_outputs_and_generated_schema(adapter, rich):
     with dspy.context(lm=DummyLM([decision_evidence(rich)], adapter=adapter), adapter=adapter):
         result = dspy.Predict(signature)(ticket="Payment failed.")
     for name, value in values.items():
-        if rich:
+        if rich or name == "severity":
             assert result[name].value == value.value
             assert result[name].confidence == pytest.approx(value.confidence)
             assert isinstance(result[name], decision_fields(True)[name])
@@ -113,8 +111,8 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
         assert "Minor" in messages[0]["content"]
         assert ("Product malfunction" in messages[0]["content"]) is rich
         prompt = messages[-1]["content"]
-        assert ('"confidence"' in prompt) is rich
-        assert ('"probabilities"' in prompt) is (rich and evidence)
+        assert '"confidence"' in prompt
+        assert ('"probabilities"' in prompt) is evidence
         assert "1.5" in prompt
         assert "technical" in prompt
     client = FakeClient()
@@ -123,20 +121,19 @@ def test_inputs_to_both_modules_preserve_values_and_context(rich, evidence):
     assert module(**values).accept is False
     state, questions = client.calls[0]
     assert set(questions) == {"accept"}  # Inputs are not additional questions.
-    assert state["inputs"] == {name: v.model_dump(mode="json") if rich else v for name, v in values.items()}
+    assert state["inputs"] == {
+        name: v.model_dump(mode="json") if rich or name == "severity" else v for name, v in values.items()
+    }
     assert "Minor" in state["input_fields"]
     assert values["urgent"].value is True if rich else values["urgent"] is True
 
 
-@pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
 @pytest.mark.parametrize("invalid", [-0.1, 2.1])
-def test_score_range_is_enforced_for_native_and_rich(adapter, rich, invalid):
-    sig = decision_signature(rich, "output")
-    values = decision_values(False)
-    values["severity"] = invalid
-    if rich:
-        values = {name: {"value": value, "confidence": 0.7} for name, value in values.items()}
+def test_score_range_is_enforced(adapter, invalid):
+    sig = decision_signature(True, "output")
+    values = decision_values(True)
+    values["severity"] = {"value": invalid, "confidence": 0.7}
     completion = adapter.format_assistant_message_content(sig, values)
     with pytest.raises(dspy.AdapterParseError):
         adapter.parse(sig, completion)
@@ -223,17 +220,30 @@ def test_score_level_order_bounds_and_fractional_values(levels, maximum):
     score = Score[levels]
     assert score.options == levels
     assert json.dumps(list(enumerate(levels))) in score.description()
-    for rich in (False, True):
-        adapter = TypeAdapter(score if rich else Annotated[float, score])
-        schema = adapter.json_schema()
-        value_schema = schema["properties"]["value"] if rich else schema
-        assert value_schema["minimum"] == 0
-        assert value_schema["maximum"] == maximum
-        for value in (0, 0.25, maximum):
-            result = adapter.validate_python({"value": value, "confidence": 0.7} if rich else value)
-            assert (result.value if rich else result) == value
-        with pytest.raises(ValidationError):
-            adapter.validate_python({"value": maximum + 0.1, "confidence": 0.7} if rich else maximum + 0.1)
+    adapter = TypeAdapter(score)
+    value_schema = adapter.json_schema()["properties"]["value"]
+    assert value_schema["minimum"] == 0
+    assert value_schema["maximum"] == maximum
+    for value in (0, 0.25, maximum):
+        result = adapter.validate_python({"value": value, "confidence": 0.7})
+        assert result.value == value
+        assert float(result) == value
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"value": maximum + 0.1, "confidence": 0.7})
+
+
+@pytest.mark.parametrize("score", [Score, Severity])
+@pytest.mark.parametrize("field", [dspy.InputField, dspy.OutputField])
+def test_score_cannot_annotate_a_native_float(score, field):
+    with pytest.raises(ValueError, match=r"Use Score.*directly"):
+        dspy.Signature({"rating": (Annotated[float, score], field())})
+
+
+def test_bare_float_remains_an_ordinary_llm_output():
+    with dspy.context(lm=DummyLM([{"rating": 12.75}])):
+        result = dspy.Predict("text -> rating: float")(text="x")
+    assert type(result.rating) is float
+    assert result.rating == 12.75
 
 
 def test_choice_type_cache_preserves_bool_vs_int():

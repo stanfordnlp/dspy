@@ -53,9 +53,8 @@ TypeSafe automatically uses the System One request format.
 | `bool` | Boolean | True-probability | `bool` |
 | `Noul` / `Availability` | `{noul: probability}` | True-probability | Rich value, probability, derived confidence |
 | `Annotated[bool, Availability]` | Same Noul evidence | Same Noul evidence | `bool` |
-| `float` | Number | Unsupported without rubric | `float` |
+| `float` | Number | Unsupported; use `Score[...]` | `float` |
 | `Severity` | `{probabilities: {"0": p0, "1": p1, "2": p2}, confidence: c}` | Level distribution and confidence | Rich value, probabilities, level, confidence |
-| `Annotated[float, Severity]` | Same Score evidence | Same Score evidence | Continuous `float` |
 | `Literal["billing", "technical"]` | Allowed member | Option distribution | Native member |
 | `Category` | `{probabilities: {"billing": p0, "technical": p1}, confidence: c}` | Option distribution and confidence | Rich value, probabilities, confidence |
 
@@ -64,6 +63,8 @@ Bare native LLM outputs retain their ordinary behavior. Adding an entry to
 Rich/configured outputs use evidence decoding by default. LLMs do not generate
 their derived `.value` or `.level` independently.
 
+Declare Score directly as `rating: Score["low", "medium", "high"]`; read
+`result.rating.value` or `float(result.rating)` for the continuous value.
 Score has 2–10 ordered level descriptions, numbered 0 through N−1. Choice
 preserves string, integer, Boolean, and None values. Its probability keys are
 string labels; ambiguous labels such as `1` and `"1"` are rejected.

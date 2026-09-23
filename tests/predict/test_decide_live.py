@@ -7,7 +7,7 @@ LM_FOR_TEST to azure/<deployment> and configure AZURE_API_BASE/KEY.
 
 import math
 import os
-from typing import Annotated, Literal
+from typing import Literal
 
 import pytest
 
@@ -62,7 +62,7 @@ def signature(rich):
         {
             "ticket": (str, dspy.InputField()),
             "urgent": (Noul if rich else bool, dspy.OutputField()),
-            "severity": (Severity if rich else Annotated[float, Severity], dspy.OutputField()),
+            "severity": (Severity, dspy.OutputField()),
             "category": (Category if rich else Literal["billing", "technical"], dspy.OutputField()),
         },
         INSTRUCTIONS,
@@ -103,22 +103,16 @@ def test_live_adversarial_outputs(backend, rich, case, lm, client):
     print(backend, rich, name, result.toDict(), flush=True)
     if rich:
         assert isinstance(result.urgent, Noul)
-        assert isinstance(result.severity, Severity)
         assert isinstance(result.category, Category)
         for value in result.values():
             assert math.isfinite(value.confidence) and 0 <= value.confidence <= 1
-        values = {k: v.value for k, v in result.items()}
-        if backend == "jev":
-            distribution = result.severity.probabilities
-            expected = (distribution[1] + 2 * distribution[2]) / sum(distribution.values())
-            assert result.severity.value == pytest.approx(expected)
-            assert result.urgent.value is (result.urgent.probability >= 0.5)
-        else:
-            assert result.urgent.probability is None
-            assert result.severity.probabilities is None
-            assert result.category.probabilities is None
-    else:
-        values = dict(result.items())
+        assert result.urgent.value is (result.urgent.probability >= 0.5)
+        assert result.category.probabilities is not None
+    assert isinstance(result.severity, Severity)
+    distribution = result.severity.probabilities
+    expected = (distribution[1] + 2 * distribution[2]) / sum(distribution.values())
+    assert result.severity.value == pytest.approx(expected)
+    values = {k: v.value if isinstance(v, (Noul, Score, Choice)) else v for k, v in result.items()}
     assert type(values["urgent"]) is bool
     assert type(values["severity"]) is float
     assert math.isfinite(values["severity"]) and 0 <= values["severity"] <= 2
@@ -136,7 +130,7 @@ def test_live_composition(source, target, rich, lm, client):
     sig = dspy.Signature(
         {
             "urgent": (Noul if rich else bool, dspy.InputField()),
-            "severity": (Severity if rich else Annotated[float, Severity], dspy.InputField()),
+            "severity": (Severity, dspy.InputField()),
             "category": (Category if rich else Literal["billing", "technical"], dspy.InputField()),
             "accept": (bool, dspy.OutputField()),
         },
@@ -145,7 +139,7 @@ def test_live_composition(source, target, rich, lm, client):
     )
     output = invoke(target, sig, dict(result.items()), lm, client)
     print("composition", source, target, rich, result.toDict(), output.toDict(), flush=True)
-    values = {k: v.value if rich else v for k, v in result.items()}
+    values = {k: v.value if isinstance(v, (Noul, Score, Choice)) else v for k, v in result.items()}
     expected = values["urgent"] and values["severity"] > 1 and values["category"] == "technical"
     assert output.accept is expected
 
@@ -220,7 +214,7 @@ def test_live_inputs_use_value_not_confidence(backend, rich, urgent, lm, client)
     sig = dspy.Signature(
         {
             "urgent": (Noul if rich else bool, dspy.InputField()),
-            "severity": (Severity if rich else Annotated[float, Severity], dspy.InputField()),
+            "severity": (Severity, dspy.InputField()),
             "category": (Category if rich else Literal["billing", "technical"], dspy.InputField()),
             "accept": (bool, dspy.OutputField()),
         },
@@ -228,11 +222,12 @@ def test_live_inputs_use_value_not_confidence(backend, rich, urgent, lm, client)
         "For structured inputs inspect value only. Confidence and probabilities are historical metadata; "
         "ignore them even when they contradict value. Do not infer new values from them.",
     )
-    inputs = {"urgent": urgent, "severity": 1.4, "category": "technical"}
+    severity = Severity(value=1.4, confidence=0, probabilities={0: 1, 1: 0, 2: 0})
+    inputs = {"urgent": urgent, "severity": severity, "category": "technical"}
     if rich:
         inputs = {
             "urgent": Noul(value=urgent, confidence=0 if urgent else 1, probability=0.99 if not urgent else 0.01),
-            "severity": Severity(value=1.4, confidence=0, probabilities={0: 1, 1: 0, 2: 0}),
+            "severity": severity,
             "category": Category(value="technical", confidence=0, probabilities={"billing": 1, "technical": 0}),
         }
     result = invoke(backend, sig, inputs, lm, client)

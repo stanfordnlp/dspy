@@ -61,7 +61,7 @@ class DecisionState:
             if kind is None:
                 raise ValueError(
                     f"Unsupported decision output {name!r}. Use Noul, Score[...], Choice[...], bool, Literal[...], "
-                    "Annotated[bool, Noul[...]], or Annotated[float, Score[...]]. Bare float requires a rubric."
+                    "or Annotated[bool, Noul[...]]. For numeric decisions, use Score[...] rather than float."
                 )
             types[name] = kind
         return types

@@ -85,8 +85,8 @@ class Score(_Decision):
     level index. It does not change the continuous value or provider confidence.
     The backend does not generate the derived value or level independently.
 
-    ``Annotated[float, Score[...]]`` uses the same rubric but returns a native
-    float instead of a rich result. Bare float has no rubric for Decide.
+    Use the configured Score as the field annotation. Access ``.value`` or
+    call ``float(result)`` to obtain the continuous numeric value.
     """
 
     value: float = Field(allow_inf_nan=False)
@@ -110,18 +110,8 @@ class Score(_Decision):
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):
         if source is float:
-            # Pydantic calls this hook when this configured type is Annotated metadata.
-            if not cls.options:
-                raise ValueError("A native Score requires a configured rubric.")
-            return core_schema.float_schema(ge=0, le=len(cls.options) - 1, allow_inf_nan=False)
+            raise ValueError("Use Score[...] directly as the field type, not Annotated[float, Score[...]].")
         return handler(source)
-
-    @classmethod
-    def __get_pydantic_json_schema__(cls, schema, handler):
-        result = handler(schema)
-        if schema["type"] == "float":
-            result["description"] = cls.description()
-        return result
 
     def __float__(self):
         return self.value
@@ -205,8 +195,6 @@ def decision_type(field):
     annotation = field.annotation
     if annotation is bool:
         return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Noul)), Noul)
-    if annotation is float:
-        return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Score) and m.options), None)
     if get_origin(annotation) is Literal:
         return Choice[tuple((value, "") for value in get_args(annotation))]
     if isinstance(annotation, type) and issubclass(annotation, _Decision):
