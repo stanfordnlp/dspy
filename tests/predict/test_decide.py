@@ -636,6 +636,30 @@ def test_instruction_json_validation_is_not_silently_coercive(entry):
         module.dump_state()
 
 
+@pytest.mark.parametrize("setting", ["instructions", "criteria"])
+def test_json_validator_reuse_still_checks_nested_mutations(setting):
+    from unittest.mock import patch
+
+    from pydantic import JsonValue, TypeAdapter
+
+    client = FakeClient()
+    module = decide(client=client)
+    examples = ["Relevant"]
+    module.fields["flag"][setting] = {"true": {"examples": examples}}
+    with patch("dspy.predict.decide.TypeAdapter", wraps=TypeAdapter) as constructors:
+        assert module(text="x").flag is True
+        examples.append("Another example")
+        assert module(text="x").flag is True
+        assert client.calls[-1][1]["flag"][setting]["true"]["examples"] == examples
+        for invalid in ({"not JSON"}, float("nan")):
+            examples.append(invalid)
+            with pytest.raises(ValueError, match=setting):
+                module(text="x")
+            examples.pop()
+        assert len(client.calls) == 2
+        assert all(call.args[0] is not JsonValue for call in constructors.call_args_list)
+
+
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("operation", ["save", "load"])
 @pytest.mark.parametrize(

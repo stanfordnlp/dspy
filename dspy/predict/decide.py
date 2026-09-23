@@ -19,6 +19,8 @@ from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.annotation import experimental
 from dspy.utils.callback import BaseCallback
 
+_JSON_ADAPTER = TypeAdapter(JsonValue)
+
 
 @experimental
 class Decide(Module, Parameter):
@@ -158,7 +160,7 @@ class Decide(Module, Parameter):
                 if not isinstance(entry, (str, dict, list, type(None))):
                     raise ValueError(f"Invalid {label} for {name!r}: expected a string, object, array, or null.")
                 try:
-                    TypeAdapter(JsonValue).validate_python(entry, strict=True)
+                    _JSON_ADAPTER.validate_python(entry, strict=True)
                     json.dumps(entry, allow_nan=False)
                 except (TypeError, ValueError) as error:
                     raise ValueError(f"Invalid JSON in {label} for {name!r}.") from error
