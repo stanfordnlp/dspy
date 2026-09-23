@@ -3,7 +3,8 @@
 A ``Flex`` never executes its optimizer-authored ``module_src`` in the host process. Instead,
 every ``forward``:
 
-1. creates a fresh interpreter from the Flex's ``interpreter_factory`` (``BridgeRuntime.forward``);
+1. creates a fresh interpreter from the Flex's ``interpreter_factory``, or from
+   ``dspy.settings.interpreter_factory`` when Flex uses its default (``BridgeRuntime.forward``);
 2. injects the sandbox-side shim (``_sandbox_shim.py``), which fakes a tiny ``dspy`` module whose
    predictor constructors and calls are proxies;
 3. executes ``module_src`` and drives its ``forward`` with the call's inputs.
@@ -358,8 +359,9 @@ class BridgeRuntime:
         # A code-executing sub-predictor should run its inner code in the backend chosen for Flex, so
         # hand it the Flex interpreter factory (it makes and tears down a fresh interpreter per forward).
         # The sandbox code can't set this itself, since a live interpreter can't cross the boundary.
+        # The resolver lets a configured factory override the default for Flex and its
+        # code-executing sub-predictors alike.
         if "interpreter_factory" not in extra and _accepts_interpreter_factory(cls):
             factory = self._sub_interpreter_factory()
-            if factory is not None:
-                extra["interpreter_factory"] = factory
+            extra["interpreter_factory"] = factory
         return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)

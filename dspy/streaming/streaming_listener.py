@@ -6,14 +6,15 @@ from collections import defaultdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any
 
-import jiter
-
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
+from dspy.utils.lazy_import import require
+
+jiter = require("jiter")
 
 if TYPE_CHECKING:
     from litellm import ModelResponseStream

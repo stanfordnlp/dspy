@@ -3,10 +3,11 @@ import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
-import anyio.from_thread
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.lazy_import import require
+
+anyio = require("anyio")
 
 
 @dataclass

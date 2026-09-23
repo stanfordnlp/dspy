@@ -432,7 +432,7 @@ def test_xml_adapter_with_code():
             model="openai/gpt-4o-mini",
         )
         result = adapter(
-            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False),
             {},
             CodeGeneration,
             [],

@@ -4,6 +4,9 @@ This section covers essential DSPy features and best practices for professional 
 
 ## Integration and Tooling
 
+### [Custom LM Engines](../custom_lm_engines/index.md)
+Connect a custom backend through the lm15 request/response contract. The worked example runs the Pi CLI and its tools from a DSPy program.
+
 ### [Use MCP in DSPy](../mcp/index.md)
 Learn to integrate Model Context Protocol (MCP) with DSPy applications. This tutorial shows how to leverage MCP for enhanced context management and more sophisticated AI interactions.
 

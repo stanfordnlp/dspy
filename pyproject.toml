@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.3.1"
+version="3.4.0b1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -78,6 +78,9 @@ exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
 dspy = ["primitives/*.js"]
+"dspy.clients.model_metadata" = ["snapshot.json.gz", "LICENSE", "provenance.json"]
+"dspy._vendor" = ["lm15-LICENSE", "lm15-provenance.txt", "UPDATING.md"]
+"dspy._vendor.lm15" = ["py.typed"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
@@ -125,6 +128,7 @@ filterwarnings = [
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
+  "dspy/_vendor/**",  # vendored lm15, linted in its own repository
   "tests/reliability/*.py",
 ]
 

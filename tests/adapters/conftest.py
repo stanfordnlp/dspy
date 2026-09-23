@@ -1,3 +1,12 @@
+"""Shared adapter test helpers.
+
+TODO(3.5): migrate general adapter LM doubles (including CapturingLM below)
+and tests mocking litellm.completion/acompletion to canonical Request/Response
+engines, with native-transport coverage where wire conversion matters. Preserve
+prompt-format and parsing assertions. Keep dedicated LiteLLM compatibility tests
+and historical cache fixtures; those are not candidates for replacement.
+"""
+
 import dspy
 
 
