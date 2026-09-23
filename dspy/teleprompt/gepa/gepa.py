@@ -262,6 +262,13 @@ class GEPA(Teleprompter):
         reflection_lm: The language model to use for reflection. Required parameter. GEPA benefits from
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`
             for optimal performance.
+        reflection_instruction: Optional additive guidance for the default instruction proposer when it
+            proposes new instructions with the reflection LM (for example "keep proposed instructions under
+            150 words" or domain hints). It is appended to the default proposal prompt and applies to the
+            selected ordinary components only; `dspy.Flex` code components are not affected. Blank or unset
+            values add nothing. When `instruction_proposer` is supplied, this parameter is ignored (a warning
+            is logged) because the custom proposer owns its own prompt. This is soft guidance, not an enforced
+            word limit, and it is not passed to the student program at inference time. Default is None.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
         instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
             **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from
@@ -411,6 +418,7 @@ class GEPA(Teleprompter):
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
+        reflection_instruction: str | None = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
@@ -469,6 +477,18 @@ class GEPA(Teleprompter):
         )
 
         self.reflection_lm = reflection_lm
+        if reflection_instruction is not None and not isinstance(reflection_instruction, str):
+            raise ValueError("reflection_instruction must be a string or None.")
+        self.reflection_instruction = reflection_instruction
+        if (
+            instruction_proposer is not None
+            and reflection_instruction is not None
+            and reflection_instruction.strip()
+        ):
+            logger.warning(
+                "reflection_instruction is ignored when instruction_proposer is provided; "
+                "include guidance in the custom proposer instead."
+            )
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -505,11 +525,16 @@ class GEPA(Teleprompter):
         if self.gepa_kwargs.get("max_reflection_cost") is not None:
             raise ValueError("max_reflection_cost is not supported by dspy.GEPA yet.")
 
+        if "reflection_instruction" in self.gepa_kwargs:
+            raise ValueError(
+                "reflection_instruction must be passed directly to dspy.GEPA, not via gepa_kwargs."
+            )
+
         if "reflection_prompt_template" in self.gepa_kwargs:
             raise ValueError(
                 "reflection_prompt_template cannot be passed via gepa_kwargs when using dspy.GEPA. "
-                "DspyAdapter implements its own propose_new_texts, so reflection_prompt_template is unused. "
-                "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
+                "Use reflection_instruction for additional guidance, or instruction_proposer for a custom "
+                "proposal prompt."
             )
 
     def auto_budget(
@@ -647,6 +672,7 @@ class GEPA(Teleprompter):
             custom_code_proposer=self.custom_code_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
+            reflection_instruction=self.reflection_instruction,
         )
 
         # Seed candidate: instruction text per non-flex predictor, plus the current module_src of
