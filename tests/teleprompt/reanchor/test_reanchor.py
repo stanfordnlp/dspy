@@ -211,6 +211,23 @@ def test_a_native_bool_stays_native_when_probabilities_do_not_score_better():
     assert optimizer.report["fitted"][0]["skipped"] == "probabilities did not beat the native output"
 
 
+def test_a_native_bool_stays_native_when_probabilities_win_only_one_example():
+    pairs = [f"same{i}" for i in range(20)] + [f"different{i}" for i in range(20)]
+
+    def one_miss(inputs, evidence):
+        answer = inputs["pair"].startswith("same")
+        if evidence:
+            return {"match": noul(0.9 if answer else 0.1)}
+        return {"match": answer and inputs["pair"] != "same0"}
+
+    dspy.configure(lm=ComputedLM(one_miss, adapter=dspy.JSONAdapter()))
+    train = [dspy.Example(pair=p, match=p.startswith("same")).with_inputs("pair") for p in pairs]
+    optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
+    program = optimizer.compile(dspy.Predict(Sig), trainset=train)
+    assert program.fields == {}
+    assert optimizer.report["fitted"][0]["skipped"] == "probabilities did not beat the native output"
+
+
 def test_a_partial_field_entry_is_filled_from_the_type_defaults(system_one):
     student = dspy.Predict(Sig)
     student.set_criteria("match", {"true": "The same item.", "false": "Two different items."})

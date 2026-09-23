@@ -249,3 +249,57 @@ def test_evidence_is_recorded_for_the_predictor_that_decoded_it(system_one):
     caller, name, evidence = log[-1]
     assert caller is program.kind and name == "kind" and evidence["probabilities"] == {"x": 0.6, "y": 0.4}
     assert len(log) == 4
+
+
+def lone_outlier(same: float, different: float, odd: float, count: int = 1):
+    """20 same pairs, 19 different pairs, and `count` of the same pairs replaced by `odd` ones."""
+    pairs = (
+        [f"same{i}" for i in range(20 - count)] + [f"odd{i}" for i in range(count)] + [f"diff{i}" for i in range(19)]
+    )
+
+    def answer(state, name, q):
+        pair = state["inputs"]["pair"]
+        return noul(odd if pair.startswith("odd") else same if pair.startswith("same") else different)
+
+    train = [dspy.Example(pair=p, match=not p.startswith("diff")).with_inputs("pair") for p in pairs]
+    return answer, train
+
+
+def test_a_threshold_stays_when_its_whole_gain_is_one_example(system_one):
+    answer, train = lone_outlier(0.9, 0.1, 0.3)
+    system_one(answer)
+    program = dspy.Predict(Match)
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
+    assert program.fields["match"]["threshold"] == 0.5
+    assert report[0]["fold_check"] == {"passed": 0, "failed": 1}
+
+
+def test_a_threshold_moves_when_its_gain_recurs_across_the_training_set(system_one):
+    answer, train = lone_outlier(0.9, 0.1, 0.3, count=6)
+    system_one(answer)
+    program = dspy.Predict(Match)
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
+    assert program.fields["match"]["threshold"] == 0.2
+    assert report[0]["fold_check"] == {"passed": 1, "failed": 0}
+
+
+def test_score_cuts_stay_when_their_whole_gain_is_one_example(system_one):
+    levels = {"lo": {0: 0.8, 1: 0.1, 2: 0.1}, "hi": {0: 0.1, 1: 0.0, 2: 0.9}, "odd": {0: 0.5, 1: 0.3, 2: 0.2}}
+    system_one(lambda state, name, q: score(levels[state["inputs"]["item"].rstrip("0123456789")]))
+    program = dspy.Predict(RateLevel)
+    items = [f"lo{i}" for i in range(19)] + ["odd0"] + [f"hi{i}" for i in range(20)]
+    train = [dspy.Example(item=k, rating=2 if k.startswith("hi") else 0).with_inputs("item") for k in items]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.rating.level == g.rating), num_threads=2)
+    assert program.fields["rating"]["cuts"] == [0.5, 1.5]
+    assert report[0]["fold_check"]["failed"] >= 1
+
+
+def test_choice_weights_stay_when_their_whole_gain_is_one_example(system_one):
+    leans = {"x": {"x": 0.8, "y": 0.2}, "y": {"x": 0.2, "y": 0.8}, "odd": {"x": 0.55, "y": 0.45}}
+    system_one(lambda state, name, q: choice(leans[state["inputs"]["item"].rstrip("0123456789")]))
+    program = dspy.Predict(Kind)
+    items = [f"x{i}" for i in range(20)] + [f"y{i}" for i in range(19)] + ["odd0"]
+    train = [dspy.Example(item=k, kind="x" if k.startswith("x") else "y").with_inputs("item") for k in items]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.kind == g.kind), num_threads=2)
+    assert program.fields["kind"]["weights"] == {"x": 1.0, "y": 1.0}
+    assert report[0]["fold_check"]["failed"] >= 1

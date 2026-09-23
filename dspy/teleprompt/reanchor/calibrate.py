@@ -16,13 +16,18 @@ The candidate settings come from the training set. One pass records the probabil
 is decoded from on every call. A setting anywhere between two neighbouring observed values makes
 the same decisions, so the candidates are the midpoints of those gaps: between P(True) values for
 a threshold, between mean level indexes for a cut, and between the points where an option's pick
-flips for a weight. A setting stays unless a candidate scores strictly better, and among equal
-scores the candidate in the widest gap wins.
+flips for a weight. Among equal scores the candidate in the widest gap wins.
+
+A setting stays unless a candidate scores strictly better and the gain holds across folds. The
+fold check splits the training set into FOLDS parts. For each part, it picks a setting on the
+other parts and scores that pick on the held-out part. A candidate replaces the current setting
+only when those held-out scores beat the current setting's. A gain that rests on one or two
+examples fails this check, because the parts without them pick nothing better.
 
 On a generative LM, a native `bool` or `Literal` output returns its value without probabilities
 unless it has an entry in `fields`. Calibration adds that entry, which asks the LM for
-probabilities, and keeps it only when the fitted setting scores strictly better than the native
-output did.
+probabilities, and keeps it only when the fitted setting beats the native output under the same
+fold check.
 
 Before sweeping an output, calibration scores it at its current setting and then pushes its
 decisions to each extreme: every Noul True, then every Noul False; every Score at its lowest
@@ -36,6 +41,7 @@ balanced items of its own, which scores the same at both extremes.
 import copy
 import itertools
 import math
+import random
 from typing import Any, Callable
 
 import dspy
@@ -47,6 +53,7 @@ from dspy.utils.parallelizer import ParallelExecutor
 
 MAX_CANDIDATES = 40  # candidate settings per parameter; more distinct values are thinned to quantiles
 WEIGHT_RANGE = (1e-3, 1e3)  # the smallest and largest Choice multiplier tried
+FOLDS = 5  # training-set parts the fold check holds out in turn
 
 
 def decision_outputs(predict: Predict) -> dict[str, type]:
@@ -138,8 +145,8 @@ def calibrate(
     ignored = {} if ignored is None else ignored
     report = []
 
-    def score() -> float:
-        return run(program, trainset, metric, num_threads)
+    def score() -> list[float]:
+        return scores(program, trainset, metric, num_threads)
 
     for name, predict in predictors(program):
         if only is not None and name != only:
@@ -162,17 +169,20 @@ def calibrate(
                 continue
             evidence = _observe(program, predict, field, trainset, metric, num_threads)
             row = {"predictor": name, "field": field}
-            if issubclass(kind, Noul):
-                row.update(_fit_threshold(predict, field, evidence, score))
-            else:
-                base = score()
-                fit = _fit_weights if issubclass(kind, Choice) else _fit_cuts
-                best, best_score, observed = fit(predict, field, kind, evidence, score, base)
-                row.update(parameter="weights" if fit is _fit_weights else "cuts", value=best)
-                row.update(train_score=round(best_score, 4), train_score_at_start=round(base, 4), observed=observed)
+            parameter, fit = (
+                ("threshold", _fit_threshold)
+                if issubclass(kind, Noul)
+                else ("weights", _fit_weights)
+                if issubclass(kind, Choice)
+                else ("cuts", _fit_cuts)
+            )
+            base = score()
+            best, fitted, observed, check = fit(predict, field, kind, evidence, score, base)
+            row.update(parameter=parameter, value=best, train_score=_mean(fitted), train_score_at_start=_mean(base))
+            row.update(observed=observed, fold_check=check)
             if promoted:
-                row["train_score_native"] = round(native, 4)
-                if row["train_score"] <= row["train_score_native"]:
+                row["train_score_native"] = _mean(native)
+                if _select(native, [(fitted, (), None)])[0] is None:
                     _restore(predict, field, original)
                     row = {
                         "predictor": name,
@@ -243,31 +253,70 @@ def _summary(values: list[float]) -> dict[str, Any]:
     }
 
 
-def _fit_threshold(predict: Predict, field: str, evidence: list[dict], score: Callable) -> dict[str, Any]:
+def _mean(values: list[float]) -> float:
+    return round(math.fsum(values) / len(values), 4)
+
+
+def _folds(n: int) -> list[list[int]]:
+    """Example indexes split into up to FOLDS parts, the same way on every run."""
+    order = list(range(n))
+    random.Random(0).shuffle(order)
+    k = min(FOLDS, n)
+    return [order[i::k] for i in range(k)]
+
+
+def _pick(start: list[float], tried: list[tuple], rows) -> tuple | None:
+    """The best entry of `tried` on `rows`, or None when none scores strictly better than `start` there.
+
+    Each entry is (per-example scores, tie-break key, setting). Equal totals go to the larger key.
+    """
+
+    def total(values):
+        return math.fsum(values[i] for i in rows)
+
+    best = max(tried, key=lambda t: (total(t[0]), t[1]), default=None)
+    return best if best is not None and total(best[0]) > total(start) else None
+
+
+def _select(start: list[float], tried: list[tuple]) -> tuple[tuple | None, bool]:
+    """The entry of `tried` to keep, or None to keep the start, and whether the fold check refused a better entry.
+
+    The entry that scores best on the whole training set is kept only when picking on all folds but
+    one, and scoring the pick on the held-out fold, beats the start on those same examples.
+    """
+    best = _pick(start, tried, range(len(start)))
+    if best is None:
+        return None, False
+    held, held_start = 0.0, 0.0
+    for fold in _folds(len(start)):
+        out = set(fold)
+        pick = _pick(start, tried, [i for i in range(len(start)) if i not in out])
+        held += math.fsum((pick[0] if pick else start)[i] for i in fold)
+        held_start += math.fsum(start[i] for i in fold)
+    return (best, False) if held > held_start else (None, True)
+
+
+def _fit_threshold(
+    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: list[float]
+) -> tuple[float, list[float], dict, dict]:
     """The threshold that scores best, between the observed probabilities.
 
-    The starting threshold stays unless a candidate scores strictly better. Among equal scores, the
-    candidate in the widest gap wins, since it leaves the most room on either side.
+    The starting threshold stays unless a candidate scores strictly better and passes the fold
+    check. Among equal scores, the candidate in the widest gap wins, since it leaves the most room
+    on either side.
     """
     config = predict.fields[field]
     start = config["threshold"]
-    base = score()
     probabilities = [e["noul"] for e in evidence]
     tried = []
     for t, width in _gaps(probabilities, 0.0, 1.0):
         config["threshold"] = t
-        tried.append((score(), width, -abs(t - start), t))
-    best_score, _, _, best = max(tried) if tried else (base, 0, 0, start)
-    if best_score <= base:
-        best, best_score = start, base
+        tried.append((score(), (width, -abs(t - start), t), t))
+    kept, refused = _select(base, tried)
+    best, values = (kept[2], kept[0]) if kept else (start, base)
     config["threshold"] = best
-    return {
-        "parameter": "threshold",
-        "value": best,
-        "train_score": round(best_score, 4),
-        "train_score_at_start": round(base, 4),
-        "observed": {**_summary(probabilities), "candidates": len(tried)},
-    }
+    observed = {**_summary(probabilities), "candidates": len(tried)}
+    return best, values, observed, {"passed": int(kept is not None), "failed": int(refused)}
 
 
 def _extremes(kind: type) -> list[tuple[str, Any]]:
@@ -298,18 +347,19 @@ def _ignored(program, predict: Predict, field: str, kind: type, trainset: list, 
 
 
 def _fit_weights(
-    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: float
-) -> tuple[dict, float, dict]:
+    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: list[float]
+) -> tuple[dict, list[float], dict, dict]:
     """The Choice multipliers that score best on the training set.
 
     Each option's multiplier moves in turn while the others hold. An option's pick on a call flips
     where its weighted probability meets the strongest rival's, so the candidates sit between those
-    flip points. A candidate replaces the current multipliers only when it scores strictly better.
+    flip points. A candidate replaces the current multipliers only when it scores strictly better
+    and passes the fold check.
     """
     labels = [str(value) for value, _ in kind.options]
     config = predict.fields[field]
     best = {label: config["weights"].get(label, 1.0) for label in labels}
-    best_score, candidates = base, 0
+    best_scores, candidates, check = base, 0, {"passed": 0, "failed": 0}
     for label in labels:
         flips = []
         for e in evidence:
@@ -328,27 +378,28 @@ def _fit_weights(
             config["weights"] = candidate
             tried.append((score(), width, candidate))
         candidates += len(tried)
-        if tried:
-            sc, _, candidate = max(tried, key=lambda t: t[:2])
-            if sc > best_score:
-                best, best_score = candidate, sc
+        kept, refused = _select(best_scores, tried)
+        check["passed"] += kept is not None
+        check["failed"] += refused
+        if kept:
+            best_scores, _, best = kept
     config["weights"] = best
-    return best, best_score, {"calls": len(evidence), "candidates": candidates}
+    return best, best_scores, {"calls": len(evidence), "candidates": candidates}, check
 
 
 def _fit_cuts(
-    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: float
-) -> tuple[list[float], float, dict]:
+    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: list[float]
+) -> tuple[list[float], list[float], dict, dict]:
     """The Score cuts that score best on the training set.
 
     A call's level depends only on its mean level index. Each cut moves in turn between the
     observed means that lie between its neighbours, and stays strictly between them. A candidate
-    replaces the current cuts only when it scores strictly better.
+    replaces the current cuts only when it scores strictly better and passes the fold check.
     """
     config = predict.fields[field]
     top = len(kind.options) - 1
     means = [sum(i * p for i, p in e["probabilities"].items()) / sum(e["probabilities"].values()) for e in evidence]
-    best, best_score, candidates = list(config["cuts"]), base, 0
+    best, best_scores, candidates, check = list(config["cuts"]), base, 0, {"passed": 0, "failed": 0}
     for i in range(len(best)):
         below = best[i - 1] if i else 0
         above = best[i + 1] if i + 1 < len(best) else top
@@ -360,9 +411,10 @@ def _fit_cuts(
             config["cuts"] = candidate
             tried.append((score(), width, candidate))
         candidates += len(tried)
-        if tried:
-            sc, _, candidate = max(tried, key=lambda t: t[:2])
-            if sc > best_score:
-                best, best_score = candidate, sc
+        kept, refused = _select(best_scores, tried)
+        check["passed"] += kept is not None
+        check["failed"] += refused
+        if kept:
+            best_scores, _, best = kept
     config["cuts"] = best
-    return best, best_score, {**_summary(means), "candidates": candidates}
+    return best, best_scores, {**_summary(means), "candidates": candidates}, check

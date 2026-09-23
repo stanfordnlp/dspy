@@ -58,9 +58,13 @@ example, when the model only returns P(True) of 0.98 and 1.0, ReAnchor tries
   tries the multipliers that fall between the points where that option's pick
   would flip on some call.
 
-The current setting stays unless another setting scores strictly better. When
-two settings score the same, ReAnchor picks the one in the widest gap, because
-it leaves the most room on either side. When an output returns many distinct
+The current setting stays unless another setting scores strictly better and
+passes a fold check. The check splits the training examples into five parts.
+For each part, ReAnchor picks a setting using the other four parts and scores
+that pick on the held-out part. A new setting is kept only when those held-out
+scores beat the current setting. A gain that rests on one or two examples fails
+the check. When two settings score the same, ReAnchor picks the one in the
+widest gap, because it leaves the most room on either side. When an output returns many distinct
 values, ReAnchor thins the list to at most 40 settings, spaced evenly through
 the observed values.
 
@@ -87,8 +91,8 @@ probabilities instead. `Predict` then applies the threshold or weights to pick
 the value, and the output still returns a `bool` or a `Literal` member.
 
 ReAnchor adds this entry for each native output on a generative LM. It keeps the
-entry only when the fitted setting scores strictly better than the native value
-did. Otherwise it removes the entry, and the output keeps its native behavior.
+entry only when the fitted setting beats the native value under the same fold
+check. Otherwise it removes the entry, and the output keeps its native behavior.
 The `report` row for a kept entry has `"promoted": True`. The first pass with
 probabilities sends new requests, because the request changes.
 
@@ -119,7 +123,9 @@ your backend's load.
   one. ReAnchor never fits settings on `valset`.
 - `fitted`, one row per output with the fitted value, or the reason ReAnchor
   skipped it. Each fitted row has an `observed` entry with the number of calls,
-  the number of distinct values, and the number of settings tried.
+  the number of distinct values, and the number of settings tried. Its
+  `fold_check` entry counts the search steps whose better training score passed
+  or failed the fold check.
 
 Your metric may return a number or a `dspy.Prediction` with a `score`.
 
