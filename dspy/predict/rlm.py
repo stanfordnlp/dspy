@@ -819,7 +819,8 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+                this RLM instance. Code-executing sub-agents built through the sandbox dspy facade still get their
+                own interpreters from ``interpreter_factory``; a live instance cannot be copied into a factory.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -912,7 +913,8 @@ class RLM(Module):
         Args:
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+                this RLM instance. Code-executing sub-agents built through the sandbox dspy facade still get their
+                own interpreters from ``interpreter_factory``; a live instance cannot be copied into a factory.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
