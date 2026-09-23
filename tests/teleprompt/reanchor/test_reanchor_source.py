@@ -19,7 +19,7 @@ class Triage(dspy.Signature):
     sender: str = dspy.InputField(desc="Name and address")
     body: str = dspy.InputField()
     needs_response: bool = dspy.OutputField(desc="Does this need a reply?")
-    attention: Annotated[float, Attention] = dspy.OutputField(desc="How much attention")
+    attention: Attention = dspy.OutputField(desc="How much attention")
     action: Action = dspy.OutputField(desc="What I will do")
     folder: Literal["inbox", "later"] = dspy.OutputField()
 
@@ -30,7 +30,7 @@ def test_render_writes_the_docstring_inputs_and_rubrics():
     assert "sender: str = dspy.InputField(desc='Name and address')" in src
     assert "body: str = dspy.InputField()" in src
     assert "needs_response: bool = dspy.OutputField(desc='Does this need a reply?')" in src
-    assert "attention: Annotated[float, Score['Ignore it', 'Read it', 'Reply to it']]" in src
+    assert "attention: Score['Ignore it', 'Read it', 'Reply to it']" in src
     assert "action: Choice[('reply', 'I answer it.'), ('read', 'I open it.')]" in src
     assert "folder: Literal['inbox', 'later'] = dspy.OutputField()" in src
     ast.parse(src)
@@ -65,6 +65,18 @@ def test_a_typed_noul_writes_true_before_false():
 
     src = render_signature(Outage)
     assert "blocked: Annotated[bool, Noul[(True, 'Service down.'), (False, 'Workaround exists.')]]" in src
+
+
+def test_bare_decision_metadata_on_a_native_output_is_kept():
+    class Route(dspy.Signature):
+        ticket: str = dspy.InputField()
+        urgent: Annotated[bool, Noul] = dspy.OutputField(desc="Urgent?")
+        queue: Annotated[Literal["billing", "tech"], Choice] = dspy.OutputField(desc="Which queue?")
+
+    src = render_signature(Route)
+    assert "urgent: Annotated[bool, Noul] = " in src
+    assert "queue: Annotated[Literal['billing', 'tech'], Choice] = " in src
+    ast.parse(src)
 
 
 @pytest.mark.parametrize(

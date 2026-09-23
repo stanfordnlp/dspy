@@ -113,6 +113,7 @@ nav:
             - Citations: api/experimental/Citations.md
             - Decision types and System One models: api/experimental/DecisionTypes.md
             - Document: api/experimental/Document.md
+            - ReAnchor: api/experimental/ReAnchor.md
         - Models:
             - api/models/index.md
             - BaseLM: api/models/BaseLM.md

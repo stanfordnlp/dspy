@@ -1,4 +1,4 @@
-"""ReAnchor on a stubbed System One client."""
+"""ReAnchor on a stubbed System One client and a stubbed generative LM."""
 
 import copy
 import json
@@ -7,8 +7,8 @@ import logging
 import pytest
 
 import dspy
-from dspy.experimental import Decide, ReAnchor
-from tests.teleprompt.reanchor.fakes import noul
+from dspy.experimental import ReAnchor
+from tests.teleprompt.reanchor.fakes import ComputedLM, noul
 
 source = ReAnchor.source
 
@@ -49,8 +49,8 @@ def metric(gold, pred, trace=None):
 
 def test_compile_fits_the_threshold_and_reports_the_training_scores():
     optimizer = ReAnchor(metric, num_threads=2)
-    program = optimizer.compile(Decide(Sig), trainset=examples())
-    assert isinstance(program, Decide)
+    program = optimizer.compile(dspy.Predict(Sig), trainset=examples())
+    assert isinstance(program, dspy.Predict)
     assert program.fields["match"]["threshold"] == 0.75
     assert optimizer.report["train_score_before"] == 0.5556 and optimizer.report["train_score"] == 0.7778
     assert optimizer.report["fitted"][0]["parameter"] == "threshold"
@@ -60,13 +60,13 @@ def test_compile_fits_the_threshold_and_reports_the_training_scores():
 def test_the_validation_set_is_scored_and_never_fitted_on():
     optimizer = ReAnchor(metric, num_threads=2)
     val = examples("v-")[:10]  # same pairs only, where the default threshold is already right
-    program = optimizer.compile(Decide(Sig), trainset=examples(), valset=val)
+    program = optimizer.compile(dspy.Predict(Sig), trainset=examples(), valset=val)
     assert program.fields["match"]["threshold"] == 0.75
     assert optimizer.report["val_score_before"] == 1.0 and optimizer.report["val_score"] == 0.6
 
 
 def test_compile_leaves_the_student_unchanged_and_marks_the_program_compiled():
-    student = Decide(Sig)
+    student = dspy.Predict(Sig)
     before = copy.deepcopy(student.fields)
     program = ReAnchor(metric, num_threads=2).compile(student, trainset=examples())
     assert student.fields == before
@@ -75,16 +75,16 @@ def test_compile_leaves_the_student_unchanged_and_marks_the_program_compiled():
 
 def test_a_metric_returning_a_prediction_is_read_by_its_score():
     graded = lambda gold, pred, trace=None: dspy.Prediction(score=metric(gold, pred), feedback="")  # noqa: E731
-    program = ReAnchor(graded, num_threads=2).compile(Decide(Sig), trainset=examples())
+    program = ReAnchor(graded, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
     assert program.fields["match"]["threshold"] == 0.75
 
 
-def test_a_module_holding_decides_gets_each_one_calibrated():
+def test_a_module_holding_predictors_gets_each_one_calibrated():
     class Wrapper(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.judge = Decide(Sig)
-            self.judges = [Decide(Sig)]
+            self.judge = dspy.Predict(Sig)
+            self.judges = [dspy.Predict(Sig)]
 
         def forward(self, pair):
             return self.judges[0](pair=pair) if self.judge(pair=pair).match else dspy.Prediction(match=False)
@@ -98,13 +98,13 @@ def test_a_module_holding_decides_gets_each_one_calibrated():
 class Items(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.judge = Decide(Sig)
+        self.judge = dspy.Predict(Sig)
 
     def forward(self, pairs):
         return dspy.Prediction(matches=[self.judge(pair=p).match for p in pairs])
 
 
-def test_a_decide_called_once_per_item_is_calibrated_from_the_program_metric():
+def test_a_predictor_called_once_per_item_is_calibrated_from_the_program_metric():
     batch = ["same", "different", "different"]
     trainset = [dspy.Example(pairs=batch, matches=[k.startswith("same") for k in batch]).with_inputs("pairs")] * 4
 
@@ -115,23 +115,23 @@ def test_a_decide_called_once_per_item_is_calibrated_from_the_program_metric():
     assert isinstance(program, Items) and program.judge.fields["match"]["threshold"] == 0.75
 
 
-def test_the_program_keeps_the_client_and_callbacks(system_one):
+def test_the_program_keeps_a_bound_client_and_callbacks(system_one):
     client = system_one(leaning)
-    dspy.configure(system_one=None)
-    student = Decide(Sig, client=client, callbacks=[])
+    dspy.configure(lm=None)
+    student = dspy.Predict(Sig, lm=client, callbacks=[])
     program = ReAnchor(metric, num_threads=2).compile(student, trainset=examples())
-    assert program.client is not None and program(pair="same").match is True
+    assert program.lm is not None and program(pair="same").match is True
 
 
 def test_source_writes_the_signature_and_the_fitted_parameters():
-    program = ReAnchor(metric, num_threads=2).compile(Decide(Sig), trainset=examples())
+    program = ReAnchor(metric, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
     text = source(program)
     assert text.startswith("class Sig(dspy.Signature):")
     assert "program.fields = {'match': {'threshold': 0.75}}" in text
 
 
 def test_log_dir_holds_the_report_and_source(tmp_path):
-    ReAnchor(metric, num_threads=2, log_dir=tmp_path).compile(Decide(Sig), trainset=examples())
+    ReAnchor(metric, num_threads=2, log_dir=tmp_path).compile(dspy.Predict(Sig), trainset=examples())
     assert json.loads((tmp_path / "report.json").read_text())["train_score"] == 0.7778
     assert "'threshold': 0.75" in (tmp_path / "source.py").read_text()
 
@@ -143,7 +143,7 @@ def test_compile_logs_each_stage():
     log = logging.getLogger("dspy.teleprompt.reanchor.reanchor")
     log.addHandler(handler)
     try:
-        ReAnchor(metric, num_threads=2).compile(Decide(Sig), trainset=examples(), valset=examples("v-"))
+        ReAnchor(metric, num_threads=2).compile(dspy.Predict(Sig), trainset=examples(), valset=examples("v-"))
     finally:
         log.removeHandler(handler)
     assert lines == [
@@ -156,9 +156,74 @@ def test_compile_logs_each_stage():
 
 def test_empty_trainset_fails():
     with pytest.raises(ValueError, match="trainset"):
-        ReAnchor(metric).compile(Decide(Sig), trainset=[])
+        ReAnchor(metric).compile(dspy.Predict(Sig), trainset=[])
 
 
-def test_a_student_without_a_decide_fails():
-    with pytest.raises(ValueError, match="discoverable Decide"):
-        ReAnchor(metric).compile(dspy.Predict("pair -> match: bool"), trainset=examples())
+def test_a_student_without_a_decision_output_fails():
+    with pytest.raises(ValueError, match="decision output"):
+        ReAnchor(metric).compile(dspy.Predict("pair -> answer: str"), trainset=examples())
+
+
+def test_an_uncached_client_fails_unless_the_cache_is_waived(system_one):
+    system_one(leaning, cache=False)
+    with pytest.raises(ValueError, match="require_cache=False"):
+        ReAnchor(metric).compile(dspy.Predict(Sig), trainset=examples())
+    program = ReAnchor(metric, num_threads=2, require_cache=False).compile(dspy.Predict(Sig), trainset=examples())
+    assert program.fields["match"]["threshold"] == 0.75
+
+
+def test_a_predictor_config_that_turns_the_cache_off_fails(system_one):
+    with pytest.raises(ValueError, match="require_cache=False"):
+        ReAnchor(metric).compile(dspy.Predict(Sig, cache=False), trainset=examples())
+
+
+def generative(inputs, evidence):
+    """The LM answers True on every pair when asked for a bool. Asked for probabilities, it leans
+    the same way as the System One client."""
+    if not evidence:
+        return {"match": True}
+    pair = inputs["pair"]
+    return {"match": noul(0.7 if pair.endswith("same-tricky") else 0.9 if "same" in pair else 0.7)}
+
+
+def test_a_native_bool_on_a_generative_lm_is_promoted_when_probabilities_score_better():
+    dspy.configure(lm=ComputedLM(generative, adapter=dspy.JSONAdapter()))
+    student = dspy.Predict(Sig)
+    assert student.fields == {}
+    optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
+    program = optimizer.compile(student, trainset=examples())
+    assert student.fields == {}
+    assert program.fields == {"match": {"threshold": 0.75}}
+    row = optimizer.report["fitted"][0]
+    assert row["promoted"] is True and row["train_score_native"] == 0.5556 and row["train_score"] == 0.7778
+    assert "program.fields = {'match': {'threshold': 0.75}}" in source(program)
+
+
+def test_a_native_bool_stays_native_when_probabilities_do_not_score_better():
+    def right(inputs, evidence):
+        answer = inputs["pair"].startswith("same")
+        return {"match": noul(0.9 if answer else 0.1)} if evidence else {"match": answer}
+
+    dspy.configure(lm=ComputedLM(right, adapter=dspy.JSONAdapter()))
+    optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
+    program = optimizer.compile(dspy.Predict(Sig), trainset=examples())
+    assert program.fields == {}
+    assert optimizer.report["fitted"][0]["skipped"] == "probabilities did not beat the native output"
+
+
+def test_a_partial_field_entry_is_filled_from_the_type_defaults(system_one):
+    student = dspy.Predict(Sig)
+    student.set_criteria("match", {"true": "The same item.", "false": "Two different items."})
+    program = ReAnchor(metric, num_threads=2).compile(student, trainset=examples())
+    assert program.fields["match"] == {
+        "criteria": {"true": "The same item.", "false": "Two different items."},
+        "threshold": 0.75,
+    }
+
+
+def test_the_calibrated_program_saves_and_loads(tmp_path):
+    program = ReAnchor(metric, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
+    program.save(tmp_path / "program.json")
+    restored = dspy.Predict(Sig)
+    restored.load(tmp_path / "program.json")
+    assert restored.fields == {"match": {"threshold": 0.75}}
