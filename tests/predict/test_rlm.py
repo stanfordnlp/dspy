@@ -1891,6 +1891,68 @@ class TestRLMSubDspy:
         RLM("dspy -> answer", tools=[_dspy_helper], interpreter_factory=MockInterpreterFactory())
 
 
+    @staticmethod
+    def _recording_predictor(code: str):
+        """Mock action predictor that records the signature RLM hands each call."""
+        seen = []
+
+        class Recording:
+            def __call__(self, signature=None, **kwargs):
+                seen.append(signature)
+                return Prediction(reasoning="Done", code=code)
+
+            async def acall(self, signature=None, **kwargs):
+                return self(signature=signature, **kwargs)
+
+        return Recording(), seen
+
+    @pytest.mark.parametrize("use_async", [False, True])
+    def test_caller_interpreter_decides_sub_agents_for_its_invocation(self, use_async):
+        import asyncio
+
+        from dspy.primitives import facade
+
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=MockInterpreterFactory())
+        rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
+        caller = SubDspyMockInterpreter(responses=["", FinalOutput({"answer": "42"})])
+
+        result = asyncio.run(rlm.acall(caller, query="q")) if use_async else rlm(caller, query="q")
+
+        assert result.answer == "42"
+        assert caller.call_history[0][0] == facade.SHIM_SETUP
+        assert "Sub-agents (dspy)" in seen[0].instructions
+
+    def test_factory_capability_does_not_advertise_sub_agents_to_a_plain_caller_interpreter(self):
+        from dspy.primitives import facade
+
+        rlm = RLM("query -> answer", max_iters=1, interpreter_factory=SubDspyMockInterpreterFactory())
+        rlm.generate_action, seen = self._recording_predictor('SUBMIT("42")')
+        caller = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+
+        assert rlm(caller, query="q").answer == "42"
+        assert all(code != facade.SHIM_SETUP for code, _ in caller.call_history)
+        assert "Sub-agents (dspy)" not in seen[0].instructions
+
+    def test_caller_interpreter_hosting_the_facade_reserves_its_names(self):
+        from dspy.primitives import facade
+
+        rlm = RLM("dspy -> answer", max_iters=1, interpreter_factory=MockInterpreterFactory())
+        caller = SubDspyMockInterpreter(responses=[FinalOutput({"answer": "42"})])
+
+        # An input named `dspy` would overwrite the installed facade, so the call is refused up front.
+        with pytest.raises(ValueError, match="conflict"):
+            rlm(caller, dspy="value")
+        assert all(code != facade.SHIM_SETUP for code, _ in caller.call_history)
+
+    def test_context_factory_hosting_the_facade_reserves_its_names(self):
+        # Built while the active factory cannot host the facade, so `dspy` passes construction.
+        with dspy.context(interpreter_factory=MockInterpreterFactory()):
+            rlm = RLM("dspy -> answer", max_iters=1)
+        with dspy.context(interpreter_factory=SubDspyMockInterpreterFactory()):
+            with pytest.raises(ValueError, match="conflict"):
+                rlm(dspy="value")
+
+
 class TestRLMFacadeDspy:
     def test_action_prompt_includes_facade_instructions(self):
         rlm = RLM("query -> answer", interpreter_factory=_InProcessInterpreter)

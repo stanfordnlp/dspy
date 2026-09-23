@@ -217,7 +217,7 @@ class RLM(Module):
         self._interpreter_factory = interpreter_factory
         self._sub_dspy = self._declares_sub_dspy(resolve_interpreter_factory(interpreter_factory))
         self._user_tools = self._normalize_tools(tools)
-        self._validate_namespace(self._user_tools)
+        self._validate_namespace(self._user_tools, self._sub_dspy)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
@@ -260,12 +260,12 @@ class RLM(Module):
             normalized[tool.name] = tool
         return normalized
 
-    def _validate_namespace(self, tools: dict[str, Tool]) -> None:
-        """Validate names owned by the RLM result and sandbox APIs."""
+    def _validate_namespace(self, tools: dict[str, Tool], sub_dspy: bool) -> None:
+        """Validate names owned by the RLM result and sandbox APIs (the facade's too, when ``sub_dspy``)."""
         def is_reserved(name: str) -> bool:
             if name in self._RESERVED_SANDBOX_NAMES:
                 return True
-            return self._sub_dspy and (name in (CONSTRUCT_TOOL, CALL_TOOL) or is_reserved_sandbox_name(name))
+            return sub_dspy and (name in (CONSTRUCT_TOOL, CALL_TOOL) or is_reserved_sandbox_name(name))
 
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
@@ -431,8 +431,8 @@ class RLM(Module):
         return action_sig, extract_sig
 
     @staticmethod
-    def _declares_sub_dspy(factory: Callable[[], CodeInterpreter]) -> bool:
-        return InterpreterCapability.SUB_DSPY in interpreter_capabilities(factory)
+    def _declares_sub_dspy(interpreter_or_factory: Any) -> bool:
+        return InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_or_factory)
 
     @staticmethod
     def _format_interpreter_rules(execution_instructions: str, sub_dspy: bool) -> str:
@@ -446,11 +446,13 @@ class RLM(Module):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         return execution_instructions
 
-    def _action_signature_for_current_factory(self) -> type[Signature]:
-        """Return an action signature whose runtime guidance matches the active interpreter."""
+    def _action_signature_for_current_factory(self, sub_dspy: bool) -> type[Signature]:
+        """Return an action signature whose runtime guidance matches the active interpreter.
+
+        ``sub_dspy`` says whether this invocation's interpreter hosts the facade.
+        """
         factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
-        sub_dspy = self._declares_sub_dspy(factory)
         # getattr, because generate_action may have been replaced by a predictor that
         # carries no signature of its own.
         current_signature = getattr(self.generate_action, "signature", self._action_signature)
@@ -575,6 +577,17 @@ class RLM(Module):
     def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
         """Host side of the dspy facade for one forward."""
         return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
+
+    def _setup_facade(self, repl: CodeInterpreter, budget: _LLMCallBudget) -> bool:
+        """Install the facade if this invocation's interpreter declares SUB_DSPY; return whether it did."""
+        if not self._declares_sub_dspy(repl):
+            return False
+        if not self._sub_dspy:
+            # Construction validated against the factory; a caller-owned interpreter or a
+            # dspy.context factory can host the facade anyway, so its names must be free too.
+            self._validate_namespace(self._user_tools, sub_dspy=True)
+        self._facade_invocation(budget).install(repl)
+        return True
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -769,13 +782,14 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        sub_dspy: bool,
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
         action = self.generate_action(
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(sub_dspy),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -823,14 +837,13 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            if InterpreterCapability.SUB_DSPY in interpreter_capabilities(repl):
-                self._facade_invocation(budget).install(repl)
+            sub_dspy = self._setup_facade(repl, budget)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, sub_dspy
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -868,11 +881,12 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        sub_dspy: bool,
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(sub_dspy),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -916,14 +930,13 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter) as repl:
-            if InterpreterCapability.SUB_DSPY in interpreter_capabilities(repl):
-                self._facade_invocation(budget).install(repl)
+            sub_dspy = self._setup_facade(repl, budget)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, sub_dspy
                 )
                 if isinstance(result, Prediction):
                     return result
