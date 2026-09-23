@@ -38,17 +38,30 @@ print(ReAnchor.source(tuned))
 
 ## What ReAnchor fits
 
-ReAnchor tries each setting and keeps the one with the best mean metric score on
-the training examples.
+ReAnchor tries settings for each output and keeps the one with the best mean
+metric score on the training examples.
 
-- For a Boolean output, it tries each `threshold` from 0.05 to 0.95 in steps of
-  0.05. The current threshold stays unless another value scores strictly
-  better. When two values score the same, ReAnchor picks the one nearer to 0.5.
-- For a Score output, it tries `cuts` between the levels and keeps them in
-  order. The cuts choose `.level` and do not change `.value`. When two settings
-  score the same, ReAnchor keeps the default cuts.
-- For a Choice output, it tries a multiplier from 0.1 to 10 for each option.
-  When two settings score the same, ReAnchor picks the multipliers nearer to 1.
+ReAnchor builds the settings to try from the training examples. First it runs
+the program once and records the probabilities behind each output on every
+call. A threshold anywhere between two neighboring P(True) values makes the
+same decisions, so ReAnchor tries the midpoint of each gap between them. For
+example, when the model only returns P(True) of 0.98 and 1.0, ReAnchor tries
+0.5 and 0.99.
+
+- For a Boolean output, ReAnchor tries each midpoint between the observed
+  P(True) values.
+- For a Score output, the level depends on the mean level index. ReAnchor tries
+  each `cut` at the midpoints between the observed mean indexes, and it keeps
+  the cuts in order. The cuts choose `.level` and do not change `.value`.
+- For a Choice output, ReAnchor moves one option's multiplier at a time. It
+  tries the multipliers that fall between the points where that option's pick
+  would flip on some call.
+
+The current setting stays unless another setting scores strictly better. When
+two settings score the same, ReAnchor picks the one in the widest gap, because
+it leaves the most room on either side. When an output returns many distinct
+values, ReAnchor thins the list to at most 40 settings, spaced evenly through
+the observed values.
 
 Before ReAnchor tries settings for an output, it checks whether your metric
 reads that output. It scores the output at its current setting. Then it pushes
@@ -96,7 +109,8 @@ not apply there.
 - `val_score_before` and `val_score`, the same scores on `valset` when you pass
   one. ReAnchor never fits settings on `valset`.
 - `fitted`, one row per output with the fitted value, or the reason ReAnchor
-  skipped it.
+  skipped it. Each fitted row has an `observed` entry with the number of calls,
+  the number of distinct values, and the number of settings tried.
 
 Your metric may return a number or a `dspy.Prediction` with a `score`.
 

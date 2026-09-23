@@ -22,12 +22,12 @@ def test_a_leaning_noul_gets_a_threshold_between_its_piles(system_one):
     program = dspy.Predict(Match)
     train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 4]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
-    assert program.fields["match"]["threshold"] == 0.75
-    assert report[0]["train_score_at_default"] == 0.5 and report[0]["train_score"] == 1.0
+    assert program.fields["match"]["threshold"] == 0.8
+    assert report[0]["train_score"] == 1.0
 
 
-def test_a_starting_threshold_off_the_grid_stays_when_no_grid_value_beats_it(system_one):
-    # 0.73 splits 0.74 from 0.72; no grid value does.
+def test_a_starting_threshold_stays_unless_a_candidate_scores_strictly_better(system_one):
+    # 0.73 already splits 0.74 from 0.72, so the candidate in that gap only ties.
     system_one(lambda state, name, q: noul(0.74 if state["inputs"]["pair"] == "same" else 0.72))
     program = dspy.Predict(Match)
     program.fields["match"] = {"threshold": 0.73}
@@ -165,7 +165,7 @@ def test_outputs_the_metric_does_not_read_are_skipped(system_one):
     rows = {r["field"]: r for r in report}
     assert rows["noise"]["skipped"] == "the metric does not read this output"
     assert rows["kind"]["skipped"] == "the metric does not read this output"
-    assert "skipped" not in rows["match"] and program.fields["match"]["threshold"] == 0.75
+    assert "skipped" not in rows["match"] and program.fields["match"]["threshold"] == 0.8
     assert "noise" not in program.fields and "kind" not in program.fields
     assert len({repr(c) for c in client.calls}) == 2  # probing the extremes asks nothing new
 
@@ -176,7 +176,7 @@ def test_balanced_labels_are_not_mistaken_for_an_ignored_output(system_one):
     program = dspy.Predict(Match)
     train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 2]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
-    assert "skipped" not in report[0] and program.fields["match"]["threshold"] == 0.75
+    assert "skipped" not in report[0] and program.fields["match"]["threshold"] == 0.8
 
 
 def test_outputs_limits_the_fit(system_one):
@@ -187,3 +187,65 @@ def test_outputs_limits_the_fit(system_one):
         program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2, outputs={"noise"}
     )
     assert [r["field"] for r in report] == ["noise"] and "match" not in program.fields
+
+
+def test_probabilities_bunched_near_one_get_a_threshold_between_them(system_one):
+    # Every P(True) is 0.98 or 1.0, above any fixed grid; the gap between them splits the labels.
+    system_one(lambda state, name, q: noul(1.0 if state["inputs"]["pair"] == "same" else 0.98))
+    program = dspy.Predict(Match)
+    train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 4]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
+    assert program.fields["match"]["threshold"] == 0.99
+    assert report[0]["train_score"] == 1.0
+    assert report[0]["observed"] == {"calls": 8, "distinct": 2, "min": 0.98, "max": 1.0, "candidates": 2}
+
+
+def test_a_choice_multiplier_can_leave_the_range_a_fixed_grid_would_try(system_one):
+    # A "y" item still puts 0.95 on "x"; separating the items needs a "y" multiplier above 19.
+    system_one(
+        lambda state, name, q: choice(
+            {"x": 0.99, "y": 0.01} if state["inputs"]["item"] == "x" else {"x": 0.95, "y": 0.05}
+        )
+    )
+    program = dspy.Predict(Kind)
+    train = [dspy.Example(item=k, kind=k).with_inputs("item") for k in ["x", "y"] * 4]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.kind == g.kind), num_threads=2)
+    w = program.fields["kind"]["weights"]
+    assert report[0]["train_score"] == 1.0
+    assert 0.95 * w["x"] < 0.05 * w["y"] and 0.99 * w["x"] > 0.01 * w["y"]
+
+
+def test_many_distinct_probabilities_are_thinned_to_the_candidate_cap(system_one):
+    from dspy.teleprompt.reanchor.calibrate import MAX_CANDIDATES
+
+    system_one(lambda state, name, q: noul(int(state["inputs"]["pair"]) / 200))
+    program = dspy.Predict(Match)
+    train = [dspy.Example(pair=str(i), match=i >= 120).with_inputs("pair") for i in range(200)]
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=4)
+    assert report[0]["observed"]["distinct"] == 200
+    assert report[0]["observed"]["candidates"] <= MAX_CANDIDATES
+    assert 0.55 < program.fields["match"]["threshold"] <= 0.6 and report[0]["train_score"] >= 0.97
+
+
+def test_evidence_is_recorded_for_the_predictor_that_decoded_it(system_one):
+    from dspy.adapters.decision import record_evidence
+
+    system_one(lambda state, name, q: noul(0.9) if name == "match" else choice({"x": 0.6, "y": 0.4}))
+
+    class Two(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.judge = dspy.Predict(Match)
+            self.kind = dspy.Predict(Kind)
+
+        def forward(self, items):
+            return [self.judge(pair=i).match for i in items], self.kind(item="a").kind
+
+    program = Two()
+    with record_evidence() as log:
+        program(items=["a", "b", "c"])
+    program(items=["d"])
+    assert [(caller is program.judge, name) for caller, name, _ in log].count((True, "match")) == 3
+    caller, name, evidence = log[-1]
+    assert caller is program.kind and name == "kind" and evidence["choice"] == "x"
+    assert len(log) == 4

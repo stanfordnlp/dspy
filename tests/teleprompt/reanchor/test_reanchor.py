@@ -15,7 +15,7 @@ source = ReAnchor.source
 
 def leaning(state, name, q):
     """Jev leans high, 0.9 on a same pair and 0.7 on a different one, and reads a tricky same pair
-    as different, so no threshold gets every pair right. The best threshold is 0.75."""
+    as different, so no threshold gets every pair right. The best thresholds lie between 0.7 and 0.9; ReAnchor picks the midpoint, 0.8."""
     pair = state["inputs"]["pair"]
     if pair.endswith("same-tricky"):
         return noul(0.7)
@@ -51,7 +51,7 @@ def test_compile_fits_the_threshold_and_reports_the_training_scores():
     optimizer = ReAnchor(metric, num_threads=2)
     program = optimizer.compile(dspy.Predict(Sig), trainset=examples())
     assert isinstance(program, dspy.Predict)
-    assert program.fields["match"]["threshold"] == 0.75
+    assert program.fields["match"]["threshold"] == 0.8
     assert optimizer.report["train_score_before"] == 0.5556 and optimizer.report["train_score"] == 0.7778
     assert optimizer.report["fitted"][0]["parameter"] == "threshold"
     assert "val_score" not in optimizer.report
@@ -61,7 +61,7 @@ def test_the_validation_set_is_scored_and_never_fitted_on():
     optimizer = ReAnchor(metric, num_threads=2)
     val = examples("v-")[:10]  # same pairs only, where the default threshold is already right
     program = optimizer.compile(dspy.Predict(Sig), trainset=examples(), valset=val)
-    assert program.fields["match"]["threshold"] == 0.75
+    assert program.fields["match"]["threshold"] == 0.8
     assert optimizer.report["val_score_before"] == 1.0 and optimizer.report["val_score"] == 0.6
 
 
@@ -76,7 +76,7 @@ def test_compile_leaves_the_student_unchanged_and_marks_the_program_compiled():
 def test_a_metric_returning_a_prediction_is_read_by_its_score():
     graded = lambda gold, pred, trace=None: dspy.Prediction(score=metric(gold, pred), feedback="")  # noqa: E731
     program = ReAnchor(graded, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
-    assert program.fields["match"]["threshold"] == 0.75
+    assert program.fields["match"]["threshold"] == 0.8
 
 
 def test_a_module_holding_predictors_gets_each_one_calibrated():
@@ -91,7 +91,7 @@ def test_a_module_holding_predictors_gets_each_one_calibrated():
 
     program = ReAnchor(metric, num_threads=2).compile(Wrapper(), trainset=examples())
     assert isinstance(program, Wrapper)
-    assert program.judge.fields["match"]["threshold"] == 0.75
+    assert program.judge.fields["match"]["threshold"] == 0.8
     assert "threshold" in program.judges[0].fields["match"]
 
 
@@ -112,7 +112,7 @@ def test_a_predictor_called_once_per_item_is_calibrated_from_the_program_metric(
         return sum(a == b for a, b in zip(pred.matches, gold.matches, strict=True)) / len(gold.matches)
 
     program = ReAnchor(items_metric, num_threads=2).compile(Items(), trainset=trainset)
-    assert isinstance(program, Items) and program.judge.fields["match"]["threshold"] == 0.75
+    assert isinstance(program, Items) and program.judge.fields["match"]["threshold"] == 0.8
 
 
 def test_the_program_keeps_a_bound_client_and_callbacks(system_one):
@@ -127,13 +127,13 @@ def test_source_writes_the_signature_and_the_fitted_parameters():
     program = ReAnchor(metric, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
     text = source(program)
     assert text.startswith("class Sig(dspy.Signature):")
-    assert "program.fields = {'match': {'threshold': 0.75}}" in text
+    assert "program.fields = {'match': {'threshold': 0.8}}" in text
 
 
 def test_log_dir_holds_the_report_and_source(tmp_path):
     ReAnchor(metric, num_threads=2, log_dir=tmp_path).compile(dspy.Predict(Sig), trainset=examples())
     assert json.loads((tmp_path / "report.json").read_text())["train_score"] == 0.7778
-    assert "'threshold': 0.75" in (tmp_path / "source.py").read_text()
+    assert "'threshold': 0.8" in (tmp_path / "source.py").read_text()
 
 
 def test_compile_logs_each_stage():
@@ -169,7 +169,7 @@ def test_an_uncached_client_fails_unless_the_cache_is_waived(system_one):
     with pytest.raises(ValueError, match="require_cache=False"):
         ReAnchor(metric).compile(dspy.Predict(Sig), trainset=examples())
     program = ReAnchor(metric, num_threads=2, require_cache=False).compile(dspy.Predict(Sig), trainset=examples())
-    assert program.fields["match"]["threshold"] == 0.75
+    assert program.fields["match"]["threshold"] == 0.8
 
 
 def test_a_predictor_config_that_turns_the_cache_off_fails(system_one):
@@ -193,10 +193,10 @@ def test_a_native_bool_on_a_generative_lm_is_promoted_when_probabilities_score_b
     optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
     program = optimizer.compile(student, trainset=examples())
     assert student.fields == {}
-    assert program.fields == {"match": {"threshold": 0.75}}
+    assert program.fields == {"match": {"threshold": 0.8}}
     row = optimizer.report["fitted"][0]
     assert row["promoted"] is True and row["train_score_native"] == 0.5556 and row["train_score"] == 0.7778
-    assert "program.fields = {'match': {'threshold': 0.75}}" in source(program)
+    assert "program.fields = {'match': {'threshold': 0.8}}" in source(program)
 
 
 def test_a_native_bool_stays_native_when_probabilities_do_not_score_better():
@@ -217,7 +217,7 @@ def test_a_partial_field_entry_is_filled_from_the_type_defaults(system_one):
     program = ReAnchor(metric, num_threads=2).compile(student, trainset=examples())
     assert program.fields["match"] == {
         "criteria": {"true": "The same item.", "false": "Two different items."},
-        "threshold": 0.75,
+        "threshold": 0.8,
     }
 
 
@@ -226,4 +226,4 @@ def test_the_calibrated_program_saves_and_loads(tmp_path):
     program.save(tmp_path / "program.json")
     restored = dspy.Predict(Sig)
     restored.load(tmp_path / "program.json")
-    assert restored.fields == {"match": {"threshold": 0.75}}
+    assert restored.fields == {"match": {"threshold": 0.8}}
