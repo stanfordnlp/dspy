@@ -1,18 +1,22 @@
-"""Fit every Decide's numeric parameters in a program against the metric.
+"""Fit the numeric decision parameters of every Predict in a program against the metric.
 
-A System One model's answers often track the label and lean. Fixing the lean needs no LM. Each
-`Decide` owns parameters that reinterpret the provider's distributions without changing the
-request, so cached answers are reused and each candidate setting is one pass of plain Python over
-the training set. The search runs directly against the metric, whatever shape the program's
-outputs have.
+A decision backend's probabilities often track the label and lean. Fixing the lean needs no new
+wording. Each `Predict` holds per-output parameters in `fields` that reinterpret the backend's
+probabilities without changing the request, so cached answers are reused and each candidate
+setting is one pass of plain Python over the training set. The search runs directly against the
+metric, whatever shape the program's outputs have.
 
-Three kinds of parameter are fitted, all in the `Decide`'s `fields[field]` configuration:
+Three kinds of parameter are fitted, all in the `Predict`'s `fields[field]` configuration:
 - `threshold`, a Boolean output's cut point on P(True).
-- `cuts`, a rich Score's boundaries on the mean level index. They pick the returned `.level`
-  and leave `.value` alone. A native `Annotated[float, Score[...]]` output returns only the
-  value, so its cuts are not fitted.
+- `cuts`, a Score's boundaries on the mean level index. They pick the returned `.level` and leave
+  `.value` alone.
 - `weights`, a Choice's multiplier per option label, from 0.1 to 10, applied to the probabilities before the
   option is picked. An option picked too often gets a multiplier below 1.
+
+On a generative LM, a native `bool` or `Literal` output returns its value without probabilities
+unless it has an entry in `fields`. Calibration adds that entry, which asks the LM for
+probabilities, and keeps it only when the fitted setting scores strictly better than the native
+output did.
 
 Before sweeping an output, calibration scores it at its current setting and then pushes its
 decisions to each extreme: every Noul True, then every Noul False; every Score at its lowest
@@ -23,12 +27,14 @@ labels does at "all True" and "all False". The current setting catches an exampl
 balanced items of its own, which scores the same at both extremes.
 """
 
+import copy
 import math
 from typing import Any, Callable
 
 import dspy
-from dspy.adapters.types.decision import decision_type
-from dspy.predict.decide import Decide
+from dspy.adapters.decision import resolve_adapter
+from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
+from dspy.predict.predict import Predict
 from dspy.utils.parallelizer import ParallelExecutor
 
 THRESHOLDS = [round(0.05 * i, 2) for i in range(1, 20)]
@@ -36,9 +42,43 @@ MULTIPLIERS = [0.1, 0.15, 0.25, 0.35, 0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 6.5, 10
 SCORE_STEPS = 10  # a Score's level range is searched in this many steps; each cut is then refined by half a step
 
 
-def decides(program) -> list[tuple[str, Decide]]:
-    """Every Decide in the program, by the name `named_parameters` gives it. A bare Decide is `self`."""
-    return [(name, p) for name, p in program.named_parameters() if isinstance(p, Decide)]
+def decision_outputs(predict: Predict) -> dict[str, type]:
+    """The outputs a decision parameter can apply to, with their decision types."""
+    kinds = {name: decision_type(field) for name, field in predict.signature.output_fields.items()}
+    return {name: kind for name, kind in kinds.items() if kind is not None}
+
+
+def predictors(program) -> list[tuple[str, Predict]]:
+    """Every Predict with a decision output, by the name `named_parameters` gives it. A bare Predict is `self`."""
+    return [(name, p) for name, p in program.named_parameters() if isinstance(p, Predict) and decision_outputs(p)]
+
+
+def resolved_lm(predict: Predict):
+    """The client the predictor calls: its own, or the configured one."""
+    lm = predict.lm or dspy.settings.lm
+    if lm is None:
+        raise ValueError("ReAnchor needs an LM or decision client, bound to the predictor or configured globally.")
+    return lm
+
+
+def caches(predict: Predict) -> bool:
+    """Whether repeated requests from the predictor are answered from the cache."""
+    lm = resolved_lm(predict)
+    enabled = predict.config.get("cache", getattr(lm, "cache", False))
+    return bool(enabled) and getattr(lm, "_cache_responses", True)
+
+
+def evidenced(predict: Predict) -> set[str]:
+    """The outputs the predictor currently decodes from probabilities."""
+    adapter = resolve_adapter(resolved_lm(predict), None, predict.signature, predict.fields)
+    return set(adapter.state.fields) if adapter is not None else set()
+
+
+def effective(predict: Predict, field: str) -> dict:
+    """The output's full configuration: its stored overrides on top of its type's defaults."""
+    fields = {**predict.fields, field: predict.fields.get(field, {})}
+    adapter = resolve_adapter(resolved_lm(predict), None, predict.signature, fields)
+    return copy.deepcopy(adapter.state.fields[field])
 
 
 def metric_value(metric: Callable, example, pred) -> float:
@@ -81,8 +121,8 @@ def calibrate(
 ) -> list[dict[str, Any]]:
     """Fit every threshold, cut, and weight in place.
 
-    `only` limits the fit to the Decide with that name, and `outputs` to those of its outputs.
-    `ignored` caches, by (Decide name, output), whether the metric ignores an output. Wording does
+    `only` limits the fit to the Predict with that name, and `outputs` to those of its outputs.
+    `ignored` caches, by (Predict name, output), whether the metric ignores an output. Wording does
     not change what the metric reads, so repeated calls with one cache probe each output once.
     Returns one report row per output: the fitted value, or why it was skipped.
     """
@@ -92,80 +132,102 @@ def calibrate(
     def score() -> float:
         return run(program, trainset, metric, num_threads)
 
-    for name, decide in decides(program):
+    for name, predict in predictors(program):
         if only is not None and name != only:
             continue
-        for field, config in decide.fields.items():
+        for field, kind in decision_outputs(predict).items():
             if outputs is not None and field not in outputs:
                 continue
-            if "cuts" in config and decide.signature.output_fields[field].annotation is float:
-                continue  # A native Score returns only the value, which cuts do not move.
-            if (name, field) not in ignored:
-                ignored[name, field] = _ignored(program, decide, field, trainset, metric, num_threads)
-            if ignored[name, field]:
+            if ignored.get((name, field)):
                 report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
                 continue
-            if "threshold" in config:
-                # The starting threshold stays unless a grid value scores strictly better.
-                start = config["threshold"]
+            original = copy.deepcopy(predict.fields.get(field))
+            promoted = field not in evidenced(predict)
+            native = score() if promoted else None
+            predict.fields[field] = effective(predict, field)
+            if (name, field) not in ignored:
+                ignored[name, field] = _ignored(program, predict, field, kind, trainset, metric, num_threads)
+            if ignored[name, field]:
+                _restore(predict, field, original)
+                report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
+                continue
+            row = {"predictor": name, "field": field}
+            if issubclass(kind, Noul):
+                row.update(_fit_threshold(predict, field, score))
+            elif issubclass(kind, Choice):
                 base = score()
-                scores = {}
-                for t in THRESHOLDS:
-                    config["threshold"] = t
-                    scores[t] = base if t == start else score()
-                best = max(scores, key=lambda t: (scores[t], -abs(t - 0.5)))
-                if scores[best] <= base:
-                    best = start
-                    scores[start] = base
-                config["threshold"] = best
-                report.append(
-                    {
+                best, best_score = _fit_multipliers(predict, field, kind, score, base)
+                row.update(parameter="weights", value=best, train_score=round(best_score, 4))
+                row["train_score_at_start"] = round(base, 4)
+            else:
+                base = score()
+                best, best_score = _fit_cuts(predict, field, kind, score, base)
+                row.update(parameter="cuts", value=best, train_score=round(best_score, 4))
+                row["train_score_at_start"] = round(base, 4)
+            if promoted:
+                row["train_score_native"] = round(native, 4)
+                if row["train_score"] <= row["train_score_native"]:
+                    _restore(predict, field, original)
+                    row = {
                         "predictor": name,
                         "field": field,
-                        "parameter": "threshold",
-                        "value": best,
-                        "train_score": round(scores[best], 4),
-                        "train_score_at_start": round(base, 4),
-                        "train_score_at_default": round(scores[0.5], 4),
+                        "skipped": "probabilities did not beat the native output",
+                        "train_score_native": row["train_score_native"],
+                        "train_score": row["train_score"],
                     }
-                )
-                continue
-            base = score()
-            if "weights" in config:
-                parameter, (best, best_score) = "weights", _fit_multipliers(decide, field, score, base)
-            else:
-                parameter, (best, best_score) = "cuts", _fit_cuts(decide, field, score, base)
-            report.append(
-                {
-                    "predictor": name,
-                    "field": field,
-                    "parameter": parameter,
-                    "value": best,
-                    "train_score": round(best_score, 4),
-                    "train_score_at_start": round(base, 4),
-                }
-            )
+                else:
+                    row["promoted"] = True
+            report.append(row)
     return report
 
 
-def _extremes(decide: Decide, field: str) -> list[tuple[str, Any]]:
+def _restore(predict: Predict, field: str, original: dict | None) -> None:
+    """Put back the output's entry in `fields` as it was before calibration, or remove it."""
+    if original is None:
+        del predict.fields[field]
+    else:
+        predict.fields[field] = original
+
+
+def _fit_threshold(predict: Predict, field: str, score: Callable) -> dict[str, Any]:
+    """The threshold that scores best. The starting threshold stays unless a grid value scores strictly better."""
+    config = predict.fields[field]
+    start = config["threshold"]
+    base = score()
+    found = {}
+    for t in THRESHOLDS:
+        config["threshold"] = t
+        found[t] = base if t == start else score()
+    best = max(found, key=lambda t: (found[t], -abs(t - 0.5)))
+    if found[best] <= base:
+        best = start
+        found[start] = base
+    config["threshold"] = best
+    return {
+        "parameter": "threshold",
+        "value": best,
+        "train_score": round(found[best], 4),
+        "train_score_at_start": round(base, 4),
+        "train_score_at_default": round(found[0.5], 4),
+    }
+
+
+def _extremes(kind: type) -> list[tuple[str, Any]]:
     """Settings that push every decision on an output to one end: (parameter, value) pairs."""
-    config = decide.fields[field]
-    if "threshold" in config:
+    if issubclass(kind, Noul):
         return [("threshold", 0.0), ("threshold", 1.0)]
-    options = decision_type(decide.signature.output_fields[field]).options
-    if "cuts" in config:
-        top = len(options) - 1
+    if issubclass(kind, Score):
+        top = len(kind.options) - 1
         tiny = 1e-6
         return [("cuts", [top - tiny * (top - i) for i in range(top)]), ("cuts", [tiny * (i + 1) for i in range(top)])]
-    labels = [str(value) for value, _ in options]
+    labels = [str(value) for value, _ in kind.options]
     return [("weights", {other: 1.0 if other == label else 1e-6 for other in labels}) for label in labels]
 
 
-def _ignored(program, decide: Decide, field: str, trainset: list, metric: Callable, num_threads) -> bool:
+def _ignored(program, predict: Predict, field: str, kind: type, trainset: list, metric: Callable, num_threads) -> bool:
     """Whether every example scores the same at the output's current setting and at each extreme."""
-    config = decide.fields[field]
-    settings = _extremes(decide, field)
+    config = predict.fields[field]
+    settings = _extremes(kind)
     saved = config[settings[0][0]]
     try:
         seen = [scores(program, trainset, metric, num_threads)]
@@ -177,14 +239,14 @@ def _ignored(program, decide: Decide, field: str, trainset: list, metric: Callab
     return all(values == seen[0] for values in seen[1:])
 
 
-def _fit_multipliers(decide: Decide, field: str, score: Callable, base: float) -> tuple[dict, float]:
+def _fit_multipliers(predict: Predict, field: str, kind: type, score: Callable, base: float) -> tuple[dict, float]:
     """The Choice multipliers that score best on the training set.
 
     Each option's multiplier moves in turn over a log-scale grid while the others hold. Ties go to
     the multipliers nearest 1.
     """
-    labels = [str(value) for value, _ in decision_type(decide.signature.output_fields[field]).options]
-    config = decide.fields[field]
+    labels = [str(value) for value, _ in kind.options]
+    config = predict.fields[field]
     start = {label: config["weights"].get(label, 1.0) for label in labels}
 
     def distance(weights):
@@ -204,7 +266,7 @@ def _fit_multipliers(decide: Decide, field: str, score: Callable, base: float) -
     return best, best_score
 
 
-def _fit_cuts(decide: Decide, field: str, score: Callable, base: float) -> tuple[list[float], float]:
+def _fit_cuts(predict: Predict, field: str, kind: type, score: Callable, base: float) -> tuple[list[float], float]:
     """The Score cuts that score best on the training set.
 
     Each cut moves in turn over a grid strictly inside the level range, then by half a step either
@@ -212,8 +274,8 @@ def _fit_cuts(decide: Decide, field: str, score: Callable, base: float) -> tuple
     halfway between levels, so a metric that ignores `.level` keeps them. A three-level Score
     costs about two dozen passes.
     """
-    config = decide.fields[field]
-    top = len(decision_type(decide.signature.output_fields[field]).options) - 1
+    config = predict.fields[field]
+    top = len(kind.options) - 1
     default = [i + 0.5 for i in range(top)]
     step = top / SCORE_STEPS
 

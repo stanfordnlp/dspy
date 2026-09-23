@@ -6,11 +6,11 @@ from tests.teleprompt.reanchor.fakes import FakeClient
 
 @pytest.fixture
 def system_one():
-    """Installs a FakeClient as `dspy.settings.system_one` for one test."""
+    """Configures a FakeClient as the LM for one test."""
 
-    def install(answer):
-        client = FakeClient(answer)
-        dspy.configure(system_one=client)
+    def install(answer, cache=True):
+        client = FakeClient(answer, cache=cache)
+        dspy.configure(lm=client)
         return client
 
     return install

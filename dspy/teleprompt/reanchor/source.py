@@ -24,10 +24,18 @@ def _is_rich(field) -> bool:
 
 
 def _native_source(field) -> str:
-    """`bool`, `float`, or the `Literal[...]` a native decision output is annotated with."""
+    """`bool`, or the `Literal[...]` a native decision output is annotated with."""
     if get_origin(field.annotation) is Literal:
         return render_annotation(field.annotation)
     return field.annotation.__name__
+
+
+def _bare_metadata(field) -> str | None:
+    """The bare `Noul` or `Choice` a native output carries as metadata, which marks it for probabilities."""
+    for m in field.metadata:
+        if isinstance(m, type) and issubclass(m, (Noul, Choice)) and not m.options:
+            return _head(m)
+    return None
 
 
 def _rubric_source(field, kind: type, indent: int) -> str | None:
@@ -62,7 +70,8 @@ def annotation_source(field, indent: int = 4) -> str:
     if _is_rich(field):
         return rubric or _head(kind)
     native = _native_source(field)
-    return f"Annotated[{native}, {rubric}]" if rubric else native
+    marker = rubric or _bare_metadata(field)
+    return f"Annotated[{native}, {marker}]" if marker else native
 
 
 def _render_docstring(text: str) -> str:
