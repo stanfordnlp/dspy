@@ -2,13 +2,35 @@
 
 import copy
 import json
+import threading
 import warnings
+from contextlib import contextmanager
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
+
+_recorders = []
+_recorders_lock = threading.Lock()
+
+
+@contextmanager
+def record_evidence():
+    """Collect the evidence each decision output is decoded from, while the context is open.
+
+    Yields a list that receives one ``(predictor, output name, evidence)`` entry per decoded
+    output, from every thread. ``predictor`` is the innermost calling module.
+    """
+    log = []
+    with _recorders_lock:
+        _recorders.append(log)
+    try:
+        yield log
+    finally:
+        with _recorders_lock:
+            _recorders[:] = [r for r in _recorders if r is not log]
 
 
 @lru_cache(maxsize=256)
@@ -112,6 +134,13 @@ class DecisionAdapter:
                         raise ValueError(f"Invalid Score distribution for {name!r}.")
                     answer["probabilities"] = {int(k): v for k, v in answer["probabilities"].items()}
                 answers[name] = answer
+            if _recorders:
+                from dspy.dsp.utils.settings import settings
+
+                caller = (settings.caller_modules or [None])[-1]
+                with _recorders_lock:
+                    for log in _recorders:
+                        log.extend((caller, name, copy.deepcopy(answer)) for name, answer in answers.items())
             results.append({**completion, **self.state._decode(answers)})
         return results
 

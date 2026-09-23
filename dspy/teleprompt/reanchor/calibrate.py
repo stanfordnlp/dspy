@@ -1,7 +1,6 @@
 """Fit the numeric decision parameters of every Predict in a program against the metric.
 
-A decision backend's probabilities often track the label and lean. Fixing the lean needs no new
-wording. Each `Predict` holds per-output parameters in `fields` that reinterpret the backend's
+Each `Predict` holds per-output parameters in `fields` that reinterpret the backend's
 probabilities without changing the request, so cached answers are reused and each candidate
 setting is one pass of plain Python over the training set. The search runs directly against the
 metric, whatever shape the program's outputs have.
@@ -10,8 +9,15 @@ Three kinds of parameter are fitted, all in the `Predict`'s `fields[field]` conf
 - `threshold`, a Boolean output's cut point on P(True).
 - `cuts`, a Score's boundaries on the mean level index. They pick the returned `.level` and leave
   `.value` alone.
-- `weights`, a Choice's multiplier per option label, from 0.1 to 10, applied to the probabilities before the
+- `weights`, a Choice's multiplier per option label, applied to the probabilities before the
   option is picked. An option picked too often gets a multiplier below 1.
+
+The candidate settings come from the training set. One pass records the probabilities the output
+is decoded from on every call. A setting anywhere between two neighbouring observed values makes
+the same decisions, so the candidates are the midpoints of those gaps: between P(True) values for
+a threshold, between mean level indexes for a cut, and between the points where an option's pick
+flips for a weight. A setting stays unless a candidate scores strictly better, and among equal
+scores the candidate in the widest gap wins.
 
 On a generative LM, a native `bool` or `Literal` output returns its value without probabilities
 unless it has an entry in `fields`. Calibration adds that entry, which asks the LM for
@@ -28,18 +34,18 @@ balanced items of its own, which scores the same at both extremes.
 """
 
 import copy
+import itertools
 import math
 from typing import Any, Callable
 
 import dspy
-from dspy.adapters.decision import resolve_adapter
+from dspy.adapters.decision import record_evidence, resolve_adapter
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.predict.predict import Predict
 from dspy.utils.parallelizer import ParallelExecutor
 
-THRESHOLDS = [round(0.05 * i, 2) for i in range(1, 20)]
-MULTIPLIERS = [0.1, 0.15, 0.25, 0.35, 0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 6.5, 10.0]  # one Choice option's multiplier
-SCORE_STEPS = 10  # a Score's level range is searched in this many steps; each cut is then refined by half a step
+MAX_CANDIDATES = 40  # candidate settings per parameter; more distinct values are thinned to quantiles
+WEIGHT_RANGE = (1e-3, 1e3)  # the smallest and largest Choice multiplier tried
 
 
 def decision_outputs(predict: Predict) -> dict[str, type]:
@@ -151,19 +157,16 @@ def calibrate(
                 _restore(predict, field, original)
                 report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
                 continue
+            evidence = _observe(program, predict, field, trainset, metric, num_threads)
             row = {"predictor": name, "field": field}
             if issubclass(kind, Noul):
-                row.update(_fit_threshold(predict, field, score))
-            elif issubclass(kind, Choice):
-                base = score()
-                best, best_score = _fit_multipliers(predict, field, kind, score, base)
-                row.update(parameter="weights", value=best, train_score=round(best_score, 4))
-                row["train_score_at_start"] = round(base, 4)
+                row.update(_fit_threshold(predict, field, evidence, score))
             else:
                 base = score()
-                best, best_score = _fit_cuts(predict, field, kind, score, base)
-                row.update(parameter="cuts", value=best, train_score=round(best_score, 4))
-                row["train_score_at_start"] = round(base, 4)
+                fit = _fit_weights if issubclass(kind, Choice) else _fit_cuts
+                best, best_score, observed = fit(predict, field, kind, evidence, score, base)
+                row.update(parameter="weights" if fit is _fit_weights else "cuts", value=best)
+                row.update(train_score=round(best_score, 4), train_score_at_start=round(base, 4), observed=observed)
             if promoted:
                 row["train_score_native"] = round(native, 4)
                 if row["train_score"] <= row["train_score_native"]:
@@ -189,26 +192,78 @@ def _restore(predict: Predict, field: str, original: dict | None) -> None:
         predict.fields[field] = original
 
 
-def _fit_threshold(predict: Predict, field: str, score: Callable) -> dict[str, Any]:
-    """The threshold that scores best. The starting threshold stays unless a grid value scores strictly better."""
+def _observe(program, predict: Predict, field: str, trainset: list, metric: Callable, num_threads) -> list[dict]:
+    """The evidence the output is decoded from on each training call, from one pass at the current setting."""
+    with record_evidence() as log:
+        scores(program, trainset, metric, num_threads)
+    return [evidence for caller, name, evidence in log if caller is predict and name == field]
+
+
+def _tidy(x: float, lo: float, hi: float) -> float:
+    """The shortest decimal strictly between `lo` and `hi`, rounded from `x`."""
+    for digits in range(1, 12):
+        rounded = round(x, digits)
+        if lo < rounded < hi:
+            return rounded
+    return x
+
+
+def _gaps(values: list[float], lo: float, hi: float, geometric: bool = False) -> list[tuple[float, float]]:
+    """Candidate settings and the width of the gap each sits in.
+
+    The candidates are the midpoints between neighbouring distinct values, with `lo` and `hi`
+    closing the range. A setting anywhere inside one gap makes the same decisions as its midpoint,
+    so these cover every outcome. More than MAX_CANDIDATES gaps are thinned to evenly spaced
+    quantiles of the values. `geometric` takes midpoints and widths on a log scale.
+    """
+    inner = sorted({v for v in values if lo < v < hi})
+    if len(inner) > MAX_CANDIDATES - 1:
+        step = (len(inner) - 1) / (MAX_CANDIDATES - 2)
+        inner = sorted({inner[round(i * step)] for i in range(MAX_CANDIDATES - 1)})
+    points = [lo, *inner, hi]
+    gaps = []
+    for a, b in itertools.pairwise(points):
+        middle, width = (math.sqrt(a * b), math.log(b / a)) if geometric else ((a + b) / 2, b - a)
+        gaps.append((_tidy(middle, a, b), width))
+    return gaps
+
+
+def _summary(values: list[float]) -> dict[str, Any]:
+    distinct = sorted(set(values))
+    if not distinct:
+        return {"calls": 0}
+    return {
+        "calls": len(values),
+        "distinct": len(distinct),
+        "min": round(distinct[0], 4),
+        "max": round(distinct[-1], 4),
+    }
+
+
+def _fit_threshold(predict: Predict, field: str, evidence: list[dict], score: Callable) -> dict[str, Any]:
+    """The threshold that scores best, between the observed probabilities.
+
+    The starting threshold stays unless a candidate scores strictly better. Among equal scores, the
+    candidate in the widest gap wins, since it leaves the most room on either side.
+    """
     config = predict.fields[field]
     start = config["threshold"]
     base = score()
-    found = {}
-    for t in THRESHOLDS:
+    probabilities = [e["noul"] for e in evidence]
+    tried = []
+    for t, width in _gaps(probabilities, 0.0, 1.0):
         config["threshold"] = t
-        found[t] = base if t == start else score()
-    best = max(found, key=lambda t: (found[t], -abs(t - 0.5)))
-    if found[best] <= base:
-        best = start
-        found[start] = base
+        tried.append((score(), width, -abs(t - start), t))
+    best_score, _, _, best = max(tried) if tried else (base, 0, 0, start)
+    if best_score <= base:
+        best, best_score = start, base
     config["threshold"] = best
     return {
         "parameter": "threshold",
         "value": best,
-        "train_score": round(found[best], 4),
+        "train_score": round(best_score, 4),
         "train_score_at_start": round(base, 4),
-        "train_score_at_default": round(found[0.5], 4),
+        "observed": {**_summary(probabilities), "candidates": len(tried)},
     }
 
 
@@ -239,63 +294,72 @@ def _ignored(program, predict: Predict, field: str, kind: type, trainset: list, 
     return all(values == seen[0] for values in seen[1:])
 
 
-def _fit_multipliers(predict: Predict, field: str, kind: type, score: Callable, base: float) -> tuple[dict, float]:
+def _fit_weights(
+    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: float
+) -> tuple[dict, float, dict]:
     """The Choice multipliers that score best on the training set.
 
-    Each option's multiplier moves in turn over a log-scale grid while the others hold. Ties go to
-    the multipliers nearest 1.
+    Each option's multiplier moves in turn while the others hold. An option's pick on a call flips
+    where its weighted probability meets the strongest rival's, so the candidates sit between those
+    flip points. A candidate replaces the current multipliers only when it scores strictly better.
     """
     labels = [str(value) for value, _ in kind.options]
     config = predict.fields[field]
-    start = {label: config["weights"].get(label, 1.0) for label in labels}
-
-    def distance(weights):
-        return sum(abs(math.log(w)) for w in weights.values())
-
-    best, best_score = start, base
+    best = {label: config["weights"].get(label, 1.0) for label in labels}
+    best_score, candidates = base, 0
     for label in labels:
-        for w in MULTIPLIERS:
+        flips = []
+        for e in evidence:
+            p = e["probabilities"]
+            rival = max(best[other] * p[other] for other in labels if other != label)
+            if p[label] > 0 and rival > 0:
+                flips.append(rival / p[label])
+        low, high = WEIGHT_RANGE
+        if flips:
+            low, high = max(low, min(flips) / 4), min(high, max(flips) * 4)
+        tried = []
+        for w, width in _gaps(flips, low, high, geometric=True):
             if w == best[label]:
                 continue
             candidate = {**best, label: w}
             config["weights"] = candidate
-            sc = score()
-            if sc > best_score or (sc == best_score and distance(candidate) < distance(best)):
+            tried.append((score(), width, candidate))
+        candidates += len(tried)
+        if tried:
+            sc, _, candidate = max(tried, key=lambda t: t[:2])
+            if sc > best_score:
                 best, best_score = candidate, sc
     config["weights"] = best
-    return best, best_score
+    return best, best_score, {"calls": len(evidence), "candidates": candidates}
 
 
-def _fit_cuts(predict: Predict, field: str, kind: type, score: Callable, base: float) -> tuple[list[float], float]:
+def _fit_cuts(
+    predict: Predict, field: str, kind: type, evidence: list[dict], score: Callable, base: float
+) -> tuple[list[float], float, dict]:
     """The Score cuts that score best on the training set.
 
-    Each cut moves in turn over a grid strictly inside the level range, then by half a step either
-    way, and stays strictly between its neighbours. Ties go to the cuts nearest the defaults,
-    halfway between levels, so a metric that ignores `.level` keeps them. A three-level Score
-    costs about two dozen passes.
+    A call's level depends only on its mean level index. Each cut moves in turn between the
+    observed means that lie between its neighbours, and stays strictly between them. A candidate
+    replaces the current cuts only when it scores strictly better.
     """
     config = predict.fields[field]
     top = len(kind.options) - 1
-    default = [i + 0.5 for i in range(top)]
-    step = top / SCORE_STEPS
-
-    def distance(cuts):
-        return sum(abs(c - d) for c, d in zip(cuts, default, strict=True))
-
-    best, best_score = list(config["cuts"]), base
+    means = [sum(i * p for i, p in e["probabilities"].items()) / sum(e["probabilities"].values()) for e in evidence]
+    best, best_score, candidates = list(config["cuts"]), base, 0
     for i in range(len(best)):
-        coarse = [round(step * j, 6) for j in range(1, SCORE_STEPS)]
-        for stage in ("coarse", "fine"):
-            grid = coarse if stage == "coarse" else [round(best[i] - step / 2, 6), round(best[i] + step / 2, 6)]
-            for c in grid:
-                below = best[i - 1] if i else 0
-                above = best[i + 1] if i + 1 < len(best) else top
-                if not below < c < above or c == best[i]:
-                    continue
-                candidate = [*best[:i], c, *best[i + 1 :]]
-                config["cuts"] = candidate
-                sc = score()
-                if sc > best_score or (sc == best_score and distance(candidate) < distance(best)):
-                    best, best_score = candidate, sc
+        below = best[i - 1] if i else 0
+        above = best[i + 1] if i + 1 < len(best) else top
+        tried = []
+        for c, width in _gaps(means, below, above):
+            if c == best[i]:
+                continue
+            candidate = [*best[:i], c, *best[i + 1 :]]
+            config["cuts"] = candidate
+            tried.append((score(), width, candidate))
+        candidates += len(tried)
+        if tried:
+            sc, _, candidate = max(tried, key=lambda t: t[:2])
+            if sc > best_score:
+                best, best_score = candidate, sc
     config["cuts"] = best
-    return best, best_score
+    return best, best_score, {**_summary(means), "candidates": candidates}
