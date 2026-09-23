@@ -290,7 +290,9 @@ class Predict(Module, Parameter):
 
     def get_criteria(self, field):
         """Return copied effective criteria for an experimental decision output."""
-        state = DecisionState(self.signature, {**self.fields, field: self.fields.get(field, {})})
+        fields = self.fields.copy()
+        fields.setdefault(field, {})
+        state = DecisionState(self.signature, fields)
         return state.get_criteria(field)
 
     def set_criteria(self, field, criteria):
