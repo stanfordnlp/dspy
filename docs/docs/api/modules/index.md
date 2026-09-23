@@ -4,6 +4,8 @@ API reference for DSPy modules. Select a page below.
 
 <!-- START_API_INDEX -->
 - [BestOfN](BestOfN.md)
+- [ChainOfDensity](ChainOfDensity.md)
+- [ChainOfDensityWithPreference](ChainOfDensityWithPreference.md)
 - [ChainOfThought](ChainOfThought.md)
 - [CodeAct](CodeAct.md)
 - [Flex](Flex.md)
