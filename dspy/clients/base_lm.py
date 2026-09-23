@@ -136,6 +136,10 @@ class BaseLM:
     def _record_response(self, response, prompt, messages, outputs, kwargs, request=None):
         if not getattr(response, "cache_hit", False) and settings.usage_tracker:
             settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
+        if not getattr(response, "cache_hit", False) and settings.cost_tracker:
+            cost = getattr(response, "_hidden_params", {}).get("response_cost")
+            usage_dict = dict(getattr(response, "usage", {}) or {}) if getattr(response, "usage", None) is not None else None
+            settings.cost_tracker.add_cost(self.model, cost, usage_dict)
 
         if settings.disable_history:
             return outputs
