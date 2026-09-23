@@ -70,7 +70,7 @@ unsupported.
 | `Annotated[bool, Availability]` | Same Noul evidence | Same Noul evidence | `bool` |
 | `float` | Number | Unsupported; use `Score[...]` | `float` |
 | `Severity` | `{probabilities: {"0": p0, "1": p1, "2": p2}, confidence: c}` | Level distribution and confidence | Rich value, probabilities, level, confidence |
-| `Literal["billing", "technical"]` | Allowed member | Option distribution | Native member |
+| `Literal["billing", "technical"]` | Allowed member | Option distribution and confidence | Native member |
 | `Annotated[Literal["billing", "technical"], Category]` | Same Choice evidence | Same Choice evidence | Native member |
 | `Category` | `{probabilities: {"billing": p0, "technical": p1}, confidence: c}` | Option distribution and confidence | Rich value, probabilities, confidence |
 
