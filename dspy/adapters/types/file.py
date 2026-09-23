@@ -122,7 +122,7 @@ class File(Type):
         return f"File({', '.join(parts)})"
 
     @classmethod
-    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None, resolution: str | None = None) -> "File":
         """Create a File from a local file path.
 
         Args:
@@ -148,7 +148,7 @@ class File(Type):
         encoded_data = base64.b64encode(file_bytes).decode("utf-8")
         file_data = f"data:{mime_type};base64,{encoded_data}"
 
-        return cls(file_data=file_data, filename=filename)
+        return cls(file_data=file_data, filename=filename, resolution=resolution)
 
     @classmethod
     def from_bytes(
