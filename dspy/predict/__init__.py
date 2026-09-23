@@ -1,5 +1,6 @@
 from dspy.predict.aggregation import majority
 from dspy.predict.best_of_n import BestOfN
+from dspy.predict.chain_of_density import ChainOfDensity, ChainOfDensityWithPreference
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.predict.code_act import CodeAct
 from dspy.predict.knn import KNN
