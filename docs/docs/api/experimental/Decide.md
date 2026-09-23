@@ -103,6 +103,12 @@ examples in the instructions rather than as fabricated evidence completions.
 
 ## Per-field parameters
 
+Decision outputs require a nonempty `OutputField(desc=...)` unless per-field
+`instructions` are explicitly supplied. Missing descriptions raise before
+inference; field names and global signature instructions are not substitutes.
+This applies to Jev outputs and evidence-generating LLM outputs, not ordinary
+native LLM outputs.
+
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `instructions` | Output description | String/object/array/null JSON; inner keys are unstructured |

@@ -61,9 +61,9 @@ def signature(rich):
     return dspy.Signature(
         {
             "ticket": (str, dspy.InputField()),
-            "urgent": (Noul if rich else bool, dspy.OutputField()),
-            "severity": (Severity, dspy.OutputField()),
-            "category": (Category if rich else Literal["billing", "technical"], dspy.OutputField()),
+            "urgent": (Noul if rich else bool, dspy.OutputField(desc="Is the incident urgent?")),
+            "severity": (Severity, dspy.OutputField(desc="Rate the incident severity.")),
+            "category": (Category if rich else Literal["billing", "technical"], dspy.OutputField(desc="Classify the incident.")),
         },
         INSTRUCTIONS,
     )
@@ -132,7 +132,7 @@ def test_live_composition(source, target, rich, lm, client):
             "urgent": (Noul if rich else bool, dspy.InputField()),
             "severity": (Severity, dspy.InputField()),
             "category": (Category if rich else Literal["billing", "technical"], dspy.InputField()),
-            "accept": (bool, dspy.OutputField()),
+            "accept": (bool, dspy.OutputField(desc="Do the inputs satisfy all acceptance conditions?")),
         },
         "Return True exactly when urgent's value is True, severity's value exceeds 1, and category's value is technical. "
         "For structured inputs inspect value, not confidence or probability. Do not reassess the incident.",
@@ -152,7 +152,7 @@ def test_live_literal_types(backend, rich, expected, lm, client):
     sig = dspy.Signature(
         {
             "request": (str, dspy.InputField()),
-            "answer": (options if rich else Literal[1, True, None, "雪"], dspy.OutputField()),
+            "answer": (options if rich else Literal[1, True, None, "雪"], dspy.OutputField(desc="Select the requested literal.")),
         },
         "Return the requested literal exactly, preserving its JSON type. Do not confuse the integer 1 with Boolean true.",
     )
@@ -216,7 +216,7 @@ def test_live_inputs_use_value_not_confidence(backend, rich, urgent, lm, client)
             "urgent": (Noul if rich else bool, dspy.InputField()),
             "severity": (Severity, dspy.InputField()),
             "category": (Category if rich else Literal["billing", "technical"], dspy.InputField()),
-            "accept": (bool, dspy.OutputField()),
+            "accept": (bool, dspy.OutputField(desc="Do the inputs satisfy all acceptance conditions?")),
         },
         "Return True exactly when urgent's value is True, severity's value exceeds 1, and category's value is technical. "
         "For structured inputs inspect value only. Confidence and probabilities are historical metadata; "

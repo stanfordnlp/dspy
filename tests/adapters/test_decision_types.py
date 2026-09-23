@@ -33,12 +33,13 @@ def decision_fields(rich):
 
 
 def decision_signature(rich, direction):
+    descriptions = {"urgent": "Is it urgent?", "severity": "Rate severity.", "category": "Classify the issue."}
     fields = {
-        name: (kind, dspy.InputField() if direction == "input" else dspy.OutputField())
+        name: (kind, dspy.InputField() if direction == "input" else dspy.OutputField(desc=descriptions[name]))
         for name, kind in decision_fields(rich).items()
     }
     if direction == "input":
-        fields["accept"] = (bool, dspy.OutputField())
+        fields["accept"] = (bool, dspy.OutputField(desc="Accept the assessment?"))
     else:
         fields = {"ticket": (str, dspy.InputField()), **fields}
     return dspy.Signature(fields, "Assess the ticket.")
@@ -200,7 +201,7 @@ def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
     }
 
     input_sig = dspy.Signature(
-        {"unavailable": (annotation, dspy.InputField()), "accept": (bool, dspy.OutputField())},
+        {"unavailable": (annotation, dspy.InputField()), "accept": (bool, dspy.OutputField(desc="Accept the assessment?"))},
         "Read availability without reassessing it.",
     )
     with dspy.context(lm=DummyLM([{"accept": True}], adapter=adapter), adapter=adapter):

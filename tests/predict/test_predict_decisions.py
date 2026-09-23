@@ -18,7 +18,7 @@ class Assess(dspy.Signature):
     text: str = dspy.InputField(desc="Document to assess")
     flag: Noul = dspy.OutputField(desc="Is it relevant?")
     rating: Rating = dspy.OutputField(desc="Rate quality.")
-    label: Label = dspy.OutputField()
+    label: Label = dspy.OutputField(desc="Classify the document.")
 
 
 EVIDENCE = {
@@ -125,9 +125,9 @@ def test_llm_demos_preserve_labels_without_fabricating_probabilities(adapter):
 def test_native_interface_and_ordinary_predict_are_preserved():
     class Native(dspy.Signature):
         text: str = dspy.InputField()
-        flag: Annotated[bool, Noul] = dspy.OutputField()
-        rating: Rating = dspy.OutputField()
-        label: Label = dspy.OutputField()
+        flag: Annotated[bool, Noul] = dspy.OutputField(desc="Is it relevant?")
+        rating: Rating = dspy.OutputField(desc="Rate quality.")
+        label: Label = dspy.OutputField(desc="Classify the document.")
 
     result = dspy.Predict(Native, lm=FakeTypeSafe())(text="x")
     assert type(result.flag) is bool and result.flag is True
@@ -263,3 +263,20 @@ async def test_decision_capability_dispatches_before_chat_checks():
         client.supports_decision_requests = False
         with pytest.raises(ValueError, match="decision-request client"):
             module(text="document")
+
+
+@pytest.mark.parametrize("desc", [None, "", "  "])
+@pytest.mark.asyncio
+async def test_decision_outputs_require_description_before_inference(desc):
+    field = dspy.OutputField() if desc is None else dspy.OutputField(desc=desc)
+    sig = dspy.Signature({"text": (str, dspy.InputField()), "flag": (Noul, field)}, "Assess relevance.")
+    for client in (FakeTypeSafe(), DummyLM([])):
+        module = dspy.Predict(sig, lm=client)
+        with pytest.raises(ValueError, match="Decision output 'flag' requires"):
+            module(text="x")
+        with pytest.raises(ValueError, match="Decision output 'flag' requires"):
+            await module.acall(text="x")
+        assert not (client.calls if isinstance(client, FakeTypeSafe) else client.history)
+    module.fields["flag"]["instructions"] = {"question": "Is this relevant?"}
+    result = module(text="x", lm=FakeTypeSafe())
+    assert result.flag.value is True
