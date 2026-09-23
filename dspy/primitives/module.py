@@ -231,7 +231,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             >>> program.set_adapter(dspy.JSONAdapter())
         """
         for _, param in self.named_predictors():
-            param.adapter = adapter
+            param.adapter = adapter.bind(param.signature) if hasattr(adapter, "bind") else adapter
 
     def get_adapter(self):
         """Get the adapter configured on this module's predictors.

@@ -1,19 +1,22 @@
-# dspy.experimental.Decide
+# Predict with DecisionAdapter
 
 !!! warning "Experimental API"
-    Import `Decide`, `Noul`, `Score`, `Choice`, and `TypeSafe` from `dspy.experimental`.
+    Import `DecisionAdapter`, `Noul`, `Score`, `Choice`, and `TypeSafe` from `dspy.experimental`.
     These APIs may change without warning.
 
-`Decide` answers a signature's closed-set outputs through a System One model.
-Types declare the answer space; the module owns per-field instructions, criteria,
-and decoding parameters. It never falls back to a generative LM.
+`Predict` can answer a signature's closed-set outputs through a System One backend.
+Types declare the answer space; an instance-owned `DecisionAdapter` owns per-field
+instructions, criteria, and decoding parameters. It never falls back to a generative LM.
+`Decide(signature, client=...)` remains a compatibility factory returning this same
+`Predict`, not a separate module class. Below, “Decide” denotes this decision path
+and “Predict” in comparison tables denotes the ordinary generative path.
 
 ## One signature, two execution paths
 
 ```python
 from typing import Annotated, Literal
 import dspy
-from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
+from dspy.experimental import Choice, DecisionAdapter, Noul, Score, TypeSafe
 
 Availability = Noul[(True, "Service unavailable"), (False, "Workaround available")]
 Severity = Score["Minor", "Disruptive", "Blocking"]
@@ -28,8 +31,7 @@ class Assess(dspy.Signature):
     category: Category = dspy.OutputField(desc="Classify the issue.")
 
 # pip install "dspy[typesafe]"; set TYPESAFE_API_KEY
-dspy.configure(system_one=TypeSafe("jev-latest"))
-assess = Decide(Assess)
+assess = dspy.Predict(Assess, adapter=DecisionAdapter(), backend=TypeSafe("jev-latest"))
 result = assess(ticket="Checkout is unavailable.")
 print(result.severity.value, result.severity.level, result.severity.confidence)
 
@@ -37,8 +39,12 @@ print(result.severity.value, result.severity.level, result.severity.confidence)
 # assess = dspy.Predict(Assess)
 ```
 
-Predict uses an adapter and generative LM to produce values; Decide uses TypeSafe
-and Jev to obtain probability evidence, then decodes it locally.
+Both paths execute through `Predict`. ChatAdapter/JSONAdapter use a generative LM;
+DecisionAdapter uses TypeSafe and Jev to obtain evidence, then decodes it locally.
+Adapter selection follows the scoped-adapter API: per-call `adapter=`, instance adapter,
+then `settings.adapter`. `set_adapter(DecisionAdapter())` binds independent field
+configuration to each predictor. If `backend` is omitted, DecisionAdapter resolves
+`settings.system_one`, never `settings.lm`; per-call `lm=` can override its backend.
 
 ## Native and rich types
 
@@ -169,39 +175,72 @@ numerically interchangeable, and Decide does not route based on confidence.
 
 ## Composition and persistence
 
-`Decide(Module, Parameter)` participates in callbacks, traces, batching, async calls,
-and `named_parameters()`, but not `named_predictors()`. It has no demonstrations.
-Predict-specific optimizers can still target Predict leaves in a mixed program;
-`reset()` preserves Decide configuration and `reset_copy()` makes an independent copy.
+Decision predictors are actual `Predict` instances, including normal optimizer discovery.
+`predict.demos` is serialized into `state.demos`, using each demo's available signature
+fields and preserving rich values and evidence. Empty demos omit the key, preserving
+the no-demo request and cache identity. Per-call `demos=` overrides the stored list.
+LabeledFewShot and BootstrapFewShot can populate decision demonstrations normally.
+
+`reset()` clears demos, training state, and the explicit backend, as for any Predict;
+adapter-owned calibration remains intact. `reset_copy()` makes an independent copy.
+`set_lm()` also follows ordinary Predict semantics. In mixed programs, assign the
+appropriate backend to each predictor rather than replacing all backends with one LM.
 
 ```python
 assess.save("assess.json")
-restored = Decide(Assess)  # Same signature architecture
+restored = dspy.Predict(Assess)  # Same signature architecture; the saved adapter is restored
 restored.load("assess.json")
 ```
 
 | Saved key | Content |
 | --- | --- |
 | `signature` | Global instructions and ordered field prefixes/descriptions |
-| `fields` | Per-output configuration, including criteria overrides; type defaults come from the signature |
+| `adapter` | Standard Adapter class marker and configuration, including decision `fields`; type defaults come from the signature |
 | `client` | Explicit TypeSafe model, endpoint, cache setting, timeout; otherwise null |
+| `demos`, `traces`, `train` | Ordinary Predict training state; legacy files default these to empty lists |
 | `metadata` | DSPy's dependency versions |
 
-State-only JSON excludes signature architecture/types/declared levels, inputs, results,
-history, and API keys. Credentials come from the environment. Loading invalid
+State-only JSON excludes signature architecture/types/declared levels, runtime inputs/results
+outside training state, history, and API keys. Credentials come from the environment. Loading invalid
 configuration leaves the module unchanged. Saved endpoints require
 `allow_unsafe_lm_state=True` for trusted files.
 Whole-program saving uses DSPy's trusted-pickle workflow: never load untrusted files.
 
 The optional TypeSafe client supports sync/async calls, DSPy caching, bounded
-history, and usage tracking. An explicit `client=` overrides `settings.system_one`.
+history, and usage tracking. An explicit `backend=` (or compatibility factory's
+`client=`) overrides `settings.system_one`.
 Model/endpoint use `TYPESAFE_DEFAULT_MODEL` / `TYPESAFE_BASE_URL`, falling back to
 `jev-latest` / `https://api.typesafe.ai`. Supply custom callable clients through
 settings rather than serializing them.
 
-::: dspy.experimental.Decide
-    options:
-        members: [__init__, forward, aforward, get_criteria, set_criteria, dump_state, load_state]
+## Experimental adapter lifecycle
+
+The draft builds on the scoped-adapter and persistence APIs in
+[PR #10099](https://github.com/stanfordnlp/dspy/pull/10099):
+
+- `Adapter.dump_state()` / `Adapter.load_state()` persist the concrete adapter and
+  its field configuration. DecisionAdapter uses that same mechanism, including the
+  built-in class allowlist; custom adapters still require trusted opt-in.
+- `bind(signature)` returns independent per-predictor adapter configuration.
+- `prepare_call(signature, backend, config, demos, kwargs)` resolves and validates the call,
+  returning `(backend, config, signature, demos, inputs)` for Predict's existing pipeline.
+- `dump_predict_state` / `load_predict_state` handle the non-generative TypeSafe
+  backend, validate calibration against the receiving signature, and read legacy
+  decision files whose fields were stored at the top level. Adapter fields themselves
+  are serialized only through the standard Adapter API.
+
+`Predict` continues to own module callbacks, sync/async orchestration, streaming
+context, Prediction creation, and tracing. TypeSafe continues to own transport,
+cache, history, credentials, and usage. DecisionAdapter owns validation, request
+formatting, evidence decoding, and field configuration. The `fields`, `get_criteria`,
+and `set_criteria` accessors on Predict delegate to its adapter.
+
+The retained `Decide` factory is not usable as a base class or an `isinstance` target.
+Old state-only JSON remains compatible; cross-version whole-program pickle compatibility
+is not guaranteed. Global and per-call decision adapters are bound for each call;
+use instance adapters when calibration must persist with the program.
+
+::: dspy.experimental.DecisionAdapter
 
 ::: dspy.experimental.Noul
     options:

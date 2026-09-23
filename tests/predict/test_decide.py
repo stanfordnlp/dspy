@@ -5,11 +5,21 @@ from typing import Annotated, Literal, get_args
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
+from dspy.experimental import Choice, Decide, DecisionAdapter, Noul, Score, TypeSafe
 from dspy.utils.callback import BaseCallback
 
 Rating = Score["bad", "fair", "great"]
 Label = Choice[(2, ""), ("other", "")]
+
+
+@pytest.fixture(autouse=True, params=["compatibility", "predict"])
+def decision_constructor(request, monkeypatch):
+    """Run the original behavior contract through both public constructors."""
+    if request.param == "predict":
+        def construct(signature, *, client=None, callbacks=None):
+            return dspy.Predict(signature, adapter=DecisionAdapter(), backend=client, callbacks=callbacks)
+
+        monkeypatch.setitem(globals(), "Decide", construct)
 
 
 class FakeClient:
@@ -283,7 +293,7 @@ def test_reject_invalid_parameters(field, config, operation, tmp_path):
     if operation == "load":
         module.client = None
         state = module.dump_state()
-        state["fields"][field] = config
+        state["adapter"]["fields"][field] = config
         with pytest.raises(ValueError):
             module.load_state(state)
         assert module.fields == initial
@@ -300,11 +310,13 @@ def test_reject_invalid_parameters(field, config, operation, tmp_path):
 @pytest.mark.parametrize("fields", [None, [], {}, {"flag": {"threshold": 0.5}}])
 def test_invalid_field_map_load_is_atomic(fields):
     module = decide(client=TypeSafe("jev-original"))
+    module.demos = [{"text": "original", "flag": False}]
     original = module.dump_state()
     invalid = copy.deepcopy(original)
-    invalid["fields"] = fields
+    invalid["adapter"]["fields"] = fields
     invalid["signature"]["instructions"] = "Do not apply this failed load."
     invalid["client"]["model"] = "jev-replacement"
+    invalid["demos"] = [{"text": "replacement", "flag": True}]
     with pytest.raises(ValueError, match="fields"):
         module.load_state(invalid)
     assert module.dump_state() == original
@@ -351,7 +363,7 @@ def test_composition_discovery_trace_callbacks():
     program = Pipeline()
     client = FakeClient()
     callback = Callback()
-    assert program.named_predictors() == []
+    assert program.named_predictors() == [("decide", program.decide)]
     assert program.named_parameters() == [("decide", program.decide)]
     trace = []
     with dspy.context(system_one=client, trace=trace, max_trace_size=1, callbacks=[callback]):
@@ -518,7 +530,7 @@ def test_copy_and_json_state_preserve_config(tmp_path):
     restored = decide(True)
     restored.load(path)
     assert restored.fields == module.fields
-    assert set(module.dump_state()) == {"signature", "fields", "client"}
+    assert set(module.dump_state()) == {"signature", "adapter", "client", "demos", "traces", "train"}
     with dspy.context(system_one=FakeClient()):
         assert restored(text="next").toDict() == before.toDict()
 
@@ -565,8 +577,8 @@ def test_json_state_preserves_instructions_criteria_and_cuts(tmp_path):
             "weights": {"2": 0.25, "other": 1.5},
         },
     }
-    assert state["fields"] == expected
-    assert set(state) == {"signature", "fields", "client", "metadata"}
+    assert state["adapter"]["fields"] == expected
+    assert set(state) == {"signature", "adapter", "client", "demos", "traces", "train", "metadata"}
     restored = decide(True)
     restored.load(path)
     assert restored.signature.instructions == "Assess impact, not writing style."
@@ -646,7 +658,7 @@ def test_json_validator_reuse_still_checks_nested_mutations(setting):
     module = decide(client=client)
     examples = ["Relevant"]
     module.fields["flag"][setting] = {"true": {"examples": examples}}
-    with patch("dspy.predict.decide.TypeAdapter", wraps=TypeAdapter) as constructors:
+    with patch("dspy.adapters.decision_adapter.TypeAdapter", wraps=TypeAdapter) as constructors:
         assert module(text="x").flag is True
         examples.append("Another example")
         assert module(text="x").flag is True
@@ -690,26 +702,78 @@ def test_criteria_persistence_rejects_incompatible_field_shape(tmp_path, rich, o
     else:
         state = module.dump_state()
         for name, entry in criteria.items():
-            state["fields"][name]["criteria"] = entry
+            state["adapter"]["fields"][name]["criteria"] = entry
         with pytest.raises(ValueError, match="criteria"):
             module.load_state(state)
         assert all("criteria" not in config for config in module.fields.values())
 
 
 @pytest.mark.asyncio
-async def test_reject_undeclared_demos_input_before_inference():
+async def test_demos_in_state_and_per_call_override():
     client = FakeClient()
     module = decide()
-    demos = [dspy.Example(text="example", flag=False)]
+    module.demos = [dspy.Example(text="stored", flag=False, augmented=True)]
+    override = [{"text": "override", "rating": 1.2}]
     with dspy.context(system_one=client):
-        for value in ([], demos):
-            with pytest.raises(ValueError, match=r"Unexpected Decide inputs.*demos"):
-                module(text="x", demos=value)
-            with pytest.raises(ValueError, match=r"Unexpected Decide inputs.*demos"):
-                await module.acall(text="x", demos=value)
-        assert client.calls == []
-        assert not hasattr(module, "demos")
-        assert module(text="x").flag is True
+        module(text="x")
+        await module.acall(text="x", demos=override)
+        module(text="x", demos=[])
+        await module.acall(text="x")
+    assert client.calls[0][0]["demos"] == [{"text": "stored", "flag": False}]
+    assert client.calls[1][0]["demos"] == override
+    assert "demos" not in client.calls[2][0]
+    assert client.calls[3] == client.calls[0]
+    assert all(call[0]["inputs"] == {"text": "x"} for call in client.calls)
+    assert module.demos[0].text == "stored"
+    assert module.demos[0].augmented is True
+
+
+def test_rich_demos_survive_json_save_load_without_rethresholding(tmp_path):
+    module = decide(True)
+    module.fields["flag"]["threshold"] = 0.9
+    module.demos = [dspy.Example(text="labeled", flag=Noul(value=True, confidence=0.4, probability=0.7))]
+    expected = [{"text": "labeled", "flag": {"value": True, "confidence": 0.4, "probability": 0.7}}]
+    path = tmp_path / "demos.json"
+    module.save(path)
+    assert json.loads(path.read_text())["demos"] == expected
+    restored = dspy.Predict(signature(True))
+    restored.load(path)
+    assert isinstance(restored.adapter, DecisionAdapter)
+    assert restored.fields == module.fields
+    client = FakeClient()
+    with dspy.context(system_one=client):
+        module(text="current")
+        restored(text="current")
+    assert client.calls[0] == client.calls[1]
+    assert client.calls[0][0]["demos"] == expected
+    restored.demos[0]["flag"]["value"] = False
+    assert module.demos[0].flag.value is True
+
+
+def test_load_legacy_state_defaults_training_state_to_empty():
+    module = decide()
+    state = module.dump_state()
+    state["fields"] = state.pop("adapter")["fields"]
+    for key in ("demos", "traces", "train"):
+        del state[key]
+        setattr(module, key, ["stale"])
+    module.load_state(state)
+    assert module.demos == module.traces == module.train == []
+
+
+def test_bootstrap_demos_reach_decision_state():
+    module = Decide("text -> flag: bool")
+    client = FakeClient()
+    with dspy.context(system_one=client):
+        trained = dspy.BootstrapFewShot(max_bootstrapped_demos=1, max_labeled_demos=0).compile(
+            module, trainset=[dspy.Example(text="training", flag=True).with_inputs("text")]
+        )
+        trained(text="inference")
+    assert module.demos == []
+    assert len(trained.demos) == 1
+    assert "demos" not in client.calls[0][0]
+    assert client.calls[-1][0]["demos"] == [{"text": "training", "flag": True}]
+    assert client.calls[-1][0]["inputs"] == {"text": "inference"}
 
 
 def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
@@ -726,16 +790,16 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
     program = Pipeline()
     decision = program.nodes["decision"]
     decision.fields["flag"]["threshold"] = 0.9
-    assert not isinstance(decision, dspy.Predict)
+    assert type(decision) is dspy.Predict
     assert decision.named_parameters() == [("self", decision)]
-    assert not hasattr(decision, "demos")
+    assert decision.demos == []
     assert program.named_parameters() == [("nodes['decision']", decision), ("explain", program.explain)]
-    assert program.named_predictors() == [("explain", program.explain)]
+    assert program.named_predictors() == [("nodes['decision']", decision), ("explain", program.explain)]
     trained = dspy.LabeledFewShot(k=1).compile(
-        program, trainset=[dspy.Example(flag=False, explanation="Below threshold").with_inputs("flag")]
+        program, trainset=[dspy.Example(text="example", flag=False, explanation="Below threshold").with_inputs("text")]
     )
     assert len(trained.explain.demos) == 1
-    assert not hasattr(trained.nodes["decision"], "demos")
+    assert len(trained.nodes["decision"].demos) == 1
     assert trained.nodes["decision"].fields == {"flag": {"threshold": 0.9}}
     path = tmp_path / "mixed.json"
     trained.save(path)
@@ -744,8 +808,10 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
     assert restored.nodes["decision"].fields == {"flag": {"threshold": 0.9}}
     assert len(restored.explain.demos) == 1
     trace = []
-    with dspy.context(system_one=FakeClient(), lm=DummyLM([{"explanation": "Below threshold"}]), trace=trace):
+    client = FakeClient()
+    with dspy.context(system_one=client, lm=DummyLM([{"explanation": "Below threshold"}]), trace=trace):
         assert restored(text="x").explanation == "Below threshold"
+    assert client.calls[0][0]["demos"] == [{"text": "example", "flag": False}]
     assert [step[0] for step in trace] == [restored.nodes["decision"], restored.explain]
     assert trace[1][1] == {"flag": False}
 
@@ -755,11 +821,17 @@ def test_reset_copy_preserves_configuration_without_aliasing():
     module.fields["flag"]["threshold"] = 0.9
     module.fields["rating"]["cuts"] = [0.4, 1.6]
     module.fields["label"]["weights"] = {"other": 3}
+    module.demos = [dspy.Example(text="example", flag=True)]
+    module.traces = ["trace"]
+    module.train = ["train"]
     reset = module.reset_copy()
     expected = {"flag": {"threshold": 0.9}, "rating": {"cuts": [0.4, 1.6]}, "label": {"weights": {"other": 3}}}
     assert reset.fields == expected
     assert reset.signature is module.signature
-    assert reset.client.model == "jev-test"
+    assert reset.client is None
+    assert reset.demos == reset.traces == reset.train == []
+    assert module.client.model == "jev-test"
+    assert module.demos[0].text == "example"
     reset.fields["flag"]["threshold"] = 0.5
     reset.fields["rating"]["cuts"][1] = 1.8
     reset.fields["label"]["weights"]["other"] = 1
@@ -874,3 +946,91 @@ def test_signature_override_accepts_equivalent_types_and_native_form():
         override = module.signature.with_updated_fields("rating", type_=annotation)
         result = module(text="x", signature=override).rating
         assert (result if type(result) is float else result.value) == pytest.approx(1.5)
+
+
+@pytest.mark.asyncio
+async def test_bound_adapter_isolation_and_no_generative_fallback():
+    from dspy.utils.dummies import DummyLM
+
+    class Callback(BaseCallback):
+        def __init__(self):
+            self.outputs = []
+
+        def on_adapter_parse_end(self, call_id, outputs, exception=None):
+            self.outputs.append(outputs)
+
+    callback = Callback()
+    adapter = DecisionAdapter(callbacks=[callback])
+    client = FakeClient(0.6)
+    first = dspy.Predict("text -> flag: bool", adapter=adapter, backend=client)
+    second = dspy.Predict("text -> other: bool", adapter=adapter, backend=client)
+    first.fields["flag"]["threshold"] = 0.8
+    assert first.adapter is not second.adapter
+    assert adapter.fields is None
+    assert second.fields == {"other": {"threshold": 0.5}}
+    with dspy.context(lm=DummyLM([]), adapter=dspy.JSONAdapter(), system_one=None):
+        assert first(text="x").flag is False
+        assert (await second.acall(text="x")).other is True
+        first.client = None
+        with pytest.raises(ValueError, match="Configure a System One"):
+            first(text="x")
+        with pytest.raises(ValueError, match="Configure a System One"):
+            await first.acall(text="x")
+    assert len(client.calls) == 2
+    assert callback.outputs == [{"flag": False}, {"other": True}]
+
+
+def test_set_lm_uses_normal_predict_assignment():
+    from dspy.utils.dummies import DummyLM
+
+    program = dspy.Module()
+    client = FakeClient(0.2)
+    program.decision = Decide("text -> flag: bool", client=client)
+    program.explanation = dspy.Predict("text -> explanation")
+    lm = DummyLM([])
+    program.set_lm(lm)
+    assert program.decision.lm is lm
+    assert program.explanation.lm is lm
+    program.decision.set_lm(client)
+    assert program.decision(text="x").flag is False
+
+
+@pytest.mark.asyncio
+async def test_predict_trace_contains_validated_inputs_not_call_controls():
+    module = Decide("count: int -> flag: bool", client=FakeClient())
+    trace = []
+    with dspy.context(trace=trace):
+        result = await module.acall(count="12")
+    assert trace == [(module, {"count": 12}, result)]
+
+
+def test_reject_generative_config_before_inference():
+    client = FakeClient()
+    module = dspy.Predict("text -> flag: bool", adapter=DecisionAdapter(), backend=client, temperature=0.7)
+    with pytest.raises(ValueError, match="generative LM configuration"):
+        module(text="x")
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
+async def test_scoped_decision_adapters_and_backend_overrides():
+    program = dspy.Module()
+    program.first = dspy.Predict("text -> flag: bool")
+    program.second = dspy.Predict("text -> other: bool")
+    template = DecisionAdapter()
+    program.set_adapter(template)
+    program.first.fields["flag"]["threshold"] = 0.9
+    assert template.fields is None
+    assert program.second.fields == {"other": {"threshold": 0.5}}
+    client = FakeClient(0.8)
+    with dspy.context(system_one=client):
+        assert program.first(text="x").flag is False
+        assert (await program.second.acall(text="x")).other is True
+        assert program.first(text="x", adapter=DecisionAdapter()).flag is True
+        assert (await program.first.acall(text="x", lm=FakeClient(0.95))).flag is True
+    assert program.first.fields["flag"]["threshold"] == 0.9
+    assert program.first.client is None
+    with dspy.context(system_one=client, adapter=DecisionAdapter()):
+        unconfigured = dspy.Predict("text -> flag: bool")
+        assert unconfigured(text="x").flag is True
+        assert (await unconfigured.acall(text="x")).flag is True

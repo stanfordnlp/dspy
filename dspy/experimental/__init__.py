@@ -1,3 +1,4 @@
+from dspy.adapters.decision_adapter import DecisionAdapter
 from dspy.adapters.types.citation import Citations
 from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.document import Document
@@ -12,4 +13,5 @@ __all__ = [
     "Score",
     "TypeSafe",
     "Decide",
+    "DecisionAdapter",
 ]

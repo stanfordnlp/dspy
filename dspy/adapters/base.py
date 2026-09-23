@@ -33,6 +33,7 @@ _BUILTIN_ADAPTER_CLASS_PATHS = {
     "dspy.adapters.xml_adapter.XMLAdapter",
     "dspy.adapters.baml_adapter.BAMLAdapter",
     "dspy.adapters.two_step_adapter.TwoStepAdapter",
+    "dspy.adapters.decision_adapter.DecisionAdapter",
 }
 
 

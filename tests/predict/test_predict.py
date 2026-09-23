@@ -1785,6 +1785,53 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch" not in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_instance_adapter_precedence_and_backend():
+    class RecordingAdapter:
+        def __init__(self, answer):
+            self.answer = answer
+            self.calls = []
+
+        def __call__(self, lm, **kwargs):
+            self.calls.append((lm, kwargs))
+            return [{"answer": self.answer}]
+
+        async def acall(self, lm, **kwargs):
+            return self(lm, **kwargs)
+
+    local = RecordingAdapter("local")
+    global_adapter = RecordingAdapter("global")
+    backend = DummyLM([])
+    predictor = Predict("question -> answer", adapter=local, backend=backend, temperature=0.2)
+    default = Predict("question -> answer")
+    trace = []
+    with dspy.context(adapter=global_adapter, lm=DummyLM([]), trace=trace):
+        assert predictor(question="sync").answer == "local"
+        assert (await predictor.acall(question="async")).answer == "local"
+        assert default(question="default").answer == "global"
+    assert len(global_adapter.calls) == 1
+    assert [call[0] for call in local.calls] == [backend, backend]
+    assert [call[1]["inputs"] for call in local.calls] == [{"question": "sync"}, {"question": "async"}]
+    assert local.calls[0][1]["lm_kwargs"] == {"temperature": 0.2}
+    assert [step[0] for step in trace] == [predictor, predictor, default]
+    predictor.reset()
+    assert predictor.lm is None
+    assert predictor.demos == []
+    assert predictor.adapter is None
+
+
+def test_restore_predict_pickle_state_without_instance_adapter():
+    predictor = Predict("question -> answer")
+    legacy_state = predictor.__getstate__()
+    del legacy_state["adapter"]
+    restored = Predict.__new__(Predict)
+    restored.__setstate__(legacy_state)
+    assert restored.adapter is None
+    assert restored.named_predictors() == [("self", restored)]
+    with dspy.context(lm=DummyLM([{"answer": "legacy"}])):
+        assert restored(question="test").answer == "legacy"
+
+
 class _TunableAdapter(dspy.ChatAdapter):
     """ChatAdapter subclass exercising the documented extension contract for extra constructor state."""
 

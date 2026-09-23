@@ -1,3 +1,4 @@
+import copy
 import logging
 import random
 import types
@@ -27,6 +28,12 @@ class Predict(Module, Parameter):
     Args:
         signature: The input/output signature describing the task.
         callbacks: Optional list of callbacks for instrumentation.
+        adapter: Experimental per-instance adapter, taking precedence over
+            ``settings.adapter``. Stateful adapters may implement ``bind``,
+            ``prepare_call``, and predictor-state persistence hooks.
+        backend: Experimental explicit backend, stored as ``lm``. Ordinary
+            adapters require BaseLM; non-generative adapters own resolution
+            and validation of their backend through ``prepare_call``.
         **config: Default keyword arguments forwarded to the underlying
             language model. These values can be overridden for a single
             invocation by passing a ``config`` dictionary when calling the
@@ -40,16 +47,53 @@ class Predict(Module, Parameter):
     globally configured values.
     """
 
-    def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
+    def __init__(
+        self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None,
+        *, adapter=None, backend=None, **config,
+    ):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
         self.reset()
+        self.adapter = adapter.bind(self.signature) if hasattr(adapter, "bind") else adapter
+        self.lm = backend
+
+    def __setstate__(self, state):
+        # Whole-program Predict pickles written before instance adapters.
+        super().__setstate__(state)
+        if "adapter" not in state:
+            self.adapter = None
+
+    @property
+    def fields(self):
+        """Per-field configuration owned by a stateful adapter."""
+        return self.adapter.fields
+
+    @fields.setter
+    def fields(self, value):
+        self.adapter.fields = value
+
+    @property
+    def client(self):
+        """Compatibility alias for the explicitly configured backend."""
+        return self.lm
+
+    @client.setter
+    def client(self, value):
+        self.lm = value
+
+    def get_criteria(self, field):
+        return self.adapter.get_criteria(self.signature, field)
+
+    def set_criteria(self, field, criteria):
+        self.adapter.set_criteria(self.signature, field, criteria)
 
     def reset(self):
         self.lm = None
-        self.adapter = None
+        # Signature-bound adapters carry calibrated program state, not just rendering configuration.
+        if not hasattr(getattr(self, "adapter", None), "bind"):
+            self.adapter = None
         self.traces = []
         self.train = []
         self.demos = []
@@ -72,7 +116,10 @@ class Predict(Module, Parameter):
                 state["demos"].append(demo.toDict())
 
         state["signature"] = self.signature.dump_state()
-        state["lm"] = self.lm.dump_state() if self.lm else None
+        if hasattr(self.adapter, "dump_predict_state"):
+            state.update(self.adapter.dump_predict_state(self.signature, self.lm, json_mode=json_mode))
+        else:
+            state["lm"] = self.lm.dump_state() if self.lm else None
         state["adapter"] = self.adapter.dump_state() if self.adapter else None
         return state
 
@@ -91,6 +138,28 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
+        adapter_state = state.get("adapter")
+        adapter = (
+            Adapter.load_state(
+                adapter_state,
+                allow_custom_adapter_class=allow_custom_adapter_class,
+                allow_unsafe_lm_state=allow_unsafe_lm_state,
+            )
+            if adapter_state
+            else None
+        )
+        # Read legacy decision states with the adapter supplied by the receiving predictor.
+        if "adapter" not in state and hasattr(self.adapter, "load_predict_state"):
+            adapter = copy.deepcopy(self.adapter)
+        if hasattr(adapter, "load_predict_state"):
+            training_state = {key: copy.deepcopy(state.get(key, [])) for key in ("traces", "train", "demos")}
+            self.signature, self.lm = adapter.load_predict_state(
+                self.signature, state, allow_unsafe_lm_state=allow_unsafe_lm_state,
+            )
+            self.adapter = adapter
+            self.__dict__.update(training_state)
+            return self
+
         excluded_keys = ["signature", "extended_signature", "lm", "adapter"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
@@ -104,18 +173,7 @@ class Predict(Module, Parameter):
             if sanitized_lm_state
             else None
         )
-        # Legacy states predate adapter persistence and carry no "adapter" key; treat that
-        # the same as an explicit None (inherit the adapter from DSPy settings).
-        adapter_state = state.get("adapter")
-        self.adapter = (
-            Adapter.load_state(
-                adapter_state,
-                allow_custom_adapter_class=allow_custom_adapter_class,
-                allow_unsafe_lm_state=allow_unsafe_lm_state,
-            )
-            if adapter_state
-            else None
-        )
+        self.adapter = adapter
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -143,14 +201,21 @@ class Predict(Module, Parameter):
         return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
+        demos = kwargs.pop("demos", self.demos)
+        # Resolve once for both generative and non-generative backends.
+        adapter = kwargs.pop("adapter", self.adapter) or settings.adapter or ChatAdapter()
+        if hasattr(adapter, "prepare_call"):
+            if adapter is not self.adapter:
+                adapter = adapter.bind(self.signature)
+            backend = kwargs.pop("lm", self.lm)
+            lm, config, signature, demos, inputs = adapter.prepare_call(
+                self.signature, backend, self.config, demos, kwargs,
+            )
+            return lm, adapter, config, signature, demos, inputs
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
         config = {**self.config, **kwargs.pop("config", {})}
-
-        # Get the right adapter to use, mirroring LM resolution: call > instance > settings > default.
-        adapter = kwargs.pop("adapter", self.adapter) or settings.adapter or ChatAdapter()
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm
