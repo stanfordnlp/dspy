@@ -7,8 +7,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.types.decision import Choice, Noul, Probability, Score, decision_type
-from dspy.signatures.signature import Signature
+from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 
 
 @lru_cache(maxsize=256)
@@ -32,41 +31,9 @@ def evidence_type(kind):
 
 def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
     """Resolve backend translation before a chat adapter starts capability planning."""
-    if not isinstance(fields, dict):
-        raise ValueError("Decision fields must be a mapping of output names to configuration.")
     system_one = getattr(lm, "supports_decision_requests", False) is True
-    selected = {}
-    for name, field in signature.output_fields.items():
-        if not system_one and name not in fields and not any(
-            isinstance(annotation, type) and issubclass(annotation, (Noul, Score, Choice))
-            for annotation in (field.annotation, *field.metadata)
-        ):
-            continue
-        kind = decision_type(field)
-        if kind is None:
-            if system_one:
-                raise ValueError(f"Unsupported System One output {name!r}; use a decision type or native equivalent.")
-            continue
-        if declared_signature is not None and name in fields:
-            declared = declared_signature.output_fields.get(name)
-            original = decision_type(declared) if declared is not None else None
-            if original is None or kind.options != original.options or (
-                kind.model_fields["value"].annotation != original.model_fields["value"].annotation
-            ):
-                raise ValueError(f"Signature override must preserve the answer space of configured output {name!r}.")
-        selected[name] = (field.rebuild_annotation(), copy.deepcopy(field))
-    if fields.keys() - selected.keys():
-        raise ValueError(f"Decision configuration refers to unsupported outputs: {sorted(fields.keys() - selected.keys())}.")
-    if not selected:
-        return adapter
-    decision_signature = Signature(selected, signature.instructions)
-    state = DecisionState(decision_signature)
-    for name, config in fields.items():
-        if not isinstance(config, dict):
-            raise ValueError(f"Decision configuration for {name!r} must be a mapping.")
-        state.fields[name].update(copy.deepcopy(config))
-    state._validate_parameters(state._output_types(decision_signature))
-    return DecisionAdapter(adapter, state, system_one)
+    state = DecisionState(signature, fields, system_one=system_one, declared_signature=declared_signature)
+    return DecisionAdapter(adapter, state, system_one) if state.types else adapter
 
 
 class DecisionAdapter:
@@ -84,7 +51,7 @@ class DecisionAdapter:
 
         if settings.send_stream is not None:
             raise NotImplementedError("Streaming decision evidence is not supported.")
-        types = self.state._output_types(self.state.signature)
+        types = self.state.types
         questions = {
             name: self.state._question(name, signature.output_fields[name], kind) for name, kind in types.items()
         }
@@ -113,8 +80,8 @@ class DecisionAdapter:
             )
         return {"lm_kwargs": lm_kwargs, "signature": signature, "demos": [], "inputs": inputs}
 
-    def _decode(self, completions, signature):
-        types = self.state._output_types(self.state.signature)
+    def _decode(self, completions):
+        types = self.state.types
         results = []
         for completion in completions:
             answers = {}
@@ -134,16 +101,15 @@ class DecisionAdapter:
                     # option order, never response-object key order.
                     answer["choice"] = max(labels, key=probabilities.get)
                 answers[name] = answer
-            decoded = self.state._decode(answers, self.state.signature, types)
-            results.append({**completion, **dict(decoded.items())})
+            results.append({**completion, **self.state._decode(answers)})
         return results
 
     def __call__(self, lm, lm_kwargs, signature, demos, inputs):
         request = self._prepare(signature, demos, inputs, lm_kwargs)
         completions = [lm(**request)] if self.system_one else self.adapter(lm, **request)
-        return self._decode(completions, signature)
+        return self._decode(completions)
 
     async def acall(self, lm, lm_kwargs, signature, demos, inputs):
         request = self._prepare(signature, demos, inputs, lm_kwargs)
         completions = [await lm.acall(**request)] if self.system_one else await self.adapter.acall(lm, **request)
-        return self._decode(completions, signature)
+        return self._decode(completions)

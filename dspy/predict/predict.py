@@ -9,6 +9,7 @@ from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.decision import resolve_adapter
+from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.utils import annotation_allows_none
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
@@ -61,13 +62,10 @@ class Predict(Module, Parameter):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
-        self.fields = {}
+        self.fields = DecisionState(self.signature, {}).fields
         self.config = config
         self.reset()
         self.lm = self.config.pop("lm", None)
-        adapter = resolve_adapter(None, None, self.signature, self.fields)
-        if adapter is not None:
-            self.fields = adapter.state.fields
 
     def reset(self):
         self.lm = None
@@ -94,7 +92,7 @@ class Predict(Module, Parameter):
 
         state["signature"] = self.signature.dump_state()
         if self.fields:
-            resolve_adapter(None, None, self.signature, self.fields)
+            DecisionState(self.signature, self.fields)
             state["fields"] = copy.deepcopy(self.fields)
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
@@ -112,7 +110,7 @@ class Predict(Module, Parameter):
         """
         restored_signature = self.signature.load_state(state["signature"])
         restored_fields = copy.deepcopy(state.get("fields", {}))
-        resolve_adapter(None, None, restored_signature, restored_fields)
+        DecisionState(restored_signature, restored_fields)
         excluded_keys = ["signature", "extended_signature", "lm", "fields"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
@@ -292,14 +290,14 @@ class Predict(Module, Parameter):
 
     def get_criteria(self, field):
         """Return copied effective criteria for an experimental decision output."""
-        adapter = resolve_adapter(None, None, self.signature, {**self.fields, field: self.fields.get(field, {})})
-        return adapter.state.get_criteria(field)
+        state = DecisionState(self.signature, {**self.fields, field: self.fields.get(field, {})})
+        return state.get_criteria(field)
 
     def set_criteria(self, field, criteria):
         """Validate and copy experimental per-field decision criteria."""
-        adapter = resolve_adapter(None, None, self.signature, {**self.fields, field: self.fields.get(field, {})})
-        adapter.state.set_criteria(field, criteria)
-        self.fields.setdefault(field, {})["criteria"] = copy.deepcopy(criteria)
+        state = DecisionState(self.signature, {**self.fields, field: self.fields.get(field, {})})
+        state.set_criteria(field, criteria)
+        self.fields.setdefault(field, {})["criteria"] = state.fields[field]["criteria"]
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

@@ -323,6 +323,24 @@ def test_nested_mutations_are_revalidated(setting):
     assert len(client.calls) == 2
 
 
+def test_inflight_decoding_uses_configuration_snapshot():
+    class UpdatingClient(FakeClient):
+        def __call__(self, state, questions):
+            module.fields["flag"]["threshold"] = 0.9
+            module.fields["rating"]["cuts"][1] = 1.6
+            module.fields["label"]["weights"]["2"] = 0.1
+            return super().__call__(state, questions)
+
+    module = predict(True, UpdatingClient())
+    first = module(text="x")
+    second = module(text="x")
+    assert first.flag.value is True and second.flag.value is False
+    assert first.rating.level == 2 and second.rating.level == 1
+    assert first.label.value == 2 and second.label.value == "other"
+    assert first.rating.probabilities == second.rating.probabilities
+    assert first.label.probabilities == second.label.probabilities
+
+
 def test_json_state_preserves_instructions_criteria_and_numeric_settings(tmp_path):
     module = predict(True)
     module.fields = {

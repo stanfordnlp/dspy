@@ -8,26 +8,55 @@ import math
 from pydantic import JsonValue, TypeAdapter
 
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
-from dspy.primitives.prediction import Prediction
-from dspy.signatures.signature import ensure_signature
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 
 
 class DecisionState:
-    """Validated per-field parameters and backend-independent decoding."""
+    """Per-operation configuration snapshot and backend-independent decoding.
 
-    def __init__(self, signature):
-        self.signature = ensure_signature(signature)
-        types = self._output_types(self.signature)
+    Predict owns the persisted overrides. This snapshot resolves output types
+    and copies overrides over defaults without modifying the predictor or signature.
+    """
+
+    def __init__(self, signature, fields, *, system_one=False, declared_signature=None):
+        if not isinstance(fields, dict):
+            raise ValueError("Decision fields must be a mapping of output names to configuration.")
+        self.signature = signature
+        self.types = {}
         self.fields = {}
-        for name, kind in types.items():
+        for name, field in signature.output_fields.items():
+            if not system_one and name not in fields and not any(
+                isinstance(annotation, type) and issubclass(annotation, (Noul, Score, Choice))
+                for annotation in (field.annotation, *field.metadata)
+            ):
+                continue
+            kind = decision_type(field)
+            if kind is None:
+                if system_one:
+                    raise ValueError(f"Unsupported System One output {name!r}; use a decision type or native equivalent.")
+                continue
+            if declared_signature is not None and name in fields:
+                declared = declared_signature.output_fields.get(name)
+                original = decision_type(declared) if declared is not None else None
+                if original is None or kind.options != original.options or (
+                    kind.model_fields["value"].annotation != original.model_fields["value"].annotation
+                ):
+                    raise ValueError(f"Signature override must preserve the answer space of configured output {name!r}.")
+            self.types[name] = kind
             if issubclass(kind, Noul):
                 self.fields[name] = {"threshold": 0.5}
             elif issubclass(kind, Score):
                 self.fields[name] = {"cuts": [i + 0.5 for i in range(len(kind.options) - 1)]}
             else:
                 self.fields[name] = {"weights": {str(v): 1.0 for v, _ in kind.options}}
+        if fields.keys() - self.types.keys():
+            raise ValueError(f"Decision configuration refers to unsupported outputs: {sorted(fields.keys() - self.types.keys())}.")
+        for name, config in fields.items():
+            if not isinstance(config, dict):
+                raise ValueError(f"Decision configuration for {name!r} must be a mapping.")
+            self.fields[name].update(copy.deepcopy(config))
+        self._validate_parameters()
 
     def get_criteria(self, field: str):
         """Return an independent copy of the effective criteria for an output field.
@@ -35,7 +64,7 @@ class DecisionState:
         Explicit module overrides take precedence over type-declared defaults.
         Bare Noul/bool has no default criteria and returns None.
         """
-        kind = self._output_types(self.signature)[field]
+        kind = self.types[field]
         return self._question(field, self.signature.output_fields[field], kind).get("criteria")
 
     def set_criteria(self, field: str, criteria):
@@ -47,29 +76,12 @@ class DecisionState:
         criteria; it does not restore the type defaults. Unknown fields raise
         KeyError, invalid criteria raise ValueError, and neither changes state.
         """
-        kind = self._output_types(self.signature)[field]
+        kind = self.types[field]
         self._validate_question_config(field, kind, {"criteria": criteria})
         self.fields[field]["criteria"] = copy.deepcopy(criteria)
 
-    @staticmethod
-    def _output_types(signature):
-        if not signature.output_fields:
-            raise ValueError("Decision state requires at least one output field.")
-        types = {}
-        for name, field in signature.output_fields.items():
-            kind = decision_type(field)
-            if kind is None:
-                raise ValueError(
-                    f"Unsupported decision output {name!r}. Use Noul, Score[...], Choice[...], bool, Literal[...], "
-                    "or Annotated[bool, Noul[...]]. For numeric decisions, use Score[...] rather than float."
-                )
-            types[name] = kind
-        return types
-
-    def _validate_parameters(self, types):
-        if not isinstance(self.fields, dict) or self.fields.keys() != types.keys():
-            raise ValueError("Decision fields must match the declared output fields.")
-        for name, kind in types.items():
+    def _validate_parameters(self):
+        for name, kind in self.types.items():
             config = self.fields[name]
             parameter = "threshold" if issubclass(kind, Noul) else "cuts" if issubclass(kind, Score) else "weights"
             if (
@@ -157,10 +169,10 @@ class DecisionState:
             question["criteria"] = copy.deepcopy(config["criteria"])
         return question
 
-    def _decode(self, answers, signature, types):
+    def _decode(self, answers):
         outputs = {}
-        for name, field in signature.output_fields.items():
-            kind = types[name]
+        for name, kind in self.types.items():
+            field = self.signature.output_fields[name]
             answer = answers[name]
             if issubclass(kind, Noul):
                 probability = answer["noul"]
@@ -203,5 +215,4 @@ class DecisionState:
                     probabilities=answer["probabilities"],
                 )
             outputs[name] = result if field.annotation is kind else result.value
-        prediction = Prediction.from_completions([outputs], signature=signature)
-        return prediction
+        return outputs
