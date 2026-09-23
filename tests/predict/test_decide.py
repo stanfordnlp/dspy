@@ -44,7 +44,7 @@ def signature(rich=False):
             "text": (str, dspy.InputField()),
             "flag": (Noul if rich else bool, dspy.OutputField(desc="Is it relevant?")),
             "rating": (Rating, dspy.OutputField(desc="Rate usefulness.")),
-            "label": (Label if rich else Literal[2, "other"], dspy.OutputField()),
+            "label": (Label if rich else Literal[2, "other"], dspy.OutputField(desc="Classify the document.")),
         },
         "Assess the document.",
     )
@@ -92,7 +92,7 @@ def test_native_rich_equivalence_and_request_mapping():
         "label": {
             "type": "choice",
             "criteria": {"2": None, "other": None},
-            "instructions": "Decide `label`.",
+            "instructions": "Classify the document.",
         },
     }
 
@@ -102,6 +102,7 @@ def test_native_rich_equivalence_and_request_mapping():
 )
 def test_bool_boundary_and_confidence(p, value, confidence):
     module = Decide("text -> flag: dspy.experimental.Noul", client=FakeClient(p))
+    module.signature = module.signature.with_updated_fields("flag", desc="Is it relevant?")
     module.fields["flag"]["threshold"] = 0.75
     result = module(text="x").flag
     assert result.value is value
@@ -112,6 +113,7 @@ def test_bool_boundary_and_confidence(p, value, confidence):
 @pytest.mark.parametrize("threshold,p,value", [(0, 0, True), (1, 0.99, False), (1, 1, True)])
 def test_threshold_endpoints(threshold, p, value):
     module = Decide("text -> flag: bool", client=FakeClient(p))
+    module.signature = module.signature.with_updated_fields("flag", desc="Is it relevant?")
     module.fields["flag"]["threshold"] = threshold
     assert module(text="x").flag is value
 
@@ -131,7 +133,10 @@ def test_literal_membership_and_exact_type(options, selected, expected, rich):
     sig = dspy.Signature(
         {
             "text": (str, dspy.InputField()),
-            "label": (Choice[tuple((v, "") for v in get_args(options))] if rich else options, dspy.OutputField()),
+            "label": (
+                Choice[tuple((v, "") for v in get_args(options))] if rich else options,
+                dspy.OutputField(desc="Classify the document."),
+            ),
         }
     )
     result = Decide(sig, client=FakeClient(choice=selected))(text="x").label
@@ -221,6 +226,7 @@ def test_reject_invalid_choice_weights_before_request(weights):
 
 def test_choice_weights_preserve_literal_types_and_json_state(tmp_path):
     module = Decide("text -> label: Literal[True, 1, None]", client=FakeClient(choice="True"))
+    module.signature = module.signature.with_updated_fields("label", desc="Classify the document.")
     module.fields["label"]["weights"] = {"True": 0, "1": 2, "None": 0}
     result = module(text="x").label
     assert type(result) is int and result == 1
@@ -237,6 +243,7 @@ def test_choice_weights_preserve_literal_types_and_json_state(tmp_path):
 
 def test_choice_weights_reject_zero_remaining_mass_and_tie_in_declaration_order():
     module = Decide("text -> label: Literal['a', 'b', 'c']")
+    module.signature = module.signature.with_updated_fields("label", desc="Classify the document.")
     answers = {"label": {"choice": "c", "probabilities": {"c": 0.5, "b": 0.25, "a": 0.25}, "confidence": 0.7}}
     module.client = lambda **_: answers
     module.fields["label"]["weights"] = {"c": 0}
@@ -400,7 +407,7 @@ async def test_shared_instructions_do_not_collide_with_input_names():
 def test_defaults_and_input_errors():
     class Sig(dspy.Signature):
         text: str = dspy.InputField(default="default")
-        flag: bool = dspy.OutputField()
+        flag: bool = dspy.OutputField(desc="Is it relevant?")
 
     client = FakeClient()
     module = Decide(Sig, client=client)
@@ -717,7 +724,8 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
 
     class Pipeline(dspy.Module):
         def __init__(self):
-            self.nodes = {"decision": Decide("text -> flag: bool")}
+            sig = dspy.Signature("text -> flag: bool").with_updated_fields("flag", desc="Is it relevant?")
+            self.nodes = {"decision": Decide(sig)}
             self.explain = dspy.Predict("flag: bool -> explanation: str")
 
         def forward(self, text):
@@ -795,6 +803,9 @@ def test_full_program_save_load(tmp_path):
 
 def test_thresholds_are_per_field_and_results_are_snapshots():
     module = Decide("text -> a: bool, b: dspy.experimental.Noul", client=FakeClient(0.6))
+    module.signature = module.signature.with_updated_fields("a", desc="Is it relevant?").with_updated_fields(
+        "b", desc="Is it useful?"
+    )
     assert module.fields == {"a": {"threshold": 0.5}, "b": {"threshold": 0.5}}
     module.fields["b"]["threshold"] = 0.8
     before = module(text="x")

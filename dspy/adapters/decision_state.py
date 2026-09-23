@@ -142,7 +142,9 @@ class DecisionState:
         desc = field.json_schema_extra.get("desc", "")
         if desc == f"${{{name}}}":
             desc = ""
-        question = {"instructions": copy.deepcopy(config.get("instructions", desc or f"Decide `{name}`."))}
+        if "instructions" not in config and not (desc and desc.strip()):
+            raise ValueError(f"Decision output {name!r} requires an OutputField(desc=...) or explicit instructions.")
+        question = {"instructions": copy.deepcopy(config.get("instructions", desc))}
         if issubclass(kind, Noul):
             question["type"] = "noul"
             if kind.options:
