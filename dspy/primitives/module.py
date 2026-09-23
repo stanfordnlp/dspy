@@ -131,8 +131,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def named_predictors(self):
         """Return all named Predict modules in this module.
 
-        Iterates through all parameters and returns those that are instances
-        of ``dspy.Predict``, along with their names.
+        Iterates through all parameters and returns demo-trainable instances
+        of ``dspy.Predict``, along with their names. Non-generative predictors
+        remain available through ``named_parameters()``.
 
         Returns:
             list[tuple[str, Predict]]: A list of (name, predictor) tuples
@@ -155,7 +156,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         from dspy.predict.predict import Predict
 
-        return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
+        return [
+            (name, param) for name, param in self.named_parameters()
+            if isinstance(param, Predict) and param.supports_demos
+        ]
 
     def predictors(self):
         """Return all Predict modules in this module.
@@ -192,7 +196,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             >>> program.set_lm(lm)
         """
         for _, param in self.named_parameters():
-            if isinstance(param, Module):
+            if isinstance(param, Module) and getattr(param, "supports_demos", True):
                 param.lm = lm
 
     def get_lm(self):

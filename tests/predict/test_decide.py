@@ -5,11 +5,21 @@ from typing import Annotated, Literal, get_args
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Decide, Noul, Score, TypeSafe
+from dspy.experimental import Choice, Decide, DecisionAdapter, Noul, Score, TypeSafe
 from dspy.utils.callback import BaseCallback
 
 Rating = Score["bad", "fair", "great"]
 Label = Choice[(2, ""), ("other", "")]
+
+
+@pytest.fixture(autouse=True, params=["compatibility", "predict"])
+def decision_constructor(request, monkeypatch):
+    """Run the original behavior contract through both public constructors."""
+    if request.param == "predict":
+        def construct(signature, *, client=None, callbacks=None):
+            return dspy.Predict(signature, adapter=DecisionAdapter(), backend=client, callbacks=callbacks)
+
+        monkeypatch.setitem(globals(), "Decide", construct)
 
 
 class FakeClient:
@@ -646,7 +656,7 @@ def test_json_validator_reuse_still_checks_nested_mutations(setting):
     module = decide(client=client)
     examples = ["Relevant"]
     module.fields["flag"][setting] = {"true": {"examples": examples}}
-    with patch("dspy.predict.decide.TypeAdapter", wraps=TypeAdapter) as constructors:
+    with patch("dspy.adapters.decision_adapter.TypeAdapter", wraps=TypeAdapter) as constructors:
         assert module(text="x").flag is True
         examples.append("Another example")
         assert module(text="x").flag is True
@@ -726,7 +736,7 @@ def test_mixed_program_discovery_optimizer_and_persistence(tmp_path):
     program = Pipeline()
     decision = program.nodes["decision"]
     decision.fields["flag"]["threshold"] = 0.9
-    assert not isinstance(decision, dspy.Predict)
+    assert type(decision) is dspy.Predict
     assert decision.named_parameters() == [("self", decision)]
     assert not hasattr(decision, "demos")
     assert program.named_parameters() == [("nodes['decision']", decision), ("explain", program.explain)]
@@ -874,3 +884,66 @@ def test_signature_override_accepts_equivalent_types_and_native_form():
         override = module.signature.with_updated_fields("rating", type_=annotation)
         result = module(text="x", signature=override).rating
         assert (result if type(result) is float else result.value) == pytest.approx(1.5)
+
+
+@pytest.mark.asyncio
+async def test_bound_adapter_isolation_and_no_generative_fallback():
+    from dspy.utils.dummies import DummyLM
+
+    class Callback(BaseCallback):
+        def __init__(self):
+            self.outputs = []
+
+        def on_adapter_parse_end(self, call_id, outputs, exception=None):
+            self.outputs.append(outputs)
+
+    callback = Callback()
+    adapter = DecisionAdapter(callbacks=[callback])
+    client = FakeClient(0.6)
+    first = dspy.Predict("text -> flag: bool", adapter=adapter, backend=client)
+    second = dspy.Predict("text -> other: bool", adapter=adapter, backend=client)
+    first.fields["flag"]["threshold"] = 0.8
+    assert first.adapter is not second.adapter
+    assert not hasattr(adapter, "fields")
+    assert second.fields == {"other": {"threshold": 0.5}}
+    with dspy.context(lm=DummyLM([]), adapter=dspy.JSONAdapter(), system_one=None):
+        assert first(text="x").flag is False
+        assert (await second.acall(text="x")).other is True
+        first.client = None
+        with pytest.raises(ValueError, match="Configure a System One"):
+            first(text="x")
+        with pytest.raises(ValueError, match="Configure a System One"):
+            await first.acall(text="x")
+    assert len(client.calls) == 2
+    assert callback.outputs == [{"flag": False}, {"other": True}]
+
+
+def test_set_lm_does_not_replace_decision_backend():
+    from dspy.utils.dummies import DummyLM
+
+    program = dspy.Module()
+    client = FakeClient(0.2)
+    program.decision = Decide("text -> flag: bool", client=client)
+    program.explanation = dspy.Predict("text -> explanation")
+    lm = DummyLM([])
+    program.set_lm(lm)
+    assert program.decision.client is client
+    assert program.explanation.lm is lm
+    assert program.decision(text="x").flag is False
+
+
+@pytest.mark.asyncio
+async def test_predict_trace_contains_validated_inputs_not_call_controls():
+    module = Decide("count: int -> flag: bool", client=FakeClient())
+    trace = []
+    with dspy.context(trace=trace):
+        result = await module.acall(count="12")
+    assert trace == [(module, {"count": 12}, result)]
+
+
+def test_reject_generative_config_before_inference():
+    client = FakeClient()
+    module = dspy.Predict("text -> flag: bool", adapter=DecisionAdapter(), backend=client, temperature=0.7)
+    with pytest.raises(ValueError, match="generative LM configuration"):
+        module(text="x")
+    assert client.calls == []

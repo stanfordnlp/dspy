@@ -46,6 +46,12 @@ class Predict(Module, Parameter):
     Args:
         signature: The input/output signature describing the task.
         callbacks: Optional list of callbacks for instrumentation.
+        adapter: Experimental per-instance adapter, taking precedence over
+            ``settings.adapter``. Stateful adapters may implement ``bind``,
+            ``prepare_call``, and predictor-state persistence hooks.
+        backend: Experimental explicit backend, stored as ``lm``. Ordinary
+            adapters require BaseLM; non-generative adapters own resolution
+            and validation of their backend through ``prepare_call``.
         **config: Default keyword arguments forwarded to the underlying
             language model. These values can be overridden for a single
             invocation by passing a ``config`` dictionary when calling the
@@ -55,20 +61,64 @@ class Predict(Module, Parameter):
                 predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
     """
 
-    def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
+    def __init__(
+        self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None,
+        *, adapter=None, backend=None, **config,
+    ):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
+        self.adapter = adapter.bind(self.signature) if hasattr(adapter, "bind") else adapter
         self.config = config
         self.reset()
+        self.lm = backend
+
+    def __setstate__(self, state):
+        # Whole-program Predict pickles written before instance adapters.
+        super().__setstate__(state)
+        if "adapter" not in state:
+            self.adapter = None
+
+    @property
+    def supports_demos(self):
+        """Whether demo-oriented optimizers may train this predictor."""
+        return getattr(self.adapter, "supports_demos", True)
+
+    @property
+    def fields(self):
+        """Per-field configuration owned by a stateful adapter."""
+        return self.adapter.fields
+
+    @fields.setter
+    def fields(self, value):
+        self.adapter.fields = value
+
+    @property
+    def client(self):
+        """Compatibility alias for the explicitly configured backend."""
+        return self.lm
+
+    @client.setter
+    def client(self, value):
+        self.lm = value
+
+    def get_criteria(self, field):
+        return self.adapter.get_criteria(self.signature, field)
+
+    def set_criteria(self, field, criteria):
+        self.adapter.set_criteria(self.signature, field, criteria)
 
     def reset(self):
+        if not self.supports_demos:
+            return
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        if hasattr(self.adapter, "dump_predict_state"):
+            return self.adapter.dump_predict_state(self.signature, self.lm, json_mode=json_mode)
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -100,6 +150,12 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
+        if hasattr(self.adapter, "load_predict_state"):
+            self.signature, self.lm = self.adapter.load_predict_state(
+                self.signature, state, allow_unsafe_lm_state=allow_unsafe_lm_state,
+            )
+            return self
+
         excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
@@ -140,6 +196,8 @@ class Predict(Module, Parameter):
         return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
+        if hasattr(self.adapter, "prepare_call"):
+            return self.adapter.prepare_call(self.signature, self.lm, self.config, kwargs)
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -251,7 +309,7 @@ class Predict(Module, Parameter):
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = self.adapter or settings.adapter or ChatAdapter()
 
         if self._should_stream():
             with settings.context(caller_predict=self):
@@ -265,7 +323,7 @@ class Predict(Module, Parameter):
     async def aforward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = self.adapter or settings.adapter or ChatAdapter()
         if self._should_stream():
             with settings.context(caller_predict=self):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
