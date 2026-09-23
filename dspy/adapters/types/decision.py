@@ -35,9 +35,9 @@ class Noul(_Decision):
     criteria while returning a native bool. Descriptions are shared by Predict
     and Decide; thresholds belong to the module, not the type.
 
-    Predict generates value and self-reported confidence. Decide derives value
-    from the provider probability and its per-field threshold (default 0.5).
-    Decide confidence is ``abs(p - threshold) / max(threshold, 1 - threshold)``:
+    Predict obtains true-probability from the backend and derives value using
+    its per-field threshold (default 0.5). Confidence is
+    ``abs(p - threshold) / max(threshold, 1 - threshold)``:
     a distance from the decision boundary, not a calibrated probability.
     """
 
@@ -78,12 +78,12 @@ class Score(_Decision):
     """A continuous score with a declared rubric and confidence.
 
     Declare ``Score["poor", "fair", "excellent"]`` in increasing order.
-    Predict generates a continuous value from 0 to N-1 and confidence;
-    Decide averages the level indices using provider probabilities.
+    Predict obtains a distribution and confidence from the backend and
+    averages the level indices using those probabilities.
     ``probabilities`` retains the raw distribution, keyed by rubric index.
-    ``level`` is the zero-based ordinal selected by Decide's cuts on the mean
+    ``level`` is the zero-based ordinal selected by the predictor's cuts on the mean
     level index. It does not change the continuous value or provider confidence.
-    Predict generates neither probabilities nor level.
+    The backend does not generate the derived value or level independently.
 
     ``Annotated[float, Score[...]]`` uses the same rubric but returns a native
     float instead of a rich result. Bare float has no rubric for Decide.

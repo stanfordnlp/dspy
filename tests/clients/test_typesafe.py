@@ -1,11 +1,12 @@
 import copy
+import io
 import json
 
 import pytest
 
 import dspy
 from dspy.experimental import TypeSafe
-from tests.predict.test_decide import decide
+from tests.predict.test_decide import decide, signature
 
 sdk = pytest.importorskip("typesafe_sdk")
 httpx = pytest.importorskip("httpx2")
@@ -135,3 +136,25 @@ def test_client_copy_and_environment(monkeypatch, transport):
     duplicate.history.clear()
     assert len(client.history) == 1
     assert "api_key" not in client.dump_state()
+
+
+@pytest.mark.asyncio
+async def test_predict_demos_sdk_cache_history_and_usage(transport, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-sdk-key")
+    module = dspy.Predict(signature(True), lm=TypeSafe("jev-test"))
+    module.demos = [dspy.Example(text="labeled document", flag=False, rating=0.0, label="other")]
+    with dspy.context(track_usage=True):
+        first = module(text="query")
+        second = await module.acall(text="query")
+        await module.acall(text="query", demos=[])
+    assert len(transport) == 2
+    assert transport[0][1]["state"]["demos"] == [module.demos[0].toDict()]
+    assert transport[1][1]["state"]["demos"] == []
+    assert first.toDict() == second.toDict()
+    assert first.get_lm_usage() == {"jev-test": {"prompt_tokens": 10, "completion_tokens": 2}}
+    assert second.get_lm_usage() == {}
+    assert len(module.history) == 3
+    stream = io.StringIO()
+    module.inspect_history(file=stream)
+    assert "query" in stream.getvalue()
+    assert "probabilities" in stream.getvalue()

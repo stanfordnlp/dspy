@@ -251,7 +251,7 @@ class BaseLM:
 
                 return LM(**state)
 
-            if class_path != _BUILTIN_LM_CLASS_PATH and not allow_custom_lm_class:
+            if class_path not in {_BUILTIN_LM_CLASS_PATH, "dspy.clients.typesafe.TypeSafe"} and not allow_custom_lm_class:
                 raise ValueError(
                     f"Refusing to import custom serialized LM class `{class_path}`. "
                     "Pass allow_unsafe_lm_state=True when loading trusted files to enable custom LM classes."

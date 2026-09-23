@@ -5,6 +5,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 import dspy
+from dspy.adapters.decision import resolve_adapter
 from dspy.adapters.json_adapter import _get_structured_outputs_response_format
 from dspy.experimental import Choice, Decide, Noul, Score
 from dspy.utils.dummies import DummyLM
@@ -59,31 +60,43 @@ def decision_values(rich, evidence=False):
     }
 
 
+def decision_evidence(rich):
+    return {
+        "urgent": {"noul": 0.8} if rich else True,
+        "severity": {"probabilities": {"0": 0.1, "1": 0.3, "2": 0.6}, "confidence": 0.61},
+        "category": (
+            {"probabilities": {"billing": 0.2, "technical": 0.8}, "confidence": 0.73} if rich else "technical"
+        ),
+    }
+
+
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
 @pytest.mark.parametrize("rich", [False, True])
 def test_predict_outputs_and_generated_schema(adapter, rich):
     signature = decision_signature(rich, "output")
-    values = decision_values(rich)
-    with dspy.context(lm=DummyLM([values], adapter=adapter), adapter=adapter):
+    values = decision_values(rich, evidence=True)
+    with dspy.context(lm=DummyLM([decision_evidence(rich)], adapter=adapter), adapter=adapter):
         result = dspy.Predict(signature)(ticket="Payment failed.")
     for name, value in values.items():
-        assert result[name] == value
         if rich:
+            assert result[name].value == value.value
+            assert result[name].confidence == pytest.approx(value.confidence)
             assert isinstance(result[name], decision_fields(True)[name])
-            assert getattr(result[name], "probability", getattr(result[name], "probabilities", None)) is None
+            assert getattr(result[name], "probability", getattr(result[name], "probabilities", None)) is not None
         else:
+            assert result[name] == value
             assert type(result[name]) is type(value)
-    messages = adapter.format(signature, [], {"ticket": "Payment failed."})
+    prepared = resolve_adapter(None, adapter, signature, {})._prepare(signature, [], {"ticket": "Payment failed."}, {})
+    rendered = prepared["signature"]
+    messages = adapter.format(rendered, [], prepared["inputs"])
     assert "Minor" in messages[0]["content"]
-    schema = _get_structured_outputs_response_format(signature).model_json_schema()
+    schema = _get_structured_outputs_response_format(rendered).model_json_schema()
     if rich:
-        for definition in schema["$defs"].values():
-            assert set(definition["properties"]) == {"value", "confidence"}
-            assert set(definition["required"]) == {"value", "confidence"}
+        assert "noul" in json.dumps(schema)
+        assert "probabilities" in json.dumps(schema)
+        assert '"value"' not in json.dumps(schema)
     else:
-        assert "confidence" not in json.dumps(schema)
-        assert schema["properties"]["severity"]["minimum"] == 0
-        assert schema["properties"]["severity"]["maximum"] == 2
+        assert schema["properties"]["urgent"]["type"] == "boolean"
         assert schema["properties"]["category"]["enum"] == ["billing", "technical"]
 
 
@@ -171,8 +184,8 @@ def test_noul_criteria_in_predict_and_decide_inputs_and_outputs(rich, adapter):
         {"ticket": (str, dspy.InputField()), "unavailable": (annotation, dspy.OutputField(desc="Is service blocked?"))},
         "Assess operational availability.",
     )
-    value = availability(value=False, confidence=0.8) if rich else False
-    with dspy.context(lm=DummyLM([{"unavailable": value}], adapter=adapter), adapter=adapter):
+    value = availability(value=False, confidence=0.8, probability=0.1) if rich else False
+    with dspy.context(lm=DummyLM([{"unavailable": {"noul": 0.1}}], adapter=adapter), adapter=adapter):
         result = dspy.Predict(output_sig)(ticket="Use the workaround.").unavailable
     assert result == value
     assert type(result) is (availability if rich else bool)
@@ -246,7 +259,7 @@ def test_decide_result_can_feed_predict_and_back():
     source = Decide(decision_signature(True, "output"), client=FakeClient(choice="technical"))
     result = source(ticket="Payment failed.")
     adapter = dspy.ChatAdapter()
-    with dspy.context(lm=DummyLM([decision_values(True)], adapter=adapter), adapter=adapter):
+    with dspy.context(lm=DummyLM([decision_evidence(True)], adapter=adapter), adapter=adapter):
         regenerated = dspy.Predict(decision_signature(True, "output"))(ticket="Payment failed.")
     target = Decide(decision_signature(True, "input"), client=FakeClient())
     assert target(**dict(result.items())).accept is True

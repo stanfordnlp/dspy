@@ -1,3 +1,4 @@
+import copy
 import logging
 import random
 import types
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.decision import resolve_adapter
 from dspy.adapters.utils import annotation_allows_none
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
@@ -59,8 +61,13 @@ class Predict(Module, Parameter):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
+        self.fields = {}
         self.config = config
         self.reset()
+        self.lm = self.config.pop("lm", None)
+        adapter = resolve_adapter(self.lm, None, self.signature, self.fields)
+        if adapter is not None:
+            self.fields = adapter.state.fields
 
     def reset(self):
         self.lm = None
@@ -86,6 +93,9 @@ class Predict(Module, Parameter):
                 state["demos"].append(demo.toDict())
 
         state["signature"] = self.signature.dump_state()
+        if self.fields:
+            resolve_adapter(None, None, self.signature, self.fields)
+            state["fields"] = copy.deepcopy(self.fields)
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
@@ -100,13 +110,17 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        restored_signature = self.signature.load_state(state["signature"])
+        restored_fields = copy.deepcopy(state.get("fields", {}))
+        resolve_adapter(None, None, restored_signature, restored_fields)
+        excluded_keys = ["signature", "extended_signature", "lm", "fields"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
 
-        self.signature = self.signature.load_state(state["signature"])
+        self.signature = restored_signature
+        self.fields = restored_fields
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
         self.lm = (
             BaseLM.load_state(sanitized_lm_state, allow_custom_lm_class=allow_unsafe_lm_state)
@@ -251,7 +265,7 @@ class Predict(Module, Parameter):
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = resolve_adapter(lm, settings.adapter or ChatAdapter(), signature, self.fields, self.signature)
 
         if self._should_stream():
             with settings.context(caller_predict=self):
@@ -265,7 +279,7 @@ class Predict(Module, Parameter):
     async def aforward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = resolve_adapter(lm, settings.adapter or ChatAdapter(), signature, self.fields, self.signature)
         if self._should_stream():
             with settings.context(caller_predict=self):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
@@ -274,6 +288,17 @@ class Predict(Module, Parameter):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         return self._forward_postprocess(completions, signature, **kwargs)
+
+    def get_criteria(self, field):
+        """Return copied effective criteria for an experimental decision output."""
+        adapter = resolve_adapter(None, None, self.signature, {**self.fields, field: self.fields.get(field, {})})
+        return adapter.state.get_criteria(field)
+
+    def set_criteria(self, field, criteria):
+        """Validate and copy experimental per-field decision criteria."""
+        adapter = resolve_adapter(None, None, self.signature, {**self.fields, field: self.fields.get(field, {})})
+        adapter.state.set_criteria(field, criteria)
+        self.fields.setdefault(field, {})["criteria"] = copy.deepcopy(criteria)
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}
