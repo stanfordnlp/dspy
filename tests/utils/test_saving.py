@@ -20,6 +20,38 @@ def test_save_predict(tmp_path):
     assert predict.signature == loaded_predict.signature
 
 
+@pytest.mark.parametrize("suffix", [".json", ".pkl"])
+def test_save_load_preserves_per_predictor_adapters(tmp_path, suffix):
+    class TwoStep(dspy.Module):
+        def __init__(self):
+            self.first = dspy.Predict("question -> draft")
+            self.second = dspy.Predict("draft -> answer")
+
+    program = TwoStep()
+    program.first.adapter = dspy.JSONAdapter(use_native_function_calling=False)
+    program.second.adapter = dspy.XMLAdapter()
+
+    path = tmp_path / f"program{suffix}"
+    program.save(path)
+
+    loaded = TwoStep()
+    loaded.load(path, allow_pickle=True)
+
+    assert type(loaded.first.adapter) is dspy.JSONAdapter
+    assert loaded.first.adapter.use_native_function_calling is False
+    assert type(loaded.second.adapter) is dspy.XMLAdapter
+
+
+def test_full_program_save_preserves_adapter_object(tmp_path):
+    predict = dspy.Predict("question -> answer")
+    predict.adapter = dspy.JSONAdapter(use_native_function_calling=False)
+    predict.save(tmp_path, save_program=True)
+
+    loaded = dspy.load(tmp_path, allow_pickle=True)
+    assert type(loaded.adapter) is dspy.JSONAdapter
+    assert loaded.adapter.use_native_function_calling is False
+
+
 def test_save_custom_model(tmp_path):
     class CustomModel(dspy.Module):
         def __init__(self):

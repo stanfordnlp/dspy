@@ -12,6 +12,7 @@
             - deepcopy
             - dump_state
             - forward
+            - get_adapter
             - get_config
             - get_lm
             - inspect_history
@@ -26,6 +27,7 @@
             - reset
             - reset_copy
             - save
+            - set_adapter
             - set_lm
             - update_config
         show_source: true

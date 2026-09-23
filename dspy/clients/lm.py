@@ -657,6 +657,11 @@ def _get_stream_completion_fn(
     # The stream is already opened, and will be closed by the caller.
     stream = cast("MemoryObjectSendStream", stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
+    caller_adapter_name = None
+    if caller_predict_id:
+        from dspy.streaming.streaming_listener import resolve_adapter_name
+
+        caller_adapter_name = resolve_adapter_name(dspy.settings.adapter)
 
     if dspy.settings.track_usage:
         request["stream_options"] = {"include_usage": True}
@@ -674,6 +679,7 @@ def _get_stream_completion_fn(
             async for chunk in response:
                 if caller_predict_id:
                     chunk.predict_id = caller_predict_id
+                    chunk.adapter_name = caller_adapter_name
                 chunks.append(chunk)
                 stream_emitted()
                 await stream.send(chunk)
@@ -834,4 +840,3 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         "User-Agent": f"DSPy/{dspy.__version__}",
         **headers,
     }
-

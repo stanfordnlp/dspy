@@ -9,10 +9,11 @@ from pydantic import JsonValue, TypeAdapter
 
 from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
 from dspy.adapters.utils import get_field_description_string
+from dspy.clients.base_lm import sanitize_lm_state
 from dspy.clients.typesafe import TypeSafe
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
-from dspy.predict.predict import _sanitize_lm_state, serialize_object
+from dspy.predict.predict import serialize_object
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
@@ -317,7 +318,7 @@ class Decide(Module, Parameter):
         restored = copy.copy(self)
         restored.signature = self.signature.load_state(state["signature"])
         restored.fields = state["fields"]
-        restored.client = TypeSafe(**_sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
+        restored.client = TypeSafe(**sanitize_lm_state(client_state, allow_unsafe_lm_state)) if client_state else None
         restored._validate_parameters(self._output_types(restored.signature))
         self.__dict__.update(restored.__dict__)
         return self
