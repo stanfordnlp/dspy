@@ -100,11 +100,14 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        excluded_keys = ["signature", "extended_signature", "lm", "config"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
                 setattr(self, name, value)
+
+        if "config" in state:
+            self.config = _sanitize_lm_state(state["config"], allow_unsafe_lm_state)
 
         self.signature = self.signature.load_state(state["signature"])
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
