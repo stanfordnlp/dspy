@@ -137,9 +137,12 @@ weighted ties prefer the raw winner, then declaration order. The selected value
 is derived from evidence on both backends, rather than copied from Jev's choice.
 Zero weight disables an option; no remaining probability mass is an error.
 
-Noul confidence is `abs(p-t) / max(t, 1-t)`: distance from the threshold, not
-a calibrated probability. Choice and Score retain backend confidence, including
-LLM self-reports. Reweighting does not recalibrate confidence for a changed choice.
+Noul retains P(True) as `.probability` and derives `.confidence` locally as
+`abs(p-t) / max(t, 1-t)`: distance from the threshold, not a calibrated probability.
+Jev does not return a separate Noul confidence. Changing the threshold changes
+this confidence without changing the model evidence. Choice and Score retain
+backend confidence, including LLM self-reports. Reweighting does not recalibrate
+confidence for a changed choice.
 
 Numeric parameters remain local. Changing them reuses cached model evidence.
 
