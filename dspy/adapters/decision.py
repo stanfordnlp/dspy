@@ -11,26 +11,19 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, Probability, Score
-
-_recorders = []
-_recorders_lock = threading.Lock()
+from dspy.dsp.utils.settings import settings
 
 
 @contextmanager
 def record_evidence():
-    """Collect the evidence each decision output is decoded from, while the context is open.
+    """Collect decision evidence in this execution context and its DSPy workers.
 
     Yields a list that receives one ``(predictor, output name, evidence)`` entry per decoded
-    output, from every thread. ``predictor`` is the innermost calling module.
+    output. ``predictor`` is the innermost calling module. Nested collectors are independent.
     """
     log = []
-    with _recorders_lock:
-        _recorders.append(log)
-    try:
+    with settings.context(_decision_evidence=(log, threading.Lock())):
         yield log
-    finally:
-        with _recorders_lock:
-            _recorders[:] = [r for r in _recorders if r is not log]
 
 
 @lru_cache(maxsize=256)
@@ -82,7 +75,6 @@ class DecisionAdapter:
 
     def _prepare(self, signature, demos, inputs, lm_kwargs):
         from dspy.adapters.utils import get_field_description_string
-        from dspy.dsp.utils.settings import settings
         from dspy.predict.predict import serialize_object
 
         if settings.send_stream is not None:
@@ -134,13 +126,12 @@ class DecisionAdapter:
                         raise ValueError(f"Invalid Score distribution for {name!r}.")
                     answer["probabilities"] = {int(k): v for k, v in answer["probabilities"].items()}
                 answers[name] = answer
-            if _recorders:
-                from dspy.dsp.utils.settings import settings
-
+            recorder = settings.get("_decision_evidence")
+            if recorder is not None:
+                log, lock = recorder
                 caller = (settings.caller_modules or [None])[-1]
-                with _recorders_lock:
-                    for log in _recorders:
-                        log.extend((caller, name, copy.deepcopy(answer)) for name, answer in answers.items())
+                with lock:
+                    log.extend((caller, name, copy.deepcopy(answer)) for name, answer in answers.items())
             results.append({**completion, **self.state._decode(answers)})
         return results
 

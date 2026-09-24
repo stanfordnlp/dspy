@@ -18,8 +18,8 @@ class ReAnchor(Teleprompter):
 
     The program can be a single `Predict` or any `dspy.Module` holding predictors with decision
     outputs, and the metric is the only supervision. Each parameter changes how `Predict` reads the
-    backend's probabilities and leaves the request unchanged. Calibration answers the training set
-    once, then searches each parameter against the metric on cached answers.
+    backend's probabilities without adding request parameters. Identical requests reuse cached
+    answers, but changed upstream decisions can produce new downstream requests.
 
     On a generative LM, a native `bool` or `Literal` output is answered without probabilities.
     ReAnchor gives such an output an entry in the predictor's `fields`, which asks the LM for

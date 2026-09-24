@@ -1,9 +1,10 @@
 """Fit the numeric decision parameters of every Predict in a program against the metric.
 
 Each `Predict` holds per-output parameters in `fields` that reinterpret the backend's
-probabilities without changing the request, so cached answers are reused and each candidate
-setting is one pass of plain Python over the training set. The search runs directly against the
-metric, whatever shape the program's outputs have.
+probabilities without adding request parameters. Each candidate reruns the program over the
+training set, reusing cached answers for identical requests. Changed upstream decisions can
+produce new downstream requests. The search runs directly against the metric, whatever shape
+the program's outputs have.
 
 Three kinds of parameter are fitted, all in the `Predict`'s `fields[field]` configuration:
 - `threshold`, a Boolean output's cut point on P(True).
@@ -21,8 +22,8 @@ flips for a weight. Among equal scores the candidate in the widest gap wins.
 A setting stays unless a candidate scores strictly better and the gain holds across folds. The
 fold check splits the training set into FOLDS parts. For each part, it picks a setting on the
 other parts and scores that pick on the held-out part. A candidate replaces the current setting
-only when those held-out scores beat the current setting's. A gain that rests on one or two
-examples fails this check, because the parts without them pick nothing better.
+only when those held-out scores beat the current setting's. This discourages gains confined to
+small portions of the dataset, but can accept them when they recur across folds.
 
 On a generative LM, a native `bool` or `Literal` output returns its value without probabilities
 unless it has an entry in `fields`. Calibration adds that entry, which asks the LM for
@@ -282,7 +283,10 @@ def _fit_threshold(
     start = config["threshold"]
     probabilities = [e["noul"] for e in evidence]
     tried = []
-    for t, width in _gaps(probabilities, 0.0, 1.0):
+    candidates = _gaps(probabilities, 0.0, 1.0)
+    if 0.0 in probabilities:
+        candidates.append((0.0, 0.0))  # P(True) >= threshold makes zero a distinct outcome.
+    for t, width in candidates:
         config["threshold"] = t
         tried.append((score(), (width, -abs(t - start), t), t))
     kept, refused = _select(base, tried)

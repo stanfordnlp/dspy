@@ -61,19 +61,25 @@ The current setting stays unless another setting scores strictly better and
 passes a fold check. The check splits the training examples into five parts.
 For each part, ReAnchor picks a setting using the other four parts and scores
 that pick on the held-out part. A new setting is kept only when those held-out
-scores beat the current setting. A gain that rests on one or two examples fails
-the check. When two settings score the same, ReAnchor picks the one in the
+scores beat the current setting. The check discourages gains confined to small
+portions of the dataset, but can accept them when they recur across folds.
+When two settings score the same, ReAnchor picks the one in the
 widest gap, because it leaves the most room on either side. When an output returns many distinct
 values, ReAnchor thins the list to at most 40 settings, spaced evenly through
-the observed values.
+the observed values. For Boolean outputs, it also tries threshold zero when
+P(True)=0 is observed, since that boundary is the only way to classify those
+answers as True.
 
 ## Requests and the cache
 
-The settings are not part of the request. The backend answers each training
-example once, and each later pass reads those answers from the cache. For this
-reason, `compile` raises an error when a predictor's client has its cache turned
-off. Pass `require_cache=False` to run anyway. Each setting ReAnchor tries then
-sends a new request for every training example.
+The numeric settings are not part of the request. Repeated identical requests
+reuse cached answers. In a composed program, changing an upstream decision can
+change downstream inputs or which predictors run, producing new requests and
+additional backend calls. Native-output promotion also changes the request.
+
+`compile` requires caching by default to avoid repeating identical backend
+calls; it does not guarantee a fixed request count. Pass `require_cache=False`
+to run without this check.
 
 ## Native outputs on a generative LM
 

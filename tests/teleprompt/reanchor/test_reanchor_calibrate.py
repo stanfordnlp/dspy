@@ -26,6 +26,16 @@ def test_a_leaning_noul_gets_a_threshold_between_its_piles(system_one):
     assert report[0]["train_score"] == 1.0
 
 
+@pytest.mark.parametrize("target", [True, False])
+def test_zero_probability_can_be_classified_on_either_side(system_one, target):
+    system_one(lambda state, name, q: noul(0.0))
+    program = dspy.Predict(Match)
+    train = [dspy.Example(pair=str(i), match=target).with_inputs("pair") for i in range(10)]
+    report = calibrate(program, train, lambda g, p: float(p.match == g.match), num_threads=2)
+    assert program.fields["match"]["threshold"] == (0.0 if target else 0.5)
+    assert report[0]["train_score"] == 1.0
+
+
 def test_a_starting_threshold_stays_unless_a_candidate_scores_strictly_better(system_one):
     # 0.73 already splits 0.74 from 0.72, so the candidate in that gap only ties.
     system_one(lambda state, name, q: noul(0.74 if state["inputs"]["pair"] == "same" else 0.72))
@@ -234,7 +244,7 @@ def test_many_distinct_probabilities_are_thinned_to_the_candidate_cap(system_one
     train = [dspy.Example(pair=str(i), match=i >= 120).with_inputs("pair") for i in range(200)]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=4)
     assert report[0]["observed"]["distinct"] == 200
-    assert report[0]["observed"]["candidates"] <= MAX_CANDIDATES
+    assert report[0]["observed"]["candidates"] <= MAX_CANDIDATES + 1  # Gap midpoints plus the zero endpoint.
     assert 0.55 < program.fields["match"]["threshold"] <= 0.6 and report[0]["train_score"] >= 0.97
 
 
@@ -260,6 +270,52 @@ def test_evidence_is_recorded_for_the_predictor_that_decoded_it(system_one):
     caller, name, evidence = log[-1]
     assert caller is program.kind and name == "kind" and evidence["probabilities"] == {"x": 0.6, "y": 0.4}
     assert len(log) == 4
+
+
+def test_concurrent_evidence_collectors_are_isolated_and_reach_dspy_workers(system_one):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from dspy.adapters.decision import record_evidence
+    from dspy.utils.parallelizer import ParallelExecutor
+
+    system_one(lambda state, name, q: noul(0.2 if state["inputs"]["pair"] == "a" else 0.8))
+    barrier = Barrier(2)
+
+    def collect(pair):
+        predict = dspy.Predict(Match)
+        with record_evidence() as log:
+            barrier.wait(timeout=10)
+            ParallelExecutor(num_threads=2, disable_progress_bar=True).execute(lambda _: predict(pair=pair), range(2))
+            barrier.wait(timeout=10)
+        return predict, log
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(collect, ["a", "b"]))
+    for (predict, log), probability in zip(results, [0.2, 0.8], strict=True):
+        assert len(log) == 2
+        assert all(
+            caller is predict and name == "match" and evidence == {"noul": probability}
+            for caller, name, evidence in log
+        )
+
+
+def test_nested_evidence_collector_restores_outer_context_after_error(system_one):
+    from dspy.adapters.decision import record_evidence
+
+    system_one(lambda state, name, q: noul(float(state["inputs"]["pair"])))
+    predict = dspy.Predict(Match)
+    with record_evidence() as outer:
+        predict(pair="0.1")
+        with pytest.raises(RuntimeError, match="stop"):
+            with record_evidence() as inner:
+                predict(pair="0.2")
+                raise RuntimeError("stop")
+        predict(pair="0.3")
+    predict(pair="0.4")
+    assert [evidence["noul"] for _, _, evidence in outer] == [0.1, 0.3]
+    assert [evidence["noul"] for _, _, evidence in inner] == [0.2]
+    assert dspy.settings.get("_decision_evidence") is None
 
 
 def lone_outlier(same: float, different: float, odd: float, count: int = 1):
