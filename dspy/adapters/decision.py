@@ -14,12 +14,14 @@ from dspy.adapters.types.decision import Choice, Noul, Probability, Score
 @lru_cache(maxsize=256)
 def evidence_type(kind):
     """Closed schemas work with JSON structured outputs as well as chat adapters."""
+    name = "Noul" if issubclass(kind, Noul) else "Score" if issubclass(kind, Score) else "Choice"
     if issubclass(kind, Noul):
         fields = {"noul": (Probability, Field(description="Probability that the answer is true."))}
     else:
-        labels = range(len(kind.options)) if issubclass(kind, Score) else [str(v) for v, _ in kind.options]
+        criteria = kind.criteria()
+        labels = range(len(criteria)) if issubclass(kind, Score) else criteria
         probabilities = create_model(
-            f"{kind.__name__}Probabilities",
+            f"{name}Probabilities",
             __config__=ConfigDict(extra="forbid"),
             **{f"option_{i}": (Probability, Field(alias=str(label))) for i, label in enumerate(labels)},
         )
@@ -27,7 +29,7 @@ def evidence_type(kind):
             "probabilities": (probabilities, Field(description="Probability of each option; sum to one.")),
             "confidence": (Probability, Field(description="Confidence in the decision, from 0 to 1.")),
         }
-    return create_model(f"{kind.__name__}Evidence", __config__=ConfigDict(extra="forbid"), **fields)
+    return create_model(f"{name}Evidence", __config__=ConfigDict(extra="forbid"), **fields)
 
 
 def resolve_adapter(lm, adapter, signature, fields, declared_signature=None):
@@ -105,7 +107,7 @@ class DecisionAdapter:
                 answer = copy.deepcopy(answer)
                 if issubclass(kind, Score):
                     keys = answer["probabilities"]
-                    labels = {str(i) for i in range(len(kind.options))}
+                    labels = {str(i) for i in range(len(kind.criteria()))}
                     if any(type(k) not in (int, str) or str(k) not in labels for k in keys) or len(keys) != len(labels):
                         raise ValueError(f"Invalid Score distribution for {name!r}.")
                     answer["probabilities"] = {int(k): v for k, v in answer["probabilities"].items()}

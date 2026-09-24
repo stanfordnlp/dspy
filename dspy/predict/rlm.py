@@ -181,8 +181,8 @@ class RLM(Module):
         ):
             warnings.warn(
                 "RLM support for Noul, Choice, and Score outputs is not implemented consistently: "
-                "SUBMIT bypasses decision evidence decoding, while forced extraction uses it. "
-                "Use Predict for decision outputs instead.",
+                "decision evidence decoding is not guaranteed, including for nested output types. "
+                "Use Predict with top-level decision outputs instead.",
                 UserWarning,
                 stacklevel=2,
             )

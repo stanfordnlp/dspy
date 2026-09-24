@@ -5,7 +5,7 @@ import pytest
 from pydantic import Field, TypeAdapter, ValidationError
 
 import dspy
-from dspy.adapters.decision import resolve_adapter
+from dspy.adapters.decision import evidence_type, resolve_adapter
 from dspy.adapters.json_adapter import _get_structured_outputs_response_format
 from dspy.experimental import Choice, Noul, Score
 from dspy.utils.dummies import DummyLM
@@ -13,6 +13,29 @@ from tests.predict.test_decision_parameters import FakeClient
 
 Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
+
+
+@pytest.mark.parametrize("left,right,left_labels,right_labels", [
+    (Category, Choice[("a", "A"), ("b", "B")], ["billing", "technical"], ["a", "b"]),
+    (Severity, Score["Low", "High"], ["0", "1", "2"], ["0", "1"]),
+])
+def test_short_evidence_names_keep_distinct_answer_spaces(left, right, left_labels, right_labels):
+    assert evidence_type(left).__name__ == evidence_type(right).__name__
+    sig = dspy.Signature({
+        "first": (evidence_type(left), dspy.OutputField()),
+        "second": (evidence_type(right), dspy.OutputField()),
+    })
+    model = _get_structured_outputs_response_format(sig)
+    schema = model.model_json_schema()
+    for field, labels in (("first", left_labels), ("second", right_labels)):
+        evidence = schema["$defs"][schema["properties"][field]["$ref"].split("/")[-1]]
+        probabilities = schema["$defs"][evidence["properties"]["probabilities"]["$ref"].split("/")[-1]]
+        assert list(probabilities["properties"]) == labels
+    first = {"probabilities": dict.fromkeys(left_labels, 1 / len(left_labels)), "confidence": 0.7}
+    second = {"probabilities": dict.fromkeys(right_labels, 1 / len(right_labels)), "confidence": 0.6}
+    model.model_validate({"first": first, "second": second})
+    with pytest.raises(ValidationError):
+        model.model_validate({"first": second, "second": first})
 
 
 @pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
@@ -208,6 +231,12 @@ def test_structured_description_defaults_are_detached_and_cacheable(kind):
     )
     assert module.get_criteria("result") == expected
     snapshot = module.get_criteria("result")
+    schema = annotation.model_json_schema()
+    declared = annotation.criteria()
+    entry = declared[0] if kind is Score else declared["true" if kind is Noul else "True"]
+    entry["examples"].append("Type metadata mutation")
+    assert declare(description).criteria() == snapshot
+    assert annotation.model_json_schema() == schema
     description["examples"].append("Mutation")
     assert module.get_criteria("result") == snapshot
     returned = module.get_criteria("result")
@@ -333,7 +362,7 @@ def test_noul_criteria_in_both_backends_inputs_and_outputs(rich, adapter):
 @pytest.mark.parametrize("levels,maximum", [(("Low", "High"), 1), (("Last", "Second", "Third", "First"), 3)])
 def test_score_level_order_bounds_and_fractional_values(levels, maximum):
     score = Score[levels]
-    assert score.options == levels
+    assert score.criteria() == list(levels)
     assert json.dumps(list(enumerate(levels))) in score.description()
     adapter = TypeAdapter(score)
     value_schema = adapter.json_schema()["properties"]["value"]
@@ -345,6 +374,15 @@ def test_score_level_order_bounds_and_fractional_values(levels, maximum):
         assert float(result) == value
     with pytest.raises(ValidationError):
         adapter.validate_python({"value": maximum + 0.1, "confidence": 0.7})
+    for level in (None, 0, maximum):
+        result = score(value=0.25, confidence=0.7, level=level)
+        assert score.model_validate_json(result.model_dump_json()).level == level
+    for level in (-1, maximum + 1, 0.5, True):
+        data = {"value": 0.25, "confidence": 0.7, "level": level}
+        with pytest.raises(ValidationError):
+            score(**data)
+        with pytest.raises(ValidationError):
+            score.model_validate_json(json.dumps(data))
 
 
 @pytest.mark.parametrize("score", [Score, Severity])
@@ -409,7 +447,7 @@ async def test_annotated_literal_evidence_criteria_and_native_types(adapter, sel
     assert "confidence" not in json.dumps(schema)
     assert "snow" in schema["description"]
     sig = dspy.Signature({"text": (str, dspy.InputField()), "label": (annotation, dspy.OutputField(desc="Choose a label."))})
-    probabilities = {str(v): 0.7 if type(v) is type(selected) and v == selected else 0.1 for v, _ in choice.options}
+    probabilities = {label: 0.7 if label == str(selected) else 0.1 for label in choice.criteria()}
     evidence = {"label": {"probabilities": probabilities, "confidence": 0.6}}
     lm = DummyLM([evidence], adapter=adapter)
     client = FakeClient(answers=evidence)
@@ -419,7 +457,7 @@ async def test_annotated_literal_evidence_criteria_and_native_types(adapter, sel
         assert type((await module.acall(text="x", lm=client)).label) is type(selected)
     assert a == b == selected
     assert type(a) is type(b) is type(selected)
-    assert client.calls[0][1]["label"]["criteria"] == {str(v): desc for v, desc in choice.options}
+    assert client.calls[0][1]["label"]["criteria"] == choice.criteria()
     module.save(tmp_path / "annotated.json")
     restored = dspy.Predict(sig)
     restored.load(tmp_path / "annotated.json")

@@ -17,8 +17,14 @@ _JSON_ADAPTER = TypeAdapter(JsonValue)
 
 class _Decision(Type):
     model_config = ConfigDict(extra="forbid")
+    _criteria_json: ClassVar[str] = "null"
 
     confidence: Probability = Field(description="Confidence in the value, from 0 to 1.")
+
+    @classmethod
+    def criteria(cls):
+        """Return an independent copy of the type's declared criteria."""
+        return json.loads(cls._criteria_json)
 
     @model_serializer(mode="wrap")
     def serialize_model(self, handler):
@@ -44,7 +50,6 @@ class Noul(_Decision):
 
     value: bool = Field(strict=True)
     probability: SkipJsonSchema[Probability | None] = None
-    options: ClassVar[tuple] = ()
 
     @classmethod
     def __class_getitem__(cls, options):
@@ -56,8 +61,8 @@ class Noul(_Decision):
     @classmethod
     def description(cls):
         description = "A Boolean decision."
-        if cls.options:
-            description += " Criteria: " + json.dumps({str(v).lower(): desc for v, desc in cls.options}) + "."
+        if cls.criteria():
+            description += " Criteria: " + cls._criteria_json + "."
         return description
 
     @classmethod
@@ -93,7 +98,6 @@ class Score(_Decision):
     value: float = Field(allow_inf_nan=False)
     probabilities: SkipJsonSchema[dict[int, Probability] | None] = None
     level: SkipJsonSchema[int | None] = Field(default=None, ge=0, strict=True)
-    options: ClassVar[tuple] = ()
 
     @classmethod
     def __class_getitem__(cls, options):
@@ -103,9 +107,10 @@ class Score(_Decision):
 
     @classmethod
     def description(cls):
+        criteria = cls.criteria() or []
         return (
-            f"Continuous score from 0 to {len(cls.options) - 1}; intermediate values are allowed. "
-            "Rubric (level index, description): " + json.dumps(list(enumerate(cls.options))) + "."
+            f"Continuous score from 0 to {len(criteria) - 1}; intermediate values are allowed. "
+            "Rubric (level index, description): " + json.dumps(list(enumerate(criteria))) + "."
         )
 
     @classmethod
@@ -132,7 +137,6 @@ class Choice(_Decision):
 
     value: str | int | bool | None
     probabilities: SkipJsonSchema[dict[str, Probability] | None] = None
-    options: ClassVar[tuple] = ()
 
     @classmethod
     def __class_getitem__(cls, options):
@@ -148,15 +152,18 @@ class Choice(_Decision):
 
     @classmethod
     def description(cls):
-        if not cls.options:
+        criteria = cls.criteria()
+        if criteria is None:
             return "Select exactly one of the declared Literal values."
-        return "Select exactly one value. Options: " + json.dumps(cls.options) + "."
+        options = [(v, criteria[str(v)]) for v in get_args(cls.model_fields["value"].annotation)]
+        return "Select exactly one value. Options: " + json.dumps(options) + "."
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):
         if get_origin(source) is Literal:
             values = get_args(source)
-            if cls.options and {(type(v), v) for v in values} != {(type(v), v) for v, _ in cls.options}:
+            declared = get_args(cls.model_fields["value"].annotation)
+            if cls.criteria() is not None and {(type(v), v) for v in values} != {(type(v), v) for v in declared}:
                 raise ValueError("Choice criteria must match the Literal members, including their Python types.")
         return handler(source)
 
@@ -192,7 +199,7 @@ def _description_json(description):
 def _noul_type(options):
     options = tuple((value, json.loads(desc)) for value, desc in options)
     result = create_model(f"Noul[{', '.join(repr(pair) for pair in options)}]", __base__=Noul)
-    result.options = options
+    result._criteria_json = json.dumps({str(v).lower(): desc for v, desc in options})
     return result
 
 
@@ -203,8 +210,9 @@ def _score_type(options):
         f"Score[{', '.join(repr(description) for description in options)}]",
         __base__=Score,
         value=(float, Field(ge=0, le=len(options) - 1, allow_inf_nan=False)),
+        level=(SkipJsonSchema[int | None], Field(default=None, ge=0, le=len(options) - 1, strict=True)),
     )
-    result.options = options
+    result._criteria_json = json.dumps(options)
     return result
 
 
@@ -216,7 +224,7 @@ def _choice_type(typed_options):
         __base__=Choice,
         value=(Literal[tuple(value for value, _ in options)], ...),
     )
-    result.options = options
+    result._criteria_json = json.dumps({str(v): desc for v, desc in options})
     return result
 
 
@@ -227,10 +235,10 @@ def decision_type(field):
         return next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Noul)), Noul)
     if get_origin(annotation) is Literal:
         configured = next((m for m in field.metadata if isinstance(m, type) and issubclass(m, Choice)), None)
-        if configured is not None and configured.options:
+        if configured is not None and configured.criteria() is not None:
             return configured
         return Choice[tuple((value, "") for value in get_args(annotation))]
     if isinstance(annotation, type) and issubclass(annotation, _Decision):
-        if issubclass(annotation, Noul) or getattr(annotation, "options", ()):
+        if issubclass(annotation, Noul) or annotation.criteria() is not None:
             return annotation
     return None

@@ -332,12 +332,16 @@ async def test_decision_outputs_require_description_before_inference(desc):
 
 
 @pytest.mark.parametrize("kind", [Noul, Rating, Label, Annotated[bool, Noul],
-                                  Annotated[Literal[2, "other"], Label], list[Noul]])
+                                  Annotated[Literal[2, "other"], Label], list[Noul], list[Rating], list[Label]])
 def test_rlm_warns_about_decision_outputs(kind):
     signature = dspy.Signature({"answer": (kind, dspy.OutputField(desc="Assess relevance."))})
     with pytest.warns(UserWarning, match="RLM support.*not implemented consistently") as recorded:
         dspy.RLM(signature)
     assert len(recorded) == 1
+    message = str(recorded[0].message)
+    assert "decision evidence decoding is not guaranteed" in message
+    assert "Use Predict with top-level decision outputs" in message
+    assert "forced extraction uses it" not in message
 
 
 def test_rlm_does_not_warn_for_native_outputs_or_rich_inputs():

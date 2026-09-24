@@ -151,40 +151,16 @@ overrides can change descriptions, not the declared answer space.
 ## Structured criteria
 
 Descriptions in all three types accept JSON strings, objects, arrays, or null.
-Use objects for rubrics with definitions, exclusions, or examples:
 
 ```python
-Urgency = Noul[
-    (True, {"what": "Service blocked", "examples": ["Cannot log in"]}),
-    (False, {"what": "Service usable", "examples": ["Cosmetic defect"]}),
-]
-Category = Choice[
-    ("billing", {"what": "Payment issue", "not_for": "Login failures"}),
-    ("technical", {"what": "Product malfunction", "examples": ["Cannot log in"]}),
-]
-Severity = Score[
-    {"what": "Minor", "examples": ["Cosmetic defect"]},
-    {"what": "Major", "examples": ["Cannot log in"]},
-]
-
-class AssessTicket(dspy.Signature):
-    """Assess the customer ticket."""
-
-    ticket: str = dspy.InputField(desc="Customer report.")
-    urgent: Urgency = dspy.OutputField(desc="Does this need immediate attention?")
-    category: Category = dspy.OutputField(desc="Classify the issue.")
-    severity: Severity = dspy.OutputField(desc="Rate the impact.")
+Urgency = Noul[(True, {"what": "Service blocked", "examples": ["Cannot log in"]}), (False, "Usable")]
+Category = Choice[("billing", {"what": "Payment issue", "not_for": "Login failures"}), ("technical", "Product bug")]
+Severity = Score["Minor", {"what": "Major", "examples": ["Cannot log in"]}]
 ```
 
-Keys such as `what`, `not_for`, and `examples` are ordinary JSON, not DSPy
-parameters. Jev receives these descriptions in each question's `criteria`;
-generative adapters include the same criteria in their output-field instructions.
-Criteria examples describe outcomes; they are separate from `Predict.demos`.
-
-Declarations copy their descriptions. Use `set_criteria()` for per-predictor
-overrides; `get_criteria()` returns an independent copy. Type defaults belong to
-the signature architecture, while save/load stores explicit module overrides.
-Thresholds, cuts, and weights remain module parameters, not type descriptions.
+These keys are ordinary JSON, not DSPy parameters. Jev receives it as `criteria`;
+generative adapters include it in output-field instructions. Criteria examples
+describe outcomes, not `Predict.demos`. Use `set_criteria()` to override defaults.
 
 ## Per-field parameters
 

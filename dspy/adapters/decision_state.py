@@ -4,6 +4,7 @@ import copy
 import itertools
 import json
 import math
+from typing import get_args
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -36,20 +37,25 @@ class DecisionState:
                 if system_one:
                     raise ValueError(f"Unsupported System One output {name!r}; use a decision type or native equivalent.")
                 continue
+            criteria = kind.criteria()
             if declared_signature is not None and name in fields:
                 declared = declared_signature.output_fields.get(name)
                 original = decision_type(declared) if declared is not None else None
-                if original is None or kind.options != original.options or (
-                    kind.model_fields["value"].annotation != original.model_fields["value"].annotation
+                original_criteria = original.criteria() if original is not None else None
+                if (
+                    original is None
+                    or criteria != original_criteria
+                    or list(criteria or []) != list(original_criteria or [])
+                    or kind.model_fields["value"].annotation != original.model_fields["value"].annotation
                 ):
                     raise ValueError(f"Signature override must preserve the answer space of configured output {name!r}.")
             self.types[name] = kind
             if issubclass(kind, Noul):
                 self.fields[name] = {"threshold": 0.5}
             elif issubclass(kind, Score):
-                self.fields[name] = {"cuts": [i + 0.5 for i in range(len(kind.options) - 1)]}
+                self.fields[name] = {"cuts": [i + 0.5 for i in range(len(criteria) - 1)]}
             else:
-                self.fields[name] = {"weights": {str(v): 1.0 for v, _ in kind.options}}
+                self.fields[name] = {"weights": dict.fromkeys(criteria, 1.0)}
         if fields.keys() - self.types.keys():
             raise ValueError(f"Decision configuration refers to unsupported outputs: {sorted(fields.keys() - self.types.keys())}.")
         for name, config in fields.items():
@@ -67,12 +73,10 @@ class DecisionState:
         kind = self.types[field]
         if "criteria" in self.fields[field]:
             return copy.deepcopy(self.fields[field]["criteria"])
-        options = copy.deepcopy(kind.options)
-        if issubclass(kind, Noul):
-            return {str(v).lower(): desc for v, desc in options} if options else None
-        if issubclass(kind, Score):
-            return list(options)
-        return {str(v): None if desc == "" else desc for v, desc in options}
+        criteria = kind.criteria()
+        if issubclass(kind, Choice):
+            return {label: None if desc == "" else desc for label, desc in criteria.items()}
+        return criteria
 
     def _validate_parameters(self):
         for name, kind in self.types.items():
@@ -93,11 +97,12 @@ class DecisionState:
                     raise ValueError(f"Threshold for {name!r} must be in [0, 1].")
             elif issubclass(kind, Score):
                 cuts = config["cuts"]
+                levels = len(kind.criteria())
                 if (
-                    not 2 <= len(kind.options) <= 10
+                    not 2 <= levels <= 10
                     or not isinstance(cuts, list)
-                    or len(cuts) != len(kind.options) - 1
-                    or any(type(c) not in (int, float) or not 0 < c < len(kind.options) - 1 for c in cuts)
+                    or len(cuts) != levels - 1
+                    or any(type(c) not in (int, float) or not 0 < c < levels - 1 for c in cuts)
                     or any(a >= b for a, b in itertools.pairwise(cuts))
                 ):
                     raise ValueError(
@@ -105,7 +110,7 @@ class DecisionState:
                     )
             else:
                 weights = config["weights"]
-                labels = {str(v) for v, _ in kind.options}
+                labels = set(kind.criteria())
                 if (
                     not isinstance(weights, dict)
                     or not set(weights) <= labels
@@ -134,9 +139,9 @@ class DecisionState:
             if issubclass(kind, Noul):
                 valid = criteria is None or (isinstance(criteria, dict) and criteria.keys() <= {"true", "false"})
             elif issubclass(kind, Choice):
-                valid = isinstance(criteria, dict) and criteria.keys() == {str(v) for v, _ in kind.options}
+                valid = isinstance(criteria, dict) and criteria.keys() == kind.criteria().keys()
             else:
-                valid = isinstance(criteria, list) and len(criteria) == len(kind.options) and 2 <= len(criteria) <= 10
+                valid = isinstance(criteria, list) and len(criteria) == len(kind.criteria()) and 2 <= len(criteria) <= 10
             if not valid:
                 raise ValueError(f"Invalid criteria for {name!r}: must match the declared decision type and options.")
             entries = criteria.values() if isinstance(criteria, dict) else criteria or []
@@ -172,7 +177,7 @@ class DecisionState:
                 )
             elif issubclass(kind, Score):
                 probabilities = answer["probabilities"]
-                if set(probabilities) != set(range(len(kind.options))) or sum(probabilities.values()) <= 0:
+                if set(probabilities) != set(range(len(kind.criteria()))) or sum(probabilities.values()) <= 0:
                     raise ValueError(f"Invalid Score distribution for {name!r}.")
                 value = sum(i * p for i, p in probabilities.items()) / sum(probabilities.values())
                 result = kind(
@@ -182,7 +187,7 @@ class DecisionState:
                     level=sum(value >= cut for cut in self.fields[name]["cuts"]),
                 )
             else:
-                options = {str(v): v for v, _ in kind.options}
+                options = {str(v): v for v in get_args(kind.model_fields["value"].annotation)}
                 probabilities = answer["probabilities"]
                 if (
                     set(probabilities) != set(options)

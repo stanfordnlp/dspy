@@ -183,7 +183,7 @@ def test_live_distribution_reinterpretation(client):
     assert boundary.severity.level == int(position >= 0.4) + int(position >= 1.7)
     assert boundary.severity.probabilities == p
     assert boundary.severity.confidence == initial.severity.confidence
-    assert Severity.options[1] == "Partial disruption; workaround available"
+    assert Severity.criteria()[1] == "Partial disruption; workaround available"
     module.fields["urgent"]["threshold"] = math.nextafter(initial.urgent.probability, 1)
     if initial.urgent.probability < 1:
         assert module(ticket=CASES[2][1]).urgent.value is False
