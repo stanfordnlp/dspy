@@ -111,6 +111,7 @@ nav:
         - Experimental:
             - api/experimental/index.md
             - Citations: api/experimental/Citations.md
+            - Decision types and System One models: api/experimental/DecisionTypes.md
             - Document: api/experimental/Document.md
         - Models:
             - api/models/index.md
