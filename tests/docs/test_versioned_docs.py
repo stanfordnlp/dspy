@@ -232,6 +232,10 @@ def test_delayed_older_patch_does_not_move_minor_redirect_backward(tmp_path):
 def test_mike_refuses_to_replace_an_immutable_snapshot(tmp_path):
     repository = make_repository(tmp_path)
     site = make_site(tmp_path / "first", "original")
+    for path in ("diving-deeper/tools", "diving-deeper/tools-react-and-mcp"):
+        page = site / path
+        page.mkdir(parents=True)
+        (page / "index.html").write_text(path)
     arguments = {
         "repository": repository,
         "site": site,

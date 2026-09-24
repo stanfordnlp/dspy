@@ -69,7 +69,11 @@ def working_directory(path: Path):
 
 def tree_digest(root: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    paths = sorted(
+        (item for item in root.rglob("*") if item.is_file()),
+        key=lambda item: item.relative_to(root).as_posix(),
+    )
+    for path in paths:
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()
