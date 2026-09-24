@@ -38,12 +38,11 @@ print(optimizer.report)
 
 ## What ReAnchor fits
 
-ReAnchor tries settings for each output and keeps the one with the best mean
-metric score on the training examples.
+ReAnchor searches each output's numeric settings against the whole-program
+metric. A new setting must improve the training score and pass a fold check.
 
-ReAnchor builds the settings to try from the training examples. First it runs
-the program once and records the probabilities behind each output on every
-call. A threshold anywhere between two neighboring P(True) values makes the
+Before fitting each output, ReAnchor runs the program and records that output's
+probabilities on every call. A threshold anywhere between two neighboring P(True) values makes the
 same decisions, so ReAnchor tries the midpoint of each gap between them. For
 example, when the model only returns P(True) of 0.98 and 1.0, ReAnchor tries
 0.5 and 0.99.
@@ -58,14 +57,14 @@ example, when the model only returns P(True) of 0.98 and 1.0, ReAnchor tries
   would flip on some call.
 
 The current setting stays unless another setting scores strictly better and
-passes a fold check. The check splits the training examples into five parts.
-For each part, ReAnchor picks a setting using the other four parts and scores
-that pick on the held-out part. A new setting is kept only when those held-out
-scores beat the current setting. The check discourages gains confined to small
+passes a fold check. The check splits the training examples into up to five parts.
+For each part, ReAnchor picks a setting using the remaining parts and scores
+that pick on the held-out part. A new setting is kept only when the combined held-out
+score beats the current setting. The check discourages gains confined to small
 portions of the dataset, but can accept them when they recur across folds.
-When two settings score the same, ReAnchor picks the one in the
-widest gap, because it leaves the most room on either side. When an output returns many distinct
-values, ReAnchor thins the list to at most 40 settings, spaced evenly through
+Among improving candidates with equal scores, ReAnchor prefers the widest gap,
+which leaves the most room on either side. Each search step tries at most
+40 gap midpoints, thinning large lists to settings spaced evenly through
 the observed values. For Boolean outputs, it also tries threshold zero when
 P(True)=0 is observed, since that boundary is the only way to classify those
 answers as True.
@@ -96,7 +95,7 @@ The `report` row for a kept entry has `"promoted": True`. The first pass with
 probabilities sends new requests, because the request changes.
 
 ```python
-dspy.configure(lm=dspy.LM("openai/gpt-6-luna"))
+dspy.configure(lm=dspy.LM("your-provider/your-model"))  # Use your model's identifier.
 tuned = ReAnchor(metric).compile(dspy.Predict(Match), trainset=trainset)
 ```
 
@@ -121,8 +120,8 @@ your backend's load.
 - `val_score_before` and `val_score`, the same scores on `valset` when you pass
   one. ReAnchor never fits settings on `valset`.
 - `fitted`, one row per output with the fitted value, or the reason ReAnchor
-  skipped it. Each fitted row has an `observed` entry with the number of calls,
-  the number of distinct values, and the number of settings tried. Its
+  skipped it. Each fitted row has an `observed` entry with the number of calls
+  and settings tried; threshold and cut reports also summarize observed values. Its
   `fold_check` entry counts the search steps whose better training score passed
   or failed the fold check.
 
