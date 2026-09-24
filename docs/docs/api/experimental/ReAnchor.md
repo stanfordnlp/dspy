@@ -34,7 +34,6 @@ dspy.configure(lm=TypeSafe("jev-latest"))
 optimizer = ReAnchor(metric)
 tuned = optimizer.compile(dspy.Predict(Match), trainset=trainset, valset=valset)
 print(optimizer.report)
-print(ReAnchor.source(tuned))
 ```
 
 ## What ReAnchor fits
@@ -67,12 +66,6 @@ the check. When two settings score the same, ReAnchor picks the one in the
 widest gap, because it leaves the most room on either side. When an output returns many distinct
 values, ReAnchor thins the list to at most 40 settings, spaced evenly through
 the observed values.
-
-Before ReAnchor tries settings for an output, it checks whether your metric
-reads that output. It scores the output at its current setting. Then it pushes
-every answer to one end and scores it again, e.g., every answer True and then
-every answer False. When no example's score changes, ReAnchor skips the output
-and records the skip in `report`.
 
 ## Requests and the cache
 
@@ -129,14 +122,11 @@ your backend's load.
 
 Your metric may return a number or a `dspy.Prediction` with a `score`.
 
-`ReAnchor.source(program)` writes each predictor's signature as a class, and
-after it the line that sets that predictor's `fields`. You can paste this into
-your code. When you set `log_dir`, ReAnchor writes `report.json` and
-`source.py` to that folder.
+When you set `log_dir`, ReAnchor writes `report.json` to that folder.
 
 The fitted settings are part of each predictor's `fields`, so the tuned program
 saves and loads like any other `Predict` program.
 
 ::: dspy.experimental.ReAnchor
     options:
-        members: [__init__, compile, source]
+        members: [__init__, compile]
