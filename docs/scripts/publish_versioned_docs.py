@@ -14,6 +14,7 @@ from html import escape
 from pathlib import Path
 
 RELEASE_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$")
+STABLE_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 DEFAULT_BRANCH = "versioned-docs"
 LEGACY_REDIRECTS_MANIFEST = ".dspy-legacy-redirects.json"
 HOST_CONFIG = (
@@ -68,7 +69,11 @@ def working_directory(path: Path):
 
 def tree_digest(root: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    paths = sorted(
+        (item for item in root.rglob("*") if item.is_file()),
+        key=lambda item: item.relative_to(root).as_posix(),
+    )
+    for path in paths:
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -100,6 +105,31 @@ def branch_file(repository: Path, branch: str, path: str) -> str | None:
         text=True,
     )
     return result.stdout if result.returncode == 0 else None
+
+
+def require_current_renderer(repository: Path, branch: str, renderer: str) -> None:
+    inventory_text = branch_file(repository, branch, "versions.json")
+    inventory = json.loads(inventory_text) if inventory_text else []
+    current = next((entry for entry in inventory if entry.get("version") == "current"), None)
+    actual = current.get("properties", {}).get("renderer") if current else None
+    if actual != renderer:
+        raise RuntimeError(f"production Current renderer is {actual!r}, expected {renderer!r}")
+
+
+def monotonic_aliases(repository: Path, branch: str, identifier: str, aliases: list[str]) -> list[str]:
+    """Do not let a delayed older patch move a minor alias backward."""
+    inventory_text = branch_file(repository, branch, "versions.json")
+    if not inventory_text:
+        return aliases
+    requested = version_tuple(identifier)
+    inventory = json.loads(inventory_text)
+    holders = {
+        alias: version_tuple(entry["version"])
+        for entry in inventory
+        if STABLE_VERSION.fullmatch(entry["version"])
+        for alias in entry.get("aliases", [])
+    }
+    return [alias for alias in aliases if alias not in holders or holders[alias] <= requested]
 
 
 def redirect_document(target: str) -> str:
@@ -159,14 +189,18 @@ def publish_site(
     aliases: list[str],
     package_source: str,
     branch: str = DEFAULT_BRANCH,
+    required_current_renderer: str | None = None,
 ) -> bool:
     from mike import commands, git_utils
 
+    if required_current_renderer:
+        require_current_renderer(repository, branch, required_current_renderer)
     current = identifier == "current"
     if not current:
         # Automated publication is append-only. Intentional corrections to an
         # existing snapshot go through review in the deployment repository.
         version_tuple(identifier)
+        aliases = monotonic_aliases(repository, branch, identifier, aliases)
         deployed = deployed_tree_digest(repository, branch, identifier)
         if deployed:
             if deployed != tree_digest(site):
@@ -215,6 +249,7 @@ def main() -> None:
         required=True,
     )
     parser.add_argument("--branch", default=DEFAULT_BRANCH)
+    parser.add_argument("--require-current-renderer")
     args = parser.parse_args()
     changed = publish_site(
         repository=args.repository.resolve(),
@@ -223,6 +258,7 @@ def main() -> None:
         aliases=args.alias,
         package_source=args.package_source,
         branch=args.branch,
+        required_current_renderer=args.require_current_renderer,
     )
     print("published" if changed else "already published")
 

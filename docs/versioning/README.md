@@ -5,8 +5,8 @@ DSPy's versioned documentation is one static site managed by
 
 - `/` redirects to `/current/`.
 - `/current/` is the mutable documentation built from `main`.
-- `/X.Y.Z/` and `/X.Y.ZbN/` are release snapshots built from their tags while importing the
-  exact released DSPy wheel.
+- `/X.Y.Z/` and prerelease paths such as `/X.Y.ZbN/` are snapshots built from
+  their tags while importing the exact released DSPy wheel.
 - `/X.Y/` redirects to the newest imported patch in that minor line.
 
 The picker lists Current and every stable or prerelease snapshot. Prereleases
@@ -33,6 +33,26 @@ Existing unversioned page URLs remain valid. Publishing Current generates root
 redirect pages such as `/api/` → `/current/api/`, and each build scopes
 hand-authored root-relative links to its own version so an old page cannot
 silently jump into Current. Query strings and fragments survive redirects.
+
+## Production publication
+
+Current publication follows the renderer state described above. Release
+publication fails closed unless production's Mike metadata identifies Zensical
+as the reviewed Current renderer.
+
+After a stable or prerelease `dspy` wheel reaches PyPI, the release workflow
+preserves that exact wheel, builds its versioned path from the tag, and
+publishes it through Mike after the existing package release job succeeds.
+Only stable releases advance `/X.Y/`. Release-tag jobs never use GitHub's lossy
+pending-concurrency slot. Mutable Current keeps latest-wins serialization
+because a newer `main` build includes the superseded commit. Deployment writes
+retry optimistic Git pushes; every release rechecks the Zensical promotion
+marker after refetching, and a delayed older patch cannot move an `/X.Y/` alias
+backward.
+
+Corrections and rollbacks use reviewed pull requests in the deployment
+repository. Restore a known-good tree with a new commit rather than rewriting
+production history.
 
 ## Historical fidelity
 
