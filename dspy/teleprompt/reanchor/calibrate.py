@@ -25,10 +25,10 @@ other parts and scores that pick on the held-out part. A candidate replaces the 
 only when those held-out scores beat the current setting's. This discourages gains confined to
 small portions of the dataset, but can accept them when they recur across folds.
 
-On a generative LM, a native `bool` or `Literal` output returns its value without probabilities
-unless it has an entry in `fields`. Calibration adds that entry, which asks the LM for
-probabilities, and keeps it only when the fitted setting beats the native output under the same
-fold check.
+Calibration enables probability-based execution for every compatible output by adding an entry
+in `fields`. After fitting, it compares against the original behavior under the same fold check
+and restores the original field configuration unless the fitted behavior wins. The adapter
+handles probability requests for the backend used on each call.
 
 """
 
@@ -61,34 +61,23 @@ def predictors(program) -> list[tuple[str, Predict]]:
     return [(name, p) for name, p in program.named_parameters() if isinstance(p, Predict) and decision_outputs(p)]
 
 
-def resolved_lm(predict: Predict):
-    """The client the predictor calls: its own, or the configured one."""
+def caches(predict: Predict) -> bool:
+    """Check caching for a statically bound or configured client."""
     lm = predict.lm or dspy.settings.lm
     if lm is None:
-        raise ValueError("ReAnchor needs an LM or decision client, bound to the predictor or configured globally.")
-    return lm
-
-
-def caches(predict: Predict) -> bool:
-    """Whether repeated requests from the predictor are answered from the cache."""
-    lm = resolved_lm(predict)
+        raise ValueError(
+            "ReAnchor cannot check caching without a bound or globally configured client. "
+            "For runtime client selection, pass require_cache=False."
+        )
     enabled = predict.config.get("cache", getattr(lm, "cache", False))
     return bool(enabled) and getattr(lm, "_cache_responses", True)
 
 
-def _state(predict: Predict, fields: dict) -> DecisionState:
-    system_one = getattr(resolved_lm(predict), "supports_decision_requests", False) is True
-    return DecisionState(predict.signature, fields, system_one=system_one)
-
-
-def evidenced(predict: Predict) -> set[str]:
-    """The outputs the predictor currently decodes from probabilities."""
-    return set(_state(predict, predict.fields).types)
-
-
 def effective(predict: Predict, field: str) -> dict:
     """The output's full configuration: its stored overrides on top of its type's defaults."""
-    return _state(predict, {**predict.fields, field: predict.fields.get(field, {})}).fields[field]
+    fields = dict(predict.fields)
+    fields.setdefault(field, {})
+    return DecisionState(predict.signature, fields).fields[field]
 
 
 def metric_value(metric: Callable, example, pred) -> float:
@@ -138,8 +127,7 @@ def calibrate(
     for name, predict in predictors(program):
         for field, kind in decision_outputs(predict).items():
             original = copy.deepcopy(predict.fields.get(field))
-            promoted = field not in evidenced(predict)
-            native = score() if promoted else None
+            before = score()
             predict.fields[field] = effective(predict, field)
             evidence = _observe(program, predict, field, trainset, metric, num_threads)
             row = {"predictor": name, "field": field}
@@ -153,20 +141,11 @@ def calibrate(
             base = score()
             best, fitted, observed, check = fit(predict, field, kind, evidence, score, base)
             row.update(parameter=parameter, value=best, train_score=_mean(fitted), train_score_at_start=_mean(base))
-            row.update(observed=observed, fold_check=check)
-            if promoted:
-                row["train_score_native"] = _mean(native)
-                if _select(native, [(fitted, (), None)])[0] is None:
-                    _restore(predict, field, original)
-                    row = {
-                        "predictor": name,
-                        "field": field,
-                        "skipped": "probabilities did not beat the native output",
-                        "train_score_native": row["train_score_native"],
-                        "train_score": row["train_score"],
-                    }
-                else:
-                    row["promoted"] = True
+            row.update(observed=observed, fold_check=check, train_score_original=_mean(before))
+            if _select(before, [(fitted, (), None)])[0] is None:
+                _restore(predict, field, original)
+                row.pop("value")
+                row.update(skipped="fitted behavior did not beat the original", train_score=_mean(before))
             report.append(row)
     return report
 
@@ -211,7 +190,8 @@ def _gaps(values: list[float], lo: float, hi: float, geometric: bool = False) ->
     gaps = []
     for a, b in itertools.pairwise(points):
         middle, width = (math.sqrt(a * b), math.log(b / a)) if geometric else ((a + b) / 2, b - a)
-        gaps.append((_tidy(middle, a, b), width))
+        if a < middle < b:  # Adjacent floats can round the midpoint onto a boundary.
+            gaps.append((_tidy(middle, a, b), width))
     return gaps
 
 

@@ -21,18 +21,17 @@ class ReAnchor(Teleprompter):
     backend's probabilities without adding request parameters. Identical requests reuse cached
     answers, but changed upstream decisions can produce new downstream requests.
 
-    On a generative LM, a native `bool` or `Literal` output is answered without probabilities.
-    ReAnchor gives such an output an entry in the predictor's `fields`, which asks the LM for
-    probabilities, and keeps the entry only when the fitted setting beats the native output on the
-    training set.
+    ReAnchor enables probability-based execution for every compatible output through the predictor's
+    `fields`. It keeps each fitted configuration only when it beats the original behavior and passes
+    a fold check; otherwise it restores the original configuration, including absent field entries.
 
     Args:
         metric: Per-example metric to maximize, as in `dspy.Evaluate`. It may return a number, or a
             `dspy.Prediction` with a `score`.
         num_threads: Evaluation concurrency, as in `dspy.Evaluate`.
         log_dir: When set, report.json is written here.
-        require_cache: When True, `compile` raises if a predictor's client does not cache responses.
-            Set it to False to calibrate anyway; every candidate setting then sends new requests.
+        require_cache: When True, check caching on statically bound or globally configured clients.
+            Set it to False for runtime client selection or to allow uncached requests.
 
     After `compile`, `report` holds the fitted parameters and the metric's mean before and after
     calibration, on the training set and on the validation set when one is given.
@@ -60,7 +59,7 @@ class ReAnchor(Teleprompter):
         found = predictors(program)
         if not found:
             raise ValueError("The student must contain at least one Predict with a decision output.")
-        uncached = [name for name, predict in found if not caches(predict)]
+        uncached = [name for name, predict in found if not caches(predict)] if self.require_cache else []
         if self.require_cache and uncached:
             raise ValueError(
                 f"Predictors {uncached} do not cache responses, so every candidate setting would send new requests. "

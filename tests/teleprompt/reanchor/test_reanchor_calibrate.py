@@ -32,7 +32,7 @@ def test_zero_probability_can_be_classified_on_either_side(system_one, target):
     program = dspy.Predict(Match)
     train = [dspy.Example(pair=str(i), match=target).with_inputs("pair") for i in range(10)]
     report = calibrate(program, train, lambda g, p: float(p.match == g.match), num_threads=2)
-    assert program.fields["match"]["threshold"] == (0.0 if target else 0.5)
+    assert program.fields == ({"match": {"threshold": 0.0}} if target else {})
     assert report[0]["train_score"] == 1.0
 
 
@@ -92,8 +92,20 @@ def test_score_cuts_stay_at_their_defaults_when_the_metric_ignores_the_level(sys
     program = dspy.Predict(RateLevel)
     train = [dspy.Example(item=k, rating={"lo": 0, "hi": 2}[k]).with_inputs("item") for k in ["lo", "hi"]]
     report = calibrate(program, train, lambda g, p, trace=None: 1 - abs(p.rating.value - g.rating) / 2, num_threads=2)
-    assert program.fields["rating"]["cuts"] == [0.5, 1.5]
+    assert program.fields == {}
     assert report[0]["train_score"] == report[0]["train_score_at_start"]
+
+
+def test_score_search_does_not_collapse_cuts_at_adjacent_floats(system_one):
+    # The midpoint between 0.7 and this observed mean rounds back to 0.7.
+    probability = 0.7000000000000001
+    system_one(lambda state, name, q: score({0: 1 - probability, 1: probability, 2: 0.0}))
+    program = dspy.Predict(RateLevel)
+    program.fields["rating"] = {"cuts": [0.7, 1.5]}
+    train = [dspy.Example(item=str(i), rating=1).with_inputs("item") for i in range(6)]
+    report = calibrate(program, train, lambda g, p: float(p.rating.level == g.rating), num_threads=2)
+    assert program.fields["rating"] == {"cuts": [0.7, 1.5]}
+    assert report[0]["train_score"] == 1.0
 
 
 class Route(dspy.Signature):
@@ -176,8 +188,8 @@ def test_outputs_the_metric_does_not_read_keep_their_numeric_settings(system_one
     assert rows["noise"]["train_score"] == rows["noise"]["train_score_at_start"]
     assert rows["kind"]["train_score"] == rows["kind"]["train_score_at_start"]
     assert "skipped" not in rows["match"] and program.fields["match"]["threshold"] == 0.8
-    assert program.fields["noise"]["threshold"] == 0.5
-    assert program.fields["kind"]["weights"] == {"x": 1.0, "y": 1.0}
+    assert "noise" not in program.fields
+    assert "kind" not in program.fields
     assert len({repr(c) for c in client.calls}) == 2
 
 
@@ -337,7 +349,7 @@ def test_a_threshold_stays_when_its_whole_gain_is_one_example(system_one):
     system_one(answer)
     program = dspy.Predict(Match)
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
-    assert program.fields["match"]["threshold"] == 0.5
+    assert program.fields == {}
     assert report[0]["fold_check"] == {"passed": 0, "failed": 1}
 
 
@@ -357,7 +369,7 @@ def test_score_cuts_stay_when_their_whole_gain_is_one_example(system_one):
     items = [f"lo{i}" for i in range(19)] + ["odd0"] + [f"hi{i}" for i in range(20)]
     train = [dspy.Example(item=k, rating=2 if k.startswith("hi") else 0).with_inputs("item") for k in items]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.rating.level == g.rating), num_threads=2)
-    assert program.fields["rating"]["cuts"] == [0.5, 1.5]
+    assert program.fields == {}
     assert report[0]["fold_check"]["failed"] >= 1
 
 
@@ -368,5 +380,5 @@ def test_choice_weights_stay_when_their_whole_gain_is_one_example(system_one):
     items = [f"x{i}" for i in range(20)] + [f"y{i}" for i in range(19)] + ["odd0"]
     train = [dspy.Example(item=k, kind="x" if k.startswith("x") else "y").with_inputs("item") for k in items]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.kind == g.kind), num_threads=2)
-    assert program.fields["kind"]["weights"] == {"x": 1.0, "y": 1.0}
+    assert program.fields == {}
     assert report[0]["fold_check"]["failed"] >= 1

@@ -90,7 +90,7 @@ def test_a_module_holding_predictors_gets_each_one_calibrated():
     program = ReAnchor(metric, num_threads=2).compile(Wrapper(), trainset=examples())
     assert isinstance(program, Wrapper)
     assert program.judge.fields["match"]["threshold"] == 0.8
-    assert "threshold" in program.judges[0].fields["match"]
+    assert program.judges[0].fields == {}  # No further gain after calibrating the first judge.
 
 
 class Items(dspy.Module):
@@ -193,19 +193,25 @@ def test_a_native_bool_on_a_generative_lm_is_promoted_when_probabilities_score_b
     assert student.fields == {}
     assert program.fields == {"match": {"threshold": 0.8}}
     row = optimizer.report["fitted"][0]
-    assert row["promoted"] is True and row["train_score_native"] == 0.5556 and row["train_score"] == 0.7778
+    assert "skipped" not in row and row["train_score_original"] == 0.5556 and row["train_score"] == 0.7778
 
 
-def test_a_native_bool_stays_native_when_probabilities_do_not_score_better():
+@pytest.mark.parametrize("accurate_probabilities", [True, False])
+def test_a_native_bool_stays_native_when_probabilities_do_not_score_better(accurate_probabilities):
     def right(inputs, evidence):
         answer = inputs["pair"].startswith("same")
-        return {"match": noul(0.9 if answer else 0.1)} if evidence else {"match": answer}
+        probability = (0.9 if answer else 0.1) if accurate_probabilities else 0.9
+        return {"match": noul(probability)} if evidence else {"match": answer}
 
     dspy.configure(lm=ComputedLM(right, adapter=dspy.JSONAdapter()))
     optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
     program = optimizer.compile(dspy.Predict(Sig), trainset=examples())
     assert program.fields == {}
-    assert optimizer.report["fitted"][0]["skipped"] == "probabilities did not beat the native output"
+    row = optimizer.report["fitted"][0]
+    assert row["skipped"] == "fitted behavior did not beat the original"
+    assert row["train_score"] == row["train_score_original"] == 1.0
+    assert row["train_score_at_start"] == (1.0 if accurate_probabilities else 0.5556)
+    assert "value" not in row
 
 
 def test_a_native_bool_stays_native_when_probabilities_win_only_one_example():
@@ -222,7 +228,49 @@ def test_a_native_bool_stays_native_when_probabilities_win_only_one_example():
     optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
     program = optimizer.compile(dspy.Predict(Sig), trainset=train)
     assert program.fields == {}
-    assert optimizer.report["fitted"][0]["skipped"] == "probabilities did not beat the native output"
+    assert optimizer.report["fitted"][0]["skipped"] == "fitted behavior did not beat the original"
+
+
+@pytest.mark.parametrize("binding", ["call", "context"])
+@pytest.mark.parametrize("backend", ["jev", "lm"])
+def test_runtime_clients_can_calibrate_without_static_cache_checks(jev, binding, backend):
+    client = jev if backend == "jev" else ComputedLM(generative, adapter=dspy.JSONAdapter())
+
+    class Routed(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.judge = dspy.Predict(Sig)
+
+        def forward(self, pair):
+            if binding == "call":
+                return self.judge(pair=pair, lm=client)
+            with dspy.context(lm=client):
+                return self.judge(pair=pair)
+
+    with dspy.context(lm=None):
+        with pytest.raises(ValueError, match="require_cache=False"):
+            ReAnchor(metric).compile(Routed(), trainset=examples())
+        optimizer = ReAnchor(metric, num_threads=2, require_cache=False)
+        program = optimizer.compile(Routed(), trainset=examples())
+        assert program.judge.fields == {"match": {"threshold": 0.8}}
+        assert program(pair="different").match is False
+        assert optimizer.report["train_score"] == 0.7778
+
+
+@pytest.mark.parametrize("original", [None, {}, {"criteria": {"true": {"what": "same item"}}}])
+def test_rejected_jev_configuration_is_restored_exactly(original):
+    student = dspy.Predict(Sig)
+    if original is not None:
+        student.fields["match"] = copy.deepcopy(original)
+    # All True is already perfect; fitting must not leave materialized defaults behind.
+    train = [dspy.Example(pair="same", match=True).with_inputs("pair") for _ in range(10)]
+    optimizer = ReAnchor(metric, num_threads=2)
+    program = optimizer.compile(student, trainset=train)
+    assert program.fields == student.fields
+    row = optimizer.report["fitted"][0]
+    assert row["skipped"] == "fitted behavior did not beat the original"
+    assert row["train_score_original"] == row["train_score"] == 1.0
+    assert "value" not in row
 
 
 def test_a_partial_field_entry_is_filled_from_the_type_defaults(system_one):

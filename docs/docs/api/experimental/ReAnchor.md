@@ -41,6 +41,12 @@ print(optimizer.report)
 ReAnchor searches each output's numeric settings against the whole-program
 metric. A new setting must improve the training score and pass a fold check.
 
+For every compatible output, ReAnchor saves the original configuration and score,
+enables probability-based execution, and fits the numeric settings. It then compares
+the fitted behavior against the original using a fold check. If rejected, it restores
+the exact original configuration, including removing an entry that was originally absent.
+The adapter handles the backend used on each call; calibration does not inspect it.
+
 Before fitting each output, ReAnchor runs the program and records that output's
 probabilities on every call. A threshold anywhere between two neighboring P(True) values makes the
 same decisions, so ReAnchor tries the midpoint of each gap between them. For
@@ -78,7 +84,9 @@ additional backend calls. Native-output promotion also changes the request.
 
 `compile` requires caching by default to avoid repeating identical backend
 calls; it does not guarantee a fixed request count. Pass `require_cache=False`
-to run without this check.
+to run without this check. The cache check inspects statically bound or globally
+configured clients. For programs selecting clients inside `forward()`, disable
+the check and manage caching on those clients.
 
 ## Native outputs on a generative LM
 
@@ -88,19 +96,18 @@ has an entry in the predictor's `fields`, `Predict` asks the LM for
 probabilities instead. `Predict` then applies the threshold or weights to pick
 the value, and the output still returns a `bool` or a `Literal` member.
 
-ReAnchor adds this entry for each native output on a generative LM. It keeps the
-entry only when the fitted setting beats the native value under the same fold
-check. Otherwise it removes the entry, and the output keeps its native behavior.
-The `report` row for a kept entry has `"promoted": True`. The first pass with
-probabilities sends new requests, because the request changes.
+The first pass with probabilities sends new requests, because the request changes.
+If the fitted behavior is rejected, restoring the original configuration returns
+an unconfigured native field to direct generation.
 
 ```python
 dspy.configure(lm=dspy.LM("your-provider/your-model"))  # Use your model's identifier.
 tuned = ReAnchor(metric).compile(dspy.Predict(Match), trainset=trainset)
 ```
 
-A System One model such as Jev always returns probabilities, so this step does
-not apply there.
+A System One model such as Jev always returns probabilities. Enabling probability
+execution leaves its request unchanged; restoring a field restores its original
+decoding settings, not direct generation.
 
 ## Errors
 
@@ -123,7 +130,10 @@ your backend's load.
   skipped it. Each fitted row has an `observed` entry with the number of calls
   and settings tried; threshold and cut reports also summarize observed values. Its
   `fold_check` entry counts the search steps whose better training score passed
-  or failed the fold check.
+  or failed the fold check. Per-field `train_score_original` is the score before
+  enabling probabilities, `train_score_at_start` is the probability-based baseline,
+  and `train_score` describes the retained behavior. Rejected configurations have
+  a `skipped` reason instead of a fitted `value`.
 
 Your metric may return a number or a `dspy.Prediction` with a `score`.
 
