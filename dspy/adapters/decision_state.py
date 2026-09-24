@@ -67,11 +67,12 @@ class DecisionState:
         kind = self.types[field]
         if "criteria" in self.fields[field]:
             return copy.deepcopy(self.fields[field]["criteria"])
+        options = copy.deepcopy(kind.options)
         if issubclass(kind, Noul):
-            return {str(v).lower(): desc for v, desc in kind.options} if kind.options else None
+            return {str(v).lower(): desc for v, desc in options} if options else None
         if issubclass(kind, Score):
-            return list(kind.options)
-        return {str(v): desc or None for v, desc in kind.options}
+            return list(options)
+        return {str(v): None if desc == "" else desc for v, desc in options}
 
     def _validate_parameters(self):
         for name, kind in self.types.items():

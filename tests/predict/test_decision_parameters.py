@@ -103,7 +103,6 @@ def test_native_rich_equivalence_and_request_mapping():
         "instructions": "Assess the document.",
         "input_fields": "1. `text` (str):",
         "inputs": {"text": "example"},
-        "demos": [],
     }
     assert questions == {
         "flag": {"type": "noul", "instructions": "Is it relevant?"},

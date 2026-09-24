@@ -74,10 +74,11 @@ class DecisionAdapter:
                 "instructions": signature.instructions,
                 "input_fields": get_field_description_string(signature.input_fields),
                 "inputs": serialize_object({k: v for k, v in inputs.items() if k in signature.input_fields}),
-                "demos": [
-                    serialize_object({k: v for k, v in demo.items() if k in signature.fields}) for demo in demos
-                ],
             }
+            if demos:
+                state["demos"] = [
+                    serialize_object({k: v for k, v in demo.items() if k in signature.fields}) for demo in demos
+                ]
             return {"state": state, "questions": questions}
         for name, kind in types.items():
             signature = signature.with_updated_fields(

@@ -179,13 +179,111 @@ def test_invalid_options(kind, options):
         ((True, "yes"), (0, "no")),
         ((True, "a"), (True, "b")),
         (("true", "yes"),),
-        ((False, {"what": "no"}),),
+        ((False, {"what": object()}),),
         (),
     ],
 )
 def test_noul_rejects_invalid_criteria(options):
     with pytest.raises(ValueError):
         Noul[options]
+
+
+@pytest.mark.parametrize("kind", [Noul, Choice, Score])
+def test_structured_description_defaults_are_detached_and_cacheable(kind):
+    description = {"what": "Match", "examples": ["Original"], "metadata": {"enabled": True, "weight": 2}}
+
+    def declare(desc):
+        return kind[desc, []] if kind is Score else kind[(True, desc), (False, {})]
+
+    annotation = declare(description)
+    assert annotation is declare(description)
+    if kind is not Score:
+        assert kind[True, description] is kind[((True, description),)]
+    sig = dspy.Signature({"result": (annotation, dspy.OutputField(desc="Assess."))})
+    module = dspy.Predict(sig)
+    expected = (
+        [description, []]
+        if kind is Score
+        else {"true" if kind is Noul else "True": description, "false" if kind is Noul else "False": {}}
+    )
+    assert module.get_criteria("result") == expected
+    snapshot = module.get_criteria("result")
+    description["examples"].append("Mutation")
+    assert module.get_criteria("result") == snapshot
+    returned = module.get_criteria("result")
+    entry = returned[0] if kind is Score else returned["true" if kind is Noul else "True"]
+    entry["examples"].append("Getter mutation")
+    assert module.get_criteria("result") == snapshot
+    assert module.fields == {}
+    assert declare(description) is not annotation
+
+
+@pytest.mark.parametrize("kind", [Noul, Choice, Score])
+@pytest.mark.parametrize("description", [1, ("tuple",), {1: "bad key"}, {"bad": float("nan")}, {"bad": {1, 2}}])
+def test_structured_descriptions_reject_non_json(kind, description):
+    with pytest.raises(ValueError):
+        if kind is Score:
+            kind["low", description]
+        else:
+            kind[True, description]
+
+
+@pytest.mark.parametrize("rich", [False, True])
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_structured_criteria_reach_both_backends_and_survive_save_load(adapter, rich, tmp_path):
+    yes = {"what": "Blocked", "examples": ["Login fails"]}
+    no = {"what": "Usable"}
+    technical = {"what": "Product bug", "not_for": "Billing"}
+    urgent = Noul[(True, yes), (False, no)]
+    category = Choice[("billing", {}), ("technical", technical)]
+    severity = Score[None, ["Disruptive"], {"what": "Blocking"}]
+    sig = dspy.Signature(
+        {
+            "ticket": (str, dspy.InputField()),
+            "urgent": (urgent if rich else Annotated[bool, urgent], dspy.OutputField(desc="Is it blocked?")),
+            "category": (
+                category if rich else Annotated[Literal["billing", "technical"], category],
+                dspy.OutputField(desc="Classify."),
+            ),
+            "severity": (severity, dspy.OutputField(desc="Rate impact.")),
+        }
+    )
+    module = dspy.Predict(sig)
+    expected = {
+        "urgent": {"true": yes, "false": no},
+        "category": {"billing": {}, "technical": technical},
+        "severity": [None, ["Disruptive"], {"what": "Blocking"}],
+    }
+    evidence = {
+        "urgent": {"noul": 0.8},
+        "category": {"probabilities": {"billing": 0.1, "technical": 0.9}, "confidence": 0.7},
+        "severity": {"probabilities": {"0": 0.1, "1": 0.2, "2": 0.7}, "confidence": 0.6},
+    }
+    client = FakeClient(answers=evidence)
+    jev = module(ticket="Login fails", lm=client)
+    for name, criteria in expected.items():
+        assert client.calls[-1][1][name]["criteria"] == criteria
+    lm = DummyLM([evidence], adapter=adapter)
+    with dspy.context(adapter=adapter):
+        chat = module(ticket="Login fails", lm=lm)
+    assert chat.toDict() == jev.toDict()
+    assert (chat.urgent.value if rich else chat.urgent) is True
+    assert (chat.category.value if rich else chat.category) == "technical"
+    assert chat.severity.value == pytest.approx(1.6)
+    translated = resolve_adapter(lm, adapter, sig, module.fields)._prepare(sig, [], {"ticket": "Login fails"}, {})
+    for name, criteria in expected.items():
+        assert json.loads(translated["signature"].output_fields[name].json_schema_extra["desc"])["criteria"] == criteria
+    module.save(tmp_path / "defaults.json")
+    restored = dspy.Predict(sig)
+    restored.load(tmp_path / "defaults.json")
+    assert restored.fields == {}
+    for name, criteria in expected.items():
+        assert restored.get_criteria(name) == criteria
+    module.set_criteria("urgent", {"true": {"what": "Overridden"}})
+    module.save(tmp_path / "overrides.json")
+    restored.load(tmp_path / "overrides.json")
+    assert restored.get_criteria("urgent") == {"true": {"what": "Overridden"}}
+    assert dspy.Predict(sig).get_criteria("urgent") == expected["urgent"]
 
 
 @pytest.mark.parametrize("rich", [False, True])

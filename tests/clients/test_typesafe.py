@@ -80,7 +80,6 @@ def test_real_sdk_request_cache_usage_and_local_parameters(transport):
         "instructions": "Assess the document.",
         "input_fields": "1. `text` (str):",
         "inputs": {"text": "x"},
-        "demos": [],
     }
     assert body["questions"]["rating"]["criteria"] == ["bad", "fair", "great"]
     assert "thresholds" not in json.dumps(body)
@@ -169,7 +168,8 @@ async def test_predict_demos_sdk_cache_history_and_usage(transport, monkeypatch)
         await module.acall(text="query", demos=[])
     assert len(transport) == 2
     assert transport[0][1]["state"]["demos"] == [module.demos[0].toDict()]
-    assert transport[1][1]["state"]["demos"] == []
+    assert "demos" not in transport[1][1]["state"]
+    assert module.demos == [dspy.Example(text="labeled document", flag=False, rating=0.0, label="other")]
     assert first.toDict() == second.toDict()
     assert first.get_lm_usage() == {"jev-test": {"prompt_tokens": 10, "completion_tokens": 2}}
     assert second.get_lm_usage() == {}
