@@ -406,9 +406,12 @@ def test_reasoning_model_token_parameter():
             assert lm.kwargs["max_tokens"] == 1000
 
 
-def test_lm_supports_reasoning_with_litellm_capability_api():
-    lm = dspy.LM("anthropic/claude-3-7-sonnet-20250219")
-    assert lm.supports_reasoning is True
+@pytest.mark.parametrize("supported", [True, False])
+def test_lm_supports_reasoning_with_litellm_capability_api(supported):
+    lm = dspy.LM("anthropic/claude-3-7-sonnet-20250219", engine="litellm")
+    with mock.patch("litellm.supports_reasoning", return_value=supported) as supports_reasoning:
+        assert lm.supports_reasoning is supported
+    supports_reasoning.assert_called_once_with(lm.model)
 
 
 @pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])

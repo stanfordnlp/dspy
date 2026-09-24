@@ -67,12 +67,14 @@ from .providers import (
     AsyncOpenAIChatLM,
     AsyncOpenAICodexLM,
     AsyncOpenAILM,
+    AsyncTypeSafeLM,
     AsyncXaiLM,
     ClaudeCodeLM,
     GeminiLM,
     OpenAIChatLM,
     OpenAICodexLM,
     OpenAILM,
+    TypeSafeLM,
     XaiLM,
 )
 
@@ -87,7 +89,7 @@ __all__ = [
 
 # The wire formats lm15 speaks.  A dialect is a class; a provider is a
 # dialect plus an access policy (plus a compat preset for the chat dialect).
-Dialect = Literal["openai-responses", "openai-chat", "anthropic", "gemini"]
+Dialect = Literal["openai-responses", "openai-chat", "anthropic", "gemini", "typesafe"]
 
 # A compat value: a preset name for a registry entry (validated against
 # the dialect's table below), or the object itself for a declared entry.
@@ -414,6 +416,11 @@ _DEFINITIONS: tuple[ProviderDefinition, ...] = (
         note="xAI Grok (Chat Completions dialect; XAI_API_KEY or subscription OAuth)",
     ),
     _adapter_owned(
+        "typesafe", "typesafe", TypeSafeLM, AsyncTypeSafeLM,
+        console_url="https://console.typesafe.ai/keys",
+        note="TypeSafe System One (Jev): judgments over declared keys with probabilities; no text generation",
+    ),
+    _adapter_owned(
         "claude-code", "anthropic", ClaudeCodeLM, AsyncClaudeCodeLM,
         note="Claude subscription through the local `claude` CLI login",
     ),
@@ -487,17 +494,17 @@ _DEFINITIONS: tuple[ProviderDefinition, ...] = (
     _hosted(
         _access.AZURE, "openai-responses", OpenAILM, AsyncOpenAILM,
         console_url="https://portal.azure.com/",
-        note="Azure OpenAI v1 Responses wire ({resource}.openai.azure.com; model = deployment name; api-key or Entra token)",
+        note="Azure OpenAI v1 Responses wire ({resource}.openai.azure.com, or AZURE_OPENAI_ENDPOINT = the Foundry root the console shows; model = deployment name; api-key or Entra token)",
     ),
     _hosted(
         _access.AZURE_CHAT, "openai-chat", OpenAIChatLM, AsyncOpenAIChatLM, compat="openai",
         console_url="https://portal.azure.com/",
-        note="Azure OpenAI v1 Chat Completions wire (same resource; also Foundry-sold models such as DeepSeek and Grok)",
+        note="Azure OpenAI v1 Chat Completions wire (same resource or AZURE_OPENAI_ENDPOINT; also Foundry-sold models such as DeepSeek, Kimi and Grok)",
     ),
     _hosted(
         _access.AZURE_ANTHROPIC, "anthropic", AnthropicLM, AsyncAnthropicLM,
         console_url="https://ai.azure.com/",
-        note="Claude in Microsoft Foundry ({resource}.services.ai.azure.com/anthropic; api-key, x-api-key or Entra token)",
+        note="Claude in Microsoft Foundry ({resource}.services.ai.azure.com/anthropic or ANTHROPIC_FOUNDRY_BASE_URL; x-api-key or Entra token)",
     ),
     _hosted(
         _access.AWS_ANTHROPIC, "anthropic", AnthropicLM, AsyncAnthropicLM,

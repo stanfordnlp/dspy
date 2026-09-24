@@ -899,7 +899,7 @@ def test_error_message_on_invalid_lm_setup():
     dspy.configure(lm=dummy_lm)
     with pytest.raises(ValueError) as e:
         Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
-    assert "LM must be an instance of `dspy.BaseLM`, not <class 'function'>." in str(e.value)
+    assert "LM must be a dspy.BaseLM or a decision-request client, not <class 'function'>." in str(e.value)
 
 
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])

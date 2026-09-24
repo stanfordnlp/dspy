@@ -17,6 +17,7 @@ import inspect
 import keyword
 import logging
 import threading
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.decision import Choice, Noul, Score
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import (
@@ -172,6 +174,18 @@ class RLM(Module):
         super().__init__()
         _validate_interpreter_factory(interpreter_factory)
         self.signature = ensure_signature(signature)
+        if any(
+            kind.extract_custom_type_from_annotation(field.rebuild_annotation())
+            for field in self.signature.output_fields.values()
+            for kind in (Noul, Choice, Score)
+        ):
+            warnings.warn(
+                "RLM support for Noul, Choice, and Score outputs is not implemented consistently: "
+                "decision evidence decoding is not guaranteed, including for nested output types. "
+                "Use Predict with top-level decision outputs instead.",
+                UserWarning,
+                stacklevel=2,
+            )
         self.max_iters = max_iters
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars

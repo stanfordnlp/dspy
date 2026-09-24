@@ -403,7 +403,7 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
     from dspy.teleprompt.teleprompt import Teleprompter
 
-    if isinstance(instance, dspy.BaseLM):
+    if isinstance(instance, dspy.BaseLM) or getattr(instance, "supports_decision_requests", False) is True:
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
@@ -431,7 +431,7 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
     from dspy.teleprompt.teleprompt import Teleprompter
 
-    if isinstance(instance, dspy.BaseLM):
+    if isinstance(instance, dspy.BaseLM) or getattr(instance, "supports_decision_requests", False) is True:
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
