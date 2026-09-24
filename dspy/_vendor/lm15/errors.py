@@ -30,7 +30,9 @@ Hierarchy:
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping, Sequence
+
+from .rate_limits import diagnostics_text, freeze_rate_limits
 
 if TYPE_CHECKING:  # pragma: no cover
     from .types import Response
@@ -56,7 +58,9 @@ class LM15Error(Exception):
         status: int | None = None,
         request_id: str | None = None,
         retry_after: float | None = None,
+        rate_limit_headers: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
+        self.rate_limit_headers = freeze_rate_limits(rate_limit_headers)
         self.message = message
         self.code = code or self.default_code
         self.provider = provider
@@ -244,11 +248,10 @@ class ProviderError(LM15Error):
             if item
         )
         base = self.message or self.code
-        if not context:
-            return base
         head, sep, tail = base.partition("\n\n")
-        suffix = f" ({context})"
-        return f"{head}{suffix}\n\n{tail}" if sep else f"{base}{suffix}"
+        suffix = f" ({context})" if context else ""
+        details = diagnostics_text(self.rate_limit_headers, self.retry_after)
+        return f"{head}{suffix}{details}" + (f"\n\n{tail}" if sep else "")
 
 
 class AuthError(ProviderError):
@@ -270,6 +273,9 @@ class AuthError(ProviderError):
         provider_name = provider or kwargs.get("provider")
         self.env_keys = tuple(env_keys)
         self.credential_hint = credential_hint
+        # AUTH-1 provenance: where the rejected credential came from (a
+        # label, never the value); set by ``with_credential_origin``.
+        self.credential_origin: str | None = None
 
         if credential_hint:
             # Subscription/OAuth adapters: guidance is how to re-login, not
@@ -303,7 +309,7 @@ class RateLimitError(ProviderError):
             "  To fix:\n"
             "    - Wait a moment and retry\n"
             "    - Retry with backoff in your application layer (lm15 never retries for you)\n"
-            "    - Reduce request rate or upgrade your API plan\n"
+            "    - Check the reported limits and deployment capacity; a 429 does not prove the endpoint is unsupported\n"
         )
         super().__init__(_append_guidance(message, guidance), **kwargs)
 
@@ -460,6 +466,36 @@ class AmbiguousModelError(ConfigurationError):
 _GUIDANCE_MARKER = "\n\n  To fix:"
 
 
+_ORIGIN_MARKER = "\n\n  credential came from: "
+
+
+def with_credential_origin(error: ProviderError, origin: str) -> ProviderError:
+    """Name where an AuthError's credential came from (AUTH-1 provenance,
+    amended 2026-09-19): its own line under the provider's message (a
+    paragraph of its own, so ``__str__`` keeps the provider/HTTP suffix
+    on the provider's line), before the guidance, so a log line at 3 a.m.
+    answers "which identity?" without a second investigation.  Non-auth
+    errors pass through."""
+    if not isinstance(error, AuthError) or not origin:
+        return error
+    base = error.message.split(_GUIDANCE_MARKER, 1)[0]
+    if _ORIGIN_MARKER in base:
+        return error
+    out = AuthError(
+        base.rstrip() + _ORIGIN_MARKER + origin,
+        provider=error.provider,
+        env_keys=error.env_keys,
+        credential_hint=error.credential_hint,
+        provider_code=error.provider_code,
+        status=error.status,
+        request_id=error.request_id,
+        retry_after=error.retry_after,
+        rate_limit_headers=error.rate_limit_headers,
+    )
+    out.credential_origin = origin
+    return out
+
+
 def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
     """Rewrite an AuthError's guidance for subscription (OAuth) adapters.
 
@@ -478,6 +514,7 @@ def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
         status=error.status,
         request_id=error.request_id,
         retry_after=error.retry_after,
+        rate_limit_headers=error.rate_limit_headers,
     )
 
 
