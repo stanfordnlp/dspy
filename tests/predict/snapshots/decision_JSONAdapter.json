@@ -265,12 +265,10 @@
           "type": "string"
         },
         "annotated_urgent": {
-          "$ref": "#/$defs/Noul__True___Service_unavailable_____False___Workaround_available___Evidence",
-          "description": "A Boolean decision. Criteria: {\"true\": \"Service unavailable\", \"false\": \"Workaround available\"}."
+          "$ref": "#/$defs/Noul__True___Service_unavailable_____False___Workaround_available___Evidence"
         },
         "annotated_category": {
-          "$ref": "#/$defs/Choice___billing____Payment_issue______technical____Product_malfunction___Evidence",
-          "description": "Select exactly one value. Options: [[\"billing\", \"Payment issue\"], [\"technical\", \"Product malfunction\"]]."
+          "$ref": "#/$defs/Choice___billing____Payment_issue______technical____Product_malfunction___Evidence"
         }
       },
       "required": [

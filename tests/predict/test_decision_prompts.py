@@ -36,7 +36,8 @@ class Triage(dspy.Signature):
 def capture_request(adapter):
     # Use real capability metadata, but stop at the LM boundary without a network call.
     lm = CapturingLM(dspy.LM("openai/gpt-4o", engine="litellm"))
-    program = dspy.Predict(Triage, lm=lm)
+    program = dspy.Predict(Triage)
+    program.set_lm(lm)
     program.fields = {
         "urgent": {"threshold": 0.8, "instructions": {"focus": "Current service availability"}},
         "severity": {"cuts": [0.4, 1.7]},

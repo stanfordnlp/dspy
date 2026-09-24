@@ -2,7 +2,7 @@ import json
 from typing import Annotated, Literal
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 
 import dspy
 from dspy.adapters.decision import resolve_adapter
@@ -13,6 +13,21 @@ from tests.predict.test_decision_parameters import FakeClient
 
 Severity = Score["Minor", "Disruptive", "Blocking"]
 Category = Choice[("billing", "Payment issue"), ("technical", "Product malfunction")]
+
+
+@pytest.mark.parametrize("adapter", [dspy.ChatAdapter(), dspy.JSONAdapter()])
+def test_ordinary_annotated_fields_keep_existing_parsing_and_schema(adapter):
+    sig = dspy.Signature({
+        "count": (Annotated[int, Field(gt=0)], dspy.OutputField()),
+        "name": (Annotated[str, Field(max_length=3)], dspy.OutputField()),
+    })
+    values = {"count": -1, "name": "longer"}
+    lm = DummyLM([values], adapter=adapter)
+    with dspy.context(lm=lm, adapter=adapter):
+        assert dspy.Predict(sig)().toDict() == values
+    properties = _get_structured_outputs_response_format(sig).model_json_schema()["properties"]
+    assert "exclusiveMinimum" not in properties["count"]
+    assert "maxLength" not in properties["name"]
 
 
 def test_decision_apis_are_experimental_only():
@@ -117,7 +132,8 @@ def test_inputs_to_both_backends_preserve_values_and_context(rich, evidence):
         assert "1.5" in prompt
         assert "technical" in prompt
     client = FakeClient()
-    module = dspy.Predict(signature, lm=client)
+    module = dspy.Predict(signature)
+    module.set_lm(client)
     module.fields["accept"] = {"threshold": 0.99}
     assert module(**values).accept is False
     state, questions = client.calls[0]
@@ -188,10 +204,10 @@ def test_noul_criteria_in_both_backends_inputs_and_outputs(rich, adapter):
     assert result == value
     assert type(result) is (availability if rich else bool)
     schema = _get_structured_outputs_response_format(output_sig).model_json_schema()
-    assert "Service unavailable" in json.dumps(schema)
+    assert ("Service unavailable" in json.dumps(schema)) is rich
     assert ("confidence" in json.dumps(schema)) is rich
     client = FakeClient(probability=0.3)
-    result = dspy.Predict(output_sig, lm=client)(ticket="Use the workaround.").unavailable
+    result = dspy.Predict(output_sig)(ticket="Use the workaround.", lm=client).unavailable
     assert type(result) is (availability if rich else bool)
     assert (result.value if rich else result) is False
     assert client.calls[-1][1]["unavailable"] == {
@@ -210,7 +226,7 @@ def test_noul_criteria_in_both_backends_inputs_and_outputs(rich, adapter):
         prompt = adapter.format(sig, [], inputs)[0]["content"]
         assert "Service unavailable" in prompt
         assert "Workaround available" in prompt
-    dspy.Predict(input_sig, lm=client)(unavailable=value)
+    dspy.Predict(input_sig)(unavailable=value, lm=client)
     state = client.calls[-1][0]
     assert "Service unavailable" in state["input_fields"]
     assert state["inputs"]["unavailable"] == (value.model_dump(mode="json") if rich else False)
@@ -267,12 +283,14 @@ def test_rich_confidence_required_and_serialization(kind, value):
 
 
 def test_jev_result_can_feed_llm_and_back():
-    source = dspy.Predict(decision_signature(True, "output"), lm=FakeClient(choice="technical"))
+    source = dspy.Predict(decision_signature(True, "output"))
+    source.set_lm(FakeClient(choice="technical"))
     result = source(ticket="Payment failed.")
     adapter = dspy.ChatAdapter()
     with dspy.context(lm=DummyLM([decision_evidence(True)], adapter=adapter), adapter=adapter):
         regenerated = dspy.Predict(decision_signature(True, "output"))(ticket="Payment failed.")
-    target = dspy.Predict(decision_signature(True, "input"), lm=FakeClient())
+    target = dspy.Predict(decision_signature(True, "input"))
+    target.set_lm(FakeClient())
     assert target(**dict(result.items())).accept is True
     assert target(**dict(regenerated.items())).accept is True
     with dspy.context(lm=DummyLM([{"accept": True}])):
@@ -311,7 +329,7 @@ async def test_annotated_literal_evidence_criteria_and_native_types(adapter, sel
     input_sig = dspy.Signature({"label": (annotation, dspy.InputField()),
                                 "accept": (bool, dspy.OutputField(desc="Accept the label?"))})
     inputs = FakeClient()
-    dspy.Predict(input_sig, lm=inputs)(label=selected)
+    dspy.Predict(input_sig)(label=selected, lm=inputs)
     assert type(inputs.calls[0][0]["inputs"]["label"]) is type(selected)
     assert "snow" in inputs.calls[0][0]["input_fields"]
     assert "snow" in adapter.format(input_sig, [], {"label": selected})[0]["content"]
@@ -328,7 +346,7 @@ def test_bare_choice_metadata_uses_literal_members():
     annotation = Annotated[Literal["a", "b"], Choice]
     sig = dspy.Signature({"label": (annotation, dspy.OutputField(desc="Choose a label."))})
     client = FakeClient(choice="b")
-    assert dspy.Predict(sig, lm=client)().label == "b"
+    assert dspy.Predict(sig)(lm=client).label == "b"
     assert client.calls[0][1]["label"]["criteria"] == {"a": None, "b": None}
 
 
@@ -338,7 +356,7 @@ def test_annotated_choice_uses_criteria_order_and_saved_weights(tmp_path):
     client = FakeClient(answers={"label": {"probabilities": {"a": 0.5, "b": 0.5}, "confidence": 0.4}})
     module = dspy.Predict(sig)
     assert module(lm=client).label == "b"
-    module.fields["label"]["weights"] = {"b": 0}
+    module.fields["label"] = {"weights": {"b": 0}}
     module.save(tmp_path / "weights.json")
     restored = dspy.Predict(sig)
     restored.load(tmp_path / "weights.json")

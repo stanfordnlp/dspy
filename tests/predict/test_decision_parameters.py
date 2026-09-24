@@ -57,10 +57,31 @@ def signature(rich=False):
 
 
 def predict(rich=False, client=None):
-    module = dspy.Predict(signature(rich), lm=client)
-    if not rich:
-        module.fields.update(flag={"threshold": 0.5}, label={"weights": {"2": 1.0, "other": 1.0}})
+    module = dspy.Predict(signature(rich))
+    module.set_lm(client)
+    # Opt outputs into configurable evidence decoding without pinning numeric defaults.
+    module.fields = {"flag": {}, "rating": {}, "label": {}}
     return module
+
+
+@pytest.mark.parametrize("overrides", [{}, {"flag": {"threshold": 0.9}}])
+def test_only_explicit_overrides_survive_inference_and_save_load(tmp_path, overrides):
+    module = dspy.Predict(signature(True))
+    assert module.fields == {}
+    module.fields = copy.deepcopy(overrides)
+    assert module.get_criteria("rating") == ["bad", "fair", "great"]
+    result = module(text="x", lm=FakeClient())
+    assert result.flag.value is (not bool(overrides))
+    assert result.rating.level == 2
+    assert result.label.value == 2
+    assert module.fields == overrides
+    path = tmp_path / "overrides.json"
+    module.save(path)
+    assert json.loads(path.read_text()).get("fields", {}) == overrides
+    restored = dspy.Predict(signature(True))
+    restored.load(path)
+    assert restored(text="x", lm=FakeClient()).toDict() == result.toDict()
+    assert restored.fields == overrides
 
 
 def test_native_rich_equivalence_and_request_mapping():
@@ -124,7 +145,7 @@ def test_threshold_endpoints(threshold, p, value):
 def test_literal_membership_and_exact_type(options, selected, expected, rich):
     kind = Choice[tuple((v, "") for v in get_args(options))] if rich else options
     sig = signature().with_updated_fields("label", type_=kind)
-    result = dspy.Predict(sig, lm=FakeClient(choice=selected))(text="x").label
+    result = dspy.Predict(sig)(text="x", lm=FakeClient(choice=selected)).label
     value = result.value if rich else result
     assert value == expected
     assert type(value) is type(expected)
@@ -336,6 +357,8 @@ def test_inflight_decoding_uses_configuration_snapshot():
             return super().__call__(state, questions)
 
     module = predict(True, UpdatingClient())
+    module.fields["rating"] = {"cuts": [0.5, 1.5]}
+    module.fields["label"] = {"weights": {"2": 1.0, "other": 1.0}}
     first = module(text="x")
     second = module(text="x")
     assert first.flag.value is True and second.flag.value is False
@@ -477,7 +500,7 @@ async def test_client_resolution_batch_and_input_context():
         {"inputs": (str, dspy.InputField()), "flag": (bool, dspy.OutputField(desc="Is it actionable?"))},
         "Shared task context.",
     )
-    dspy.Predict(sig, lm=client)(inputs="User content")
+    dspy.Predict(sig)(inputs="User content", lm=client)
     state, questions = client.calls[-1]
     assert state["inputs"] == {"inputs": "User content"}
     assert state["instructions"] == "Shared task context."
@@ -498,7 +521,8 @@ async def test_client_resolution_batch_and_input_context():
 async def test_output_override_preserves_answer_space(base, override):
     sig = signature().with_updated_fields("flag", type_=base)
     client = FakeClient()
-    module = dspy.Predict(sig, lm=client)
+    module = dspy.Predict(sig)
+    module.set_lm(client)
     module.fields.setdefault("flag", {})
     changed = sig.with_updated_fields("flag", type_=override)
     with pytest.raises(ValueError, match="preserve the answer space"):
@@ -511,7 +535,8 @@ async def test_output_override_preserves_answer_space(base, override):
 @pytest.mark.parametrize("kind", [str, int, float, Choice])
 def test_unsupported_decision_outputs_fail_before_request(kind):
     client = FakeClient()
-    module = dspy.Predict(signature().with_updated_fields("flag", type_=kind), lm=client)
+    module = dspy.Predict(signature().with_updated_fields("flag", type_=kind))
+    module.set_lm(client)
     with pytest.raises(ValueError, match="Unsupported"):
         module(text="x")
     assert not client.calls
@@ -535,7 +560,7 @@ def test_mixed_program_discovery_demos_trace_and_persistence(tmp_path):
             return self.explain(flag=self.assess(text=text).flag)
 
     program = Pipeline()
-    program.assess.fields["flag"]["threshold"] = 0.9
+    program.assess.fields["flag"] = {"threshold": 0.9}
     assert program.named_predictors() == [("assess", program.assess), ("explain", program.explain)]
     trained = dspy.LabeledFewShot(k=1).compile(
         program, trainset=[dspy.Example(text="x", flag=False, explanation="Below threshold").with_inputs("text")]

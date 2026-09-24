@@ -160,7 +160,8 @@ def test_client_copy_and_environment(monkeypatch, transport):
 @pytest.mark.asyncio
 async def test_predict_demos_sdk_cache_history_and_usage(transport, monkeypatch):
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-sdk-key")
-    module = dspy.Predict(signature(True), lm=TypeSafe("jev-test"))
+    module = dspy.Predict(signature(True))
+    module.set_lm(TypeSafe("jev-test"))
     module.demos = [dspy.Example(text="labeled document", flag=False, rating=0.0, label="other")]
     with dspy.context(track_usage=True):
         first = module(text="query")
@@ -196,7 +197,8 @@ async def test_standalone_client_callbacks_copy_and_reload(transport, tmp_path):
     callbacks = Calls()
     client = TypeSafe("jev-test", base_url="https://original.test", callbacks=[callbacks])
     assert not isinstance(client, dspy.BaseLM)
-    module = dspy.Predict(signature(True), lm=client)
+    module = dspy.Predict(signature(True))
+    module.set_lm(client)
     first = module(text="x")
     assert (await module.acall(text="x")).toDict() == first.toDict()
     assert callbacks.events == ["start", "end", "start", "end"]

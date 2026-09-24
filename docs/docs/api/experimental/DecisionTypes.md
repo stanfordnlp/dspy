@@ -25,12 +25,13 @@ class Assess(dspy.Signature):
     category: Category = dspy.OutputField(desc="Classify the issue.")
 
 # pip install "dspy[typesafe]"; set TYPESAFE_API_KEY
-assess = dspy.Predict(Assess, lm=TypeSafe("jev-latest"))
+assess = dspy.Predict(Assess)
+assess.set_lm(TypeSafe("jev-latest"))
 assess.demos = [dspy.Example(
     ticket="Incorrect invoice", urgent=False, severity=0.0, category="billing",
 )]
-assess.fields["urgent"]["threshold"] = 0.7
-assess.fields["severity"]["cuts"] = [0.5, 1.6]
+assess.fields["urgent"] = {"threshold": 0.7}
+assess.fields["severity"] = {"cuts": [0.5, 1.6]}
 assess.set_criteria("urgent", {
     "true": {"what": "Service blocked", "examples": ["Checkout unavailable"]},
     "false": "Service usable",
@@ -42,7 +43,7 @@ print(result.severity.value, result.severity.level, result.severity.confidence)
 # result = assess(ticket="Checkout is unavailable.", lm=generative_lm)
 ```
 
-`lm=` can be bound to the predictor, supplied per call, or configured through
+Use `set_lm()` to bind a client to the predictor, supply `lm=` per call, or configure it through
 `dspy.configure(lm=...)` / `dspy.context(lm=...)`.
 
 ```python
@@ -128,6 +129,11 @@ native LLM outputs.
 both backends. Delete an override to restore its type default; Noul `None`
 explicitly sends null criteria.
 
+`predict.fields` stores only explicit overrides and starts empty. Omitted
+parameters are resolved at invocation, without adding entries to `fields`.
+Save/load preserves these overrides; omitted parameters use the defaults of
+the installed DSPy version.
+
 Score `.value` is `sum(i * p[i]) / sum(p)`. `.level` counts cuts less than or
 equal to that value. With probabilities `[0.1, 0.3, 0.6]`, value is `1.5` and
 cuts `[0.5, 1.6]` give level `1`. Cuts never change the continuous value.
@@ -183,7 +189,7 @@ Use ordinary `Predict.save()` / `load()` with the same signature architecture.
 | --- | --- |
 | `signature` | Global instructions and field descriptions/prefixes |
 | `demos` | Demonstration inputs and answers, including rich JSON values |
-| `fields` | Per-output instructions, criteria and numeric settings |
+| `fields` | Explicit per-output overrides only; omitted when empty |
 | `lm` | Provider class, model, endpoint, cache setting and timeout; no API key |
 | `traces`, `train` | Existing Predict bookkeeping |
 | `metadata` | DSPy's dependency versions |

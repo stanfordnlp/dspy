@@ -62,10 +62,9 @@ class Predict(Module, Parameter):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
-        self.fields = DecisionState(self.signature, {}).fields
+        self.fields = {}
         self.config = config
         self.reset()
-        self.lm = self.config.pop("lm", None)
 
     def reset(self):
         self.lm = None

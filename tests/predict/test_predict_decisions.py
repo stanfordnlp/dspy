@@ -43,7 +43,8 @@ class FakeTypeSafe(TypeSafe):
 
 
 def configured_predict(lm):
-    module = dspy.Predict(Assess, lm=lm)
+    module = dspy.Predict(Assess)
+    module.set_lm(lm)
     module.fields = {
         "flag": {"threshold": 0.7, "instructions": {"focus": "relevance"}},
         "rating": {"cuts": [0.5, 1.6]},
@@ -142,14 +143,14 @@ def test_native_interface_and_ordinary_predict_are_preserved():
         rating: Rating = dspy.OutputField(desc="Rate quality.")
         label: Label = dspy.OutputField(desc="Classify the document.")
 
-    result = dspy.Predict(Native, lm=FakeTypeSafe())(text="x")
+    result = dspy.Predict(Native)(text="x", lm=FakeTypeSafe())
     assert type(result.flag) is bool and result.flag is True
     assert type(result.rating) is Rating and result.rating.value == pytest.approx(1.5)
     with dspy.context(lm=DummyLM([{"flag": False}])):
         assert dspy.Predict("text -> flag: bool")(text="x").flag is False
 
 
-@pytest.mark.parametrize("binding", ["constructor", "context", "assignment", "call"])
+@pytest.mark.parametrize("binding", ["set_lm", "context", "assignment", "call"])
 @pytest.mark.asyncio
 async def test_native_decision_state_does_not_depend_on_client_binding(binding):
     class Native(dspy.Signature):
@@ -159,7 +160,9 @@ async def test_native_decision_state_does_not_depend_on_client_binding(binding):
 
     client = FakeTypeSafe()
     with dspy.context(lm=client if binding == "context" else None):
-        module = dspy.Predict(Native, **({"lm": client} if binding == "constructor" else {}))
+        module = dspy.Predict(Native)
+        if binding == "set_lm":
+            module.set_lm(client)
         if binding == "assignment":
             module.lm = client
         kwargs = {"lm": client} if binding == "call" else {}
@@ -205,7 +208,7 @@ def test_rich_demos_remain_json_serializable_after_reload(tmp_path):
 def test_unsupported_jev_outputs_fail_before_call():
     client = FakeTypeSafe()
     with pytest.raises(ValueError, match="Unsupported System One output"):
-        dspy.Predict("text -> answer", lm=client)(text="x")
+        dspy.Predict("text -> answer")(text="x", lm=client)
     assert not client.calls
 
 
@@ -214,7 +217,8 @@ def test_native_literal_not_supported_by_jev_still_works_with_llm():
         text: str = dspy.InputField()
         level: Literal[1.5, 2.5] = dspy.OutputField()
 
-    module = dspy.Predict(Native, lm=DummyLM([{"level": 1.5}]))
+    module = dspy.Predict(Native)
+    module.set_lm(DummyLM([{"level": 1.5}]))
     assert module(text="x").level == 1.5
     assert module.fields == {}
 
@@ -226,7 +230,7 @@ def test_choice_uses_distribution_not_provider_choice_or_key_order():
             result["label"] = {"choice": "other", "probabilities": {"other": 0.5, "2": 0.5}, "confidence": 0.4}
             return result
 
-    result = dspy.Predict(Assess, lm=Fixed())(text="x")
+    result = dspy.Predict(Assess)(text="x", lm=Fixed())
     assert result.label.value == 2
     assert type(result.label.value) is int
     assert result.label.confidence == 0.4
@@ -237,7 +241,8 @@ async def test_async_lm_mixed_outputs_and_multiple_completions():
     signature = Assess.append("explanation", dspy.OutputField(), type_=str)
     evidence = {**EVIDENCE, "explanation": "Evidence supports the classification."}
     alternate = {**evidence, "flag": {"noul": 0.2}, "explanation": "Alternate classification."}
-    module = dspy.Predict(signature, lm=DummyLM([evidence, alternate], adapter=dspy.JSONAdapter()))
+    module = dspy.Predict(signature)
+    module.set_lm(DummyLM([evidence, alternate], adapter=dspy.JSONAdapter()))
     with dspy.context(adapter=dspy.JSONAdapter()):
         result = await module.acall(text="x", config={"n": 2})
     assert result.explanation == evidence["explanation"]
@@ -257,7 +262,8 @@ def test_output_override_cannot_reinterpret_saved_parameters():
 
 @pytest.mark.parametrize("fields", [{"missing": {}}, {"flag": None}, {"flag": {"threshold": float("nan")}}])
 def test_invalid_field_state_fails_before_inference(fields):
-    module = dspy.Predict(Assess, lm=FakeTypeSafe())
+    module = dspy.Predict(Assess)
+    module.set_lm(FakeTypeSafe())
     module.fields = fields
     with pytest.raises(ValueError):
         module(text="x")
@@ -265,7 +271,8 @@ def test_invalid_field_state_fails_before_inference(fields):
 
 
 def test_unsupported_options_and_streaming_fail_explicitly():
-    module = dspy.Predict(Assess, lm=FakeTypeSafe())
+    module = dspy.Predict(Assess)
+    module.set_lm(FakeTypeSafe())
     with pytest.raises(ValueError, match="generation settings"):
         module(text="x", config={"temperature": 0.5})
     with dspy.context(send_stream=object()):
@@ -312,13 +319,14 @@ async def test_decision_outputs_require_description_before_inference(desc):
     field = dspy.OutputField() if desc is None else dspy.OutputField(desc=desc)
     sig = dspy.Signature({"text": (str, dspy.InputField()), "flag": (Noul, field)}, "Assess relevance.")
     for client in (FakeTypeSafe(), DummyLM([])):
-        module = dspy.Predict(sig, lm=client)
+        module = dspy.Predict(sig)
+        module.set_lm(client)
         with pytest.raises(ValueError, match="Decision output 'flag' requires"):
             module(text="x")
         with pytest.raises(ValueError, match="Decision output 'flag' requires"):
             await module.acall(text="x")
         assert not (client.calls if isinstance(client, FakeTypeSafe) else client.history)
-    module.fields["flag"]["instructions"] = {"question": "Is this relevant?"}
+    module.fields["flag"] = {"instructions": {"question": "Is this relevant?"}}
     result = module(text="x", lm=FakeTypeSafe())
     assert result.flag.value is True
 
@@ -356,7 +364,8 @@ def test_rlm_does_not_warn_for_native_outputs_or_rich_inputs():
 async def test_predict_warns_for_nested_decision_outputs(adapter, annotation, value):
     signature = dspy.Signature({"answer": (annotation, dspy.OutputField())})
     lm = DummyLM([{"answer": value}] * 2, adapter=adapter)
-    module = dspy.Predict(signature, lm=lm)
+    module = dspy.Predict(signature)
+    module.set_lm(lm)
     with dspy.context(adapter=adapter):
         with pytest.warns(UserWarning, match="not implemented for nested output 'answer'") as recorded:
             result = module()
@@ -378,7 +387,7 @@ def test_predict_does_not_warn_for_nested_inputs_or_top_level_decision_outputs()
     lm = DummyLM([{"flag": {"noul": 0.8}, "labels": ["a"]}])
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
-        result = dspy.Predict(signature, lm=lm)(prior=[Noul(value=False, confidence=0.6)])
+        result = dspy.Predict(signature)(prior=[Noul(value=False, confidence=0.6)], lm=lm)
     assert not recorded
     assert result.flag.value is True
     assert result["labels"] == ["a"]

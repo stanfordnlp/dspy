@@ -89,7 +89,7 @@ def client():
 
 def invoke(backend, sig, inputs, lm, client):
     if backend == "jev":
-        return dspy.Predict(sig, lm=client)(**inputs)
+        return dspy.Predict(sig)(**inputs, lm=client)
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False) if backend == "chat" else dspy.JSONAdapter()
     with dspy.context(lm=lm, adapter=adapter):
         return dspy.Predict(sig)(**inputs)
@@ -166,13 +166,14 @@ def test_live_literal_types(backend, rich, expected, lm, client):
 
 
 def test_live_distribution_reinterpretation(client):
-    module = dspy.Predict(signature(True), lm=client)
+    module = dspy.Predict(signature(True))
+    module.set_lm(client)
     initial = module(ticket=CASES[2][1])
     raw = client.history[-1]["response"]["answers"]
     # Replay the actual live evidence to isolate local interpretation from model variability.
     module.lm = FakeClient(answers=raw)
-    module.fields["urgent"]["threshold"] = initial.urgent.probability
-    module.fields["severity"]["cuts"] = [0.4, 1.7]
+    module.fields["urgent"] = {"threshold": initial.urgent.probability}
+    module.fields["severity"] = {"cuts": [0.4, 1.7]}
     boundary = module(ticket=CASES[2][1])
     assert boundary.urgent.value is True
     assert boundary.urgent.confidence == 0
@@ -189,7 +190,8 @@ def test_live_distribution_reinterpretation(client):
 
 
 def test_live_choice_weighted_reinterpretation(client):
-    module = dspy.Predict(signature(True), lm=client)
+    module = dspy.Predict(signature(True))
+    module.set_lm(client)
     ticket = "Checkout rejected a payment. It might be an incorrect charge or a software fault; neither is confirmed."
     initial = module(ticket=ticket).category
     raw = client.history[-1]["response"]["answers"]
@@ -198,8 +200,9 @@ def test_live_choice_weighted_reinterpretation(client):
     weights = {initial.value: 0.0, other: 1.0}
     # Use exactly the same live distribution in both forms, without another model draw.
     for rich in (True, False):
-        weighted = dspy.Predict(signature(rich), lm=FakeClient(answers=raw))
-        weighted.fields["category"]["weights"] = weights
+        weighted = dspy.Predict(signature(rich))
+        weighted.set_lm(FakeClient(answers=raw))
+        weighted.fields["category"] = {"weights": weights}
         result = weighted(ticket=ticket).category
         assert (result.value if rich else result) == other
         if rich:

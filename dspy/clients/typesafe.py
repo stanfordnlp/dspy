@@ -19,7 +19,7 @@ class TypeSafe:
     Install ``dspy[typesafe]`` to use this client. Model, API key, and endpoint
     default to TYPESAFE_DEFAULT_MODEL, TYPESAFE_API_KEY, and TYPESAFE_BASE_URL.
     Configure with ``dspy.configure(lm=dspy.experimental.TypeSafe(...))`` or pass
-    ``lm=`` to Predict. Predict selects System One translation automatically.
+    ``lm=`` when calling a predictor. Predict selects System One translation automatically.
 
     Args:
         model: Model name (defaults to ``jev-latest``).
