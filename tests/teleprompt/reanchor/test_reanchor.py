@@ -116,7 +116,8 @@ def test_a_predictor_called_once_per_item_is_calibrated_from_the_program_metric(
 def test_the_program_keeps_a_bound_client_and_callbacks(system_one):
     client = system_one(leaning)
     dspy.configure(lm=None)
-    student = dspy.Predict(Sig, lm=client, callbacks=[])
+    student = dspy.Predict(Sig, callbacks=[])
+    student.set_lm(client)
     program = ReAnchor(metric, num_threads=2).compile(student, trainset=examples())
     assert program.lm is not None and program(pair="same").match is True
 
