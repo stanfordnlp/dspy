@@ -204,10 +204,11 @@ class BootstrapFewShot(Teleprompter):
 
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)
-                    if isinstance(metric_val, dspy.Prediction) and "score" in metric_val:
-                        metric_val = metric_val.score
                     if self.metric_threshold:
                         success = metric_val >= self.metric_threshold
+                    elif isinstance(metric_val, dspy.Prediction) and "score" in metric_val:
+                        # A Prediction with any field is truthy, so judge a scored one by its score.
+                        success = float(metric_val) != 0
                     else:
                         success = metric_val
                 else:

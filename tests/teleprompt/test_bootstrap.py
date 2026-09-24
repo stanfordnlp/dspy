@@ -181,8 +181,8 @@ def _compile_with_prediction_metric(metric, **kwargs):
 
 def test_prediction_score_false_is_not_bootstrapped():
     # SemanticF1 and CompleteAndGrounded return Prediction(score=False) for a rejected
-    # trace. A Prediction with any field is truthy, so the score must be unwrapped
-    # before the acceptance check or the rejected trace is saved as a demo.
+    # trace. A Prediction with any field is truthy, so without a metric_threshold the
+    # acceptance check must read the score or the rejected trace is saved as a demo.
     def rejecting_metric(example, prediction, trace=None):
         return dspy.Prediction(score=False)
 
@@ -211,3 +211,20 @@ def test_prediction_score_respects_explicit_threshold():
 
     assert _compile_with_prediction_metric(low_metric, metric_threshold=0.5) == []
     assert len(_compile_with_prediction_metric(low_metric, metric_threshold=0.3)) == 1
+
+
+def test_prediction_threshold_path_uses_prediction_float():
+    # The metric_threshold path already compares through Prediction.__ge__, which
+    # converts the score with float(). A score only float() can read must keep working.
+    def string_score_metric(example, prediction, trace=None):
+        return dspy.Prediction(score="0.6")
+
+    assert len(_compile_with_prediction_metric(string_score_metric, metric_threshold=0.5)) == 1
+    assert _compile_with_prediction_metric(string_score_metric, metric_threshold=0.7) == []
+
+
+def test_prediction_without_score_keeps_truthiness():
+    def scoreless_metric(example, prediction, trace=None):
+        return dspy.Prediction(verdict="ok")
+
+    assert len(_compile_with_prediction_metric(scoreless_metric)) == 1
