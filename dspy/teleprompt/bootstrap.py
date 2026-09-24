@@ -206,6 +206,17 @@ class BootstrapFewShot(Teleprompter):
                     metric_val = self.metric(example, prediction, trace)
                     if self.metric_threshold:
                         success = metric_val >= self.metric_threshold
+                    elif isinstance(metric_val, dspy.Prediction):
+                        # A Prediction's truthiness is that of a non-empty example (it
+                        # has no `__bool__`), so `Prediction(score=False)` from judge
+                        # metrics like SemanticF1/CompleteAndGrounded would be accepted
+                        # by a bare truthiness check. The score is the documented
+                        # acceptance value; a Prediction without a score keeps the
+                        # previous field-truthiness behavior.
+                        try:
+                            success = float(metric_val) != 0
+                        except ValueError:
+                            success = True
                     else:
                         success = metric_val
                 else:
