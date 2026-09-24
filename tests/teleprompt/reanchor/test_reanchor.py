@@ -10,8 +10,6 @@ import dspy
 from dspy.experimental import ReAnchor
 from tests.teleprompt.reanchor.fakes import ComputedLM, noul
 
-source = ReAnchor.source
-
 
 def leaning(state, name, q):
     """Jev leans high, 0.9 on a same pair and 0.7 on a different one, and reads a tricky same pair
@@ -123,17 +121,10 @@ def test_the_program_keeps_a_bound_client_and_callbacks(system_one):
     assert program.lm is not None and program(pair="same").match is True
 
 
-def test_source_writes_the_signature_and_the_fitted_parameters():
-    program = ReAnchor(metric, num_threads=2).compile(dspy.Predict(Sig), trainset=examples())
-    text = source(program)
-    assert text.startswith("class Sig(dspy.Signature):")
-    assert "program.fields = {'match': {'threshold': 0.8}}" in text
-
-
-def test_log_dir_holds_the_report_and_source(tmp_path):
+def test_log_dir_holds_the_report(tmp_path):
     ReAnchor(metric, num_threads=2, log_dir=tmp_path).compile(dspy.Predict(Sig), trainset=examples())
     assert json.loads((tmp_path / "report.json").read_text())["train_score"] == 0.7778
-    assert "'threshold': 0.8" in (tmp_path / "source.py").read_text()
+    assert {path.name for path in tmp_path.iterdir()} == {"report.json"}
 
 
 def test_compile_logs_each_stage():
@@ -157,6 +148,12 @@ def test_compile_logs_each_stage():
 def test_empty_trainset_fails():
     with pytest.raises(ValueError, match="trainset"):
         ReAnchor(metric).compile(dspy.Predict(Sig), trainset=[])
+
+
+@pytest.mark.parametrize("keyword", ["teacher", "unsupported"])
+def test_unsupported_compile_arguments_are_not_silently_ignored(keyword):
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        ReAnchor(metric).compile(dspy.Predict(Sig), trainset=examples(), **{keyword: None})
 
 
 def test_a_student_without_a_decision_output_fails():
@@ -196,7 +193,6 @@ def test_a_native_bool_on_a_generative_lm_is_promoted_when_probabilities_score_b
     assert program.fields == {"match": {"threshold": 0.8}}
     row = optimizer.report["fitted"][0]
     assert row["promoted"] is True and row["train_score_native"] == 0.5556 and row["train_score"] == 0.7778
-    assert "program.fields = {'match': {'threshold': 0.8}}" in source(program)
 
 
 def test_a_native_bool_stays_native_when_probabilities_do_not_score_better():

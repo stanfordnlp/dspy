@@ -2,12 +2,10 @@
 
 import json
 import logging
-import pprint
 from pathlib import Path
 from typing import Any
 
 from dspy.teleprompt.reanchor.calibrate import caches, calibrate, predictors, run
-from dspy.teleprompt.reanchor.source import render_signature
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -32,7 +30,7 @@ class ReAnchor(Teleprompter):
         metric: Per-example metric to maximize, as in `dspy.Evaluate`. It may return a number, or a
             `dspy.Prediction` with a `score`.
         num_threads: Evaluation concurrency, as in `dspy.Evaluate`.
-        log_dir: When set, the report and the program's source are written here.
+        log_dir: When set, report.json is written here.
         require_cache: When True, `compile` raises if a predictor's client does not cache responses.
             Set it to False to calibrate anyway; every candidate setting then sends new requests.
 
@@ -48,7 +46,7 @@ class ReAnchor(Teleprompter):
         self.require_cache = require_cache
         self.report: dict[str, Any] = {}
 
-    def compile(self, student, *, trainset, teacher=None, valset=None, **kwargs):
+    def compile(self, student, *, trainset, valset=None):
         """Return a calibrated copy; leave the student unchanged.
 
         Args:
@@ -83,21 +81,8 @@ class ReAnchor(Teleprompter):
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             (self.log_dir / "report.json").write_text(json.dumps(self.report, indent=2, default=str), encoding="utf-8")
-            (self.log_dir / "source.py").write_text(self.source(program), encoding="utf-8")
         program._compiled = True
         return program
 
     def _score(self, program, examples: list, progress: bool = False) -> float:
         return round(run(program, examples, self.metric, self.num_threads, progress), 4)
-
-    @staticmethod
-    def source(program) -> str:
-        """Each predictor's signature as a declared class, followed by the line that sets its `fields`."""
-        parts = []
-        for name, predict in predictors(program):
-            target = "program" if name == "self" else f"program.{name}"
-            text = render_signature(predict.signature)
-            if predict.fields:
-                text += f"\n{target}.fields = {pprint.pformat(predict.fields, width=100, sort_dicts=False)}\n"
-            parts.append(text)
-        return "\n\n".join(parts)

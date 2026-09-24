@@ -29,13 +29,6 @@ unless it has an entry in `fields`. Calibration adds that entry, which asks the 
 probabilities, and keeps it only when the fitted setting beats the native output under the same
 fold check.
 
-Before sweeping an output, calibration scores it at its current setting and then pushes its
-decisions to each extreme: every Noul True, then every Noul False; every Score at its lowest
-level, then its highest; each Choice option in turn. When no example's metric score changes
-across those settings, the metric does not read the output, and its sweep is skipped. Scores are
-compared example by example, because a mean can match by coincidence, as accuracy on balanced
-labels does at "all True" and "all False". The current setting catches an example that holds
-balanced items of its own, which scores the same at both extremes.
 """
 
 import copy
@@ -47,7 +40,7 @@ from typing import Any, Callable
 import dspy
 from dspy.adapters.decision import record_evidence
 from dspy.adapters.decision_state import DecisionState
-from dspy.adapters.types.decision import Choice, Noul, Score, decision_type
+from dspy.adapters.types.decision import Choice, Noul, decision_type
 from dspy.predict.predict import Predict
 from dspy.utils.parallelizer import ParallelExecutor
 
@@ -131,42 +124,22 @@ def calibrate(
     trainset: list,
     metric: Callable,
     num_threads: int | None = None,
-    only: str | None = None,
-    outputs: set[str] | None = None,
-    ignored: dict[tuple[str, str], bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Fit every threshold, cut, and weight in place.
 
-    `only` limits the fit to the Predict with that name, and `outputs` to those of its outputs.
-    `ignored` caches, by (Predict name, output), whether the metric ignores an output. Wording does
-    not change what the metric reads, so repeated calls with one cache probe each output once.
     Returns one report row per output: the fitted value, or why it was skipped.
     """
-    ignored = {} if ignored is None else ignored
     report = []
 
     def score() -> list[float]:
         return scores(program, trainset, metric, num_threads)
 
     for name, predict in predictors(program):
-        if only is not None and name != only:
-            continue
         for field, kind in decision_outputs(predict).items():
-            if outputs is not None and field not in outputs:
-                continue
-            if ignored.get((name, field)):
-                report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
-                continue
             original = copy.deepcopy(predict.fields.get(field))
             promoted = field not in evidenced(predict)
             native = score() if promoted else None
             predict.fields[field] = effective(predict, field)
-            if (name, field) not in ignored:
-                ignored[name, field] = _ignored(program, predict, field, kind, trainset, metric, num_threads)
-            if ignored[name, field]:
-                _restore(predict, field, original)
-                report.append({"predictor": name, "field": field, "skipped": "the metric does not read this output"})
-                continue
             evidence = _observe(program, predict, field, trainset, metric, num_threads)
             row = {"predictor": name, "field": field}
             parameter, fit = (
@@ -317,33 +290,6 @@ def _fit_threshold(
     config["threshold"] = best
     observed = {**_summary(probabilities), "candidates": len(tried)}
     return best, values, observed, {"passed": int(kept is not None), "failed": int(refused)}
-
-
-def _extremes(kind: type) -> list[tuple[str, Any]]:
-    """Settings that push every decision on an output to one end: (parameter, value) pairs."""
-    if issubclass(kind, Noul):
-        return [("threshold", 0.0), ("threshold", 1.0)]
-    if issubclass(kind, Score):
-        top = len(kind.options) - 1
-        tiny = 1e-6
-        return [("cuts", [top - tiny * (top - i) for i in range(top)]), ("cuts", [tiny * (i + 1) for i in range(top)])]
-    labels = [str(value) for value, _ in kind.options]
-    return [("weights", {other: 1.0 if other == label else 1e-6 for other in labels}) for label in labels]
-
-
-def _ignored(program, predict: Predict, field: str, kind: type, trainset: list, metric: Callable, num_threads) -> bool:
-    """Whether every example scores the same at the output's current setting and at each extreme."""
-    config = predict.fields[field]
-    settings = _extremes(kind)
-    saved = config[settings[0][0]]
-    try:
-        seen = [scores(program, trainset, metric, num_threads)]
-        for parameter, value in settings:
-            config[parameter] = value
-            seen.append(scores(program, trainset, metric, num_threads))
-    finally:
-        config[settings[0][0]] = saved
-    return all(values == seen[0] for values in seen[1:])
 
 
 def _fit_weights(

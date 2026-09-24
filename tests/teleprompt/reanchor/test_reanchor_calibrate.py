@@ -83,7 +83,7 @@ def test_score_cuts_stay_at_their_defaults_when_the_metric_ignores_the_level(sys
     train = [dspy.Example(item=k, rating={"lo": 0, "hi": 2}[k]).with_inputs("item") for k in ["lo", "hi"]]
     report = calibrate(program, train, lambda g, p, trace=None: 1 - abs(p.rating.value - g.rating) / 2, num_threads=2)
     assert program.fields["rating"]["cuts"] == [0.5, 1.5]
-    assert report == [{"predictor": "self", "field": "rating", "skipped": "the metric does not read this output"}]
+    assert report[0]["train_score"] == report[0]["train_score_at_start"]
 
 
 class Route(dspy.Signature):
@@ -157,17 +157,18 @@ def two_flags(state, name, q):
     return noul(0.9 if state["inputs"]["pair"] == "same" else 0.7)
 
 
-def test_outputs_the_metric_does_not_read_are_skipped(system_one):
+def test_outputs_the_metric_does_not_read_keep_their_numeric_settings(system_one):
     client = system_one(two_flags)
     program = dspy.Predict(TwoFlags)
     train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 4]
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
     rows = {r["field"]: r for r in report}
-    assert rows["noise"]["skipped"] == "the metric does not read this output"
-    assert rows["kind"]["skipped"] == "the metric does not read this output"
+    assert rows["noise"]["train_score"] == rows["noise"]["train_score_at_start"]
+    assert rows["kind"]["train_score"] == rows["kind"]["train_score_at_start"]
     assert "skipped" not in rows["match"] and program.fields["match"]["threshold"] == 0.8
-    assert "noise" not in program.fields and "kind" not in program.fields
-    assert len({repr(c) for c in client.calls}) == 2  # probing the extremes asks nothing new
+    assert program.fields["noise"]["threshold"] == 0.5
+    assert program.fields["kind"]["weights"] == {"x": 1.0, "y": 1.0}
+    assert len({repr(c) for c in client.calls}) == 2
 
 
 def test_balanced_labels_are_not_mistaken_for_an_ignored_output(system_one):
@@ -179,14 +180,24 @@ def test_balanced_labels_are_not_mistaken_for_an_ignored_output(system_one):
     assert "skipped" not in report[0] and program.fields["match"]["threshold"] == 0.8
 
 
-def test_outputs_limits_the_fit(system_one):
-    system_one(two_flags)
-    program = dspy.Predict(TwoFlags)
-    train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 2]
-    report = calibrate(
-        program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2, outputs={"noise"}
-    )
-    assert [r["field"] for r in report] == ["noise"] and "match" not in program.fields
+def test_equal_scores_at_extremes_do_not_hide_a_useful_threshold(system_one):
+    system_one(lambda state, name, q: noul(0.4 if state["inputs"]["pair"] == "same" else 0.2))
+
+    class Batch(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.judge = dspy.Predict(Match)
+
+        def forward(self, pairs):
+            return dspy.Prediction(matches=[self.judge(pair=p).match for p in pairs])
+
+    program = Batch()
+    train = [dspy.Example(pairs=["same", "different"], matches=[True, False]).with_inputs("pairs") for _ in range(10)]
+    # Default, all-True, and all-False decisions all fail exact match. Only the interior split wins.
+    report = calibrate(program, train, lambda g, p, trace=None: float(p.matches == g.matches), num_threads=2)
+    assert program.judge.fields["match"]["threshold"] == pytest.approx(0.3)
+    assert report[0]["train_score_at_start"] == 0.0
+    assert report[0]["train_score"] == 1.0
 
 
 def test_probabilities_bunched_near_one_get_a_threshold_between_them(system_one):
