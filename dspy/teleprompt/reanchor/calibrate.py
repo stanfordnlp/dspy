@@ -306,7 +306,7 @@ def _fit_weights(
     flip points. A candidate replaces the current multipliers only when it scores strictly better
     and passes the fold check.
     """
-    labels = [str(value) for value, _ in kind.options]
+    labels = list(kind.criteria())
     config = predict.fields[field]
     best = {label: config["weights"].get(label, 1.0) for label in labels}
     best_scores, candidates, check = base, 0, {"passed": 0, "failed": 0}
@@ -347,7 +347,7 @@ def _fit_cuts(
     replaces the current cuts only when it scores strictly better and passes the fold check.
     """
     config = predict.fields[field]
-    top = len(kind.options) - 1
+    top = len(kind.criteria()) - 1
     means = [sum(i * p for i, p in e["probabilities"].items()) / sum(e["probabilities"].values()) for e in evidence]
     best, best_scores, candidates, check = list(config["cuts"]), base, 0, {"passed": 0, "failed": 0}
     for i in range(len(best)):
