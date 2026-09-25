@@ -4,7 +4,6 @@ from dspy.primitives.code_interpreter import (
     CodeInterpreter,
     CodeInterpreterError,
     FinalOutput,
-    InterpreterCapability,
     resolve_interpreter_factory,
 )
 from dspy.primitives.example import Example
@@ -24,7 +23,6 @@ __all__ = [
     "CodeInterpreterError",
     "LocalInterpreter",
     "Module",
-    "InterpreterCapability",
     "Prediction",
     "PythonInterpreter",
     "SandboxSerializable",

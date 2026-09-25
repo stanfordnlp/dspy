@@ -17,6 +17,7 @@ the Flex signature's declared output types on the way out (``BridgeRuntime._to_p
 from __future__ import annotations
 
 import ast
+import functools
 import json
 import logging
 from typing import Any, Callable
@@ -24,14 +25,10 @@ from typing import Any, Callable
 from pydantic import TypeAdapter
 
 import dspy
+from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.adapters.utils import annotation_allows_none, parse_value
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
-from dspy.primitives.facade import (
-    FacadeInvocation,
-    _collect_custom_type_originals,
-    _restoring_entrypoint,
-    _tool_entrypoint,
-)
+from dspy.primitives.facade import FacadeInvocation, restore_custom_types
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +51,41 @@ def parse_module_class_name(module_src: str) -> str:
     if not chosen:
         raise CodeInterpreterError("module_src must define a dspy.Module subclass with a `forward` method")
     return chosen[0].name
+
+
+def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
+    """A callable for the interpreter's tool registry."""
+    func = getattr(tool, "func", None)
+    if func is None:
+        return tool
+
+    @functools.wraps(func)
+    def entrypoint(**kwargs: Any) -> Any:
+        return tool(**kwargs)
+
+    return entrypoint
+
+
+def _restoring_entrypoint(fn: Callable[..., Any], originals: dict[str, Any]) -> Callable[..., Any]:
+    """Wrap a tool entrypoint so serialized custom-type inputs arrive as the original objects."""
+
+    @functools.wraps(fn)
+    def entrypoint(**kwargs: Any) -> Any:
+        return fn(**{k: restore_custom_types(v, originals) for k, v in kwargs.items()})
+
+    return entrypoint
+
+
+def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
+    """Record custom-type instances by their serialized string, recursing into containers."""
+    if isinstance(value, _CustomType):
+        out[value.serialize_model()] = value
+    elif isinstance(value, dict):
+        for v in value.values():
+            _collect_custom_type_originals(v, out)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _collect_custom_type_originals(v, out)
 
 
 class BridgeRuntime:

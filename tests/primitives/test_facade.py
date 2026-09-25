@@ -60,6 +60,25 @@ def test_reserve_meters_admitted_calls_only():
     assert reserved == [1, 1, 1]
 
 
+def test_reserve_charges_one_slot_per_requested_completion():
+    # `n` asks for n completions in one request; it must not multiply max_llm_calls.
+    class _StubLM:
+        model = "stub"
+
+        def __init__(self):
+            self.kwargs = {"n": 4, "api_key": "sk-host"}
+
+        def __call__(self, *args, **kwargs):
+            return ["x"] * kwargs.get("n", self.kwargs["n"])
+
+    reserved = []
+    sandbox = SandboxLM(_StubLM(), reserve=reserved.append)
+    assert len(sandbox("per-call", n=64)) == 64
+    sandbox("mirrored default")
+    sandbox("explicit one", n=1)
+    assert reserved == [64, 4, 1]
+
+
 def test_proxy_mirrors_identity_kwargs_and_capabilities_of_the_wrapped_lm():
     lm = _CapableLM([{"answer": "a"}])
     lm.kwargs.update(temperature=0.7, api_key="sk-secret", api_base="http://internal.example")

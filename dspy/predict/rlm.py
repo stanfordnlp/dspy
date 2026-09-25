@@ -31,14 +31,12 @@ from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
-    InterpreterCapability,
     _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
-    interpreter_capabilities,
     resolve_interpreter_factory,
 )
-from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, SandboxLM, is_reserved_sandbox_name
+from dspy.primitives.facade import CALL_TOOL, CONSTRUCT_TOOL, FacadeInvocation, is_reserved_sandbox_name
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -79,7 +77,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Appended to the interpreter rules when the interpreter can host the sandbox dspy facade.
+# Appended to the interpreter rules whenever RLM installs the sandbox dspy facade (every factory-made interpreter).
 SUB_AGENT_INSTRUCTIONS = """
 Sub-agents (dspy):
 You may `import dspy` and build sub-agents in the REPL for subtasks that need structured inputs/outputs.
@@ -91,7 +89,7 @@ You may `import dspy` and build sub-agents in the REPL for subtasks that need st
   This is the heaviest option: reserve it for deep subtasks whose input is itself too large or
   structured to prompt directly, and prefer Predict/ChainOfThought/ReActV2 for everything else.
 Prefer `llm_query` for simple one-shot prompts; use sub-agents for structured, tool-using, or
-recursive subtasks. Never call `dspy.configure(...)`: the LM configuration is already provided.
+recursive subtasks.
 """
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
@@ -199,9 +197,9 @@ class RLM(Module):
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
                 callable may be invoked concurrently, and DSPy shuts down each interpreter it returns. RLM updates
                 the returned interpreter's mutable ``tools`` dictionary before execution. The callable may expose
-                an ``execution_instructions`` string describing its runtime for the action prompt, and a
-                ``capabilities`` declaration (see ``InterpreterCapability``) that shapes the action prompt; the
-                facade itself is installed only into an interpreter instance that declares it. RLM applies the
+                an ``execution_instructions`` string describing its runtime for the action prompt. RLM installs the
+                sandbox dspy facade into every interpreter it creates, so the runtime must be able to host it
+                (see ``CodeInterpreter``). RLM applies the
                 active factory's instructions to each action call, so ``dspy.context`` can switch runtimes
                 without changing the shared predictor signature. Defaults to ``dspy.PythonInterpreter``;
                 ``dspy.configure(interpreter_factory=...)`` replaces the default.
@@ -215,9 +213,8 @@ class RLM(Module):
         self.verbose = verbose
         self.sub_lm = sub_lm
         self._interpreter_factory = interpreter_factory
-        self._sub_dspy = self._declares_sub_dspy(resolve_interpreter_factory(interpreter_factory))
         self._user_tools = self._normalize_tools(tools)
-        self._validate_namespace(self._user_tools, self._sub_dspy)
+        self._validate_namespace(self._user_tools)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
@@ -260,12 +257,10 @@ class RLM(Module):
             normalized[tool.name] = tool
         return normalized
 
-    def _validate_namespace(self, tools: dict[str, Tool], sub_dspy: bool) -> None:
-        """Validate names owned by the RLM result and sandbox APIs (the facade's too, when ``sub_dspy``)."""
+    def _validate_namespace(self, tools: dict[str, Tool]) -> None:
+        """Validate names owned by the RLM result, the sandbox APIs, and the sandbox dspy facade."""
         def is_reserved(name: str) -> bool:
-            if name in self._RESERVED_SANDBOX_NAMES:
-                return True
-            return sub_dspy and (name in (CONSTRUCT_TOOL, CALL_TOOL) or is_reserved_sandbox_name(name))
+            return name in self._RESERVED_SANDBOX_NAMES or is_reserved_sandbox_name(name)
 
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
@@ -395,7 +390,7 @@ class RLM(Module):
         factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
         self._initial_execution_instructions = execution_instructions
-        self._initial_sub_agent_rules = SUB_AGENT_INSTRUCTIONS if self._sub_dspy else ""
+        self._initial_sub_agent_rules = SUB_AGENT_INSTRUCTIONS
         self._initial_interpreter_rules = self._format_interpreter_rules(
             execution_instructions, self._initial_sub_agent_rules
         )
@@ -432,10 +427,6 @@ class RLM(Module):
         extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
-
-    @staticmethod
-    def _declares_sub_dspy(interpreter_or_factory: Any) -> bool:
-        return InterpreterCapability.SUB_DSPY in interpreter_capabilities(interpreter_or_factory)
 
     @staticmethod
     def _format_interpreter_rules(execution_instructions: str, sub_agent_rules: str) -> str:
@@ -571,32 +562,26 @@ class RLM(Module):
 
         return regular_args
 
-    def _host_lm(self) -> Any:
-        """The LM serving sub-agents: the explicit sub_lm, else the host's default."""
-        return self.sub_lm if self.sub_lm is not None else dspy.settings.lm
-
-    def _sandbox_host_lm(self, budget: _LLMCallBudget) -> SandboxLM | None:
-        """One SandboxLM per forward for the sub-agent endpoint and the facade; None when the host has no LM."""
-        lm = self._host_lm()
-        return None if lm is None else SandboxLM(lm, budget.reserve)
-
-    def _facade_invocation(self, budget: _LLMCallBudget) -> FacadeInvocation:
-        """Host side of the dspy facade for one forward."""
-        return FacadeInvocation(self._user_tools, self._interpreter_factory, None, lm=self._sandbox_host_lm(budget))
-
     def _setup_facade(self, repl: CodeInterpreter, budget: _LLMCallBudget, *, caller_owned: bool) -> str:
-        """Install the facade into a factory-made interpreter that declares SUB_DSPY; return its sub-agent guidance.
+        """Install the sandbox dspy facade into a factory-made interpreter; return its sub-agent guidance.
 
         Sub-agents need the interpreter factory: nested code-executing ones get their interpreters from it, and
-        a caller-owned instance came from no factory, so it runs RLM without the facade.
+        a caller-owned instance came from no factory, so it runs RLM without the facade. The facade resolves
+        ``sub_lm`` (else ``dspy.settings.lm``) per call, like ``llm_query``, and charges ``max_llm_calls``.
         """
-        if caller_owned or not self._declares_sub_dspy(repl):
+        if caller_owned:
             return ""
-        if not self._sub_dspy:
-            # Construction validated against the factory active then; a dspy.context factory
-            # can host the facade anyway, so its names must be free too.
-            self._validate_namespace(self._user_tools, sub_dspy=True)
-        self._facade_invocation(budget).install(repl)
+        invocation = FacadeInvocation(
+            self._user_tools, self._interpreter_factory, None, lm=self.sub_lm, reserve=budget.reserve
+        )
+        try:
+            invocation.install(repl)
+        except CodeExecutionError as e:
+            # The runtime cannot host the shim (e.g. it runs code in the host's memory): no sub-agents this call.
+            for name in (CONSTRUCT_TOOL, CALL_TOOL):
+                repl.tools.pop(name, None)
+            logger.warning("RLM sub-agents are unavailable on %s: %s", type(repl).__name__, e)
+            return ""
         return SUB_AGENT_INSTRUCTIONS
 
     # =========================================================================
@@ -830,7 +815,7 @@ class RLM(Module):
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
                 this RLM instance. Sub-agents need ``interpreter_factory``, so a caller-owned interpreter runs
-                without the sandbox dspy facade, even if it declares ``InterpreterCapability.SUB_DSPY``.
+                without the sandbox dspy facade.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -924,7 +909,7 @@ class RLM(Module):
             interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
                 output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
                 this RLM instance. Sub-agents need ``interpreter_factory``, so a caller-owned interpreter runs
-                without the sandbox dspy facade, even if it declares ``InterpreterCapability.SUB_DSPY``.
+                without the sandbox dspy facade.
             **input_args: Input values matching the signature's input fields.
 
         Returns:

@@ -1,16 +1,15 @@
 """Conformance against dspy-interpreters, the third-party CodeInterpreter backends (a test-only
 dependency, declared in the ``dev`` dependency group).
 
-Both directions of the capability contract are pinned on real backends: undeclared backends get no
-sub-agents, a subclass declaring ``InterpreterCapability.SUB_DSPY`` hosts the facade and runs bridged
-sub-agents, and the library's own consumer checks pass.
+RLM installs the sandbox dspy facade into every interpreter it creates. On real backends: an isolated
+one runs bridged sub-agents, one that executes in the host's memory runs RLM without them, and the
+library's own consumer checks pass.
 """
 
 import pytest
 
 import dspy
 from dspy.predict.rlm import RLM
-from dspy.primitives.code_interpreter import InterpreterCapability, interpreter_capabilities
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
@@ -19,10 +18,6 @@ dspy_interpreters = pytest.importorskip("dspy_interpreters")
 InProcessInterpreter = dspy_interpreters.InProcessInterpreter
 SubprocessInterpreter = dspy_interpreters.SubprocessInterpreter
 BACKENDS = ["InProcessInterpreter", "SubprocessInterpreter"]
-
-
-class FacadeSubprocessInterpreter(SubprocessInterpreter):
-    capabilities = InterpreterCapability.SUB_DSPY
 
 
 def make_scripted_predictor(responses: list[dict]):
@@ -39,21 +34,29 @@ def make_scripted_predictor(responses: list[dict]):
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
-def test_backends_satisfy_protocol_and_declare_no_capabilities(backend_name):
-    backend = getattr(dspy_interpreters, backend_name)
-    interpreter = backend()
+def test_backends_satisfy_protocol(backend_name):
+    interpreter = getattr(dspy_interpreters, backend_name)()
     try:
         assert isinstance(interpreter, dspy.CodeInterpreter)
     finally:
         interpreter.shutdown()
-    assert not interpreter_capabilities(backend)
 
 
-@pytest.mark.parametrize("backend_name", BACKENDS)
-def test_undeclared_backends_get_no_sub_agents(backend_name):
-    rlm = RLM("query -> answer", interpreter_factory=getattr(dspy_interpreters, backend_name))
-    assert rlm._sub_dspy is False
-    assert "Sub-agents (dspy)" not in rlm.generate_action.signature.instructions
+def test_in_process_backend_runs_rlm_without_sub_agents(caplog):
+    seen = []
+
+    class Recording:
+        def __call__(self, signature=None, **kwargs):
+            seen.append(signature.instructions)
+            return Prediction(reasoning="Submit", code='SUBMIT("ok")')
+
+    rlm = RLM("query -> answer", max_iters=1, interpreter_factory=InProcessInterpreter)
+    rlm.generate_action = Recording()
+    with caplog.at_level("WARNING", logger="dspy.predict.rlm"):
+        assert rlm(query="q").answer == "ok"
+
+    assert "Sub-agents (dspy)" not in seen[0]
+    assert "sub-agents are unavailable on InProcessInterpreter" in caplog.text
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
@@ -69,7 +72,7 @@ def test_flex_facade_needs_an_isolated_backend():
     assert not report.passed and "host's memory" in report.results[0].detail
 
 
-def test_declaring_backend_runs_bridged_sub_agents_with_host_tools():
+def test_isolated_backend_runs_bridged_sub_agents_with_host_tools():
     # Regression: worker backends bind host tools as "<lambda>" proxies; the shim names them by global.
     calls = []
 
@@ -78,7 +81,7 @@ def test_declaring_backend_runs_bridged_sub_agents_with_host_tools():
         calls.append(text)
         return text
 
-    rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=FacadeSubprocessInterpreter)
+    rlm = RLM("query -> answer", max_iters=2, tools=[echo], interpreter_factory=SubprocessInterpreter)
     rlm.generate_action = make_scripted_predictor([
         {
             "reasoning": "Bridged ReActV2 with a host tool",

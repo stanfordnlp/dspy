@@ -215,15 +215,11 @@ def test_reactv2_constructs_and_runs_through_the_bridge() -> None:
     assert tool_sequence == ["lookup", "submit"]
 
 
-def test_bridged_rlm_inherits_sub_dspy_capable_factory() -> None:
-    # A bridged sub-RLM gets the Flex factory, capability included.
-    class SubDspyFactory:
-        capabilities = dspy.InterpreterCapability.SUB_DSPY
+def test_bridged_rlm_inherits_the_flex_factory() -> None:
+    # A bridged sub-RLM runs on the Flex factory, and sandboxed code cannot pick another.
+    def factory() -> MockInterpreter:
+        return MockInterpreter()
 
-        def __call__(self) -> MockInterpreter:
-            return MockInterpreter()
-
-    factory = SubDspyFactory()
     flex = Flex(Doubler, interpreter_factory=factory)
     inv = flex._bridge.invocation()
     inv.construct("RLM", "value: int -> result: int", "rlm", {})
@@ -367,7 +363,7 @@ def test_predictor_call_budget_is_enforced() -> None:
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     inv.call("solve", {"value": 1})  # 1st
     inv.call("solve", {"value": 1})  # 2nd
-    with pytest.raises(CodeInterpreterError, match="budget"):
+    with pytest.raises(CodeInterpreterError, match="budget.*Raise max_predictor_calls if this is expected"):
         inv.call("solve", {"value": 1})  # 3rd exceeds the cap
     # A new forward gets a new budget — and its own registry, so it constructs anew.
     fresh = flex._bridge.invocation()

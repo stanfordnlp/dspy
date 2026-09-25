@@ -21,7 +21,6 @@ generation parameters (``SANDBOX_LM_KWARGS``) and meters the calls.
 from __future__ import annotations
 
 import contextlib
-import functools
 import inspect
 import json
 import secrets
@@ -31,7 +30,6 @@ from typing import Any, Callable
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
-from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.clients.base_lm import BaseLM
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.signatures.signature import make_signature
@@ -109,49 +107,14 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
     return fields
 
 
-def _tool_entrypoint(tool: Any) -> Callable[..., Any]:
-    """A callable for the interpreter's tool registry."""
-    func = getattr(tool, "func", None)
-    if func is None:
-        return tool
-
-    @functools.wraps(func)
-    def entrypoint(**kwargs: Any) -> Any:
-        return tool(**kwargs)
-
-    return entrypoint
-
-
-def _restoring_entrypoint(fn: Callable[..., Any], originals: dict[str, Any]) -> Callable[..., Any]:
-    """Wrap a tool entrypoint so serialized custom-type inputs arrive as the original objects."""
-
-    @functools.wraps(fn)
-    def entrypoint(**kwargs: Any) -> Any:
-        return fn(**{k: _restore_custom_types(v, originals) for k, v in kwargs.items()})
-
-    return entrypoint
-
-
-def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
-    """Record custom-type instances by their serialized string, recursing into containers."""
-    if isinstance(value, _CustomType):
-        out[value.serialize_model()] = value
-    elif isinstance(value, dict):
-        for v in value.values():
-            _collect_custom_type_originals(v, out)
-    elif isinstance(value, (list, tuple)):
-        for v in value:
-            _collect_custom_type_originals(v, out)
-
-
-def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
+def restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     """Substitute serialized custom-type strings back with the original host objects."""
     if isinstance(value, str) and value in originals:
         return originals[value]
     if isinstance(value, dict):
-        return {k: _restore_custom_types(v, originals) for k, v in value.items()}
+        return {k: restore_custom_types(v, originals) for k, v in value.items()}
     if isinstance(value, list):
-        return [_restore_custom_types(v, originals) for v in value]
+        return [restore_custom_types(v, originals) for v in value]
     return value
 
 
@@ -167,7 +130,8 @@ _LM_CALL_INPUTS = frozenset({"prompt", "messages", "request"})
 
 
 class SandboxLM(BaseLM):
-    """The host LM as sandboxed code may call it: only ``SANDBOX_LM_KWARGS`` per call, ``reserve(1)`` before each."""
+    """The host LM as sandboxed code may call it: only ``SANDBOX_LM_KWARGS`` per call, and ``reserve(n)`` before
+    each, one slot per requested completion."""
 
     def __init__(self, lm: Any, reserve: Callable[[int], None] | None = None) -> None:
         # lm may be any callable RLM accepts as sub_lm, not only a BaseLM. Adapters and Predict read the
@@ -188,7 +152,8 @@ class SandboxLM(BaseLM):
     def _admit(self, kwargs: dict[str, Any]) -> None:
         self._check(kwargs)
         if self._reserve is not None:
-            self._reserve(1)
+            # `n` completions cost `n` calls, so it cannot multiply the budget.
+            self._reserve(max(1, int(kwargs.get("n", self.kwargs.get("n")) or 1)))
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         self._admit(kwargs)
@@ -234,6 +199,7 @@ class FacadeInvocation:
     Builds the predictors the shim asks for (keyed by the sandbox attribute name) from the host
     module's tools and interpreter factory, runs them by handle under a predictor-call budget on a
     ``SandboxLM``, and restores custom-type inputs. Each forward gets its own ``FacadeInvocation``.
+    ``lm`` defaults to ``dspy.settings.lm`` at call time; ``reserve`` meters every LM call.
     """
 
     def __init__(
@@ -244,6 +210,7 @@ class FacadeInvocation:
         *,
         custom_types: dict[str, type] | None = None,
         lm: Any = None,
+        reserve: Callable[[int], None] | None = None,
         originals: dict[str, Any] | None = None,
     ) -> None:
         self._tools = tools
@@ -251,6 +218,7 @@ class FacadeInvocation:
         self._max_predictor_calls = max_predictor_calls
         self._custom_types = custom_types
         self._lm = lm
+        self._reserve = reserve
         self._originals = originals or {}
         self._predictors: dict[str, Any] = {}
         self._calls = 0
@@ -276,11 +244,14 @@ class FacadeInvocation:
         self._calls += 1
         budget = self._max_predictor_calls
         if budget is not None and self._calls > budget:
-            raise CodeInterpreterError(f"Sandboxed forward exceeded its predictor-call budget ({budget}).")
+            raise CodeInterpreterError(
+                f"Sandboxed forward exceeded its predictor-call budget ({budget}). "
+                "Raise max_predictor_calls if this is expected."
+            )
         predictor = self._predictors.get(handle)
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
-        restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        restored = {k: restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
         try:
             with self._lm_scope():
                 return prediction_to_fields(predictor(**restored))
@@ -294,7 +265,9 @@ class FacadeInvocation:
         lm = self._lm if self._lm is not None else dspy.settings.lm
         if lm is None:
             return contextlib.nullcontext()
-        return dspy.context(lm=lm if isinstance(lm, SandboxLM) else SandboxLM(lm))
+        if isinstance(lm, SandboxLM) and self._reserve is None:
+            return dspy.context(lm=lm)
+        return dspy.context(lm=SandboxLM(lm, self._reserve))
 
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)
