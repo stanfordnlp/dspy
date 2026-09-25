@@ -3014,3 +3014,85 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+
+def _chat_completion(content: str) -> ModelResponse:
+    return ModelResponse(choices=[Choices(message=Message(content=content))], model="openai/gpt-4o-mini")
+
+
+def test_chat_adapter_does_not_fall_back_when_value_fails_validation():
+    """A well-formed response carrying an invalid value must not trigger a second LM call.
+
+    The chat format here is correct — the field marker is present and its content parses —
+    so JSONAdapter would re-ask the LM only to receive the same out-of-domain literal.
+    """
+
+    class Color(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+                adapter(lm, {}, Color, [], {"question": "pick"})
+
+        mock_json_adapter_call.assert_not_called()
+
+    assert mock_completion.call_count == 1
+    # The real validation failure survives instead of being replaced by a serialization error.
+    assert "color" in str(exc_info.value)
+    assert exc_info.value.is_format_error is False
+
+
+def test_chat_adapter_still_falls_back_when_response_is_malformed():
+    """A response missing the field markers is a format failure, so the fallback still runs."""
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("nonsense without any field markers")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__", return_value=[{"answer": "Paris"}]
+        ) as mock_json_adapter_call:
+            result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+        mock_json_adapter_call.assert_called_once()
+
+    assert result == [{"answer": "Paris"}]
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_does_not_fall_back_when_value_fails_validation_async():
+    class Color(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                await adapter.acall(lm, {}, Color, [], {"question": "pick"})
+
+        mock_json_adapter_acall.assert_not_called()
+
+    assert mock_completion.call_count == 1
+
+
+def test_adapter_parse_error_defaults_to_format_error():
+    """Callers that do not classify the failure keep the previous fallback behaviour."""
+    signature = dspy.make_signature("question->answer")
+    error = dspy.utils.exceptions.AdapterParseError(
+        adapter_name="ChatAdapter", signature=signature, lm_response="nonsense"
+    )
+    assert error.is_format_error is True

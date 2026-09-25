@@ -54,8 +54,10 @@ class ChatAdapter(Adapter):
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
             use_json_adapter_fallback: Whether to try JSONAdapter after an AdapterParseError.
-                Only invalid model output can trigger this extra call, and never after visible stream output.
-                Configuration errors, engine failures and programming bugs propagate. Defaults to True.
+                Only a malformed response can trigger this extra call, and never after visible stream output.
+                A well-formed response whose value fails validation against its field annotation
+                propagates instead, since re-asking cannot fix it. Configuration errors, engine
+                failures and programming bugs propagate. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
         """
@@ -86,10 +88,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or not e.is_format_error
+                ):
                     raise
                 return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -104,10 +111,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or not e.is_format_error
+                ):
                     raise
                 return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
@@ -234,11 +246,15 @@ class ChatAdapter(Adapter):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
+                    # The field marker was found and its content extracted, so the response
+                    # was well-formed; only the value failed validation. Re-asking in JSON
+                    # would cost another call and still produce the same invalid value.
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                        is_format_error=False,
                     )
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():

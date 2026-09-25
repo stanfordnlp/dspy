@@ -308,6 +308,12 @@ class AdapterParseError(DSPyError):
         lm_response: Raw LM response text or representation being parsed.
         message: Optional additional context about the parse failure.
         parsed_result: Partial parsed result, if any.
+        is_format_error: Whether the response failed to conform to the adapter's
+            wire format, as opposed to carrying a well-formed value that failed
+            validation against its field annotation. Re-asking the LM in a
+            different format can recover the former but never the latter, so
+            adapters use this to decide whether falling back is worthwhile.
+            Defaults to True.
     """
 
     default_code = "adapter_parse_error"
@@ -319,11 +325,13 @@ class AdapterParseError(DSPyError):
         lm_response: str,
         message: str | None = None,
         parsed_result: str | None = None,
+        is_format_error: bool = True,
     ):
         self.adapter_name = adapter_name
         self.signature = signature
         self.lm_response = lm_response
         self.parsed_result = parsed_result
+        self.is_format_error = is_format_error
 
         message = f"{message}\n\n" if message else ""
         message = (
