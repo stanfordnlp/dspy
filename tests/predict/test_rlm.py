@@ -279,11 +279,14 @@ class TestRLMInitialization:
         with pytest.raises(TypeError, match="interpreter must implement CodeInterpreter, not NoneType"):
             rlm(query="test")
 
-    def test_keyword_interpreter_factory_override_has_clear_error(self):
+    @pytest.mark.asyncio
+    async def test_positional_interpreter_factory_is_rejected(self):
         rlm = RLM("query -> answer")
 
-        with pytest.raises(TypeError, match="first positional argument"):
-            rlm(query="test", interpreter_factory=MockInterpreterFactory())
+        with pytest.raises(TypeError):
+            rlm(MockInterpreterFactory(), query="test")
+        with pytest.raises(TypeError):
+            await rlm.acall(MockInterpreterFactory(), query="test")
 
     def test_llm_query_returns_legacy_response_text(self):
         from dspy.utils.dummies import DummyLM
@@ -529,8 +532,8 @@ class TestRLMInterpreterLifecycle:
         rlm.generate_action = Action()
         original_signature = rlm._action_signature.instructions
         with dspy.context(interpreter_factory=configured):
-            sync_result = rlm(factory, query="sync")
-            async_result = await rlm.acall(factory, query="async")
+            sync_result = rlm(query="sync", interpreter_factory=factory)
+            async_result = await rlm.acall(query="async", interpreter_factory=factory)
             assert rlm(query="default").answer == "constructor"
 
         assert sync_result.answer == async_result.answer == "override"
@@ -551,19 +554,13 @@ class TestRLMInterpreterLifecycle:
     async def test_invalid_call_time_factory_is_rejected(self, factory):
         rlm = RLM("query -> answer")
         with pytest.raises(TypeError):
-            rlm(factory, query="sync")
+            rlm(query="sync", interpreter_factory=factory)
         with pytest.raises(TypeError):
-            await rlm.acall(factory, query="async")
+            await rlm.acall(query="async", interpreter_factory=factory)
 
-    def test_interpreter_factory_remains_available_as_signature_input(self):
-        factory = MockInterpreterFactory(responses=[FinalOutput({"answer": "factory input"})])
-        rlm = RLM("interpreter_factory -> answer", max_iters=1)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return input", "code": "SUBMIT(interpreter_factory)"},
-        ])
-
-        assert rlm(factory, interpreter_factory="factory input").answer == "factory input"
-        assert factory.instances[0].call_history[0][1] == {"interpreter_factory": "factory input"}
+    def test_interpreter_factory_is_reserved_as_signature_input(self):
+        with pytest.raises(ValueError, match="'interpreter_factory' is reserved"):
+            RLM("interpreter_factory -> answer")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("phase", ["setup", "prediction", "extraction", "cancellation"])
@@ -587,7 +584,7 @@ class TestRLMInterpreterLifecycle:
             monkeypatch.setattr(rlm, "_inject_execution_context", fail_setup)
 
         with pytest.raises(type(error)) as exc:
-            await rlm.acall(factory, query="test")
+            await rlm.acall(query="test", interpreter_factory=factory)
 
         assert exc.value is error
         assert len(factory.instances) == 1
@@ -876,7 +873,7 @@ class TestRLMCallMethod:
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
         ])
 
-        result = rlm(lambda: mock, query="What is the answer?")
+        result = rlm(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
 
 
@@ -901,7 +898,7 @@ class TestRLMMaxIterationsFallback:
             {"answer": "extracted_answer"},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "extracted_answer"
         assert result.final_reasoning == "Extract forced final output"
 
@@ -924,7 +921,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
 
     def test_runtime_error_history_uses_stripped_code(self):
@@ -939,7 +936,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         first_step = result.trajectory[0]
         assert first_step["code"] == "print(x)"
@@ -956,7 +953,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
 
@@ -971,7 +968,7 @@ class TestRLMToolExceptions:
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error]")
 
@@ -990,7 +987,7 @@ class TestRLMToolExceptions:
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
-            rlm.forward(lambda: mock, query="test")
+            rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert mock._shutdown
 
     @pytest.mark.asyncio
@@ -1009,7 +1006,7 @@ class TestRLMToolExceptions:
         rlm.extract = make_mock_predictor([{"answer": "hallucinated"}])
 
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
-            await rlm.aforward(lambda: mock, query="test")
+            await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert mock._shutdown
 
 
@@ -1270,7 +1267,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
         ])
 
-        result = await rlm.aforward(lambda: mock, query="What is the answer?")
+        result = await rlm.aforward(query="What is the answer?", interpreter_factory=lambda: mock)
         assert result.answer == "42"
 
     @pytest.mark.asyncio
@@ -1282,7 +1279,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
         ])
 
-        result = await rlm.aforward(lambda: mock, query="count items")
+        result = await rlm.aforward(query="count items", interpreter_factory=lambda: mock)
         assert result.count == 42
         assert isinstance(result.count, int)
 
@@ -1299,7 +1296,7 @@ class TestRLMAsyncMock:
             {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
         ])
 
-        result = await rlm.aforward(lambda: mock, query="test")
+        result = await rlm.aforward(query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
 
 
@@ -1321,7 +1318,7 @@ class TestRLMTypeCoercionMock:
             {"reasoning": "Return value", "code": code},
         ])
 
-        result = rlm.forward(lambda: mock, query="test")
+        result = rlm.forward(query="test", interpreter_factory=lambda: mock)
         assert getattr(result, output_field) == expected
 
     def test_type_error_retries(self):
@@ -1336,7 +1333,7 @@ class TestRLMTypeCoercionMock:
             {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
         ])
 
-        result = rlm.forward(lambda: mock, query="is it yes?")
+        result = rlm.forward(query="is it yes?", interpreter_factory=lambda: mock)
         assert result.answer == "yes"
 
 
@@ -1368,7 +1365,7 @@ class TestRLMTypeCoercion:
             {"reasoning": "Return value", "code": code},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert getattr(result, output_field) == expected
         assert isinstance(getattr(result, output_field), expected_type)
 
@@ -1379,7 +1376,7 @@ class TestRLMTypeCoercion:
             {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="count items")
+        result = rlm.forward(query="count items", interpreter_factory=PythonInterpreter)
         assert result.count == 42
         assert isinstance(result.count, int)
 
@@ -1403,7 +1400,7 @@ class TestRLMMultipleOutputs:
             {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "alice"
         assert result.count == 5
         assert isinstance(result.count, int)
@@ -1415,7 +1412,7 @@ class TestRLMMultipleOutputs:
             {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "bob"
         assert result.count == 10
 
@@ -1426,7 +1423,7 @@ class TestRLMMultipleOutputs:
             {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "carol"
         assert result.age == 30
         assert result.active is True
@@ -1440,7 +1437,7 @@ class TestRLMMultipleOutputs:
         ])
 
         # RLM should retry after getting error for missing field
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "alice"
         assert result.count == 5
 
@@ -1451,7 +1448,7 @@ class TestRLMMultipleOutputs:
             {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.name == "dave"
         assert result.count == 15
 
@@ -1462,7 +1459,7 @@ class TestRLMMultipleOutputs:
             {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
         ])
 
-        result = rlm.forward(PythonInterpreter, query="test")
+        result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
         assert result.count == 42
         assert isinstance(result.count, int)
         assert result.ratio == 3.14
@@ -1492,7 +1489,7 @@ class TestRLMWithDummyLM:
         ]):
             rlm = RLM("query -> answer: int", max_iters=3)
             with dspy.context(interpreter_factory=configured):
-                result = rlm(PythonInterpreter, query="What is 2 + 3?")
+                result = rlm(query="What is 2 + 3?", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 5
             assert isinstance(result.answer, int)
@@ -1505,7 +1502,7 @@ class TestRLMWithDummyLM:
             {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
         ]):
             rlm = RLM("query -> answer: int", max_iters=5)
-            result = rlm.forward(PythonInterpreter, query="Double ten")
+            result = rlm.forward(query="Double ten", interpreter_factory=PythonInterpreter)
 
             assert result.answer == 20
             assert len(result.trajectory) == 2
@@ -1516,7 +1513,7 @@ class TestRLMWithDummyLM:
             {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
         ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iters=3)
-            result = rlm.forward(PythonInterpreter, numbers=[1, 2, 3, 4, 5])
+            result = rlm.forward(numbers=[1, 2, 3, 4, 5], interpreter_factory=PythonInterpreter)
 
             assert result.total == 15
 
@@ -1529,7 +1526,7 @@ class TestRLMWithDummyLM:
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
             rlm = RLM("fruit -> color: str", max_iters=3, tools=[lookup])
-            result = rlm.forward(PythonInterpreter, fruit="apple")
+            result = rlm.forward(fruit="apple", interpreter_factory=PythonInterpreter)
 
             assert result.color == "red"
 
@@ -1572,7 +1569,7 @@ class TestRLMWithDummyLM:
             },
         ]):
             with dspy.context(callbacks=[Recorder()]):
-                result = rlm.forward(PythonInterpreter, query="test")
+                result = rlm.forward(query="test", interpreter_factory=PythonInterpreter)
 
         assert result.answer == 6
         assert len(received) == 1
@@ -1816,7 +1813,7 @@ class TestPrepareSerializableVars:
         ])
 
         stub = _StubSerializable("test_payload")
-        result = rlm.forward(lambda: mock, data=stub, query="test")
+        result = rlm.forward(data=stub, query="test", interpreter_factory=lambda: mock)
         assert result.answer == "done"
 
         # First call should be the serializable setup, second should be the iteration

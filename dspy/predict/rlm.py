@@ -126,8 +126,8 @@ class RLM(Module):
     ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
     accepts an adapter for a remote sandbox.
     RLM updates the interpreter's mutable ``tools`` dictionary with
-    invocation-scoped tools before execution. Pass a zero-argument factory as the
-    first positional call argument to override the runtime for one invocation.
+    invocation-scoped tools before execution. Pass a zero-argument factory via
+    ``interpreter_factory=`` at call time to override the runtime for one invocation.
     RLM shuts down every interpreter it creates.
 
     Examples:
@@ -236,7 +236,7 @@ class RLM(Module):
         return normalized
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
-        """Validate names owned by the RLM result and sandbox APIs."""
+        """Validate names owned by the RLM call, result, and sandbox APIs."""
         for name in tools:
             if not name.isidentifier() or keyword.iskeyword(name):
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier and not a keyword")
@@ -244,6 +244,8 @@ class RLM(Module):
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
 
         input_names = set(self.signature.input_fields)
+        if "interpreter_factory" in input_names:
+            raise ValueError("'interpreter_factory' is reserved for RLM runtime configuration, not a signature input.")
         reserved_inputs = sorted(input_names & self._RESERVED_SANDBOX_NAMES)
         if reserved_inputs:
             raise ValueError(f"Input fields conflict with built-in sandbox functions: {reserved_inputs}")
@@ -481,10 +483,6 @@ class RLM(Module):
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
         """Validate call-time arguments against the signature's input namespace."""
-        if "interpreter_factory" in input_args and "interpreter_factory" not in self.signature.input_fields:
-            raise TypeError(
-                "Pass interpreter_factory as the first positional argument when calling the module."
-            )
         input_names = set(self.signature.input_fields)
         unexpected = set(input_args) - input_names
         if unexpected:
@@ -755,11 +753,11 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def forward(self, interpreter_factory: Callable[[], CodeInterpreter] | None = None, /, **input_args) -> Prediction:
+    def forward(self, *, interpreter_factory: Callable[[], CodeInterpreter] | None = None, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
-            interpreter_factory: Optional zero-argument factory, passed positionally. Overrides the constructor
+            interpreter_factory: Optional zero-argument factory, passed by keyword. Overrides the constructor
                 and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
                 and output metadata and shuts it down on exit, including failures.
             **input_args: Input values matching the signature's input fields.
@@ -848,11 +846,11 @@ class RLM(Module):
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)
 
-    async def aforward(self, interpreter_factory: Callable[[], CodeInterpreter] | None = None, /, **input_args) -> Prediction:
+    async def aforward(self, *, interpreter_factory: Callable[[], CodeInterpreter] | None = None, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
-            interpreter_factory: Optional zero-argument factory, passed positionally. Overrides the constructor
+            interpreter_factory: Optional zero-argument factory, passed by keyword. Overrides the constructor
                 and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
                 and output metadata and shuts it down on exit, including failures.
             **input_args: Input values matching the signature's input fields.

@@ -207,14 +207,14 @@ dspy.configure(interpreter_factory=MyInterpreter)
 
 RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol.
 
-To override the factory for a single invocation, pass a zero-argument callable as the first positional argument:
+To override the factory for a single invocation, pass a zero-argument callable via the `interpreter_factory` keyword:
 
 ```python
-result = rlm(MyInterpreter, context=data, query=query)
-result = await rlm.acall(MyInterpreter, context=data, query=query)
+result = rlm(context=data, query=query, interpreter_factory=MyInterpreter)
+result = await rlm.acall(context=data, query=query, interpreter_factory=MyInterpreter)
 ```
 
-The call-time factory takes precedence over constructor and global/context factories, including when explicitly passing `PythonInterpreter`. RLM calls it once and shuts down the returned interpreter on success or failure. The factory must return a fresh interpreter each time. Passing a live interpreter at call time is no longer supported; migrate `rlm(interpreter, ...)` to `rlm(factory, ...)`. The argument is positional-only so `interpreter_factory` remains available as a signature input field.
+The call-time factory takes precedence over constructor and global/context factories, including when explicitly passing `PythonInterpreter`. RLM calls it once and shuts down the returned interpreter on success or failure. The factory must return a fresh interpreter each time. Passing a live interpreter at call time is no longer supported; migrate `rlm(interpreter, ...)` to `rlm(..., interpreter_factory=factory)`. The option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
 
 If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
 which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
