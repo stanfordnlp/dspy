@@ -1,6 +1,7 @@
+import enum
 import re
 import textwrap
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple, get_origin
 
 from pydantic.fields import FieldInfo
 
@@ -21,6 +22,17 @@ from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
+
+
+def _is_closed_set_annotation(annotation: Any) -> bool:
+    """Whether the annotation admits a fixed set of values, such as `Literal` or an `Enum`.
+
+    Re-asking the LM in another wire format can recover a value the adapter failed to
+    *parse*, so those failures stay eligible for the JSONAdapter fallback. It cannot
+    recover a value that parsed fine but is not one of the permitted members, and
+    retrying discards the error naming which member was expected.
+    """
+    return get_origin(annotation) is Literal or isinstance(annotation, enum.EnumMeta)
 
 
 class FieldInfoWithName(NamedTuple):
@@ -55,8 +67,9 @@ class ChatAdapter(Adapter):
             native_response_types: List of output field types handled by native LM features.
             use_json_adapter_fallback: Whether to try JSONAdapter after an AdapterParseError.
                 Only a malformed response can trigger this extra call, and never after visible stream output.
-                A well-formed response whose value fails validation against its field annotation
-                propagates instead, since re-asking cannot fix it. Configuration errors, engine
+                A well-formed value that is not a permitted member of a closed set, such as a
+                `Literal` or an `Enum`, propagates instead, since re-asking cannot fix it and
+                would discard the error naming the expected members. Configuration errors, engine
                 failures and programming bugs propagate. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
@@ -247,14 +260,17 @@ class ChatAdapter(Adapter):
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
                     # The field marker was found and its content extracted, so the response
-                    # was well-formed; only the value failed validation. Re-asking in JSON
-                    # would cost another call and still produce the same invalid value.
+                    # followed the chat format. For a closed set of permitted values the
+                    # fallback cannot help: it costs a second call and replaces the error
+                    # naming the expected members with a generic one. A value the adapter
+                    # merely failed to parse, such as a malformed list, stays eligible.
+                    annotation = signature.output_fields[k].annotation
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
-                        is_format_error=False,
+                        is_format_error=not _is_closed_set_annotation(annotation),
                     )
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():

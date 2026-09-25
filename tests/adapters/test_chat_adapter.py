@@ -1,3 +1,4 @@
+import enum
 import json
 import re
 from typing import Literal
@@ -3096,3 +3097,55 @@ def test_adapter_parse_error_defaults_to_format_error():
         adapter_name="ChatAdapter", signature=signature, lm_response="nonsense"
     )
     assert error.is_format_error is True
+
+
+def test_chat_adapter_still_falls_back_when_a_structured_value_cannot_be_parsed():
+    """A malformed value for a structured type stays eligible for the fallback.
+
+    The chat format was followed, but the content could not be parsed into a list.
+    Re-asking in JSON can genuinely recover that, unlike a value that parsed fine and
+    simply is not a permitted member of a closed set.
+    """
+
+    class Numbers(dspy.Signature):
+        question: str = dspy.InputField()
+        values: list[int] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## values ## ]]\nnot a list at all\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__", return_value=[{"values": [1, 2]}]
+        ) as mock_json_adapter_call:
+            result = adapter(lm, {}, Numbers, [], {"question": "pick"})
+
+        mock_json_adapter_call.assert_called_once()
+
+    assert result == [{"values": [1, 2]}]
+
+
+def test_chat_adapter_does_not_fall_back_for_an_enum_member_violation():
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    class Pick(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Color = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                adapter(lm, {}, Pick, [], {"question": "pick"})
+
+        mock_json_adapter_call.assert_not_called()
+
+    assert mock_completion.call_count == 1

@@ -8,7 +8,7 @@ import pydantic
 from pydantic import TypeAdapter
 from typing_extensions import is_typeddict
 
-from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName, _is_closed_set_annotation
 from dspy.adapters.utils import (
     apply_output_field_defaults,
     format_field_value,
@@ -126,7 +126,7 @@ class XMLAdapter(ChatAdapter):
                     signature=signature,
                     lm_response=completion,
                     message=f"Failed to parse field {field} with value {value}: {error}",
-                    is_format_error=False,
+                    is_format_error=not _is_closed_set_annotation(field.annotation),
                 ) from error
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
