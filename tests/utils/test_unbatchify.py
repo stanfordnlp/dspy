@@ -1,6 +1,9 @@
+import itertools
 import time
 from concurrent.futures import Future
 from unittest.mock import MagicMock
+
+import pytest
 
 from dspy.utils.unbatchify import Unbatchify
 
@@ -95,3 +98,82 @@ def test_unbatchify_honors_max_wait_time_under_trickling_input():
     assert elapsed < wait_time * 1.5
 
     unbatcher.close()
+
+
+def test_unbatchify_raises_when_batch_fn_returns_fewer_outputs():
+    """Every caller in the batch must fail fast if batch_fn drops outputs, instead of hanging."""
+
+    def dropping_batch_fn(batch):
+        # Simulates a batch_fn that filters its inputs, e.g. skipping items it cannot handle.
+        return [item for item in batch if item % 2 == 0]
+
+    unbatcher = Unbatchify(batch_fn=dropping_batch_fn, max_batch_size=2, max_wait_time=5.0)
+
+    try:
+        futures = [unbatcher.submit(1), unbatcher.submit(2)]
+
+        for future in futures:
+            with pytest.raises(ValueError, match="exactly one output per input"):
+                future.result(timeout=5)
+    finally:
+        unbatcher.close()
+
+
+def test_unbatchify_raises_when_batch_fn_returns_more_outputs():
+    """Extra outputs are a contract violation too, and must not be silently discarded."""
+
+    def duplicating_batch_fn(batch):
+        return [item for item in batch for _ in range(2)]
+
+    unbatcher = Unbatchify(batch_fn=duplicating_batch_fn, max_batch_size=2, max_wait_time=5.0)
+
+    try:
+        futures = [unbatcher.submit(1), unbatcher.submit(2)]
+
+        for future in futures:
+            with pytest.raises(ValueError, match="exactly one output per input"):
+                future.result(timeout=5)
+    finally:
+        unbatcher.close()
+
+
+def test_unbatchify_does_not_misalign_outputs_when_batch_fn_drops_items():
+    """A dropped output must never shift a later output onto an earlier input's future."""
+
+    def drop_first_batch_fn(batch):
+        return [f"result-for-{item}" for item in batch[1:]]
+
+    unbatcher = Unbatchify(batch_fn=drop_first_batch_fn, max_batch_size=2, max_wait_time=5.0)
+
+    try:
+        future = unbatcher.submit("a")
+        unbatcher.submit("b")
+
+        # Before the fix this future resolved to "result-for-b" -- the wrong input's output.
+        with pytest.raises(ValueError, match="exactly one output per input"):
+            future.result(timeout=5)
+    finally:
+        unbatcher.close()
+
+
+def test_unbatchify_does_not_stall_on_unbounded_batch_fn_output():
+    """An output iterable that never terminates must not block the worker thread.
+
+    The worker cannot fully materialize the result before resolving futures, or a lazy
+    batch_fn hangs every caller in the batch -- the exact failure this validation exists
+    to prevent.
+    """
+
+    def unbounded_batch_fn(batch):
+        return itertools.count()
+
+    unbatcher = Unbatchify(batch_fn=unbounded_batch_fn, max_batch_size=2, max_wait_time=5.0)
+
+    try:
+        futures = [unbatcher.submit(1), unbatcher.submit(2)]
+
+        for future in futures:
+            with pytest.raises(ValueError, match="exactly one output per input"):
+                future.result(timeout=5)
+    finally:
+        unbatcher.close()
