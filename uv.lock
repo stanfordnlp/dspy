@@ -207,21 +207,20 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.121.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "distro" },
     { name = "docstring-parser" },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "jiter" },
     { name = "pydantic" },
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/ca/3cb2c20ee729736fbd4546d5d8b67e818288529fe70cb7a80dbf80aef70b/anthropic-0.121.0.tar.gz", hash = "sha256:e79d6e08ab3376602fc9a70d4d5ea3540817c76cf7e16658bed790834e1833d6", size = 1013292, upload-time = "2026-08-07T17:11:07.241Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/3d/4170318539de0c163e1806509b0bb9cd7d611ee15e7885f1d16a11a37d29/anthropic-1.6.0.tar.gz", hash = "sha256:ce3c032f940984f67c516db896375bff36959f8dc589973e386f8e6ea81bbec3", size = 1172375, upload-time = "2026-09-15T15:14:55.826Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/91/b3d41643f1f639927e8c5fb02c3bd8bffe6f1f29e219b3bd4c61e267b15c/anthropic-0.121.0-py3-none-any.whl", hash = "sha256:6048713fa441e59e1cba8363171cd2a86273b25bd213e9c7ac70a523af88b011", size = 1035493, upload-time = "2026-08-07T17:11:08.508Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/32/57a8b6c5441d9e6a1f332f70ee02375af6d9b5b65b42689ba83f7c7d010a/anthropic-1.6.0-py3-none-any.whl", hash = "sha256:049434f013d3a874acdfee696ec626e19166d58f4277e8fa34e5d0a5ec250ad0", size = 1249068, upload-time = "2026-09-15T15:14:54.326Z" },
 ]
 
 [[package]]
@@ -948,7 +947,7 @@ weaviate = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.18.0,<1.0.0" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.18.0,<2.0.0" },
     { name = "anyio" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.3" },
     { name = "cachetools", specifier = ">=5.5.0" },
