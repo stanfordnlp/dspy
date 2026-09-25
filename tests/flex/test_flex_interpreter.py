@@ -363,7 +363,7 @@ def test_predictor_call_budget_is_enforced() -> None:
     inv.construct("ChainOfThought", "value: int -> result: int", "solve", {})
     inv.call("solve", {"value": 1})  # 1st
     inv.call("solve", {"value": 1})  # 2nd
-    with pytest.raises(CodeInterpreterError, match="budget.*Raise max_predictor_calls if this is expected"):
+    with pytest.raises(CodeInterpreterError, match=r"budget.*Raise max_predictor_calls if this is expected"):
         inv.call("solve", {"value": 1})  # 3rd exceeds the cap
     # A new forward gets a new budget — and its own registry, so it constructs anew.
     fresh = flex._bridge.invocation()

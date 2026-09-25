@@ -13,8 +13,9 @@ from docs.scripts.build_docs import (
     remove_source_maps,
     scope_root_relative_urls,
     set_release_badge_version,
+    validate_release_site,
 )
-from docs.scripts.publish_versioned_docs import publish_site, version_tuple
+from docs.scripts.publish_versioned_docs import publish_site, require_current_renderer, version_tuple
 
 requires_mike = pytest.mark.skipif(importlib.util.find_spec("mike") is None, reason="Mike is a docs-only dependency")
 
@@ -55,6 +56,17 @@ def branch_file(repository, branch: str, path: str) -> str:
     return subprocess.check_output(["git", "show", f"{branch}:{path}"], cwd=repository, text=True)
 
 
+def set_current_renderer(repository, renderer: str):
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+    current = next(entry for entry in inventory if entry["version"] == "current")
+    current["properties"]["renderer"] = renderer
+    subprocess.run(["git", "checkout", "-q", "versioned-docs"], cwd=repository, check=True)
+    (repository / "versions.json").write_text(json.dumps(inventory, indent=2) + "\n")
+    subprocess.run(["git", "add", "versions.json"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", f"Set Current renderer to {renderer}"], cwd=repository, check=True)
+    subprocess.run(["git", "checkout", "-q", "master"], cwd=repository, check=True)
+
+
 def test_release_versions_accept_prereleases_and_reject_old_major_versions():
     assert release_version("3.1.2") == "3.1.2"
     assert release_version("3.4.0b1") == "3.4.0b1"
@@ -83,6 +95,27 @@ def test_release_config_enables_mike_and_scopes_urls(tmp_path):
         assert "alias: true" in text
     finally:
         result.unlink()
+
+
+def test_release_validation_accepts_zensical_minified_metadata(tmp_path, monkeypatch):
+    site = tmp_path / "site"
+    (site / "api").mkdir(parents=True)
+    (site / "assets" / "images" / "social-zensical").mkdir(parents=True)
+    (site / "index.html").write_text(
+        "<html><head>"
+        "<link rel=canonical href=https://dspy.ai/3.4.0b1/>"
+        "<meta property=og:image content=https://dspy.ai/card.png>"
+        "</head></html>"
+    )
+    (site / "api" / "index.html").write_text("API")
+    (site / "search.json").write_text("{}")
+    (site / "llms.txt").write_text("DSPy")
+    (site / "assets" / "images" / "social-zensical" / "card.png").write_bytes(b"png")
+    config = tmp_path / "mkdocs.yml"
+    config.write_text("site_name: DSPy\n")
+    monkeypatch.setattr("docs.scripts.build_docs.importlib.metadata.version", lambda package: "3.4.0b1")
+
+    validate_release_site(site, config, "3.4.0b1")
 
 
 def test_production_build_removes_source_maps(tmp_path):
@@ -185,9 +218,35 @@ def test_mike_preserves_patches_and_moves_minor_redirect(tmp_path):
 
 
 @requires_mike
+def test_delayed_older_patch_does_not_move_minor_redirect_backward(tmp_path):
+    repository = make_repository(tmp_path)
+    newest = make_site(tmp_path / "newest", "3.0.1")
+    delayed = make_site(tmp_path / "delayed", "3.0.0")
+
+    for version, site in (("3.0.1", newest), ("3.0.0", delayed)):
+        publish_site(
+            repository=repository,
+            site=site,
+            identifier=version,
+            aliases=["3.0"],
+            package_source="workflow-wheel",
+        )
+
+    alias = branch_file(repository, "versioned-docs", "3.0/guide/index.html")
+    assert "../../3.0.1/guide/" in alias
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+    aliases = {entry["version"]: entry["aliases"] for entry in inventory}
+    assert aliases == {"3.0.0": [], "3.0.1": ["3.0"]}
+
+
+@requires_mike
 def test_mike_refuses_to_replace_an_immutable_snapshot(tmp_path):
     repository = make_repository(tmp_path)
     site = make_site(tmp_path / "first", "original")
+    for path in ("diving-deeper/tools", "diving-deeper/tools-react-and-mcp"):
+        page = site / path
+        page.mkdir(parents=True)
+        (page / "index.html").write_text(path)
     arguments = {
         "repository": repository,
         "site": site,
@@ -243,6 +302,40 @@ def test_mike_current_is_mutable_and_default(tmp_path):
         ["git", "cat-file", "-e", "master:versions.json"], cwd=repository, capture_output=True
     )
     assert production_inventory.returncode != 0
+    require_current_renderer(repository, "versioned-docs", "zensical")
+    with pytest.raises(RuntimeError, match="expected 'material'"):
+        require_current_renderer(repository, "versioned-docs", "material")
+
+
+@requires_mike
+def test_publication_requires_reviewed_zensical_current(tmp_path):
+    repository = make_repository(tmp_path)
+    deployed = make_site(tmp_path / "deployed", "deployed")
+    publish_site(
+        repository=repository,
+        site=deployed,
+        identifier="current",
+        aliases=[],
+        package_source="working-tree",
+    )
+    set_current_renderer(repository, "material")
+
+    update = make_site(tmp_path / "update", "update")
+    arguments = {
+        "repository": repository,
+        "site": update,
+        "identifier": "current",
+        "aliases": [],
+        "package_source": "working-tree",
+        "required_current_renderer": "zensical",
+    }
+    with pytest.raises(RuntimeError, match="expected 'zensical'"):
+        publish_site(**arguments)
+    assert "deployed" in branch_file(repository, "versioned-docs", "current/index.html")
+
+    set_current_renderer(repository, "zensical")
+    assert publish_site(**arguments)
+    assert "update" in branch_file(repository, "versioned-docs", "current/index.html")
 
 
 @requires_mike

@@ -7,8 +7,11 @@ from dspy.lm15 import StreamAssemblyError
 
 
 def error_from_event(event, *, provider=None):
+    http = event.error.http_response
     return error_class_for_code(event.error.code)(
         event.error.message, provider=provider, provider_code=event.error.provider_code,
+        request_id=http.get("request_id"), retry_after=http.get("retry_after"),
+        rate_limit_headers=http.get("rate_limit_headers"),
     )
 
 
