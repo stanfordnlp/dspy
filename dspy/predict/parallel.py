@@ -30,6 +30,9 @@ class Parallel:
             return_failed_examples (bool): Whether to return failed examples. Defaults to False.
             provide_traceback (Optional[bool]): Whether to provide traceback. Defaults to None.
             disable_progress_bar (bool): Whether to disable progress bar. Defaults to False.
+            timeout (int): Seconds after which straggler tasks are cancelled. Defaults to 120.
+            straggler_limit (int): Number of outstanding tasks below which the straggler timeout
+                is enforced. Defaults to 3.
 
         Example:
             ```python
