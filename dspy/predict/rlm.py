@@ -33,7 +33,6 @@ from dspy.primitives.code_interpreter import (
     CodeExecutionError,
     CodeInterpreter,
     FinalOutput,
-    _create_interpreter,
     _validate_interpreter,
     _validate_interpreter_factory,
     resolve_interpreter_factory,
@@ -127,9 +126,9 @@ class RLM(Module):
     ``dspy.configure(interpreter_factory=...)`` replaces that default. Either route
     accepts an adapter for a remote sandbox.
     RLM updates the interpreter's mutable ``tools`` dictionary with
-    invocation-scoped tools before execution. A caller-owned interpreter may be
-    reused sequentially with the same RLM instance, but must not be shared by
-    overlapping invocations.
+    invocation-scoped tools before execution. Pass a zero-argument factory as the
+    first positional call argument to override the runtime for one invocation.
+    RLM shuts down every interpreter it creates.
 
     Examples:
         ```python
@@ -422,9 +421,8 @@ class RLM(Module):
             raise TypeError("interpreter_factory.execution_instructions must be a string")
         return execution_instructions
 
-    def _action_signature_for_current_factory(self) -> type[Signature]:
+    def _action_signature_for_current_factory(self, factory: Callable[[], CodeInterpreter]) -> type[Signature]:
         """Return an action signature whose runtime guidance matches the active interpreter."""
-        factory = resolve_interpreter_factory(self._interpreter_factory)
         execution_instructions = self._get_execution_instructions(factory)
         # getattr, because generate_action may have been replaced by a predictor that
         # carries no signature of its own.
@@ -483,9 +481,9 @@ class RLM(Module):
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
         """Validate call-time arguments against the signature's input namespace."""
-        if "interpreter" in input_args and "interpreter" not in self.signature.input_fields:
+        if "interpreter_factory" in input_args and "interpreter_factory" not in self.signature.input_fields:
             raise TypeError(
-                "To use a caller-owned interpreter, pass it as the first positional argument when calling the module."
+                "Pass interpreter_factory as the first positional argument when calling the module."
             )
         input_names = set(self.signature.input_fields)
         unexpected = set(input_args) - input_names
@@ -579,16 +577,12 @@ class RLM(Module):
     def _interpreter_context(
         self,
         execution_tools: dict[str, Callable],
-        interpreter: CodeInterpreter | None,
+        factory: Callable[[], CodeInterpreter],
     ) -> Iterator[CodeInterpreter]:
-        """Yield a caller-owned interpreter or manage a factory-created one."""
-        if interpreter is not None:
-            _validate_interpreter(interpreter)
-            self._inject_execution_context(interpreter, execution_tools)
-            yield interpreter
-            return
-
-        interpreter = _create_interpreter(self._interpreter_factory)
+        """Create and close one interpreter for this invocation."""
+        _validate_interpreter_factory(factory)
+        interpreter = factory()
+        _validate_interpreter(interpreter)
         try:
             self._inject_execution_context(interpreter, execution_tools)
             yield interpreter
@@ -730,13 +724,14 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        interpreter_factory: Callable[[], CodeInterpreter],
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
         variables_info = [variable.format() for variable in variables]
         # A per-call signature, not a mutation of generate_action.signature, keeps a
         # dspy.context override local to this invocation.
         action = self.generate_action(
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(interpreter_factory),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -760,13 +755,13 @@ class RLM(Module):
     # Public Interface
     # =========================================================================
 
-    def forward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
+    def forward(self, interpreter_factory: Callable[[], CodeInterpreter] | None = None, /, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
         Args:
-            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+            interpreter_factory: Optional zero-argument factory, passed positionally. Overrides the constructor
+                and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
+                and output metadata and shuts it down on exit, including failures.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -777,18 +772,20 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        if interpreter_factory is None:
+            interpreter_factory = resolve_interpreter_factory(self._interpreter_factory)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, interpreter_factory
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -826,11 +823,12 @@ class RLM(Module):
         iteration: int,
         input_args: dict[str, Any],
         output_field_names: list[str],
+        interpreter_factory: Callable[[], CodeInterpreter],
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
         variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            signature=self._action_signature_for_current_factory(),
+            signature=self._action_signature_for_current_factory(interpreter_factory),
             variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iters}",
@@ -850,13 +848,13 @@ class RLM(Module):
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)
 
-    async def aforward(self, interpreter: CodeInterpreter | None = None, /, **input_args) -> Prediction:
+    async def aforward(self, interpreter_factory: Callable[[], CodeInterpreter] | None = None, /, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
-            interpreter: Optional caller-owned interpreter, passed positionally. RLM injects invocation tools and
-                output metadata into it but does not shut it down. Reuse is supported only for sequential calls to
-                this RLM instance.
+            interpreter_factory: Optional zero-argument factory, passed positionally. Overrides the constructor
+                and configured factories for this invocation. Must return a fresh interpreter; RLM injects tools
+                and output metadata and shuts it down on exit, including failures.
             **input_args: Input values matching the signature's input fields.
 
         Returns:
@@ -867,18 +865,20 @@ class RLM(Module):
             CodeInterpreterError: If interpreter setup, process, or protocol fails
         """
         self._validate_inputs(input_args)
+        if interpreter_factory is None:
+            interpreter_factory = resolve_interpreter_factory(self._interpreter_factory)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._interpreter_context(execution_tools, interpreter) as repl:
+        with self._interpreter_context(execution_tools, interpreter_factory) as repl:
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names, interpreter_factory
                 )
                 if isinstance(result, Prediction):
                     return result
