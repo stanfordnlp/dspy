@@ -230,11 +230,17 @@ def test_method_named_field_keeps_the_method_callable():
 
 
 def test_method_named_field_warns_at_construction(caplog):
-    with caplog.at_level("WARNING", logger="dspy.primitives.example"):
-        dspy.Example(items=["a"])
+    from dspy.primitives.example import _WARNED_SHADOWED_FIELDS
 
-    assert "items" in caplog.text
-    assert "subscript" in caplog.text
+    _WARNED_SHADOWED_FIELDS.clear()
+    try:
+        with caplog.at_level("WARNING", logger="dspy.primitives.example"):
+            dspy.Example(items=["a"])
+
+        assert "items" in caplog.text
+        assert "subscript" in caplog.text
+    finally:
+        _WARNED_SHADOWED_FIELDS.clear()
 
 
 def test_ordinary_field_assignment_is_unchanged():
@@ -252,3 +258,27 @@ def test_private_attributes_still_bypass_the_store():
 
     assert ex._input_keys == {"question"}
     assert "_input_keys" not in ex.keys(include_dspy=True)
+
+
+def test_non_string_keys_are_accepted():
+    """A dict passed as `base` may hold keys of any hashable type."""
+    ex = dspy.Example(base={1: "value", "question": "q"})
+
+    assert ex[1] == "value"
+    assert ex.question == "q"
+
+
+def test_shadowing_warning_is_emitted_once_per_field(caplog):
+    """copy()/without()/with_inputs() each build a new instance; one warning is enough."""
+    from dspy.primitives.example import _WARNED_SHADOWED_FIELDS
+
+    _WARNED_SHADOWED_FIELDS.clear()
+    try:
+        with caplog.at_level("WARNING", logger="dspy.primitives.example"):
+            ex = dspy.Example(items=["a"])
+            for _ in range(5):
+                ex.copy()
+
+        assert caplog.text.count("share a name with a method") == 1
+    finally:
+        _WARNED_SHADOWED_FIELDS.clear()

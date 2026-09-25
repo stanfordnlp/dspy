@@ -4,6 +4,9 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# (class name, field name) pairs already reported by the shadowing warning.
+_WARNED_SHADOWED_FIELDS: set[tuple[str, str]] = set()
+
 
 class Example:
     """A flexible data container for DSPy examples and training data with named fields.
@@ -129,13 +132,22 @@ class Example:
         # Update with provided kwargs
         self._store.update(kwargs)
 
-        shadowed = sorted(k for k in self._store if not k.startswith("_") and k in dir(type(self)))
-        if shadowed:
-            names = ", ".join(repr(k) for k in shadowed)
+        # Only str keys can collide with an attribute name; a dict passed as `base` may
+        # hold keys of any hashable type.
+        class_attributes = dir(type(self))
+        shadowed = sorted(
+            k for k in self._store if isinstance(k, str) and not k.startswith("_") and k in class_attributes
+        )
+        # Warn once per class and field name: copy(), without() and with_inputs() each
+        # build a new instance, and a legitimate field would otherwise warn on every one.
+        unreported = [k for k in shadowed if (type(self).__name__, k) not in _WARNED_SHADOWED_FIELDS]
+        if unreported:
+            _WARNED_SHADOWED_FIELDS.update((type(self).__name__, k) for k in unreported)
+            names = ", ".join(repr(k) for k in unreported)
             logger.warning(
                 f"{type(self).__name__} field(s) {names} share a name with a method, so attribute "
                 f"access returns the method rather than the stored value. Use subscript access "
-                f"such as example[{shadowed[0]!r}] to read them."
+                f"such as example[{unreported[0]!r}] to read them."
             )
 
     def __getattr__(self, key):
