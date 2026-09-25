@@ -284,5 +284,7 @@ annotations. This restriction applies to outputs, not structured input data.
 Use TypeSafe through `Predict`, rather than calling chat adapters directly.
 Generation-specific wrappers such as `BestOfN` and `Refine`, generative optimizers,
 and fine-tuning are unsupported with TypeSafe.
+[ReAnchor](ReAnchor.md) calibrates decision outputs with TypeSafe or a
+generative LM, and it sends no generation settings.
 Wrappers that assume LM generation settings can currently raise `AttributeError`
 rather than a capability-specific error.
