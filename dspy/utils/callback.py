@@ -2,7 +2,7 @@ import functools
 import inspect
 import logging
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, ParamSpec, TypeVar, cast
 
 import dspy
 import dspy.utils.callback_context as callback_context
@@ -306,8 +306,16 @@ class BaseCallback:
         pass
 
 
-def with_callbacks(fn):
-    """Decorator to add callback functionality to instance methods."""
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def with_callbacks(fn: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to add callback functionality to instance methods.
+
+    The wrapper preserves the decorated method's signature, so annotations such as
+    `Module.__call__(...) -> Prediction` remain visible to type checkers.
+    """
 
     def _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs):
         """Execute all start callbacks for a function call."""
@@ -366,7 +374,7 @@ def with_callbacks(fn):
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
-        return async_wrapper
+        return cast(Callable[P, R], async_wrapper)
 
     else:
 
@@ -396,7 +404,7 @@ def with_callbacks(fn):
                 callback_context.ACTIVE_CALL_ID.set(parent_call_id)
                 _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
 
-        return sync_wrapper
+        return cast(Callable[P, R], sync_wrapper)
 
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
