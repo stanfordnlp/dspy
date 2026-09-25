@@ -205,7 +205,16 @@ One call puts the same interpreter behind every code-executing module in the pro
 dspy.configure(interpreter_factory=MyInterpreter)
 ```
 
-RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol. To reuse a caller-owned interpreter, pass it as the first positional argument when calling the module: `rlm(interpreter, context=data, query=query)`. RLM updates its tools and output metadata but does not shut down or restore it. Reuse is supported only for sequential calls to the same RLM instance; use the factory path for concurrency.
+RLM creates and shuts down one interpreter from this factory per invocation. It adds invocation-scoped tools to the returned interpreter's mutable `tools` dictionary, so remote sandboxes need a `CodeInterpreter` adapter that supports that protocol.
+
+To override the factory for a single invocation, pass a zero-argument callable via the `interpreter_factory` keyword:
+
+```python
+result = rlm(context=data, query=query, interpreter_factory=MyInterpreter)
+result = await rlm.acall(context=data, query=query, interpreter_factory=MyInterpreter)
+```
+
+The call-time factory takes precedence over constructor and global/context factories, including when explicitly passing `PythonInterpreter`. RLM calls it once and shuts down the returned interpreter on success or failure. The factory must return a fresh interpreter each time. Passing a live interpreter at call time is no longer supported; migrate `rlm(interpreter, ...)` to `rlm(..., interpreter_factory=factory)`. The option is keyword-only, and `interpreter_factory` is reserved for runtime configuration rather than signature inputs.
 
 If the factory exposes an `execution_instructions` string, RLM adds it to the action predictor's task instructions,
 which DSPy adapters place in the system prompt. Optimizers such as GEPA may therefore adapt the execution guidance
@@ -274,7 +283,7 @@ RLM returns a `Prediction` with:
     RLM is marked as experimental. The API may change in future releases.
 
 !!! note "Thread Safety"
-    `interpreter_factory` may be called concurrently and must return a fresh interpreter each time. An interpreter passed as the first positional argument to `rlm(...)` or `rlm.acall(...)` is caller-owned and may be reused only for sequential calls to the same RLM instance. `PythonInterpreter` must also stay on the thread where it was first used.
+    Constructor and call-time factories may be called concurrently and must return a fresh interpreter each time. RLM retains that interpreter throughout one invocation and shuts it down afterward. `PythonInterpreter` must stay on the thread where it was first used.
 
 !!! note "Interpreter Requirements"
     RLM defaults to `PythonInterpreter`, which requires [Deno](https://deno.land/) to be installed for the Pyodide WASM sandbox.

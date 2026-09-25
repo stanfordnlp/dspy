@@ -14,9 +14,18 @@ Two entry points:
   its configuration is present.  The first offline-usable rung is
   ``selected``; an ``unprobed`` rung that precedes it may still win at
   request time, and the report says so.
-- ``credential_provider(policy, ctx)`` — the AUTH-2 provider callable:
-  resolves once, caches until the AUTH-3 skew window, re-resolves after.
-  Cache key = provider id + the identity-selecting settings.
+- ``credential_provider(policy, ctx, named=None)`` — the AUTH-2 provider
+  callable: resolves once, caches until the AUTH-3 skew window,
+  re-resolves after.  Cache key = provider id + the identity-selecting
+  settings.  Its ``source`` is the ``CredentialSource`` of the rung that
+  won (AUTH-1 provenance, amended 2026-09-19): every auth error names it.
+
+Named credentials (AUTH-1, amended 2026-09-19): ``named`` is one of
+``platform`` / ``workload`` / ``environment`` / ``cli``.  It selects the
+rungs that mean that one thing on this cloud (``NAMED_RUNGS``) and the
+chain is not walked: a named credential that is absent is a
+``NotConfiguredError`` naming what was probed, never a fall-through to
+another identity.
 
 Rungs that are declared but not implemented raise ``NotConfiguredError``
 naming the gap and the fix; they never fall through silently
@@ -45,11 +54,11 @@ from xml.etree import ElementTree
 
 from ..credentials import ApiKey, AwsCredentials, BearerToken, CredentialValue, parse_rfc3339
 from ..errors import AuthError, NotConfiguredError
-from ..features import RUNG_KINDS, AccessPolicy
+from ..features import NAMED_CREDENTIALS, RUNG_KINDS, AccessPolicy
 from . import rs256, sigv4
 
-__all__ = ["ChainContext", "Rung", "Step", "chain_for", "explain", "credential_provider",
-           "token_exchange_build", "token_exchange_parse", "RUNG_KINDS"]
+__all__ = ["ChainContext", "Rung", "Step", "CredentialSource", "chain_for", "named_rungs", "explain",
+           "credential_provider", "token_exchange_build", "token_exchange_parse", "RUNG_KINDS", "NAMED_RUNGS"]
 
 
 _SKEW = timedelta(seconds=300)  # AUTH-3
@@ -176,6 +185,33 @@ class Step:
     source: str
     detail: str
     state: str  # selected | shadowed | absent | unprobed
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialSource:
+    """Where a resolved credential came from (AUTH-1 provenance).  Never
+    the value: the rung's fixture kind, its human label, the name that
+    selected it (``platform`` …) when one did, and the expiry if known."""
+
+    rung: str
+    label: str
+    named: str | None = None
+    expires_at: datetime | None = None
+
+    def describe(self, now: datetime | None = None) -> str:
+        text = self.label
+        if self.named:
+            text += f' (named credential "{self.named}")'
+        if self.expires_at is not None:
+            current = now if now is not None else datetime.now(timezone.utc)
+            left = int((self.expires_at - current).total_seconds())
+            if left <= 0:
+                text += ", expired"
+            elif left < 3600:
+                text += f", expires in {max(left // 60, 1)} min"
+            else:
+                text += f", expires in {left // 3600} h {(left % 3600) // 60} min"
+        return text
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────
@@ -1143,6 +1179,60 @@ def profile_settings(policy: AccessPolicy, ctx: ChainContext) -> Callable[[str],
 
 _CHAINS = {"aws-chain": _aws_chain, "azure-chain": _azure_chain, "gcp-chain": _gcp_chain}
 
+# AUTH-1 named credentials (amended 2026-09-19): the rungs each name
+# covers on each cloud.  One word, the same on every cloud; the doctor and
+# every auth error print the concrete mechanism, never just the word.
+# ``platform`` on AWS covers two rungs (the container endpoint, then IMDS):
+# both are the machine's own identity, boto3 tries them in this order, and
+# the doctor says which answered.  ``workload`` and ``environment`` on GCP
+# are the same file rung told apart by the file's ``type``
+# (``external_account`` vs ``service_account``); the wrong type is refused
+# by name, never read as the other.
+NAMED_RUNGS: dict[str, dict[str, tuple[str, ...]]] = {
+    "aws-chain": {
+        "platform": ("container", "imds"),
+        "workload": ("web-identity",),
+        "environment": ("env:AWS_ACCESS_KEY_ID",),
+        "cli": ("assume-role", "sso", "shared-credentials-file", "login", "credential_process", "config-file"),
+    },
+    "azure-chain": {
+        "platform": ("managed-identity",),
+        "workload": ("workload-identity",),
+        "environment": ("environment",),
+        "cli": ("az", "pwsh", "azd"),
+    },
+    "gcp-chain": {
+        "platform": ("metadata",),
+        "workload": ("adc-env",),
+        "environment": ("adc-env",),
+        "cli": ("adc-file", "gcloud"),
+    },
+}
+
+_GCP_NAMED_TYPES = {"workload": ("external_account",), "environment": ("service_account", "impersonated_service_account")}
+
+# What each name means on each cloud, for the doctor and for errors.
+NAMED_MEANING: dict[str, dict[str, str]] = {
+    "aws-chain": {
+        "platform": "the ECS/EKS container endpoint, else the EC2 instance role (IMDSv2)",
+        "workload": "web identity (AWS_WEB_IDENTITY_TOKEN_FILE + AWS_ROLE_ARN) via STS",
+        "environment": "AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY",
+        "cli": "the active `aws` profile (assume-role, SSO, shared files, `aws login`, credential_process)",
+    },
+    "azure-chain": {
+        "platform": "Azure managed identity",
+        "workload": "Entra workload identity (AZURE_FEDERATED_TOKEN_FILE)",
+        "environment": "an Entra service principal from AZURE_TENANT_ID / AZURE_CLIENT_ID + secret or certificate",
+        "cli": "`az`, Azure PowerShell or `azd` sign-in",
+    },
+    "gcp-chain": {
+        "platform": "the attached service account (GCE metadata server)",
+        "workload": "workload identity federation (GOOGLE_APPLICATION_CREDENTIALS, type external_account)",
+        "environment": "a service-account file (GOOGLE_APPLICATION_CREDENTIALS, type service_account)",
+        "cli": "`gcloud auth application-default login` (the ADC file) or `gcloud auth print-access-token`",
+    },
+}
+
 
 def chain_for(policy: AccessPolicy) -> list[Rung]:
     builder = _CHAINS.get(policy.credential_policy)
@@ -1151,8 +1241,63 @@ def chain_for(policy: AccessPolicy) -> list[Rung]:
     return builder(policy)
 
 
-def explain(policy: AccessPolicy, ctx: ChainContext, *, explicit: bool) -> tuple[list[Step], bool]:
-    """The AUTH-7 walk.  ``explicit`` = an api_keys entry exists (rung 0)."""
+def _gcp_typed(rung: Rung, name: str) -> Rung:
+    """The GOOGLE_APPLICATION_CREDENTIALS rung narrowed to the file types the
+    name means; another type is refused naming the name it belongs to."""
+    allowed = _GCP_NAMED_TYPES[name]
+    other = "environment" if name == "workload" else "workload"
+
+    def kind_of(ctx: ChainContext) -> tuple[str | None, str | None]:
+        path = ctx.env.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not path:
+            return None, None
+        info = _gcp_credential_file(ctx, path)
+        return path, (str(info.get("type")) if info else None)
+
+    def probe(ctx: ChainContext):
+        path, kind = kind_of(ctx)
+        if path and kind and kind not in allowed:
+            return ("absent", f"{path} holds {kind} credentials; that is the named credential \"{other}\", not \"{name}\"")
+        return rung.probe(ctx)
+
+    def acquire(ctx: ChainContext):
+        path, kind = kind_of(ctx)
+        if path and kind and kind not in allowed:
+            raise NotConfiguredError(
+                f"{path} holds {kind} credentials; that is the named credential \"{other}\", not \"{name}\"",
+                credential_hint=f'credentials={{"<provider>": "{other}"}}',
+            )
+        return rung.acquire(ctx)
+
+    return Rung(rung.name, rung.kind, rung.source, rung.needs, probe, acquire)
+
+
+def named_rungs(policy: AccessPolicy, name: str) -> list[Rung]:
+    """The rungs a named credential covers on this door, in chain order."""
+    if name not in NAMED_CREDENTIALS:
+        raise NotConfiguredError(
+            f"{policy.provider}: unknown named credential {name!r}; one of {', '.join(repr(n) for n in NAMED_CREDENTIALS)}",
+            provider=policy.provider,
+        )
+    wanted = NAMED_RUNGS[policy.credential_policy][name]
+    rungs = [rung for rung in chain_for(policy) if rung.name in wanted]
+    if policy.credential_policy == "gcp-chain" and name in _GCP_NAMED_TYPES:
+        rungs = [_gcp_typed(rung, name) for rung in rungs]
+    return rungs
+
+
+def named_meaning(policy: AccessPolicy, name: str) -> str:
+    return NAMED_MEANING[policy.credential_policy][name]
+
+
+def _walk(policy: AccessPolicy, named: str | None) -> list[Rung]:
+    return named_rungs(policy, named) if named else chain_for(policy)
+
+
+def explain(policy: AccessPolicy, ctx: ChainContext, *, explicit: bool, named: str | None = None) -> tuple[list[Step], bool]:
+    """The AUTH-7 walk.  ``explicit`` = an api_keys entry exists (rung 0).
+    With ``named``, only the rungs the name covers are walked (the rest
+    are not steps at all: a named credential never falls through)."""
     steps: list[Step] = []
     selected = False
     if explicit:
@@ -1160,7 +1305,7 @@ def explain(policy: AccessPolicy, ctx: ChainContext, *, explicit: bool) -> tuple
         selected = True
     else:
         steps.append(Step("api_keys", "explicit api_keys entry", "not provided", "absent"))
-    for rung in chain_for(policy):
+    for rung in _walk(policy, named):
         try:
             verdict, detail = rung.probe(ctx)
         except NotConfiguredError as exc:
@@ -1179,13 +1324,31 @@ def explain(policy: AccessPolicy, ctx: ChainContext, *, explicit: bool) -> tuple
     return steps, selected or any(s.state == "unprobed" for s in steps)
 
 
-def resolve(policy: AccessPolicy, ctx: ChainContext) -> CredentialValue:
-    """Walk the chain online; the first rung that yields wins.  A rung that
-    is configured and fails raises. Azure developer commands are the
-    AUTH-1 exception: try all three before reporting their failure.
-    Deployed Azure credentials and AWS/GCP failures never fall through."""
+def _source_of(rung: Rung, value: CredentialValue, named: str | None) -> CredentialSource:
+    return CredentialSource(rung=rung.name, label=rung.source, named=named, expires_at=getattr(value, "expires_at", None))
+
+
+def _probed_summary(policy: AccessPolicy, ctx: ChainContext, rungs: list[Rung]) -> str:
+    parts = []
+    for rung in rungs:
+        try:
+            _, detail = rung.probe(ctx)
+        except NotConfiguredError as exc:
+            detail = str(exc).splitlines()[0]
+        parts.append(f"{rung.source}: {detail}")
+    return "; ".join(parts)
+
+
+def resolve(policy: AccessPolicy, ctx: ChainContext, *, named: str | None = None) -> tuple[CredentialValue, CredentialSource]:
+    """Walk the chain online; the first rung that yields wins, and the
+    result names the rung (AUTH-1 provenance).  A rung that is configured
+    and fails raises.  Azure developer commands are the AUTH-1 exception:
+    try all three before reporting their failure.  Deployed Azure
+    credentials and AWS/GCP failures never fall through.  With ``named``,
+    only that name's rungs run and nothing else is tried."""
     developer_failed = False
-    for rung in chain_for(policy):
+    rungs = _walk(policy, named)
+    for rung in rungs:
         try:
             got = rung.acquire(ctx)
         except AuthError:
@@ -1194,10 +1357,19 @@ def resolve(policy: AccessPolicy, ctx: ChainContext) -> CredentialValue:
                 continue
             raise
         if got is not None:
-            return got
+            return got, _source_of(rung, got, named)
     if developer_failed:
         raise AuthError("Azure developer credentials failed; sign in with az, Azure PowerShell, or azd",
                         provider=policy.provider)
+    if named:
+        raise NotConfiguredError(
+            f'{policy.provider}: named credential "{named}" \u2014 {named_meaning(policy, named)} \u2014 answered nothing '
+            f"({_probed_summary(policy, ctx, rungs)}). This door was told to use that identity only; it will not try "
+            f"the rest of the {policy.credential_policy} chain.",
+            provider=policy.provider,
+            credential_hint=f'credentials={{"{policy.provider}": "<platform|workload|environment|cli>"}} names one identity; '
+                            f"omit it to walk the {policy.credential_policy} chain",
+        )
     raise NotConfiguredError(
         f"{policy.provider}: no credential found in the {policy.credential_policy} chain"
         + (f"; set {policy.env_keys[0]} or configure the cloud SDK" if policy.env_keys else "; configure the cloud SDK"),
@@ -1208,20 +1380,30 @@ def resolve(policy: AccessPolicy, ctx: ChainContext) -> CredentialValue:
 
 class _CachingProvider:
     """AUTH-2/AUTH-3: resolve once, hand out until the skew window, then
-    re-resolve.  In memory only; never written to a foreign file."""
+    re-resolve.  In memory only; never written to a foreign file.
+    ``source`` is where the last resolution came from (AUTH-1 provenance);
+    ``None`` until the first request."""
 
-    def __init__(self, policy: AccessPolicy, ctx: ChainContext) -> None:
+    def __init__(self, policy: AccessPolicy, ctx: ChainContext, named: str | None = None) -> None:
         self._policy = policy
         self._ctx = ctx
+        self._named = named
         self._lock = threading.Lock()
         self._value: CredentialValue | None = None
+        self.source: CredentialSource | None = None
+
+    @property
+    def named(self) -> str | None:
+        return self._named
 
     def __call__(self) -> CredentialValue:
         with self._lock:
             if self._value is None or self._value.is_expired(self._ctx.now()):
-                value = resolve(self._policy, self._ctx)
+                value, source = resolve(self._policy, self._ctx, named=self._named)
+                self.source = source
                 if value.is_expired(self._ctx.now()):
-                    raise AuthError("cloud credential is expired; renew the configured credential source",
+                    raise AuthError("cloud credential is expired; renew the configured credential source"
+                                    f" (credential came from: {source.describe(self._ctx.now())})",
                                     provider=self._policy.provider)
                 # CLI output without an expiry cannot safely be cached forever.
                 self._value = value if isinstance(value, (ApiKey, AwsCredentials)) or value.expires_at is not None else None
@@ -1241,8 +1423,10 @@ def cache_key(policy: AccessPolicy, ctx: ChainContext) -> str:
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()
 
 
-def credential_provider(policy: AccessPolicy, ctx: ChainContext) -> Callable[[], CredentialValue]:
-    return _CachingProvider(policy, ctx)
+def credential_provider(policy: AccessPolicy, ctx: ChainContext, named: str | None = None) -> Callable[[], CredentialValue]:
+    if named is not None:
+        named_rungs(policy, named)  # an unknown name fails at construction, not on the first request
+    return _CachingProvider(policy, ctx, named)
 
 
 # ─── Harness ops (PROTOCOL.md token_exchange_build / token_exchange_parse) ──

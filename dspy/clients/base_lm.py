@@ -17,6 +17,21 @@ LM_CLASS_STATE_KEY = "_dspy_lm_class"
 _BUILTIN_LM_CLASS_PATH = "dspy.clients.lm.LM"
 
 
+def record_history(client, entry):
+    """Record a client call in global, client, and calling-module histories."""
+    if settings.disable_history:
+        return
+    if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
+        GLOBAL_HISTORY.pop(0)
+    GLOBAL_HISTORY.append(entry)
+    if settings.max_history_size == 0:
+        return
+    for owner in (client, *(settings.caller_modules or [])):
+        if len(owner.history) >= settings.max_history_size:
+            owner.history.pop(0)
+        owner.history.append(entry)
+
+
 def _import_lm_class(class_path: str) -> type:
     parts = class_path.split(".")
     last_error = None
@@ -69,6 +84,8 @@ class BaseLM:
     Persistent custom state belongs in dump_state/load_state. Runtime clients
     are shared by copy(), while DSPy history, callbacks and kwargs are isolated.
     """
+
+    supports_decision_requests = False
 
     def __init__(
         self,
@@ -261,6 +278,10 @@ class BaseLM:
         class_path = state.pop(LM_CLASS_STATE_KEY, None)
 
         if cls is BaseLM:
+            if class_path == "dspy.clients.typesafe.TypeSafe":
+                from dspy.clients.typesafe import TypeSafe
+
+                return TypeSafe.load_state(state)
             if class_path is None:
                 # Legacy saved programs did not record the concrete LM class.
                 from dspy.clients.lm import LM
@@ -331,30 +352,7 @@ class BaseLM:
         pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
-        if settings.disable_history:
-            return
-
-        # Global LM history
-        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
-            GLOBAL_HISTORY.pop(0)
-
-        GLOBAL_HISTORY.append(entry)
-
-        if settings.max_history_size == 0:
-            return
-
-        # dspy.LM.history
-        if len(self.history) >= settings.max_history_size:
-            self.history.pop(0)
-
-        self.history.append(entry)
-
-        # Per-module history
-        caller_modules = settings.caller_modules or []
-        for module in caller_modules:
-            if len(module.history) >= settings.max_history_size:
-                module.history.pop(0)
-            module.history.append(entry)
+        record_history(self, entry)
 
     def _process_completion(self, response, merged_kwargs):
         """Process the response of OpenAI chat completion API and extract outputs.

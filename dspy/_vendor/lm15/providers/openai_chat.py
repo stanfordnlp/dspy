@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import json
+import math
 import mimetypes
 import os
 from dataclasses import dataclass, field, replace
@@ -25,13 +26,15 @@ from ..compat import (
     ResolvedOpenAIChatCompat,
     resolve_openai_chat_compat,
 )
-from ..adaptation import AdaptationPolicy, adapt, check_policy, nearest_effort
+from ..adaptation import Adaptation, AdaptationPolicy, adapt, check_policy, collecting, nearest_effort
 from ..errors import ProviderError, ServerError, UnsupportedFeatureError
 from ..access import OPENAI_CHAT_API
 from ..features import ProviderManifest
+from ..judgments import Judgment, judgments_in_schema, non_judgment_properties, normalize_logprobs, note_unmeasurable_probabilities, replace_text_with_data, request_judgments
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    DataPart,
     BuiltinTool,
     CacheConfig,
     CitationPart,
@@ -61,7 +64,7 @@ from ..types import (
     document,
     image,
 )
-from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport
+from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport, _attach_error_metadata
 from .common import (
     MEDIA_KINDS,
     check_tool_result_media,
@@ -72,6 +75,7 @@ from .common import (
     parse_json_object,
     unnamed_tool_call_error,
     parts_to_text,
+    data_part_text,
 )
 from .openai import (
     OpenAILM,
@@ -129,6 +133,8 @@ def _chat_content_parts(msg: Message, *, force_array: bool = False, provider: st
     parts = [p for p in msg.parts if not isinstance(p, (ToolCallPart, ToolResultPart))]
     if len(parts) == 1 and isinstance(parts[0], TextPart) and not force_array:
         return parts[0].text
+    if len(parts) == 1 and isinstance(parts[0], DataPart) and not force_array:
+        return data_part_text(parts[0])  # a data part is text on this wire (D3): the same string form as a lone text part
     out: list[dict[str, Any]] = []
     for part in parts:
         if isinstance(part, TextPart):
@@ -1037,7 +1043,19 @@ def _response_from_chat_body(
     )
 
 
-def response_from_openai_chat(body: Mapping[str, Any], *, model: str | None = None, choice: int | None = None) -> Response:
+def _fold_judgments(resp: Response, response_format: Mapping[str, Any] | None) -> Response:
+    """MAP-14 §3: the single text part of a judgment answer becomes a DataPart."""
+    if not isinstance(response_format, Mapping) or response_format.get("type") != "json_schema":
+        return resp
+    found = judgments_in_schema(response_format.get("schema"))
+    if not found:
+        return resp
+    parts = replace_text_with_data(resp.message.parts, found)
+    return replace(resp, message=Message(role="assistant", parts=parts, continuation=resp.message.continuation))
+
+
+def response_from_openai_chat(body: Mapping[str, Any], *, model: str | None = None, choice: int | None = None,
+                              response_format: Mapping[str, Any] | None = None) -> Response:
     """A Chat Completions response body → the canonical :class:`Response`.
 
     The reading-side twin of :func:`request_from_openai_chat`: ``body`` is
@@ -1062,7 +1080,7 @@ def response_from_openai_chat(body: Mapping[str, Any], *, model: str | None = No
         cls = OpenAILM._response_error_code_map.get(code, ServerError)
         return cls(message or code or "provider error", provider="openai-chat", provider_code=code or None)
 
-    return _response_from_chat_body("openai-chat", body, model=model, choice=choice, on_error=on_error)
+    return _fold_judgments(_response_from_chat_body("openai-chat", body, model=model, choice=choice, on_error=on_error), response_format)
 
 
 def _usage_from_chat(usage_data: dict[str, Any]) -> Usage:
@@ -1098,6 +1116,9 @@ class OpenAIChatLM(BaseProviderLM):
     access: ProviderManifest | None = field(default=None, repr=False)
     credentials_path: "str | os.PathLike[str] | None" = field(default=None, repr=False)
     settings: "Mapping[str, str] | None" = None
+    # A named cloud identity ("platform", "workload", "environment", "cli";
+    # AUTH-1) on a cloud door, instead of api_key=.
+    credential: str | None = field(default=None, kw_only=True)
     clock: "Callable[[], datetime] | None" = field(default=None, repr=False)
 
     # MAP-13 policy: "note" (adapt and record), "silent", or "refuse".
@@ -1119,7 +1140,8 @@ class OpenAIChatLM(BaseProviderLM):
 
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
-        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings)
+        self._bind_access(self.access, credentials_path=self.credentials_path, default_base_url=_DEFAULT_BASE_URL, settings=self.settings,
+                          credential=self.credential)
         compat = self.compat if self.compat is not None else self._registry_compat()
         if isinstance(compat, str):
             partial = OpenAIChatCompat.preset(compat)
@@ -1151,7 +1173,6 @@ class OpenAIChatLM(BaseProviderLM):
             method="GET",
             url=f"{self.base_url.rstrip('/')}/models",
             headers=self._headers(),
-            read_timeout=30.0,
         )
 
     def _models_from_body(self, body: str):
@@ -1323,6 +1344,14 @@ class OpenAIChatLM(BaseProviderLM):
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
         compat = self._compat_for(request.model)
+        # Streaming uses generated JSON, never the non-streamable trie driver.
+        # Check before building messages or invoking credentials, including on
+        # servers that would otherwise ignore response_format.
+        if stream or not self._scores_named_tokens(request.model):
+            if stream and self._judgments_via_token_scoring(request):
+                self._judgment_stream_policy(request)
+            else:
+                note_unmeasurable_probabilities(request, self.provider)
         breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
             "model": request.model,
@@ -1414,6 +1443,11 @@ class OpenAIChatLM(BaseProviderLM):
                       "and does not apply it; use {'type': 'json_object'} and describe the shape in the prompt",
                       asked=request.config.response_format, provider=self.provider)
             else:
+                # MAP-14: the judgment convention goes verbatim on the chat
+                # dialect (api.openai.com strict honours it, receipted
+                # 2026-09-17); a server that scores named tokens delivers
+                # probabilities through the trie driver, every other one
+                # answers with the pick only.
                 payload["response_format"] = _response_format_to_chat(request.config.response_format)
         if request.config.reasoning:
             reasoning = request.config.reasoning
@@ -1541,6 +1575,7 @@ class OpenAIChatLM(BaseProviderLM):
         return payload
 
     def build_request(self, request: Request, stream: bool) -> TransportRequest:
+        request = self._wire_request(request)
         return self._emit(
             method="POST",
             url=f"{self.base_url.rstrip('/')}/chat/completions",
@@ -1566,20 +1601,468 @@ class OpenAIChatLM(BaseProviderLM):
         return mapped
 
     def parse_response(self, request: Request, response: HttpResponse) -> Response:
-        return _response_from_chat_body(
+        request = self._wire_request(request)
+        resp = _response_from_chat_body(
             self.provider, response.json(), model=request.model,
             choice=None, on_error=self._response_error,
         )
+        return _fold_judgments(resp, request.config.response_format)
 
-    def response_from_openai_chat(self, body: Mapping[str, Any], *, model: str | None = None, choice: int | None = None) -> Response:
+    # ─── Judgments by candidate-sequence likelihood (MAP-14 §4) ───────
+    #
+    # A server that scores named tokens (compat token_scoring =
+    # "logprob_token_ids": vLLM ≥ 0.29, receipted 2026-09-17) can deliver a
+    # distribution over the declared keys of every judgment.  Pure hooks
+    # below; the driver sequences them like files and batch:
+    #   1. two /tokenize calls per key plus one per judgment prefill, so
+    #      the server's chat template is honoured and the key path is
+    #      read in context (terminator included: prefix-free paths);
+    #   2. ONE /v1/completions call carrying every trie node as a prompt
+    #      (token ids), max_tokens 1, logprob_token_ids = union of child
+    #      tokens; raw log-probs sum along each path, one normalisation.
+
+    _JUDGMENT_PREFILL = "Answer:"
+
+    def _judgment_ask(self, j: "Judgment") -> str:
+        keys = []
+        for k in j.keys:
+            label = j.titles.get(k)
+            desc = j.descriptions.get(k)
+            tail = f": {label} - {desc}" if label and desc else (f": {label or desc}" if (label or desc) else "")
+            keys.append(f"- {k}{tail}")
+        instruction = j.instruction or j.name
+        return f"{instruction}\nOptions:\n" + "\n".join(keys) + "\nAnswer with the option only, spelled exactly as listed."
+
+    def _judgment_messages(self, request: Request, j: "Judgment", answer: str) -> list[dict[str, Any]]:
+        """The conversation, the judgment's question as a final user turn,
+        and the assistant's answer so far (prefill + key)."""
+        compat = self._compat_for(request.model)
+        messages = self._build_messages(replace(request, config=Config()), compat)
+        messages.append({"role": "user", "content": self._judgment_ask(j)})
+        messages.append({"role": "assistant", "content": answer})
+        return messages
+
+    def _judgment_tokenize_request(self, model: str, messages: list[dict[str, Any]], *, continue_final: bool) -> TransportRequest:
+        return self._emit(
+            method="POST",
+            url=f"{self.base_url.rstrip('/').removesuffix('/v1')}/tokenize",
+            endpoint="tokenize",
+            model=model,
+            headers=self._headers(),
+            payload={"model": model, "messages": messages, "add_generation_prompt": False,
+                     "continue_final_message": continue_final},
+        )
+
+    def _judgment_reply_error(self, response: HttpResponse, detail: str) -> ProviderError:
+        error = ProviderError(f"malformed judgment reply: {detail}", provider=self.provider, status=response.status)
+        _attach_error_metadata(error, response.headers)
+        return error
+
+    def _judgment_tokens_from_body(self, response: HttpResponse) -> list[int]:
+        data = response.json()
+        tokens = data.get("tokens") if isinstance(data, dict) else None
+        if not isinstance(tokens, list) or not tokens or not all(type(t) is int and t >= 0 for t in tokens):
+            raise self._judgment_reply_error(response, "tokenize reply carries no non-negative integer token list")
+        return tokens
+
+    def _judgment_score_request(self, model: str, prompts: list[list[int]], token_ids: list[int]) -> TransportRequest:
+        return self._emit(
+            method="POST",
+            url=f"{self.base_url.rstrip('/')}/completions",
+            endpoint="completions",
+            model=model,
+            headers=self._headers(),
+            payload={"model": model, "prompt": prompts, "max_tokens": 1, "temperature": 1.0, "logprobs": 0,
+                     "return_tokens_as_token_ids": True, "logprob_token_ids": sorted(token_ids)},
+        )
+
+    def _judgment_scores_from_body(self, response: HttpResponse, n_prompts: int) -> tuple[list[dict[int, float]], Usage, str | None]:
+        """Per prompt, measured token log-probs; missing ids follow MAP-14 §4."""
+        data = response.json()
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if (not isinstance(choices, list) or len(choices) != n_prompts
+                or any(not isinstance(c, dict) or type(c.get("index")) is not int for c in choices)
+                or {c["index"] for c in choices} != set(range(n_prompts))):
+            raise self._judgment_reply_error(response, "choices must contain every prompt index exactly once")
+        out: list[dict[int, float]] = []
+        for choice in sorted(choices, key=lambda c: c["index"]):
+            logprobs = choice.get("logprobs")
+            if logprobs is None:
+                logprobs = {}
+            if not isinstance(logprobs, dict):
+                raise self._judgment_reply_error(response, "logprobs must be an object or null")
+            top_list = logprobs.get("top_logprobs")
+            if top_list is None or top_list == []:
+                top = {}
+            elif isinstance(top_list, list) and len(top_list) == 1 and (top_list[0] is None or isinstance(top_list[0], dict)):
+                top = top_list[0] if top_list[0] is not None else {}
+            else:
+                raise self._judgment_reply_error(response, "expected one top_logprobs object")
+            scores: dict[int, float] = {}
+            for token, value in top.items():
+                if isinstance(token, str) and token.startswith("token_id:") and token[9:].isascii() and token[9:].isdigit():
+                    # -inf is a zero-likelihood token; NaN/+inf, positive log
+                    # probabilities, booleans and string coercions are not measurements.
+                    if (isinstance(value, bool) or not isinstance(value, (int, float))
+                            or value > 0 or (isinstance(value, float) and math.isnan(value))):
+                        raise self._judgment_reply_error(response, f"invalid log probability for {token}")
+                    try:
+                        scores[int(token[9:])] = float(value)
+                    except (ValueError, OverflowError) as exc:
+                        raise self._judgment_reply_error(response, f"invalid token score for {token}") from exc
+            out.append(scores)
+        usage_raw = data.get("usage")
+        if usage_raw is None:
+            usage_raw = {}
+        if not isinstance(usage_raw, dict):
+            raise self._judgment_reply_error(response, "usage must be an object or null")
+        for name in ("prompt_tokens_details", "completion_tokens_details"):
+            if usage_raw.get(name) is not None and not isinstance(usage_raw[name], dict):
+                raise self._judgment_reply_error(response, f"{name} must be an object or null")
+        try:
+            usage = _usage_from_chat(usage_raw)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise self._judgment_reply_error(response, f"invalid usage: {exc}") from exc
+        model = data.get("model")
+        if model is not None and (not isinstance(model, str) or not model):
+            raise self._judgment_reply_error(response, "model must be a non-empty string")
+        return out, usage, model
+
+    def _judgment_plan(self, request: Request) -> "list[dict[str, Any]]":
+        """One entry per judgment: the tokenize requests it needs.  Pure."""
+        plan = []
+        for name, j in request_judgments(request).items():
+            plan.append({
+                "judgment": j,
+                "prefill": self._judgment_tokenize_request(request.model, self._judgment_messages(request, j, self._JUDGMENT_PREFILL), continue_final=True),
+                "keys": {k: (self._judgment_tokenize_request(request.model, self._judgment_messages(request, j, f"{self._JUDGMENT_PREFILL} {k}"), continue_final=True),
+                             self._judgment_tokenize_request(request.model, self._judgment_messages(request, j, f"{self._JUDGMENT_PREFILL} {k}"), continue_final=False))
+                         for k in j.keys},
+            })
+        return plan
+
+    @staticmethod
+    def _judgment_paths(prefix: list[int], keys: dict[str, tuple[list[int], list[int]]]) -> dict[str, tuple[int, ...]]:
+        """Each key's token path after the prefill, terminator included."""
+        paths: dict[str, tuple[int, ...]] = {}
+        for key, (open_tokens, closed_tokens) in keys.items():
+            if open_tokens[:len(prefix)] != prefix or closed_tokens[:len(open_tokens)] != open_tokens:
+                raise UnsupportedFeatureError(
+                    f"openai-chat: key {key!r} does not tokenize as an extension of the prefill in this chat template; "
+                    "candidate-sequence scoring cannot place it (rename the key or use a provider that classifies natively)",
+                    provider="openai-chat", feature="config.response_format",
+                )
+            body = open_tokens[len(prefix):]
+            terminator = closed_tokens[len(open_tokens):len(open_tokens) + 1]
+            if not body or not terminator:
+                raise UnsupportedFeatureError(
+                    f"openai-chat: key {key!r} yields no scorable tokens (empty key or no end-of-turn token in the template)",
+                    provider="openai-chat", feature="config.response_format",
+                )
+            paths[key] = tuple(body) + tuple(terminator)
+        return paths
+
+    @staticmethod
+    def _judgment_nodes(paths: dict[str, tuple[int, ...]]) -> dict[tuple[int, ...], set[int]]:
+        nodes: dict[tuple[int, ...], set[int]] = {}
+        for seq in paths.values():
+            for i in range(len(seq)):
+                nodes.setdefault(seq[:i], set()).add(seq[i])
+        return nodes
+
+    def _judgment_fold(self, request: Request, found: "dict[str, Judgment]", per_judgment: list[tuple["Judgment", dict[str, tuple[int, ...]], dict[tuple[int, ...], dict[int, float]]]],
+                       usage: Usage, model: str | None, n_nodes: int, tokenize_calls: int) -> Response:
+        value: dict[str, Any] = {}
+        probabilities: dict[str, dict[str, float]] = {}
+        coverage: dict[str, float] = {}
+        for j, paths, table in per_judgment:
+            raw = {key: sum(table[seq[:i]][seq[i]] for i in range(len(seq))) for key, seq in paths.items()}
+            if not any(math.isfinite(v) for v in raw.values()):
+                raise ProviderError(
+                    f"judgment {j.name!r} has zero likelihood for every declared key; cannot normalize",
+                    provider=self.provider,
+                )
+            coverage[j.name] = sum(math.exp(v) for v in raw.values())
+            dist = normalize_logprobs(raw)
+            probabilities[j.name] = dist
+            best = max(dist, key=dist.get)
+            value[j.name] = (best == "true") if j.kind == "boolean" else (int(best) if j.ordered else best)
+        part = DataPart(value=value, probabilities=probabilities, method="candidate_sequence_likelihood")
+        return Response(
+            id=None,
+            model=str(model or request.model),
+            message=Message(role="assistant", parts=(part,)),
+            finish_reason="stop",
+            usage=usage,
+            provider_data={"coverage": coverage, "judgments": {"nodes": n_nodes, "tokenize_calls": tokenize_calls, "method": "candidate_sequence_likelihood"}},
+        )
+
+    def _judgments_via_token_scoring(self, request: Request) -> bool:
+        return (self._scores_named_tokens(request.model) and request.config.probabilities in ("if_available", "required")
+                and bool(request_judgments(request)))
+
+    def _validate_judgment_scoring(self, request: Request) -> None:
+        """Harmful omissions are refusals, not silent scoring adaptations."""
+        def refuse(feature: str, reason: str) -> None:
+            raise UnsupportedFeatureError(
+                f"{self.provider}: {reason}; use generated JSON with probabilities='off' "
+                "or a separate scoring request",
+                provider=self.provider, feature=feature,
+            )
+
+        if request.tools:
+            refuse("tools", "candidate scoring cannot execute tools; the program may depend on their results")
+        if request.config.tool_choice is not None:
+            refuse("config.tool_choice", "candidate scoring cannot preserve tool/action semantics")
+        if request.config.cache is not None and request.config.cache.resource is not None:
+            refuse("config.cache.resource", "candidate scoring cannot read a stored cache object; omitting it would lose prompt content")
+        n = (request.config.extensions or {}).get("n")
+        if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 1:
+            refuse("config.extensions.n", "n > 1 has no canonical multiple-response representation")
+        for name in ("store", "user_id", "service_tier"):
+            if getattr(request.config, name) is not None:
+                refuse(f"config.{name}", "measurement endpoints have no established mapping for this privacy, safety or billing control")
+        cache = request.config.cache
+        if cache is not None:
+            if cache.mode == "off":
+                refuse("config.cache.mode", "measurement endpoints cannot guarantee cache writes are disabled")
+            if cache.retention is not None:
+                refuse("config.cache.retention", "measurement endpoints cannot preserve cache lifetime and billing intent")
+        harmless = {"temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty"}
+        for name, value in (request.config.extensions or {}).items():
+            numeric = type(value) is int or (isinstance(value, float) and math.isfinite(value))
+            if (name == "n" and numeric and value == 1) or (name in harmless and numeric):
+                continue
+            refuse(f"config.extensions.{name}", "unknown measurement extension semantics; dropping it could lose privacy, money or action controls")
+
+    @staticmethod
+    def _judgment_mixed(request: Request) -> bool:
+        return bool(non_judgment_properties(request.config.response_format["schema"], request_judgments(request)))
+
+    @staticmethod
+    def _judgment_generated_request(request: Request) -> Request:
+        return replace(request, config=replace(request.config, probabilities="off"))
+
+    def _judgment_stream_policy(self, request: Request) -> None:
+        if request.config.probabilities == "required":
+            raise UnsupportedFeatureError(
+                f"{self.provider}: candidate scoring produces a non-streamable DataPart; "
+                "use complete() for required probabilities or a separate scoring request",
+                provider=self.provider, feature="config.probabilities",
+            )
+        adapt("config.probabilities", "dropped",
+              "stream() uses generated JSON, not candidate scoring; the answer carries an unmeasured pick only; use complete() for scoring",
+              asked=request.config.probabilities, provider=self.provider)
+
+    def _judgment_adaptations(self, request: Request, *, policy: AdaptationPolicy | None = None) -> "tuple[Adaptation, ...]":
+        # Shared offline preflight for plan, complete and async complete. No
+        # tokenization builder, credential provider or transport runs here.
+        self._validate_judgment_scoring(request)
+        with collecting(check_policy(policy if policy is not None else self.adaptations), provider=self.provider, planning=True) as scope:
+            from ..serde import config_to_dict
+
+            mixed = self._judgment_mixed(request)
+            if mixed:
+                adapt("config.response_format", "client_side",
+                      "an additional structured-output call answers ordinary properties, which are never scored",
+                      provider=self.provider)
+            config = config_to_dict(request.config)
+            for name in ("max_tokens", "temperature", "top_p", "top_k", "stop", "seed", "frequency_penalty",
+                         "presence_penalty", "reasoning", "logprobs", "cache", "extensions"):
+                if name in config:
+                    adapt(f"config.{name}", "dropped",
+                          "candidate likelihood measures unmodified next-token probabilities with max_tokens=1 per trie node; "
+                          "this generation setting has no measurement slot (any generated JSON call still uses its usual mapping)",
+                          asked=config[name], provider=self.provider)
+            if mixed:
+                self._payload(self._judgment_generated_request(request), stream=False)
+            self._build_messages(replace(request, config=Config()), self._compat_for(request.model))
+        return tuple(scope.records)
+
+    def plan(self, request: Request, *, policy: AdaptationPolicy | None = None) -> "tuple[Adaptation, ...]":
+        wire_request = self._wire_request(request)
+        if self._judgments_via_token_scoring(wire_request):
+            return self._judgment_adaptations(wire_request, policy=policy)
+        return BaseProviderLM.plan(self, request, policy=policy)
+
+    def complete(self, request: Request) -> Response:
+        wire_request = self._wire_request(request)
+        if not self._judgments_via_token_scoring(wire_request):
+            return BaseProviderLM.complete(self, request)
+        adaptations = self._judgment_adaptations(wire_request)
+        found = request_judgments(request)
+        plan = self._judgment_plan(wire_request)
+        tokenized: list[tuple["Judgment", dict[str, tuple[int, ...]], list[int]]] = []
+        calls = 0
+        for entry in plan:
+            prefix = self._judgment_tokens_from_body(self._send_ok(entry["prefill"])); calls += 1
+            keys = {}
+            for key, (open_req, closed_req) in entry["keys"].items():
+                keys[key] = (self._judgment_tokens_from_body(self._send_ok(open_req)),
+                             self._judgment_tokens_from_body(self._send_ok(closed_req))); calls += 2
+            tokenized.append((entry["judgment"], self._judgment_paths(prefix, keys), prefix))
+        return self._judgment_score_and_fold(request, found, tokenized, calls, adaptations)
+
+    def _send_ok(self, req: TransportRequest) -> HttpResponse:
+        resp = self._send(req)
+        if resp.status >= 400:
+            raise self._http_error(resp)
+        return resp
+
+    def _judgment_score_and_fold(self, request: Request, found, tokenized, calls: int, adaptations) -> Response:
+        wire_request = self._wire_request(request)
+        prompts: list[list[int]] = []
+        meta: list[tuple[int, tuple[int, ...]]] = []
+        union: set[int] = set()
+        nodes_per: list[dict[tuple[int, ...], set[int]]] = []
+        for index, (j, paths, prefix) in enumerate(tokenized):
+            nodes = self._judgment_nodes(paths)
+            nodes_per.append(nodes)
+            for node_prefix, children in nodes.items():
+                prompts.append(list(prefix) + list(node_prefix))
+                meta.append((index, node_prefix))
+                union |= children
+        req = self._judgment_score_request(wire_request.model, prompts, sorted(union))
+        resp = self._send_ok(req)
+        scores, usage, model = self._judgment_scores_from_body(resp, len(prompts))
+        tables: list[dict[tuple[int, ...], dict[int, float]]] = [{} for _ in tokenized]
+        for (index, node_prefix), got in zip(meta, scores):
+            children = nodes_per[index][node_prefix]
+            if any(t not in got for t in children):
+                return self._judgment_unmeasured(request, adaptations, usage)
+            tables[index][node_prefix] = {t: got[t] for t in children}
+        per = [(j, paths, tables[i]) for i, (j, paths, _) in enumerate(tokenized)]
+        try:
+            response = self._judgment_fold(wire_request, found, per, usage, model, len(prompts), calls)
+        except ProviderError as error:
+            error.status = resp.status
+            _attach_error_metadata(error, resp.headers)
+            raise
+        if self._judgment_mixed(request):
+            generated, _ = self._judgment_generate(request)
+            response = self._judgment_merge(response, generated)
+        return replace(response, adaptations=self._visible(adaptations))
+
+    def _judgment_generate(self, request: Request, *, unmeasured: bool = False):
+        from .base import _client_side_stop
+        from ..result import materialize_response
+
+        generated_request = self._judgment_generated_request(request)
+        wire, built = self._build(generated_request, stream=False)
+        if _client_side_stop(built):
+            # Preserve the ordinary driver's close-at-stop billing semantics.
+            plain = replace(generated_request, config=replace(generated_request.config, response_format=None))
+            response = materialize_response(self.stream(generated_request), plain)
+            return self._judgment_generated_value(generated_request, response, unmeasured=unmeasured), built
+        reply = self._send_ok(wire)
+        return self._judgment_generated_response(generated_request, reply, built, unmeasured=unmeasured), built
+
+    def _judgment_generated_response(self, request: Request, reply: HttpResponse, adaptations, *, policy=None, unmeasured: bool = False) -> Response:
+        """A strict semantic boundary: never repair an incomplete JSON answer."""
+        try:
+            # Read raw text first: the general judgment fold is deliberately lenient.
+            plain = replace(request, config=replace(request.config, response_format=None))
+            body = reply.json()
+            if isinstance(body, dict) and isinstance(body.get("error"), dict):
+                self.parse_response(plain, reply)  # preserve in-band provider errors
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if (not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict)
+                    or choices[0].get("finish_reason") != "stop"):
+                raise ValueError("generated judgment reply needs one complete choice with finish_reason='stop'")
+            response = self.parse_response(plain, reply)
+            response = self._finish_response(request, response, adaptations, policy=policy)
+            return self._judgment_generated_value(request, response, unmeasured=unmeasured)
+        except ProviderError as error:
+            error.status = reply.status
+            _attach_error_metadata(error, reply.headers)
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError, OverflowError) as error:
+            raise self._judgment_reply_error(reply, str(error)) from error
+
+    def _judgment_generated_value(self, request: Request, response: Response, *, unmeasured: bool = False) -> Response:
+        try:
+            if response.finish_reason != "stop":
+                raise ValueError("generated judgment answer did not finish completely")
+            texts = [p for p in response.message.parts if isinstance(p, TextPart)]
+            if len(texts) != 1:
+                raise ValueError("generated judgment answer needs one JSON object")
+            def invalid_constant(value):
+                raise ValueError(f"non-finite JSON constant {value}")
+            value = json.loads(texts[0].text, parse_constant=invalid_constant)
+            if not isinstance(value, dict):
+                raise ValueError("generated judgment answer needs a JSON object")
+            schema = request.config.response_format["schema"]
+            measured_fields = request_judgments(request)
+            for name in schema.get("required", ()):
+                if (unmeasured or name not in measured_fields) and name not in value:
+                    raise ValueError(f"generated answer is missing required property {name!r}")
+            part = DataPart(value=value, continuation=texts[0].continuation)
+            parts = tuple(part if p is texts[0] else p for p in response.message.parts)
+            return replace(response, message=replace(response.message, parts=parts), adaptations=())
+        except (ValueError, TypeError, OverflowError) as error:
+            raise ProviderError(f"malformed generated judgment JSON: {error}", provider=self.provider) from error
+
+    @staticmethod
+    def _judgment_sum_usage(scoring: Usage, generated: Usage) -> Usage:
+        return Usage(**{name: (getattr(scoring, name) + getattr(generated, name)
+                              if getattr(scoring, name) is not None and getattr(generated, name) is not None else None)
+                        for name in Usage.__dataclass_fields__})
+
+    def _judgment_merge(self, measured: Response, generated: Response) -> Response:
+        from ..serde import response_to_dict, usage_to_dict
+
+        original = generated.message.first(DataPart)
+        scored = measured.message.first(DataPart)
+        part = replace(scored, value={**original.value, **scored.value}, continuation=original.continuation)
+        return replace(measured, id=generated.id, finish_reason=generated.finish_reason,
+                       message=replace(generated.message, parts=tuple(part if p is original else p for p in generated.message.parts)),
+                       usage=self._judgment_sum_usage(measured.usage, generated.usage),
+                       provider_data={**(measured.provider_data or {}), "scoring_usage": usage_to_dict(measured.usage),
+                                      "generated_response": response_to_dict(generated, include_provider_data=True)})
+
+    def _judgment_fallback_usage(self, generated: Response, usage: Usage) -> Response:
+        from ..serde import usage_to_dict
+
+        return replace(generated, usage=self._judgment_sum_usage(usage, generated.usage),
+                       provider_data={**(generated.provider_data or {}), "scoring_usage": usage_to_dict(usage)})
+
+    def _judgment_unmeasured(self, request: Request, adaptations, usage: Usage) -> Response:
+        """The server answered 200 without the requested token ids: it dropped
+        ``logprob_token_ids`` (receipted on vLLM 0.25.1).  ``required`` refuses;
+        ``if_available`` answers by structured output instead and records it."""
+        if request.config.probabilities == "required":
+            raise UnsupportedFeatureError(
+                f"{self.provider}: config.probabilities='required' but this server ignored logprob_token_ids "
+                "(vLLM < 0.29?); no distribution can be measured here",
+                provider=self.provider, feature="config.probabilities",
+            )
+        with collecting(check_policy(self.adaptations), provider=self.provider) as scope:
+            adapt("config.probabilities", "dropped",
+                  "the server accepted the request and returned no log-probs for the requested token ids (logprob_token_ids ignored); "
+                  "answered by structured output instead", asked=request.config.probabilities, provider=self.provider)
+        response, built = self._judgment_generate(request, unmeasured=True)
+        response = self._judgment_fallback_usage(response, usage)
+        records = tuple(adaptations) + tuple(scope.records) + tuple(a for a in built if a not in adaptations)
+        return replace(response, adaptations=self._visible(records))
+
+    def _scores_named_tokens(self, model: str | None = None) -> bool:
+        """Whether the selected model can deliver a measured distribution."""
+        compat = self._compat_for(model) if model is not None else self._resolved_compat
+        return getattr(compat, "token_scoring", "none") == "logprob_token_ids"
+
+    def response_from_openai_chat(self, body: Mapping[str, Any], *, model: str | None = None, choice: int | None = None,
+                                  response_format: Mapping[str, Any] | None = None) -> Response:
         """A Chat Completions response body → canonical :class:`Response`
         under this adapter's provider name and error mapping; see
-        :func:`response_from_openai_chat`."""
-        return _response_from_chat_body(self.provider, body, model=model, choice=choice, on_error=self._response_error)
+        :func:`response_from_openai_chat`.  ``response_format`` (the
+        request's) folds a judgment answer into a DataPart (MAP-14)."""
+        resp = _response_from_chat_body(self.provider, body, model=model, choice=choice, on_error=self._response_error)
+        return _fold_judgments(resp, response_format)
 
     # ─── Stream parsing ──────────────────────────────────────────────
 
     def parse_stream_events(self, request: Request, raw_event: SSEEvent) -> Iterator[StreamEvent]:
+        request = self._wire_request(request)
         if not raw_event.data:
             return
         if raw_event.data == "[DONE]":
