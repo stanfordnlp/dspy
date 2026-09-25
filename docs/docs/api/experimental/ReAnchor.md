@@ -73,7 +73,8 @@ which leaves the most room on either side. Each search step tries at most
 40 gap midpoints, thinning large lists to settings spaced evenly through
 the observed values. For Boolean outputs, it also tries threshold zero when
 P(True)=0 is observed, since that boundary is the only way to classify those
-answers as True.
+answers as True. When two observed probabilities are adjacent floats, it tries
+the upper value as a threshold: `p >= threshold` separates them without a midpoint.
 
 ## Requests and the cache
 

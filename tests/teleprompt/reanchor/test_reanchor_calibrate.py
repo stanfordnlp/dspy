@@ -1,5 +1,6 @@
 """Calibration fits each predictor's thresholds, cuts, and weights against the metric, in place."""
 
+import math
 from typing import Annotated, Literal
 
 import pytest
@@ -24,6 +25,20 @@ def test_a_leaning_noul_gets_a_threshold_between_its_piles(system_one):
     report = calibrate(program, train, lambda g, p, trace=None: float(p.match == g.match), num_threads=2)
     assert program.fields["match"]["threshold"] == 0.8
     assert report[0]["train_score"] == 1.0
+
+
+@pytest.mark.parametrize("lower", [0.0, 0.7, math.nextafter(0.7, 1.0), math.nextafter(1.0, 0.0)])
+def test_adjacent_probabilities_can_be_separated_by_a_boolean_threshold(system_one, lower):
+    upper = math.nextafter(lower, 1.0)
+    system_one(lambda state, name, q: noul(upper if state["inputs"]["pair"] == "same" else lower))
+    train = [dspy.Example(pair=k, match=k == "same").with_inputs("pair") for k in ["same", "different"] * 10]
+    optimizer = dspy.experimental.ReAnchor(lambda g, p: float(p.match == g.match), num_threads=2)
+    program = optimizer.compile(dspy.Predict(Match), trainset=train)
+    assert program.fields["match"]["threshold"] == upper
+    assert program(pair="same").match is True
+    assert program(pair="different").match is False
+    assert optimizer.report["train_score_before"] == 0.5
+    assert optimizer.report["train_score"] == 1.0
 
 
 @pytest.mark.parametrize("target", [True, False])

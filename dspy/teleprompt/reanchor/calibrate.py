@@ -264,6 +264,10 @@ def _fit_threshold(
     probabilities = [e["noul"] for e in evidence]
     tried = []
     candidates = _gaps(probabilities, 0.0, 1.0)
+    for lower, upper in itertools.pairwise(sorted(set(probabilities))):
+        if math.nextafter(lower, upper) == upper:
+            # No interior float exists, but p >= upper still separates the pair.
+            candidates.append((upper, upper - lower))
     if 0.0 in probabilities:
         candidates.append((0.0, 0.0))  # P(True) >= threshold makes zero a distinct outcome.
     for t, width in candidates:
