@@ -1,4 +1,8 @@
+import logging
+
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class Example:
@@ -125,6 +129,15 @@ class Example:
         # Update with provided kwargs
         self._store.update(kwargs)
 
+        shadowed = sorted(k for k in self._store if not k.startswith("_") and k in dir(type(self)))
+        if shadowed:
+            names = ", ".join(repr(k) for k in shadowed)
+            logger.warning(
+                f"{type(self).__name__} field(s) {names} share a name with a method, so attribute "
+                f"access returns the method rather than the stored value. Use subscript access "
+                f"such as example[{shadowed[0]!r}] to read them."
+            )
+
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
             raise AttributeError
@@ -133,7 +146,15 @@ class Example:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
-        if key.startswith("_") or key in dir(self.__class__):
+        if key.startswith("_"):
+            super().__setattr__(key, value)
+        elif "_store" in self.__dict__ and key in self._store:
+            # The field is already stored, so keep attribute and item access in
+            # sync even when its name shadows a method such as items() or get().
+            # Writing an instance attribute instead would leave ex.key and
+            # ex["key"] holding different values.
+            self._store[key] = value
+        elif key in dir(self.__class__):
             super().__setattr__(key, value)
         else:
             self._store[key] = value

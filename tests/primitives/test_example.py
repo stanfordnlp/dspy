@@ -202,3 +202,53 @@ def test_example_to_dict_with_history():
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_assigning_to_a_method_named_field_updates_the_store():
+    """A field whose name shadows a method must not hold two different values.
+
+    Assignment previously wrote an instance attribute and left `_store` alone, so
+    `ex.items` and `ex["items"]` diverged.
+    """
+    ex = dspy.Example(items=["a"])
+    assert ex["items"] == ["a"]
+
+    ex.items = ["b"]
+
+    assert ex["items"] == ["b"]
+    assert ex.toDict()["items"] == ["b"]
+
+
+def test_method_named_field_keeps_the_method_callable():
+    """Fields never shadow the mapping API, which other code and users rely on."""
+    ex = dspy.Example(items=["a"], keys=["k"], values=["v"], get=1)
+
+    assert callable(ex.items)
+    assert sorted(ex.keys()) == ["get", "items", "keys", "values"]
+    assert dict(ex.items())["items"] == ["a"]
+    assert ex.get("items") == ["a"]
+
+
+def test_method_named_field_warns_at_construction(caplog):
+    with caplog.at_level("WARNING", logger="dspy.primitives.example"):
+        dspy.Example(items=["a"])
+
+    assert "items" in caplog.text
+    assert "subscript" in caplog.text
+
+
+def test_ordinary_field_assignment_is_unchanged():
+    ex = dspy.Example(question="q", answer="a")
+    ex.answer = "b"
+
+    assert ex.answer == "b"
+    assert ex["answer"] == "b"
+    assert "answer" not in ex.__dict__
+
+
+def test_private_attributes_still_bypass_the_store():
+    ex = dspy.Example(question="q")
+    ex._input_keys = {"question"}
+
+    assert ex._input_keys == {"question"}
+    assert "_input_keys" not in ex.keys(include_dspy=True)
