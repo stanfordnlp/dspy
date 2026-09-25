@@ -152,7 +152,9 @@ class File(Type):
 
     @classmethod
     def from_bytes(
-        cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream"
+        cls, file_bytes: bytes, filename: str | None = None,
+        resolution:str="medium",
+        mime_type: str = "application/octet-stream",
     ) -> "File":
         """Create a File from raw bytes.
 
@@ -163,7 +165,7 @@ class File(Type):
         """
         encoded_data = base64.b64encode(file_bytes).decode("utf-8")
         file_data = f"data:{mime_type};base64,{encoded_data}"
-        return cls(file_data=file_data, filename=filename)
+        return cls(file_data=file_data, filename=filename, resolution=resolution)
 
     @classmethod
     def from_file_id(cls, file_id: str, filename: str | None = None,
