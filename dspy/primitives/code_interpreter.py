@@ -159,7 +159,7 @@ def _validate_interpreter_factory(factory: Any, name: str = "interpreter_factory
     if not isinstance(factory, type) and isinstance(factory, CodeInterpreter):
         raise TypeError(
             f"{name} received an object that already implements CodeInterpreter, so its ownership "
-            "is ambiguous. Pass an existing interpreter as the first positional argument when calling the module. "
+            "is ambiguous. "
             "If this object also creates interpreters, pass a dedicated zero-argument creation callable instead."
         )
     if not callable(factory):
