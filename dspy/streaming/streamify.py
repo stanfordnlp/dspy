@@ -3,7 +3,7 @@ import contextvars
 import logging
 import threading
 from asyncio import iscoroutinefunction
-from queue import Queue
+from queue import Empty, Full, Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
 import orjson
@@ -80,7 +80,9 @@ def streamify(
         is_async_program: Whether the program is async. If `False`, the program will be wrapped with `asyncify`,
             otherwise the program will be called with `acall`.
         async_streaming: Whether to return an async generator or a sync generator. If `False`, the streaming will be
-            converted to a sync generator.
+            converted to a sync generator backed by a background producer; close the generator (or wrap it in
+            `contextlib.closing`) when you may stop consuming early, so the producer and the LM stream are released
+            deterministically (see `apply_sync_streaming`).
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -265,27 +267,116 @@ def streamify(
         return sync_streamer
 
 
+# Matches the anyio buffer `async_streamer` uses: the producer may run at
+# most this far ahead of the consumer, so abandoning a stream leaves only a
+# bounded handful of chunks consumed, not the whole completion.
+_SYNC_STREAM_BUFFER_SIZE = 16
+
+# How long a producer blocked on backpressure sleeps before re-checking the
+# queue. Only reached when the buffer is full — i.e. the consumer is slower
+# than the stream — and it is the producer's cancellation point (#10406).
+_SYNC_STREAM_BACKPRESSURE_POLL_SECONDS = 0.01
+
+
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
-    """Convert the async streaming generator to a sync generator."""
-    queue = Queue()  # Queue to hold items from the async generator
+    """Convert the async streaming generator to a sync generator.
+
+    The returned generator owns a background producer (thread + event loop +
+    the upstream LM stream). Like any resource-backed generator, it releases
+    them when it is closed: on exhaustion, on ``close()``, or when the last
+    reference is dropped (garbage collection). Breaking out of a ``for`` loop
+    while KEEPING the reference does not close a generator in Python — until
+    it is closed, the producer stays parked on a full buffer (it consumes at
+    most one bounded buffer past what was read, never the whole stream). Use
+    ``contextlib.closing`` when consumption may stop early:
+
+    ```python
+    from contextlib import closing
+
+    with closing(apply_sync_streaming(stream)) as sync_stream:
+        for chunk in sync_stream:
+            if is_enough(chunk):
+                break  # closed on exit — producer released deterministically
+    ```
+    """
+    # Bounded so the producer cannot race arbitrarily far ahead of the
+    # consumer; sized like the async path's memory-object stream.
+    queue = Queue(maxsize=_SYNC_STREAM_BUFFER_SIZE)
     stop_sentinel = object()  # Sentinel to signal the generator is complete
     exception_sentinel = object()
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
 
+    # Close handshake: when the consumer abandons a partially consumed
+    # stream (break / close() / GC), it flips `close_requested` and cancels
+    # the runner task on its own loop. Without this the producer thread kept
+    # pumping the async generator to exhaustion — consuming (and paying for)
+    # the rest of the LM stream and buffering it into the queue with nobody
+    # reading (#10406).
+    close_requested = False
+    runner_ready = threading.Event()
+    runner_loop: asyncio.AbstractEventLoop | None = None
+    runner_task: asyncio.Task | None = None
+
+    def put_trailing(obj):
+        """Queue a sentinel without ever wedging the producer.
+
+        On the live path the consumer is draining, so a blocked put resolves
+        itself. After a close request nobody drains; evicting the oldest
+        unread item is safe — the consumer has already walked away from it.
+        """
+        while True:
+            if not close_requested:
+                try:
+                    queue.put(obj, timeout=0.1)
+                    return
+                except Full:
+                    continue
+            try:
+                queue.put_nowait(obj)
+                return
+            except Full:
+                try:
+                    queue.get_nowait()
+                except Empty:
+                    pass
+
     def producer():
         """Runs in a background thread to fetch items asynchronously."""
 
         async def runner():
+            nonlocal runner_loop, runner_task
+            runner_loop = asyncio.get_running_loop()
+            runner_task = asyncio.current_task()
+            runner_ready.set()
             try:
                 async for item in async_generator:
-                    queue.put(item)
+                    # Awaitable backpressure: a plain blocking put would hold
+                    # the event loop and make the task uncancellable.
+                    while True:
+                        try:
+                            queue.put_nowait(item)
+                            break
+                        except Full:
+                            await asyncio.sleep(_SYNC_STREAM_BACKPRESSURE_POLL_SECONDS)
             except BaseException as exc:
-                queue.put((exception_sentinel, exc))
+                if isinstance(exc, asyncio.CancelledError) and close_requested:
+                    # The consumer walked away — a requested shutdown, not an
+                    # error to report.
+                    pass
+                else:
+                    put_trailing((exception_sentinel, exc))
             finally:
+                try:
+                    await async_generator.aclose()
+                except BaseException as exc:
+                    # The stream is over for the consumer either way; a close
+                    # complaint (e.g. a task group unwinding, see #10380) must
+                    # not displace the outcome already on the queue.
+                    logger.debug("Error closing the async stream: %s", exc)
                 # Signal completion
-                queue.put(stop_sentinel)
+                put_trailing(stop_sentinel)
 
         context.run(asyncio.run, runner())
 
@@ -294,13 +385,36 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     thread.start()
 
     # Consume items from the queue
-    while True:
-        item = queue.get()  # Block until an item is available
-        if item is stop_sentinel:
-            break
-        if isinstance(item, tuple) and len(item) == 2 and item[0] is exception_sentinel:
-            raise item[1]
-        yield item
+    finished = False
+    try:
+        while True:
+            item = queue.get()  # Block until an item is available
+            if item is stop_sentinel:
+                finished = True
+                break
+            if isinstance(item, tuple) and len(item) == 2 and item[0] is exception_sentinel:
+                finished = True  # the producer already stopped on its own
+                raise item[1]
+            yield item
+    finally:
+        if not finished:
+            # Abandoned mid-stream: stop the producer instead of letting it
+            # drain the rest of the upstream into the void. The generator can
+            # only be closed while suspended at a yield, so by now the runner
+            # has published its loop and task — the wait is belt and braces.
+            close_requested = True
+            if runner_ready.wait(timeout=1.0) and runner_loop is not None and runner_task is not None:
+                try:
+                    runner_loop.call_soon_threadsafe(runner_task.cancel)
+                except RuntimeError:
+                    # The loop already closed — the producer finished on its own.
+                    pass
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning(
+                    "The background streaming producer did not stop within its shutdown "
+                    "timeout; the stream may keep being consumed until it ends."
+                )
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
