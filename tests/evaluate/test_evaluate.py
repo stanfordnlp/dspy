@@ -490,3 +490,47 @@ def test_evaluate_raises_on_empty_devset():
     with pytest.raises(ValueError, match="devset"):
         ev(program)
 
+
+def test_display_dataframe_does_not_crash_on_non_utf8_stdout():
+    """display_dataframe must not raise UnicodeEncodeError on a non-UTF-8 stdout.
+
+    stylize_metric_name hardcodes a checkmark (U+2714 U+FE0F) into every metric cell.
+    A plain print(df) crashes with UnicodeEncodeError on any stdout whose encoding can't
+    represent it, e.g. the default Windows console (cp1252). This reproduces that
+    scenario directly against a fake stdout that behaves like cp1252 and checks
+    display_dataframe falls back instead of raising.
+    """
+    import io
+
+    import pandas as pd
+
+    from dspy.evaluate.evaluate import display_dataframe, stylize_metric_name
+
+    df = pd.DataFrame({"question": ["What is 1+1?"], "answer": ["2"], "score": [1.0]})
+    df = stylize_metric_name(df, "score")
+
+    class FakeNonUtf8Stdout(io.TextIOBase):
+        """Mimics a stdout stream that can only encode to cp1252, like a default
+        Windows console, raising UnicodeEncodeError on characters outside that codec.
+        """
+
+        encoding = "cp1252"
+
+        def __init__(self):
+            self.written = []
+
+        def write(self, s):
+            # Force the same failure a real cp1252 stdout would hit.
+            s.encode(self.encoding)
+            self.written.append(s)
+            return len(s)
+
+        def flush(self):
+            pass
+
+    fake_stdout = FakeNonUtf8Stdout()
+    with patch("sys.stdout", fake_stdout):
+        display_dataframe(df)  # must not raise UnicodeEncodeError
+
+    assert any("score" in chunk for chunk in fake_stdout.written)
+
