@@ -1,7 +1,8 @@
 import enum
 import re
 import textwrap
-from typing import Any, Literal, NamedTuple, get_origin
+import types
+from typing import Any, Literal, NamedTuple, Union, get_args, get_origin
 
 from pydantic.fields import FieldInfo
 
@@ -32,7 +33,14 @@ def _is_closed_set_annotation(annotation: Any) -> bool:
     recover a value that parsed fine but is not one of the permitted members, and
     retrying discards the error naming which member was expected.
     """
-    return get_origin(annotation) is Literal or isinstance(annotation, enum.EnumMeta)
+    origin = get_origin(annotation)
+    if origin is Literal or isinstance(annotation, enum.EnumMeta):
+        return True
+    if origin is Union or origin is types.UnionType:
+        # `Literal[...] | None` still names a fixed set; None is the only other member.
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        return bool(members) and all(_is_closed_set_annotation(arg) for arg in members)
+    return False
 
 
 class FieldInfoWithName(NamedTuple):

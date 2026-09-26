@@ -3127,6 +3127,29 @@ def test_chat_adapter_still_falls_back_when_a_structured_value_cannot_be_parsed(
     assert result == [{"values": [1, 2]}]
 
 
+def test_chat_adapter_does_not_fall_back_for_an_optional_literal_member_violation():
+    """`Literal[...] | None` names a fixed set too: an out-of-domain value must not be re-asked."""
+
+    class Color(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Literal["red", "blue"] | None = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## color ## ]]\ngreen\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError) as exc_info:
+                adapter(lm, {}, Color, [], {"question": "pick"})
+
+        mock_json_adapter_call.assert_not_called()
+
+    assert mock_completion.call_count == 1
+    assert exc_info.value.is_format_error is False
+
+
 def test_chat_adapter_does_not_fall_back_for_an_enum_member_violation():
     class Color(enum.Enum):
         RED = "red"
