@@ -173,3 +173,36 @@ def test_json_file_loading_works_without_permission(tmp_path):
     new_predict = dspy.Predict("question->answer")
     new_predict.load(json_path)
     assert new_predict.dump_state() == predict.dump_state()
+
+
+class _ProgramWithRetriever(dspy.Module):
+    def __init__(self):
+        self.retriever = dspy.Retrieve(k=5)
+
+
+def test_dump_state_of_a_module_holding_a_retrieve():
+    # BaseModule.dump_state forwards `json_mode` to every named parameter, and
+    # Retrieve.dump_state used to not accept it, so a module holding a Retrieve
+    # could not dump its state at all (#10454). Both modes must work.
+    program = _ProgramWithRetriever()
+
+    assert program.dump_state() == {"retriever": {"k": 5}}
+    assert program.dump_state(json_mode=False) == {"retriever": {"k": 5}}
+
+
+@pytest.mark.parametrize("filename", ["state.json", "state.pkl"])
+def test_save_and_load_state_of_a_module_holding_a_retrieve(tmp_path, filename):
+    # `save` reaches dump_state on both paths: .json via dump_state() and .pkl
+    # via dump_state(json_mode=False). Neither could run before the fix.
+    program = _ProgramWithRetriever()
+    path = tmp_path / filename
+    program.save(path)
+
+    loaded = _ProgramWithRetriever()
+    # Start the destination at a DIFFERENT k so the assertion proves the load
+    # actually restored the persisted value, not just left the constructor
+    # default in place.
+    loaded.retriever.k = 1
+    # .pkl loads require the explicit opt-in; .json does not.
+    loaded.load(path, allow_pickle=filename.endswith(".pkl"))
+    assert loaded.retriever.k == 5
