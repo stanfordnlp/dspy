@@ -225,7 +225,7 @@ loaded_program.load(path=save_path)
 
 ### BootstrapFewShotWithRandomSearch
 
-Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](api/optimizers/BootstrapFewShot.md).
+Detailed documentation on BootstrapFewShotWithRandomSearch can be found [here](api/optimizers/BootstrapFewShotWithRandomSearch.md).
 
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch
@@ -248,7 +248,7 @@ fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric,
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ensemble_optimizer = Ensemble(reduce_fn=dspy.majority)
-programs = [x[-1] for x in your_dspy_program_compiled.candidate_programs]
+programs = [x["program"] for x in your_dspy_program_compiled.candidate_programs]
 your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(programs[:3])
 ```
 
@@ -259,7 +259,7 @@ from dspy.teleprompt import BootstrapFewShotWithRandomSearch, BootstrapFinetune
 
 #Compile program on current dspy.settings.lm
 fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_threads=NUM_THREADS)
-your_dspy_program_compiled = tp.compile(your_dspy_program, trainset=trainset[:some_num], valset=trainset[some_num:])
+your_dspy_program_compiled = fewshot_optimizer.compile(your_dspy_program, trainset=trainset[:some_num], valset=trainset[some_num:])
 
 #Configure model to finetune
 config = dict(target=model_to_finetune, epochs=2, bf16=True, bsize=6, accumsteps=2, lr=5e-5)
@@ -468,11 +468,11 @@ dspy.configure_cache(
 )
 ```
 
-## DSPy `Refine` and `BestofN`
+## DSPy `Refine` and `BestOfN`
 
->`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
+>`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestOfN` in DSPy 2.6.
 
-### BestofN
+### BestOfN
 
 Runs a module up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 
