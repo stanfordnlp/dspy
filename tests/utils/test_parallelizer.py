@@ -424,6 +424,46 @@ def test_input_skipped_during_revoked_cancellation_is_not_dropped():
     assert not executor.cancel_jobs.is_set()
 
 
+def test_retry_reaching_the_gate_as_cancellation_lands_still_recovers():
+    """The original's failure must be in exceptions_map before it can set cancel_jobs.
+    Otherwise a retry for the same input that reaches the worker gate in between is
+    skipped as cancelled, and the recovery is lost."""
+    call_count = {"n": 0}
+    call_lock = threading.Lock()
+    cancel_landed = threading.Event()
+    retry_started = threading.Event()
+
+    class HoldOnSet(threading.Event):
+        def set(self):
+            super().set()
+            # free the pool threads, then hold the main thread until the retry is past the gate
+            cancel_landed.set()
+            retry_started.wait(timeout=5)
+
+    def task(item):
+        if item == 1:
+            with call_lock:
+                call_count["n"] += 1
+                is_original = call_count["n"] == 1
+            if is_original:
+                time.sleep(2.5)
+                raise ValueError("original failed")
+            retry_started.set()
+            return 10
+        # items 2 and 3 keep both pool threads busy, so the queued retry starts only once cancellation lands
+        cancel_landed.wait(timeout=5)
+        return item * 10
+
+    executor = ParallelExecutor(num_threads=2, max_errors=1, timeout=1.0, straggler_limit=3)
+    executor.cancel_jobs = HoldOnSet()
+
+    results = executor.execute(task, [1, 2, 3])
+
+    assert results == [10, 20, 30]
+    assert executor.failed_indices == []
+    assert not executor.cancel_jobs.is_set()
+
+
 def test_should_finalize_treats_recorded_none_result_as_already_finalized():
     """A slot can legitimately hold a real None result (not an error, not "unfinished").
     _should_finalize must tell that apart from a not-yet-recorded slot by checking against

@@ -247,6 +247,7 @@ class ParallelExecutor:
                             if outcome == job_cancelled:
                                 skipped.append((index, futures_map[f][2]))
                             elif self._should_finalize(index, outcome, results):
+                                self._process_outcome(results, index, outcome)
                                 if isinstance(outcome, Exception):
                                     self._record_error(futures_map[f][2], outcome)
                                 else:
@@ -254,7 +255,6 @@ class ParallelExecutor:
                                     # the other future for this index failed -- a success always wins,
                                     # so drop the stale failure record instead of reporting both.
                                     self._clear_stale_failure(index)
-                                self._process_outcome(results, index, outcome)
 
                             self._report_progress(pbar, results, len(data))
 
@@ -324,7 +324,9 @@ class ParallelExecutor:
     def _clear_stale_failure(self, idx):
         """A retry recovered idx after its original attempt failed. Undo what _record_error
         did for that stale failure: give back error_count, and cancel_jobs too if it was the
-        error budget (not a real interrupt) that set it."""
+        error budget (not a real interrupt) that set it. The recovery grace in keep_running applies
+        only while cancel_jobs is set. Once this clears cancel_jobs, in-flight futures are waited on
+        as in any run under max_errors."""
         with self.error_lock:
             if self.exceptions_map.pop(idx, None) is not None:
                 self.error_count -= 1
