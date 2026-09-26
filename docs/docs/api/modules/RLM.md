@@ -52,7 +52,7 @@ RLM operates in an iterative REPL loop:
 1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
 2. The LLM writes **Python code** to explore the data (print samples, search, filter)
 3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
-4. The LLM can call `llm_query(prompt)` to run **sub-LLM calls** for semantic analysis on snippets
+4. The LLM can call `llm_query(prompt, images=None)` or `llm_query_batched(prompts, images=None)` to run **sub-LLM calls** over text and optional images
 5. When done, the LLM calls `SUBMIT(output)` to return the final answer
 
 #### What the LLM sees (step-by-step trace):
@@ -119,8 +119,8 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
-| `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
+| `llm_query(prompt, images=None)` | Query a sub-LLM with text and an optional image or image list |
+| `llm_query_batched(prompts, images=None)` | Query prompts concurrently, optionally with one image entry per prompt |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
 | Standard library | `re`, `json`, `collections`, `math`, etc. |
@@ -223,12 +223,125 @@ metadata; anonymous factories without it continue to use the generic action prom
 for each action call, so a `dspy.context(interpreter_factory=...)` override keeps the prompt aligned with the runtime
 that executes the generated code.
 
+### Filesystems with Monty
+
+`MontyInterpreter` accepts the native Monty `os`, `mount`, and initial `cwd`
+options. No filesystem access is granted by default. Generated code can use
+supported `open()`, `pathlib.Path`, and `os` operations without DSPy-specific file
+tools or source translation. Paths use virtual POSIX syntax on every platform.
+
+For persistent in-memory files:
+
+```python
+from pydantic_monty import MemoryFile, OSAccess
+
+fs = OSAccess([MemoryFile("/work/input.txt", "13\n29")])
+factory = dspy.MontyInterpreter.configured(os=fs, cwd="/work")
+rlm = dspy.RLM("query -> answer", interpreter_factory=factory)
+result = rlm(query="Sum the numbers in input.txt and write the result to result.txt.")
+```
+
+`configured(...)` accepts MontyInterpreter constructor options and returns a
+reusable factory, without starting an interpreter. Each invocation gets a fresh
+session. It preserves Monty's RLM and GEPA authoring instructions and also works
+with `dspy.configure(interpreter_factory=factory)` and Flex.
+
+The same `OSAccess` object retains writes across REPL turns and interpreters.
+Nested RLMs inherit the factory, so they share these files but not Python globals.
+To isolate independent invocations, have the factory construct a fresh `OSAccess`
+instead. Shared writable state requires caller-managed concurrency; it is not a
+transactional store. `MemoryFile.permissions` describes metadata, not a read-only
+security policy. Custom OS handlers and `CallbackFile` callbacks are trusted host
+code, like supplied tools, and must enforce their own access policy.
+
+To expose an existing directory without granting access to the rest of the host:
+
+```python
+from pydantic_monty import MountDir
+
+with MountDir(host_path="./documents", virtual_path="/docs", mode="read-only") as mount:
+    factory = dspy.MontyInterpreter.configured(mount=mount, cwd="/docs")
+    reader = dspy.RLM("query -> answer", interpreter_factory=factory)
+    result = reader(query="Read report.txt and summarize it.")
+```
+
+Mounts are caller-owned: keep them open until all invocations finish. Interpreter
+shutdown does not close them. A list of mounts is also accepted.
+
+| Mount mode | Behavior |
+|---|---|
+| `read-only` | Reads confined to the mounted directory; writes rejected. |
+| `read-write` | Writes change actual host files and persist. Use a dedicated data/work directory. |
+| `overlay` (Monty's default) | Reads host files, but writes are discarded after **each code execution**, not after the entire RLM invocation. |
+
+Use `OSAccess` or a dedicated read-write directory for persistent scratch files,
+not an overlay mount. Do not mount source, configuration, hooks, or other paths
+whose contents host processes may later execute as writable. Monty performs
+mount confinement and rejects escaping symlinks/traversal; see its
+[filesystem contract](https://github.com/pydantic/monty/blob/v1.0.0/docs/filesystem.md).
+Guest `os.chdir()` persists across turns; the configured `cwd` is only initial.
+
+Filesystem operations do not grant shell/subprocess execution, arbitrary library
+imports, or network access. Monty's guest time/memory limits do not bound host OS
+callbacks or mount I/O; use MountDir's own limits where applicable.
+
+For GEPA, isolate filesystem state between candidates and examples to avoid
+evaluation contamination. Deep-copying a configured factory containing `OSAccess` copies
+its in-memory state, while factories closing over shared objects can retain shared
+state. Rebuilding a candidate is not a general filesystem reset mechanism.
+
+### Images with Monty and nested RLMs
+
+Monty can send images to multimodal LMs without Pyodide. Install `dspy[monty]` and
+choose `interpreter_factory=dspy.MontyInterpreter`. In its REPL, image inputs are
+URL/data-URI strings, including images in lists and dictionaries. Use
+`llm_query(prompt, images=[image])` or `llm_query_batched(prompts, images=...)` to
+inspect them. Typed sub-predictors such as `dspy.Predict("image: dspy.Image -> answer")`
+also send real multimodal content. Nested RLMs inherit Monty, share the parent's
+LM-call budget, and can return image URL/data-URI strings that typed final outputs
+convert back into host-side `dspy.Image` values. Flex supports the same transport.
+
+```python
+rlm = dspy.RLM(
+    "source: dspy.Image, request -> selected: dspy.Image, answer",
+    interpreter_factory=dspy.MontyInterpreter,
+)
+result = rlm(
+    source=dspy.Image.from_path("scan.png"),
+    request="Describe the diagram and return the source image.",
+)
+```
+
+For image **editing** or any other `SandboxSerializable` that relies on external
+Python libraries, explicitly run the invocation with `PythonInterpreter`. Monty
+does not import Pillow, OpenCV, NumPy, or arbitrary installed packages, and DSPy
+does not fall back to a Python worker or sidecar. A call-time override makes this
+choice explicit even when the module was constructed with Monty:
+
+```python
+result = rlm(
+    source=dspy.Image.from_path("scan.png"),
+    request="Crop the top-left 200×100 region and read its text.",
+    interpreter_factory=dspy.PythonInterpreter,
+)
+```
+
+With `PythonInterpreter`, image injection provisions and imports Pillow/OpenCV and
+exposes `DSPyImage.to_pil()`, `to_cv2()`, `from_pil()`, and `from_cv2()` in that
+interpreter. Remote pixels must first be embedded explicitly with
+`dspy.Image.from_url()` on the host. `PythonInterpreter` remains the default, but a
+constructor value of `PythonInterpreter` is also the configurable-default sentinel;
+prefer the call-time override above when documenting an explicit backend choice.
+
 ### Custom Sandbox-Serializable Inputs
 
-For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, lets interpreters with dynamic provisioning preload packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. Package provisioning is optional; `sandbox_setup()` remains the portable contract and must import required dependencies.
 
 ```python
 class DataFrame(dspy.SandboxSerializable):
+    def sandbox_packages(self) -> list[str]:
+        return ["pandas", "pyarrow"]
+
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport base64\nimport io"
 

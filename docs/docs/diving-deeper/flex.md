@@ -80,6 +80,51 @@ Plain functions or `dspy.Tool` instances, referenced by name in the generated co
 **`interpreter_factory=...`**
 Defaults to `dspy.PythonInterpreter` (sandboxed, needs Deno). `dspy.configure(interpreter_factory=...)` replaces that default on each interpreter session, including for a `Flex` built before the call. Must be a zero-argument callable returning a fresh `CodeInterpreter` for each interpreter session; parallel evaluations and nested code-executing modules can therefore receive isolated sessions. As in `dspy.RLM`, a bare interpreter instance is not accepted. This low-level hook does not guarantee source, standard-library portability, or a particular security boundary between different interpreters.
 
+To use Monty without Deno, install `dspy[monty]` and select its interpreter:
+
+```python
+dspy.configure(interpreter_factory=dspy.MontyInterpreter)
+program = dspy.Flex("question -> answer")
+```
+
+This also selects Monty for RLMs created by supplied host tools. Alternatively, pass
+`interpreter_factory=dspy.MontyInterpreter` to one Flex; predictors constructed by that
+Flex inherit its factory, but independently created modules in host tools use their own
+configured factory.
+
+Flex keeps its generated and saved `dspy.Module` source unchanged. For Monty execution,
+it removes the shim's no-op Module base and adapts imports and prediction field access.
+Predictor constructors return native callable closures backed by host handles, so both
+`self.solve = dspy.Predict(...)` and standalone RLM calls work without rewriting assignments.
+Classes, methods, closures, and calls use Monty's native implementation;
+generated logic never executes on the host or falls back to another interpreter.
+Flex and RLM use the shared host facade for typed outputs, budgets, and LM-option restrictions.
+These authoring restrictions apply to RLM's facade-enabled code as well as Flex.
+
+Write ordinary `__init__`/`forward` methods and nested helpers using
+[Monty's Python subset](https://github.com/pydantic/monty/tree/main/docs/limitations).
+Only direct `super().__init__(...)` inside `__init__` is supported, not aliases, shadowing,
+or `__class__` introspection. Call `module.forward(...)`, not `module(...)`.
+Ordinary helper classes (including nested classes), `locals()`, and async functions
+use Monty's native support. The adapter does not maintain a Python-feature blacklist;
+Monty itself reports unsupported syntax and APIs.
+Native method values such as `fn = text.strip` require a named
+helper that calls `text.strip()` directly. Flex methods and supplied tools can still
+be passed as values. The `_dspy`, `_Dspy`, and `__dspy` prefixes are reserved.
+
+Compiler-name checks run before authored code executes; runtime source-line diagnostics
+feed back into GEPA. External libraries can run behind supplied host tools; they cannot
+be imported into Monty. See [Monty-compatible RLM inputs](rlm.md#monty-compatible-inputs-and-external-libraries)
+for the `SandboxSerializable` boundary and a pandas-backed tool example.
+GEPA reads authoring rules from the configured factory (including `functools.partial`)
+without invoking it. Opaque lambdas still execute and receive name checks, but do not
+automatically supply backend-specific authoring rules. Keep the backend configuration
+consistent during optimization. Pyodide remains the default and is not subject to these rules.
+
+For resource limits, use `partial(dspy.MontyInterpreter, limits={"max_feed_duration_secs": 5})`
+from `functools`. Limits cover guest execution, not host tools. A resource-limit failure
+ends the session; ordinary code errors remain recoverable.
+
 **`max_predictor_calls`**
 The maximum number of predictor calls the generated code can make in one `forward`. It guards against runaway loops. `None` removes the limit.
 

@@ -29,6 +29,7 @@ from dspy.adapters.types.base_type import Type as _CustomType
 from dspy.adapters.utils import annotation_allows_none, parse_value
 from dspy.primitives.code_interpreter import CodeInterpreterError, _create_interpreter
 from dspy.primitives.facade import FacadeInvocation, restore_custom_types
+from dspy.primitives.monty_interpreter import MontyInterpreter
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,8 @@ def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
     """Record custom-type instances by their serialized string, recursing into containers."""
     if isinstance(value, _CustomType):
         out[value.serialize_model()] = value
+        if isinstance(value, dspy.Image):
+            out[value.url] = value
     elif isinstance(value, dict):
         for v in value.values():
             _collect_custom_type_originals(v, out)
@@ -147,7 +150,11 @@ class BridgeRuntime:
                 f"import json as {_JSON_VAR}\n"
                 f"{_JSON_VAR}.dumps({_OUT_VAR}._fields if hasattr({_OUT_VAR}, '_fields') else {_OUT_VAR})"
             )
-            result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
+            if isinstance(interp, MontyInterpreter):
+                # The framework-owned driver uses reserved names and needs no source adaptation.
+                result = interp._execute(code, variables={_INPUTS_VAR: interp.prepare_inputs(inputs)})
+            else:
+                result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
         except CodeInterpreterError as e:
             if invocation._lm_error is not None:
                 lm_error, tag = invocation._lm_error
