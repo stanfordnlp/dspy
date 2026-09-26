@@ -119,9 +119,12 @@ def test_codeact_code_parse_failure(pooled_interpreter):
     program = CodeAct(BasicQA, tools=[add])
     res = program(pooled_interpreter, question="What is 1+1?")
     assert res.answer == "2"
+    observation = res.trajectory.pop("observation_0")
+    assert observation.startswith("Failed to execute the generated code: Invalid Python syntax. message: ")
+    assert "'(' was never closed" in observation
+    assert "parse(error" in observation
     assert res.trajectory == {
         "generated_code_0": "parse(error",
-        "observation_0": "Failed to execute the generated code: Invalid Python syntax. message: ",
         "generated_code_1": "result = add(1,1)\nprint(result)",
         "code_output_1": '"2\\n"',
     }

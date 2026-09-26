@@ -102,11 +102,42 @@ def test_rejects_python_keywords_as_variable_names(pooled_interpreter):
             interpreter.execute("print(x)", variables={keyword: 42})
 
 
-def test_failure_syntax_error(pooled_interpreter):
+@pytest.mark.parametrize(
+    ("code", "detail"),
+    [
+        ("+++", "invalid syntax"),
+        ("def broken(:\n    pass", "invalid syntax"),
+        ("x = (1,", "'(' was never closed"),
+    ],
+)
+def test_failure_syntax_error(pooled_interpreter, code, detail):
     interpreter = pooled_interpreter
-    code = "+++"
-    with pytest.raises(SyntaxError, match="Invalid Python syntax"):
+    with pytest.raises(SyntaxError, match="Invalid Python syntax") as exc_info:
         interpreter.execute(code)
+    message = str(exc_info.value)
+    assert detail in message
+    assert "'<exec>', 1," in message
+    assert code.splitlines()[0] in message
+    assert interpreter.execute("print(40 + 2)") == "42\n"
+
+
+def test_failure_indentation_error(pooled_interpreter):
+    with pytest.raises(CodeExecutionError, match="IndentationError.*unexpected indent") as exc_info:
+        pooled_interpreter.execute("print(1)\n  print(2)")
+    assert "'<exec>', 2," in str(exc_info.value)
+    assert pooled_interpreter.execute("print(40 + 2)") == "42\n"
+
+
+def test_javascript_syntax_error_does_not_reuse_python_exception_args(pooled_interpreter):
+    with pytest.raises(CodeExecutionError, match="previous Python error"):
+        pooled_interpreter.execute("raise ValueError('previous Python error')")
+
+    # Raise in JavaScript while serializing the result, outside runPythonAsync.
+    code = """from js import eval as js_eval
+js_eval('({toJSON() { throw new SyntaxError("native syntax failure"); }})')"""
+    with pytest.raises(CodeExecutionError, match="native syntax failure"):
+        pooled_interpreter.execute(code)
+    assert pooled_interpreter.execute("print(40 + 2)") == "42\n"
 
 
 def test_failure_zero_division(pooled_interpreter):

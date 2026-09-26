@@ -363,8 +363,8 @@ while (true) {
 
       // Get error args for other exception types
       let errorArgs = [];
-      if (errorType !== "SyntaxError") {
-        // Only python exceptions have args.
+      if (setupCompleted && error instanceof pyodide.ffi.PythonError) {
+        // Python SyntaxError has args too; JavaScript errors must not reuse sys.last_exc.
         const last_exception_args = pyodide.globals.get("last_exception_args");
         // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
         // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
