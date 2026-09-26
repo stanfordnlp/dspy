@@ -3014,3 +3014,15 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+def test_chat_adapter_parses_indented_field_headers():
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    parsed = dspy.ChatAdapter().parse(
+        Sig,
+        "  [[ ## answer ## ]] Paris\n\n[[ ## completed ## ]]\n",
+    )
+    assert parsed["answer"] == "Paris"
+
