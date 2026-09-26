@@ -104,16 +104,20 @@ These authoring restrictions apply to RLM's facade-enabled code as well as Flex.
 Write ordinary `__init__`/`forward` methods and nested helpers using
 [Monty's Python subset](https://github.com/pydantic/monty/tree/main/docs/limitations).
 Only direct `super().__init__(...)` inside `__init__` is supported, not aliases, shadowing,
-or `__class__` introspection. Call `module.forward(...)`, not `module(...)`. Arbitrary
-inheritance, class data/decorators, custom special methods, and dynamic scope APIs are
-outside this subset. Native method values such as `fn = text.strip` require a named
+or `__class__` introspection. Call `module.forward(...)`, not `module(...)`.
+Ordinary helper classes (including nested classes), `locals()`, and async functions
+use Monty's native support. The adapter does not maintain a Python-feature blacklist;
+Monty itself reports unsupported syntax and APIs.
+Native method values such as `fn = text.strip` require a named
 helper that calls `text.strip()` directly. Flex methods and supplied tools can still
 be passed as values. The `_dspy`, `_Dspy`, and `__dspy` prefixes are reserved.
 
-Validation runs before authored code executes; source-line diagnostics feed back into GEPA.
-The native-method linter checks literal receivers only, not inferred variable types.
+Compiler-name checks run before authored code executes; runtime source-line diagnostics
+feed back into GEPA. External libraries can run behind supplied host tools; they cannot
+be imported into Monty. See [Monty-compatible RLM inputs](rlm.md#monty-compatible-inputs-and-external-libraries)
+for the `SandboxSerializable` boundary and a pandas-backed tool example.
 GEPA reads authoring rules from the configured factory (including `functools.partial`)
-without invoking it. Opaque lambdas still execute and receive validation, but do not
+without invoking it. Opaque lambdas still execute and receive name checks, but do not
 automatically supply backend-specific authoring rules. Keep the backend configuration
 consistent during optimization. Pyodide remains the default and is not subject to these rules.
 

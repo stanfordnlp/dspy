@@ -2,7 +2,7 @@
 
 Classes, methods, closures, and calls belong to Monty. We only remove the shim's
 no-op Module base/initializer and supply its attribute and subscription hooks.
-Validate first so unsupported object-model features fail before guest execution.
+Check names required by that adaptation; Monty owns its Python feature support.
 """
 
 import ast
@@ -37,31 +37,10 @@ def _module_init(node):
 
 
 class _Validate(ast.NodeVisitor):
-    """Reject semantics we cannot preserve before executing any generated code."""
-
-    _dynamic = frozenset({"eval", "exec", "compile", "globals", "locals", "vars", "dir", "__import__"})
-    _unsupported_nodes = frozenset(
-        {
-            "Delete",
-            "Yield",
-            "YieldFrom",
-            "Match",
-            "TryStar",
-            "AsyncWith",
-            "AsyncFor",
-            "AsyncFunctionDef",
-        }
-    )
+    """Protect compiler-owned names and the initializer whose base we remove."""
 
     def __init__(self):
-        self.in_function = False
         self.module_inits = set()
-        self.direct_method = None
-
-    def generic_visit(self, node):
-        if type(node).__name__ in self._unsupported_nodes:
-            _unsupported(node, type(node).__name__)
-        super().generic_visit(node)
 
     def _identifier(self, node, name):
         if name.startswith(("_dspy", "_Dspy", "__dspy")):
@@ -71,8 +50,6 @@ class _Validate(ast.NodeVisitor):
 
     def visit_Name(self, node):
         self._identifier(node, node.id)
-        if node.id in self._dynamic:
-            _unsupported(node, f"{node.id} exposes or replaces compiled execution scope")
 
     def visit_arg(self, node):
         self._identifier(node, node.arg)
@@ -80,84 +57,29 @@ class _Validate(ast.NodeVisitor):
 
     def visit_alias(self, node):
         self._identifier(node, node.asname or node.name.split(".")[0])
-        if node.name == "*":
-            _unsupported(node, "wildcard imports")
 
     def visit_ClassDef(self, node):
         self._identifier(node, node.name)
-        if self.in_function:
-            _unsupported(node, "nested class definitions")
-        if node.decorator_list or node.keywords or len(node.bases) != 1:
-            _unsupported(node, "use one dspy.Module base, without class decorators or metaclasses")
-        for item in node.body:
-            if isinstance(item, ast.FunctionDef):
-                if item.decorator_list:
-                    _unsupported(item, "method decorators and descriptors")
-                if item.name.startswith("__") and item.name != "__init__":
-                    _unsupported(item, "custom special methods; call forward explicitly")
-                if item.name == "__init__":
+        if len(node.bases) == 1 and not node.keywords:
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == "__init__":
                     self.module_inits.update(
                         stmt.value for stmt in item.body if isinstance(stmt, ast.Expr) and _module_init(stmt.value)
                     )
-            elif not (
-                isinstance(item, ast.Pass) or (isinstance(item, ast.Expr) and isinstance(item.value, ast.Constant))
-            ):
-                _unsupported(item, "class bodies may contain only methods and docstrings")
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
         self._identifier(node, node.name)
-        previous = self.in_function
-        self.in_function = True
         self.generic_visit(node)
-        self.in_function = previous
 
-    def visit_Attribute(self, node):
-        if node.attr.startswith("__") and not node.attr.endswith("__"):
-            _unsupported(node, "name-mangled private attributes; use a single underscore")
-        # Only diagnose receivers whose type follows from syntax. Inferring
-        # names from assignments or annotations would misclassify rebinding,
-        # branch joins, supplied tools, and compiled Flex methods.
-        literal_type = {
-            ast.List: list,
-            ast.ListComp: list,
-            ast.Tuple: tuple,
-            ast.Dict: dict,
-            ast.DictComp: dict,
-            ast.Set: set,
-            ast.SetComp: set,
-            ast.JoinedStr: str,
-        }.get(type(node.value))
-        if isinstance(node.value, ast.Constant):
-            literal_type = type(node.value.value)
-        if (
-            node is not self.direct_method
-            and isinstance(node.ctx, ast.Load)
-            and literal_type is not None
-            and callable(getattr(literal_type, node.attr, None))
-        ):
-            _unsupported(
-                node,
-                f"native method '{node.attr}' used as a value. Call it directly, or use a named helper: "
-                f"def helper(value, *args, **kwargs): return value.{node.attr}(*args, **kwargs)",
-            )
-        self.generic_visit(node)
+    def visit_AsyncFunctionDef(self, node):
+        self.visit_FunctionDef(node)
 
     def visit_Call(self, node):
         if node in self.module_inits:
             for argument in [*node.args, *node.keywords]:
                 self.visit(argument)
             return
-        previous = self.direct_method
-        self.direct_method = node.func
-        self.generic_visit(node)
-        self.direct_method = previous
-
-    def visit_comprehension(self, node):
-        if any(isinstance(n, (ast.Attribute, ast.Subscript)) for n in ast.walk(node.target)):
-            _unsupported(node.target, "attribute/subscript targets in comprehensions; use an explicit loop")
-        if node.is_async:
-            _unsupported(node.target, "async comprehensions")
         self.generic_visit(node)
 
 
@@ -184,6 +106,8 @@ class _Compile(ast.NodeTransformer):
     def visit_ImportFrom(self, node):
         if node.module != "dspy" or node.level:
             return node
+        if any(alias.name == "*" for alias in node.names):
+            _unsupported(node, "import DSPy facade names explicitly")
         return [
             ast.Assign(
                 targets=[_name(alias.asname or alias.name, ast.Store())],
@@ -193,6 +117,8 @@ class _Compile(ast.NodeTransformer):
         ]
 
     def visit_ClassDef(self, node):
+        if len(node.bases) != 1 or node.keywords:
+            return self.generic_visit(node)
         base = self.visit(node.bases[0])
         node.bases = []
         node = self.generic_visit(node)

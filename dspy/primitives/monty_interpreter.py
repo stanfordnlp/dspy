@@ -26,7 +26,7 @@ class MontyInterpreter:
     execution_instructions = (
         "Code runs in a persistent Monty Python sandbox. Variables and functions persist. "
         "Host tools and SUBMIT are available as global functions. Use print to inspect values. "
-        "Monty supports a Python subset: no third-party packages, class inheritance, generators, "
+        "Monty supports a Python subset: no third-party packages, class inheritance, generator functions, "
         "globals(), or method decorators. Standard-library modules have limited APIs. "
         "Call native methods directly (text.strip()); use named helper functions for callbacks. "
         "The dspy facade adapts dspy.Module subclasses; call their forward method explicitly. "
@@ -35,20 +35,18 @@ class MontyInterpreter:
     )
 
     flex_execution_instructions = """Monty Flex authoring rules:
-Write one dspy.Module subclass with __init__ and forward; use nested helper functions
-for ordinary data processing. Predictors, supplied tools, and compiled Flex methods
+Write one dspy.Module subclass with __init__ and forward. Ordinary helper classes,
+nested helpers, locals(), and async functions use Monty's native support.
+Predictors, supplied tools, and compiled Flex methods
 may be referenced by name and passed as values. Only supplied tools may be given to
 bridged predictors. Call native methods directly: text.strip(), not fn = text.strip.
 When a callback is needed, write a helper: def normalize(text): return text.strip().
-Use explicit loops instead of attribute/subscript comprehension targets. Use named
-helpers for reusable logic. Only direct super().__init__(...) in __init__ is supported;
+Only direct super().__init__(...) in __init__ is supported;
 do not alias or shadow super or access __class__. Call module.forward(...) explicitly.
-Do not use arbitrary inheritance, nested classes, class data, method decorators, custom
-special methods other than __init__, async functions, generators, del, match, name-mangled
-attributes, or dynamic scope APIs (eval, exec, globals, locals, vars, dir).
 The _dspy, _Dspy, and __dspy identifier prefixes are reserved. Standard-library APIs
 are limited to Monty's supported subset; third-party imports are unavailable.
-Validation and runtime failures include diagnostics; revise the source to address
+Use supplied host tools for external libraries; return plain data across the boundary.
+Runtime failures include diagnostics; revise the source to address
 them rather than catching an unsupported operation and returning a dummy answer.
 """
 

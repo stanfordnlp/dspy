@@ -98,6 +98,52 @@ A per-invocation factory override, supplied by keyword. For example, `rlm(query=
 **`dspy.SandboxSerializable`**
 The base class for inputs that need custom loading. Implement `sandbox_setup`, `to_sandbox`, `sandbox_assignment`, and `rlm_preview`. It also defines a Pydantic schema hook, so a subclass can be a typed field in a signature, as in `data: DataFrame = dspy.InputField()`.
 
+#### Monty-compatible inputs and external libraries
+
+With `interpreter_factory=dspy.MontyInterpreter` (install `dspy[monty]`),
+`SandboxSerializable` keeps the same contract: setup and reconstruction run once,
+and the reconstructed value persists across REPL turns. JSON-backed records,
+ordinary guest classes, and binary payloads decoded through `base64` work.
+The setup and reconstruction code must use APIs available in the selected interpreter.
+
+**A pandas-based loader does not work unchanged in Monty.** Pure Monty cannot import
+pandas, NumPy, `io`, or arbitrary installed Python packages. Installing them on the
+host, or mounting their files, does not add them to the sandbox's module set.
+To work with a DataFrame, choose one of these explicit boundaries:
+
+- Serialize it to JSON records and reconstruct lists/dicts with `json.loads` in
+  `sandbox_assignment`. This gives the guest data, **not the pandas API**, and may
+  lose DataFrame-specific types or metadata unless your serialization preserves them.
+- Keep the DataFrame on the host and supply narrowly scoped, pandas-backed tools:
+
+```python
+import pandas as pd
+import dspy
+
+frame = pd.DataFrame({"group": ["a", "b", "a"], "value": [2, 7, 11]})
+
+def group_total(group: str) -> int:
+    """Sum the value column for one group in the host DataFrame."""
+    return int(frame.loc[frame["group"] == group, "value"].sum())
+
+rlm = dspy.RLM(
+    "group -> answer: int",
+    tools=[group_total],
+    interpreter_factory=dspy.MontyInterpreter,
+)
+# Guest code can call group_total(group), then SUBMIT(answer=...).
+```
+
+The tool runs trusted code on the host; only its arguments and plain-data result
+cross the boundary. Validate its inputs and expose only the operations you intend
+to allow. Monty's guest resource limits do not bound host library work.
+
+Monty also provides [allow-listed host-object wrappers](https://pydantic.dev/docs/monty/concepts/host-objects/)
+such as `ClassInstance`, but DSPy's Monty adapter does not expose those wrappers.
+Transparent DataFrame emulation and arbitrary external-library imports are outside
+this backend's scope. If guest code needs those APIs, choose an interpreter that
+provides them; `LocalInterpreter` is an option only for trusted code.
+
 ### Inspecting the trajectory
 
 **`Prediction` fields: your output fields, `trajectory`, `final_reasoning`**

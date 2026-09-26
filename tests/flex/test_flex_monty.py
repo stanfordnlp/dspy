@@ -357,9 +357,7 @@ def test_augmented_stores_preserve_receiver_index_and_rhs_order(backend):
 @pytest.mark.parametrize(
     "body,match",
     [
-        ("x = locals()", "execution scope"),
-        ("del self.x", "Delete"),
-        ("self.__private = 1", "name-mangled"),
+        ("_dspy_value_1 = 1", "namespaces are reserved"),
         ("f = lambda: super()", "only direct super"),
         ("parent = super", "only direct super"),
         ("cls = __class__", "only direct super"),
@@ -384,21 +382,12 @@ def test_compiled_failure_reports_original_source_statement():
         flex(value=0)
 
 
-@pytest.mark.parametrize(
-    "methods,match",
-    [
-        (
-            "def __init__(self):\n    def helper(obj):\n        super().__init__()\n    helper(self)",
-            "only direct super",
-        ),
-        ("def __call__(self):\n    return self.forward(value=0)", "custom special methods"),
-    ],
-)
-def test_removed_object_model_features_fail_validation(methods, match):
+def test_nested_super_cannot_be_mistaken_for_the_module_initializer():
     from dspy.primitives._monty import compile_source
 
+    methods = "def __init__(self):\n    def helper(obj):\n        super().__init__()\n    helper(self)"
     source = "class M(dspy.Module):\n" + textwrap.indent(methods, "    ")
-    with pytest.raises(dspy.CodeExecutionError, match=match):
+    with pytest.raises(dspy.CodeExecutionError, match="only direct super"):
         compile_source(source)
 
 
@@ -424,12 +413,35 @@ def test_failed_unpack_preserves_partial_writes(backend):
 
 
 @pytest.mark.parametrize("expression", ['" Hello ".strip', "[].append", 'f"{value}".lower'])
-def test_native_method_lint_runs_before_any_guest_execution(expression):
-    from dspy.primitives._monty import compile_source
-
+def test_native_method_values_have_runtime_diagnostics(expression):
     source = f"class M(dspy.Module):\n    def forward(self, value):\n        fn = {expression}"
-    with pytest.raises(dspy.CodeExecutionError, match=r"sandbox:3: native method.*named helper"):
-        compile_source(source)
+    with pytest.raises(dspy.CodeExecutionError, match="named helper") as error:
+        program(source)(value=1)
+    assert "sandbox:3:" in str(error.value)
+
+
+def test_native_helper_classes_and_locals(backend):
+    flex = program(
+        """
+        class Offset:
+            def __init__(self, amount):
+                self.amount = amount
+            def apply(self, value):
+                return value + self.amount
+
+        class M(dspy.Module):
+            def forward(self, value):
+                class Scale:
+                    def apply(self, value):
+                        return value * 3
+                offset = Offset(7)
+                local = locals()["offset"]
+                assert not isinstance(local, dspy.Module)
+                return dspy.Prediction(result=Scale().apply(local.apply(value)))
+        """,
+        interpreter_factory=backend,
+    )
+    assert flex(value=4).result == 33
 
 
 def test_named_helpers_and_flex_method_values_are_allowed(backend):
