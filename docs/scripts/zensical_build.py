@@ -309,6 +309,9 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
         page.write_text(html.replace("</head>", f"{tags}</head>", 1))
 
 
+HREF = re.compile(r"""href=["']?([^"'\s>]+)""")
+
+
 def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str]) -> None:
     """Fail the build when an existing documentation feature has no output."""
     required = ("index.html", "api/index.html", "search.json", "llms.txt", "sitemap.xml", "sitemap.xml.gz")
@@ -331,6 +334,15 @@ def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, 
     cards = site / "assets" / "images" / "social-zensical"
     if not any(cards.glob("*.png")) or 'property="og:image"' not in home:
         raise RuntimeError("social cards or Open Graph metadata were not generated")
+
+    notebook_links = [
+        f"{page.relative_to(site).as_posix()} -> {href}"
+        for page in site.rglob("*.html")
+        for href in HREF.findall(page.read_text())
+        if ":" not in href and not href.startswith("//") and re.split(r"[?#]", href)[0].endswith(".ipynb")
+    ]
+    if notebook_links:
+        raise RuntimeError(f"pages link to notebook sources instead of rendered pages: {', '.join(notebook_links)}")
 
 
 def build_zensical_site(
