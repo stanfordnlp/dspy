@@ -833,9 +833,9 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
      {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
      {"role": "assistant",
       "content": '[[ ## citations ## ]]\n'
-                 '<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "char_location", "cited_text": "alpha", '
+                 '[{"type": "char_location", "cited_text": "alpha", '
                  '"document_index": 0, "start_char_index": 0, "end_char_index": '
-                 '5}]<<CUSTOM-TYPE-END-IDENTIFIER>>\n'
+                 '5}]\n'
                  '\n'
                  '[[ ## completed ## ]]\n'},
      {"role": "user",
@@ -3014,3 +3014,56 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+
+def test_chat_adapter_does_not_leak_custom_type_markers_into_assistant_messages():
+    # Custom types whose `format()` returns a list (Image, Audio, File, Citations, Document) serialize to a
+    # marker-wrapped string. Markers are expanded into content blocks for user messages only, so a custom type
+    # in an output field of a demo (assistant message) used to leak the reserved identifiers into the prompt.
+    from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
+    from dspy.adapters.types.citation import Citations
+
+    class CitedAnswer(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
+
+    citations = Citations(
+        citations=[
+            {"cited_text": "Paris is the capital.", "document_index": 0, "start_char_index": 0, "end_char_index": 21}
+        ]
+    )
+    demos = [dspy.Example(question="Capital of France?", answer="Paris", citations=citations).with_inputs("question")]
+
+    messages = dspy.ChatAdapter().format(CitedAnswer, demos, {"question": "Capital of Spain?"})
+
+    assistant_messages = [message for message in messages if message["role"] == "assistant"]
+    assert len(assistant_messages) == 1
+    content = assistant_messages[0]["content"]
+    assert isinstance(content, str)
+    assert CUSTOM_TYPE_START_IDENTIFIER not in content
+    assert CUSTOM_TYPE_END_IDENTIFIER not in content
+    # The serialized payload itself is kept, so the demo still shows the LM the expected output shape.
+    assert '"cited_text": "Paris is the capital."' in content
+    assert "[[ ## citations ## ]]" in content
+
+
+def test_chat_adapter_does_not_leak_custom_type_markers_into_history_assistant_turns():
+    from dspy.adapters.types.base_type import CUSTOM_TYPE_START_IDENTIFIER
+
+    class DescribeImage(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        prompt: str = dspy.InputField()
+        image: dspy.Image = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[{"prompt": "a cat", "image": dspy.Image(url="https://example.com/cat.jpg")}],
+    )
+
+    messages = dspy.ChatAdapter().format(DescribeImage, [], {"history": history, "prompt": "a dog"})
+
+    assistant_messages = [message for message in messages if message["role"] == "assistant"]
+    assert len(assistant_messages) == 1
+    assert isinstance(assistant_messages[0]["content"], str)
+    assert CUSTOM_TYPE_START_IDENTIFIER not in assistant_messages[0]["content"]
+    assert "https://example.com/cat.jpg" in assistant_messages[0]["content"]

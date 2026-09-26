@@ -12,13 +12,24 @@ from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYP
 
 
 def _expand_legacy_custom_type_markers_in_chat_message(message: dict[str, Any]) -> dict[str, Any]:
-    """Expand legacy marker payloads in an OpenAI-chat-shaped user message."""
-    if message.get("role") != "user" or not isinstance(message.get("content"), str):
+    """Expand legacy marker payloads in an OpenAI-chat-shaped message.
+
+    User messages are split into content blocks so multimodal payloads (e.g. `dspy.Image`) reach the LM
+    natively. Assistant and system messages must stay plain text, so any marker they carry (e.g. a custom
+    type in an output field of a few-shot demo or a conversation-history turn) is unwrapped to its serialized
+    payload instead of leaking the reserved identifiers into the prompt.
+    """
+    content = message.get("content")
+    if not isinstance(content, str) or CUSTOM_TYPE_START_IDENTIFIER not in content:
         return message
-    content = message["content"]
-    if CUSTOM_TYPE_START_IDENTIFIER not in content:
-        return message
+    if message.get("role") != "user":
+        return {**message, "content": _strip_legacy_custom_type_markers(content)}
     return {**message, "content": _split_legacy_custom_type_text_to_blocks(content)}
+
+
+def _strip_legacy_custom_type_markers(text: str) -> str:
+    """Replace each marker-wrapped payload with the payload itself, keeping the message a string."""
+    return re.sub(_marker_pattern(), lambda match: match.group(1).strip(), text, flags=re.DOTALL)
 
 
 def _split_legacy_custom_type_text_to_blocks(text: str) -> list[dict[str, Any]]:
