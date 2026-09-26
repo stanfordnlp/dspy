@@ -113,13 +113,34 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
         destination.write_text(redirect_document(relative))
 
 
+NOTEBOOK_LINK = re.compile(r"\]\((?P<target>[^)\s#]+)\.ipynb(?P<suffix>#[^)\s]*)?\)")
+
+
+def rewrite_notebook_links(docs: Path, notebooks: set[Path]) -> None:
+    """Point Markdown links at converted notebooks to their generated pages, as mkdocs-jupyter did."""
+
+    for page in docs.rglob("*.md"):
+        text = page.read_text()
+
+        def replace(match: re.Match[str], page: Path = page) -> str:
+            target = match["target"]
+            if (page.parent / f"{target}.ipynb").resolve() not in notebooks:
+                return match[0]
+            return f"]({target}.md{match['suffix'] or ''})"
+
+        rewritten = NOTEBOOK_LINK.sub(replace, text)
+        if rewritten != text:
+            page.write_text(rewritten)
+
+
 def convert_notebooks(docs: Path) -> set[str]:
     from nbconvert import MarkdownExporter
 
     exporter = MarkdownExporter()
     routes = set()
-    for notebook in docs.rglob("*.ipynb"):
-        relative = notebook.relative_to(docs).with_suffix(".md").as_posix()
+    notebooks = {notebook.resolve() for notebook in docs.rglob("*.ipynb")}
+    for notebook in notebooks:
+        relative = notebook.relative_to(docs.resolve()).with_suffix(".md").as_posix()
         routes.add(route_for_source(relative).lstrip("/") + "index.html")
         body, resources = exporter.from_filename(
             str(notebook), resources={"output_files_dir": f"{notebook.stem}_files"}
@@ -130,6 +151,7 @@ def convert_notebooks(docs: Path) -> set[str]:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(content)
         notebook.unlink()
+    rewrite_notebook_links(docs, notebooks)
     for source in docs.rglob("*.py"):
         relative = source.relative_to(docs).with_suffix(".md").as_posix()
         routes.add(route_for_source(relative).lstrip("/") + "index.html")
