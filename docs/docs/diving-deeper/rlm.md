@@ -100,6 +100,12 @@ The base class for inputs that need custom loading. Implement `sandbox_setup`, `
 
 `dspy.Image` implements this contract and declares Pillow and OpenCV as sandbox packages. With the default `PythonInterpreter`, an image enters the sandbox as a string-compatible `DSPyImage`; Pillow, OpenCV (`cv2`), and NumPy (`np`) are preloaded and imported during image injection. Generated code can pass the image directly to `llm_query(..., images=[image])`, manipulate it through `image.to_pil()` and `DSPyImage.from_pil(...)`, or use `image.to_cv2()` and `DSPyImage.from_cv2(...)` for OpenCV operations. An image produced in the sandbox can be submitted through an output field annotated as `dspy.Image`. As with other DSPy modules, wrap host-side PIL images explicitly with `dspy.Image(pil_image)` before passing them to RLM. Custom interpreters own their package environment; they can consume the provisioning hint or provide these dependencies independently, and the setup imports verify the result.
 
+Library-backed image editing requires an explicit `PythonInterpreter` invocation;
+DSPy does not fall back to a Python worker or sidecar from another backend. Prefer
+a call-time `interpreter_factory=dspy.PythonInterpreter` override when making that
+choice explicit, because the same constructor value is the configurable-default
+sentinel.
+
 #### Monty-compatible inputs and external libraries
 
 With `interpreter_factory=dspy.MontyInterpreter` (install `dspy[monty]`),
@@ -109,10 +115,9 @@ ordinary guest classes, and binary payloads decoded through `base64` work.
 The setup and reconstruction code must use APIs available in the selected interpreter.
 
 Images have a simpler Monty representation: URL/data-URI strings. They can go
-directly to multimodal queries or typed sub-predictors. To edit pixels, explicitly
-supply `dspy.Image.process_images` as a tool; it runs Pillow/OpenCV/NumPy in a
-separate Pyodide worker and returns encoded images. Editing therefore still
-requires Deno, and Monty's resource limits do not bound that worker. See the
+directly to multimodal queries or typed sub-predictors, through nested RLMs and
+Flex, and back through typed `dspy.Image` outputs. Monty cannot edit pixels with
+Pillow/OpenCV/NumPy; explicitly choose `PythonInterpreter` for those operations. See the
 [Monty image example](../api/modules/RLM.md#images-with-monty-and-nested-rlms).
 
 **A pandas-based loader does not work unchanged in Monty.** Pure Monty cannot import

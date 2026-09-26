@@ -94,3 +94,74 @@ def test_host_interrupt_discards_suspended_session(interpreter):
         interpreter.execute("interrupt()")
     with pytest.raises(dspy.CodeInterpreterError, match="shut down"):
         interpreter.execute("1")
+
+
+def test_virtual_files_and_cwd_persist_across_feeds():
+    from pathlib import PurePosixPath
+
+    from pydantic_monty import MemoryFile, OSAccess
+
+    fs = OSAccess([MemoryFile("/work/input.txt", "13"), MemoryFile("/work/sub/input.txt", "29")])
+    interpreter = dspy.MontyInterpreter(os=fs, cwd="/work")
+    try:
+        interpreter.start()  # Explicit startup must not lose the initial cwd.
+        assert interpreter.execute("open('input.txt').read()") == "13"
+        interpreter.execute("import os\nos.chdir('sub')\nfrom pathlib import Path\nPath('result.txt').write_text('41')")
+        assert interpreter.execute("[os.getcwd(), open('input.txt').read(), Path('result.txt').read_text()]") == [
+            "/work/sub", "29", "41",
+        ]
+    finally:
+        interpreter.shutdown()
+    assert fs.path_read_text(PurePosixPath("/work/sub/result.txt")) == "41"
+
+
+def test_filesystem_is_denied_without_capabilities(interpreter, tmp_path):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("host only")
+    with pytest.raises(dspy.CodeExecutionError, match="PermissionError"):
+        interpreter.execute(f"open({str(secret)!r}).read()")
+
+
+@pytest.mark.parametrize("mode", ["read-only", "read-write", "overlay"])
+def test_mount_modes_and_caller_ownership(tmp_path, mode):
+    from pydantic_monty import MountDir
+
+    source = tmp_path / "input.txt"
+    source.write_text("original")
+    with MountDir(host_path=tmp_path, virtual_path="/data", mode=mode) as mount:
+        # A session shutdown must not close the mount needed by the next session.
+        for _ in range(2):
+            interpreter = dspy.MontyInterpreter(mount=mount, cwd="/data")
+            try:
+                assert interpreter.execute("open('input.txt').read()") == "original"
+                code = "from pathlib import Path\nPath('output.txt').write_text('edited')\nPath('output.txt').read_text()"
+                if mode == "read-only":
+                    with pytest.raises(dspy.CodeExecutionError, match="PermissionError"):
+                        interpreter.execute(code)
+                else:
+                    assert interpreter.execute(code) == "edited"
+                # Overlay writes must not be mistaken for persistent RLM scratch space.
+                assert interpreter.execute("from pathlib import Path\nPath('output.txt').exists()") == (
+                    mode == "read-write"
+                )
+            finally:
+                interpreter.shutdown()
+    assert (tmp_path / "output.txt").exists() == (mode == "read-write")
+    assert source.read_text() == "original"
+
+
+def test_mount_confines_traversal_and_symlinks(tmp_path):
+    from pydantic_monty import MountDir
+
+    root = tmp_path / "allowed"
+    root.mkdir()
+    (tmp_path / "secret.txt").write_text("outside mount")
+    (root / "link.txt").symlink_to("../secret.txt")
+    with MountDir(host_path=root, virtual_path="/data", mode="read-only") as mount:
+        interpreter = dspy.MontyInterpreter(mount=mount, cwd="/data")
+        try:
+            for path in ("../secret.txt", "link.txt"):
+                with pytest.raises(dspy.CodeExecutionError, match="PermissionError"):
+                    interpreter.execute(f"open({path!r}).read()")
+        finally:
+            interpreter.shutdown()

@@ -224,35 +224,6 @@ class DSPyImage(str):
     def sandbox_packages() -> list[str]:
         return ["Pillow", "opencv-python"]
 
-    @staticmethod
-    def process_images(code: str, images: list[Union[str, "Image"]]) -> Any:
-        """Run image-processing Python in a fresh, isolated Pyodide sandbox (requires Deno).
-
-        Supply this function as an RLM/Flex tool. Pass image data-URI strings in
-        ``images``; remote URLs must be downloaded by the caller first. Inside
-        ``code``, ``images`` contains DSPyImage values with to_pil()/to_cv2().
-        Pillow, cv2 and np are available. Finish with SUBMIT(value), returning
-        JSON-compatible data; encode edited images with DSPyImage.from_pil(image)
-        or DSPyImage.from_cv2(array). No variables persist between calls.
-
-        Code cannot access host files, environment, network or other DSPy tools.
-        Monty resource limits do not apply to this separate worker.
-        """
-        from dspy.primitives.code_interpreter import CodeExecutionError, FinalOutput
-        from dspy.primitives.python_interpreter import PythonInterpreter
-
-        # Construction only validates references; pixel decoding stays in the worker.
-        references = [Image(image).url for image in images]
-        if any(not reference.startswith("data:") for reference in references):
-            raise ValueError("process_images requires embedded images; download URLs on the host with Image.from_url().")
-        with PythonInterpreter(packages=Image.sandbox_packages(), sync_files=False) as worker:
-            worker.execute(Image.sandbox_setup())
-            worker.execute("images = [DSPyImage(value) for value in _images]", variables={"_images": references})
-            result = worker.execute(code)
-            if not isinstance(result, FinalOutput):
-                raise CodeExecutionError("Image-processing code must finish with SUBMIT(value).")
-            return result.output["output"]
-
     def to_sandbox(self) -> bytes:
         return self.url.encode("utf-8")
 

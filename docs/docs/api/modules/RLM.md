@@ -223,6 +223,69 @@ metadata; anonymous factories without it continue to use the generic action prom
 for each action call, so a `dspy.context(interpreter_factory=...)` override keeps the prompt aligned with the runtime
 that executes the generated code.
 
+### Filesystems with Monty
+
+`MontyInterpreter` accepts the native Monty `os`, `mount`, and initial `cwd`
+options. No filesystem access is granted by default. Generated code can use
+supported `open()`, `pathlib.Path`, and `os` operations without DSPy-specific file
+tools or source translation. Paths use virtual POSIX syntax on every platform.
+
+For persistent in-memory files:
+
+```python
+from functools import partial
+from pydantic_monty import MemoryFile, OSAccess
+
+fs = OSAccess([MemoryFile("/work/input.txt", "13\n29")])
+factory = partial(dspy.MontyInterpreter, os=fs, cwd="/work")
+rlm = dspy.RLM("query -> answer", interpreter_factory=factory)
+result = rlm(query="Sum the numbers in input.txt and write the result to result.txt.")
+```
+
+The same `OSAccess` object retains writes across REPL turns and interpreters.
+Nested RLMs inherit the factory, so they share these files but not Python globals.
+To isolate independent invocations, have the factory construct a fresh `OSAccess`
+instead. Shared writable state requires caller-managed concurrency; it is not a
+transactional store. `MemoryFile.permissions` describes metadata, not a read-only
+security policy. Custom OS handlers and `CallbackFile` callbacks are trusted host
+code, like supplied tools, and must enforce their own access policy.
+
+To expose an existing directory without granting access to the rest of the host:
+
+```python
+from pydantic_monty import MountDir
+
+with MountDir(host_path="./documents", virtual_path="/docs", mode="read-only") as mount:
+    factory = partial(dspy.MontyInterpreter, mount=mount, cwd="/docs")
+    reader = dspy.RLM("query -> answer", interpreter_factory=factory)
+    result = reader(query="Read report.txt and summarize it.")
+```
+
+Mounts are caller-owned: keep them open until all invocations finish. Interpreter
+shutdown does not close them. A list of mounts is also accepted.
+
+| Mount mode | Behavior |
+|---|---|
+| `read-only` | Reads confined to the mounted directory; writes rejected. |
+| `read-write` | Writes change actual host files and persist. Use a dedicated data/work directory. |
+| `overlay` (Monty's default) | Reads host files, but writes are discarded after **each code execution**, not after the entire RLM invocation. |
+
+Use `OSAccess` or a dedicated read-write directory for persistent scratch files,
+not an overlay mount. Do not mount source, configuration, hooks, or other paths
+whose contents host processes may later execute as writable. Monty performs
+mount confinement and rejects escaping symlinks/traversal; see its
+[filesystem contract](https://github.com/pydantic/monty/blob/v1.0.0/docs/filesystem.md).
+Guest `os.chdir()` persists across turns; the configured `cwd` is only initial.
+
+Filesystem operations do not grant shell/subprocess execution, arbitrary library
+imports, or network access. Monty's guest time/memory limits do not bound host OS
+callbacks or mount I/O; use MountDir's own limits where applicable.
+
+For GEPA, isolate filesystem state between candidates and examples to avoid
+evaluation contamination. Deep-copying a `partial` containing `OSAccess` copies
+its in-memory state, while factories closing over shared objects can retain shared
+state. Rebuilding a candidate is not a general filesystem reset mechanism.
+
 ### Images with Monty and nested RLMs
 
 Monty can send images to multimodal LMs without Pyodide. Install `dspy[monty]` and
@@ -230,56 +293,41 @@ choose `interpreter_factory=dspy.MontyInterpreter`. In its REPL, image inputs ar
 URL/data-URI strings, including images in lists and dictionaries. Use
 `llm_query(prompt, images=[image])` or `llm_query_batched(prompts, images=...)` to
 inspect them. Typed sub-predictors such as `dspy.Predict("image: dspy.Image -> answer")`
-also send real multimodal content, including newly edited images.
-
-For image **editing**, supply `dspy.Image.process_images` as a tool and install
-`dspy[monty,deno]`. This runs ordinary Pillow/OpenCV/NumPy code in a fresh Pyodide
-worker. There is no translation of those libraries into Monty and no execution of
-model-written Python in the host process.
+also send real multimodal content. Nested RLMs inherit Monty, share the parent's
+LM-call budget, and can return image URL/data-URI strings that typed final outputs
+convert back into host-side `dspy.Image` values. Flex supports the same transport.
 
 ```python
 rlm = dspy.RLM(
-    "source: dspy.Image, request -> edited: dspy.Image, answer",
+    "source: dspy.Image, request -> selected: dspy.Image, answer",
     interpreter_factory=dspy.MontyInterpreter,
-    tools=[dspy.Image.process_images],
 )
 result = rlm(
     source=dspy.Image.from_path("scan.png"),
-    request="Crop the top-left 200×100 region and read its text.",
+    request="Describe the diagram and return the source image.",
 )
 ```
 
-For example, the RLM can generate:
+For image **editing** or any other `SandboxSerializable` that relies on external
+Python libraries, explicitly run the invocation with `PythonInterpreter`. Monty
+does not import Pillow, OpenCV, NumPy, or arbitrary installed packages, and DSPy
+does not fall back to a Python worker or sidecar. A call-time override makes this
+choice explicit even when the module was constructed with Monty:
 
 ```python
-edited = process_images('''
-crop = images[0].to_pil().crop((0, 0, 200, 100))
-SUBMIT(DSPyImage.from_pil(crop))
-''', images=[source])
-answer = llm_query("Read this crop", images=[edited])
-SUBMIT(edited=edited, answer=answer)
+result = rlm(
+    source=dspy.Image.from_path("scan.png"),
+    request="Crop the top-left 200×100 region and read its text.",
+    interpreter_factory=dspy.PythonInterpreter,
+)
 ```
 
-The worker provides `images`, `PILImage`, `cv2`, `np`, and `DSPyImage`; return an
-image reference or JSON-compatible result with `SUBMIT(value)`. NumPy slicing,
-boolean masks, and library calls execute normally **inside that code string**.
-The worker cannot access the parent REPL's variables or tools. Pass everything it
-needs in `images`, and keep related operations in one call to avoid repeated
-worker startup and image encoding.
-
-Nested RLMs inherit Monty and may receive the same supplied tool via
-`dspy.RLM(..., tools=[process_images])`. Image outputs return as data-URI strings
-in the parent REPL, and typed final outputs become host-side `dspy.Image` values.
-Sub-agent LM calls and image queries share the parent's LM-call budget. Flex can
-use the same tool and delegate to an RLM on Monty.
-
-Limitations: editing requires embedded pixels (load remote images explicitly with
-`dspy.Image.from_url()` on the host); workers have no host filesystem, environment,
-or network grants and retain no state between calls. Package provisioning may
-need network access at startup, before generated code runs. **Monty's time and
-memory limits do not bound the image worker.** This is an opt-in hybrid, not a
-Deno-free replacement for arbitrary Python packages. `PythonInterpreter` remains
-the default.
+With `PythonInterpreter`, image injection provisions and imports Pillow/OpenCV and
+exposes `DSPyImage.to_pil()`, `to_cv2()`, `from_pil()`, and `from_cv2()` in that
+interpreter. Remote pixels must first be embedded explicitly with
+`dspy.Image.from_url()` on the host. `PythonInterpreter` remains the default, but a
+constructor value of `PythonInterpreter` is also the configurable-default sentinel;
+prefer the call-time override above when documenting an explicit backend choice.
 
 ### Custom Sandbox-Serializable Inputs
 

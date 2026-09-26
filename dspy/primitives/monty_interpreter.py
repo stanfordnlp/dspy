@@ -7,20 +7,29 @@ import keyword
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError, FinalOutput
+
+if TYPE_CHECKING:
+    from pydantic_monty import MountDir
 
 
 class MontyInterpreter:
     """Persistent, sandboxed Python-subset execution using ``dspy[monty]``.
 
     Each instance owns a Monty worker session. Only explicitly registered tools
-    run on the host; filesystem, network, and environment access are not granted.
+    run on the host. Filesystem and environment access require explicit ``mount``
+    or ``os`` capabilities; network and process execution are not granted.
     ``limits`` accepts Monty's ResourceLimits. These bound guest execution, not
-    the duration or memory consumption of host tools.
+    the duration or memory consumption of host tools or filesystem handlers.
+
+    ``mount`` and ``os`` are caller-owned Monty MountDir and OS-handler objects;
+    shutdown does not close them. Reusing them across interpreters shares their
+    backing state. MountDir overlays are per-feed, not persistent scratch space.
+    ``cwd`` sets the initial virtual working directory; guest chdir persists.
     """
 
     execution_instructions = (
@@ -32,8 +41,9 @@ class MontyInterpreter:
         "The dspy facade adapts dspy.Module subclasses; call their forward method explicitly. "
         "The _dspy, _Dspy, and __dspy prefixes are reserved. "
         "Image inputs are URL/data-URI strings, not Pillow objects. Pass them to llm_query(..., images=[image]). "
-        "If supplied, process_images(code, images) runs Pillow/OpenCV/NumPy code in a separate sandbox; "
-        "those imports and DSPyImage methods are available only inside that tool's code. "
+        "Image library imports and pixel editing require a different interpreter. "
+        "open(), pathlib.Path, and os filesystem APIs work only through explicitly configured mounts or OS handlers. "
+        "Paths are virtual POSIX paths. Shell and subprocess execution are unavailable. "
         "Use supplied tools for external access."
     )
 
@@ -49,9 +59,9 @@ do not alias or shadow super or access __class__. Call module.forward(...) expli
 The _dspy, _Dspy, and __dspy identifier prefixes are reserved. Standard-library APIs
 are limited to Monty's supported subset; third-party imports are unavailable.
 Use supplied host tools for external libraries; return plain data across the boundary.
-Image inputs and sub-predictor image outputs are URL/data-URI strings. If supplied,
-process_images(code, images) runs Pillow/OpenCV/NumPy in a separate sandbox;
-only that code string can use DSPyImage.to_pil()/to_cv2() and library imports.
+Image inputs and sub-predictor image outputs are URL/data-URI strings.
+Filesystem APIs require explicitly configured mounts or OS handlers and use virtual
+POSIX paths. Shell/subprocess execution and image-library imports are unavailable.
 Runtime failures include diagnostics; revise the source to address
 them rather than catching an unsupported operation and returning a dummy answer.
 """
@@ -62,10 +72,16 @@ them rather than catching an unsupported operation and returning a dummy answer.
         output_fields: list[dict[str, Any]] | None = None,
         *,
         limits: dict[str, Any] | None = None,
+        mount: MountDir | list[MountDir] | None = None,
+        os: Callable[..., Any] | None = None,
+        cwd: str | None = None,
     ) -> None:
         self.tools = dict(tools or {})
         self.output_fields = output_fields
         self.limits = dict(limits or {})
+        self._mount = mount
+        self._os = os
+        self._cwd = cwd
         self._resources = ExitStack()
         self._session = None
         self._ended = False
@@ -187,7 +203,9 @@ them rather than catching an unsupported operation and returning a dummy answer.
         try:
             step = self._session.feed_start(
                 code, inputs=inputs, external_lookup=lookup, print_callback=output,
+                mount=self._mount, os=self._os, cwd=self._cwd,
             )
+            self._cwd = None  # Subsequent feeds preserve guest os.chdir().
             while not isinstance(step, monty.MontyComplete):
                 if isinstance(step, monty.FunctionSnapshot) and not step.is_os_function:
                     if step.function_name == "SUBMIT":
