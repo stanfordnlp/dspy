@@ -47,7 +47,7 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             with suppress(json.JSONDecodeError):
                 arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
             print(_green(f"{function.get('name') or tool_call.get('name', '<unknown>')}: {json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, (dict, list)) else str(arguments)}", use_colors=use_colors), file=out)
-    for item in history[-n:]:
+    for item in (history[-n:] if n > 0 else []):
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
