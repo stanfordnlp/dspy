@@ -202,3 +202,83 @@ def test_example_to_dict_with_history():
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_assigning_to_a_method_named_field_updates_the_store():
+    """A field whose name shadows a method must not hold two different values.
+
+    Assignment previously wrote an instance attribute and left `_store` alone, so
+    `ex.items` and `ex["items"]` diverged.
+    """
+    ex = dspy.Example(items=["a"])
+    assert ex["items"] == ["a"]
+
+    ex.items = ["b"]
+
+    assert ex["items"] == ["b"]
+    assert ex.toDict()["items"] == ["b"]
+
+
+def test_method_named_field_keeps_the_method_callable():
+    """Fields never shadow the mapping API, which other code and users rely on."""
+    ex = dspy.Example(items=["a"], keys=["k"], values=["v"], get=1)
+
+    assert callable(ex.items)
+    assert sorted(ex.keys()) == ["get", "items", "keys", "values"]
+    assert dict(ex.items())["items"] == ["a"]
+    assert ex.get("items") == ["a"]
+
+
+def test_method_named_field_warns_at_construction(caplog):
+    from dspy.primitives.example import _WARNED_SHADOWED_FIELDS
+
+    _WARNED_SHADOWED_FIELDS.clear()
+    try:
+        with caplog.at_level("WARNING", logger="dspy.primitives.example"):
+            dspy.Example(items=["a"])
+
+        assert "items" in caplog.text
+        assert "subscript" in caplog.text
+    finally:
+        _WARNED_SHADOWED_FIELDS.clear()
+
+
+def test_ordinary_field_assignment_is_unchanged():
+    ex = dspy.Example(question="q", answer="a")
+    ex.answer = "b"
+
+    assert ex.answer == "b"
+    assert ex["answer"] == "b"
+    assert "answer" not in ex.__dict__
+
+
+def test_private_attributes_still_bypass_the_store():
+    ex = dspy.Example(question="q")
+    ex._input_keys = {"question"}
+
+    assert ex._input_keys == {"question"}
+    assert "_input_keys" not in ex.keys(include_dspy=True)
+
+
+def test_non_string_keys_are_accepted():
+    """A dict passed as `base` may hold keys of any hashable type."""
+    ex = dspy.Example(base={1: "value", "question": "q"})
+
+    assert ex[1] == "value"
+    assert ex.question == "q"
+
+
+def test_shadowing_warning_is_emitted_once_per_field(caplog):
+    """copy()/without()/with_inputs() each build a new instance; one warning is enough."""
+    from dspy.primitives.example import _WARNED_SHADOWED_FIELDS
+
+    _WARNED_SHADOWED_FIELDS.clear()
+    try:
+        with caplog.at_level("WARNING", logger="dspy.primitives.example"):
+            ex = dspy.Example(items=["a"])
+            for _ in range(5):
+                ex.copy()
+
+        assert caplog.text.count("share a name with a method") == 1
+    finally:
+        _WARNED_SHADOWED_FIELDS.clear()
