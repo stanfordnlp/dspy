@@ -503,6 +503,127 @@ def test_no_skip_warning_when_custom_code_proposer_handles_code(caplog) -> None:
     assert not any("code component" in r.message for r in caplog.records)
 
 
+# --- reflection_instruction stays out of the code path -----------------------
+
+
+class _CapturingCallableLM:
+    """Minimal callable reflection LM that records the rendered instruction prompt."""
+
+    def __init__(self):
+        self.prompts = []
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        self.prompts.append(prompt if prompt is not None else messages)
+        return ["```\nimproved\n```"]
+
+
+def test_reflection_instruction_applies_only_to_ordinary_components() -> None:
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.flex = dspy.Flex(Echo)
+            self.sibling = dspy.Predict("x -> y")
+
+        def forward(self, **kwargs):
+            return self.flex(**kwargs)
+
+    prog = Prog()
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        assert components_to_update == ["flex"]
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    guidance = "Keep proposed instructions under 150 words."
+    lm = _CapturingCallableLM()
+    adapter = DspyAdapter(
+        student_module=prog,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=lm,
+        custom_code_proposer=code_proposer,
+        reflection_instruction=guidance,
+    )
+    candidate = {"flex": prog.flex.module_src, "sibling": "old instruction"}
+    reflective = {
+        "flex": [],
+        "sibling": [{"Inputs": {"x": "x"}, "Generated Outputs": {"y": "z"}, "Feedback": "bad"}],
+    }
+
+    out = adapter.propose_new_texts(candidate, reflective, ["flex", "sibling"])
+
+    assert out == {"flex": SIMPLE_MODULE, "sibling": "improved"}
+    # The code component went to the code proposer; only the ordinary instruction proposal used the
+    # reflection LM, and that prompt carried the guidance.
+    assert len(lm.prompts) == 1
+    assert guidance in lm.prompts[0]
+
+
+def test_reflection_instruction_not_passed_to_builtin_code_proposer(monkeypatch) -> None:
+    captured = {}
+
+    def fake_propose_code(code_keys, candidate, reflective_dataset, task_descriptions, context_blurbs, reflection_lm):
+        captured["args"] = (code_keys, candidate, reflective_dataset, task_descriptions, context_blurbs, reflection_lm)
+        return dict.fromkeys(code_keys, SIMPLE_MODULE)
+
+    monkeypatch.setattr("dspy.teleprompt.gepa.gepa_utils.propose_code", fake_propose_code)
+
+    student = dspy.Flex(Echo)
+    reflection = DummyLM([])
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=reflection,
+        reflection_instruction="Keep it short.",
+    )
+
+    out = adapter.propose_new_texts(
+        {"self": student.module_src},
+        {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]},
+        ["self"],
+    )
+
+    assert out == {"self": SIMPLE_MODULE}
+    # The built-in code proposer contract is unchanged: same six arguments, no guidance.
+    assert captured["args"][0] == ["self"]
+    assert captured["args"][5] is reflection
+    assert "Keep it short." not in repr(captured["args"])
+
+
+def test_reflection_instruction_does_not_change_custom_code_proposer_contract() -> None:
+    captured = {}
+
+    def code_proposer(*, candidate, reflective_dataset, components_to_update, task_descriptions, context_blurbs):
+        captured.update(
+            candidate=candidate,
+            reflective_dataset=reflective_dataset,
+            components_to_update=components_to_update,
+            task_descriptions=task_descriptions,
+            context_blurbs=context_blurbs,
+        )
+        return dict.fromkeys(components_to_update, SIMPLE_MODULE)
+
+    student = dspy.Flex(Echo)
+    adapter = DspyAdapter(
+        student_module=student,
+        metric_fn=_metric,
+        feedback_map={},
+        reflection_lm=DummyLM([]),
+        custom_code_proposer=code_proposer,
+        reflection_instruction="Keep it short.",
+    )
+    candidate = {"self": student.module_src}
+    reflective = {"self": [{"Inputs": {"q": "x"}, "Generated Outputs": "wrong", "Feedback": "bad"}]}
+
+    out = adapter.propose_new_texts(candidate, reflective, ["self"])
+
+    assert out == {"self": SIMPLE_MODULE}
+    assert captured["components_to_update"] == ["self"]
+    assert captured["candidate"] == candidate
+    assert captured["reflective_dataset"] == reflective
+    assert "reflection_instruction" not in captured
+
+
 # --- GEPA.compile: seed mixes code + instruction components ------------------
 
 

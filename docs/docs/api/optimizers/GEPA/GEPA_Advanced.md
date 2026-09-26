@@ -48,6 +48,31 @@ gepa = dspy.GEPA(
 optimized_program = gepa.compile(student, trainset=examples)
 ```
 
+### Additional Reflection Guidance
+
+For simple additive guidance, you do not need a custom proposer. Pass `reflection_instruction` and DSPy appends it to the default proposal prompt after GEPA renders it:
+
+```python
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_instruction=(
+        "Keep proposed instructions concise, preferably under 150 words. "
+        "Preserve task requirements and useful domain knowledge."
+    ),
+    auto="medium",
+)
+```
+
+Use this for length/format preferences or light domain hints that you want added to the default prompt. It differs from the other two customization channels:
+
+- **Metric feedback** is per-example evidence that GEPA gathers and feeds into the default prompt automatically; `reflection_instruction` is a constant instruction you write once for the proposal step.
+- **`instruction_proposer`** fully replaces the default proposal prompt and has access to the candidate and reflective dataset; use it when you need full control, custom signatures, external knowledge, or coordinated multi-component updates.
+
+`reflection_instruction` only affects the default proposer. If `instruction_proposer` is set, `reflection_instruction` is ignored and a warning is logged. It applies to selected ordinary predictors; `dspy.Flex` code components keep their own code proposer. The guidance is soft prompting: it is not an enforced word limit or a direct student instruction, and the proposal output is still expected to be the new instruction (the default prompt asks for it inside fenced ` ``` ` blocks).
+
+Passing a full `reflection_prompt_template` through `gepa_kwargs` remains unsupported; DSPy rejects it because `DspyAdapter` owns proposal generation.
+
 ### When to Use Custom instruction_proposer
 
 **Note:** Custom instruction proposers are an advanced feature. Most users should start with the default proposer, which works well for most text-based optimization tasks.
@@ -55,8 +80,8 @@ optimized_program = gepa.compile(student, trainset=examples)
 Consider implementing a custom instruction proposer when you need:
 
 - **Multi-modal handling**: Process images (dspy.Image) alongside textual information in your inputs
-- **Nuanced control on limits and length constraints**: Have more fine-grained control over instruction length, format, and structural requirements
-- **Domain-specific information**: Inject specialized knowledge, terminology, or context that the default proposer lacks and cannot be provided via feedback_func. This is an advanced feature, and most users should not need to use this.
+- **Nuanced control on limits and length constraints**: Have more fine-grained control over instruction length, format, and structural requirements. For simple additive guidance rather than a full replacement, prefer `reflection_instruction`.
+- **Domain-specific information**: Inject specialized knowledge, terminology, or context that the default proposer lacks and cannot be provided via feedback_func. For light hints, `reflection_instruction` can add guidance to the default prompt without a custom proposer. This is an advanced feature, and most users should not need to use this.
 - **Provider-specific prompting guides**: Optimize instructions for specific LLM providers (OpenAI, Anthropic, etc.) with their unique formatting preferences
 - **Coupled component updates**: Handle situations where 2 or more components need to be updated together in a coordinated manner, rather than optimizing each component independently (refer to component_selector parameter, in [Custom Component Selection](#custom-component-selection) section, for related functionality)
 - **External knowledge integration**: Connect to databases, APIs, or knowledge bases during instruction generation

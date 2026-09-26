@@ -1,11 +1,14 @@
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 import dspy
 from dspy.teleprompt.gepa import instruction_proposal
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 
 
@@ -368,3 +371,194 @@ def test_default_proposer(reasoning: bool, caplog):
     assert images_in_history.has_text_serialized_images, (
         "Expected to find serialized images (CUSTOM-TYPE-START-IDENTIFIER)"
     )
+
+
+# --- reflection_instruction: additive guidance for the default proposer ------
+
+
+DATASET = [{"Inputs": {"input": "x"}, "Generated Outputs": {"output": "y"}, "Feedback": "bad"}]
+HEADING = "Additional instructions for proposing the new instruction:"
+
+
+class CapturingLM:
+    """Callable reflection LM that records the prompt it receives and returns scripted outputs."""
+
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.prompts: list[Any] = []
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        self.prompts.append(prompt)
+        if self.responses:
+            return [self.responses.pop(0)]
+        return ["```\nNew instruction\n```"]
+
+
+def _make_adapter(reflection_lm, reflection_instruction=None, custom_instruction_proposer=None):
+    return DspyAdapter(
+        student_module=dspy.Predict("input -> output"),
+        metric_fn=lambda *args, **kwargs: 0.0,
+        feedback_map={},
+        reflection_lm=reflection_lm,
+        custom_instruction_proposer=custom_instruction_proposer,
+        reflection_instruction=reflection_instruction,
+    )
+
+
+def _baseline(current_instruction: str, dataset: list[dict[str, Any]]) -> str:
+    return InstructionProposalSignature.prompt_renderer(
+        {"current_instruction_doc": current_instruction, "dataset_with_feedback": dataset}
+    )
+
+
+@pytest.mark.parametrize("guidance", [None, "", "   ", "\n\t "])
+def test_default_proposer_prompt_unchanged_without_guidance(guidance):
+    lm = CapturingLM()
+    adapter = _make_adapter(lm, reflection_instruction=guidance)
+
+    adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    assert lm.prompts == [_baseline("current", DATASET)]
+
+
+def test_reflection_instruction_appended_once_after_baseline():
+    guidance = "Keep proposed instructions concise."
+    lm = CapturingLM()
+    adapter = _make_adapter(lm, reflection_instruction=guidance)
+
+    adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    baseline = _baseline("current", DATASET)
+    expected = f"{baseline}\n\n{HEADING}\n{guidance}"
+    assert lm.prompts[0] == expected
+    assert lm.prompts[0].startswith(baseline)
+    assert lm.prompts[0].count(HEADING) == 1
+
+
+def test_reflection_instruction_is_appended_literally():
+    guidance = (
+        "Use <curr_param> and <side_info> literally. {braces} and \\n and newlines\n"
+        "second line \u2014 unicode \u2713 and `backticks`."
+    )
+    lm = CapturingLM()
+    adapter = _make_adapter(lm, reflection_instruction=guidance)
+
+    adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    baseline = _baseline("current", DATASET)
+    assert lm.prompts[0] == f"{baseline}\n\n{HEADING}\n{guidance}"
+
+
+def test_reflection_instruction_reaches_each_selected_component():
+    guidance = "Be concise."
+    lm = CapturingLM()
+    adapter = _make_adapter(lm, reflection_instruction=guidance)
+    candidate = {"a": "inst a", "b": "inst b", "c": "inst c"}
+    reflective = {"a": DATASET, "b": DATASET, "c": DATASET}
+    candidate_before = copy.deepcopy(candidate)
+    reflective_before = copy.deepcopy(reflective)
+
+    out = adapter.propose_new_texts(candidate, reflective, ["a", "b"])
+
+    assert set(out) == {"a", "b"}  # the unselected component "c" is left alone
+    assert len(lm.prompts) == 2
+    for prompt, current in zip(lm.prompts, ["inst a", "inst b"], strict=True):
+        assert prompt == f"{_baseline(current, DATASET)}\n\n{HEADING}\n{guidance}"
+    # The candidate and the reflective records are never mutated by injection.
+    assert candidate == candidate_before
+    assert reflective == reflective_before
+    assert out["a"] == "New instruction" and out["b"] == "New instruction"
+
+
+def test_reflection_instruction_does_not_accumulate_across_calls():
+    guidance = "Be concise."
+    lm = CapturingLM()
+    adapter = _make_adapter(lm, reflection_instruction=guidance)
+
+    for _ in range(3):
+        adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    expected = f"{_baseline('current', DATASET)}\n\n{HEADING}\n{guidance}"
+    assert lm.prompts == [expected] * 3
+
+
+def test_reflection_instruction_does_not_leak_between_instances():
+    lm_with = CapturingLM()
+    lm_without = CapturingLM()
+
+    _make_adapter(lm_with, reflection_instruction="only here").propose_new_texts(
+        {"predict": "current"}, {"predict": DATASET}, ["predict"]
+    )
+    _make_adapter(lm_without).propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    baseline = _baseline("current", DATASET)
+    assert lm_with.prompts[0] == f"{baseline}\n\n{HEADING}\nonly here"
+    assert lm_without.prompts[0] == baseline
+
+
+def test_custom_proposer_ignores_reflection_instruction():
+    captured = {}
+
+    def custom_instruction_proposer(*, candidate, reflective_dataset, components_to_update):
+        captured["candidate"] = candidate
+        captured["reflective_dataset"] = reflective_dataset
+        captured["components_to_update"] = components_to_update
+        return dict.fromkeys(components_to_update, "from custom")
+
+    lm = CapturingLM()
+    adapter = _make_adapter(
+        lm,
+        reflection_instruction="should be ignored",
+        custom_instruction_proposer=custom_instruction_proposer,
+    )
+    candidate = {"predict": "current"}
+    reflective = {"predict": DATASET}
+
+    out = adapter.propose_new_texts(candidate, reflective, ["predict"])
+
+    assert out == {"predict": "from custom"}
+    assert captured == {
+        "candidate": candidate,
+        "reflective_dataset": reflective,
+        "components_to_update": ["predict"],
+    }
+    # The default proposer (and therefore the guidance-bearing callback) never runs.
+    assert lm.prompts == []
+
+
+def test_falsey_custom_proposer_still_wins_over_reflection_instruction():
+    """A callable custom proposer wins even if its truthiness is False, matching the
+    constructor's `is not None` warning check and the reflective-dataset handling."""
+    captured = {}
+
+    class FalseyProposer:
+        def __bool__(self):
+            return False
+
+        def __call__(self, *, candidate, reflective_dataset, components_to_update):
+            captured["called"] = True
+            return dict.fromkeys(components_to_update, "from falsey")
+
+    lm = CapturingLM()
+    adapter = _make_adapter(
+        lm,
+        reflection_instruction="should be ignored",
+        custom_instruction_proposer=FalseyProposer(),
+    )
+
+    out = adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    assert out == {"predict": "from falsey"}
+    assert captured.get("called") is True
+    # The guidance-bearing default callback never ran.
+    assert lm.prompts == []
+
+
+@pytest.mark.parametrize("response", ["```\nBetter instruction\n```", {"text": "```\nBetter instruction\n```"}])
+def test_reflection_instruction_output_parsing(response):
+    lm = CapturingLM([response])
+    adapter = _make_adapter(lm, reflection_instruction="Be concise.")
+
+    out = adapter.propose_new_texts({"predict": "current"}, {"predict": DATASET}, ["predict"])
+
+    assert out == {"predict": "Better instruction"}
