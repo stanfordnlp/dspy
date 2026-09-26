@@ -1,5 +1,6 @@
 from dspy.predict.aggregation import majority
 from dspy.predict.best_of_n import BestOfN
+from dspy.predict.chain_of_density import ChainOfDensity, ChainOfDensityWithPreference
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.predict.code_act import CodeAct
 from dspy.predict.knn import KNN
@@ -16,6 +17,8 @@ __all__ = [
     "majority",
     "BestOfN",
     "ChainOfThought",
+    "ChainOfDensity",
+    "ChainOfDensityWithPreference",
     "CodeAct",
     "KNN",
     "MultiChainComparison",
@@ -26,5 +29,5 @@ __all__ = [
     "Refine",
     "RLM",
     "Tool",
-    "Parallel",
+    "Parallel"
 ]

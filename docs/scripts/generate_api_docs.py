@@ -36,6 +36,8 @@ API_MAPPING = {
         dspy.Module,
         dspy.Predict,
         dspy.ChainOfThought,
+        dspy.ChainOfDensity,
+        dspy.ChainOfDensityWithPreference,
         dspy.ReAct,
         dspy.ReActV2,
         dspy.ProgramOfThought,

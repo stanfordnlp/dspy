@@ -122,6 +122,8 @@ nav:
         - Modules:
             - api/modules/index.md
             - BestOfN: api/modules/BestOfN.md
+            - ChainOfDensity: api/modules/ChainOfDensity.md
+            - ChainOfDensityWithPreference: api/modules/ChainOfDensityWithPreference.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - CodeAct: api/modules/CodeAct.md
             - Flex: api/modules/Flex.md
