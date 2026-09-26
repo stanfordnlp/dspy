@@ -36,6 +36,8 @@ class File(Type):
     file_data: str | None = None
     file_id: str | None = None
     filename: str | None = None
+    mime_type: str | None = None
+    resolution: str | None = None
 
     model_config = pydantic.ConfigDict(
         frozen=True,
@@ -66,6 +68,8 @@ class File(Type):
                 "file_data": values.file_data,
                 "file_id": values.file_id,
                 "filename": values.filename,
+                "mime_type": values.mime_type,
+                "resolution": values.resolution
             }
 
         if isinstance(values, dict):
@@ -84,6 +88,10 @@ class File(Type):
                 file_dict["file_id"] = self.file_id
             if self.filename:
                 file_dict["filename"] = self.filename
+            if self.mime_type:
+                file_dict["format"] = self.mime_type
+            if self.resolution:
+                file_dict["resolution"] = self.resolution
 
             return [{"type": "file", "file": file_dict}]
         except Exception as e:
@@ -98,9 +106,7 @@ class File(Type):
             if self.file_data.startswith("data:"):
                 # file data has "data:text/plain;base64,..." format
                 mime_type = self.file_data.split(";")[0].split(":")[1]
-                len_data = (
-                    len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
-                )
+                len_data = len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
                 parts.append(f"file_data=<DATA_URI({mime_type}, {len_data} chars)>")
             else:
                 len_data = len(self.file_data)
@@ -109,16 +115,21 @@ class File(Type):
             parts.append(f"file_id='{self.file_id}'")
         if self.filename is not None:
             parts.append(f"filename='{self.filename}'")
+        if self.mime_type is not None:
+            parts.append(f"mime_type='{self.mime_type}'")
+        if self.resolution is not None:
+            parts.append(f"resolution='{self.resolution}'")
         return f"File({', '.join(parts)})"
 
     @classmethod
-    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None, resolution: str | None = None) -> "File":
         """Create a File from a local file path.
 
         Args:
             file_path: Path to the file to read
             filename: Optional filename to use (defaults to basename of path)
             mime_type: Optional MIME type (defaults to auto-detection from file extension)
+            resolution: Optional resolution used to rescale the file by some providers
         """
         if not os.path.isfile(file_path):
             raise ValueError(f"File not found: {file_path}")
@@ -137,11 +148,13 @@ class File(Type):
         encoded_data = base64.b64encode(file_bytes).decode("utf-8")
         file_data = f"data:{mime_type};base64,{encoded_data}"
 
-        return cls(file_data=file_data, filename=filename)
+        return cls(file_data=file_data, filename=filename, resolution=resolution)
 
     @classmethod
     def from_bytes(
-        cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream"
+        cls, file_bytes: bytes, filename: str | None = None,
+        resolution:str="medium",
+        mime_type: str = "application/octet-stream",
     ) -> "File":
         """Create a File from raw bytes.
 
@@ -152,12 +165,22 @@ class File(Type):
         """
         encoded_data = base64.b64encode(file_bytes).decode("utf-8")
         file_data = f"data:{mime_type};base64,{encoded_data}"
-        return cls(file_data=file_data, filename=filename)
+        return cls(file_data=file_data, filename=filename, resolution=resolution)
 
     @classmethod
-    def from_file_id(cls, file_id: str, filename: str | None = None) -> "File":
-        """Create a File from an uploaded file ID."""
-        return cls(file_id=file_id, filename=filename)
+    def from_file_id(cls, file_id: str, filename: str | None = None,
+                mime_type: str | None = None,
+                resolution: str | None = None
+    ) -> "File":
+        """Create a File from an uploaded file ID.
+
+        Args:
+            file_id: The uploaded file ID
+            filename: Optional filename
+            mime_type: Optional MIME type (passed as 'format' to the API)
+            resolution: Optional file resolution (e.g., low, medium, high)
+        """
+        return cls(file_id=file_id, filename=filename, mime_type=mime_type, resolution=resolution)
 
 
 def encode_file_to_dict(file_input: Any) -> dict:
@@ -178,6 +201,10 @@ def encode_file_to_dict(file_input: Any) -> dict:
             result["file_id"] = file_input.file_id
         if file_input.filename is not None:
             result["filename"] = file_input.filename
+        if file_input.mime_type is not None:
+            result["format"] = file_input.mime_type
+        if file_input.resolution is not None:
+            result["resolution"] = file_input.resolution
         return result
 
     elif isinstance(file_input, dict):
