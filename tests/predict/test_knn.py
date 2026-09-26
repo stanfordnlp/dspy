@@ -49,3 +49,19 @@ def test_knn_query_specificity(setup_knn):
     nearest_samples = knn(**query)
     assert len(nearest_samples) == 2, "Incorrect number of nearest samples returned"
     assert "Paris" in [sample.answer for sample in nearest_samples], "Expected Paris to be a nearest sample answer"
+
+
+def test_knn_query_k_zero_returns_no_neighbors():
+    """k=0 must return zero neighbors, not the whole trainset.
+
+    scores.argsort()[-self.k:] becomes scores.argsort()[0:] (the entire array) when
+    self.k == 0, because -0 == 0 in Python. This is a regression test for that bug.
+    """
+    trainset = [
+        mock_example("What is the capital of France?", "Paris"),
+        mock_example("What is the largest ocean?", "Pacific"),
+        mock_example("What is 2+2?", "4"),
+    ]
+    knn = KNN(k=0, trainset=trainset, vectorizer=dspy.Embedder(DummyVectorizer()))
+    nearest_samples = knn(question="What is 3+3?")
+    assert nearest_samples == [], "k=0 should return no neighbors, not the entire trainset"
