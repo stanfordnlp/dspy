@@ -219,7 +219,7 @@ class BootstrapFewShot(Teleprompter):
                         try:
                             success = float(metric_val) != 0
                         except ValueError:
-                            success = True
+                            success = bool(metric_val)
                     else:
                         success = metric_val
                 else:
