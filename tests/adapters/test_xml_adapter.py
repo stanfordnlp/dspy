@@ -74,6 +74,169 @@ def test_xml_adapter_parse_casts_types():
     assert parsed == {"number": 42, "flag": True}
 
 
+def test_xml_adapter_predict_accepts_literal_code_without_fallback():
+    class Generate(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        code: str = dspy.OutputField()
+
+    code = "if len(page) < 20:\n    print('R&B', '</code>')"
+    completion = f"<reasoning>\nKeep R&B tracks\n</reasoning>\n<code>\n{code}\n</code>"
+    with mock.patch("litellm.completion") as completion_mock:
+        completion_mock.return_value = ModelResponse(
+            choices=[Choices(message=Message(content=completion))], model="openai/gpt-4o-mini"
+        )
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False),
+            adapter=XMLAdapter(use_json_adapter_fallback=False),
+        ):
+            result = dspy.Predict(Generate)(question="Write a pagination check")
+    assert result.code == code
+    assert result.reasoning == "Keep R&B tracks"
+    assert completion_mock.call_count == 1
+
+
+def test_xml_adapter_xml_syntax_is_literal_text():
+    class Result(dspy.Signature):
+        text: str = dspy.OutputField()
+
+    value = "<![CDATA[<raw> &amp; &#65;]]>"
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, {"text": value})
+    assert formatted == f"<text>\n{value}\n</text>"
+    assert adapter.parse(Result, formatted) == {"text": value}
+    assert adapter.parse(Result, f"<text>{value}</text>") == {"text": value}
+
+
+def test_xml_adapter_literal_leaves_round_trip_at_every_depth():
+    class Program(pydantic.BaseModel):
+        code: str
+        alternatives: list[str]
+        metadata: dict[str, str]
+
+    class Result(dspy.Signature):
+        code: str = dspy.OutputField()
+        programs: list[Program] = dspy.OutputField()
+
+    value = "if x<y: print('</code>', '</item>', 'R&B')"
+    expected = {"code": value, "programs": [Program(code=value, alternatives=[value], metadata={"source": value})]}
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, expected)
+    assert adapter.parse(Result, formatted) == expected
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_xml_adapter_nested_tag_lines_preserve_literal_payload(newline):
+    class Program(pydantic.BaseModel):
+        code: str
+        checks: list[str]
+
+    class Result(dspy.Signature):
+        program: Program = dspy.OutputField()
+
+    code = f"    if n < 20:{newline}        print('</code> &amp;')  "
+    completion = newline.join(
+        [
+            "<program>",
+            "  <code>",
+            code,
+            "  </code>",
+            "  <checks>",
+            "    <item>",
+            "print('</item>')",
+            "    </item>",
+            "    <item>",
+            "R&B",
+            "    </item>",
+            "  </checks>",
+            "</program>",
+        ]
+    )
+    assert XMLAdapter().parse(Result, completion) == {"program": Program(code=code, checks=["print('</item>')", "R&B"])}
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "<code>unterminated",
+        "<code>x</wrong>",
+        "<code>x</code></code>",
+        "<code>x</code><code>y</code>",
+        "<code>x</code><unknown>y</unknown>",
+        '<entry key="code">x</entry>',
+        "<code>x</code><counts><item>2</counts>",
+        "<code>\nx\n</code>\nsurplus\n</code>",
+        "<code>print('</code>')</code>",
+    ],
+)
+def test_xml_adapter_validates_outer_fields_and_structured_nesting(completion):
+    class Result(dspy.Signature):
+        code: str = dspy.OutputField()
+        counts: list[int] = dspy.OutputField(default=[])
+
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        XMLAdapter().parse(Result, completion)
+
+
+def test_xml_adapter_nullable_scalar_cannot_repeat():
+    class Result(dspy.Signature):
+        text: str | None = dspy.OutputField()
+
+    assert XMLAdapter().parse(Result, "<text />") == {"text": None}
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        XMLAdapter().parse(Result, "<text /><text />")
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_xml_adapter_nullable_text_round_trip_distinguishes_empty_from_null(value):
+    class Result(dspy.Signature):
+        text: str | None = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, {"text": value})
+    assert adapter.parse(Result, formatted) == {"text": value}
+    assert adapter.parse(Result, "<text>\n\n</text>") == {"text": ""}
+
+
+@pytest.mark.parametrize("values", [None, [], ["", None, "R&B"]])
+def test_xml_adapter_nullable_containers_round_trip(values):
+    class Result(dspy.Signature):
+        values: list[str | None] | None = dspy.OutputField()
+        mapping: dict[str, str | None] | None = dspy.OutputField()
+
+    expected = {
+        "values": values,
+        "mapping": None if values is None else {str(i): value for i, value in enumerate(values)},
+    }
+    adapter = XMLAdapter()
+    formatted = adapter.format_assistant_message_content(Result, expected)
+    assert adapter.parse(Result, formatted) == expected
+
+
+def test_xml_adapter_structured_union_uses_structural_tag_lines():
+    class Person(pydantic.BaseModel):
+        name: str
+        age: int
+
+    class Result(dspy.Signature):
+        person: str | Person = dspy.OutputField()
+
+    adapter = XMLAdapter()
+    body = "<name>Ada</name><age>not an integer</age>"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(Result, f"<person>{body}</person>")
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+        adapter.parse(Result, "<person>\n<name>\nAda\n</name>\n<age>\nbad\n</age>\n</person>")
+    assert adapter.parse(Result, f"<person>\n{body}\n</person>") == {"person": body}
+    assert adapter.parse(Result, adapter.format_assistant_message_content(Result, {"person": body})) == {"person": body}
+    assert adapter.parse(Result, "<person><name>Ada</name><age>36</age></person>") == {
+        "person": Person(name="Ada", age=36)
+    }
+    assert adapter.parse(Result, "<person>\n<name>\n<unfinished>\n</name>\n<age>\n36\n</age>\n</person>") == {
+        "person": Person(name="<unfinished>", age=36)
+    }
+
+
 def test_xml_adapter_parse_raises_on_type_error():
     class TestSignature(dspy.Signature):
         number: int = dspy.OutputField()
@@ -98,7 +261,7 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
     counts = {"postal code": [3, 4], 'quoted "key" & more': [5], "line\nbreak": [6], "-status": [7], ".status": [8]}
     field = FieldInfoWithName(name="counts", info=TestSignature.output_fields["counts"])
     formatted = adapter.format_field_with_value({field: counts})
-    assert '<entry key="postal code"><item>3</item><item>4</item></entry>' in formatted
+    assert '<entry key="postal code">\n<item>\n3\n</item>\n<item>\n4\n</item>\n</entry>' in formatted
     assert adapter.parse(TestSignature, formatted) == {"counts": counts}
     assert adapter.parse(TestSignature, "<counts />") == {"counts": {}}
 
@@ -106,7 +269,7 @@ def test_xml_adapter_repeated_dict_elements_and_empty_lists():
         items: list[str] = dspy.OutputField()
 
     field = FieldInfoWithName(name="items", info=EmptySignature.output_fields["items"])
-    assert adapter.format_field_with_value({field: []}) == "<items />"
+    assert adapter.format_field_with_value({field: []}) == "<items>\n\n</items>"
     assert adapter.parse(EmptySignature, "<items />") == {"items": []}
 
 
@@ -122,8 +285,8 @@ def test_xml_adapter_uses_pydantic_field_names_as_xml_tags():
     address = Address(**{"postal code": "94305", "country-code": "US"})
     xml = adapter.format_assistant_message_content(TestSignature, {"address": address})
 
-    assert xml == "<address><postal_code>94305</postal_code><country_code>US</country_code></address>"
-    assert "<address><postal_code>...</postal_code><country_code>...</country_code></address>" in (
+    assert xml == "<address>\n<postal_code>\n94305\n</postal_code>\n<country_code>\nUS\n</country_code>\n</address>"
+    assert "<address>\n<postal_code>\n...\n</postal_code>\n<country_code>\n...\n</country_code>\n</address>" in (
         adapter.format_field_structure(TestSignature)
     )
     assert adapter.parse(TestSignature, xml) == {"address": address}
@@ -144,12 +307,12 @@ def test_xml_adapter_typed_dict_schema_and_parsing():
 
     adapter = XMLAdapter()
     order_schema = (
-        "<order><order_id>...</order_id><address><city>...</city></address>"
-        "<labels><item>...</item></labels></order>"
+        "<order>\n<order_id>\n...\n</order_id>\n<address>\n<city>\n...\n</city>\n</address>\n"
+        "<labels>\n<item>\n...\n</item>\n</labels>\n</order>"
     )
     orders_schema = (
-        "<orders><item><order_id>...</order_id><address><city>...</city></address>"
-        "<labels><item>...</item></labels></item></orders>"
+        "<orders>\n<item>\n<order_id>\n...\n</order_id>\n<address>\n<city>\n...\n</city>\n</address>\n"
+        "<labels>\n<item>\n...\n</item>\n</labels>\n</item>\n</orders>"
     )
     system_instructions = adapter.format_field_structure(TestSignature)
     assert f"{order_schema}\n\n{orders_schema}" in system_instructions
@@ -243,27 +406,13 @@ def test_xml_adapter_recursive_model_schema_terminates():
         root: Node = dspy.OutputField()
 
     adapter = XMLAdapter()
-    assert "<root><value>...</value><children><item>...</item></children></root>" in (
+    assert "<root>\n<value>\n...\n</value>\n<children>\n<item>\n...\n</item>\n</children>\n</root>" in (
         adapter.format_field_structure(TestSignature)
     )
     completion = "<root><value>parent</value><children><value>child</value><children /></children></root>"
     assert adapter.parse(TestSignature, completion) == {
         "root": Node(value="parent", children=[Node(value="child", children=[])])
     }
-
-
-def test_xml_adapter_escapes_closing_tags_and_rejects_malformed_xml():
-    class TestSignature(dspy.Signature):
-        code: str = dspy.OutputField()
-
-    adapter = XMLAdapter()
-    value = "print('</code> & done')"
-    formatted = adapter.format_assistant_message_content(TestSignature, {"code": value})
-    assert "&lt;/code> &amp; done" in formatted
-    assert adapter.parse(TestSignature, formatted) == {"code": value}
-
-    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse XML"):
-        adapter.parse(TestSignature, "<code>print('</code>')</code>")
 
 
 def test_xml_adapter_format_and_parse_nested_model():
@@ -284,7 +433,7 @@ def test_xml_adapter_format_and_parse_nested_model():
     result = InnerModel(value=5, label="foo", address=Address(city="London"))
     fields_with_values = {FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): result}
     xml = adapter.format_field_with_value(fields_with_values)
-    assert xml == "<result><value>5</value><label>foo</label><address><city>London</city></address></result>"
+    assert xml == "<result>\n<value>\n5\n</value>\n<label>\nfoo\n</label>\n<address>\n<city>\nLondon\n</city>\n</address>\n</result>"
     assert adapter.parse(TestSignature, xml) == {"result": result}
 
     # Legacy JSON values inside the outer XML field remain supported.
@@ -306,8 +455,8 @@ def test_xml_adapter_format_and_parse_list_of_models():
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml == (
-        "<items><item><name>a</name><score>1.1</score></item>"
-        "<item><name>b</name><score>2.2</score></item></items>"
+        "<items>\n<item>\n<name>\na\n</name>\n<score>\n1.1\n</score>\n</item>\n"
+        "<item>\n<name>\nb\n</name>\n<score>\n2.2\n</score>\n</item>\n</items>"
     )
     assert adapter.parse(TestSignature, xml) == {"items": items}
 
@@ -343,8 +492,8 @@ def test_xml_adapter_with_tool_like_output():
     }
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml.strip().startswith("<tool_calls>")
-    assert "<name>get_weather</name>" in xml
-    assert "<result>125M</result>" in xml
+    assert "<name>\nget_weather\n</name>" in xml
+    assert "<result>\n125M\n</result>" in xml
     assert xml.strip().endswith("</answer>")
 
     import json
@@ -473,6 +622,7 @@ def test_xml_adapter_full_prompt():
     expected_user = (
         "<query>\nwhen was Marie Curie born\n</query>\n\n"
         "Respond with the corresponding output fields wrapped in XML tags `<answer>`."
+        " Put structural tags on separate lines; leaf values are literal text, without escaping."
     )
 
     assert messages[0]["content"] == expected_system
@@ -518,7 +668,7 @@ In adhering to this structure, your objective is:\x20
 why did a chicken cross the kitchen?
 </question>
 
-Respond with the corresponding output fields wrapped in XML tags `<answer>`.""",
+Respond with the corresponding output fields wrapped in XML tags `<answer>`. Put structural tags on separate lines; leaf values are literal text, without escaping.""",
         },
     ]
 
@@ -571,6 +721,7 @@ def test_xml_adapter_format_exact_non_native_tool_result_history_field():
         "</tools>\n"
         "\n"
         "Respond with the corresponding output fields wrapped in XML tags `<next_thought>`, then `<tool_calls>`."
+        " Put structural tags on separate lines; leaf values are literal text, without escaping."
     )
 
 
@@ -623,7 +774,7 @@ why did a chicken cross the kitchen?
 To get to the other side!
 </answer>
 
-Respond with the corresponding output fields wrapped in XML tags `<judgement>`.""",
+Respond with the corresponding output fields wrapped in XML tags `<judgement>`. Put structural tags on separate lines; leaf values are literal text, without escaping.""",
         },
     ]
 
@@ -686,7 +837,7 @@ A1
 Q2
 </question>
 
-Respond with the corresponding output fields wrapped in XML tags `<answer>`, then `<score>`.""",
+Respond with the corresponding output fields wrapped in XML tags `<answer>`, then `<score>`. Put structural tags on separate lines; leaf values are literal text, without escaping.""",
         },
     ]
 
@@ -791,7 +942,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  "{question}\n"
                  "</question>\n"
                  "\n"
-                 "<answer><answer>...</answer><sources><item>...</item></sources></answer>\n"
+                 "<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Answer using all supplied context."},
      {"role": "user",
@@ -820,7 +971,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            'What should we mention?\n'
                            '</question>'}]},
      {"role": "assistant",
-      "content": "<answer><answer>Mention analytical engines.</answer><sources><item>demo</item></sources></answer>"},
+      "content": "<answer>\n<answer>\nMention analytical engines.\n</answer>\n<sources>\n<item>\ndemo\n</item>\n</sources>\n</answer>"},
      {"role": "user",
       "content": '<profile>\n'
                  '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
@@ -831,7 +982,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  'Who is Ada?\n'
                  '</question>'},
      {"role": "assistant",
-      "content": "<answer><answer>Ada is a mathematician.</answer><sources><item>memory</item></sources></answer>"},
+      "content": "<answer>\n<answer>\nAda is a mathematician.\n</answer>\n<sources>\n<item>\nmemory\n</item>\n</sources>\n</answer>"},
      {"role": "user",
       "content": [{"type": "text", "text": "<image>\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
@@ -855,8 +1006,9 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                            '</question>\n'
                            '\n'
                            'Respond with the corresponding output fields wrapped in XML tags '
-                           '`<answer>`. Use this nested XML structure: '
-                               '<answer><answer>...</answer><sources><item>...</item></sources></answer>'}]}]
+                           '`<answer>`. Put structural tags on separate lines; '
+                           'leaf values are literal text, without escaping. Use this nested XML structure: '
+                               '<answer>\n<answer>\n...\n</answer>\n<sources>\n<item>\n...\n</item>\n</sources>\n</answer>'}]}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -888,8 +1040,8 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "{question}\n"
                  "</question>\n"
                  "\n"
-                 "<summary><title>...</title><address><city>...</city><country>...</country>"
-                 "</address></summary>\n"
+                 "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
+                 "</address>\n</summary>\n"
                  "In adhering to this structure, your objective is: \n"
                  "        Given the fields `question`, produce the fields `summary`."},
      {"role": "user",
@@ -898,9 +1050,10 @@ def test_xml_adapter_format_exact_messages_with_nested_pydantic_output():
                  "</question>\n"
                  "\n"
                  "Respond with the corresponding output fields wrapped in XML tags `<summary>`. "
+                    "Put structural tags on separate lines; leaf values are literal text, without escaping. "
                     "Use this nested XML structure: "
-                    "<summary><title>...</title><address><city>...</city><country>...</country>"
-                    "</address></summary>"}]
+                    "<summary>\n<title>\n...\n</title>\n<address>\n<city>\n...\n</city>\n<country>\n...\n</country>\n"
+                    "</address>\n</summary>"}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -972,7 +1125,8 @@ def test_xml_adapter_format_exact_messages_with_incomplete_demo():
                  "</context>\n"
                  "\n"
                  "Respond with the corresponding output fields wrapped in XML tags `<answer>`, then "
-                 "`<score>`."}]
+                 "`<score>`. Put structural tags on separate lines; "
+                 "leaf values are literal text, without escaping."}]
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
@@ -1000,9 +1154,17 @@ All interactions will be structured in the following way, with the appropriate v
 {question}
 </question>
 
-<answers><item>...</item></answers>
+<answers>
+<item>
+...
+</item>
+</answers>
 
-<scores><item>...</item></scores>
+<scores>
+<item>
+...
+</item>
+</scores>
 In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
