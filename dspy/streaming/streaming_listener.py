@@ -81,6 +81,23 @@ class StreamListener:
             },
         }
 
+    def reset(self):
+        """Reset the per-stream state so the listener can capture a fresh stream.
+
+        Called by `streamify()` on the shallow per-call copy of each listener it builds for a
+        top-level call, so a listener built once and reused across many calls (the common
+        `streamify(program)` pattern) keeps working without sharing parser state between calls,
+        and also used by the `allow_reuse` path in `receive()` to reset between multiple emissions
+        within a single call (#8425). Because the copy is shallow, a subclass that adds per-stream
+        mutable state must rebind it here (assign a new container) rather than clear it in place.
+        """
+        self.field_start_queue = []
+        self.field_end_queue = Queue()
+        self.stream_start = False
+        self.stream_end = False
+        self.cache_hit = False
+        self.json_adapter_state["field_accumulated_messages"] = ""
+
     def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
         for i in range(len(concat_message)):
             if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
@@ -130,12 +147,7 @@ class StreamListener:
         if self.stream_end:
             if self.allow_reuse:
                 # Clear up the state for the next stream.
-                self.stream_end = False
-                self.cache_hit = False
-                self.field_start_queue = []
-                self.field_end_queue = Queue()
-                self.json_adapter_state["field_accumulated_messages"] = ""
-                self.stream_start = False
+                self.reset()
             else:
                 return
 

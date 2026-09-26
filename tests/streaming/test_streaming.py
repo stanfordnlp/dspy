@@ -2130,3 +2130,217 @@ def test_streamify_keeps_a_group_of_several_failures():
     assert _single_failure(group_class("two", [ValueError("a"), ValueError("b")])) is None
     assert isinstance(_single_failure(group_class("outer", [group_class("inner", [KeyError("k")])])), KeyError)
     assert _single_failure(ValueError("plain")) is None
+
+
+@pytest.mark.anyio
+async def test_stream_listener_reused_across_separate_top_level_calls():
+    """#8425: streamify builds the listeners once; StreamListener.receive sets stream_end=True and,
+    with the default allow_reuse=False, drops every chunk on subsequent top-level calls. The common
+    'build once, call many times' pattern (e.g. a FastAPI handler reusing a factory-built module) must
+    keep streaming on each call, not only the first."""
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    contents = ["[[", " ##", " answer", " ##", " ]]\n\n", "To", " get", " to", " the", " other",
+                " side", "!\n\n[[ ##", " completed", " ##", " ]]"]
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        for content in contents:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    stream_generators = [gpt_4o_mini_stream, gpt_4o_mini_stream]
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_generators.pop(0)()
+
+    async def collect():
+        out = program(question="why did a chicken cross the kitchen?")
+        chunks = []
+        async for value in out:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                chunks.append(value.chunk)
+        return "".join(chunks)
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+            first = await collect()
+            second = await collect()
+
+    assert first == "To get to the other side!"
+    assert second == "To get to the other side!"
+
+
+@pytest.mark.anyio
+async def test_stream_listener_state_isolated_across_concurrent_top_level_calls():
+    """streamify() builds `stream_listeners` once at wrap time and every top-level call to the
+    returned streamer used to close over the identical StreamListener objects. If call A is still
+    mid-stream when call B starts on the same streamer, B's generator() call must not reset or
+    otherwise mutate the shared listener state A is actively using, or A silently stops emitting
+    content after B starts even though A's own underlying LM stream keeps sending tokens.
+
+    Deterministic overlap, driven by hand instead of real concurrency:
+      1. start call A, drive it until it emits its first content chunk ("A-first")
+      2. while A is still suspended mid-stream, start call B and drain B to completion ("B-only")
+      3. resume A and drain it to completion
+
+    A's cumulative content must be "A-firstA-later!": nothing it already emitted is lost, and it
+    keeps emitting after B runs to completion.
+    """
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    b_drained = asyncio.Event()
+
+    async def stream_a(*args, **kwargs):
+        for content in ["[[", " ##", " answer", " ##", " ]]\n\n", "A-first"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+        # A's first content chunk has already been flushed through the listener. Block here (A's own
+        # LM stream is still open but has not sent more tokens yet) until B has started and fully
+        # drained, mirroring "B starts while A is mid-stream, then A resumes".
+        await b_drained.wait()
+        for content in ["A-later", "!\n\n[[ ##", " completed", " ##", " ]]"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    async def stream_b(*args, **kwargs):
+        for content in ["[[", " ##", " answer", " ##", " ]]\n\n", "B-only", "!\n\n[[ ##", " completed", " ##", " ]]"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    stream_generators = [stream_a, stream_b]
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_generators.pop(0)()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+            out_a = program(question="A")
+            chunks_a = []
+            # Drive A by hand until its first content chunk has been observed, then stop pulling -
+            # the async generator (and the background task feeding it) is left suspended exactly
+            # where the shared-listener hazard needs it: mid-stream, with state already recorded.
+            async for value in out_a:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks_a.append(value.chunk)
+                if chunks_a:
+                    break
+
+            assert "".join(chunks_a) == "A-first", f"sanity check failed, got {chunks_a!r}"
+
+            # Start a second top-level call on the same streamer while A is still mid-stream, and
+            # drain it fully before resuming A.
+            out_b = program(question="B")
+            chunks_b = []
+            async for value in out_b:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks_b.append(value.chunk)
+
+            assert "".join(chunks_b) == "B-only!", f"B sanity check failed, got {chunks_b!r}"
+
+            b_drained.set()
+            async for value in out_a:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks_a.append(value.chunk)
+
+    assert "".join(chunks_a) == "A-firstA-later!", (
+        f"A's cumulative stream content was {chunks_a!r} (expected the two chunks to join to "
+        f"'A-firstA-later!'); B's concurrent top-level call corrupted A's shared StreamListener "
+        f"state mid-flight."
+    )
+
+
+@pytest.mark.anyio
+async def test_stream_listener_subclass_is_preserved_across_top_level_calls():
+    """The per-call listener copies streamify() builds must keep the listener's class, so a
+    StreamListener subclass keeps its overrides on every call, not only on the first."""
+
+    class UpperCaseListener(dspy.streaming.StreamListener):
+        def receive(self, chunk):
+            output = super().receive(chunk)
+            if output is not None:
+                output.chunk = output.chunk.upper()
+            return output
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def stream(*args, **kwargs):
+        for content in ["[[ ##", " answer", " ##", " ]]\n\n", "To", " get", " there", "!\n\n[[ ##", " completed", " ##", " ]]"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    stream_generators = [stream, stream]
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_generators.pop(0)()
+
+    program = dspy.streamify(MyProgram(), stream_listeners=[UpperCaseListener(signature_field_name="answer")])
+
+    async def collect():
+        chunks = []
+        async for value in program(question="why did a chicken cross the kitchen?"):
+            if isinstance(value, dspy.streaming.StreamResponse):
+                chunks.append(value.chunk)
+        return "".join(chunks)
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+            first = await collect()
+            second = await collect()
+
+    assert first == "TO GET THERE!"
+    assert second == "TO GET THERE!"
+
+
+@pytest.mark.anyio
+async def test_stream_listener_repeated_instance_is_copied_once_per_call():
+    """The same StreamListener instance listed twice must still act as one parser per call: the
+    per-call copies are made once per instance, so the field is not streamed twice."""
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def stream(*args, **kwargs):
+        for content in ["[[ ##", " answer", " ##", " ]]\n\n", "To", " get", " there", "!\n\n[[ ##", " completed", " ##", " ]]"]:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    program = dspy.streamify(MyProgram(), stream_listeners=[listener, listener])
+
+    with mock.patch("litellm.acompletion", side_effect=lambda *args, **kwargs: stream()):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)):
+            chunks = []
+            async for value in program(question="why did a chicken cross the kitchen?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks.append(value.chunk)
+
+    assert "".join(chunks) == "To get there!"

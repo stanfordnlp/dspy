@@ -1,8 +1,10 @@
 import asyncio
 import contextvars
+import copy
 import logging
 import threading
 from asyncio import iscoroutinefunction
+from collections import defaultdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
@@ -180,9 +182,12 @@ def streamify(
     """
     stream_listeners = stream_listeners or []
     if len(stream_listeners) > 0:
-        predict_id_to_listener = find_predictor_for_stream_listeners(program, stream_listeners)
-    else:
-        predict_id_to_listener = {}
+        # Resolve each listener's `predict`/`predict_name` against the program once, here, so an
+        # ambiguous or unknown field name still raises at streamify()-wrap time rather than on the
+        # first streamed call. The returned mapping is discarded: every top-level call below builds
+        # its own listener copies and its own predict-id mapping (see `_fresh_stream_listeners`),
+        # so concurrent calls to the returned streamer do not share the listeners' parser state.
+        find_predictor_for_stream_listeners(program, stream_listeners)
 
     if is_async_program:
         program = program.acall
@@ -194,8 +199,35 @@ def streamify(
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
 
-    async def generator(args, kwargs, stream: "MemoryObjectSendStream"):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+    def _fresh_stream_listeners() -> tuple[list[StreamListener], dict[int, list[StreamListener]]]:
+        # Give each top-level call its own StreamListener copies instead of reusing the listeners
+        # closed over above. Two overlapping calls to the same streamer would otherwise mutate the
+        # identical StreamListener objects (field_start_queue, field_end_queue, stream_start,
+        # stream_end, cache_hit, json_adapter_state), so one call's chunks could silently corrupt
+        # another call's in-flight parser state. A shallow copy keeps the listener's class and its
+        # configuration (`predict`, `predict_name`, `allow_reuse`, `adapter_identifiers`); the JSON
+        # adapter state is copied explicitly and `reset()` then rebinds the base class's per-stream
+        # queues and flags on the copy (a subclass that adds per-stream mutable state must rebind
+        # it in `reset()` too, see `StreamListener.reset`). A listener that appears more than once
+        # in `stream_listeners` is copied once per call, so repeated entries keep sharing one
+        # parser as before. The predict-id mapping is rebuilt from the already-resolved
+        # predictors, without walking the program again.
+        call_stream_listeners = []
+        call_predict_id_to_listener = defaultdict(list)
+        copies: dict[int, StreamListener] = {}
+        for listener in stream_listeners:
+            fresh = copies.get(id(listener))
+            if fresh is None:
+                fresh = copy.copy(listener)
+                fresh.json_adapter_state = dict(listener.json_adapter_state)
+                fresh.reset()
+                copies[id(listener)] = fresh
+                call_predict_id_to_listener[id(fresh.predict)].append(fresh)
+            call_stream_listeners.append(fresh)
+        return call_stream_listeners, call_predict_id_to_listener
+
+    async def generator(args, kwargs, stream: "MemoryObjectSendStream", call_stream_listeners: list[StreamListener]):
+        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=call_stream_listeners):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
@@ -214,19 +246,23 @@ def streamify(
             raise leaf from None
 
     async def _stream_program(args, kwargs):
+        # Fresh listener copies (and a fresh predict-id mapping) for THIS call only, so this call
+        # does not see another concurrent call's receive/finalize mutations, and vice versa.
+        call_stream_listeners, call_predict_id_to_listener = _fresh_stream_listeners()
+
         send_stream, receive_stream = anyio.create_memory_object_stream(16)
         async with anyio.create_task_group() as tg, send_stream, receive_stream:
-            tg.start_soon(generator, args, kwargs, send_stream)
+            tg.start_soon(generator, args, kwargs, send_stream, call_stream_listeners)
 
             async for value in receive_stream:
                 if _is_litellm_model_response_stream(value):
-                    if len(predict_id_to_listener) == 0:
+                    if len(call_predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
                     else:
                         # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
-                        for listener in predict_id_to_listener[value.predict_id]:
+                        for listener in call_predict_id_to_listener[value.predict_id]:
                             # In some special cases such as Citation API, it is possible that multiple listeners
                             # return values at the same time due to the chunk buffer of the listener.
                             if output := listener.receive(value):
@@ -235,16 +271,16 @@ def streamify(
                     yield value
                 elif isinstance(value, Prediction):
                     # Flush remaining buffered tokens before yielding the Prediction instance
-                    for listener in stream_listeners:
+                    for listener in call_stream_listeners:
                         if final_chunk := listener.finalize():
                             yield final_chunk
 
                     if include_final_prediction_in_output_stream:
                         yield value
                     elif (
-                        len(stream_listeners) == 0
-                        or any(listener.cache_hit for listener in stream_listeners)
-                        or not any(listener.stream_start for listener in stream_listeners)
+                        len(call_stream_listeners) == 0
+                        or any(listener.cache_hit for listener in call_stream_listeners)
+                        or not any(listener.stream_start for listener in call_stream_listeners)
                     ):
                         yield value
                     return
