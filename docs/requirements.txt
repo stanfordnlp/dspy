@@ -2,7 +2,7 @@ mkdocstrings==1.0.6
 mkdocstrings-python==2.0.7
 nbconvert==7.17.1
 pillow==12.3.0
-zensical==0.0.59
+zensical==0.0.62
 mike==2.2.0
 urllib3==2.7.0
 mistune==3.3.4
