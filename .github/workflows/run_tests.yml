@@ -95,10 +95,10 @@ jobs:
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
-          uv sync --dev -p .venv --extra dev
+          uv sync --dev -p .venv --extra dev --extra monty
           uv pip list
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
+        run: uv run -p .venv --extra monty pytest -vv -m 'not extra and not deno' -n auto --dist worksteal tests/
 
   extra_test:
     name: Run Extra and Deno Tests

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from functools import partial
 from typing import Any
 
 from gepa import EvaluationBatch
@@ -11,6 +12,7 @@ from dspy.predict.flex import Flex
 from dspy.predict.flex.ctx import _strip_code_fences
 from dspy.predict.flex.primitives_doc import PRIMITIVES_CATALOG
 from dspy.primitives import Prediction
+from dspy.primitives.code_interpreter import resolve_interpreter_factory
 from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.utils.exceptions import LMError
@@ -33,6 +35,13 @@ def flex_task_context(student_module) -> tuple[dict[str, str], dict[str, str]]:
         if ctx is not None and hasattr(ctx, "render_signature_spec"):
             task_descriptions[path] = ctx.render_signature_spec()
             context_blurbs[path] = ctx.render_context_blurb(sandboxed=True)
+            factory = resolve_interpreter_factory(sub._interpreter_factory)
+            if isinstance(factory, partial):
+                factory = factory.func
+            # Read metadata without invoking a user factory just to build a prompt.
+            instructions = getattr(factory, "flex_execution_instructions", "")
+            if instructions:
+                context_blurbs[path] += "\n\n" + instructions
     return task_descriptions, context_blurbs
 
 

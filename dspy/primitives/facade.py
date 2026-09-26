@@ -226,8 +226,13 @@ class FacadeInvocation:
 
     def install(self, interpreter: Any) -> None:
         """Register the tools the shim calls, then install the ``dspy`` facade in the sandbox."""
+        from dspy.primitives.monty_interpreter import MontyInterpreter
+
         interpreter.tools.update({CONSTRUCT_TOOL: self.construct, CALL_TOOL: self.call})
-        interpreter.execute(SHIM_SETUP, variables={HOST_TOKEN_VAR: _HOST_PROCESS_TOKEN})
+        if isinstance(interpreter, MontyInterpreter):
+            interpreter._install_dspy_facade(self._tools)
+        else:
+            interpreter.execute(SHIM_SETUP, variables={HOST_TOKEN_VAR: _HOST_PROCESS_TOKEN})
 
     def construct(self, kind: str, signature: Any, attr_name: str, kwargs: dict[str, Any] | None = None) -> str:
         self._lm_error = None
