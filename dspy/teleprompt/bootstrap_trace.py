@@ -54,7 +54,9 @@ def bootstrap_trace_data(
     def wrapped_metric(example, prediction, trace=None):
         prediction, _ = prediction
         if isinstance(prediction, FailedPrediction):
-            return prediction.format_reward or format_failure_score
+            # `format_reward=None` means "not set"; 0.0 is a real reward (the
+            # best partial credit under the default scores) and must survive.
+            return prediction.format_reward if prediction.format_reward is not None else format_failure_score
         return metric(example, prediction, trace) if metric else True
 
     # Use `object.__getattribute__` to bypass the custom hook `Module.__getattribute__` so that we avoid
@@ -88,7 +90,7 @@ def bootstrap_trace_data(
                     failed_pred = FailedPrediction(
                         completion_text=completion_str,
                         format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
+                        + (failure_score - format_failure_score) * (len(present) / len(expected)),
                     )
                 else:
                     failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
