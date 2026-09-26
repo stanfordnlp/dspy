@@ -48,7 +48,6 @@ from dspy.utils.annotation import experimental
 from dspy.utils.exceptions import format_error_for_lm
 
 if TYPE_CHECKING:
-
     from dspy.signatures.signature import Signature
 
 logger = logging.getLogger(__name__)
@@ -62,19 +61,20 @@ You have access to a Python REPL environment. Write Python code and it will be e
 {interpreter_rules}
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
-- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
+- `llm_query(prompt, images=None)` - query a sub-LLM (~500K char capacity), optionally with images
+- `llm_query_batched(prompts, images=None)` - query multiple text or multimodal prompts concurrently
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
 
-1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
+1. EXPLORE FIRST - Inspect structure cheaply before processing: print small samples, types, shapes, or lengths rather than entire large values.
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
 4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
-5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
-6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
+5. WORK WITH IMAGES VISUALLY - Use `llm_query(..., images=[...])` early for semantic visual inspection. Printing or displaying an image encoding does not let you see it. When useful, apply deterministic edits through methods exposed by the image (for example crops, rotations, enhancement, or contact sheets), then query the edited image. Validate brittle pixel heuristics against visual evidence instead of letting an unverified heuristic override it.
+6. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
+7. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
@@ -130,7 +130,7 @@ def _strip_code_fences(code: str) -> str:
 
     # Find the first opening fence (skip any text before it)
     fence_start = code.find("```")
-    lang_line, separator, remainder = code[fence_start + 3:].partition("\n")
+    lang_line, separator, remainder = code[fence_start + 3 :].partition("\n")
     if not separator:
         return code
 
@@ -192,7 +192,7 @@ class RLM(Module):
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
-                  Built-in tools: llm_query(prompt), llm_query_batched(prompts).
+                  Built-in tools: llm_query(prompt, images=None), llm_query_batched(prompts, images=None).
             sub_lm: LM for llm_query/llm_query_batched and sub-agents. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter_factory: Zero-argument callable that creates an interpreter for each forward pass. The
@@ -272,6 +272,7 @@ class RLM(Module):
 
     def _validate_namespace(self, tools: dict[str, Tool]) -> None:
         """Validate names owned by the RLM call, result, sandbox APIs, and the sandbox dspy facade."""
+
         def is_reserved(name: str) -> bool:
             return name in self._RESERVED_SANDBOX_NAMES or is_reserved_sandbox_name(name)
 
@@ -317,18 +318,59 @@ class RLM(Module):
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _normalize_llm_query_images(images: Any) -> list[dspy.Image]:
+        if images is None:
+            return []
+        if isinstance(images, (str, dspy.Image, dict)):
+            images = [images]
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("images must be an image or a list of images")
+        normalized = []
+        for image in images:
+            if isinstance(image, dspy.Image):
+                normalized.append(image)
+            elif isinstance(image, str):
+                normalized.append(dspy.Image(image))
+            elif isinstance(image, dict) and set(image) == {"url"}:
+                normalized.append(dspy.Image(image))
+            else:
+                raise TypeError(
+                    "Each image must be a dspy.Image, URL, data URI, or {'url': ...} mapping, "
+                    f"got {type(image).__name__}."
+                )
+        return normalized
+
+    @staticmethod
+    def _normalize_llm_query_batch_images(prompts: list[str], images: Any) -> list[Any]:
+        if images is None:
+            return [None] * len(prompts)
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("images must be a list with one image entry per prompt")
+        if len(images) != len(prompts):
+            raise ValueError(f"images must have the same length as prompts ({len(images)} != {len(prompts)})")
+        return list(images)
+
     def _make_llm_tools(self, budget: _LLMCallBudget | None = None, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools drawing on ``budget`` (fresh by default)."""
         budget = budget if budget is not None else _LLMCallBudget(self.max_llm_calls)
         lm = self.sub_lm
 
-        def _query_lm(prompt: str) -> str:
+        def _query_lm(prompt: str, images: Any = None) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
             if target_lm is None:
-                raise dspy.LMNotConfiguredError(
-                    "No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM."
+                raise dspy.LMNotConfiguredError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            normalized_images = self._normalize_llm_query_images(images)
+            if normalized_images and getattr(target_lm, "model_type", None) == "text":
+                raise ValueError(
+                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
                 )
-            response = target_lm(prompt)
+            if normalized_images:
+                content = [{"type": "text", "text": prompt}]
+                content.extend(image.format()[0] for image in normalized_images)
+                response = target_lm(messages=[{"role": "user", "content": content}])
+            else:
+                response = target_lm(prompt)
             if isinstance(response, dspy.lm15.Response):
                 text = response.text
             elif isinstance(response, list) and response:
@@ -344,24 +386,37 @@ class RLM(Module):
                 raise TypeError(f"Sub-LM response must contain text, got {type(text).__name__}.")
             return text
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
+        def llm_query(prompt: str, images=None) -> str:
+            """Query the LLM with a prompt and optional images."""
             if not prompt:
                 raise ValueError("prompt cannot be empty")
+            normalized_images = self._normalize_llm_query_images(images)
+            target_lm = lm if lm is not None else dspy.settings.lm
+            if normalized_images and target_lm is not None and getattr(target_lm, "model_type", None) == "text":
+                raise ValueError(
+                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
+                )
             budget.reserve(1)
-            return _query_lm(prompt)
+            return _query_lm(prompt, normalized_images)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
+        def llm_query_batched(prompts: list[str], images=None) -> list[str]:
             """Query prompts concurrently, isolating LM failures while propagating contract errors."""
+            batch_images = self._normalize_llm_query_batch_images(prompts, images)
             if not prompts:
                 return []
+            batch_images = [self._normalize_llm_query_images(prompt_images) for prompt_images in batch_images]
+            target_lm = lm if lm is not None else dspy.settings.lm
+            if any(batch_images) and target_lm is not None and getattr(target_lm, "model_type", None) == "text":
+                raise ValueError(
+                    "llm_query images require a chat or responses LM; model_type='text' does not support images."
+                )
             budget.reserve(len(prompts))
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_idx = {
-                    executor.submit(contextvars.copy_context().run, _query_lm, prompt): index
-                    for index, prompt in enumerate(prompts)
+                    executor.submit(contextvars.copy_context().run, _query_lm, prompt, prompt_images): index
+                    for index, (prompt, prompt_images) in enumerate(zip(prompts, batch_images, strict=True))
                 }
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
@@ -389,10 +444,7 @@ class RLM(Module):
         # Simple names for SUBMIT() examples
         final_output_names = ", ".join(self.signature.output_fields.keys())
 
-        output_fields = "\n".join(
-            f"- {translate_field_type(n, f)}"
-            for n, f in self.signature.output_fields.items()
-        )
+        output_fields = "\n".join(f"- {translate_field_type(n, f)}" for n, f in self.signature.output_fields.items())
 
         # Include original signature instructions (docstring) if present
         task_instructions = f"{self.signature.instructions}\n\n" if self.signature.instructions else ""
@@ -412,15 +464,41 @@ class RLM(Module):
         interpreter_rules = self._initial_interpreter_rules
 
         action_sig = (
-            dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
-                inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
-                max_llm_calls=self.max_llm_calls, interpreter_rules=interpreter_rules,
-            ) + tool_docs)
-            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
-            .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
-            .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str)
-            .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
-            .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
+            dspy.Signature(
+                {},
+                task_instructions
+                + ACTION_INSTRUCTIONS_TEMPLATE.format(
+                    inputs=inputs_str,
+                    final_output_names=final_output_names,
+                    output_fields=output_fields,
+                    max_llm_calls=self.max_llm_calls,
+                    interpreter_rules=interpreter_rules,
+                )
+                + tool_docs,
+            )
+            .append(
+                "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
+            )
+            .append(
+                "repl_history",
+                dspy.InputField(desc="Previous REPL code executions and their outputs"),
+                type_=REPLHistory,
+            )
+            .append(
+                "iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iters"), type_=str
+            )
+            .append(
+                "reasoning",
+                dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."),
+                type_=str,
+            )
+            .append(
+                "code",
+                dspy.OutputField(
+                    desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"
+                ),
+                type_=str,
+            )
         )
 
         # Extract signature: includes the original signature's output fields and task instructions.
@@ -431,15 +509,21 @@ class RLM(Module):
         # Prepend original task instructions to extract instructions so the LLM knows what task to extract for
         extended_task_instructions = ""
         if task_instructions:
-            extended_task_instructions = "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
+            extended_task_instructions = (
+                "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
+            )
         full_extract_instructions = extended_task_instructions + extract_instructions
 
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
             full_extract_instructions,
         )
-        extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
-        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
+        extract_sig = extract_sig.prepend(
+            "repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory
+        )
+        extract_sig = extract_sig.prepend(
+            "variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str
+        )
 
         return action_sig, extract_sig
 
@@ -533,7 +617,9 @@ class RLM(Module):
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
     def _prepare_serializable_vars(
-        self, input_args: dict[str, Any], repl: CodeInterpreter,
+        self,
+        input_args: dict[str, Any],
+        repl: CodeInterpreter,
     ) -> dict[str, Any]:
         """Inject SandboxSerializable values into the interpreter.
 
@@ -560,10 +646,12 @@ class RLM(Module):
                 except UnicodeDecodeError:
                     encoded_var_name = f"{raw_var_name}_base64"
                     payload_vars[encoded_var_name] = base64.b64encode(payload).decode("ascii")
-                    code_lines.extend([
-                        "import base64",
-                        f"{raw_var_name} = base64.b64decode({encoded_var_name})",
-                    ])
+                    code_lines.extend(
+                        [
+                            "import base64",
+                            f"{raw_var_name} = base64.b64decode({encoded_var_name})",
+                        ]
+                    )
             else:
                 payload_vars[raw_var_name] = str(payload)
 
@@ -573,6 +661,21 @@ class RLM(Module):
             repl.execute("\n".join(code_lines), variables=payload_vars)
 
         return regular_args
+
+    def _preload_sandbox_packages(self, input_args: dict[str, Any], repl: CodeInterpreter) -> None:
+        """Ask capable interpreters to provision packages declared by serializable inputs."""
+        packages = []
+        for value in input_args.values():
+            if not isinstance(value, SandboxSerializable):
+                continue
+            declared = value.sandbox_packages()
+            if not isinstance(declared, list) or not all(isinstance(package, str) and package for package in declared):
+                raise TypeError(f"{type(value).__name__}.sandbox_packages() must return a list of non-empty strings")
+            packages.extend(declared)
+        packages = list(dict.fromkeys(packages))
+        preload_packages = getattr(repl, "preload_packages", None)
+        if packages and callable(preload_packages):
+            preload_packages(packages)
 
     def _setup_facade(
         self, repl: CodeInterpreter, budget: _LLMCallBudget, interpreter_factory: Callable[[], CodeInterpreter]
@@ -603,9 +706,11 @@ class RLM(Module):
     def _make_interpreter_tool(self, tool: Tool) -> Callable:
         """Preserve function metadata while routing execution through Tool."""
         if inspect.iscoroutinefunction(tool.func) or inspect.iscoroutinefunction(getattr(tool.func, "__call__", None)):
+
             async def invoke(**kwargs):
                 return await tool.acall(**kwargs)
         else:
+
             def invoke(**kwargs):
                 return tool(**kwargs)
 
@@ -685,12 +790,18 @@ class RLM(Module):
 
         # Validate raw_output is a dict
         if not isinstance(raw_output, dict):
-            return None, f"[Error] FINAL returned {type(raw_output).__name__}, expected dict with fields: {output_field_names}"
+            return (
+                None,
+                f"[Error] FINAL returned {type(raw_output).__name__}, expected dict with fields: {output_field_names}",
+            )
 
         # Validate all required output fields are present
         missing = set(output_field_names) - set(raw_output.keys())
         if missing:
-            return None, f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})"
+            return (
+                None,
+                f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})",
+            )
 
         # Parse and validate each output field
         parsed_outputs = {}
@@ -745,9 +856,7 @@ class RLM(Module):
             if error:
                 return history.append(reasoning=pred.reasoning, code=code, output=error)
 
-            final_history = history.append(
-                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
-            )
+            final_history = history.append(reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}")
             return Prediction(
                 **parsed_outputs,
                 trajectory=[e.model_dump() for e in final_history],
@@ -800,8 +909,7 @@ class RLM(Module):
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
-                f"Reasoning: {action.reasoning}\nCode:\n{action.code}"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\nReasoning: {action.reasoning}\nCode:\n{action.code}"
             )
 
         try:
@@ -841,16 +949,26 @@ class RLM(Module):
         output_field_names = list(self.signature.output_fields.keys())
         budget = _LLMCallBudget(self.max_llm_calls)
         execution_tools = self._prepare_execution_tools(budget)
-        variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            prepare_inputs = getattr(repl, "prepare_inputs", None)
+            if callable(prepare_inputs):
+                input_args = prepare_inputs(input_args)
+            variables = self._build_variables(**input_args)
+            self._preload_sandbox_packages(input_args, repl)
             sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names, interpreter_factory,
+                    repl,
+                    variables,
+                    history,
+                    iteration,
+                    regular_args,
+                    output_field_names,
+                    interpreter_factory,
                     sub_agent_rules,
                 )
                 if isinstance(result, Prediction):
@@ -902,8 +1020,7 @@ class RLM(Module):
         )
         if self.verbose:
             logger.info(
-                f"RLM iteration {iteration + 1}/{self.max_iters}\n"
-                f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
+                f"RLM iteration {iteration + 1}/{self.max_iters}\nReasoning: {pred.reasoning}\nCode:\n{pred.code}"
             )
 
         try:
@@ -915,7 +1032,9 @@ class RLM(Module):
         result = self._execute_code(repl, code, input_args)
         return self._process_execution_result(pred, code, result, history, output_field_names)
 
-    async def aforward(self, *, interpreter_factory: Callable[[], CodeInterpreter] | None = None, **input_args) -> Prediction:
+    async def aforward(
+        self, *, interpreter_factory: Callable[[], CodeInterpreter] | None = None, **input_args
+    ) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
 
         Args:
@@ -939,16 +1058,26 @@ class RLM(Module):
         output_field_names = list(self.signature.output_fields.keys())
         budget = _LLMCallBudget(self.max_llm_calls)
         execution_tools = self._prepare_execution_tools(budget)
-        variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools, interpreter_factory) as repl:
+            prepare_inputs = getattr(repl, "prepare_inputs", None)
+            if callable(prepare_inputs):
+                input_args = prepare_inputs(input_args)
+            variables = self._build_variables(**input_args)
+            self._preload_sandbox_packages(input_args, repl)
             sub_agent_rules = self._setup_facade(repl, budget, interpreter_factory)
             regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iters):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, regular_args, output_field_names, interpreter_factory,
+                    repl,
+                    variables,
+                    history,
+                    iteration,
+                    regular_args,
+                    output_field_names,
+                    interpreter_factory,
                     sub_agent_rules,
                 )
                 if isinstance(result, Prediction):

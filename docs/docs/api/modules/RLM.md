@@ -52,7 +52,7 @@ RLM operates in an iterative REPL loop:
 1. The LLM receives **metadata** about the context (type, length, preview) but not the full context
 2. The LLM writes **Python code** to explore the data (print samples, search, filter)
 3. Code executes in a **sandboxed interpreter**, and the LLM sees the output
-4. The LLM can call `llm_query(prompt)` to run **sub-LLM calls** for semantic analysis on snippets
+4. The LLM can call `llm_query(prompt, images=None)` or `llm_query_batched(prompts, images=None)` to run **sub-LLM calls** over text and optional images
 5. When done, the LLM calls `SUBMIT(output)` to return the final answer
 
 #### What the LLM sees (step-by-step trace):
@@ -119,8 +119,8 @@ Inside the REPL, the LLM has access to:
 
 | Tool | Description |
 |------|-------------|
-| `llm_query(prompt)` | Query a sub-LLM for semantic analysis (~500K char capacity) |
-| `llm_query_batched(prompts)` | Query multiple prompts concurrently (faster for batch operations) |
+| `llm_query(prompt, images=None)` | Query a sub-LLM with text and an optional image or image list |
+| `llm_query_batched(prompts, images=None)` | Query prompts concurrently, optionally with one image entry per prompt |
 | `print()` | Print output (required to see results) |
 | `SUBMIT(...)` | Submit final output and end execution |
 | Standard library | `re`, `json`, `collections`, `math`, etc. |
@@ -223,12 +223,73 @@ metadata; anonymous factories without it continue to use the generic action prom
 for each action call, so a `dspy.context(interpreter_factory=...)` override keeps the prompt aligned with the runtime
 that executes the generated code.
 
+### Images with Monty and nested RLMs
+
+Monty can send images to multimodal LMs without Pyodide. Install `dspy[monty]` and
+choose `interpreter_factory=dspy.MontyInterpreter`. In its REPL, image inputs are
+URL/data-URI strings, including images in lists and dictionaries. Use
+`llm_query(prompt, images=[image])` or `llm_query_batched(prompts, images=...)` to
+inspect them. Typed sub-predictors such as `dspy.Predict("image: dspy.Image -> answer")`
+also send real multimodal content, including newly edited images.
+
+For image **editing**, supply `dspy.Image.process_images` as a tool and install
+`dspy[monty,deno]`. This runs ordinary Pillow/OpenCV/NumPy code in a fresh Pyodide
+worker. There is no translation of those libraries into Monty and no execution of
+model-written Python in the host process.
+
+```python
+rlm = dspy.RLM(
+    "source: dspy.Image, request -> edited: dspy.Image, answer",
+    interpreter_factory=dspy.MontyInterpreter,
+    tools=[dspy.Image.process_images],
+)
+result = rlm(
+    source=dspy.Image.from_path("scan.png"),
+    request="Crop the top-left 200×100 region and read its text.",
+)
+```
+
+For example, the RLM can generate:
+
+```python
+edited = process_images('''
+crop = images[0].to_pil().crop((0, 0, 200, 100))
+SUBMIT(DSPyImage.from_pil(crop))
+''', images=[source])
+answer = llm_query("Read this crop", images=[edited])
+SUBMIT(edited=edited, answer=answer)
+```
+
+The worker provides `images`, `PILImage`, `cv2`, `np`, and `DSPyImage`; return an
+image reference or JSON-compatible result with `SUBMIT(value)`. NumPy slicing,
+boolean masks, and library calls execute normally **inside that code string**.
+The worker cannot access the parent REPL's variables or tools. Pass everything it
+needs in `images`, and keep related operations in one call to avoid repeated
+worker startup and image encoding.
+
+Nested RLMs inherit Monty and may receive the same supplied tool via
+`dspy.RLM(..., tools=[process_images])`. Image outputs return as data-URI strings
+in the parent REPL, and typed final outputs become host-side `dspy.Image` values.
+Sub-agent LM calls and image queries share the parent's LM-call budget. Flex can
+use the same tool and delegate to an RLM on Monty.
+
+Limitations: editing requires embedded pixels (load remote images explicitly with
+`dspy.Image.from_url()` on the host); workers have no host filesystem, environment,
+or network grants and retain no state between calls. Package provisioning may
+need network access at startup, before generated code runs. **Monty's time and
+memory limits do not bound the image worker.** This is an opt-in hybrid, not a
+Deno-free replacement for arbitrary Python packages. `PythonInterpreter` remains
+the default.
+
 ### Custom Sandbox-Serializable Inputs
 
-For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, lets interpreters with dynamic provisioning preload packages declared by `sandbox_packages()`, sends the serialized payload into the interpreter, runs its setup code, and exposes the reconstructed value under the original input name. Package provisioning is optional; `sandbox_setup()` remains the portable contract and must import required dependencies.
 
 ```python
 class DataFrame(dspy.SandboxSerializable):
+    def sandbox_packages(self) -> list[str]:
+        return ["pandas", "pyarrow"]
+
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport base64\nimport io"
 

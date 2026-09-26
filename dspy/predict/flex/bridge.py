@@ -81,6 +81,8 @@ def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
     """Record custom-type instances by their serialized string, recursing into containers."""
     if isinstance(value, _CustomType):
         out[value.serialize_model()] = value
+        if isinstance(value, dspy.Image):
+            out[value.url] = value
     elif isinstance(value, dict):
         for v in value.values():
             _collect_custom_type_originals(v, out)
@@ -150,7 +152,7 @@ class BridgeRuntime:
             )
             if isinstance(interp, MontyInterpreter):
                 # The framework-owned driver uses reserved names and needs no source adaptation.
-                result = interp._execute(code, variables={_INPUTS_VAR: dict(inputs)})
+                result = interp._execute(code, variables={_INPUTS_VAR: interp.prepare_inputs(inputs)})
             else:
                 result = interp.execute(code, variables={_INPUTS_VAR: dict(inputs)})
         except CodeInterpreterError as e:

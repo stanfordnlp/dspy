@@ -31,6 +31,9 @@ class MontyInterpreter:
         "Call native methods directly (text.strip()); use named helper functions for callbacks. "
         "The dspy facade adapts dspy.Module subclasses; call their forward method explicitly. "
         "The _dspy, _Dspy, and __dspy prefixes are reserved. "
+        "Image inputs are URL/data-URI strings, not Pillow objects. Pass them to llm_query(..., images=[image]). "
+        "If supplied, process_images(code, images) runs Pillow/OpenCV/NumPy code in a separate sandbox; "
+        "those imports and DSPyImage methods are available only inside that tool's code. "
         "Use supplied tools for external access."
     )
 
@@ -46,6 +49,9 @@ do not alias or shadow super or access __class__. Call module.forward(...) expli
 The _dspy, _Dspy, and __dspy identifier prefixes are reserved. Standard-library APIs
 are limited to Monty's supported subset; third-party imports are unavailable.
 Use supplied host tools for external libraries; return plain data across the boundary.
+Image inputs and sub-predictor image outputs are URL/data-URI strings. If supplied,
+process_images(code, images) runs Pillow/OpenCV/NumPy in a separate sandbox;
+only that code string can use DSPyImage.to_pil()/to_cv2() and library imports.
 Runtime failures include diagnostics; revise the source to address
 them rather than catching an unsupported operation and returning a dummy answer.
 """
@@ -65,6 +71,21 @@ them rather than catching an unsupported operation and returning a dummy answer.
         self._ended = False
         self._facade_installed = False
         self._compiled_code = None
+
+    def prepare_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Use image references rather than the Pyodide-specific image reconstruction code."""
+        from dspy.adapters.types.image import Image
+
+        def prepare(value):
+            if isinstance(value, Image):
+                return value.url
+            if isinstance(value, dict):
+                return {key: prepare(item) for key, item in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [prepare(item) for item in value]
+            return value
+
+        return prepare(inputs)
 
     def start(self) -> None:
         if self._ended:

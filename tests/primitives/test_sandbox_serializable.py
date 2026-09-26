@@ -75,6 +75,9 @@ class TestABCConformance:
 class TestCoreMethods:
     """Smoke tests that a conforming implementation behaves as expected."""
 
+    def test_sandbox_packages_default_empty(self):
+        assert ExampleSerializable().sandbox_packages() == []
+
     def test_sandbox_setup(self):
         assert ExampleSerializable().sandbox_setup() == "import json"
 

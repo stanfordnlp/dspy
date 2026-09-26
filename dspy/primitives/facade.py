@@ -27,6 +27,7 @@ import secrets
 from pathlib import Path
 from typing import Any, Callable
 
+from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
@@ -80,6 +81,12 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
 
 def _jsonable(value: Any) -> Any:
     """Coerce a predictor output field to a JSON-serializable value."""
+    if isinstance(value, dspy.Image):
+        return value.url
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
     try:
         return to_jsonable_python(value)
     except PydanticSerializationError:
@@ -257,6 +264,12 @@ class FacadeInvocation:
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
         restored = {k: restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
+        # Rebuild images from references, including edited images that have no
+        # original host object. Adapters need Image instances for multimodal content.
+        signature = predictor.predict.signature if isinstance(predictor, dspy.ChainOfThought) else predictor.signature
+        for name, field in signature.input_fields.items():
+            if name in restored and dspy.Image.extract_custom_type_from_annotation(field.annotation):
+                restored[name] = TypeAdapter(field.annotation).validate_python(restored[name])
         try:
             with self._lm_scope():
                 return prediction_to_fields(predictor(**restored))
