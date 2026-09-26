@@ -1717,3 +1717,30 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+def test_json_adapter_does_not_leak_custom_type_markers_into_assistant_messages():
+    from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER
+    from dspy.adapters.types.citation import Citations
+
+    class CitedAnswer(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
+
+    citations = Citations(
+        citations=[
+            {"cited_text": "Paris is the capital.", "document_index": 0, "start_char_index": 0, "end_char_index": 21}
+        ]
+    )
+    demos = [dspy.Example(question="Capital of France?", answer="Paris", citations=citations).with_inputs("question")]
+
+    messages = dspy.JSONAdapter().format(CitedAnswer, demos, {"question": "Capital of Spain?"})
+
+    assistant_messages = [message for message in messages if message["role"] == "assistant"]
+    assert len(assistant_messages) == 1
+    content = assistant_messages[0]["content"]
+    assert isinstance(content, str)
+    assert CUSTOM_TYPE_START_IDENTIFIER not in content
+    assert CUSTOM_TYPE_END_IDENTIFIER not in content
+    assert "Paris is the capital." in content
