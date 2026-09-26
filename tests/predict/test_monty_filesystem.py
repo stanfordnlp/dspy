@@ -1,6 +1,5 @@
 """Filesystem-backed nested RLMs, including the Flex/GEPA source adaptation path."""
 
-from functools import partial
 from pathlib import PurePosixPath
 
 import pytest
@@ -14,8 +13,9 @@ monty = pytest.importorskip("pydantic_monty")
 
 def test_nested_rlm_shares_explicit_filesystem_but_not_python_globals():
     fs = monty.OSAccess([monty.MemoryFile("/work/input.txt", "13\n29")])
-    factory = partial(dspy.MontyInterpreter, os=fs, cwd="/work")
+    factory = dspy.MontyInterpreter.configured(os=fs, cwd="/work")
     rlm = dspy.RLM("query -> answer: int", interpreter_factory=factory, max_iters=2)
+    assert dspy.MontyInterpreter.execution_instructions in rlm.generate_action.signature.instructions
     rlm.generate_action = make_mock_predictor([
         {"reasoning": "Delegate", "code": (
             "sentinel = 17\n"
@@ -44,7 +44,7 @@ def test_gepa_rebound_flex_runs_native_file_operations():
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
     fs = monty.OSAccess([monty.MemoryFile("/work/input.txt", "13\n29")])
-    factory = partial(dspy.MontyInterpreter, os=fs, cwd="/work")
+    factory = dspy.MontyInterpreter.configured(os=fs, cwd="/work")
     student = dspy.Flex("path -> answer: int", interpreter_factory=factory)
     adapter = DspyAdapter(student_module=student, metric_fn=lambda gold, pred: float(pred.answer == 42), feedback_map={})
     source = (
@@ -60,5 +60,5 @@ def test_gepa_rebound_flex_runs_native_file_operations():
     rebuilt = adapter.build_program({"self": source})
     assert rebuilt(path="input.txt").answer == 42
     assert rebuilt.module_src == source
-    # GEPA deep-copies this partial factory and its in-memory filesystem.
+    # GEPA deep-copies this configured factory and its in-memory filesystem.
     assert not fs.path_exists(PurePosixPath("/work/result.txt"))

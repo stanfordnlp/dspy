@@ -61,6 +61,37 @@ def test_shutdown_is_terminal(interpreter):
         interpreter.execute("1")
 
 
+def test_configured_factory_is_lazy_and_creates_independent_sessions():
+    constructed = []
+
+    class TrackedMonty(dspy.MontyInterpreter):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            constructed.append(self)
+
+    factory = TrackedMonty.configured(output_fields=[{"name": "answer"}])
+    assert constructed == []
+    assert factory.flex_execution_instructions == TrackedMonty.flex_execution_instructions
+    with dspy.context(interpreter_factory=factory):
+        first = dspy.primitives.code_interpreter._create_interpreter(None)
+        second = dspy.primitives.code_interpreter._create_interpreter(None)
+    try:
+        assert len(constructed) == 2 and first is not second
+        first.execute("value = 13")
+        with pytest.raises(dspy.CodeExecutionError, match="NameError"):
+            second.execute("value")
+        first.shutdown()
+        assert second.execute("SUBMIT(answer=29)") == dspy.FinalOutput({"answer": 29})
+    finally:
+        first.shutdown()
+        second.shutdown()
+
+
+def test_configured_rejects_unknown_constructor_options():
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        dspy.MontyInterpreter.configured(working_directory="/work")
+
+
 @pytest.mark.parametrize("limits,code", [
     ({"max_feed_duration_secs": 0.01}, "while True: pass"),
     ({"max_memory": 100_000}, "large = 'x' * 1_000_000"),

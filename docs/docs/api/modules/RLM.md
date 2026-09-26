@@ -233,14 +233,18 @@ tools or source translation. Paths use virtual POSIX syntax on every platform.
 For persistent in-memory files:
 
 ```python
-from functools import partial
 from pydantic_monty import MemoryFile, OSAccess
 
 fs = OSAccess([MemoryFile("/work/input.txt", "13\n29")])
-factory = partial(dspy.MontyInterpreter, os=fs, cwd="/work")
+factory = dspy.MontyInterpreter.configured(os=fs, cwd="/work")
 rlm = dspy.RLM("query -> answer", interpreter_factory=factory)
 result = rlm(query="Sum the numbers in input.txt and write the result to result.txt.")
 ```
+
+`configured(...)` accepts MontyInterpreter constructor options and returns a
+reusable factory, without starting an interpreter. Each invocation gets a fresh
+session. It preserves Monty's RLM and GEPA authoring instructions and also works
+with `dspy.configure(interpreter_factory=factory)` and Flex.
 
 The same `OSAccess` object retains writes across REPL turns and interpreters.
 Nested RLMs inherit the factory, so they share these files but not Python globals.
@@ -256,7 +260,7 @@ To expose an existing directory without granting access to the rest of the host:
 from pydantic_monty import MountDir
 
 with MountDir(host_path="./documents", virtual_path="/docs", mode="read-only") as mount:
-    factory = partial(dspy.MontyInterpreter, mount=mount, cwd="/docs")
+    factory = dspy.MontyInterpreter.configured(mount=mount, cwd="/docs")
     reader = dspy.RLM("query -> answer", interpreter_factory=factory)
     result = reader(query="Read report.txt and summarize it.")
 ```
@@ -282,7 +286,7 @@ imports, or network access. Monty's guest time/memory limits do not bound host O
 callbacks or mount I/O; use MountDir's own limits where applicable.
 
 For GEPA, isolate filesystem state between candidates and examples to avoid
-evaluation contamination. Deep-copying a `partial` containing `OSAccess` copies
+evaluation contamination. Deep-copying a configured factory containing `OSAccess` copies
 its in-memory state, while factories closing over shared objects can retain shared
 state. Rebuilding a candidate is not a general filesystem reset mechanism.
 

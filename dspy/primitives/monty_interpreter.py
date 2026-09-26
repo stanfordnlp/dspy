@@ -6,6 +6,7 @@ import inspect
 import keyword
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -87,6 +88,20 @@ them rather than catching an unsupported operation and returning a dummy answer.
         self._ended = False
         self._facade_installed = False
         self._compiled_code = None
+
+    @classmethod
+    def configured(cls, **kwargs: Any) -> Callable[[], MontyInterpreter]:
+        """Configure a reusable factory without starting an interpreter.
+
+        Each call creates a fresh session. Supplied mounts and OS handlers are
+        shared, caller-owned capabilities, just as with direct construction.
+        Use this with RLM/Flex's ``interpreter_factory`` or ``dspy.configure``.
+        """
+        inspect.signature(cls).bind(**kwargs)
+        factory = partial(cls, **kwargs)
+        factory.execution_instructions = cls.execution_instructions
+        factory.flex_execution_instructions = cls.flex_execution_instructions
+        return factory
 
     def prepare_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Use image references rather than the Pyodide-specific image reconstruction code."""
