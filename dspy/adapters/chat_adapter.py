@@ -1,6 +1,8 @@
+import enum
 import re
 import textwrap
-from typing import Any, NamedTuple
+import types
+from typing import Any, Literal, NamedTuple, Union, get_args, get_origin
 
 from pydantic.fields import FieldInfo
 
@@ -21,6 +23,24 @@ from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
+
+
+def _is_closed_set_annotation(annotation: Any) -> bool:
+    """Whether the annotation admits a fixed set of values, such as `Literal` or an `Enum`.
+
+    Re-asking the LM in another wire format can recover a value the adapter failed to
+    *parse*, so those failures stay eligible for the JSONAdapter fallback. It cannot
+    recover a value that parsed fine but is not one of the permitted members, and
+    retrying discards the error naming which member was expected.
+    """
+    origin = get_origin(annotation)
+    if origin is Literal or isinstance(annotation, enum.EnumMeta):
+        return True
+    if origin is Union or origin is types.UnionType:
+        # `Literal[...] | None` still names a fixed set; None is the only other member.
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        return bool(members) and all(_is_closed_set_annotation(arg) for arg in members)
+    return False
 
 
 class FieldInfoWithName(NamedTuple):
@@ -54,8 +74,11 @@ class ChatAdapter(Adapter):
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
             use_json_adapter_fallback: Whether to try JSONAdapter after an AdapterParseError.
-                Only invalid model output can trigger this extra call, and never after visible stream output.
-                Configuration errors, engine failures and programming bugs propagate. Defaults to True.
+                Only a malformed response can trigger this extra call, and never after visible stream output.
+                A well-formed value that is not a permitted member of a closed set, such as a
+                `Literal` or an `Enum`, propagates instead, since re-asking cannot fix it and
+                would discard the error naming the expected members. Configuration errors, engine
+                failures and programming bugs propagate. Defaults to True.
             parallel_tool_calls: Whether to request provider-side parallel tool-call generation when native function
                 calling is active. If None, the adapter does not set the provider option.
         """
@@ -86,10 +109,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or not e.is_format_error
+                ):
                     raise
                 return self._make_json_adapter_fallback()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -104,10 +132,15 @@ class ChatAdapter(Adapter):
         with adapter_fallback_scope() as progress:
             try:
                 return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError:
+            except AdapterParseError as e:
                 from dspy.adapters.json_adapter import JSONAdapter
 
-                if progress.emitted or isinstance(self, JSONAdapter) or not self.use_json_adapter_fallback:
+                if (
+                    progress.emitted
+                    or isinstance(self, JSONAdapter)
+                    or not self.use_json_adapter_fallback
+                    or not e.is_format_error
+                ):
                     raise
                 return await self._make_json_adapter_fallback().acall(lm, lm_kwargs, signature, demos, inputs)
 
@@ -234,11 +267,18 @@ class ChatAdapter(Adapter):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except ValueError as e:
+                    # The field marker was found and its content extracted, so the response
+                    # followed the chat format. For a closed set of permitted values the
+                    # fallback cannot help: it costs a second call and replaces the error
+                    # naming the expected members with a generic one. A value the adapter
+                    # merely failed to parse, such as a malformed list, stays eligible.
+                    annotation = signature.output_fields[k].annotation
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
                         message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                        is_format_error=not _is_closed_set_annotation(annotation),
                     )
         fields = apply_output_field_defaults(signature, fields)
         if fields.keys() != signature.output_fields.keys():
