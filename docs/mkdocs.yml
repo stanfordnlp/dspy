@@ -50,6 +50,7 @@ nav:
             - Building RAG as Agent: tutorials/agents/index.md
             - Entity Extraction: tutorials/entity_extraction/index.md
             - Classification: tutorials/classification/index.md
+            - Decision-Making with Jev Types: tutorials/jev_decisions/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.md
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
             - Program Of Thought: tutorials/program_of_thought/index.md
