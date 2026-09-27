@@ -250,10 +250,12 @@ def test_dump_and_load_state():
         "instructions": "I am just an instruction.",
         "fields": [
             {
+                "name": "sentence",
                 "prefix": "Sentence:",
                 "description": "I am an innocent input!",
             },
             {
+                "name": "sentiment",
                 "prefix": "Sentiment:",
                 "description": "${sentiment}",
             },
@@ -277,6 +279,53 @@ def test_dump_and_load_state():
     assert CustomSignature2.instructions == "I am a malicious instruction."
     assert CustomSignature2.fields["sentence"].json_schema_extra["desc"] == "I am an malicious input!"
     assert CustomSignature2.fields["sentiment"].json_schema_extra["prefix"] == "Sentiment:"
+
+
+def test_load_state_matches_fields_by_name():
+    # load_state must restore each saved field's prefix/desc onto the field with the
+    # SAME name, even when the target signature declares its fields in a different
+    # order. Regression: it assigned by position, corrupting reordered signatures.
+    class Source(dspy.Signature):
+        """Source instruction."""
+
+        question = dspy.InputField(desc="the question")
+        context = dspy.InputField(desc="the context")
+        answer = dspy.OutputField(desc="the answer")
+
+    state = Source.dump_state()
+
+    class Target(dspy.Signature):
+        """Target instruction."""
+
+        context = dspy.InputField(desc="orig context")
+        question = dspy.InputField(desc="orig question")
+        answer = dspy.OutputField(desc="orig answer")
+
+    loaded = Target.load_state(state)
+    assert loaded.fields["question"].json_schema_extra["desc"] == "the question"
+    assert loaded.fields["context"].json_schema_extra["desc"] == "the context"
+    assert loaded.fields["answer"].json_schema_extra["desc"] == "the answer"
+
+
+def test_load_state_backward_compatible_without_names():
+    # Legacy state files saved before field names were serialized must still load
+    # (positionally, as before).
+    class Sig(dspy.Signature):
+        """Instr."""
+
+        question = dspy.InputField(desc="q")
+        answer = dspy.OutputField(desc="a")
+
+    legacy_state = {
+        "instructions": "Instr.",
+        "fields": [
+            {"prefix": "Q:", "description": "d0"},
+            {"prefix": "A:", "description": "d1"},
+        ],
+    }
+    loaded = Sig.load_state(legacy_state)
+    assert loaded.fields["question"].json_schema_extra["desc"] == "d0"
+    assert loaded.fields["answer"].json_schema_extra["desc"] == "d1"
 
 
 def test_typed_signatures_basic_types():
