@@ -1,5 +1,4 @@
 import json
-import re
 from typing import Literal
 from unittest import mock
 
@@ -788,8 +787,7 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
                  '\n'
                  '[[ ## citations ## ]]\n'
                  '{citations}        # note: the value you produce must adhere to the JSON schema: '
-                 '{"type": "object", "$defs": {"Citation": {"type": "object", "description": '
-                 '"Individual citation with character location information.", "properties": {"type": '
+                 '{"type": "object", "$defs": {"Citation": {"type": "object", "properties": {"type": '
                  '{"type": "string", "default": "char_location", "title": "Type"}, "cited_text": '
                  '{"type": "string", "title": "Cited Text"}, "document_index": {"type": "integer", '
                  '"title": "Document Index"}, "document_title": {"anyOf": [{"type": "string"}, '
@@ -798,32 +796,7 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
                  '"integer", "title": "Start Char Index"}, "supported_text": {"anyOf": [{"type": '
                  '"string"}, {"type": "null"}], "default": null, "title": "Supported Text"}}, '
                  '"required": ["cited_text", "document_index", "start_char_index", "end_char_index"], '
-                 '"title": "Citation"}}, "description": "Experimental: This class may change or be '
-                 'removed in a future release without warning (introduced in v3.0.4).\\n\\nCitations '
-                 'extracted from an LM response with source references.\\n\\n    This type represents '
-                 'citations returned by language models that support\\n    citation extraction, '
-                 "particularly Anthropic's Citations API through LiteLLM.\\n    Citations include the "
-                 'quoted text and source information.\\n\\n    Examples:\\n        ```python\\n        '
-                 'import os\\n        import dspy\\n        from dspy.signatures import '
-                 'Signature\\n        from dspy.experimental import Citations, Document\\n        '
-                 'os.environ[\\"ANTHROPIC_API_KEY\\"] = \\"YOUR_ANTHROPIC_API_KEY\\"\\n\\n        '
-                 "class AnswerWithSources(Signature):\\n            '''Answer questions using provided "
-                 "documents with citations.'''\\n            documents: list[Document] = "
-                 'dspy.InputField()\\n            question: str = dspy.InputField()\\n            '
-                 'answer: str = dspy.OutputField()\\n            citations: Citations = '
-                 'dspy.OutputField()\\n\\n        # Create documents to provide as sources\\n        '
-                 'docs = [\\n            Document(\\n                data=\\"The Earth orbits the Sun '
-                 'in an elliptical path.\\",\\n                title=\\"Basic Astronomy '
-                 'Facts\\"\\n            ),\\n            Document(\\n                data=\\"Water '
-                 'boils at 100°C at standard atmospheric pressure.\\",\\n                '
-                 'title=\\"Physics Fundamentals\\",\\n                metadata={\\"author\\": \\"Dr. '
-                 'Smith\\", \\"year\\": 2023}\\n            )\\n        ]\\n\\n        # Use with a '
-                 'model that supports citations like Claude\\n        lm = '
-                 'dspy.LM(\\"anthropic/claude-opus-4-1-20250805\\")\\n        predictor = '
-                 'dspy.Predict(AnswerWithSources)\\n        result = predictor(documents=docs, '
-                 'question=\\"What temperature does water boil?\\", lm=lm)\\n\\n        for citation '
-                 'in result.citations.citations:\\n            print(citation.format())\\n        '
-                 '```\\n    ", "properties": {"citations": {"type": "array", "items": {"$ref": '
+                 '"title": "Citation"}}, "properties": {"citations": {"type": "array", "items": {"$ref": '
                  '"#/$defs/Citation"}, "title": "Citations"}}, "required": ["citations"], "title": '
                  '"Citations"}\n'
                  '\n'
@@ -845,16 +818,6 @@ def test_chat_adapter_format_exact_messages_with_citations_output_demo():
                  "Respond with the corresponding output fields, starting with the field `[[ ## "
                  "citations ## ]]` (must be formatted as a valid Python Citations), and then ending "
                  "with the marker for `[[ ## completed ## ]]`."}]
-    def normalize_citations_schema_description(content):
-        return re.sub(
-            r'"description": ".*?", "properties":',
-            '"description": "<CITATIONS_SCHEMA_DESCRIPTION>", "properties":',
-            content,
-        )
-
-    messages[0]["content"] = normalize_citations_schema_description(messages[0]["content"])
-    expected_messages[0]["content"] = normalize_citations_schema_description(expected_messages[0]["content"])
-
     assert messages == expected_messages
     expected_lm_kwargs = {}
     assert lm_kwargs == expected_lm_kwargs
