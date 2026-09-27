@@ -1,10 +1,12 @@
+import importlib
 import sys
 import threading
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from dspy.utils.lazy_import import _INSTALL_HINTS, _detect_dspy_dist, _MissingModule, is_available, require
+from dspy.utils.lazy_import import _INSTALL_HINTS, _detect_dspy_dist, _LazyModule, _MissingModule, is_available, require
 
 
 def test_is_available_true_for_stdlib():
@@ -37,6 +39,26 @@ def test_require_returns_lazy_module_when_present():
 def test_require_returns_cached_module():
     mod = require("json")
     assert mod is sys.modules["json"]
+
+
+def test_lazy_module_supports_loader_without_exec_module(monkeypatch):
+    module_name = "dspy_lazy_legacy_loader_module"
+    spec = importlib.machinery.ModuleSpec(module_name, object())
+    proxy = _LazyModule(module_name, spec, threading.RLock())
+    module = types.ModuleType(module_name)
+    module.value = 42
+    monkeypatch.setitem(sys.modules, module_name, proxy)
+
+    def import_module(name):
+        assert name == module_name
+        assert name not in sys.modules
+        sys.modules[name] = module
+        return module
+
+    monkeypatch.setattr(importlib, "import_module", import_module)
+
+    assert proxy.value == 42
+    assert sys.modules[module_name] is module
 
 
 def test_require_is_safe_under_concurrent_first_use(tmp_path, monkeypatch):
