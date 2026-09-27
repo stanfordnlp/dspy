@@ -83,6 +83,9 @@ class _LazyModule(types.ModuleType):
     """Module proxy that imports the real module on first attribute access.
 
     Attribute assignment also materializes the real module so configuration writes apply to the real dependency.
+    Assigning a *module* value is treated as the import system binding a submodule onto
+    this (parent) proxy and never triggers a load; the binding is replayed onto the real
+    module once it materializes.
     """
 
     def __init__(self, module: str, spec: importlib.machinery.ModuleSpec, lock: threading.RLock):
@@ -113,7 +116,19 @@ class _LazyModule(types.ModuleType):
             except Exception:
                 sys.modules[module_name] = self
                 raise
-            return sys.modules.get(module_name, module)
+            real = sys.modules.get(module_name, module)
+            self._replay_deferred_submodules(real)
+            return real
+
+    def _replay_deferred_submodules(self, real: types.ModuleType) -> None:
+        # Submodules the import system bound onto the proxy before the real module
+        # materialized (see __setattr__). The real module's own imports found those
+        # submodules already in sys.modules, so the import system never re-bound them
+        # onto it; copy the bindings over so `real.<submodule>` resolves the same way
+        # it would have without the proxy in the middle.
+        for attr, value in list(self.__dict__.items()):
+            if isinstance(value, types.ModuleType) and not hasattr(real, attr):
+                setattr(real, attr, value)
 
     def __getattr__(self, attr: str) -> Any:
         return getattr(self._load(), attr)
@@ -121,6 +136,24 @@ class _LazyModule(types.ModuleType):
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
             super().__setattr__(attr, value)
+        elif isinstance(value, types.ModuleType):
+            # The import system binds submodules onto their parent package with
+            # setattr(). Materializing the real module from here would re-enter the
+            # import machinery while this package's submodule can still be
+            # mid-initialization (e.g. `import numpy._core` while sys.modules still
+            # holds this proxy), nesting a full exec of the parent inside the
+            # submodule's init and corrupting it. Bind locally instead; _load()
+            # replays these bindings onto the real module once it materializes.
+            super().__setattr__(attr, value)
+            # A caller can retain the proxy past first use. Once the real module has
+            # materialized, sys.modules no longer routes through this object, so the
+            # import system binds submodules onto the real module directly — any
+            # module-valued assignment reaching the retained proxy from here on can
+            # only be caller code and must replace the canonical module's binding,
+            # exactly like a non-module configuration write.
+            loaded = sys.modules.get(self.__name__)
+            if loaded is not None and loaded is not self:
+                setattr(loaded, attr, value)
         else:
             setattr(self._load(), attr, value)
 
