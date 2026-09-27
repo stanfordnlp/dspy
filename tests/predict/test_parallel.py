@@ -259,3 +259,12 @@ def test_batch_timeout_and_straggler_limit_params():
     results = module.batch(examples, timeout=0, straggler_limit=5)
 
     assert results == [2, 4, 6]
+
+
+def test_batch_accepts_dict_examples():
+    class SimpleModule(dspy.Module):
+        def forward(self, value: int) -> int:
+            return value * 2
+
+    results = SimpleModule().batch([{"value": 1}, {"value": 2}], num_threads=1, disable_progress_bar=True)
+    assert results == [2, 4]

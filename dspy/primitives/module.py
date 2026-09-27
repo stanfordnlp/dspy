@@ -1,5 +1,6 @@
 import inspect
 import logging
+from collections.abc import Sequence
 from typing import Any, TextIO
 
 from dspy.dsp.utils.settings import settings
@@ -269,7 +270,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def batch(
         self,
-        examples: list[Example],
+        examples: Sequence[Example | dict[str, Any]],
         num_threads: int | None = None,
         max_errors: int | None = None,
         return_failed_examples: bool = False,
@@ -282,7 +283,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 
         Args:
-            examples: List of dspy.Example instances to process.
+            examples: List of dspy.Example instances or input dicts (keyword arguments for the module) to process.
             num_threads: Number of threads to use for parallel processing.
             max_errors: Maximum number of errors allowed before stopping execution.
                 If ``None``, inherits from ``dspy.settings.max_errors``.
@@ -296,7 +297,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
             List of results, and optionally failed examples and exceptions.
         """
         # Create a list of execution pairs (self, example)
-        exec_pairs = [(self, example.inputs()) for example in examples]
+        exec_pairs = []
+        for example in examples:
+            if isinstance(example, dict):
+                exec_pairs.append((self, example))
+            else:
+                exec_pairs.append((self, example.inputs()))
 
         # Create an instance of Parallel
         parallel_executor = Parallel(
