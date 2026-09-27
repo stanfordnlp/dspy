@@ -1,3 +1,4 @@
+import importlib
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -76,6 +77,58 @@ def test_require_assignment_updates_materialized_module(tmp_path, monkeypatch):
     mod.value = 2
 
     assert sys.modules[module_name].value == 2
+
+
+def test_require_leaves_sys_modules_untouched(tmp_path, monkeypatch):
+    """A proxy parked in sys.modules would shadow the real module for every other importer."""
+    module_name = "dspy_lazy_unshadowed_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("value = 7\n")
+
+    mod = require(module_name)
+
+    # The proxy is returned but never inserted into sys.modules.
+    assert module_name not in sys.modules
+    assert mod.value == 7
+    assert sys.modules[module_name].value == 7
+
+
+def test_require_retries_after_a_failed_import(tmp_path, monkeypatch):
+    module_name = "dspy_lazy_failing_module"
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    (tmp_path / f"{module_name}.py").write_text("raise RuntimeError('boom')\n")
+
+    mod = require(module_name)
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="boom"):
+            _ = mod.value
+    assert module_name not in sys.modules
+
+
+def test_require_does_not_break_submodule_imports(tmp_path, monkeypatch):
+    """A shadowed package is skipped when one of its submodules is imported, so the package ends up
+    executing from an attribute access made while that submodule is still initializing.
+    """
+    package_name = "dspy_lazy_submodule_package"
+    monkeypatch.syspath_prepend(tmp_path)
+    for name in (package_name, f"{package_name}.sub", f"{package_name}.version"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    package = tmp_path / package_name
+    package.mkdir()
+    (package / "__init__.py").write_text(f"from {package_name}.sub import LATE\n\nvalue = 42\n")
+    (package / "sub.py").write_text(f"from {package_name}.version import VERSION\n\nLATE = VERSION\n")
+    (package / "version.py").write_text("VERSION = '1.0'\n")
+
+    require(package_name)
+    submodule = importlib.import_module(f"{package_name}.sub")
+
+    assert submodule.LATE == "1.0"
+    assert sys.modules[package_name].sub is submodule
+    assert require(package_name).value == 42
 
 
 def test_require_returns_stub_when_missing():
