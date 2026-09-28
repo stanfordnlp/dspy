@@ -205,3 +205,82 @@ def test_lazy_module_avoids_circular_import_on_submodule_relative_import(tmp_pat
     # Subsequent parent access should materialize cleanly
     assert sys.modules[pkg_name].INIT_DONE is True
     assert not isinstance(sys.modules[pkg_name], _LazyModule)
+
+
+def test_lazy_module_submodule_import_error_not_masked(tmp_path, monkeypatch):
+    pkg_name = "dspy_broken_child_pkg"
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("INITIALIZED = True\n")
+    (pkg_dir / "child.py").write_text("import definitely_missing_dependency_xyz_12345\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, pkg_name, raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.child", raising=False)
+
+    lazy_pkg = require(pkg_name)
+    assert isinstance(sys.modules[pkg_name], _LazyModule)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        _ = lazy_pkg.child
+
+    assert "definitely_missing_dependency_xyz_12345" in str(exc_info.value)
+
+
+def test_lazy_module_saved_proxy_submodule_assignment_forwards_to_materialized_module(tmp_path, monkeypatch):
+    import types
+
+    pkg_name = "dspy_saved_proxy_pkg"
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("INITIALIZED = True\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, pkg_name, raising=False)
+
+    lazy_pkg = require(pkg_name)
+
+    # Materialize parent
+    assert lazy_pkg.INITIALIZED is True
+    active_module = sys.modules[pkg_name]
+    assert not isinstance(active_module, _LazyModule)
+
+    # Assign matching submodule via retained proxy reference
+    child_module = types.ModuleType(f"{pkg_name}.child")
+    lazy_pkg.child = child_module
+
+    assert getattr(lazy_pkg, "child", None) is child_module
+    assert getattr(active_module, "child", None) is child_module
+    assert getattr(sys.modules[pkg_name], "child", None) is child_module
+
+
+def test_lazy_module_concurrent_submodule_attachment(tmp_path, monkeypatch):
+    import time
+    import types
+
+    pkg_name = "dspy_concurrent_attach_pkg"
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("import time\ntime.sleep(0.05)\nINITIALIZED = True\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, pkg_name, raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.child", raising=False)
+
+    lazy_pkg = require(pkg_name)
+    child_module = types.ModuleType(f"{pkg_name}.child")
+
+    t1 = threading.Thread(target=lambda: lazy_pkg.INITIALIZED)
+
+    def attach():
+        time.sleep(0.01)
+        lazy_pkg.child = child_module
+
+    t2 = threading.Thread(target=attach)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    active = sys.modules[pkg_name]
+    assert getattr(active, "child", None) is child_module

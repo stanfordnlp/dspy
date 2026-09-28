@@ -117,6 +117,10 @@ class _LazyModule(types.ModuleType):
             except Exception:
                 sys.modules[module_name] = self
                 raise
+            for attr, val in self.__dict__.items():
+                if isinstance(val, types.ModuleType) and getattr(val, "__name__", None) == f"{module_name}.{attr}":
+                    if not hasattr(module, attr):
+                        setattr(module, attr, val)
             return sys.modules.get(module_name, module)
 
     def __getattr__(self, attr: str) -> Any:
@@ -126,22 +130,33 @@ class _LazyModule(types.ModuleType):
 
         path = self.__dict__.get("__path__")
         if path is not None:
+            spec = None
             try:
                 spec = importlib.machinery.PathFinder.find_spec(full_submodule_name, path)
-                if spec is not None:
-                    return importlib.import_module(full_submodule_name)
             except (ImportError, AttributeError, ValueError):
                 pass
+            if spec is not None:
+                return importlib.import_module(full_submodule_name)
 
         return getattr(self._load(), attr)
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
             super().__setattr__(attr, value)
-        elif isinstance(value, types.ModuleType) and getattr(value, "__name__", None) == f"{self.__name__}.{attr}":
-            super().__setattr__(attr, value)
-        else:
-            setattr(self._load(), attr, value)
+            return
+
+        with self._dspy_lazy_lock:
+            loaded = sys.modules.get(self.__name__)
+            if loaded is not None and loaded is not self:
+                super().__setattr__(attr, value)
+                setattr(loaded, attr, value)
+                return
+
+            if isinstance(value, types.ModuleType) and getattr(value, "__name__", None) == f"{self.__name__}.{attr}":
+                super().__setattr__(attr, value)
+                return
+
+        setattr(self._load(), attr, value)
 
     def __dir__(self) -> list[str]:
         return dir(self._load())
