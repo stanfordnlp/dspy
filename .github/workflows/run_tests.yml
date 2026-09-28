@@ -72,6 +72,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Some deps (e.g. fastuuid) have no cp315 wheel yet, so uv builds them
+      # from sdist and pyo3 refuses to build against a Python newer than its
+      # max supported. This flag builds against the stable ABI and runs
+      # forward-compatibly on 3.15; it is a no-op on versions that have a
+      # prebuilt wheel (no source build happens). Drop once deps ship cp315.
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
@@ -106,6 +113,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Some deps (e.g. fastuuid) have no cp315 wheel yet, so uv builds them
+      # from sdist and pyo3 refuses to build against a Python newer than its
+      # max supported. This flag builds against the stable ABI and runs
+      # forward-compatibly on 3.15; it is a no-op on versions that have a
+      # prebuilt wheel (no source build happens). Drop once deps ship cp315.
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
@@ -260,6 +274,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Some deps (e.g. fastuuid) have no cp315 wheel yet, so uv builds them
+      # from sdist and pyo3 refuses to build against a Python newer than its
+      # max supported. This flag builds against the stable ABI and runs
+      # forward-compatibly on 3.15; it is a no-op on versions that have a
+      # prebuilt wheel (no source build happens). Drop once deps ship cp315.
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
