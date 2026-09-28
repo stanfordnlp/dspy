@@ -37,6 +37,7 @@ def _detect_dspy_dist() -> str:
             continue
     return "dspy"
 
+
 _INSTALL_HINTS: dict[str, str] = {
     "optuna": "optuna",
     "mcp": "mcp",
@@ -107,6 +108,9 @@ class _LazyModule(types.ModuleType):
 
             spec = self._dspy_lazy_spec
             module = importlib.util.module_from_spec(spec)
+            for attr, val in self.__dict__.items():
+                if isinstance(val, types.ModuleType) and getattr(val, "__name__", None) == f"{module_name}.{attr}":
+                    setattr(module, attr, val)
             sys.modules[module_name] = module
             try:
                 spec.loader.exec_module(module)
@@ -116,10 +120,25 @@ class _LazyModule(types.ModuleType):
             return sys.modules.get(module_name, module)
 
     def __getattr__(self, attr: str) -> Any:
+        full_submodule_name = f"{self.__name__}.{attr}"
+        if full_submodule_name in sys.modules:
+            return sys.modules[full_submodule_name]
+
+        path = self.__dict__.get("__path__")
+        if path is not None:
+            try:
+                spec = importlib.machinery.PathFinder.find_spec(full_submodule_name, path)
+                if spec is not None:
+                    return importlib.import_module(full_submodule_name)
+            except (ImportError, AttributeError, ValueError):
+                pass
+
         return getattr(self._load(), attr)
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr.startswith("_dspy_lazy_") or attr in {"__spec__", "__loader__", "__package__", "__path__"}:
+            super().__setattr__(attr, value)
+        elif isinstance(value, types.ModuleType) and getattr(value, "__name__", None) == f"{self.__name__}.{attr}":
             super().__setattr__(attr, value)
         else:
             setattr(self._load(), attr, value)
@@ -167,10 +186,7 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
         feat = feature or "this feature"
         ext = extra or _INSTALL_HINTS.get(top, top)
         dist = _detect_dspy_dist()
-        message = (
-            f"{top} is required to use {feat}. "
-            f"Install with `pip install {dist}[{ext}]` or `pip install {top}`."
-        )
+        message = f"{top} is required to use {feat}. Install with `pip install {dist}[{ext}]` or `pip install {top}`."
         parent = inspect.stack()[1]
         frame_data = {
             "filename": parent.filename,

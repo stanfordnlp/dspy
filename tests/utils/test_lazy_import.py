@@ -4,7 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from dspy.utils.lazy_import import _INSTALL_HINTS, _detect_dspy_dist, _MissingModule, is_available, require
+from dspy.utils.lazy_import import (
+    _INSTALL_HINTS,
+    _detect_dspy_dist,
+    _LazyModule,
+    _MissingModule,
+    is_available,
+    require,
+)
 
 
 def test_is_available_true_for_stdlib():
@@ -139,3 +146,62 @@ def test_install_hints_match_pyproject_extras(pytestconfig):
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
             f"pyproject.toml (declared: {sorted(extras)})"
         )
+
+
+def test_require_submodule_attachment_does_not_prematurely_materialize(tmp_path, monkeypatch):
+    import importlib
+
+    pkg_name = "dspy_lazy_pkg_with_submodule"
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("INITIALIZED = True\n")
+    (pkg_dir / "sub.py").write_text("SUB_VAL = 42\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, pkg_name, raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.sub", raising=False)
+
+    lazy_pkg = require(pkg_name)
+    assert isinstance(sys.modules[pkg_name], _LazyModule)
+
+    # Importing the submodule causes importlib to attach it to the parent module
+    sub = importlib.import_module(f"{pkg_name}.sub")
+    assert sub.SUB_VAL == 42
+
+    # The parent package should remain a lazy proxy and not prematurely materialize
+    assert isinstance(sys.modules[pkg_name], _LazyModule)
+    assert getattr(lazy_pkg, "sub", None) is sub
+
+    # When the parent package is subsequently accessed, it materializes and preserves the submodule
+    assert lazy_pkg.INITIALIZED is True
+    assert not isinstance(sys.modules[pkg_name], _LazyModule)
+    assert getattr(sys.modules[pkg_name], "sub", None) is sub
+
+
+def test_lazy_module_avoids_circular_import_on_submodule_relative_import(tmp_path, monkeypatch):
+    import importlib
+
+    pkg_name = "dspy_circular_submodule_pkg"
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("from . import b\nINIT_DONE = True\n")
+    (pkg_dir / "b.py").write_text("from .a import A_VAL\n")
+    (pkg_dir / "a.py").write_text("from . import c\nA_VAL = 100\n")
+    (pkg_dir / "c.py").write_text("C_VAL = 200\n")
+
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, pkg_name, raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.a", raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.b", raising=False)
+    monkeypatch.delitem(sys.modules, f"{pkg_name}.c", raising=False)
+
+    require(pkg_name)
+
+    # Importing a submodule first must not trigger circular import via premature parent materialization
+    mod_a = importlib.import_module(f"{pkg_name}.a")
+    assert mod_a.A_VAL == 100
+    assert isinstance(sys.modules[pkg_name], _LazyModule)
+
+    # Subsequent parent access should materialize cleanly
+    assert sys.modules[pkg_name].INIT_DONE is True
+    assert not isinstance(sys.modules[pkg_name], _LazyModule)
