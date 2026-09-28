@@ -1684,3 +1684,73 @@ def test_exception_args_that_are_not_json_are_reported(pooled_interpreter):
         pooled_interpreter.execute("raise KeyError({1, 2})")
     assert "{1, 2}" in str(info.value)
     assert pooled_interpreter.execute("print('still alive')") == "still alive\n"
+
+
+
+def test_guarded_syntax_error_details_and_reuse(pooled_interpreter):
+    with pytest.raises(SyntaxError, match="Invalid Python syntax") as info:
+        pooled_interpreter.execute("def broken(:\n    pass")
+    assert "invalid syntax" in str(info.value)
+    assert "def broken(" in str(info.value)
+    assert pooled_interpreter.execute("40 + 2") == 42
+
+
+def test_diagnostic_args_survive_invalid_json_keys(pooled_interpreter):
+    with pytest.raises(CodeExecutionError, match="ValueError") as info:
+        pooled_interpreter.execute("raise ValueError({(1, 2): {3, 4}}, 'retained')")
+    assert "(1, 2)" in str(info.value)
+    assert "retained" in str(info.value)
+    assert pooled_interpreter.execute("40 + 2") == 42
+
+
+def test_diagnostic_args_survive_broken_repr(pooled_interpreter):
+    code = (
+        "class BrokenRepr:\n"
+        "    def __repr__(self):\n"
+        "        raise ValueError('broken repr')\n"
+        "raise ValueError(BrokenRepr(), 'retained')"
+    )
+    with pytest.raises(CodeExecutionError, match="ValueError") as info:
+        pooled_interpreter.execute(code)
+    assert "<unrepresentable>" in str(info.value)
+    assert "retained" in str(info.value)
+    assert pooled_interpreter.execute("40 + 2") == 42
+
+
+@pytest.mark.parametrize("payload", ["{1, 2}", "{(1, 2): 'value'}", "float('nan')"])
+def test_submit_does_not_succeed_with_unserializable_output(pooled_interpreter, payload):
+    with pytest.raises(CodeExecutionError, match="SUBMIT output could not be serialized"):
+        pooled_interpreter(f"SUBMIT({payload})")
+    assert pooled_interpreter.execute("40 + 2") == 42
+
+
+def test_submit_none_and_json_output_remain_valid(pooled_interpreter):
+    empty = pooled_interpreter("SUBMIT(None)")
+    assert isinstance(empty, FinalOutput)
+    assert empty.output == {"output": None}
+    result = pooled_interpreter("SUBMIT({'items': [1, 2]})")
+    assert isinstance(result, FinalOutput)
+    assert result.output == {"output": {"items": [1, 2]}}
+
+
+def test_native_javascript_syntax_error_uses_no_stale_python_args(pooled_interpreter):
+    with pytest.raises(CodeExecutionError, match="previous Python failure"):
+        pooled_interpreter.execute("raise ValueError('previous Python failure')")
+    code = (
+        "from js import eval as js_eval\n"
+        "js_eval('({toJSON() { throw new SyntaxError(\"native syntax failure\"); }})')"
+    )
+    with pytest.raises(CodeExecutionError, match="native syntax failure") as info:
+        pooled_interpreter.execute(code)
+    assert "previous Python failure" not in str(info.value)
+    assert pooled_interpreter.execute("40 + 2") == 42
+
+
+def test_syntax_error_after_tool_call_remains_recoverable(configure_pooled_interpreter):
+    def describe(path: str = "") -> dict:
+        return {"path": path}
+
+    sandbox = configure_pooled_interpreter(tools={"describe": describe})
+    with pytest.raises(SyntaxError, match="post-tool syntax detail"):
+        sandbox.execute("describe('')\nraise SyntaxError('post-tool syntax detail')")
+    assert sandbox.execute("describe('')['path']") == ""
