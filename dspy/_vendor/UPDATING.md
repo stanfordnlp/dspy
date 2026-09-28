@@ -1,0 +1,48 @@
+# Updating lm15
+
+Do not edit `lm15/` by hand. Make changes in the source repository and sync
+`cmpnd-ai/lm15-python` first.
+
+From the DSPy root, with all changes committed:
+
+```sh
+python scripts/update_vendored_lm15.py main
+```
+
+Pass a full source commit instead of `main` for a reproducible import.
+The command fetches the cmpnd fork, splits its `lm15/` package history, and
+uses `git subtree add` (first import) or `git subtree merge` (updates), with
+squashed history. It creates local commits; it never pushes.
+
+The first run replaces the old copied snapshot in a separate commit before
+adding the subtree. Review the resulting diff before pushing. If a merge
+conflicts, inspect Git's status and resolve or abort the merge before retrying;
+the tool does not discard conflicts automatically.
+
+`lm15-provenance.txt` records the source URL, package version, Python commit,
+contract pin and package split commit. The commit identifies the exact snapshot;
+several snapshots can share the same package version. `lm15-LICENSE` preserves the source repository's license.
+Both live outside the subtree to keep its contents faithful to upstream.
+The full upstream package is imported, including any non-Python files tracked
+there. Packaging determines which files ship to users.
+
+Use DSPy's normal **squash-and-merge** workflow for import/update PRs.
+The updater does not require subtree commits or their messages to survive.
+It fetches the previously recorded Python commit, reproduces its package split,
+and verifies that the existing vendor tree matches it. It then reconnects a
+package-root merge base before running the subtree merge. These extra local
+bookkeeping commits can be discarded by the next squash merge too.
+
+The recorded source commit must remain available in the source repository.
+If that commit cannot be fetched, or vendor files have been edited locally,
+the updater stops rather than guessing a merge base or overwriting changes.
+
+The `Verify bundled lm15` workflow builds a source distribution, builds a wheel
+from it, and tests a fresh installation outside the checkout. It checks public
+exports, request/response conversion, pickle round trips, and license/provenance
+files. No provider keys or network LM calls are needed.
+
+`dspy.lm15` re-exports lm15's public top-level names; it does not alias lm15's
+whole submodule tree. Use `from dspy.lm15 import Request`, not
+`from dspy.lm15.types import Request`. Existing DSPy LM behavior is unchanged
+by the vendor import.

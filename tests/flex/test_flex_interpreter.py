@@ -26,7 +26,11 @@ import pytest
 
 import dspy
 from dspy.predict.flex import Flex, bridge
-from dspy.primitives.code_interpreter import CodeExecutionError, CodeInterpreterError
+from dspy.primitives.code_interpreter import (
+    CodeExecutionError,
+    CodeInterpreterError,
+    resolve_interpreter_factory,
+)
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import LMError, LMRateLimitError
 from tests.mock_interpreter import MockInterpreter
@@ -59,8 +63,7 @@ class ShoutSig(dspy.Signature):
 
 
 def test_default_interpreter_factory_is_python_interpreter() -> None:
-    # Like dspy.RLM, interpreter_factory defaults to dspy.PythonInterpreter (a class used as a
-    # zero-arg factory). Inspect the constructor default so this needs no Deno.
+    # PythonInterpreter is the public default. The resolver lets a configured factory override it.
     default = inspect.signature(Flex.__init__).parameters["interpreter_factory"].default
     assert default is dspy.PythonInterpreter
 
@@ -71,7 +74,7 @@ def test_default_is_sandbox() -> None:
     flex = Flex(Doubler)
     assert flex._bridge is not None
     assert flex._interpreter_factory is dspy.PythonInterpreter
-    assert isinstance(flex._interpreter_factory(), dspy.PythonInterpreter)
+    assert isinstance(resolve_interpreter_factory(flex._interpreter_factory)(), dspy.PythonInterpreter)
 
 
 def test_bare_instance_is_rejected() -> None:
@@ -82,7 +85,7 @@ def test_bare_instance_is_rejected() -> None:
 
 
 def test_none_interpreter_factory_is_rejected() -> None:
-    # None used to mean "run in-process"; that path is gone, so None is now invalid.
+    # None once meant "run in-process"; that path is gone, so it remains invalid.
     with pytest.raises(TypeError):
         Flex(Doubler, interpreter_factory=None)  # type: ignore[arg-type]
 
