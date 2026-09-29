@@ -192,15 +192,17 @@ class BootstrapFewShot(Teleprompter):
                 new_settings = {"lm": lm} if round_idx > 0 else {}
 
                 with dspy.context(**new_settings):
-                    for name, predictor in teacher.named_predictors():
-                        predictor_cache[name] = predictor.demos
-                        predictor.demos = [x for x in predictor.demos if x != example]
+                    try:
+                        for name, predictor in teacher.named_predictors():
+                            predictor_cache[name] = predictor.demos
+                            predictor.demos = [x for x in predictor.demos if x != example]
 
-                    prediction = teacher(**example.inputs())
-                    trace = dspy.settings.trace
-
-                    for name, predictor in teacher.named_predictors():
-                        predictor.demos = predictor_cache[name]
+                        prediction = teacher(**example.inputs())
+                        trace = dspy.settings.trace
+                    finally:
+                        for name, predictor in teacher.named_predictors():
+                            if name in predictor_cache:
+                                predictor.demos = predictor_cache[name]
 
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)
