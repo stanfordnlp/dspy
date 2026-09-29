@@ -16,6 +16,12 @@ from typing import Any
 _protocol_output = os.fdopen(os.dup(sys.__stdout__.fileno()), "w", encoding="utf-8")
 os.set_inheritable(_protocol_output.fileno(), False)
 _worker_stdout, _worker_stderr = sys.stdout, sys.stderr
+# On Windows the text layer translates "\n" to "\r\n" on write, which would
+# leak "\r" into captured guest output. Pin newline translation off so guest
+# prints are captured verbatim on every platform.
+for _stream in (_worker_stdout, _worker_stderr):
+    with contextlib.suppress(Exception):
+        _stream.reconfigure(newline="\n")
 _sink = os.open(os.devnull, os.O_WRONLY)
 os.dup2(_sink, 1)
 os.dup2(_sink, 2)
