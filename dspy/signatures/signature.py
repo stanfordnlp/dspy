@@ -464,7 +464,8 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             A new Signature class with the field inserted.
 
         Raises:
-            ValueError: If `index` falls outside the valid range for the chosen section.
+            ValueError: If `index` falls outside the valid range for the chosen section, or if `name` already
+                exists in the opposite section (inputs vs. outputs).
 
         Examples:
             ```python

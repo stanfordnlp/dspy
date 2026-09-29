@@ -69,6 +69,20 @@ def test_insert_field_with_name_from_other_section_raises():
         Signature("question -> answer").append("answer", InputField())
 
 
+def test_append_field_with_existing_name_in_same_section_replaces_it():
+    signature = Signature("question, context -> answer, confidence")
+
+    new_signature = signature.append("question", InputField(desc="replacement"))
+    assert list(new_signature.input_fields) == ["question", "context"]
+    assert list(new_signature.output_fields) == ["answer", "confidence"]
+    assert new_signature.input_fields["question"].json_schema_extra["desc"] == "replacement"
+
+    new_signature = signature.append("answer", OutputField(desc="replacement"))
+    assert list(new_signature.input_fields) == ["question", "context"]
+    assert list(new_signature.output_fields) == ["answer", "confidence"]
+    assert new_signature.output_fields["answer"].json_schema_extra["desc"] == "replacement"
+
+
 def test_with_signature():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_instructions("This is a test")
