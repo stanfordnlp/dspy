@@ -62,6 +62,13 @@ def test_duplicate_input_output_field_names_raise():
         Signature("value -> value")
 
 
+def test_insert_field_with_name_from_other_section_raises():
+    with pytest.raises(ValueError, match="distinct names"):
+        Signature("reasoning, question -> answer").prepend("reasoning", OutputField())
+    with pytest.raises(ValueError, match="distinct names"):
+        Signature("question -> answer").append("answer", InputField())
+
+
 def test_with_signature():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_instructions("This is a test")
