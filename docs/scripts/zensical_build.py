@@ -113,13 +113,34 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
         destination.write_text(redirect_document(relative))
 
 
+NOTEBOOK_LINK = re.compile(r"\]\((?P<target>[^)\s#]+)\.ipynb(?P<suffix>#[^)\s]*)?\)")
+
+
+def rewrite_notebook_links(docs: Path, notebooks: set[Path]) -> None:
+    """Point Markdown links at converted notebooks to their generated pages, as mkdocs-jupyter did."""
+
+    for page in docs.rglob("*.md"):
+        text = page.read_text()
+
+        def replace(match: re.Match[str], page: Path = page) -> str:
+            target = match["target"]
+            if (page.parent / f"{target}.ipynb").resolve() not in notebooks:
+                return match[0]
+            return f"]({target}.md{match['suffix'] or ''})"
+
+        rewritten = NOTEBOOK_LINK.sub(replace, text)
+        if rewritten != text:
+            page.write_text(rewritten)
+
+
 def convert_notebooks(docs: Path) -> set[str]:
     from nbconvert import MarkdownExporter
 
     exporter = MarkdownExporter()
     routes = set()
-    for notebook in docs.rglob("*.ipynb"):
-        relative = notebook.relative_to(docs).with_suffix(".md").as_posix()
+    notebooks = {notebook.resolve() for notebook in docs.rglob("*.ipynb")}
+    for notebook in notebooks:
+        relative = notebook.relative_to(docs.resolve()).with_suffix(".md").as_posix()
         routes.add(route_for_source(relative).lstrip("/") + "index.html")
         body, resources = exporter.from_filename(
             str(notebook), resources={"output_files_dir": f"{notebook.stem}_files"}
@@ -130,6 +151,7 @@ def convert_notebooks(docs: Path) -> set[str]:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(content)
         notebook.unlink()
+    rewrite_notebook_links(docs, notebooks)
     for source in docs.rglob("*.py"):
         relative = source.relative_to(docs).with_suffix(".md").as_posix()
         routes.add(route_for_source(relative).lstrip("/") + "index.html")
@@ -287,6 +309,9 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
         page.write_text(html.replace("</head>", f"{tags}</head>", 1))
 
 
+HREF = re.compile(r"""href=["']?([^"'\s>]+)""")
+
+
 def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, str]) -> None:
     """Fail the build when an existing documentation feature has no output."""
     required = ("index.html", "api/index.html", "search.json", "llms.txt", "sitemap.xml", "sitemap.xml.gz")
@@ -309,6 +334,15 @@ def validate_output(site: Path, notebook_routes: set[str], redirects: dict[str, 
     cards = site / "assets" / "images" / "social-zensical"
     if not any(cards.glob("*.png")) or 'property="og:image"' not in home:
         raise RuntimeError("social cards or Open Graph metadata were not generated")
+
+    notebook_links = [
+        f"{page.relative_to(site).as_posix()} -> {href}"
+        for page in site.rglob("*.html")
+        for href in HREF.findall(page.read_text())
+        if ":" not in href and not href.startswith("//") and re.split(r"[?#]", href)[0].endswith(".ipynb")
+    ]
+    if notebook_links:
+        raise RuntimeError(f"pages link to notebook sources instead of rendered pages: {', '.join(notebook_links)}")
 
 
 def build_zensical_site(
