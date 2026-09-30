@@ -249,9 +249,17 @@ def social_cards(site: Path, site_url: str, titles: dict[str, str], logo: Path) 
 
     card_dir = site / "assets" / "images" / "social-zensical"
     card_dir.mkdir(parents=True, exist_ok=True)
-    font = ImageFont.truetype("DejaVuSans.ttf", 32)
-    title_font = ImageFont.truetype("DejaVuSans.ttf", 84)
-    description_font = ImageFont.truetype("DejaVuSans.ttf", 25)
+
+    def load_font(size: int):
+        try:
+            return ImageFont.truetype("DejaVuSans.ttf", size)
+        except OSError:
+            # DejaVu is only guaranteed on Linux; fall back to Pillow's bundled font elsewhere.
+            return ImageFont.load_default(size)
+
+    font = load_font(32)
+    title_font = load_font(84)
+    description_font = load_font(25)
     logo_image = Image.open(logo).convert("RGBA").resize((140, 140))
     for page in site.rglob("*.html"):
         html = page.read_text()
