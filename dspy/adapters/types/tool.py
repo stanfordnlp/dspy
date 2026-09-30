@@ -365,7 +365,7 @@ class ToolCalls(Type):
         """Convert a list of dictionaries to a ToolCalls instance.
 
         Args:
-            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
+            tool_calls_dicts: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
 
         Returns:
             A ToolCalls instance.
