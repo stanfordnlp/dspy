@@ -116,12 +116,13 @@ class FlexContext:
 DECISION_NOTE = """\
 Decision outputs: this signature declares outputs with decision types, whose values are decided from
 probabilities rather than generated. Sub-signature strings can declare them too:
-`"email: str -> spam: Noul[(True, 'Unsolicited or fraudulent'), (False, 'Legitimate')]"`,
+`"ticket: str -> duplicate: Noul[(True, 'Repeats an open ticket'), (False, 'New issue')]"`,
 `"ticket -> severity: Score['minor', 'major', 'critical']"` (ordered lowest to highest), or
 `"ticket -> team: Choice[('billing', 'Payment issue'), ('tech', 'Product bug')]"`. A bare `bool` output
 works as `Noul`. Each decision output needs a question: set it on the predictor in `__init__`, as in
-`self.spam.fields["spam"] = {"instructions": "Is this email spam?"}`. The result is a decision object:
-`bool(out.spam)` and `out.spam.value` for a Noul, `float(out.severity)` and `out.severity.level` for a Score,
+`self.check.fields["duplicate"] = {"instructions": "Does this ticket repeat an open one?"}`. The result is a
+decision object: `bool(out.duplicate)` and `out.duplicate.value` for a Noul, `float(out.severity)` and
+`out.severity.level` for a Score,
 `out.team.value` for a Choice; `.confidence` and `.probability`/`.probabilities` carry the evidence.
 The thresholds, cuts, and weights that turn probabilities into values are calibrated outside this code."""
 

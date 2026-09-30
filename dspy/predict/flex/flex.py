@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
-from dspy.predict.flex.bridge import SIGNATURE_MARKER, BridgeRuntime
+from dspy.predict.flex.bridge import BridgeRuntime
 from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
 from dspy.predict.predict import _sanitize_lm_state
@@ -151,9 +151,7 @@ class Flex(Module, Parameter):
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
         instructions = (getattr(cls, "instructions", "") or "").strip()
-        # Always a dspy.Signature(...) payload, which the host recognizes as the declared signature
-        # (``_is_declared_signature``), so the baseline keeps descriptions the string cannot carry.
-        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})"
+        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
         tool_names = list(self._flex_ctx.context_names())
         if tool_names:
             attr, ctor = "rlm", f"dspy.RLM({sig_arg}, tools=[{', '.join(tool_names)}])"
@@ -180,15 +178,6 @@ class Flex(Module, Parameter):
             # Fitted to the previous code's predictors, which the new code may rename or redefine.
             self.predictor_fields = {}
         self._module_src = module_src
-
-    def _is_declared_signature(self, signature: Any) -> bool:
-        """Whether a sandbox signature payload is exactly the one the baseline renders for this Flex."""
-        if not isinstance(signature, dict) or not signature.get(SIGNATURE_MARKER):
-            return False
-        instructions = (getattr(self._signature_cls, "instructions", "") or "").strip()
-        return signature.get("signature") == self._flex_ctx.render_signature_string() and (
-            signature.get("instructions") or ""
-        ) == instructions
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the bound ``forward`` inside the interpreter."""

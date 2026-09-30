@@ -60,12 +60,12 @@ class DecomposeSignature(dspy.Signature):
     Work like an analyst. Find the examples the current code gets wrong and why: which questions have
     probabilities that do not separate the classes, which cases a broad question conflates. Then decompose
     the judgment into narrow, atomic decisions whose answers plain Python combines into the outputs, for
-    example a Noul per distinct reason an email needs a reply, gated by a Noul that it is automated or
-    fraudulent. Write each question and its criteria from what the data shows, never from single examples,
-    and never hardcode example inputs or outputs.
+    example a Noul per distinct reason an output is positive, gated by a Noul for the cases that override
+    them. Write each question and its criteria from what the data shows, never from single examples, and
+    never hardcode example inputs or outputs.
 
     The code is chosen on held-out examples, so it must generalize. Each question names a general property
-    that many inputs share (e.g. "the sender asks the recipient a direct question"), never a scenario seen in
+    that many inputs share (e.g. "the text asks the reader to act"), never a scenario seen in
     a handful of training examples; a question that is true for only a few percent of the training set is
     probably overfit. Prefer a few well-separated questions (two to six) over many narrow ones, and check with
     `run_code` that each new question's probabilities differ between the classes on a broad sample.

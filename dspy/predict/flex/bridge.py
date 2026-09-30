@@ -520,6 +520,17 @@ class BridgeRuntime:
     def _sub_interpreter_factory(self) -> Any:
         return self._factory
 
+    def _is_declared_signature(self, signature: Any) -> bool:
+        """Whether a sandbox signature is exactly the one the Flex's baseline renders (string and instructions)."""
+        if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
+            text, instructions = signature.get("signature"), signature.get("instructions") or ""
+        elif isinstance(signature, str):
+            text, instructions = signature, ""
+        else:
+            return False
+        declared = (getattr(self._flex.signature, "instructions", "") or "").strip()
+        return text == self._flex._flex_ctx.render_signature_string() and instructions.strip() == declared
+
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)
         extra = {k: self._decode_tools(v) for k, v in (kwargs or {}).items()}
@@ -531,7 +542,7 @@ class BridgeRuntime:
         if "interpreter_factory" not in extra and _accepts_interpreter_factory(cls):
             factory = self._sub_interpreter_factory()
             extra["interpreter_factory"] = factory
-        if self._flex._is_declared_signature(signature):
+        if self._is_declared_signature(signature):
             # The baseline's rendered signature string drops field descriptions and prefixes, and any
             # type the string grammar cannot spell; a predictor over exactly that string and
             # instructions gets the Flex's declared signature instead.
