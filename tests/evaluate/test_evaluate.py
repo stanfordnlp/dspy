@@ -532,5 +532,9 @@ def test_display_dataframe_does_not_crash_on_non_utf8_stdout():
     with patch("sys.stdout", fake_stdout):
         display_dataframe(df)  # must not raise UnicodeEncodeError
 
-    assert any("score" in chunk for chunk in fake_stdout.written)
+    output = "".join(fake_stdout.written)
+    # The fallback must keep the header and the result row, not just the header.
+    assert "score" in output
+    assert "What is 1+1?" in output
+    assert "1.0" in output
 
