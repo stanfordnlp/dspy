@@ -35,6 +35,36 @@ The generated code always runs through a `CodeInterpreter` (`interpreter_factory
 
 A broken candidate can't crash the optimization run. If the reflection model emits source that fails to bind, GEPA scores that candidate as a failure and moves on, rather than aborting the optimization.
 
+## Decision Outputs
+
+A `Flex` can declare [decision outputs](../experimental/DecisionTypes.md) (`Noul`, `Score`,
+`Choice`, or a native `bool` or `Literal`) and run on a System One model such as Jev. Its code can
+declare them in sub-signature strings, and configure each predictor's questions the way it would
+on a `dspy.Predict`:
+
+```python
+class Reply(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.judge = dspy.Predict("subject, body -> asks_me: Noul, automated: Noul")
+        self.judge.fields["asks_me"] = {"instructions": "Does the sender ask me something directly?"}
+        self.judge.fields["automated"] = {"instructions": "Is this an automated or bulk message?"}
+
+    def forward(self, subject, body):
+        out = self.judge(subject=subject, body=body)
+        return dspy.Prediction(needs_response=bool(out.asks_me) and not bool(out.automated))
+```
+
+Inside the code, a decision behaves as it does on the host: `bool()` of a Noul and `float()` of a
+Score give its value, and `.value`, `.level`, `.confidence`, and `.probability`/`.probabilities`
+are available. Returned for a decision output, it is validated as the declared type; returned
+for a native output, its value is used.
+
+`predictor_fields` maps each predictor's name (`judge` above, or `judge.predict` for a
+`dspy.ChainOfThought`) to settings applied on top of the code's `fields`.
+[`dspy.experimental.ReAnchor`](../experimental/ReAnchor.md#flex-programs) fits these thresholds,
+cuts, and weights, and with a `proposer`, it also rewrites the code into narrower decisions.
+
 ## Optimizing with GEPA
 
 You optimize a `Flex` the same way you optimize any DSPy program — hand it to `dspy.GEPA` with a metric and a trainset:
