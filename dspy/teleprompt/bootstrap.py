@@ -182,7 +182,7 @@ class BootstrapFewShot(Teleprompter):
     def _bootstrap_one_example(self, example, round_idx=0):
         name2traces = {}
         teacher = self.teacher
-        predictor_cache = {}
+        predictor_cache = []
 
         try:
             with dspy.context(trace=[], **self.teacher_settings):
@@ -193,16 +193,15 @@ class BootstrapFewShot(Teleprompter):
 
                 with dspy.context(**new_settings):
                     try:
-                        for name, predictor in teacher.named_predictors():
-                            predictor_cache[name] = predictor.demos
+                        for _, predictor in teacher.named_predictors():
+                            predictor_cache.append((predictor, predictor.demos))
                             predictor.demos = [x for x in predictor.demos if x != example]
 
                         prediction = teacher(**example.inputs())
                         trace = dspy.settings.trace
                     finally:
-                        for name, predictor in teacher.named_predictors():
-                            if name in predictor_cache:
-                                predictor.demos = predictor_cache[name]
+                        for predictor, demos in predictor_cache:
+                            predictor.demos = demos
 
                 if self.metric:
                     metric_val = self.metric(example, prediction, trace)

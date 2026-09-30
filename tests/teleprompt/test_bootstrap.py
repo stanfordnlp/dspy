@@ -179,6 +179,35 @@ def test_teacher_demos_restored_after_failed_bootstrap():
     assert teacher.predictor.demos is original_demos
 
 
+def test_teacher_swap_does_not_receive_old_predictor_demos():
+    original_predictor = Predict("input -> output")
+    replacement_predictor = Predict("input -> output")
+    first = Example(input="first", output="ok").with_inputs("input")
+    replacement_example = Example(input="replacement", output="ok").with_inputs("input")
+    original_demos = [first]
+    replacement_demos = [replacement_example]
+    original_predictor.demos = original_demos
+    replacement_predictor.demos = replacement_demos
+
+    class SwappingTeacher(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = original_predictor
+
+        def forward(self, **kwargs):
+            self.predictor = replacement_predictor
+            raise RuntimeError("Teacher failed after swapping predictors")
+
+    teacher = SwappingTeacher()
+    bootstrap = BootstrapFewShot(max_errors=2)
+    bootstrap.teacher = teacher
+
+    assert not bootstrap._bootstrap_one_example(first)
+    assert original_predictor.demos is original_demos
+    assert teacher.predictor is replacement_predictor
+    assert replacement_predictor.demos is replacement_demos
+
+
 def test_validation_set_usage():
     """
     Test to ensure the validation set is correctly used during bootstrapping
