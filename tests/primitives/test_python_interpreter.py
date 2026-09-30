@@ -1661,10 +1661,6 @@ def test_execution_instructions_are_class_metadata():
 
 
 def test_error_after_a_tool_call_is_recoverable_and_session_stays_synced(configure_pooled_interpreter):
-    """A step that raises after calling a tool must fail like any other step. The tool call is a
-    JSPI stack switch (run_sync), and an exception propagating out of runPythonAsync afterwards
-    escaped as an unhandled rejection that ended the Deno process (#10165)."""
-
     def describe(path: str = "") -> dict:
         return {"path": path, "keys": ["a", "b"]}
 
