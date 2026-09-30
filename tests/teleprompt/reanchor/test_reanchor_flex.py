@@ -16,6 +16,7 @@ import dspy
 from dspy.experimental import ReAnchor
 from dspy.teleprompt.reanchor import decompose
 from dspy.teleprompt.reanchor.calibrate import calibrate
+from dspy.utils.exceptions import AdapterParseError
 from tests.teleprompt.reanchor.fakes import ComputedLM, noul
 
 
@@ -188,7 +189,10 @@ def proposals(monkeypatch):
 
     def fake_propose(flex, proposer, attempts, records, trainset, metric, max_iters=20, num_threads=None):
         calls.append({"flex": flex, "attempts": attempts, "records": records})
-        return queue.pop(0)
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
     monkeypatch.setattr("dspy.teleprompt.reanchor.reanchor.propose", fake_propose)
     return queue, calls
@@ -224,6 +228,19 @@ def test_a_better_decomposition_replaces_the_code_and_is_calibrated(proposals):
     assert first["records"][6]["outputs"] == {"match": False} and first["records"][6]["score"] == 0.0  # same-tricky
     assert first["records"][0]["decisions"] == [{"predictor": "predict", "output": "match", "evidence": {"noul": 0.9}}]
     assert ["NameError" in a.get("error", "") for a in second["attempts"]] == [False, True]
+
+
+def test_a_proposer_that_fails_fails_the_round_not_the_run(proposals):
+    queue, calls = proposals
+    queue.extend([AdapterParseError("JSONAdapter", dspy.Signature("task -> module_src"), lm_response=""), GATED])
+    optimizer = ReAnchor(metric, num_threads=4, proposer=dspy.utils.DummyLM([]), rounds=2)
+    program = optimizer.compile(flex(), trainset=examples(), valset=examples("v-"))
+
+    assert "class Gated" in program.module_src
+    _, failed, gated = optimizer.report["decomposition"]
+    assert not failed["accepted"] and "AdapterParseError" in failed["error"] and "source" not in failed
+    assert gated["accepted"] and gated["round"] == 2
+    assert ["AdapterParseError" in a.get("error", "") for a in calls[1]["attempts"]] == [False, True]
 
 
 def test_a_decomposition_that_scores_lower_on_the_valset_is_not_kept(proposals):

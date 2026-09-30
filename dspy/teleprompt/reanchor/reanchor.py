@@ -148,24 +148,26 @@ class ReAnchor(Teleprompter):
                 flex = dict(flex_modules(best["program"]))[path]
                 logger.info("round %d: proposing code for %s", round_, path)
                 records = trace(best["program"], trainset, self.metric, self.num_threads)
-                source = propose(
-                    flex,
-                    self.proposer,
-                    [self._for_proposer(a) for a in sorted(attempts, key=lambda a: -a.get("score", -1))],
-                    records,
-                    trainset,
-                    self.metric,
-                    max_iters=self.proposer_max_iters,
-                    num_threads=self.num_threads,
-                )
                 candidate = best["program"].deepcopy()
-                attempt = {"round": round_, "flex": path, "source": source}
+                attempt = {"round": round_, "flex": path}
                 try:
-                    dict(flex_modules(candidate))[path]._bind_code(source)
+                    attempt["source"] = propose(
+                        flex,
+                        self.proposer,
+                        [self._for_proposer(a) for a in sorted(attempts, key=lambda a: -a.get("score", -1))],
+                        records,
+                        trainset,
+                        self.metric,
+                        max_iters=self.proposer_max_iters,
+                        num_threads=self.num_threads,
+                    )
+                    dict(flex_modules(candidate))[path]._bind_code(attempt["source"])
                     outcome = self._calibrate_candidate(candidate, trainset, selection)
                 except LMError:
                     raise
-                except Exception as e:  # Code that breaks under some calibrated setting fails like code that won't run.
+                # A proposer that returns no usable source, and code that won't run or breaks under some
+                # calibrated setting, all fail the round rather than the run.
+                except Exception as e:
                     attempts.append({**attempt, "error": f"{type(e).__name__}: {e}", "accepted": False})
                     logger.info("round %d: the proposal for %s failed: %s", round_, path, e)
                     continue
