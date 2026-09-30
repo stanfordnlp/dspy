@@ -145,3 +145,22 @@ def test_cost_provenance_survives_cache_record():
     assert cached.cost_details == result.cost_details
     assert cached.usage == {}
     assert combine([result, result], model_type="chat").cost == result.cost * 2
+
+
+def test_family_rule_provider_limits_only_known_entries(monkeypatch):
+    monkeypatch.setattr(metadata, "_data", {
+        "openai/gpt-test": {"litellm_provider": "openai", "supports_vision": False},
+        "proxy/gpt-test": {"litellm_provider": "proxy"},
+        "fallback_generalizations": {"rules": [{
+            "pattern": "^gpt-",
+            "fill_missing_for_providers": ["openai"],
+            "model_info": {"supports_reasoning": True, "supports_vision": True,
+                           "input_cost_per_token": 99},
+        }]},
+    })
+    assert dspy.LM("openai/gpt-test", engine="lm15").supports_reasoning
+    assert metadata.model_info("openai-chat", "gpt-test")["supports_vision"] is False
+    assert "supports_reasoning" not in metadata.model_info("proxy", "gpt-test")
+    unknown = metadata.model_info("proxy", "gpt-unlisted")
+    assert unknown["supports_reasoning"] is True
+    assert "input_cost_per_token" not in unknown
