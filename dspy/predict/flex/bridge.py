@@ -15,7 +15,9 @@ protocol (``CodeInterpreter.tools``):
 - ``__dspy_construct__``: the shim asks the host to build a real predictor (``_Invocation.construct``).
   The host constructs it from the serialized signature/kwargs and returns a string handle.
 - ``__dspy_call__``: the shim runs a predictor by handle (``_Invocation.call``); the host makes the
-  real LM call and returns the prediction's fields as JSON.
+  real LM call and returns the prediction's fields as JSON. The call also carries the proxy's
+  ``fields``, the decision configuration the code set on it, which the host merges under the
+  Flex's ``predictor_fields`` (see ``_Invocation.call``).
 - user tools passed to ``dspy.Flex(tools=...)``, registered by name so sandbox code can call them
   directly; the callables themselves stay on the host.
 
@@ -24,25 +26,38 @@ originals, and the last LM infrastructure error, lives in a ``_Invocation`` crea
 forward, never on the shared ``Flex``, so concurrent forwards (e.g. threaded evaluation) are
 isolated. The final ``dspy.Prediction`` is parsed against the Flex signature's declared output
 types on the way out (``BridgeRuntime._to_prediction``).
+
+Decision values (``Noul``, ``Score``, ``Choice``) cross the boundary as their JSON fields plus a
+``__dspy_decision__`` kind marker, so the shim can rebuild them with the host semantics
+(``bool(noul)``, ``float(score)``, ``.value``, ``.probability``) and the host can turn them back
+into decision objects wherever they return: as predictor inputs, tool arguments, or outputs.
 """
 
 from __future__ import annotations
 
 import ast
+import copy
 import functools
 import inspect
 import json
 import logging
+import threading
+import types
+import typing
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, get_args, get_origin
 
 from pydantic import TypeAdapter
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 import dspy
 from dspy import CodeInterpreterError
+from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.base_type import Type as _CustomType
+from dspy.adapters.types.decision import Choice, Noul, Score, _Decision
 from dspy.adapters.utils import annotation_allows_none, parse_value
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.code_interpreter import _create_interpreter
 from dspy.signatures.signature import make_signature
 from dspy.utils.exceptions import LMError
@@ -60,6 +75,13 @@ SIGNATURE_MARKER = "__dspy_sig__"
 # The shim passes tools by name (callables can't cross the JSON boundary); the host resolves the name
 # back to the real tool object passed to dspy.Flex(tools=...).
 TOOL_MARKER = "__dspy_tool__"
+# A decision value crosses the boundary as its JSON fields plus this key naming its kind.
+DECISION_MARKER = "__dspy_decision__"
+DECISION_KINDS = {"noul": Noul, "score": Score, "choice": Choice}
+# Decision type names every sub-signature string may use, e.g. "email -> spam: Noul".
+DECISION_TYPE_NAMES = {"Noul": Noul, "Score": Score, "Choice": Choice}
+# Set on each host predictor a Flex builds: (the Flex, the predictor's name in `predictor_fields`).
+FLEX_ORIGIN = "_dspy_flex_origin"
 # Variable/identifier names used in the per-forward driver code (namespaced to avoid clashing with
 # whatever the optimizer-authored module uses).
 _INPUTS_VAR = "__dspy_flex_inputs"
@@ -95,6 +117,7 @@ def _accepts_interpreter_factory(cls: type) -> bool:
 
 def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = None) -> Any:
     """Turn a shim signature payload back into something a host predictor accepts."""
+    custom_types = {**DECISION_TYPE_NAMES, **(custom_types or {})}
     if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
         # marker always carries a string signature; make_signature applies instructions if given
         return make_signature(signature["signature"], signature.get("instructions"), custom_types=custom_types)
@@ -103,12 +126,100 @@ def _resolve_signature(signature: Any, custom_types: dict[str, type] | None = No
     return signature
 
 
+@contextmanager
+def record_flex_predictors():
+    """Collect the predictors every Flex calls in this execution context and its DSPy workers.
+
+    Yields a list that receives one ``(flex, name, predictor, fields)`` entry per bridged call to a
+    ``dspy.Predict`` a Flex built: ``name`` addresses it in the Flex's ``predictor_fields``, and
+    ``fields`` is the decision configuration the Flex's code set on it for that call.
+    """
+    log = []
+    with settings.context(_flex_predictors=(log, threading.Lock())):
+        yield log
+
+
+def merge_fields(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Per output, the overlay's settings on top of the base's."""
+    merged = copy.deepcopy(base)
+    for field, config in overlay.items():
+        merged[field] = {**merged.get(field, {}), **copy.deepcopy(config)}
+    return merged
+
+
 def _jsonable(value: Any) -> Any:
     """Coerce a predictor output field to a JSON-serializable value."""
     try:
         return to_jsonable_python(value)
     except PydanticSerializationError:
         return value
+
+
+def _encode_decisions(value: Any) -> Any:
+    """Replace decision objects with their JSON fields plus the kind marker, recursing into containers."""
+    if isinstance(value, _Decision):
+        kind = next(name for name, cls in DECISION_KINDS.items() if isinstance(value, cls))
+        return {DECISION_MARKER: kind, **to_jsonable_python(value)}
+    if isinstance(value, dict):
+        return {k: _encode_decisions(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_encode_decisions(v) for v in value]
+    return value
+
+
+def _is_decision_payload(value: Any) -> bool:
+    return isinstance(value, dict) and value.get(DECISION_MARKER) in DECISION_KINDS
+
+
+def _decision_payload(value: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in value.items() if k != DECISION_MARKER}
+
+
+def _decode_decisions(value: Any) -> Any:
+    """Rebuild decision objects from marked payloads, recursing into containers.
+
+    The sandbox does not know a value's declared criteria, so a decision comes back as its base kind
+    (``Noul``, ``Score``, or ``Choice``) with the same value, confidence, and probabilities.
+    """
+    if _is_decision_payload(value):
+        return DECISION_KINDS[value[DECISION_MARKER]].model_validate(_decision_payload(value))
+    if isinstance(value, dict):
+        return {k: _decode_decisions(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decode_decisions(v) for v in value]
+    return value
+
+
+def _allows_decision(annotation: Any) -> bool:
+    """Whether ``annotation`` is, or is a union containing, a decision type."""
+    if isinstance(annotation, type) and issubclass(annotation, _Decision):
+        return True
+    if get_origin(annotation) in (typing.Union, types.UnionType):
+        return any(_allows_decision(arg) for arg in get_args(annotation))
+    return False
+
+
+def _unwrap_decisions(value: Any, annotation: Any) -> Any:
+    """Fit marked decision payloads to a declared output type before parsing.
+
+    Where the annotation takes a decision type, the payload is kept for validation against it; where
+    it takes a plain type (``bool``, ``Literal[...]``, ``float``), the payload becomes its ``value``.
+    Lists and dicts are followed through their item types.
+    """
+    if _is_decision_payload(value):
+        if annotation is Any or _allows_decision(annotation):
+            return _decision_payload(value)
+        return value.get("value")
+    origin, args = get_origin(annotation), get_args(annotation)
+    if isinstance(value, list):
+        item = args[0] if origin in (list, set, frozenset) and args else Any
+        if origin is tuple and args:
+            item = args[0] if len(args) == 2 and args[1] is Ellipsis else Any
+        return [_unwrap_decisions(v, item) for v in value]
+    if isinstance(value, dict):
+        item = args[1] if origin is dict and len(args) == 2 else Any
+        return {k: _unwrap_decisions(v, item) for k, v in value.items()}
+    return value
 
 
 def prediction_to_fields(pred: Any) -> dict[str, Any]:
@@ -121,7 +232,7 @@ def prediction_to_fields(pred: Any) -> dict[str, Any]:
             raise CodeInterpreterError(
                 f"A bridged predictor must return a dspy.Prediction; got {type(pred).__name__}"
             )
-    fields = {k: _jsonable(v) for k, v in dict(store).items()}
+    fields = {k: _jsonable(_encode_decisions(v)) for k, v in dict(store).items()}
     try:
         json.dumps(fields)
     except TypeError as e:
@@ -168,14 +279,27 @@ def _collect_custom_type_originals(value: Any, out: dict[str, Any]) -> None:
 
 
 def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
-    """Substitute serialized custom-type strings back with the original host objects."""
+    """Substitute serialized custom-type strings back with the original host objects, and rebuild decisions."""
     if isinstance(value, str) and value in originals:
         return originals[value]
+    if _is_decision_payload(value):
+        return _decode_decisions(value)
     if isinstance(value, dict):
         return {k: _restore_custom_types(v, originals) for k, v in value.items()}
     if isinstance(value, list):
         return [_restore_custom_types(v, originals) for v in value]
     return value
+
+
+def _named_predicts(handle: str, predictor: Any) -> list[tuple[str, Any]]:
+    """Each host ``Predict`` in a bridged predictor, by its name in the Flex's ``predictor_fields``.
+
+    A ``dspy.Predict`` is named by its attribute, like ``judge``; one inside a composite predictor
+    by the attribute plus its path, like ``judge.predict`` for a ``dspy.ChainOfThought``.
+    """
+    return [
+        (handle if name == "self" else f"{handle}.{name}", predict) for name, predict in predictor.named_predictors()
+    ]
 
 
 class _Invocation:
@@ -197,10 +321,49 @@ class _Invocation:
                 f"dspy.{kind} is not supported inside a sandboxed dspy.Flex yet "
                 f"(bridgeable: {', '.join(BRIDGEABLE_KINDS)})"
             )
-        self._predictors[attr_name] = self._runtime._build_predictor(kind, signature, kwargs)
+        predictor = self._runtime._build_predictor(kind, signature, kwargs)
+        for name, predict in _named_predicts(attr_name, predictor):
+            setattr(predict, FLEX_ORIGIN, (self._runtime._flex, name))
+        self._predictors[attr_name] = predictor
         return attr_name
 
-    def call(self, handle: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _configure(self, handle: str, predictor: Any, fields: dict[str, Any] | None) -> None:
+        """Set each host ``Predict``'s decision fields for this call.
+
+        The code's ``fields`` (set on the sandbox proxy) configure a ``dspy.Predict`` or a
+        ``dspy.ChainOfThought``'s inner predict. The Flex's ``predictor_fields`` entry for the same
+        name goes on top, output by output and setting by setting, so a calibrated threshold replaces
+        the code's while the code's instructions and criteria stay.
+        """
+        flex = self._runtime._flex
+        named = _named_predicts(handle, predictor)
+        if fields:
+            if not isinstance(fields, dict):
+                raise CodeInterpreterError(f"{handle}.fields must be a dict of output name to configuration.")
+            if not isinstance(predictor, (dspy.Predict, dspy.ChainOfThought)):
+                raise CodeInterpreterError(
+                    f"{handle}.fields configures decision outputs of a dspy.Predict or dspy.ChainOfThought, "
+                    f"not a dspy.{type(predictor).__name__}."
+                )
+        main = handle if isinstance(predictor, dspy.Predict) else f"{handle}.predict"
+        recorder = settings.get("_flex_predictors")
+        for name, predict in named:
+            base = copy.deepcopy(fields or {}) if name == main else {}
+            merged = merge_fields(base, flex.predictor_fields.get(name, {}))
+            try:
+                DecisionState(predict.signature, merged)
+            except ValueError as e:
+                source = "the Flex's predictor_fields" if name in flex.predictor_fields else f"{handle}.fields"
+                raise CodeInterpreterError(f"Invalid decision fields for predictor {name!r} (from {source}): {e}") from e
+            predict.fields = merged
+            if recorder is not None:
+                log, lock = recorder
+                with lock:
+                    log.append((flex, name, predict, base))
+
+    def call(
+        self, handle: str, inputs: dict[str, Any] | None = None, fields: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         self._lm_error = None
         self._calls += 1
         budget = self._runtime._max_predictor_calls
@@ -212,6 +375,7 @@ class _Invocation:
         predictor = self._predictors.get(handle)
         if predictor is None:
             raise CodeInterpreterError(f"Unknown predictor handle: {handle!r}")
+        self._configure(handle, predictor, fields)
         restored = {k: _restore_custom_types(v, self._originals) for k, v in (inputs or {}).items()}
         try:
             return prediction_to_fields(predictor(**restored))
@@ -292,6 +456,9 @@ class BridgeRuntime:
     def _to_prediction(self, fields: dict[str, Any]) -> Any:
         signature = self._flex.signature
         out = dict(fields)
+        for name, field in signature.output_fields.items():
+            if name in out:
+                out[name] = _unwrap_decisions(out[name], field.annotation)
         filled: set[str] = set()
         missing: list[str] = []
         for name, field in signature.output_fields.items():
@@ -364,4 +531,9 @@ class BridgeRuntime:
         if "interpreter_factory" not in extra and _accepts_interpreter_factory(cls):
             factory = self._sub_interpreter_factory()
             extra["interpreter_factory"] = factory
+        if self._flex._is_declared_signature(signature):
+            # The baseline's rendered signature string drops field descriptions and prefixes, and any
+            # type the string grammar cannot spell; a predictor over exactly that string and
+            # instructions gets the Flex's declared signature instead.
+            return cls(self._flex.signature, **extra)
         return cls(_resolve_signature(signature, self._flex._flex_ctx.custom_types()), **extra)

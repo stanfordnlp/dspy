@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable
 
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.settings import settings
-from dspy.predict.flex.bridge import BridgeRuntime
+from dspy.predict.flex.bridge import SIGNATURE_MARKER, BridgeRuntime
 from dspy.predict.flex.ctx import FlexContext
 from dspy.predict.parameter import Parameter
 from dspy.predict.predict import _sanitize_lm_state
@@ -34,6 +35,14 @@ class Flex(Module, Parameter):
     The optimizer-authored glue runs isolated; only provided-tool calls, predictor construction,
     and predictor calls bridge back to the host, which makes the real LM calls.
 
+    The predictors the code builds are addressed by attribute name, e.g. ``judge`` for
+    ``self.judge = dspy.Predict(...)`` or ``judge.predict`` for a ``dspy.ChainOfThought``'s inner
+    predict. ``predictor_fields`` maps those names to the decision configuration of
+    ``dspy.Predict.fields`` (thresholds, cuts, weights, instructions, criteria) and applies it on
+    top of whatever the code sets, so ``dspy.experimental.ReAnchor`` can calibrate a Flex's
+    decision outputs. The configuration belongs to the code it was fitted on: binding a different
+    ``module_src`` clears it.
+
     Args:
         signature: A ``dspy.Signature`` class or string declaring inputs/outputs.
         tools: ``dspy.Tool`` instances or named callables.
@@ -60,6 +69,7 @@ class Flex(Module, Parameter):
 
         self._module_src: str | None = None
         self.lm = None
+        self.predictor_fields: dict[str, dict[str, dict[str, Any]]] = {}
 
         _validate_interpreter_factory(interpreter_factory)
         self._interpreter_factory = interpreter_factory
@@ -91,15 +101,21 @@ class Flex(Module, Parameter):
         return self._module_src
 
     def dump_state(self, json_mode: bool = True) -> dict[str, Any]:
-        return {
+        state = {
             "module_src": self._module_src,
             "lm": self.lm.dump_state() if self.lm else None,
         }
+        predictor_fields = {name: fields for name, fields in self.predictor_fields.items() if fields}
+        if predictor_fields:
+            state["predictor_fields"] = copy.deepcopy(_checked_predictor_fields(predictor_fields))
+        return state
 
     def load_state(self, state: dict[str, Any], *, allow_unsafe_lm_state: bool = False) -> None:
+        predictor_fields = copy.deepcopy(_checked_predictor_fields(state.get("predictor_fields", {})))
         module_src = state.get("module_src")
         if module_src:
             self._bind_code(module_src)
+        self.predictor_fields = predictor_fields
         lm_state = state.get("lm")
         if lm_state:
             sanitized = _sanitize_lm_state(lm_state, allow_unsafe_lm_state)
@@ -135,7 +151,9 @@ class Flex(Module, Parameter):
         sig_str = self._flex_ctx.render_signature_string()
         returns = ", ".join(f"{name}=result.{name}" for name in cls.output_fields)
         instructions = (getattr(cls, "instructions", "") or "").strip()
-        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})" if instructions else repr(sig_str)
+        # Always a dspy.Signature(...) payload, which the host recognizes as the declared signature
+        # (``_is_declared_signature``), so the baseline keeps descriptions the string cannot carry.
+        sig_arg = f"dspy.Signature({sig_str!r}, {instructions!r})"
         tool_names = list(self._flex_ctx.context_names())
         if tool_names:
             attr, ctor = "rlm", f"dspy.RLM({sig_arg}, tools=[{', '.join(tool_names)}])"
@@ -158,7 +176,19 @@ class Flex(Module, Parameter):
 
     def _bind_code(self, module_src: str) -> None:
         self._bridge.bind(module_src)
+        if module_src != self._module_src:
+            # Fitted to the previous code's predictors, which the new code may rename or redefine.
+            self.predictor_fields = {}
         self._module_src = module_src
+
+    def _is_declared_signature(self, signature: Any) -> bool:
+        """Whether a sandbox signature payload is exactly the one the baseline renders for this Flex."""
+        if not isinstance(signature, dict) or not signature.get(SIGNATURE_MARKER):
+            return False
+        instructions = (getattr(self._signature_cls, "instructions", "") or "").strip()
+        return signature.get("signature") == self._flex_ctx.render_signature_string() and (
+            signature.get("instructions") or ""
+        ) == instructions
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the bound ``forward`` inside the interpreter."""
@@ -168,3 +198,15 @@ class Flex(Module, Parameter):
             with settings.context(lm=self.lm):
                 return self._bridge.forward(kwargs)
         return self._bridge.forward(kwargs)
+
+
+def _checked_predictor_fields(predictor_fields: Any) -> dict[str, dict[str, dict[str, Any]]]:
+    """Check the shape of ``predictor_fields``; each entry is validated against its predictor when called."""
+    if not isinstance(predictor_fields, dict) or not all(
+        isinstance(name, str) and isinstance(fields, dict) and all(isinstance(c, dict) for c in fields.values())
+        for name, fields in predictor_fields.items()
+    ):
+        raise ValueError(
+            "predictor_fields must map predictor names to {output name: decision configuration} mappings."
+        )
+    return predictor_fields

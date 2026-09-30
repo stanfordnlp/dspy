@@ -6,6 +6,8 @@ import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from dspy.adapters.types.decision import Choice, Noul, Score, _Decision, decision_type
+
 
 @dataclass
 class FlexContext:
@@ -90,6 +92,8 @@ class FlexContext:
                 tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
                 tool_lines.append(f"  - {tname}: {tdesc}")
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
+        if self.decision_outputs():
+            parts.append(DECISION_NOTE)
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: only the tools listed above may be passed to "
@@ -97,6 +101,57 @@ class FlexContext:
                 "the module can be called directly in forward, but cannot be handed to those predictors."
             )
         return "\n\n".join(parts) if parts else "(no extra context)"
+
+
+    def decision_outputs(self) -> list[str]:
+        """The signature's outputs declared with a decision type (``Noul``, ``Score``, ``Choice``)."""
+        return [
+            name
+            for name, finfo in self.signature_cls.output_fields.items()
+            if decision_type(finfo) is not None
+            and any(isinstance(a, type) and issubclass(a, _Decision) for a in (finfo.annotation, *finfo.metadata))
+        ]
+
+
+DECISION_NOTE = """\
+Decision outputs: this signature declares outputs with decision types, whose values are decided from
+probabilities rather than generated. Sub-signature strings can declare them too:
+`"email: str -> spam: Noul[(True, 'Unsolicited or fraudulent'), (False, 'Legitimate')]"`,
+`"ticket -> severity: Score['minor', 'major', 'critical']"` (ordered lowest to highest), or
+`"ticket -> team: Choice[('billing', 'Payment issue'), ('tech', 'Product bug')]"`. A bare `bool` output
+works as `Noul`. Each decision output needs a question: set it on the predictor in `__init__`, as in
+`self.spam.fields["spam"] = {"instructions": "Is this email spam?"}`. The result is a decision object:
+`bool(out.spam)` and `out.spam.value` for a Noul, `float(out.severity)` and `out.severity.level` for a Score,
+`out.team.value` for a Choice; `.confidence` and `.probability`/`.probabilities` carry the evidence.
+The thresholds, cuts, and weights that turn probabilities into values are calibrated outside this code."""
+
+
+def _render_decision(annotation: type) -> ast.expr:
+    """``Noul[...]``, ``Score[...]``, or ``Choice[...]`` for a decision type, from its declared criteria."""
+    criteria = annotation.criteria()
+    if issubclass(annotation, Noul):
+        base = "Noul"
+        pairs = [(value, criteria[str(value).lower()]) for value in (True, False) if criteria and str(value).lower() in criteria]
+    elif issubclass(annotation, Score):
+        base, pairs = "Score", criteria
+    elif issubclass(annotation, Choice):
+        base = "Choice"
+        values = get_args(annotation.model_fields["value"].annotation) if criteria is not None else ()
+        pairs = [(value, criteria[str(value)]) for value in values]
+    else:
+        raise ValueError(f"Unsupported decision type {annotation!r}.")
+    if not pairs:
+        return ast.Name(id=base)
+
+    def constant(value: Any) -> ast.expr:
+        if value is not None and not isinstance(value, (str, int, bool)):
+            raise ValueError(f"Decision criteria in {annotation!r} are not signature-string constants.")
+        return ast.Constant(value=value)
+
+    elts = [
+        constant(pair) if base == "Score" else ast.Tuple(elts=[constant(pair[0]), constant(pair[1])]) for pair in pairs
+    ]
+    return ast.Subscript(value=ast.Name(id=base), slice=ast.Tuple(elts=elts) if len(elts) > 1 else elts[0])
 
 
 def _type_name(t: Any) -> str:
@@ -132,6 +187,9 @@ def _render_type_node(annotation: Any, custom_types: dict[str, type]) -> ast.exp
     """Build the annotation AST for ``annotation``, emitting only nodes ``_parse_type_node`` handles."""
     if annotation is type(None):
         return ast.Constant(value=None)
+
+    if isinstance(annotation, type) and issubclass(annotation, _Decision):
+        return _render_decision(annotation)
 
     origin = get_origin(annotation)
     if origin is None:

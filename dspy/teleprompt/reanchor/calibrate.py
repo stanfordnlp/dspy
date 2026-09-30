@@ -28,12 +28,18 @@ small portions of the dataset, but can accept them when they recur across folds.
 Calibration enables probability-based execution for every compatible output by adding an entry
 in `fields`. After fitting, it compares against the original behavior under the same fold check
 and restores the original field configuration unless the fitted behavior wins. The adapter
-handles probability requests for the backend used on each call.
+handles probability requests for the backend used on each call. An output with no question to
+ask (no description and no `instructions`) cannot be decided from probabilities and is skipped.
+
+A `dspy.Flex` builds its predictors afresh on every forward, from its code. They are found by
+running the program and are calibrated through the Flex's `predictor_fields`, which the Flex
+applies to each predictor it builds (`FlexPredictor`).
 
 """
 
 import copy
 import itertools
+import logging
 import math
 import random
 from typing import Any, Callable
@@ -42,12 +48,42 @@ import dspy
 from dspy.adapters.decision import record_evidence
 from dspy.adapters.decision_state import DecisionState
 from dspy.adapters.types.decision import Choice, Noul, decision_type
+from dspy.predict.flex import Flex
+from dspy.predict.flex.bridge import FLEX_ORIGIN, merge_fields, record_flex_predictors
 from dspy.predict.predict import Predict
 from dspy.utils.parallelizer import ParallelExecutor
+
+logger = logging.getLogger(__name__)
 
 MAX_CANDIDATES = 40  # candidate settings per parameter; more distinct values are thinned to quantiles
 WEIGHT_RANGE = (1e-3, 1e3)  # the smallest and largest Choice multiplier tried
 FOLDS = 5  # training-set parts the fold check holds out in turn
+
+
+class FlexPredictor:
+    """A `Predict` a Flex builds on each forward, calibrated through the Flex's `predictor_fields`.
+
+    It stands in for the predictor where calibration reads and writes a `Predict`: `fields` is the
+    Flex's entry for the predictor's name, and `base_fields` is what the Flex's code sets on it,
+    which that entry overrides setting by setting.
+    """
+
+    def __init__(self, flex: Flex, name: str, predict: Predict, base_fields: dict):
+        self.flex = flex
+        self.name = name
+        self.signature = predict.signature
+        self.config = predict.config
+        self.lm = predict.lm or flex.lm
+        self.base_fields = copy.deepcopy(base_fields)
+
+    @property
+    def fields(self) -> dict:
+        return self.flex.predictor_fields.setdefault(self.name, {})
+
+    def made(self, caller) -> bool:
+        """Whether a call's innermost module is this predictor, built by its Flex on some forward."""
+        origin = getattr(caller, FLEX_ORIGIN, None)
+        return origin is not None and origin[0] is self.flex and origin[1] == self.name
 
 
 def decision_outputs(predict: Predict) -> dict[str, type]:
@@ -61,23 +97,82 @@ def predictors(program) -> list[tuple[str, Predict]]:
     return [(name, p) for name, p in program.named_parameters() if isinstance(p, Predict) and decision_outputs(p)]
 
 
-def caches(predict: Predict) -> bool:
+def flex_modules(program) -> list[tuple[str, Flex]]:
+    """Every Flex in the program, by the name `named_parameters` gives it. A bare Flex is `self`."""
+    return [(name, p) for name, p in program.named_parameters() if isinstance(p, Flex)]
+
+
+def flex_predictors(program, log: list) -> list[tuple[str, FlexPredictor]]:
+    """The predictors with a decision output that the program's Flexes called, from `record_flex_predictors`.
+
+    A predictor is named by its Flex's path and its own name, like `triage.judge`, or `judge` in a
+    bare Flex. One built with different decision outputs or code `fields` on different calls has no
+    single configuration to fit, and is left out.
+    """
+    paths = {id(flex): path for path, flex in flex_modules(program)}
+    found, conflicting = {}, set()
+    for flex, name, predict, base in log:
+        if id(flex) not in paths or not decision_outputs(predict):
+            continue
+        key = (paths[id(flex)], name)
+        seen = found.get(key)
+        if seen is None:
+            found[key] = FlexPredictor(flex, name, predict, base)
+        elif decision_outputs(seen) != decision_outputs(predict) or seen.base_fields != base:
+            conflicting.add(key)
+    for path, name in sorted(conflicting):
+        logger.warning(
+            "Flex predictor %r was built with different decision outputs or fields across calls; not calibrating it.",
+            _flex_name(path, name),
+        )
+    return [(_flex_name(*key), found[key]) for key in sorted(found) if key not in conflicting]
+
+
+def _flex_name(path: str, name: str) -> str:
+    return name if path == "self" else f"{path}.{name}"
+
+
+def caches(predict: Predict | FlexPredictor) -> bool:
     """Check caching for a statically bound or configured client."""
-    lm = predict.lm or dspy.settings.lm
+    return lm_caches(predict.lm, predict.config)
+
+
+def lm_caches(lm, config: dict) -> bool:
+    """Check caching for `lm`, or the configured client when it is None, under a predictor's `config`."""
+    lm = lm or dspy.settings.lm
     if lm is None:
         raise ValueError(
             "ReAnchor cannot check caching without a bound or globally configured client. "
             "For runtime client selection, pass require_cache=False."
         )
-    enabled = predict.config.get("cache", getattr(lm, "cache", False))
+    enabled = config.get("cache", getattr(lm, "cache", False))
     return bool(enabled) and getattr(lm, "_cache_responses", True)
 
 
-def effective(predict: Predict, field: str) -> dict:
-    """The output's full configuration: its stored overrides on top of its type's defaults."""
-    fields = dict(predict.fields)
+def _applied(predict: Predict | FlexPredictor, field: str) -> dict:
+    """The fields a call applies, with an entry for `field`: a Flex's code `fields` under its stored ones."""
+    fields = merge_fields(getattr(predict, "base_fields", {}), predict.fields)
     fields.setdefault(field, {})
-    return DecisionState(predict.signature, fields).fields[field]
+    return fields
+
+
+def effective(predict: Predict | FlexPredictor, field: str) -> dict:
+    """The output's full configuration: its stored overrides on top of its type's defaults."""
+    return DecisionState(predict.signature, _applied(predict, field)).fields[field]
+
+
+def unaskable(predict: Predict | FlexPredictor, field: str) -> str | None:
+    """Why the output has no question to decide it from probabilities, or None when it has one."""
+    state = DecisionState(predict.signature, _applied(predict, field))
+    try:
+        state._question(field, predict.signature.output_fields[field], state.types[field])
+    except ValueError as e:
+        return str(e)
+    return None
+
+
+def _made(predict: Predict | FlexPredictor, caller) -> bool:
+    return predict.made(caller) if isinstance(predict, FlexPredictor) else caller is predict
 
 
 def metric_value(metric: Callable, example, pred) -> float:
@@ -91,13 +186,24 @@ def scores(
 ) -> list[float]:
     """The program's metric score on each example. Any program or metric error fails the pass."""
 
+    failures = []
+
     def one(example):
-        with dspy.context(trace=[]):
-            pred = program(**example.inputs())
-        return metric_value(metric, example, pred)
+        try:
+            with dspy.context(trace=[]):
+                pred = program(**example.inputs())
+            return metric_value(metric, example, pred)
+        except Exception as e:
+            failures.append(e)
+            raise
 
     executor = ParallelExecutor(num_threads=num_threads, max_errors=1, disable_progress_bar=not progress)
-    values = executor.execute(one, examples)
+    try:
+        values = executor.execute(one, examples)
+    except Exception:
+        if failures:  # The executor reports a cancelled run; raise what the program or metric raised.
+            raise failures[0] from None
+        raise
     if not all(math.isfinite(s) for s in values):
         raise ValueError("ReAnchor requires finite metric values.")
     return values
@@ -114,8 +220,12 @@ def calibrate(
     trainset: list,
     metric: Callable,
     num_threads: int | None = None,
+    targets: list[tuple[str, Predict | FlexPredictor]] | None = None,
 ) -> list[dict[str, Any]]:
     """Fit every threshold, cut, and weight in place.
+
+    `targets` are the predictors to calibrate, by name. By default, every `Predict` with a decision
+    output, and the ones the program's Flexes call on the training set, found with one more pass.
 
     Returns one report row per output: the fitted value, or why it was skipped.
     """
@@ -124,8 +234,19 @@ def calibrate(
     def score() -> list[float]:
         return scores(program, trainset, metric, num_threads)
 
-    for name, predict in predictors(program):
+    if targets is None:
+        targets = predictors(program)
+        if flex_modules(program):
+            with record_flex_predictors() as log:
+                score()
+            targets += flex_predictors(program, log)
+
+    for name, predict in targets:
         for field, kind in decision_outputs(predict).items():
+            reason = unaskable(predict, field)
+            if reason is not None:
+                report.append({"predictor": name, "field": field, "skipped": reason})
+                continue
             original = copy.deepcopy(predict.fields.get(field))
             before = score()
             predict.fields[field] = effective(predict, field)
@@ -147,6 +268,8 @@ def calibrate(
                 row.pop("value")
                 row.update(skipped="fitted behavior did not beat the original", train_score=_mean(before))
             report.append(row)
+        if isinstance(predict, FlexPredictor) and not predict.fields:
+            del predict.flex.predictor_fields[predict.name]
     return report
 
 
@@ -158,11 +281,13 @@ def _restore(predict: Predict, field: str, original: dict | None) -> None:
         predict.fields[field] = original
 
 
-def _observe(program, predict: Predict, field: str, trainset: list, metric: Callable, num_threads) -> list[dict]:
+def _observe(
+    program, predict: Predict | FlexPredictor, field: str, trainset: list, metric: Callable, num_threads
+) -> list[dict]:
     """The evidence the output is decoded from on each training call, from one pass at the current setting."""
     with record_evidence() as log:
         scores(program, trainset, metric, num_threads)
-    return [evidence for caller, name, evidence in log if caller is predict and name == field]
+    return [evidence for caller, name, evidence in log if _made(predict, caller) and name == field]
 
 
 def _tidy(x: float, lo: float, hi: float) -> float:
