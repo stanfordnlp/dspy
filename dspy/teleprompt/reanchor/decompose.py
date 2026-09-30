@@ -64,6 +64,12 @@ class DecomposeSignature(dspy.Signature):
     fraudulent. Write each question and its criteria from what the data shows, never from single examples,
     and never hardcode example inputs or outputs.
 
+    The code is chosen on held-out examples, so it must generalize. Each question names a general property
+    that many inputs share (e.g. "the sender asks the recipient a direct question"), never a scenario seen in
+    a handful of training examples; a question that is true for only a few percent of the training set is
+    probably overfit. Prefer a few well-separated questions (two to six) over many narrow ones, and check with
+    `run_code` that each new question's probabilities differ between the classes on a broad sample.
+
     Every threshold, Score cut, and Choice weight is calibrated against the metric after you submit, so a
     question is good when its probability RANKS examples well, even if its 0.5 cut is wrong. Combine decided
     values (`bool(out.x)`, `out.y.level`, `out.z.value`) in code; do not threshold probabilities yourself.
