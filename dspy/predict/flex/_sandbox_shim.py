@@ -30,6 +30,14 @@ def _dspy_host(_fn, **_kw):
     return globals()[_fn](**_kw)
 
 
+# Each decision kind's attributes on the host type.
+_DSPY_DECISION_FIELDS = {
+    "noul": ("value", "confidence", "probability"),
+    "score": ("value", "confidence", "probabilities", "level"),
+    "choice": ("value", "confidence", "probabilities"),
+}
+
+
 class _DspyDecision(dict):
     """Sandbox-side stand-in for a Noul, Score, or Choice value.
 
@@ -47,24 +55,16 @@ class _DspyDecision(dict):
     def __getattr__(self, _name):
         if _name in self:
             return self[_name]
-        if _name in ("value", "confidence", "probability", "probabilities", "level"):
+        # The host serializes missing evidence away; it is still an attribute, and None, on the host type.
+        if _name in _DSPY_DECISION_FIELDS.get(self.get("__dspy_decision__"), ()):
             return None
         raise AttributeError(_name)
 
     def __bool__(self):
-        if self.get("__dspy_decision__") == "noul":
-            return bool(self["value"])
-        return True
+        return bool(self["value"]) if self.get("__dspy_decision__") == "noul" else True
 
     def __float__(self):
-        if self.get("__dspy_decision__") == "choice":
-            raise TypeError("a Choice has no numeric value; use .value")
         return float(self["value"])
-
-    def __repr__(self):
-        _kind = str(self.get("__dspy_decision__", "decision")).capitalize()
-        _shown = ", ".join(_k + "=" + repr(_v) for _k, _v in self.items() if _k != "__dspy_decision__")
-        return _kind + "(" + _shown + ")"
 
 
 def _dspy_decisions(_v):

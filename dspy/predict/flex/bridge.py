@@ -79,7 +79,7 @@ TOOL_MARKER = "__dspy_tool__"
 DECISION_MARKER = "__dspy_decision__"
 DECISION_KINDS = {"noul": Noul, "score": Score, "choice": Choice}
 # Decision type names every sub-signature string may use, e.g. "email -> spam: Noul".
-DECISION_TYPE_NAMES = {"Noul": Noul, "Score": Score, "Choice": Choice}
+DECISION_TYPE_NAMES = {cls.__name__: cls for cls in DECISION_KINDS.values()}
 # Set on each host predictor a Flex builds: (the Flex, the predictor's name in `predictor_fields`).
 FLEX_ORIGIN = "_dspy_flex_origin"
 # Variable/identifier names used in the per-forward driver code (namespaced to avoid clashing with
@@ -175,21 +175,6 @@ def _decision_payload(value: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in value.items() if k != DECISION_MARKER}
 
 
-def _decode_decisions(value: Any) -> Any:
-    """Rebuild decision objects from marked payloads, recursing into containers.
-
-    The sandbox does not know a value's declared criteria, so a decision comes back as its base kind
-    (``Noul``, ``Score``, or ``Choice``) with the same value, confidence, and probabilities.
-    """
-    if _is_decision_payload(value):
-        return DECISION_KINDS[value[DECISION_MARKER]].model_validate(_decision_payload(value))
-    if isinstance(value, dict):
-        return {k: _decode_decisions(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_decode_decisions(v) for v in value]
-    return value
-
-
 def _allows_decision(annotation: Any) -> bool:
     """Whether ``annotation`` is, or is a union containing, a decision type."""
     if isinstance(annotation, type) and issubclass(annotation, _Decision):
@@ -283,7 +268,8 @@ def _restore_custom_types(value: Any, originals: dict[str, Any]) -> Any:
     if isinstance(value, str) and value in originals:
         return originals[value]
     if _is_decision_payload(value):
-        return _decode_decisions(value)
+        # The sandbox does not know the declared criteria, so a decision comes back as its base kind.
+        return DECISION_KINDS[value[DECISION_MARKER]].model_validate(_decision_payload(value))
     if isinstance(value, dict):
         return {k: _restore_custom_types(v, originals) for k, v in value.items()}
     if isinstance(value, list):

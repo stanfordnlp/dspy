@@ -6,7 +6,7 @@ import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
-from dspy.adapters.types.decision import Choice, Noul, Score, _Decision, decision_type
+from dspy.adapters.types.decision import Score, _Decision
 
 
 @dataclass
@@ -108,8 +108,7 @@ class FlexContext:
         return [
             name
             for name, finfo in self.signature_cls.output_fields.items()
-            if decision_type(finfo) is not None
-            and any(isinstance(a, type) and issubclass(a, _Decision) for a in (finfo.annotation, *finfo.metadata))
+            if any(isinstance(a, type) and issubclass(a, _Decision) for a in (finfo.annotation, *finfo.metadata))
         ]
 
 
@@ -122,37 +121,22 @@ probabilities rather than generated. Sub-signature strings can declare them too:
 works as `Noul`. Each decision output needs a question: set it on the predictor in `__init__`, as in
 `self.check.fields["duplicate"] = {"instructions": "Does this ticket repeat an open one?"}`. The result is a
 decision object: `bool(out.duplicate)` and `out.duplicate.value` for a Noul, `float(out.severity)` and
-`out.severity.level` for a Score,
-`out.team.value` for a Choice; `.confidence` and `.probability`/`.probabilities` carry the evidence.
+`out.severity.level` for a Score, `out.team.value` for a Choice; `.confidence` and
+`.probability`/`.probabilities` carry the evidence.
 The thresholds, cuts, and weights that turn probabilities into values are calibrated outside this code."""
 
 
 def _render_decision(annotation: type) -> ast.expr:
-    """``Noul[...]``, ``Score[...]``, or ``Choice[...]`` for a decision type, from its declared criteria."""
-    criteria = annotation.criteria()
-    if issubclass(annotation, Noul):
-        base = "Noul"
-        pairs = [(value, criteria[str(value).lower()]) for value in (True, False) if criteria and str(value).lower() in criteria]
-    elif issubclass(annotation, Score):
-        base, pairs = "Score", criteria
-    elif issubclass(annotation, Choice):
-        base = "Choice"
-        values = get_args(annotation.model_fields["value"].annotation) if criteria is not None else ()
-        pairs = [(value, criteria[str(value)]) for value in values]
-    else:
-        raise ValueError(f"Unsupported decision type {annotation!r}.")
-    if not pairs:
-        return ast.Name(id=base)
-
-    def constant(value: Any) -> ast.expr:
-        if value is not None and not isinstance(value, (str, int, bool)):
-            raise ValueError(f"Decision criteria in {annotation!r} are not signature-string constants.")
-        return ast.Constant(value=value)
-
-    elts = [
-        constant(pair) if base == "Score" else ast.Tuple(elts=[constant(pair[0]), constant(pair[1])]) for pair in pairs
-    ]
-    return ast.Subscript(value=ast.Name(id=base), slice=ast.Tuple(elts=elts) if len(elts) > 1 else elts[0])
+    """``Noul[...]``, ``Score[...]``, or ``Choice[...]``: a decision type's name is its signature-string spelling."""
+    node = ast.parse(annotation.__name__, mode="eval").body
+    allowed = (ast.Name, ast.Load, ast.Subscript, ast.Tuple, ast.Constant)
+    if not all(isinstance(n, allowed) for n in ast.walk(node)):
+        raise ValueError(f"Decision criteria in {annotation!r} are not signature-string constants.")
+    if isinstance(node, ast.Subscript) and not issubclass(annotation, Score):
+        if isinstance(node.slice, ast.Tuple) and not isinstance(node.slice.elts[0], ast.Tuple):
+            # A lone (value, description) pair: keep it a pair, `Noul[(True, 'x'),]`, not `Noul[True, 'x']`.
+            node.slice = ast.Tuple(elts=[node.slice])
+    return node
 
 
 def _type_name(t: Any) -> str:

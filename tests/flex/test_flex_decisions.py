@@ -14,9 +14,12 @@ from typing import Literal
 import pytest
 
 import dspy
-from dspy.experimental import Choice, Score
+from dspy.experimental import Choice, Noul, Score
+from dspy.predict.flex._sandbox_shim import _DspyDecision
+from dspy.predict.flex.bridge import DECISION_TYPE_NAMES
 from dspy.predict.flex.ctx import DECISION_NOTE
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.signatures.signature import make_signature
 from tests.teleprompt.reanchor.fakes import FakeClient, choice, noul, score
 
 deno_required = pytest.mark.skipif(shutil.which("deno") is None, reason="Deno is not installed")
@@ -74,6 +77,26 @@ def test_the_baseline_renders_decision_types_in_its_signature_string():
     source = flex().module_src
     assert "severity: Score['low', 'medium', 'high']" in source
     assert "kind: Choice[('billing', 'Payment issue'), ('technical', 'Product bug')]" in source
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [Noul, Noul[(True, "Blocked")], Noul[(True, "Blocked"), (False, "Usable")], Choice[("billing", "Payment")], Kind, Level],
+)
+def test_decision_types_render_as_signature_strings_that_parse_back(annotation):
+    class One(dspy.Signature):
+        ticket: str = dspy.InputField()
+        out: annotation = dspy.OutputField()
+
+    rendered = dspy.Flex(One)._flex_ctx.render_signature_string()
+    assert make_signature(rendered, custom_types=DECISION_TYPE_NAMES).output_fields["out"].annotation is annotation
+
+
+def test_missing_evidence_reads_as_none_in_the_sandbox():
+    blocked = _DspyDecision({"__dspy_decision__": "noul", "value": True, "confidence": 0.9})
+    assert bool(blocked) is True and blocked.probability is None  # the host drops None evidence when serializing
+    with pytest.raises(AttributeError):
+        _ = blocked.level  # a Noul has no level on the host either
 
 
 def test_decision_values_keep_their_host_semantics_in_the_sandbox(client):
