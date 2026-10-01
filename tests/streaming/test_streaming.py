@@ -353,6 +353,39 @@ async def test_streaming_handles_space_correctly():
     assert "".join([chunk.chunk for chunk in all_chunks]) == "How are you doing?"
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"],
+        ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
+    ],
+)
+async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    async def stream(*args, **kwargs):
+        for part in parts:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
+
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.ChatAdapter()):
+            all_chunks = []
+            final = None
+            async for value in program(question="What is the capital of France?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final = value
+
+    assert "".join([chunk.chunk for chunk in all_chunks]) == final.answer
+
+
 @pytest.mark.llm_call
 def test_sync_streaming(lm_for_test):
     class MyProgram(dspy.Module):
