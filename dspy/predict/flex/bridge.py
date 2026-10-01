@@ -196,6 +196,8 @@ def _unwrap_decisions(value: Any, annotation: Any) -> Any:
             return _decision_payload(value)
         return value.get("value")
     origin, args = get_origin(annotation), get_args(annotation)
+    if origin in (typing.Union, types.UnionType) and len(options := [a for a in args if a is not type(None)]) == 1:
+        return _unwrap_decisions(value, options[0])  # An optional container: follow its one real type.
     if isinstance(value, list):
         item = args[0] if origin in (list, set, frozenset) and args else Any
         if origin is tuple and args:
@@ -334,7 +336,7 @@ class _Invocation:
         main = handle if isinstance(predictor, dspy.Predict) else f"{handle}.predict"
         recorder = settings.get("_flex_predictors")
         for name, predict in named:
-            base = copy.deepcopy(fields or {}) if name == main else {}
+            base = (fields or {}) if name == main else {}  # Fresh from JSON on every call, so not shared.
             merged = merge_fields(base, flex.predictor_fields.get(name, {}))
             try:
                 DecisionState(predict.signature, merged)
@@ -507,15 +509,13 @@ class BridgeRuntime:
         return self._factory
 
     def _is_declared_signature(self, signature: Any) -> bool:
-        """Whether a sandbox signature is exactly the one the Flex's baseline renders (string and instructions)."""
-        if isinstance(signature, dict) and signature.get(SIGNATURE_MARKER):
-            text, instructions = signature.get("signature"), signature.get("instructions") or ""
-        elif isinstance(signature, str):
-            text, instructions = signature, ""
-        else:
+        """Whether a sandbox signature is exactly the ``dspy.Signature(...)`` the Flex's baseline renders."""
+        if not (isinstance(signature, dict) and signature.get(SIGNATURE_MARKER)):
             return False
         declared = (getattr(self._flex.signature, "instructions", "") or "").strip()
-        return text == self._flex._flex_ctx.render_signature_string() and instructions.strip() == declared
+        return signature.get("signature") == self._flex._flex_ctx.render_signature_string() and (
+            (signature.get("instructions") or "").strip() == declared
+        )
 
     def _build_predictor(self, kind: str, signature: Any, kwargs: dict[str, Any] | None) -> Any:
         cls = getattr(dspy, kind)

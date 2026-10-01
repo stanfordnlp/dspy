@@ -187,7 +187,7 @@ def test_calibrating_leaves_no_empty_predictor_fields_entries():
 def proposals(monkeypatch):
     queue, calls = [], []
 
-    def fake_propose(flex, proposer, attempts, records, trainset, metric, max_iters=20, num_threads=None):
+    def fake_propose(flex, proposer, attempts, records, trainset, metric, max_iters=20, num_threads=None, **where):
         calls.append({"flex": flex, "attempts": attempts, "records": records})
         item = queue.pop(0)
         if isinstance(item, Exception):
@@ -266,7 +266,6 @@ def test_a_decomposition_that_scores_lower_on_the_valset_is_not_kept(proposals):
 
 
 def test_an_equal_score_with_fewer_calls_is_kept(proposals):
-    queue, _ = proposals
     two_calls = """
     class Twice(dspy.Module):
         def __init__(self):
@@ -280,12 +279,18 @@ def test_an_equal_score_with_fewer_calls_is_kept(proposals):
             self.first(pair=pair)
             return dspy.Prediction(match=self.second(pair=pair).same)
     """
-    queue.extend([GATED])
+    queue, calls = proposals
+    queue.extend([GATED, BROKEN])
     student = flex(two_calls)
-    optimizer = ReAnchor(metric, num_threads=4, proposer=dspy.utils.DummyLM([]), rounds=1)
+    optimizer = ReAnchor(metric, num_threads=4, proposer=dspy.utils.DummyLM([]), rounds=2)
     program = optimizer.compile(student, trainset=examples()[:6])  # all "same": both codes score 1.0
-    assert optimizer.report["decomposition"][0]["calls"] == 2.0
-    assert "class Gated" in program.module_src and optimizer.report["decomposition"][1]["calls"] == 1.0
+    baseline, gated, broken = optimizer.report["decomposition"]
+    assert baseline["calls"] == 2.0
+    assert "class Gated" in program.module_src and gated["calls"] == 1.0
+    # The proposer reads the best attempt first: the equal score with fewer calls, then the baseline.
+    assert ["class Gated" in a["source"]["self"] for a in calls[1]["attempts"]] == [True, False]
+    # Every attempt records its code the same way, by the Flex's path.
+    assert all(set(a["source"]) == {"self"} for a in (baseline, gated, broken))
 
 
 def test_without_a_valset_the_choice_is_made_on_the_trainset_with_a_warning(proposals, caplog):
@@ -305,6 +310,36 @@ def test_the_proposer_is_not_used_for_a_program_without_a_flex(proposals):
     )
     assert program.fields == {"match": {"threshold": 0.8}}
     assert proposals[1] == []
+
+
+def test_propose_runs_drafts_inside_the_whole_program(monkeypatch):
+    class Outer(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.checker = flex()
+
+        def forward(self, text):  # The program's input is not the Flex's.
+            return self.checker(pair=text)
+
+    captured = {}
+
+    class FakeRLM:
+        def __init__(self, signature, max_iters, tools, sub_lm):
+            captured["tools"] = tools
+
+        def __call__(self, **inputs):
+            [run_code] = captured["tools"]
+            captured["draft"] = json.loads(run_code(module_src=GATED, indexes=[0]))
+            return dspy.Prediction(module_src=GATED)
+
+    monkeypatch.setattr(dspy, "RLM", FakeRLM)
+    program = Outer()
+    data = [dspy.Example(text=e.pair, match=e.match).with_inputs("text") for e in examples()]
+    decompose.propose(program.checker, dspy.utils.DummyLM([]), [], [], data, metric, program=program, path="checker")
+
+    [draft] = captured["draft"]
+    assert "error" not in draft and draft["score"] == 1.0
+    assert "class Gated" not in program.checker.module_src  # Drafts run on a copy.
 
 
 def test_propose_drives_an_rlm_whose_drafts_run_on_the_flex_backend(monkeypatch, jev):

@@ -102,7 +102,6 @@ class FlexContext:
             )
         return "\n\n".join(parts) if parts else "(no extra context)"
 
-
     def decision_outputs(self) -> list[str]:
         """The signature's outputs declared with a decision type (``Noul``, ``Score``, ``Choice``)."""
         return [

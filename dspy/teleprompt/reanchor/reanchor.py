@@ -59,7 +59,7 @@ class ReAnchor(Teleprompter):
 
     After `compile`, `report` holds the fitted parameters and the metric's mean before and after
     calibration, on the training set and on the validation set when one is given. With a proposer,
-    `report["decomposition"]` lists every rewrite with its scores, requests per example, and errors.
+    `report["decomposition"]` lists every rewrite with its scores, bridged predictor calls per example, and errors.
     """
 
     def __init__(
@@ -143,25 +143,32 @@ class ReAnchor(Teleprompter):
         selection = valset or trainset
         best = {"program": program, "fitted": self.report["fitted"], **self._measure(program, selection)}
         attempts = [self._attempt(program, best, accepted=True)]
+        traced = None
         for round_ in range(1, self.rounds + 1):
             for path, _ in flex_modules(best["program"]):
                 flex = dict(flex_modules(best["program"]))[path]
                 logger.info("round %d: proposing code for %s", round_, path)
-                records = trace(best["program"], trainset, self.metric, self.num_threads)
+                if traced is not best["program"]:  # The proposer reads the best program's results; rerun on change.
+                    records, traced = trace(best["program"], trainset, self.metric, self.num_threads), best["program"]
                 candidate = best["program"].deepcopy()
                 attempt = {"round": round_, "flex": path}
+                # Best first: highest score, then fewest calls; attempts that failed come last.
+                ranked = sorted(attempts, key=lambda a: ("score" not in a, -a.get("score", 0), a.get("calls", 0)))
                 try:
-                    attempt["source"] = propose(
+                    source = propose(
                         flex,
                         self.proposer,
-                        [self._for_proposer(a) for a in sorted(attempts, key=lambda a: -a.get("score", -1))],
+                        [self._for_proposer(a) for a in ranked],
                         records,
                         trainset,
                         self.metric,
                         max_iters=self.proposer_max_iters,
                         num_threads=self.num_threads,
+                        program=best["program"],
+                        path=path,
                     )
-                    dict(flex_modules(candidate))[path]._bind_code(attempt["source"])
+                    attempt["source"] = {path: source}
+                    dict(flex_modules(candidate))[path]._bind_code(source)
                     outcome = self._calibrate_candidate(candidate, trainset, selection)
                 except LMError:
                     raise

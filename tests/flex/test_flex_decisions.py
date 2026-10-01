@@ -16,7 +16,7 @@ import pytest
 import dspy
 from dspy.experimental import Choice, Noul, Score
 from dspy.predict.flex._sandbox_shim import _DspyDecision
-from dspy.predict.flex.bridge import DECISION_TYPE_NAMES
+from dspy.predict.flex.bridge import DECISION_TYPE_NAMES, _unwrap_decisions
 from dspy.predict.flex.ctx import DECISION_NOTE
 from dspy.primitives.code_interpreter import CodeInterpreterError
 from dspy.signatures.signature import make_signature
@@ -90,6 +90,12 @@ def test_decision_types_render_as_signature_strings_that_parse_back(annotation):
 
     rendered = dspy.Flex(One)._flex_ctx.render_signature_string()
     assert make_signature(rendered, custom_types=DECISION_TYPE_NAMES).output_fields["out"].annotation is annotation
+
+
+def test_decisions_in_an_optional_container_become_values():
+    noul = {"__dspy_decision__": "noul", "value": True, "confidence": 0.9}
+    assert _unwrap_decisions([noul], list[bool] | None) == [True]
+    assert _unwrap_decisions(noul, bool | None) is True
 
 
 def test_missing_evidence_reads_as_none_in_the_sandbox():

@@ -60,12 +60,12 @@ class DecomposeSignature(dspy.Signature):
     Work like an analyst. Find the examples the current code gets wrong and why: which questions have
     probabilities that do not separate the classes, which cases a broad question conflates. Then decompose
     the judgment into narrow, atomic decisions whose answers plain Python combines into the outputs, for
-    example a Noul per distinct reason an output is positive, gated by a Noul for the cases that override
-    them. Write each question and its criteria from what the data shows, never from single examples, and
-    never hardcode example inputs or outputs.
+    example several narrow Nouls joined with `and`/`or`, or a cheap check in Python that skips the call. Write
+    each question and its criteria from what the data shows, never from single examples, and never hardcode
+    example inputs or outputs.
 
     The code is chosen on held-out examples, so it must generalize. Each question names a general property
-    that many inputs share (e.g. "the text asks the reader to act"), never a scenario seen in
+    that many inputs share (e.g. "the input states a deadline"), never a scenario seen in
     a handful of training examples; a question that is true for only a few percent of the training set is
     probably overfit. Prefer a few well-separated questions (two to six) over many narrow ones, and check with
     `run_code` that each new question's probabilities differ between the classes on a broad sample.
@@ -147,8 +147,16 @@ def propose(
     metric: Callable,
     max_iters: int = 20,
     num_threads: int | None = None,
+    program=None,
+    path: str = "self",
 ) -> str:
-    """One proposal for the Flex's new source, from an RLM driven by `proposer`."""
+    """One proposal for the Flex's new source, from an RLM driven by `proposer`.
+
+    `program` is the whole program the Flex sits in, at `path`; drafts run inside a copy of it, so they see the
+    program's inputs and the metric scores the program's outputs. Without it, the Flex is the program.
+    """
+    from dspy.teleprompt.reanchor.calibrate import flex_modules
+
     # The RLM runs with the proposer as the configured LM; drafts must still call the Flex's own.
     predictor_lm = flex.lm or dspy.settings.lm
     backend = backend_note(flex)
@@ -159,13 +167,14 @@ def propose(
         Returns JSON: each example's outputs, expected outputs, score, error, and decision evidence.
         """
         chosen = [i for i in indexes if isinstance(i, int) and 0 <= i < len(trainset)][:MAX_TRIAL_EXAMPLES]
-        trial = flex.deepcopy()
+        whole = (program if program is not None else flex).deepcopy()
+        trial = dict(flex_modules(whole))[path] if program is not None else whole
         trial.lm = predictor_lm
         try:
             trial._bind_code(_strip_code_fences(module_src))
         except (SyntaxError, CodeInterpreterError) as e:
             return json.dumps({"error": f"{type(e).__name__}: {e}"})
-        results = trace(trial, [trainset[i] for i in chosen], metric, num_threads)
+        results = trace(whole, [trainset[i] for i in chosen], metric, num_threads)
         for result, i in zip(results, chosen, strict=True):
             result["index"] = i
         return json.dumps(results, default=str)
@@ -176,7 +185,8 @@ def propose(
         result = rlm(
             task=task,
             backend=backend,
-            catalog=PRIMITIVES_CATALOG + "\n\n" + DECISION_NOTE,
+            # The task already carries DECISION_NOTE when the signature declares decision outputs.
+            catalog=PRIMITIVES_CATALOG if DECISION_NOTE in task else PRIMITIVES_CATALOG + "\n\n" + DECISION_NOTE,
             attempts=attempts,
             examples=json.loads(json.dumps(records, default=str)),
         )
