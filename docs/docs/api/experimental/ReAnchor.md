@@ -107,7 +107,7 @@ all outputs of one predictor share one billed request, so asking several questio
 input costs about the same as one.
 
 ReAnchor calibrates each rewrite as above and keeps it only when the calibrated program scores
-higher on `valset`, or the same with fewer predictor calls per example. Without a `valset`, the
+higher on `valset`, or the same with fewer calls from the Flex's predictors per example. Without a `valset`, the
 choice falls back to the training set, which the proposer has read. A rewrite that fails on any
 training example is rejected, and its error goes to the next round.
 

@@ -159,6 +159,7 @@ def propose(
 
     # The RLM runs with the proposer as the configured LM; drafts must still call the Flex's own.
     predictor_lm = flex.lm or dspy.settings.lm
+    task_lm = dspy.settings.lm  # The rest of the program's unbound predictors run here, not on the proposer.
     backend = backend_note(flex)
 
     def run_code(module_src: str, indexes: list[int]) -> str:
@@ -174,7 +175,8 @@ def propose(
             trial._bind_code(_strip_code_fences(module_src))
         except (SyntaxError, CodeInterpreterError) as e:
             return json.dumps({"error": f"{type(e).__name__}: {e}"})
-        results = trace(whole, [trainset[i] for i in chosen], metric, num_threads)
+        with dspy.context(lm=task_lm):
+            results = trace(whole, [trainset[i] for i in chosen], metric, num_threads)
         for result, i in zip(results, chosen, strict=True):
             result["index"] = i
         return json.dumps(results, default=str)

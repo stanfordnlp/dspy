@@ -318,7 +318,11 @@ def test_propose_runs_drafts_inside_the_whole_program(monkeypatch):
             super().__init__()
             self.checker = flex()
 
+            self.gate = dspy.Predict("pair -> same: bool")  # Unbound: runs on the configured client.
+            self.gate.fields["same"] = {"instructions": "Are the two the same?"}
+
         def forward(self, text):  # The program's input is not the Flex's.
+            self.gate(pair=text)
             return self.checker(pair=text)
 
     captured = {}
@@ -337,8 +341,9 @@ def test_propose_runs_drafts_inside_the_whole_program(monkeypatch):
     data = [dspy.Example(text=e.pair, match=e.match).with_inputs("text") for e in examples()]
     decompose.propose(program.checker, dspy.utils.DummyLM([]), [], [], data, metric, program=program, path="checker")
 
-    [draft] = captured["draft"]
+    [draft] = captured["draft"]  # The proposer (a DummyLM with no answers) never serves the gate.
     assert "error" not in draft and draft["score"] == 1.0
+    assert {d["predictor"] for d in draft["decisions"]} == {"gate", "judge"}
     assert "class Gated" not in program.checker.module_src  # Drafts run on a copy.
 
 
