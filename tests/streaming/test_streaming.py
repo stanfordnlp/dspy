@@ -361,6 +361,7 @@ async def test_streaming_handles_space_correctly():
         ["[[ ## answer ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n", "[[ ## completed ## ]]"],
         ["[[ ## answer", " ## ]]", "\nHow ", "are ", "you ", "doing?", "\n\n[[ ## completed ## ]]"],
         ["[[ ## answer ## ]]\n", "How\n", "are you\n", "doing?", "\n\n[[ ## completed ## ]]"],
+        ["[[ ## answer ## ]]\n", "How ", "are ", "you ", "doing?\n\n"],
     ],
 )
 async def test_streaming_strips_boundary_whitespace_regardless_of_chunking(parts):
