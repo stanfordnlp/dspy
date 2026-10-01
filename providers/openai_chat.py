@@ -17,7 +17,7 @@ import math
 import mimetypes
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, ClassVar, Iterator, Mapping
+from typing import Any, Callable, ClassVar, Iterator, Mapping, cast
 
 from ..compat import (
     OPENAI_CHAT_PRESET_BASE_URLS,
@@ -34,6 +34,7 @@ from ..judgments import Judgment, judgments_in_schema, non_judgment_properties, 
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    ReasoningEffort,
     DataPart,
     BuiltinTool,
     CacheConfig,
@@ -66,6 +67,7 @@ from ..types import (
 )
 from .base import BaseProviderLM, Credential, HttpResponse, SyncTransport, default_transport, _attach_error_metadata
 from .common import (
+    check_message_media,
     MEDIA_KINDS,
     check_tool_result_media,
     media_data_uri,
@@ -246,7 +248,13 @@ _INGEST_CONFIG_KEYS: frozenset[str] = frozenset({
 
 _INGEST_GROQ_BUILTIN_INVERSE: dict[str, str] = {wire: name for name, wire in _GROQ_BUILTIN_MAP.items()}
 
-_INGEST_AUDIO_MEDIA_TYPES: dict[str, str] = {"wav": "audio/wav", "mp3": "audio/mpeg"}
+# MAP-12 rule 4: OpenAI's server takes wav and mp3, Gemini's any audio type,
+# and DSPy writes the MIME subtype (mpeg for .mp3). Each format reads as its
+# true media type; a builder with no audio slot raises at send (MAP-10).
+_INGEST_AUDIO_MEDIA_TYPES: dict[str, str] = {
+    "wav": "audio/wav", "mp3": "audio/mpeg", "mpeg": "audio/mpeg", "ogg": "audio/ogg", "opus": "audio/opus",
+    "flac": "audio/flac", "aac": "audio/aac", "aiff": "audio/aiff", "webm": "audio/webm",
+}
 
 
 def _ingest_unsupported(provider: str, what: str, why: str) -> UnsupportedFeatureError:
@@ -1091,7 +1099,14 @@ def _usage_from_chat(usage_data: dict[str, Any]) -> Usage:
         output_tokens=usage_data.get("completion_tokens"),
         total_tokens=usage_data.get("total_tokens"),
         reasoning_tokens=completion_details.get("reasoning_tokens"),
-        cache_read_tokens=prompt_details.get("cached_tokens"),
+        # Nested (OpenAI) first; some servers report the count flat on usage
+        # instead (Together's non-reasoning models: `usage.cached_tokens`,
+        # openai-compatibility.md, live 2026-09-26).  Reading one place only
+        # turns a reported 0 into "not reported".
+        cache_read_tokens=(
+            prompt_details["cached_tokens"] if prompt_details.get("cached_tokens") is not None
+            else usage_data.get("cached_tokens")
+        ),
         cache_write_tokens=prompt_details.get("cache_write_tokens"),
         input_audio_tokens=prompt_details.get("audio_tokens"),
         output_audio_tokens=completion_details.get("audio_tokens"),
@@ -1176,8 +1191,18 @@ class OpenAIChatLM(BaseProviderLM):
         )
 
     def _models_from_body(self, body: str):
+        # Two catalog shapes are in the wild: OpenAI's envelope
+        # {"object": "list", "data": [...]} and a bare JSON array (Together,
+        # api.together.ai/v1/models, live 2026-09-26: 272 entries, no
+        # envelope).  Anything else is a malformed reply, never an empty
+        # catalog: reading it as zero models would lose every entry silently.
         data = json.loads(body)
-        entries = data.get("data") if isinstance(data, dict) else None
+        if isinstance(data, list):
+            entries = data
+        elif isinstance(data, dict) and isinstance(data.get("data"), list):
+            entries = data["data"]
+        else:
+            raise ValueError("a model catalog is {\"data\": [...]} or a JSON array of entries")
         return model_infos_from_entries(
             entries,
             provider=self.provider,
@@ -1343,6 +1368,7 @@ class OpenAIChatLM(BaseProviderLM):
         return resolve_openai_chat_compat(partial.for_model(model))
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
+        check_message_media(request, dialect="openai_chat", provider=self.provider)
         compat = self._compat_for(request.model)
         # Streaming uses generated JSON, never the non-streamable trie driver.
         # Check before building messages or invoking credentials, including on
@@ -1463,6 +1489,16 @@ class OpenAIChatLM(BaseProviderLM):
                       "the model reasons at its own default; pass the server's own knob through extensions",
                       asked={"effort": reasoning.effort}, provider=self.provider)
                 reasoning = None
+            if reasoning is not None and reasoning.is_off and compat.reasoning_off == "lowest":
+                # The model cannot stop reasoning and this server accepts the
+                # off word and reasons anyway (compat reasoning_off): send the
+                # lowest level and say so (MAP-13 §4.2, xAI's rule).
+                lowest = cast(ReasoningEffort, compat.reasoning_efforts[0] if compat.reasoning_efforts else "low")
+                adapt("config.reasoning.effort", "substituted",
+                      "this model cannot stop reasoning and the server accepts 'none' and reasons anyway "
+                      "(a paid no-op); the lowest level was sent",
+                      asked="off", applied=lowest, provider=self.provider)
+                reasoning = replace(reasoning, effort=lowest)
             if reasoning is not None and not reasoning.is_off:
                 # MAP-7: verbatim effort; no budget on this wire; summary
                 # levels are Responses-only; "auto" maps to the dialect's

@@ -8,7 +8,7 @@ HTTP transport.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Iterator
+from typing import AsyncIterator, Awaitable, Callable, Iterator
 
 
 @dataclass(slots=True)
@@ -44,7 +44,7 @@ class TransportResponse:
         headers: list[tuple[str, str]],
         http_version: str,
         chunks: Iterator[bytes],
-        release: "callable",
+        release: Callable[[bool], None],
     ) -> None:
         self.status = status
         self.reason = reason
@@ -130,7 +130,7 @@ class AsyncTransportResponse:
         headers: list[tuple[str, str]],
         http_version: str,
         chunks: AsyncIterator[bytes],
-        release: "callable",
+        release: Callable[[bool], Awaitable[None]],
     ) -> None:
         self.status = status
         self.reason = reason

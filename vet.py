@@ -34,6 +34,7 @@ JsonObject = dict[str, Any]
 LANGUAGE = "python"
 
 from ._version import __version__ as IMPL_VERSION
+from ._vet_managed import op_managed_run
 
 # Parse-only ops (parse_response, replay_stream, normalize_error) construct an
 # adapter but never build auth headers; the key value is irrelevant and must
@@ -96,7 +97,10 @@ def adapter_for_provider(provider: str, api_key: Any, base_url: str | None = Non
         if definition.compat is not None:
             # The Gemini dialect takes no compat (the router does the same).
             kwargs["compat"] = definition.compat
-    if definition.hosted:
+    if definition.hosted or settings:
+        # A cloud door's host settings, or a door's backend settings
+        # (client_version on the subscription doors; AUTH-10 amended
+        # 2026-09-30).  The shim passes exactly these and reads no environment.
         kwargs["settings"] = settings
     if clock is not None:
         kwargs["clock"] = clock
@@ -588,6 +592,19 @@ def op_replay_live(msg: JsonObject) -> JsonObject:
     }
 
 
+def _explained_settings(report: Any) -> JsonObject:
+    values = {name: value for name, value in report.settings if name != "error"}
+    out: JsonObject = {}
+    for name, origin in report.setting_sources:
+        if origin == "missing":
+            out[name] = {"value": None, "from": None}
+        elif origin.startswith("unprobed:"):
+            out[name] = {"value": None, "from": origin.split(":", 1)[1], "state": "unprobed"}
+        else:
+            out[name] = {"value": values.get(name), "from": origin}
+    return out
+
+
 def op_explain_auth(msg: JsonObject) -> JsonObject:
     """AUTH-7 resolution chain over harness-supplied inputs only.
 
@@ -625,6 +642,9 @@ def op_explain_auth(msg: JsonObject) -> JsonObject:
     return {
         "configured": report.configured,
         "steps": [{"kind": step.kind, "state": step.state} for step in report.steps],
+        # PROTOCOL.md explain_auth ``settings`` (additive, 2026-09-26): each
+        # host setting's value and origin; an unprobed one has value null.
+        "settings": _explained_settings(report),
         "report_text": "\n".join((report.describe(), repr(report), str(report))),
     }
 
@@ -808,6 +828,7 @@ HANDLERS: dict[str, Callable[[JsonObject], JsonObject]] = {
     "batch_op_parse": op_batch_op_parse,
     "cache_op_build": op_cache_op_build,
     "cache_op_parse": op_cache_op_parse,
+    "managed_run": op_managed_run,
 }
 
 

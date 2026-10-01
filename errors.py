@@ -113,6 +113,83 @@ class LockTimeoutError(LM15Error):
         super().__init__(message, **kwargs)
 
 
+# spec/auth.md AUTH-24 (ratified core 2026-09-22): the closed reasons a
+# managed-auth lifecycle operation can fail with.  None is a provider HTTP
+# 401; none is automatically retryable.
+AUTH_OPERATION_REASONS: frozenset[str] = frozenset({
+    "interaction_required", "method_unavailable", "connection_exists",
+    "login_in_progress", "login_required", "connection_changed", "login_denied",
+    "login_expired", "invalid_login_state", "attempt_unavailable", "indeterminate",
+    "storage_unavailable", "unsupported_store_version", "selection_mismatch",
+    "credential_rejected",
+})
+AUTH_OPERATION_STAGES: frozenset[str] = frozenset({
+    "discovery", "reservation", "interaction", "authorization", "polling", "exchange",
+    "persistence", "resolution", "renewal", "verification", "catalog", "dispatch",
+})
+AUTH_OPERATION_RECOVERIES: frozenset[str] = frozenset({
+    "provide_input", "choose_method", "resume_attempt", "inspect_attempt", "restart_login",
+    "select_connection", "repair_storage", "operator_action", "none",
+})
+AUTH_COMMIT_STATES: frozenset[str] = frozenset({"not_committed", "committed", "unknown"})
+
+
+class AuthOperationError(LM15Error):
+    """A managed-auth lifecycle operation failed locally (AUTH-24).
+
+    Root-level, beside :class:`TransportError`: nothing here is a provider
+    HTTP reply, and nothing here is safe to retry blindly.  ``reason`` is
+    one of :data:`AUTH_OPERATION_REASONS`; ``stage`` names where the
+    operation stopped; ``commit_state`` says whether the store changed
+    (``committed``, ``not_committed``, or ``unknown`` after an interrupted
+    write); ``recovery`` is guidance for the caller, never an instruction
+    to retry.  ``provider`` is the route; ``connection_id`` and
+    ``attempt_id`` are safe references, never secrets.
+
+    The message is for people.  Programs match on ``reason``.
+    """
+
+    default_code = "auth_operation"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        reason: str,
+        stage: str = "resolution",
+        commit_state: str = "not_committed",
+        recovery: str = "none",
+        operation: str | None = None,
+        connection_id: str | None = None,
+        attempt_id: str | None = None,
+        method_id: str | None = None,
+        **kwargs,
+    ) -> None:
+        if reason not in AUTH_OPERATION_REASONS:
+            raise ValueError(f"AuthOperationError: unknown reason {reason!r}")
+        if stage not in AUTH_OPERATION_STAGES:
+            raise ValueError(f"AuthOperationError: unknown stage {stage!r}")
+        if commit_state not in AUTH_COMMIT_STATES:
+            raise ValueError(f"AuthOperationError: unknown commit_state {commit_state!r}")
+        if recovery not in AUTH_OPERATION_RECOVERIES:
+            raise ValueError(f"AuthOperationError: unknown recovery {recovery!r}")
+        self.reason = reason
+        self.stage = stage
+        self.commit_state = commit_state
+        self.recovery = recovery
+        self.operation = operation
+        self.connection_id = connection_id
+        self.attempt_id = attempt_id
+        self.method_id = method_id
+        super().__init__(message, **kwargs)
+
+    def __repr__(self) -> str:
+        return (
+            f"AuthOperationError(reason={self.reason!r}, stage={self.stage!r}, "
+            f"commit_state={self.commit_state!r}, provider={self.provider!r})"
+        )
+
+
 class CollectionLimitError(LM15Error):
     """A local turn collector reached its budget, not a provider failure.
 
@@ -247,7 +324,7 @@ class ProviderError(LM15Error):
             )
             if item
         )
-        base = self.message or self.code
+        base = self.message or self.code or ""
         head, sep, tail = base.partition("\n\n")
         suffix = f" ({context})" if context else ""
         details = diagnostics_text(self.rate_limit_headers, self.retry_after)
@@ -520,6 +597,41 @@ def with_credential_hint(error: ProviderError, hint: str) -> ProviderError:
 
 # ─── HTTP status → error class mapping ───────────────────────────────
 
+# MAP-15: the pinned forms of a provider's "no such model" answer that carry no
+# model-specific code and no not-found class (lm15-contract
+# spec/model-not-found.json, carried verbatim; each form has a live receipt).
+MODEL_NOT_FOUND_FORMS: tuple[dict[str, str], ...] = (
+    {"code": "not_found_error", "prefix": "model: "},  # Anthropic, Claude Code
+    {"code": "invalid_request_error", "contains": "The supported API model names are "},  # DeepSeek
+    {"code": "1211"},  # Z.AI: Unknown Model
+    {"code": "1214", "prefix": "modelCode: "},  # Z.AI: the model field is invalid
+    {"code": "400", "suffix": " is not a valid model ID"},  # OpenRouter
+    {"code": "invalid-argument", "prefix": "Model not found: "},  # xAI (2026-09-01)
+    {"code": "validation_error", "contains": "The provided model identifier is invalid"},  # Bedrock Chat
+    {"code": "invalid_request_error", "prefix": "Deployment ", "suffix": " doesn't exist or isn't accessible."},  # Parasail
+)
+
+
+def is_pinned_model_not_found(provider_code: str | None, message: str | None) -> bool:
+    """True when the error is one of the pinned MAP-15 forms: the provider
+    code matches exactly and the message passes every text test the form
+    gives.  Never widened beyond the captured answers."""
+    if not provider_code:
+        return False
+    text = message or ""
+    for form in MODEL_NOT_FOUND_FORMS:
+        if form["code"] != provider_code:
+            continue
+        if "prefix" in form and not text.startswith(form["prefix"]):
+            continue
+        if "contains" in form and form["contains"] not in text:
+            continue
+        if "suffix" in form and not text.endswith(form["suffix"]):
+            continue
+        return True
+    return False
+
+
 def map_http_error(
     status: int,
     message: str,
@@ -579,6 +691,7 @@ _CLASS_TO_CODE: dict[type[LM15Error], str] = {
     AmbiguousModelError: "ambiguous_model",
     TransportError: "transport",
     LockTimeoutError: "lock_timeout",
+    AuthOperationError: "auth_operation",
     StreamAssemblyError: "stream_assembly",
     CollectionLimitError: "collection_limit",
     ProviderError: "provider",

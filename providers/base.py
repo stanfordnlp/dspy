@@ -408,6 +408,15 @@ class BaseProviderLM:
 
         return has_stored_credential(cls.manifest)
 
+    @classmethod
+    def stored_credential_state(cls) -> str:
+        """Offline: ``usable`` (fresh, or renewable), ``unusable`` (expired
+        with no way to renew), ``logged_out`` (signed out under a managed
+        Auth: a suppression marker blocks ambient keys, R3), or ``absent``."""
+        from ..access import stored_credential_state
+
+        return stored_credential_state(cls.manifest)
+
     def _bind_access(
         self,
         access: ProviderManifest | None,
@@ -436,10 +445,17 @@ class BaseProviderLM:
         chain.  It cannot be combined with ``api_key``: two answers to "who
         am I" is a configuration error, not a precedence question.
         """
-        from ..access import load_credential
+        from ..access import load_credential, resolve_backend_settings, with_backend_settings
         from ..cloud.hosts import render_base_url, resolve_settings
 
         policy = access if access is not None else type(self).manifest
+        if policy.host is None:
+            # A door without a host: ``settings`` are its backend settings
+            # (AUTH-10, amended 2026-09-30), explicit values and the table's
+            # defaults only — the router fills env fallbacks.  A name the
+            # door does not declare raises instead of being dropped.
+            policy = with_backend_settings(policy, resolve_backend_settings(policy, settings))
+            settings = None
         self.access = policy
         self.provider = policy.provider
         endpoint = self.base_url if (policy.host is not None and default_base_url is not None
@@ -771,6 +787,14 @@ class BaseProviderLM:
         hint = self.access.login_hint
         if hint and (self.access.credential_policy == "oauth" or self._credential_source == "stored"):
             error = with_credential_hint(error, hint)
+        elif isinstance(error, AuthError) and self.access.cloud_chain:
+            # A cloud door refusing an identity is an IAM or token question,
+            # not a mistyped key: say which role, or which kind of credential.
+            from ..cloud.chains import wire_auth_hint
+
+            wire_hint = wire_auth_hint(self.access, error.status, self._sent_credential_kind())
+            if wire_hint:
+                error = with_credential_hint(error, wire_hint)
         if isinstance(error, AuthError):
             from ..errors import with_credential_origin
 
@@ -781,6 +805,24 @@ class BaseProviderLM:
             if origin:
                 error = with_credential_origin(error, origin)
         return error
+
+    def _sent_credential_kind(self) -> str | None:
+        """"key", "token", or None when a callable decides per request."""
+        from ..access import looks_like_access_token
+        from ..credentials import ApiKey, BearerToken
+
+        cred = self.api_key
+        if hasattr(cred, "source") and hasattr(cred, "named"):  # a cloud chain provider: tokens
+            return "token"
+        if cred is None or callable(cred):
+            return None
+        try:
+            value = coerce_credential(cred)
+        except Exception:  # noqa: BLE001 - guidance must never mask the real error
+            return None
+        if isinstance(value, BearerToken) or (isinstance(value, ApiKey) and looks_like_access_token(value.value)):
+            return "token"
+        return "key" if isinstance(value, ApiKey) else None
 
     def close(self) -> None:
         close = getattr(self.transport, "close", None)
