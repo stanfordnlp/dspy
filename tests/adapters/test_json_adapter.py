@@ -1,5 +1,5 @@
 import enum
-from typing import Literal
+from typing import Annotated, Literal
 from unittest import mock
 
 import pydantic
@@ -1758,6 +1758,35 @@ def test_structured_outputs_preserve_exclusive_numeric_field_constraints():
     assert ratio_schema["exclusiveMaximum"] == 1.0
 
 
+def test_structured_outputs_keep_declared_constraints_through_chain_of_thought():
+    class Score(dspy.Signature):
+        text: str = dspy.InputField()
+        score: float = dspy.OutputField(ge=0.0, le=1.0, multiple_of=0.25)
+
+    signature = dspy.ChainOfThought(Score).predict.signature
+    schema = _get_structured_outputs_response_format(signature).model_json_schema()
+
+    score_schema = schema["properties"]["score"]
+    assert score_schema["minimum"] == 0.0
+    assert score_schema["maximum"] == 1.0
+    assert score_schema["multipleOf"] == 0.25
+
+
+def test_structured_outputs_forward_only_output_field_constraints():
+    # Constraints from `Annotated[..., Field(...)]` keep their existing schema behavior
+    # (see test_decision_types.py); only the ones declared on the OutputField are forwarded.
+    class Count(dspy.Signature):
+        text: str = dspy.InputField()
+        count: Annotated[int, pydantic.Field(lt=9)] = dspy.OutputField(gt=0)
+
+    for signature in (Count, dspy.ChainOfThought(Count).predict.signature):
+        schema = _get_structured_outputs_response_format(signature).model_json_schema()
+
+        count_schema = schema["properties"]["count"]
+        assert count_schema["exclusiveMinimum"] == 0
+        assert "exclusiveMaximum" not in count_schema
+
+
 def test_structured_outputs_do_not_leak_dspy_metadata():
     class Score(dspy.Signature):
         text: str = dspy.InputField()
@@ -1831,7 +1860,7 @@ def test_aliased_output_field_still_parses_end_to_end():
             model="openai/gpt-4o-mini",
         )
         adapter = dspy.JSONAdapter()
-        lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+        lm = dspy.LM(engine="litellm", model="openai/gpt-4o-mini", cache=False)
         result = adapter(lm, {}, Aliased, [], {"question": "weather?"})
 
     assert result[0]["answer_text"] == "sunny"
