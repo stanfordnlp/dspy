@@ -66,13 +66,17 @@ def _lock_dir() -> Path:
     try:
         base = Path("~/.cache").expanduser()
     except RuntimeError as exc:  # no home directory: a WASI guest, some containers
-        raise NotConfiguredError(
-            "No home directory to keep the credential lock in, so lm15 cannot "
-            "serialize credential refreshes against other processes. Reading "
-            "credentials still works; refreshing them from here does not.",
-            credential_hint="Set LM15_LOCK_DIR (or XDG_CACHE_HOME), or pass an explicit credential instead of a stored login",
-        ) from exc
+        raise _no_home_error() from exc
     return base / "lm15" / "locks"
+
+
+def _no_home_error() -> NotConfiguredError:
+    return NotConfiguredError(
+        "No home directory to keep the credential lock in, so lm15 cannot "
+        "serialize credential refreshes against other processes. Reading "
+        "credentials still works; refreshing them from here does not.",
+        credential_hint="Set LM15_LOCK_DIR (or XDG_CACHE_HOME), or pass an explicit credential instead of a stored login",
+    )
 
 
 def _strip_windows_verbatim(path: str) -> str:
@@ -148,7 +152,10 @@ def _real_path_allow_missing(target: str) -> str:
         raise ValueError("Named-user home expansion is unsupported for credential locks")
     target = os.path.expanduser(target)
     if target == "~" or target.startswith("~/") or (windows and target.startswith("~\\")):
-        raise ValueError("No home directory for credential lock path")
+        # No home directory (Windows has no passwd fallback, so this is where
+        # it shows there): the same fact about the host as _lock_dir's, and
+        # the same typed error with the same remedy.
+        raise _no_home_error()
     cwd = os.path.realpath(os.getcwd(), strict=True)
     resolved, pending = parts(target, _strip_windows_verbatim(cwd) if windows else cwd)
     links = 0

@@ -95,6 +95,12 @@ class AuthReport:
     # (``"base_urls"``, an env variable name, or ``"template"``).
     base_url: str | None = None
     base_url_source: str | None = None
+    # Where each setting came from (AUTH-10 ``from`` vocabulary, amended
+    # 2026-09-26): ``explicit``, ``env:<VAR>``, ``adc-env``,
+    # ``gcloud-config``, ``adc-file``, ``metadata``, ``aws-profile``,
+    # ``default``; ``unprobed:metadata`` when only the metadata server could
+    # answer and the doctor does not use the network.
+    setting_sources: tuple[tuple[str, str], ...] = ()
 
     @property
     def selected(self) -> AuthStep | None:
@@ -117,8 +123,14 @@ class AuthReport:
             lines.append(f"  configured: probably — {', '.join(s.source for s in unprobed)} (unprobed offline)")
         else:
             lines.append("  configured: no")
+        origins = dict(self.setting_sources)
         for name, value in self.settings:
-            lines.append(f"  setting {name}: {value}")
+            origin = origins.get(name)
+            shown = f"env ${origin[4:]}" if origin and origin.startswith("env:") else _SETTING_FROM.get(origin or "", origin)
+            lines.append(f"  setting {name}: {value}" + (f" (from {shown})" if origin else ""))
+        for name, origin in self.setting_sources:
+            if origin.startswith("unprobed:"):  # "missing" is the error line below
+                lines.append(f"  setting {name}: not found offline; {_SETTING_FROM.get(origin, origin)} is asked at request time")
         if self.base_url:
             origin = f" (from {self.base_url_source})" if self.base_url_source else ""
             lines.append(f"  base url: {self.base_url}{origin}")
@@ -126,6 +138,18 @@ class AuthReport:
 
     def __str__(self) -> str:
         return self.describe()
+
+
+_SETTING_FROM = {
+    "explicit": "settings",
+    "adc-env": "the GOOGLE_APPLICATION_CREDENTIALS file",
+    "gcloud-config": "gcloud's active configuration",
+    "adc-file": "the gcloud application default credentials file",
+    "metadata": "the Google Cloud metadata server",
+    "unprobed:metadata": "the Google Cloud metadata server",
+    "aws-profile": "the active AWS profile",
+    "default": "default",
+}
 
 
 def _expiry_detail(credential: LocalOAuthCredential) -> str:
@@ -244,6 +268,10 @@ def explain_auth(
         known = sorted(PROVIDERS)
         raise ValueError(f"Unknown provider {provider!r}. Known providers: {', '.join(known)}")
 
+    if config is not None and config.auth is not None:
+        return _with_backend_settings(_explain_managed(canonical, config, api_keys=api_keys, env=env),
+                                      settings, env)
+
     policy = _credential_policy(canonical)
     if policy in ("aws-chain", "azure-chain", "gcp-chain") or (
         _bound_definition(canonical) is not None and _bound_definition(canonical).hosted
@@ -258,7 +286,8 @@ def explain_auth(
     if policy == "oauth":
         override = claude_credentials_path if canonical == "claude-code" else codex_auth_path
         step = _oauth_step(canonical, override)
-        return AuthReport(provider=canonical, steps=(step,), configured=step.state == "selected")
+        return _with_backend_settings(AuthReport(provider=canonical, steps=(step,), configured=step.state == "selected"),
+                                      settings, env)
 
     config = RouterConfig(env=env, api_keys=api_keys)
     environment = env if env is not None else os.environ
@@ -286,21 +315,33 @@ def explain_auth(
             )
         )
 
+    blocked = False
     if policy == "oauth-unless-explicit":
         # The stored subscription login outranks env keys (AUTH-1): it
         # spends no money per token.  Only the explicit api_keys entry
-        # above can shadow it.
+        # above can shadow it.  An unusable or signed-out login BLOCKS the
+        # env keys (R3, 2026-09-22): they show as shadowed, and nothing is
+        # selected.
+        from .auth import xai_stored_state
+
         step = _xai_oauth_step(xai_credentials_path, shadowed=selected)
+        state_word = xai_stored_state(xai_credentials_path)
+        if state_word == "logged_out" and not selected:
+            step = AuthStep(kind="oauth-file", source=step.source, detail="signed out (marker present)", state="absent")
+            blocked = True
+        elif state_word == "unusable" and not selected:
+            blocked = True
         steps.append(step)
         selected = selected or step.state == "selected"
 
     for key in _declared_env_keys(canonical, ADAPTERS):
         if environment.get(key):
-            state = "shadowed" if selected else "selected"
-            steps.append(
-                AuthStep(kind=f"env:{key}", source=f"env ${key}", detail="set (value never shown)", state=state)
-            )
-            selected = True
+            state = "shadowed" if (selected or blocked) else "selected"
+            detail = "set (value never shown)"
+            if blocked and not selected:
+                detail = "set, blocked by the failed/signed-out subscription (pass it explicitly to use it)"
+            steps.append(AuthStep(kind=f"env:{key}", source=f"env ${key}", detail=detail, state=state))
+            selected = selected or not blocked
         else:
             steps.append(
                 AuthStep(kind=f"env:{key}", source=f"env ${key}", detail="not set", state="absent")
@@ -321,7 +362,82 @@ def explain_auth(
         )
         selected = True
 
-    return AuthReport(provider=canonical, steps=tuple(steps), configured=selected)
+    return _with_backend_settings(AuthReport(provider=canonical, steps=tuple(steps), configured=selected),
+                                  settings, env)
+
+
+def _with_backend_settings(report: AuthReport, settings: Mapping[str, str] | None,
+                           env: Mapping[str, str] | None) -> AuthReport:
+    """A door without a host prints its backend settings the way a cloud
+    door prints its host settings (AUTH-7; AUTH-10 amended 2026-09-30):
+    the Claude Code release the claude-code door claims, and where that
+    came from — the value a model's minimum-version refusal is about."""
+    import os
+    from dataclasses import replace
+
+    from .access import resolve_backend_settings
+
+    definition = _bound_definition(report.provider)
+    policy = (definition.access if definition is not None and definition.bound
+              else getattr(ADAPTERS.get(report.provider), "manifest", None))
+    if policy is None or policy.host is not None or (not policy.backend_settings and not settings):
+        return report
+    sources: dict[str, str] = {}
+    values = resolve_backend_settings(policy, settings, env if env is not None else os.environ, sources=sources)
+    return replace(report, settings=tuple(values.items()), setting_sources=tuple(sources.items()))
+
+
+def _explain_managed(provider: str, config: RouterConfig, *, api_keys, env) -> AuthReport:
+    """AUTH-15 mode B, rung by rung: the explicit entry, the named cloud
+    identity, the scope's saved connection; environment keys are shown
+    and marked not consulted.  Store reads only, no renewal (AUTH-7)."""
+    import os
+
+    from .router import _credentials_entry
+
+    auth = config.auth
+    walk = RouterConfig(env=env, api_keys=api_keys)
+    environment = env if env is not None else os.environ
+    steps: list[AuthStep] = []
+    selected = False
+    entry = _api_keys_source(walk, provider)
+    if entry is not None:
+        steps.append(AuthStep(kind="api_keys", source=_entry_source(provider, entry), detail="provided (value never shown)",
+                              state="selected"))
+        selected = True
+    else:
+        steps.append(AuthStep(kind="api_keys", source="explicit api_keys entry", detail="not provided", state="absent"))
+    named = _credentials_entry(config, provider)
+    if named is not None:
+        steps.append(AuthStep(kind="named_cloud", source=f'named credential "{named}"', detail="explicit",
+                              state="shadowed" if selected else "selected"))
+        selected = True
+    status = auth.status(provider)
+    if status.connection is not None:
+        detail = f"{status.connection.label} ({status.usability}" + (f", expires {status.expires_at}" if status.expires_at else "") + ")"
+        state = "shadowed" if selected else ("selected" if status.ready else "absent")
+        steps.append(AuthStep(kind="connection", source=f"saved connection {status.connection.id}", detail=detail, state=state))
+        selected = selected or state == "selected"
+    else:
+        detail = "signed out (marker present)" if status.logged_out else "none saved in this scope"
+        steps.append(AuthStep(kind="connection", source=f"saved connection in {auth.store.description}", detail=detail,
+                              state="absent"))
+    for key in _declared_env_keys(provider, ADAPTERS):
+        if environment.get(key):
+            steps.append(AuthStep(kind=f"env:{key}", source=f"env ${key}",
+                                  detail="set, not consulted under a managed Auth (pass it explicitly to use it)",
+                                  state="shadowed"))
+        else:
+            steps.append(AuthStep(kind=f"env:{key}", source=f"env ${key}", detail="not set", state="absent"))
+    from .registry import PROVIDERS
+
+    definition = PROVIDERS.get(provider)
+    if definition is not None and definition.placeholder_key is not None and not status.logged_out:
+        state = "shadowed" if selected else "selected"
+        steps.append(AuthStep(kind="placeholder", source="local-server placeholder key",
+                              detail=f"preset default for keyless {provider} servers", state=state))
+        selected = True
+    return AuthReport(provider=provider, steps=tuple(steps), configured=selected)
 
 
 def _entry_source(provider: str, entry: str | None) -> str:
@@ -368,6 +484,7 @@ def _explain_cloud(
     entry = _api_keys_source(config, canonical)
     has_entry = entry is not None
     resolved: dict[str, str] = {}
+    setting_sources: dict[str, str] = {}
     setting_error: str | None = None
     ctx = ChainContext(
         env=environment,
@@ -383,13 +500,18 @@ def _explain_cloud(
             endpoint_source = next(var for var in policy.host.endpoint_env if (environment.get(var) or "").strip())
             endpoint_source = f"env ${endpoint_source}"
     try:
+        problems: list[NotConfiguredError] = []
         resolved = resolve_settings(policy.host, settings, environment, provider=canonical,
-                                    profile=profile_settings(policy, ctx), endpoint=base_url)
+                                    profile=profile_settings(policy, ctx), endpoint=base_url,
+                                    sources=setting_sources, unprobed_ok=True, problems=problems)
+        if problems:
+            setting_error = str(problems[0]).splitlines()[0]
     except NotConfiguredError as exc:
         setting_error = str(exc).splitlines()[0]
     ctx.settings = resolved
     rendered: str | None = None
-    if policy.host is not None and setting_error is None:
+    pending = any(origin.startswith("unprobed:") for origin in setting_sources.values())
+    if policy.host is not None and setting_error is None and not pending:  # nothing missing, nothing unprobed
         try:
             rendered = render_base_url(policy.host, resolved, base_url, provider=canonical)
         except NotConfiguredError as exc:
@@ -417,4 +539,5 @@ def _explain_cloud(
         provider=canonical, steps=tuple(out), configured=configured, settings=shown,
         named=credential, named_meaning=named_meaning(policy, credential) if credential else None,
         base_url=rendered, base_url_source=(endpoint_source or "template") if rendered else None,
+        setting_sources=tuple(sorted(setting_sources.items())),
     )

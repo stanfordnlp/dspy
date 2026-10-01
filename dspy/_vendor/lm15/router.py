@@ -80,11 +80,12 @@ from typing import AsyncIterator, Iterator, Literal, Mapping, overload
 
 from .result import AsyncResponseStream, ResponseStream
 
-from .errors import AmbiguousModelError, NotConfiguredError, UnknownModelError
+from .errors import AmbiguousModelError, AuthOperationError, NotConfiguredError, UnknownModelError
 from .models import ModelInfo, ModelRegistry
 from .providers import Credential
 from .registry import PROVIDERS, Compat, ProviderDefinition, canonical_provider as _canonical_provider
 from .adaptation import AdaptationPolicy, check_policy
+from .features import AccessPolicy
 from .transports import Timeouts
 from .types import Request, Response, StreamEvent
 
@@ -196,9 +197,18 @@ def _table(adapters: Mapping[str, type], config: RouterConfig) -> Mapping[str, t
     """``adapters`` as a router uses it: unchanged when nothing is declared
     (the module views keep their identity), else wrapped with the config's
     declared providers."""
-    if not config.providers:
+    declared = config.providers
+    if config.auth is not None:
+        # A managed router also routes the connection-only doors (kimi-code,
+        # github-copilot): declared providers, marked as such, added only
+        # here because only a managed Auth can hold their credential.
+        from .login.declared import DECLARED_PROVIDERS
+
+        taken = {d.id for d in declared}
+        declared = declared + tuple(d for d in DECLARED_PROVIDERS if d.id not in taken)
+    if not declared:
         return adapters
-    return _Table(adapters, config.providers, is_async=adapters is ASYNC_ADAPTERS)
+    return _Table(adapters, declared, is_async=adapters is ASYNC_ADAPTERS)
 
 
 def _definitions(adapters: Mapping[str, type]) -> Mapping[str, ProviderDefinition]:
@@ -513,10 +523,24 @@ class RouterConfig:
     # wire).  Applied to every LM the router builds.
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
     providers: tuple[ProviderDefinition, ...] = field(default=(), kw_only=True)
+    # Managed authentication (spec/auth.md AUTH-15 mode B, ratified
+    # 2026-09-22): a ``lm15.login.Auth`` whose saved connections supply the
+    # credential when no explicit ``api_keys``/``credentials`` entry does.
+    # With it attached, environment keys, foreign CLI files and the
+    # machine's cloud identity are never consulted: a missing, expired,
+    # rejected or signed-out connection is a typed ``AuthOperationError``,
+    # never a silent switch to a metered key.  Keyless local servers still
+    # work without a connection.
+    auth: object | None = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
         check_policy(self.adaptations)
         _check_declared(self.providers)
+        if self.auth is not None:
+            from .login.manager import Auth
+
+            if not isinstance(self.auth, Auth):
+                raise TypeError(f"RouterConfig(auth=...) takes a lm15.login.Auth, got {type(self.auth).__name__}")
         if self.credentials is not None:
             from .features import NAMED_CREDENTIALS
 
@@ -902,6 +926,32 @@ def _env_key_for(provider: str, config: RouterConfig, adapters: Mapping[str, typ
     return env_keys[0]
 
 
+def _settings_entry(config: RouterConfig, provider: str) -> Mapping[str, str] | None:
+    """The ``settings`` entry for ``provider``, under any spelling of its name."""
+    for key, value in (config.settings or {}).items():
+        if _canonical_provider(key) == provider:
+            return value
+    return None
+
+
+def _backend_settings(config: RouterConfig, provider: str, cls: type,
+                      definition: "ProviderDefinition | None", *, sources: dict[str, str] | None = None) -> dict[str, str] | None:
+    """A door without a host: its backend settings (AUTH-10, amended
+    2026-09-30) from the config's entry, then the environment, then the
+    table's default — ``client_version`` on the subscription doors.  None
+    when the door declares none and the config gives none; a settings entry
+    for a door that reads none raises (NotConfiguredError), because nothing
+    would read it."""
+    from .access import resolve_backend_settings
+
+    policy: AccessPolicy = definition.access if definition is not None else getattr(cls, "manifest")
+    given = _settings_entry(config, provider)
+    if not given and not policy.backend_settings:
+        return None
+    env = config.env if config.env is not None else os.environ
+    return resolve_backend_settings(policy, given, env, sources=sources)
+
+
 def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], transport: object | None = None):
     cls = _adapter_for(resolution.provider, adapters)
     definition = _bound(resolution.provider, adapters)
@@ -916,7 +966,13 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
     base_url = _hosted_endpoint(config, resolution.provider, definition) if hosted else _base_url_entry(config, resolution.provider)
     if base_url is not None:
         extra["base_url"] = base_url
+    if not hosted:
+        door = _backend_settings(config, resolution.provider, cls, definition)
+        if door:
+            extra["settings"] = door
     policy = _credential_policy(resolution.provider, adapters)
+    if config.auth is not None:
+        return _build_managed_lm(resolution, config, adapters, cls, definition, extra, hosted, base_url)
     if policy == "oauth":
         return cls(**extra)  # self-resolving local OAuth constructor
     api_key, _ = _api_keys_entry(config, resolution.provider, adapters)
@@ -962,10 +1018,32 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         if origin is not None:
             _set_origin(lm, origin)
         return lm
-    if api_key is None and policy == "oauth-unless-explicit" and cls.has_stored_credential():
-        # A usable stored subscription login outranks ambient env keys:
-        # it spends no money per token (AUTH-1, oauth-unless-explicit).
-        return cls(**extra)  # self-resolving local OAuth constructor
+    if api_key is None and policy == "oauth-unless-explicit":
+        # A usable stored subscription login outranks ambient env keys: it
+        # spends no money per token (AUTH-1, oauth-unless-explicit).  An
+        # unusable or signed-out one BLOCKS them (R3, ratified 2026-09-22):
+        # a failed subscription is never silently replaced by a metered key.
+        probe = getattr(cls, "stored_credential_state", None)
+        if callable(probe):
+            state = probe()
+        else:  # an adapter written against the older boolean probe
+            state = "usable" if cls.has_stored_credential() else "absent"
+        if state == "usable":
+            return cls(**extra)  # self-resolving local OAuth constructor
+        if state in ("unusable", "logged_out"):
+            env_keys = _declared_env_keys(resolution.provider, adapters)
+            env = config.env if config.env is not None else os.environ
+            present = [key for key in env_keys if env.get(key)]
+            what = "was signed out" if state == "logged_out" else "is expired and cannot be renewed"
+            raise MissingCredentialError(
+                f"the {resolution.provider!r} subscription login {what}. "
+                + (f"${present[0]} is set but is used only when passed explicitly: " if present else "")
+                + f"sign in again ({cls.manifest.login_hint}), or pass the key deliberately with "
+                f"RouterConfig(api_keys={{{resolution.provider!r}: \"...\"}}).",
+                provider=resolution.provider,
+                env_keys=env_keys,
+                credential_hint=cls.manifest.login_hint,
+            )
     origin: str | None = None
     if api_key is None:
         env = config.env if config.env is not None else os.environ
@@ -1003,6 +1081,87 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
     return lm
 
 
+def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], cls: type,
+                      definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None):
+    """AUTH-15 mode B.  Order: explicit ``api_keys`` entry; explicit named
+    cloud identity; the scope's saved connection (renewed per request);
+    a keyless local server's placeholder.  Never an environment key, a
+    foreign CLI file or the machine's cloud chain."""
+    from .login.manager import Auth
+
+    auth: Auth = config.auth  # type: ignore[assignment]
+    provider = resolution.provider
+    api_key, explicit = _api_keys_entry(config, provider, adapters)
+    named = _credentials_entry(config, provider)
+    origin: str | None = None
+    account_id: str | None = None
+    if not explicit and named is None:
+        try:
+            saved = auth.request_auth(provider)
+        except AuthOperationError as exc:
+            if exc.reason == "login_required" and definition is not None and definition.placeholder_key is not None \
+                    and not auth.status(provider).logged_out:
+                api_key = definition.placeholder_key
+                origin = "the local server's placeholder key"
+            elif exc.reason == "login_required" and definition is not None and definition.hosted:
+                raise AuthOperationError(
+                    f"{provider}: no saved connection in this scope; the machine's cloud identity is not used "
+                    "under a managed Auth — save a named identity (Auth.configure(method='cloud')) or pass "
+                    "RouterConfig(credentials=...) explicitly",
+                    reason="login_required", stage="resolution", recovery="select_connection", provider=provider,
+                ) from exc
+            else:
+                raise
+        else:
+            connection = auth.status(provider).connection
+            if saved.named is not None:
+                named = saved.named  # a saved cloud recipe names the identity; the chain rung runs
+            else:
+                api_key = auth.credential_provider(provider)
+                account_id = saved.account_id
+                if saved.base_url is not None and base_url is None:
+                    base_url = saved.base_url
+                    extra["base_url"] = base_url
+                if saved.headers and definition is not None and not definition.hosted:
+                    from dataclasses import replace as _replace
+
+                    merged = tuple(definition.access.headers) + tuple(
+                        (k, v) for k, v in saved.headers.items() if k.lower() not in {h[0].lower() for h in definition.access.headers}
+                    )
+                    definition = _replace(definition, access=_replace(definition.access, headers=merged))
+            origin = (f"managed connection {connection.id} ({connection.label})" if connection is not None
+                      else "managed connection")
+    if hosted:
+        from .cloud.chains import ChainContext, credential_provider, profile_settings
+        from .cloud.hosts import resolve_settings
+
+        env = config.env if config.env is not None else os.environ
+        given = (config.settings or {}).get(provider)
+        ctx = ChainContext.online(env)
+        settings = resolve_settings(definition.access.host, given, env, provider=provider,
+                                    profile=profile_settings(definition.access, ctx), endpoint=base_url)
+        ctx.settings = settings
+        if api_key is None and named is not None:
+            api_key = credential_provider(definition.access, ctx, named=named)
+        if api_key is None:
+            raise AuthOperationError(
+                f"{provider}: no credential for this cloud door under a managed Auth",
+                reason="login_required", stage="resolution", recovery="select_connection", provider=provider,
+            )
+        if definition.compat is not None:
+            extra["compat"] = definition.compat
+        lm = cls(api_key=api_key, access=definition.access, settings=settings, **extra)
+    elif definition is not None and definition.bound:
+        lm = cls(api_key=api_key, compat=definition.compat, access=definition.access, **extra)
+    else:
+        if account_id is not None:
+            extra["account_id"] = account_id
+        lm = cls(api_key=api_key, **extra)
+    if origin is not None:
+        _set_origin(lm, origin)
+    return lm
+
+
 PLANNING_KEY = "lm15-planning"
 
 
@@ -1030,6 +1189,10 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         # The Codex backend derives an account id from its token at
         # construction; a placeholder token has none, so name one.
         extra["account_id"] = PLANNING_KEY
+    if definition is None or not definition.hosted:
+        door = _backend_settings(config, resolution.provider, cls, definition)
+        if door:
+            extra["settings"] = door
     if definition is None:
         return cls(**extra)
     if definition.hosted:
@@ -1076,6 +1239,10 @@ LITELLM_PROVIDER_PREFIXES: Mapping[str, str] = MappingProxyType({
     "hosted_vllm": "vllm",
     "moonshot": "moonshotai",
     "azure": "azure-chat",
+    "deepinfra": "deepinfra",
+    "together_ai": "together",
+    "fireworks_ai": "fireworks",
+    "parasail": "parasail",
 })
 
 # The same prefixes in canonical spelling, for the collision check a

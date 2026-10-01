@@ -35,8 +35,9 @@ manifest is its access policy.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Mapping
 
 from .auth import (
     CLAUDE_CODE_LOGIN_HINT,
@@ -46,7 +47,7 @@ from .auth import (
     get_claude_code_access_token,
     get_codex_cli_access_token,
     get_xai_access_token,
-    usable_xai_credential,
+    xai_stored_state,
 )
 from .compat import ANTHROPIC_PRESET_BASE_URLS, OPENAI_CHAT_PRESET_BASE_URLS, OPENAI_RESPONSES_PRESET_BASE_URLS
 from .errors import NotConfiguredError
@@ -87,8 +88,17 @@ TYPESAFE_API = AccessPolicy(
     auth_scheme=("bearer",),
 )
 
-DEFAULT_CLAUDE_CODE_VERSION = "2.1.170"
+# The Claude Code release this door says it is (``user-agent:
+# claude-cli/<version>``).  Anthropic's server reads it: a model can require
+# a newer release (claude-opus-5-5 refuses anything before 2.1.280, live
+# 2026-09-23 and 2026-09-30).  The latest release when last receipted
+# (changes/2026-09-30-claude-code-client-version.md); callers move it
+# without a release through the ``client_version`` setting or
+# LM15_CLAUDE_CODE_VERSION (AUTH-10 backend settings).
+DEFAULT_CLAUDE_CODE_VERSION = "2.1.285"
 DEFAULT_CLAUDE_CODE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude."
+CLAUDE_CODE_VERSION_ENV = "LM15_CLAUDE_CODE_VERSION"
+CODEX_CLIENT_VERSION_ENV = "LM15_CODEX_CLIENT_VERSION"
 
 # models=True: the Anthropic /v1/models endpoint answers to the OAuth
 # headers (validated live 2026-08-31, HTTP 200). Files and batch are
@@ -107,6 +117,8 @@ CLAUDE_CODE = AccessPolicy(
     ),
     login_hint=CLAUDE_CODE_LOGIN_HINT,
     backend="claude-code",
+    backend_options={"client_version": DEFAULT_CLAUDE_CODE_VERSION},
+    backend_settings=(HostSetting("client_version", env=(CLAUDE_CODE_VERSION_ENV,)),),
     system_prefix=DEFAULT_CLAUDE_CODE_SYSTEM_PROMPT,
 )
 
@@ -140,6 +152,7 @@ OPENAI_CODEX = AccessPolicy(
     login_hint=OPENAI_CODEX_LOGIN_HINT,
     backend="chatgpt-codex",
     backend_options={"client_version": DEFAULT_CODEX_CLIENT_VERSION},
+    backend_settings=(HostSetting("client_version", env=(CODEX_CLIENT_VERSION_ENV,)),),
     system_prefix=DEFAULT_CODEX_INSTRUCTIONS,
     base_url=DEFAULT_CODEX_BASE_URL,
 )
@@ -274,6 +287,47 @@ MOONSHOTAI = AccessPolicy(
     auth_modes=("bearer",),
     env_keys=MOONSHOTAI_ENV_KEYS,
     base_url=OPENAI_CHAT_PRESET_BASE_URLS["moonshotai"],
+)
+
+# ─── Open-model inference hosts (changes/2026-09-26-inference-hosts-live.md) ───
+#
+# DeepInfra, Together AI, Fireworks AI and Parasail: a bearer key each, the
+# provider's own documented variable (docs examples use exactly these names;
+# lm15-contract/scrapes/<id>/pages), prepaid or card-billed balances (HTTP
+# 402 when drained on DeepInfra and Together).  Each also sells batch jobs
+# and files on the same key, and some sell images, speech or video; none is
+# registered — `supports` names what has a receipt.
+
+DEEPINFRA = AccessPolicy(
+    provider="deepinfra",
+    supports=EndpointSupport(complete=True, stream=True, models=True),
+    auth_modes=("bearer",),
+    env_keys=("DEEPINFRA_API_KEY",),
+    base_url=OPENAI_CHAT_PRESET_BASE_URLS["deepinfra"],
+)
+
+TOGETHER = AccessPolicy(
+    provider="together",
+    supports=EndpointSupport(complete=True, stream=True, models=True),
+    auth_modes=("bearer",),
+    env_keys=("TOGETHER_API_KEY",),
+    base_url=OPENAI_CHAT_PRESET_BASE_URLS["together"],
+)
+
+FIREWORKS = AccessPolicy(
+    provider="fireworks",
+    supports=EndpointSupport(complete=True, stream=True, models=True),
+    auth_modes=("bearer",),
+    env_keys=("FIREWORKS_API_KEY",),
+    base_url=OPENAI_CHAT_PRESET_BASE_URLS["fireworks"],
+)
+
+PARASAIL = AccessPolicy(
+    provider="parasail",
+    supports=EndpointSupport(complete=True, stream=True, models=True),
+    auth_modes=("bearer",),
+    env_keys=("PARASAIL_API_KEY",),
+    base_url=OPENAI_CHAT_PRESET_BASE_URLS["parasail"],
 )
 
 # Moonshot's Responses wire (responses--create.md): the same key and root,
@@ -548,13 +602,20 @@ AZURE_ANTHROPIC = AccessPolicy(
 # else {loc}-aiplatform.googleapis.com (vertex-locations.md:40-63, :91).
 _VERTEX_BASE = "https://{location_host}/v1/projects/{project}/locations/{location}"
 
+# API keys (amended 2026-09-26): Google accepts a Vertex API key in
+# ``x-goog-api-key`` on the project-scoped global and regional hosts
+# (live: generateContent, streamGenerateContent, countTokens), so a key
+# user keeps residency control.  Key first, then bearer: a string is a key
+# unless it has an access token's shape (``auth_header``).  No env key:
+# ``GOOGLE_API_KEY`` is commonly set for the Gemini API, and reading it
+# here would silently replace the ADC identity (and its billing) with it.
 VERTEX = AccessPolicy(
     provider="vertex",
     supports=EndpointSupport(complete=True, stream=True),  # caches/batches/models: live cells
     credential_policy="gcp-chain",
-    auth_modes=("google-oauth",),
+    auth_modes=("x-goog-api-key", "google-oauth"),
     env_keys=(),
-    auth_scheme=("bearer",),
+    auth_scheme=("x-api-key", "bearer"),
     backend="vertex",
     host=HostSpec(base_url=_VERTEX_BASE + "/publishers/google", settings=(_GCP_PROJECT, _GCP_LOCATION)),
 )
@@ -624,6 +685,92 @@ SGLANG = AccessPolicy(
 )
 
 
+# ─── Backend settings (AUTH-10, amended 2026-09-30) ──────────────────
+
+
+def resolve_backend_settings(
+    policy: AccessPolicy,
+    given: "Mapping[str, str] | None",
+    env: "Mapping[str, str] | None" = None,
+    *,
+    sources: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """The door's backend settings: the caller's value, then ``env`` (when
+    given — the router passes the environment, an adapter built by hand
+    does not), then the table's ``backend_options`` value.  ``sources``
+    receives each origin in the AUTH-10 ``from`` vocabulary (``explicit``,
+    ``env:<VAR>``, ``default``).  A name the door does not declare is a
+    configuration error that lists the names it does: a setting nothing
+    reads would otherwise be dropped with nothing said."""
+    given = {str(k): str(v) for k, v in (given or {}).items()}
+    known = [setting.name for setting in policy.backend_settings]
+    unknown = sorted(set(given) - set(known))
+    if unknown:
+        hint = f"known: {', '.join(known)}" if known else "this door takes no settings"
+        raise NotConfiguredError(
+            f"{policy.provider}: unknown setting(s) {', '.join(repr(n) for n in unknown)}; {hint}",
+            provider=policy.provider,
+            credential_hint=(f"Pass only {', '.join(known)} for {policy.provider}" if known
+                             else f"Remove the settings entry for {policy.provider}"),
+        )
+    out: dict[str, str] = {}
+    record = sources if sources is not None else {}
+    for setting in policy.backend_settings:
+        value = given.get(setting.name) or ""
+        origin = "explicit" if value else ""
+        if not value and env is not None:
+            for var in setting.env:
+                candidate = env.get(var)
+                if candidate:
+                    value, origin = candidate, f"env:{var}"
+                    break
+        if not value:
+            value, origin = policy.backend_options[setting.name], "default"
+        out[setting.name] = value
+        record[setting.name] = origin
+    return out
+
+
+def with_backend_settings(policy: AccessPolicy, values: "Mapping[str, str]") -> AccessPolicy:
+    """The policy with these resolved backend settings in ``backend_options``.
+
+    ``client_version`` on the ``claude-code`` backend is also the version the
+    ``user-agent`` header claims (``claude-cli/<client_version>``): the one
+    backend setting that reaches a header.  On ``chatgpt-codex`` it is the
+    ``/models`` query parameter, read from ``backend_options``."""
+    from dataclasses import replace
+
+    if not values:
+        return policy
+    options = {**policy.backend_options, **values}
+    if options == dict(policy.backend_options):
+        return policy
+    out = replace(policy, backend_options=options)
+    if policy.backend == "claude-code" and "client_version" in values:
+        out = out.with_headers({"user-agent": f"claude-cli/{options['client_version']}"})
+    return out
+
+
+# Anthropic's refusal when the claimed Claude Code release is older than a
+# model requires (live 2026-09-23, 2026-09-30; errors/cases/claude-code.json).
+_CLAUDE_CODE_FLOOR = re.compile(r"Claude Code (\S+) does not support this model; version (\S+) or newer is required")
+
+
+def claude_code_version_guidance(message: str) -> str:
+    """The claude-code door's minimum-version refusal, with what an lm15
+    caller changes.  The server says "run 'claude update'", which does not
+    move the version lm15 claims; the guidance names the setting that does
+    (AUTH-10 backend settings).  Any other message is returned unchanged."""
+    match = _CLAUDE_CODE_FLOOR.search(message)
+    if match is None or "\n\n  To fix:" in message:
+        return message
+    required = match.group(2)
+    return (f"{message}\n\n  To fix:\n"
+            "    - lm15 sends this version itself; updating Claude Code does not change it\n"
+            f"    - Set the claude-code setting client_version to {required} or newer "
+            f"(or {CLAUDE_CODE_VERSION_ENV}={required})\n")
+
+
 # ─── Credential loading, keyed by provider ───────────────────────────
 
 
@@ -658,11 +805,6 @@ _CREDENTIAL_LOADERS: dict[str, Callable[[str | os.PathLike[str] | None], LoadedC
     "xai": _load_xai,
 }
 
-_STORED_PROBES: dict[str, Callable[[], bool]] = {
-    "xai": usable_xai_credential,
-}
-
-
 def load_credential(
     policy: AccessPolicy,
     api_key: Credential | None,
@@ -692,8 +834,19 @@ def load_credential(
 def has_stored_credential(policy: AccessPolicy) -> bool:
     """Offline probe (reads files, never the network) for the router's
     ``oauth-unless-explicit`` chain: is a usable login stored locally?"""
-    probe = _STORED_PROBES.get(policy.provider)
-    return bool(probe()) if probe is not None else False
+    return stored_credential_state(policy) == "usable"
+
+
+_STORED_STATES: dict[str, Callable[[], str]] = {
+    "xai": xai_stored_state,
+}
+
+
+def stored_credential_state(policy: AccessPolicy) -> str:
+    """``usable`` | ``unusable`` | ``logged_out`` | ``absent`` (spec/auth.md
+    AUTH-1 ``oauth-unless-explicit``, R3).  Reads files only."""
+    probe = _STORED_STATES.get(policy.provider)
+    return probe() if probe is not None else "absent"
 
 
 # AUTH-2 (ratified 2026-09-06, lm15-contract/changes/2026-09-06-decisions.md D1): the
@@ -736,6 +889,19 @@ def select_scheme(policy: AccessPolicy, credential: CredentialValue) -> AuthSche
     )
 
 
+def looks_like_access_token(text: str) -> str | None:
+    """The token shape a plain string has, if any (AUTH-2, amended
+    2026-09-19 and 2026-09-26): ``"JWT"`` (JWS compact: Entra, OIDC, a
+    Google self-signed JWT) or ``"Google access token"`` (``ya29.``, what
+    every Google OAuth endpoint issues: user, service account, metadata,
+    STS, impersonation).  No key any door here issues has either shape."""
+    if text.startswith("ya29."):
+        return "Google access token"
+    if _looks_like_jwt(text):
+        return "JWT"
+    return None
+
+
 def _looks_like_jwt(text: str) -> bool:
     """Three base64url segments whose first decodes to a JSON object with
     ``alg`` — the JWS compact form every Entra/OAuth access token uses."""
@@ -766,7 +932,7 @@ def auth_header(
     ``_emit`` handles those."""
     value = coerce_credential(credential)
     scheme = select_scheme(policy, value)
-    if scheme in ("api-key", "x-api-key") and "bearer" in policy.auth_scheme and _looks_like_jwt(value.value):
+    if scheme in ("api-key", "x-api-key") and "bearer" in policy.auth_scheme and looks_like_access_token(value.value):
         # A plain string reads as an API key, and on this door the key header
         # comes before bearer.  A JWT is never an API key on any door lm15
         # has: it is an Entra/OAuth access token that a token-provider
@@ -777,7 +943,9 @@ def auth_header(
         # which the request can succeed — and the doctor says so.  Before
         # that date this was a refusal naming the BearerToken wrap; the
         # wrap is still accepted and still the form to use when nothing
-        # should be read from a token's shape.
+        # should be read from a token's shape.  Amended 2026-09-26: a Google
+        # access token (``ya29.``) is read the same way, so an access token
+        # string on the vertex door (key header first) still goes as bearer.
         scheme = "bearer"
     if scheme == "bearer":
         return ("Authorization", f"Bearer {value.value}")

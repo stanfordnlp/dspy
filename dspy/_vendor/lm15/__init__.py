@@ -166,6 +166,7 @@ from .errors import (
     UnsupportedModelError,
     UnsupportedFeatureError,
     NotConfiguredError,
+    AuthOperationError,
     RETRYABLE_ERRORS,
 )
 
@@ -222,16 +223,6 @@ from .transports import Timeouts
 # ── MAP-13 adaptations (lm15.adaptation) ──────────────────────────────
 from .adaptation import Adaptation, AdaptationPolicy
 
-# ── Tool derivation (lm15.tools) ─────────────────────────────────────
-from .tools import (
-    DerivedParam,
-    ToolConfig,
-    ToolDerivation,
-    ToolDerivationError,
-    tool,
-)
-from .tools import derive as derive_tool
-
 # ── Judgments (changes/2026-09-17-judgments.md) ─────────────────────
 from .judgments import choice, judgments, score, yes_no
 from .types import data
@@ -270,8 +261,10 @@ __all__ = [
     "ProviderError", "AuthError", "BillingError", "RateLimitError",
     "InvalidRequestError", "ContextLengthError", "TimeoutError",
     "ServerError", "UnsupportedModelError", "UnsupportedFeatureError",
-    "NotConfiguredError", "RETRYABLE_ERRORS",
+    "NotConfiguredError", "AuthOperationError", "RETRYABLE_ERRORS",
     "AccessPolicy", "EndpointSupport",
+    # managed authentication (lm15.login / lm15.interactive; loaded on first use)
+    "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "providers", "connect",
     # providers
     "choice", "judgments", "score", "yes_no", "data",
     "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
@@ -292,7 +285,29 @@ __all__ = [
     "Adaptation", "AdaptationPolicy",
     "UnknownModelError",
     "AmbiguousModelError", "MissingCredentialError",
-    # tool derivation (lm15.tools)
-    "tool", "derive_tool", "ToolConfig", "ToolDerivation", "DerivedParam",
-    "ToolDerivationError",
 ]
+
+
+# ── Managed authentication: loaded on first use ──────────────────────
+# ``lm15.login`` pulls in threading, http.server and the login flows;
+# nothing on the request path needs them, and lm15's import time is a
+# promise, so these names resolve lazily (PEP 562).
+_LAZY_LOGIN = {
+    "Auth": (".login", "Auth"),
+    "AsyncAuth": (".login", "AsyncAuth"),
+    "BoundClient": (".login", "BoundClient"),
+    "TerminalUI": (".login", "TerminalUI"),
+    "providers": (".login", "providers"),
+    "connect": (".interactive", "connect"),
+}
+
+
+def __getattr__(name: str):
+    target = _LAZY_LOGIN.get(name)
+    if target is None:
+        raise AttributeError(f"module 'lm15' has no attribute {name!r}")
+    import importlib
+
+    value = getattr(importlib.import_module(target[0], __package__), target[1])
+    globals()[name] = value
+    return value
