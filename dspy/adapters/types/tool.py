@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, get_origin, 
 
 import json_repair
 import pydantic
+import pydantic_core
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
@@ -111,7 +112,7 @@ class Tool(Type):
             else:
                 args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
-                args[k]["default"] = default_values[k]
+                args[k]["default"] = _to_json_default(default_values[k])
             if arg_desc and k in arg_desc:
                 args[k]["description"] = arg_desc[k]
 
@@ -518,6 +519,14 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "args": arguments,
     }
+
+
+def _to_json_default(value: Any) -> Any:
+    """Convert a parameter default to its JSON form, e.g. an Enum member to its value."""
+    try:
+        return pydantic_core.to_jsonable_python(value)
+    except pydantic_core.PydanticSerializationError:
+        return value
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
