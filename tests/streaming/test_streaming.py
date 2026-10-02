@@ -552,8 +552,18 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
         (['{"summary": "Paris is big.", "answer": "Paris"}'], {"summary": "Paris is big.", "answer": "Paris"}),
         (['{"summary": ', "4", "2", ', "answer": ', "4", "2", "}"], {"summary": "42", "answer": "42"}),
         (['{"summary": tr', 'ue, "answer": fal', "se}"], {"summary": "True", "answer": "False"}),
+        (['{"summary": 42, "answer": ', "42"], {"summary": "42", "answer": "42"}),
+        (['{"summary": "', "line\nbreak", '", "answer": "ok"}'], {"summary": "line\nbreak", "answer": "ok"}),
     ],
-    ids=["token-sized", "multi-token", "single-chunk", "coerced-number", "coerced-boolean"],
+    ids=[
+        "token-sized",
+        "multi-token",
+        "single-chunk",
+        "coerced-number",
+        "coerced-boolean",
+        "truncated-number",
+        "repaired-newline",
+    ],
 )
 async def test_stream_listener_json_adapter_field_boundary(parts, expected):
     async def stream(*args, **kwargs):
@@ -586,6 +596,79 @@ async def test_stream_listener_json_adapter_field_boundary(parts, expected):
     assert prediction is not None
     assert prediction.summary == expected["summary"]
     assert prediction.answer == expected["answer"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("annotation, answer", [("int", 42), ("list[int]", [1, 2])])
+async def test_stream_listener_json_adapter_typed_single_chunk(annotation, answer):
+    async def stream(*args, **kwargs):
+        content = f'{{"answer": {answer}, "other": "other"}}'
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=content))])
+
+    program = dspy.streamify(
+        dspy.Predict(f"question -> answer: {annotation}, other: str"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+        include_final_prediction_in_output_stream=False,
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            values = [value async for value in program(question="q")]
+    assert len(values) == 1
+    assert isinstance(values[0], dspy.Prediction)
+    assert values[0].answer == answer
+    assert values[0].other == "other"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "prefix, combined_finish, truncated",
+    [("", False, False), ("", True, False), ("```json\n", False, False), ("```json\n", True, False), ("", True, True)],
+)
+async def test_stream_listener_json_adapter_reuse_at_response_boundary(prefix, combined_finish, truncated):
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question -> answer, other: dict[str, str]")
+
+        def forward(self, question):
+            self.predict(question=question)
+            return self.predict(question=question)
+
+    call_count = 0
+
+    async def stream(*args, **kwargs):
+        nonlocal call_count
+        parts = [
+            prefix + '{"answer":',
+            ' "good",',
+            ' "other": {"answer":',
+            ' "bad"}}' + ("\n```" if prefix else ""),
+        ]
+        if truncated and call_count % 2 == 0:
+            parts = ['{"other": {}, "answer":', "42"]
+        call_count += 1
+        for index, part in enumerate(parts):
+            finish_reason = "stop" if combined_finish and index == len(parts) - 1 else None
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part), finish_reason=finish_reason)]
+            )
+        if not combined_finish:
+            yield ModelResponseStream(
+                model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=None), finish_reason="stop")]
+            )
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer", allow_reuse=True)],
+        include_final_prediction_in_output_stream=False,
+    )
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            for _ in range(2):
+                values = [value async for value in program(question="q")]
+                assert all(isinstance(value, StreamResponse) for value in values)
+                assert [value.chunk for value in values] == (["42", "good"] if truncated else ["good", "good"])
+                assert all(value.is_last_chunk for value in values)
 
 
 @pytest.mark.anyio

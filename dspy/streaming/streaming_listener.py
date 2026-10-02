@@ -16,6 +16,7 @@ from dspy.streaming.messages import StreamResponse
 from dspy.utils.lazy_import import require
 
 jiter = require("jiter")
+json_repair = require("json_repair")
 
 if TYPE_CHECKING:
     from litellm import ModelResponseStream
@@ -56,7 +57,7 @@ class StreamListener:
         self.cache_hit = False
         self.allow_reuse = allow_reuse
 
-        self.json_adapter_state = {"field_accumulated_messages": "", "emitted_length": 0}
+        self.json_adapter_state = {"field_accumulated_messages": "", "emitted_length": 0, "response_complete": False}
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -130,6 +131,28 @@ class StreamListener:
 
         if self.stream_end:
             if self.allow_reuse:
+                if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+                    try:
+                        message = chunk.choices[0].delta.content
+                        finish_reason = chunk.choices[0].finish_reason
+                    except Exception:
+                        return
+                    if not message:
+                        if finish_reason is not None:
+                            self.json_adapter_state["response_complete"] = True
+                        return
+                    if finish_reason is not None and not self.json_adapter_state["response_complete"]:
+                        self.json_adapter_state["response_complete"] = True
+                        return
+                    if not self.json_adapter_state["response_complete"]:
+                        try:
+                            jiter.from_json(self.json_adapter_state["field_accumulated_messages"].encode("utf-8"))
+                        except ValueError:
+                            # This field ended, but the rest of its response is still arriving.
+                            self.json_adapter_state["field_accumulated_messages"] += message
+                            return
+                        if not message.lstrip().startswith("{"):
+                            return
                 # Clear up the state for the next stream.
                 self.stream_end = False
                 self.cache_hit = False
@@ -137,6 +160,7 @@ class StreamListener:
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
                 self.json_adapter_state["emitted_length"] = 0
+                self.json_adapter_state["response_complete"] = False
                 self.stream_start = False
             else:
                 return
@@ -159,8 +183,20 @@ class StreamListener:
         # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
         try:
             chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
+            if not chunk_message:
+                if (
+                    isinstance(settings.adapter, JSONAdapter)
+                    and self._output_type is str
+                    and chunk.choices[0].finish_reason is not None
+                ):
+                    return self.finalize()
                 return
+            if (
+                isinstance(settings.adapter, JSONAdapter)
+                and self._output_type is str
+                and chunk.choices[0].finish_reason is not None
+            ):
+                self.json_adapter_state["response_complete"] = True
         except Exception:
             return
 
@@ -182,7 +218,11 @@ class StreamListener:
             # ChatAdapter to identify the start of the stream of our target field. Once the start_indicator, i.e., "[["
             # for ChatAdapter, is found, we start checking the next tokens
             self.field_start_queue.append(chunk_message)
-            if not isinstance(settings.adapter, JSONAdapter) or start_identifier not in chunk_message:
+            if (
+                not isinstance(settings.adapter, JSONAdapter)
+                or self._output_type is not str
+                or start_identifier not in chunk_message
+            ):
                 return
             chunk_message = ""
 
@@ -218,6 +258,9 @@ class StreamListener:
 
         if self.stream_start and chunk_message:
             if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+                if chunk.choices[0].finish_reason is not None:
+                    self.json_adapter_state["field_accumulated_messages"] += chunk_message
+                    return self.finalize()
                 return self._json_adapter_handle_string_chunk(chunk_message)
 
             # The stream is started, we keep returning the token until we see the start of the next field.
@@ -386,11 +429,22 @@ class StreamListener:
             A StreamResponse with the remaining buffered tokens and is_last_chunk=True,
             or None if there are no buffered tokens or the stream hasn't started.
         """
+        if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+            # A top-level Prediction is also a response boundary for repaired JSON.
+            self.json_adapter_state["response_complete"] = True
         if self.stream_end or not self.stream_start:
             # Stream already ended or never started, nothing to finalize
             return None
 
         self.stream_end = True
+        if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+            # JSONAdapter accepts repaired/truncated JSON; drain the new string buffer
+            # with the same repair and coercion rather than silently losing the field.
+            parsed = json_repair.loads(self.json_adapter_state["field_accumulated_messages"])
+            if isinstance(parsed, dict) and self.signature_field_name in parsed:
+                value = str(parsed[self.signature_field_name])
+                token = value[self.json_adapter_state["emitted_length"] :]
+                return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=True)
         if self.field_end_queue.qsize() > 0:
             token = self.flush()
             if token:
