@@ -55,7 +55,7 @@ class StreamListener:
         self.cache_hit = False
         self.allow_reuse = allow_reuse
 
-        self.json_adapter_state = {"field_accumulated_messages": ""}
+        self.json_adapter_state = {"field_accumulated_messages": "", "emitted_length": 0}
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -135,6 +135,7 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_messages"] = ""
+                self.json_adapter_state["emitted_length"] = 0
                 self.stream_start = False
             else:
                 return
@@ -180,7 +181,9 @@ class StreamListener:
             # ChatAdapter to identify the start of the stream of our target field. Once the start_indicator, i.e., "[["
             # for ChatAdapter, is found, we start checking the next tokens
             self.field_start_queue.append(chunk_message)
-            return
+            if not isinstance(settings.adapter, JSONAdapter) or start_identifier not in chunk_message:
+                return
+            chunk_message = ""
 
         if len(self.field_start_queue) > 0 and not self.stream_start:
             # We keep appending the tokens to the queue until we have a full identifier or the concanated
@@ -213,6 +216,9 @@ class StreamListener:
                 return
 
         if self.stream_start and chunk_message:
+            if isinstance(settings.adapter, JSONAdapter) and self._output_type is str:
+                return self._json_adapter_handle_string_chunk(chunk_message)
+
             # The stream is started, we keep returning the token until we see the start of the next field.
             self.field_end_queue.put(chunk_message)
 
@@ -238,6 +244,27 @@ class StreamListener:
             else:
                 # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
                 return self._default_handle_stream_chunk(token, end_identifier)
+
+    def _json_adapter_handle_string_chunk(self, chunk_message: str) -> StreamResponse | None:
+        self.json_adapter_state["field_accumulated_messages"] += chunk_message
+        accumulated = self.json_adapter_state["field_accumulated_messages"].encode("utf-8")
+        try:
+            parsed = jiter.from_json(accumulated, partial_mode="trailing-strings")
+            value = parsed.get(self.signature_field_name)
+            if not isinstance(value, str):
+                return None
+            # Unlike trailing-strings mode, partial_mode=True omits unfinished strings.
+            # A completed value ends this field even if the same chunk contains the next field.
+            completed = jiter.from_json(accumulated, partial_mode=True)
+        except ValueError:
+            # An escape sequence may be split across provider chunks.
+            return None
+
+        self.stream_end = self.signature_field_name in completed
+        token = value[self.json_adapter_state["emitted_length"] :]
+        self.json_adapter_state["emitted_length"] = len(value)
+        if token or self.stream_end:
+            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> StreamResponse | None:
         self.json_adapter_state["field_accumulated_messages"] += chunk_message
