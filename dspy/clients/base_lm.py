@@ -54,10 +54,14 @@ def _import_lm_class(class_path: str) -> type:
             continue
 
         if not isinstance(obj, type):
-            raise TypeError(f"Serialized LM class `{class_path}` did not resolve to a class.")
+            raise TypeError(
+                f"Serialized LM class `{class_path}` did not resolve to a class."
+            )
         return obj
 
-    raise ImportError(f"Could not import serialized LM class `{class_path}`.") from last_error
+    raise ImportError(
+        f"Could not import serialized LM class `{class_path}`."
+    ) from last_error
 
 
 class BaseLM:
@@ -113,11 +117,15 @@ class BaseLM:
         self.cache = cache
         self.callbacks = list(callbacks or [])
         self.num_retries = num_retries
-        self.kwargs = self._get_initial_kwargs(temperature=temperature, max_tokens=max_tokens, **kwargs)
+        self.kwargs = self._get_initial_kwargs(
+            temperature=temperature, max_tokens=max_tokens, **kwargs
+        )
         self.history = []
         self._warned_zero_temp_rollout = False
 
-    def _get_initial_kwargs(self, *, temperature, max_tokens, **kwargs) -> dict[str, Any]:
+    def _get_initial_kwargs(
+        self, *, temperature, max_tokens, **kwargs
+    ) -> dict[str, Any]:
         return dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     @property
@@ -152,7 +160,9 @@ class BaseLM:
 
     def _record_response(self, response, prompt, messages, outputs, kwargs, request=None):
         if not getattr(response, "cache_hit", False) and settings.usage_tracker:
-            settings.usage_tracker.add_usage(self.model, dict(getattr(response, "usage", {}) or {}))
+            settings.usage_tracker.add_usage(
+                self.model, dict(getattr(response, "usage", {}) or {})
+            )
 
         if settings.disable_history:
             return outputs
@@ -225,7 +235,11 @@ class BaseLM:
             A dictionary that can be passed to `BaseLM.load_state`. The state
             excludes API keys.
         """
-        filtered_kwargs = {key: value for key, value in self.kwargs.items() if key not in ("api_key", LM_CLASS_STATE_KEY)}
+        filtered_kwargs = {
+            key: value
+            for key, value in self.kwargs.items()
+            if key not in ("api_key", LM_CLASS_STATE_KEY)
+        }
         return {
             LM_CLASS_STATE_KEY: f"{type(self).__module__}.{type(self).__qualname__}",
             "model": self.model,
@@ -236,7 +250,9 @@ class BaseLM:
         }
 
     @classmethod
-    def load_state(cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False) -> "BaseLM":
+    def load_state(
+        cls, state: dict[str, Any], *, allow_custom_lm_class: bool = False
+    ) -> "BaseLM":
         """Reconstruct an LM from `dump_state` output.
 
         Legacy states without a class marker load as `dspy.LM`. Custom LM
@@ -280,9 +296,16 @@ class BaseLM:
 
             lm_cls = _import_lm_class(class_path)
             if not issubclass(lm_cls, BaseLM):
-                raise TypeError(f"Serialized LM class `{class_path}` must be a subclass of dspy.BaseLM.")
-            if "allow_custom_lm_class" in inspect.signature(lm_cls.load_state).parameters:
-                return lm_cls.load_state(state, allow_custom_lm_class=allow_custom_lm_class)
+                raise TypeError(
+                    f"Serialized LM class `{class_path}` must be a subclass of dspy.BaseLM."
+                )
+            if (
+                "allow_custom_lm_class"
+                in inspect.signature(lm_cls.load_state).parameters
+            ):
+                return lm_cls.load_state(
+                    state, allow_custom_lm_class=allow_custom_lm_class
+                )
             return lm_cls.load_state(state)
 
         return cls(**state)
