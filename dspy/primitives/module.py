@@ -91,7 +91,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             self.callbacks = []
 
     @with_callbacks
-    def __call__(self, *args, **kwargs) -> Prediction:
+    def __call__(self, *args: Any, **kwargs: Any) -> Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
@@ -110,7 +110,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return self.forward(*args, **kwargs)
 
     @with_callbacks
-    async def acall(self, *args, **kwargs) -> Prediction:
+    async def acall(self, *args: Any, **kwargs: Any) -> Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
