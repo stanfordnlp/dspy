@@ -1,3 +1,4 @@
+import csv
 import json
 import signal
 import tempfile
@@ -478,6 +479,34 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
+
+
+def test_evaluate_save_as_csv_includes_keys_from_every_row(tmp_path):
+    """csv.DictWriter used only the first row's keys, so mixed predictions crashed."""
+
+    def program(**kwargs):
+        if kwargs["question"] == "one":
+            return dspy.Prediction(answer="1")
+        return dspy.Prediction(answer="2", extra="bonus")
+
+    def metric(example, pred, trace=None):
+        return 1.0
+
+    devset = [
+        dspy.Example(question="one", answer="1").with_inputs("question"),
+        dspy.Example(question="two", answer="2").with_inputs("question"),
+    ]
+    csv_path = tmp_path / "results.csv"
+    ev = Evaluate(devset=devset, metric=metric, num_threads=1, display_progress=False)
+    ev(program, save_as_csv=str(csv_path))
+
+    with csv_path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    assert len(rows) == 2
+    assert "extra" in rows[0]
+    assert rows[1]["extra"] == "bonus"
+    assert rows[0]["extra"] == ""
 
 
 def test_evaluate_raises_on_empty_devset():
