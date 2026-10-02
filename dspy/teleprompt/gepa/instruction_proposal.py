@@ -42,11 +42,12 @@ class _SkillLoader:
     1. A `Path` is always a path (`~` is expanded). A missing path raises `FileNotFoundError`.
     2. A `str` naming an existing file or directory (after `~` expansion) is a path.
     3. A `str` that does not exist but looks like a path raises `FileNotFoundError`. Text spanning
-       more than one line never looks like a path. A single line looks like a path when it contains
-       a path separator and no whitespace, starts with `.` or `~` and contains no whitespace, starts
-       like a path (`./`, `../`, `~/`, `/`, or a drive letter), ends with `.md`, `.markdown`, or
-       `.txt`, or names an entry inside a directory that exists (so `./skills/my skill` and
-       `skills/my skill` are caught even though they contain a space).
+       more than one line never looks like a path. A single line without whitespace looks like a
+       path when it contains a path separator, starts with `.` or `~`, or ends with `.md`,
+       `.markdown`, or `.txt`. A single line with whitespace looks like a path only when it starts
+       like one (`./`, `../`, `~/`, `/`, or a drive letter) or names an entry inside a directory that
+       exists, so `./skills/my skill` and `skills/my skill` are caught while prose such as
+       `Consult the file report.txt` stays inline.
     4. Any other `str` is inline skill content. Empty content raises `ValueError`.
 
     A directory must contain `SKILL.md` (the Agent Skills layout); only that file is read. A file is
@@ -128,8 +129,9 @@ class _SkillLoader:
         if not re.search(r"\s", source):
             return has_separator or source.startswith((".", "~")) or source.lower().endswith(cls.FILE_SUFFIXES)
         # Paths may contain spaces ("./skills/my skill"), so a single line with whitespace is still a path
-        # when it carries a stronger signal than a bare separator.
-        if cls._PATH_PREFIX_RE.match(source) or source.lower().endswith(cls.FILE_SUFFIXES):
+        # when it carries a stronger signal than a bare separator or suffix: prose such as
+        # "Consult the file report.txt" must stay inline.
+        if cls._PATH_PREFIX_RE.match(source):
             return True
         return has_separator and cls._parent_exists(source)
 

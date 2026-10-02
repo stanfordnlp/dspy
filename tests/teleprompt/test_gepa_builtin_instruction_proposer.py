@@ -264,8 +264,6 @@ def test_missing_skill_path_raises(tmp_path: Path):
         "~/skills/my skill",
         "/skills/my skill",
         "C:\\skills\\my skill",
-        "my skill notes.md",
-        "My Skill.TXT",
     ],
 )
 def test_missing_skill_path_with_whitespace_raises(source):
@@ -289,6 +287,7 @@ def test_missing_skill_inside_an_existing_directory_raises_even_with_whitespace(
         "...and then stop.",
         "Approximately ~5 words.",
         "Cite the file as docs/style.md where relevant.",
+        "Consult the file report.txt",
         "Use active voice.\nSee ./docs/style for examples.",
     ],
 )
