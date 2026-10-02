@@ -127,3 +127,28 @@ def test_native_reasoning_default_survives_provider_omission():
 
     assert value["answer"] == "42"
     assert value["reasoning"] == dspy.Reasoning(content="(omitted)")
+
+
+def test_gemini_native_reasoning_sets_include_thoughts_and_thinking_level():
+    from dataclasses import replace
+
+    from dspy._vendor.lm15.providers.gemini import GeminiLM
+    from dspy.clients.execution import _canonical, prepare
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    lm = dspy.LM("gemini/au.gemini-3.5-flash", api_key="fake", cache=False)
+    lm_kwargs: dict = {}
+    adapted = dspy.Reasoning.adapt_to_native_lm_feature(Sig, "reasoning", lm, lm_kwargs)
+    assert "reasoning" not in adapted.output_fields
+    assert lm_kwargs["reasoning_effort"] == "low"
+
+    call = prepare(lm, "What is 2+2?", None, lm_kwargs)
+    req = _canonical(call)
+    provider_lm = GeminiLM(api_key="fake")
+    payload = provider_lm._payload(replace(req, model="au.gemini-3.5-flash"))
+    thinking_cfg = payload["generationConfig"]["thinkingConfig"]
+    assert thinking_cfg == {"includeThoughts": True, "thinkingLevel": "low"}
