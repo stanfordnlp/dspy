@@ -256,6 +256,46 @@ def test_missing_skill_path_raises(tmp_path: Path):
         InstructionProposer(skills=[str(tmp_path / "missing")])
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "./skills/my skill",
+        "../skills/my skill",
+        "~/skills/my skill",
+        "/skills/my skill",
+        "C:\\skills\\my skill",
+        "my skill notes.md",
+        "My Skill.TXT",
+    ],
+)
+def test_missing_skill_path_with_whitespace_raises(source):
+    with pytest.raises(FileNotFoundError, match="looks like a path"):
+        _SkillLoader.load(source)
+
+
+def test_missing_skill_inside_an_existing_directory_raises_even_with_whitespace(tmp_path: Path, monkeypatch):
+    (tmp_path / "skills").mkdir()
+    with pytest.raises(FileNotFoundError, match="my skill"):
+        _SkillLoader.load(str(tmp_path / "skills" / "my skill"))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError, match="my skill"):
+        InstructionProposer(skills=["skills/my skill"])
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Use JSON/YAML formatting.",
+        "...and then stop.",
+        "Approximately ~5 words.",
+        "Cite the file as docs/style.md where relevant.",
+        "Use active voice.\nSee ./docs/style for examples.",
+    ],
+)
+def test_single_line_prose_and_multi_line_text_are_inline_skills(source):
+    assert _SkillLoader.load(source).content == source
+
+
 def test_inline_skill_and_empty_skill():
     assert _SkillLoader.load("Be terse.") == _Skill(name="Be terse.", content="Be terse.")
     assert _SkillLoader.load("x" * 80 + "\nmore").name == "x" * 60 + "…"
@@ -354,6 +394,36 @@ def test_token_cap_with_the_fallback_counter(monkeypatch):
 
     both = InstructionProposer(max_instruction_words=3, max_instruction_tokens=5)
     assert both._length_limit_text() == "The new instruction must be at most 3 words and at most 5 tokens."
+
+
+def test_two_caps_keep_a_compression_that_only_improves_the_over_cap_unit(monkeypatch, caplog):
+    import litellm
+
+    # Every text costs the same 4 tokens: the token cap is met before and after compression.
+    monkeypatch.setattr(litellm, "token_counter", lambda **kwargs: 4)
+    proposer = InstructionProposer(max_instruction_words=5, max_instruction_tokens=10)
+
+    lm = json_lm(words(8), words(7))
+    with caplog.at_level(logging.WARNING):
+        assert propose(proposer, lm) == {"pred": words(7)}
+    [record] = caplog.records
+    assert "7 words, 4 tokens" in record.message
+    assert "limit: 5 words, 10 tokens" in record.message
+
+
+def test_two_caps_drop_a_compression_that_pushes_the_other_unit_over_its_cap(monkeypatch, caplog):
+    import litellm
+
+    # Fewer words cost more tokens: compression trades a word-cap miss for a token-cap miss.
+    monkeypatch.setattr(litellm, "token_counter", lambda model, text: 20 - len(text.split()))
+    proposer = InstructionProposer(max_instruction_words=5, max_instruction_tokens=12)
+
+    lm = json_lm(words(10), words(7))  # 10 tokens -> 13 tokens
+    with caplog.at_level(logging.WARNING):
+        assert propose(proposer, lm) == {"pred": words(10)}
+    [record] = caplog.records
+    assert "10 words, 10 tokens" in record.message
+    assert "compression did not shorten it" in record.message
 
 
 # --- compaction -----------------------------------------------------------------

@@ -41,9 +41,12 @@ class _SkillLoader:
 
     1. A `Path` is always a path (`~` is expanded). A missing path raises `FileNotFoundError`.
     2. A `str` naming an existing file or directory (after `~` expansion) is a path.
-    3. A `str` that does not exist but looks like a path raises `FileNotFoundError`. A string looks
-       like a path when it contains no whitespace and either contains a path separator, starts with
-       `.` or `~`, or ends with `.md`, `.markdown`, or `.txt`.
+    3. A `str` that does not exist but looks like a path raises `FileNotFoundError`. Text spanning
+       more than one line never looks like a path. A single line looks like a path when it contains
+       a path separator and no whitespace, starts with `.` or `~` and contains no whitespace, starts
+       like a path (`./`, `../`, `~/`, `/`, or a drive letter), ends with `.md`, `.markdown`, or
+       `.txt`, or names an entry inside a directory that exists (so `./skills/my skill` and
+       `skills/my skill` are caught even though they contain a space).
     4. Any other `str` is inline skill content. Empty content raises `ValueError`.
 
     A directory must contain `SKILL.md` (the Agent Skills layout); only that file is read. A file is
@@ -51,12 +54,14 @@ class _SkillLoader:
     stripped from the content. The fallback name is the directory name, the file stem, or the first
     line of an inline skill.
 
-    Note: a non-existent path that contains whitespace cannot be told apart from inline content and
-    is loaded as inline content. Pass a `Path` for strict checking.
+    Note: a single line of inline content can be mistaken for a path when it matches one of the rules
+    above; write it on more than one line, or pass a `Path` for strict path checking.
     """
 
     SKILL_FILE = "SKILL.md"
     FILE_SUFFIXES = (".md", ".markdown", ".txt")
+    # `./`, `../`, `~/`, `/`, `\`, or a Windows drive letter, with either separator.
+    _PATH_PREFIX_RE = re.compile(r"^(?:\.{1,2}[\\/]|~[\\/]|[\\/]|[A-Za-z]:[\\/])")
 
     @classmethod
     def load(cls, source: "str | Path") -> _Skill:
@@ -73,8 +78,8 @@ class _SkillLoader:
         if cls._looks_like_path(source):
             raise FileNotFoundError(
                 f"Skill {source!r} looks like a path, but no such file or directory exists. "
-                "Pass the path to an existing skill file or directory, or pass inline skill content "
-                "(text containing whitespace)."
+                "Pass the path to an existing skill file or directory. Inline skill content that "
+                "resembles a path must span more than one line."
             )
         return cls._from_text(source, fallback_name=None)
 
@@ -115,14 +120,25 @@ class _SkillLoader:
 
     @classmethod
     def _looks_like_path(cls, source: str) -> bool:
-        if re.search(r"\s", source):
+        """Whether a string that names nothing on disk was meant as a path rather than inline content."""
+        if "\n" in source or "\r" in source:
             return False
-        return (
-            "/" in source
-            or "\\" in source
-            or source.startswith((".", "~"))
-            or source.lower().endswith(cls.FILE_SUFFIXES)
-        )
+        source = source.strip()
+        has_separator = "/" in source or "\\" in source
+        if not re.search(r"\s", source):
+            return has_separator or source.startswith((".", "~")) or source.lower().endswith(cls.FILE_SUFFIXES)
+        # Paths may contain spaces ("./skills/my skill"), so a single line with whitespace is still a path
+        # when it carries a stronger signal than a bare separator.
+        if cls._PATH_PREFIX_RE.match(source) or source.lower().endswith(cls.FILE_SUFFIXES):
+            return True
+        return has_separator and cls._parent_exists(source)
+
+    @staticmethod
+    def _parent_exists(source: str) -> bool:
+        try:
+            return Path(source).expanduser().parent.exists()
+        except (OSError, ValueError):
+            return False
 
     @staticmethod
     def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -444,7 +460,12 @@ class InstructionProposer(ProposalFn):
         return caps
 
     def _enforce_length(self, name: str, draft: str) -> str:
-        """Ask the reflection LM once to shorten an over-length draft. Never truncates."""
+        """Ask the reflection LM once to shorten an over-length draft. Never truncates.
+
+        A compressed draft that still exceeds a cap is kept when it makes progress on at least one
+        over-cap unit without going over, or further over, the cap in any unit. A unit that was and
+        stays within its cap may change freely. Otherwise the original draft is kept.
+        """
         if self.compress is None:
             return draft
         caps = self._caps()
@@ -460,7 +481,11 @@ class InstructionProposer(ProposalFn):
             shortened_size = self._measure(shortened)
             if all(shortened_size[unit] <= caps[unit] for unit in caps):
                 return shortened
-            if all(shortened_size[unit] < draft_size[unit] for unit in caps):
+            progressed = any(draft_size[unit] > caps[unit] and shortened_size[unit] < draft_size[unit] for unit in caps)
+            regressed = any(
+                shortened_size[unit] > caps[unit] and shortened_size[unit] > draft_size[unit] for unit in caps
+            )
+            if progressed and not regressed:
                 logger.warning(
                     "The proposed instruction for component %r is %s after compression (limit: %s). "
                     "Using the compressed instruction as is.",
