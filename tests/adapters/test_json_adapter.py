@@ -1717,3 +1717,70 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+def test_open_ended_mapping_detects_optional_and_annotated_dicts():
+    from typing import Annotated, Any, Optional
+
+    from dspy.adapters.json_adapter import (
+        _get_structured_outputs_response_format,
+        _has_open_ended_mapping,
+    )
+
+    class BareDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: dict[str, Any] = dspy.OutputField()
+
+    class UntypedDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: dict = dspy.OutputField()
+
+    class OptionalDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: dict[str, Any] | None = dspy.OutputField()
+
+    class OptionalUntypedDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: dict | None = dspy.OutputField()
+
+    class TypingOptionalDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: Optional[dict[str, str]] = dspy.OutputField()
+
+    class TypingOptionalUntypedDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: Optional[dict] = dspy.OutputField()
+
+    class AnnotatedDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: Annotated[dict[str, int], "meta"] = dspy.OutputField()
+
+    class AnnotatedUntypedDict(dspy.Signature):
+        question: str = dspy.InputField()
+        extra: Annotated[dict, "meta"] = dspy.OutputField()
+
+    class PlainString(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    assert _has_open_ended_mapping(BareDict)
+    assert _has_open_ended_mapping(UntypedDict)
+    assert _has_open_ended_mapping(OptionalDict)
+    assert _has_open_ended_mapping(OptionalUntypedDict)
+    assert _has_open_ended_mapping(TypingOptionalDict)
+    assert _has_open_ended_mapping(TypingOptionalUntypedDict)
+    assert _has_open_ended_mapping(AnnotatedDict)
+    assert _has_open_ended_mapping(AnnotatedUntypedDict)
+    assert not _has_open_ended_mapping(PlainString)
+
+    with pytest.raises(ValueError, match="open-ended mapping"):
+        _get_structured_outputs_response_format(OptionalDict)
+    with pytest.raises(ValueError, match="open-ended mapping"):
+        _get_structured_outputs_response_format(UntypedDict)
+    with pytest.raises(ValueError, match="open-ended mapping"):
+        _get_structured_outputs_response_format(OptionalUntypedDict)
+    with pytest.raises(ValueError, match="open-ended mapping"):
+        _get_structured_outputs_response_format(TypingOptionalUntypedDict)
+    with pytest.raises(ValueError, match="open-ended mapping"):
+        _get_structured_outputs_response_format(AnnotatedUntypedDict)
+
