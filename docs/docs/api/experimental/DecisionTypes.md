@@ -150,7 +150,7 @@ overrides can change descriptions, not the declared answer space.
 
 ## Structured criteria
 
-Descriptions in all three types accept JSON strings, objects, arrays, or null.
+Descriptions accept JSON strings, objects, or arrays. Only Noul and Choice allow null.
 
 ```python
 Urgency = Noul[(True, {"what": "Service blocked", "examples": ["Cannot log in"]}), (False, "Usable")]
