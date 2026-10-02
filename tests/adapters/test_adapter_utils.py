@@ -1,5 +1,6 @@
 # ruff: noqa: UP007
 
+import enum
 from typing import Literal, Optional, Union
 
 import pytest
@@ -115,3 +116,17 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_parse_value_optional_enum_and_literal_accept_the_bare_spellings():
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    assert parse_value("RED", Color | None) is Color.RED
+    assert parse_value("red", Color | None) is Color.RED
+    assert parse_value("None", Color | None) is None
+    assert parse_value("Literal[red]", Literal["red", "blue"] | None) == "red"
+    assert parse_value("null", Literal["red", "blue"] | None) is None
+    with pytest.raises(ValueError):
+        parse_value("green", Color | None)

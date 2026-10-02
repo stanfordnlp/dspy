@@ -193,6 +193,16 @@ def parse_value(value, annotation):
 
     origin = get_origin(annotation)
 
+    if origin in (Union, types.UnionType):
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(members) == 1 and (isinstance(members[0], enum.EnumMeta) or get_origin(members[0]) is Literal):
+            # `X | None` for an Enum or Literal X: accept every spelling the bare X accepts (an Enum
+            # member's name, a `Literal[...]`-wrapped value) before the generic union handling below.
+            try:
+                return parse_value(value, members[0])
+            except ValueError:
+                pass
+
     if origin is Literal:
         allowed = get_args(annotation)
         if value in allowed:

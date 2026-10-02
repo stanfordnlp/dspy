@@ -3150,6 +3150,31 @@ def test_chat_adapter_does_not_fall_back_for_an_optional_literal_member_violatio
     assert exc_info.value.is_format_error is False
 
 
+def test_chat_adapter_parses_member_names_of_an_optional_enum():
+    """`Color | None` accepts the same spellings as `Color`, so a member name never needs a fallback."""
+
+    class Color(enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    class Pick(dspy.Signature):
+        question: str = dspy.InputField()
+        color: Color | None = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = _chat_completion("[[ ## color ## ]]\nRED\n\n[[ ## completed ## ]]")
+        lm = dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            result = adapter(lm, {}, Pick, [], {"question": "pick"})
+
+        mock_json_adapter_call.assert_not_called()
+
+    assert result == [{"color": Color.RED}]
+
+
 def test_chat_adapter_does_not_fall_back_for_an_enum_member_violation():
     class Color(enum.Enum):
         RED = "red"

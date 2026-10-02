@@ -38,8 +38,9 @@ def _is_closed_set_annotation(annotation: Any) -> bool:
         return True
     if origin is Union or origin is types.UnionType:
         # `Literal[...] | None` still names a fixed set; None is the only other member.
+        # parse_value only accepts every spelling of the members when there is a single one.
         members = [arg for arg in get_args(annotation) if arg is not type(None)]
-        return bool(members) and all(_is_closed_set_annotation(arg) for arg in members)
+        return len(members) == 1 and _is_closed_set_annotation(members[0])
     return False
 
 
