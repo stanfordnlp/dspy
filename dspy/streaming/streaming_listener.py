@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import re
 from collections import defaultdict
 from queue import Queue
@@ -252,7 +253,18 @@ class StreamListener:
             parsed = jiter.from_json(accumulated, partial_mode="trailing-strings")
             value = parsed.get(self.signature_field_name)
             if not isinstance(value, str):
-                return None
+                # JSONAdapter also accepts non-string JSON values in str fields.
+                # Decode the complete value, then use the adapter's str coercion.
+                start_identifier = self.adapter_identifiers["JSONAdapter"]["start_identifier"]
+                value_source = self.json_adapter_state["field_accumulated_messages"][
+                    len(start_identifier) + 1 :
+                ].lstrip()
+                value, end = json.JSONDecoder().raw_decode(value_source)
+                if end == len(value_source) or value_source[end] not in " \t\r\n,}":
+                    # A partial number like 4 may still become 42 or 4e2.
+                    return None
+                self.stream_end = True
+                return StreamResponse(self.predict_name, self.signature_field_name, str(value), is_last_chunk=True)
             # Unlike trailing-strings mode, partial_mode=True omits unfinished strings.
             # A completed value ends this field even if the same chunk contains the next field.
             completed = jiter.from_json(accumulated, partial_mode=True)

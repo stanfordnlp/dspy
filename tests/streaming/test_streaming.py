@@ -542,25 +542,30 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "parts",
+    "parts, expected",
     [
-        ['{"', "summary", '":', ' "', "Paris", " is", " big", '.",', ' "', "answer", '":', ' "', "Paris", '"', "}"],
-        ['{"summary": "Paris is', ' big.", "answer": "Paris', '"}'],
-        ['{"summary": "Paris is big.", "answer": "Paris"}'],
+        (
+            ['{"', "summary", '":', ' "', "Paris", " is", " big", '.",', ' "', "answer", '":', ' "', "Paris", '"', "}"],
+            {"summary": "Paris is big.", "answer": "Paris"},
+        ),
+        (['{"summary": "Paris is', ' big.", "answer": "Paris', '"}'], {"summary": "Paris is big.", "answer": "Paris"}),
+        (['{"summary": "Paris is big.", "answer": "Paris"}'], {"summary": "Paris is big.", "answer": "Paris"}),
+        (['{"summary": ', "4", "2", ', "answer": ', "4", "2", "}"], {"summary": "42", "answer": "42"}),
+        (['{"summary": tr', 'ue, "answer": fal', "se}"], {"summary": "True", "answer": "False"}),
     ],
-    ids=["token-sized", "multi-token", "single-chunk"],
+    ids=["token-sized", "multi-token", "single-chunk", "coerced-number", "coerced-boolean"],
 )
-async def test_stream_listener_json_adapter_field_boundary(parts):
+async def test_stream_listener_json_adapter_field_boundary(parts, expected):
     async def stream(*args, **kwargs):
         for part in parts:
             yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
 
-    expected = {"summary": "Paris is big.", "answer": "Paris"}
     program = dspy.streamify(
         dspy.Predict("question -> summary, answer"),
         stream_listeners=[dspy.streaming.StreamListener(signature_field_name=field) for field in expected],
     )
     content = dict.fromkeys(expected, "")
+    final_fields = set()
     prediction = None
     with mock.patch("litellm.acompletion", side_effect=stream):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
@@ -571,10 +576,13 @@ async def test_stream_listener_json_adapter_field_boundary(parts):
                     assert expected[field].startswith(content[field])
                     if value.is_last_chunk:
                         assert content[field] == expected[field]
+                        assert field not in final_fields
+                        final_fields.add(field)
                 elif isinstance(value, dspy.Prediction):
                     prediction = value
 
     assert content == expected
+    assert final_fields == expected.keys()
     assert prediction is not None
     assert prediction.summary == expected["summary"]
     assert prediction.answer == expected["answer"]
