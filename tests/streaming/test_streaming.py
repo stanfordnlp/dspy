@@ -1621,6 +1621,28 @@ async def test_json_adapter_multiple_fields_detection():
     assert "second response" in second_content
 
 
+@pytest.mark.parametrize("adapter", [None, dspy.ChatAdapter()])
+@pytest.mark.parametrize(
+    "content_chunks",
+    [
+        ["Matrix: [[1, 2], [3, 4]]", "\n\n[[ ## completed ## ]]"],
+        ["Matrix: [", "[", "1, 2], [3, 4]]", "\n\n[[ ## completed ## ]]"],
+        ["Matrix: [[1, 2], [3, 4]]\n\n[[ ## completed ## ]]"],
+    ],
+)
+def test_stream_listener_preserves_literal_double_brackets(adapter, content_chunks):
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    chunks = ["[[ ## answer", " ## ]]\n\n", *content_chunks]
+    outputs = []
+    with dspy.context(adapter=adapter):
+        for text in chunks:
+            chunk = ModelResponseStream(choices=[StreamingChoices(delta=Delta(content=text))])
+            if output := listener.receive(chunk):
+                outputs.append(output)
+    assert "".join(output.chunk for output in outputs) == "Matrix: [[1, 2], [3, 4]]"
+    assert outputs[-1].is_last_chunk
+
+
 def test_stream_listener_could_form_end_identifier_chat_adapter():
     listener = dspy.streaming.StreamListener(signature_field_name="answer")
 

@@ -327,9 +327,9 @@ class StreamListener:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
-            boundary_index = last_tokens.find("[[")
-            if boundary_index == -1:
-                boundary_index = len(last_tokens)
+            end_identifier = self.adapter_identifiers["ChatAdapter"]["end_identifier"]
+            boundary = end_identifier.search(last_tokens)
+            boundary_index = boundary.start() if boundary else len(last_tokens)
             return last_tokens[:boundary_index]
         else:
             raise ValueError(
