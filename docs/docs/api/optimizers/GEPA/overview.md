@@ -90,6 +90,24 @@ the final candidate; objectives only affect parent and merge selection. Each obj
 over examples that report it. Predictor-level objective scores are ignored. `objective_pareto_front` contains the
 independent maximum for each objective, not nondominated objective vectors.
 
+### Additional Reflection Guidance
+
+Pass `reflection_instruction` to add soft guidance to the default instruction proposer, without writing a custom `instruction_proposer`. The guidance is appended to the default proposal prompt that the reflection LM sees.
+
+```python
+gepa = dspy.GEPA(
+    metric=metric,
+    reflection_lm=reflection_lm,
+    reflection_instruction=(
+        "Keep proposed instructions concise, preferably under 150 words. "
+        "Preserve task requirements and useful domain knowledge."
+    ),
+    auto="medium",
+)
+```
+
+This applies to the ordinary predictors selected for optimization; `dspy.Flex` code components are unaffected. It is soft prompting, not an enforced word limit. When a custom `instruction_proposer` is supplied, `reflection_instruction` is ignored. See [Advanced Features](GEPA_Advanced.md) for details.
+
 ## How Does GEPA Work?
 
 ### 1. **Reflective Prompt Mutation**

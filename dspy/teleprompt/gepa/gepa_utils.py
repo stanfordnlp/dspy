@@ -126,6 +126,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         custom_code_proposer: "CodeProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
         reflection_minibatch_size: int | None = None,
+        reflection_instruction: str | None = None,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -139,6 +140,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_code_proposer = custom_code_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        self.reflection_instruction = reflection_instruction
         self._warned_custom_proposer_skips_code = False
 
         # dspy.Flex code components are keyed by the submodule's parameter path.
@@ -183,7 +185,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return results
 
         # A custom proposer overrides the default *instruction* proposer only.
-        if self.custom_instruction_proposer:
+        if self.custom_instruction_proposer is not None:
             if code_keys and not self.custom_code_proposer and not self._warned_custom_proposer_skips_code:
                 logger.warning(
                     "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
@@ -202,12 +204,31 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 )
                 return results
 
+        # Additive guidance for the built-in proposer only. It is appended to the already-rendered
+        # default prompt so it cannot be corrupted by GEPA's global placeholder replacement. Only
+        # the `lm` callback supplied to this default path is touched, so the guidance never leaks
+        # into custom proposers or the dspy.Flex code path.
+        reflection_instruction = self.reflection_instruction
+
+        def proposal_lm(prompt):
+            if (
+                isinstance(prompt, str)
+                and reflection_instruction is not None
+                and reflection_instruction.strip()
+            ):
+                prompt = (
+                    f"{prompt}\n\n"
+                    "Additional instructions for proposing the new instruction:\n"
+                    f"{reflection_instruction}"
+                )
+            return self.stripped_lm_call(prompt)[0]
+
         with dspy.context(lm=reflection_lm):
             for name in components_to_update:
                 base_instruction = candidate[name]
                 dataset_with_feedback = reflective_dataset[name]
                 results[name] = InstructionProposalSignature.run(
-                    lm=(lambda x: self.stripped_lm_call(x)[0]),
+                    lm=proposal_lm,
                     input_dict={
                         "current_instruction_doc": base_instruction,
                         "dataset_with_feedback": dataset_with_feedback,
