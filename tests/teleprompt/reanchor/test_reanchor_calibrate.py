@@ -169,7 +169,7 @@ def test_a_metric_error_fails_the_pass(system_one):
         raise RuntimeError("metric failed")
 
     train = [dspy.Example(pair="same", match=True).with_inputs("pair")]
-    with pytest.raises(Exception, match="Execution cancelled"):
+    with pytest.raises(RuntimeError, match="metric failed"):  # The metric's own error, not the executor's.
         calibrate(dspy.Predict(Match), train, broken, num_threads=1)
 
 

@@ -8,7 +8,11 @@ the host:
   because the attribute name is the predictor's host-side handle.
 - ``_DspyModule.__setattr__`` has the host build the real predictor (``__dspy_construct__``) and
   binds a ``_DspyProxy`` in its place. Calling the proxy runs the predictor (``__dspy_call__``)
-  and wraps the returned output fields in a ``_DspyPrediction``.
+  with the proxy's ``fields`` (decision configuration, as on ``dspy.Predict``) and wraps the
+  returned output fields in a ``_DspyPrediction``.
+- Decision values arrive as JSON objects marked ``__dspy_decision__`` and become ``_DspyDecision``
+  objects: still dicts, so they cross back unchanged, with the host types' ``bool``/``float``
+  conversions and attribute access.
 - Callables and signatures cannot cross the JSON boundary as themselves, so they travel as
   markers the host resolves: tools by name (``__dspy_tool__``), ``dspy.Signature(...)`` results
   as ``__dspy_sig__`` payloads.
@@ -24,6 +28,54 @@ import types as _dspy_types
 def _dspy_host(_fn, **_kw):
     # Call a registered host tool by name (the CodeInterpreter.tools contract) and return its result.
     return globals()[_fn](**_kw)
+
+
+# Each decision kind's attributes on the host type.
+_DSPY_DECISION_FIELDS = {
+    "noul": ("value", "confidence", "probability"),
+    "score": ("value", "confidence", "probabilities", "level"),
+    "choice": ("value", "confidence", "probabilities"),
+}
+
+
+class _DspyDecision(dict):
+    """Sandbox-side stand-in for a Noul, Score, or Choice value.
+
+    A dict of the decision's JSON fields plus its ``__dspy_decision__`` kind, so it serializes back
+    to the host unchanged. ``bool()`` of a Noul and ``float()`` of a Score give its value, as on the host.
+    """
+
+    def __init__(self, _data):
+        _data = dict(_data)
+        if _data.get("__dspy_decision__") == "score" and isinstance(_data.get("probabilities"), dict):
+            # JSON object keys are strings; the host keys a Score's distribution by level index.
+            _data["probabilities"] = {int(_k): _v for _k, _v in _data["probabilities"].items()}
+        dict.__init__(self, _data)
+
+    def __getattr__(self, _name):
+        if _name in self:
+            return self[_name]
+        # The host serializes missing evidence away; it is still an attribute, and None, on the host type.
+        if _name in _DSPY_DECISION_FIELDS.get(self.get("__dspy_decision__"), ()):
+            return None
+        raise AttributeError(_name)
+
+    def __bool__(self):
+        return bool(self["value"]) if self.get("__dspy_decision__") == "noul" else True
+
+    def __float__(self):
+        return float(self["value"])
+
+
+def _dspy_decisions(_v):
+    # Rebuild decision values the host marked, recursing into lists and dicts.
+    if isinstance(_v, dict):
+        if _v.get("__dspy_decision__") in ("noul", "score", "choice"):
+            return _DspyDecision(_v)
+        return {_k: _dspy_decisions(_x) for _k, _x in _v.items()}
+    if isinstance(_v, list):
+        return [_dspy_decisions(_x) for _x in _v]
+    return _v
 
 
 class _DspyPrediction:
@@ -50,11 +102,16 @@ class _DspyProxy:
 
     def __init__(self, _handle):
         object.__setattr__(self, "_handle", _handle)
+        # Decision configuration per output, as on dspy.Predict; sent with every call.
+        object.__setattr__(self, "fields", {})
 
     def __call__(self, **_inputs):
         _h = object.__getattribute__(self, "_handle")
-        _out = _dspy_host("__dspy_call__", handle=_h, inputs=_inputs)
-        return _DspyPrediction(**(_out or {}))
+        _kw = {"handle": _h, "inputs": _inputs}
+        if self.fields:
+            _kw["fields"] = self.fields
+        _out = _dspy_host("__dspy_call__", **_kw)
+        return _DspyPrediction(**_dspy_decisions(_out or {}))
 
 
 class _DspyPending:

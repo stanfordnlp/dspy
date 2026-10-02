@@ -6,6 +6,8 @@ import typing
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from dspy.adapters.types.decision import Score, _Decision
+
 
 @dataclass
 class FlexContext:
@@ -90,6 +92,8 @@ class FlexContext:
                 tdesc = tdesc.strip().splitlines()[0] if tdesc else ""
                 tool_lines.append(f"  - {tname}: {tdesc}")
             parts.append("Available tools (in scope by name):\n" + "\n".join(tool_lines))
+        if self.decision_outputs():
+            parts.append(DECISION_NOTE)
         if sandboxed:
             parts.append(
                 "This module runs in a sandbox: only the tools listed above may be passed to "
@@ -97,6 +101,41 @@ class FlexContext:
                 "the module can be called directly in forward, but cannot be handed to those predictors."
             )
         return "\n\n".join(parts) if parts else "(no extra context)"
+
+    def decision_outputs(self) -> list[str]:
+        """The signature's outputs declared with a decision type (``Noul``, ``Score``, ``Choice``)."""
+        return [
+            name
+            for name, finfo in self.signature_cls.output_fields.items()
+            if any(isinstance(a, type) and issubclass(a, _Decision) for a in (finfo.annotation, *finfo.metadata))
+        ]
+
+
+DECISION_NOTE = """\
+Decision outputs: this signature declares outputs with decision types, whose values are decided from
+probabilities rather than generated. Sub-signature strings can declare them too:
+`"ticket: str -> duplicate: Noul[(True, 'Repeats an open ticket'), (False, 'New issue')]"`,
+`"ticket -> severity: Score['minor', 'major', 'critical']"` (ordered lowest to highest), or
+`"ticket -> team: Choice[('billing', 'Payment issue'), ('tech', 'Product bug')]"`. A bare `bool` output
+works as `Noul`. Each decision output needs a question: set it on the predictor in `__init__`, as in
+`self.check.fields["duplicate"] = {"instructions": "Does this ticket repeat an open one?"}`. The result is a
+decision object: `bool(out.duplicate)` and `out.duplicate.value` for a Noul, `float(out.severity)` and
+`out.severity.level` for a Score, `out.team.value` for a Choice; `.confidence` and
+`.probability`/`.probabilities` carry the evidence.
+The thresholds, cuts, and weights that turn probabilities into values are calibrated outside this code."""
+
+
+def _render_decision(annotation: type) -> ast.expr:
+    """``Noul[...]``, ``Score[...]``, or ``Choice[...]``: a decision type's name is its signature-string spelling."""
+    node = ast.parse(annotation.__name__, mode="eval").body
+    allowed = (ast.Name, ast.Load, ast.Subscript, ast.Tuple, ast.Constant)
+    if not all(isinstance(n, allowed) for n in ast.walk(node)):
+        raise ValueError(f"Decision criteria in {annotation!r} are not signature-string constants.")
+    if isinstance(node, ast.Subscript) and not issubclass(annotation, Score):
+        if isinstance(node.slice, ast.Tuple) and not isinstance(node.slice.elts[0], ast.Tuple):
+            # A lone (value, description) pair: keep it a pair, `Noul[(True, 'x'),]`, not `Noul[True, 'x']`.
+            node.slice = ast.Tuple(elts=[node.slice])
+    return node
 
 
 def _type_name(t: Any) -> str:
@@ -132,6 +171,9 @@ def _render_type_node(annotation: Any, custom_types: dict[str, type]) -> ast.exp
     """Build the annotation AST for ``annotation``, emitting only nodes ``_parse_type_node`` handles."""
     if annotation is type(None):
         return ast.Constant(value=None)
+
+    if isinstance(annotation, type) and issubclass(annotation, _Decision):
+        return _render_decision(annotation)
 
     origin = get_origin(annotation)
     if origin is None:

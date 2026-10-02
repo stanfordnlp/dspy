@@ -76,6 +76,53 @@ P(True)=0 is observed, since that boundary is the only way to classify those
 answers as True. When two observed probabilities are adjacent floats, it tries
 the upper value as a threshold: `p >= threshold` separates them without a midpoint.
 
+## Flex programs
+
+A [`dspy.Flex`](../modules/Flex.md) builds its predictors from its code on every forward, so
+they do not exist until the program runs. ReAnchor finds them during its first pass over the
+training set and names each by its attribute in the Flex's code, such as `judge`, or
+`triage.judge` for a Flex at `triage`. The fitted settings go into the Flex's
+`predictor_fields`, which the Flex applies to each predictor it builds, on top of any `fields`
+its code sets. They are saved with the Flex, and cleared when the Flex's code changes.
+
+```python
+flex = dspy.Flex(Match)  # starts as one Predict over the signature, named `predict`
+tuned = ReAnchor(metric).compile(flex, trainset=trainset, valset=valset)
+print(tuned.predictor_fields)  # {'predict': {'match': {'threshold': 0.8}}}
+```
+
+An output with no question to ask, meaning no description and no `instructions` entry, cannot
+be decided from probabilities, so ReAnchor reports it as skipped. A predictor that a Flex builds
+with different decision outputs on different calls is also left out.
+
+### Decomposing the code
+
+Pass a generative `proposer` LM to also rewrite each Flex's code. Each round, an RLM on the
+proposer reads every training example: its inputs and expected outputs, the calibrated program's
+outputs and metric score, and the probability behind each decision. It can run drafts on chosen
+examples to see the probabilities its questions get. It then writes new code that splits the
+judgment into narrower decisions and combines them in Python. The predictors keep running on
+the Flex's LM or the configured one. On a System One model such as Jev, the proposer is told that
+all outputs of one predictor share one billed request, so asking several questions of the same
+input costs about the same as one.
+
+ReAnchor calibrates each rewrite as above and keeps it only when the calibrated program scores
+higher on `valset`, or the same with fewer calls from the Flex's predictors per example. Without a `valset`, the
+choice falls back to the training set, which the proposer has read. A rewrite that fails on any
+training example is rejected, and its error goes to the next round.
+
+```python
+proposer = dspy.LM("openai/gpt-5.6-sol", max_tokens=32000)
+optimizer = ReAnchor(metric, proposer=proposer, rounds=4)
+tuned = optimizer.compile(dspy.Flex(Match), trainset=trainset, valset=valset)
+print(tuned.module_src)
+print(optimizer.report["decomposition"])  # every rewrite, its scores and calls per example, or its error
+```
+
+Every calibration pass reruns the Flex's code, and the default `dspy.PythonInterpreter`
+starts a new sandbox for every forward. For long searches, a faster `interpreter_factory` such
+as `dspy.LocalInterpreter` cuts the time sharply, but it is not a security sandbox.
+
 ## Requests and the cache
 
 The numeric settings are not part of the request. Repeated identical requests
@@ -112,7 +159,7 @@ decoding settings, not direct generation.
 
 ## Errors
 
-ReAnchor stops at the first error from the program or the metric. On a
+ReAnchor stops at the first error from the program or the metric, and raises that error. On a
 generative LM, a malformed answer counts as an error. For example, `Predict`
 raises when a `Score` answer leaves out a probability for any level. Use a
 model that follows JSON schemas reliably, and set a client `timeout` that fits
@@ -127,6 +174,9 @@ your backend's load.
   examples before and after calibration.
 - `val_score_before` and `val_score`, the same scores on `valset` when you pass
   one. ReAnchor never fits settings on `valset`.
+- `decomposition`, with a `proposer`: every code tried, starting with the
+  original, with its score on the selection set, predictor calls per example,
+  fitted rows, whether it was kept, or the error it failed with.
 - `fitted`, one row per output with the fitted value, or the reason ReAnchor
   skipped it. Each fitted row has an `observed` entry with the number of calls
   and settings tried; threshold and cut reports also summarize observed values. Its
