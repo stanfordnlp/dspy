@@ -541,6 +541,46 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ['{"', "summary", '":', ' "', "Paris", " is", " big", '.",', ' "', "answer", '":', ' "', "Paris", '"', "}"],
+        ['{"summary": "Paris is', ' big.", "answer": "Paris', '"}'],
+        ['{"summary": "Paris is big.", "answer": "Paris"}'],
+    ],
+    ids=["token-sized", "multi-token", "single-chunk"],
+)
+async def test_stream_listener_json_adapter_field_boundary(parts):
+    async def stream(*args, **kwargs):
+        for part in parts:
+            yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=part))])
+
+    expected = {"summary": "Paris is big.", "answer": "Paris"}
+    program = dspy.streamify(
+        dspy.Predict("question -> summary, answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name=field) for field in expected],
+    )
+    content = dict.fromkeys(expected, "")
+    prediction = None
+    with mock.patch("litellm.acompletion", side_effect=stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", engine="litellm", cache=False), adapter=dspy.JSONAdapter()):
+            async for value in program(question="q"):
+                if isinstance(value, StreamResponse):
+                    field = value.signature_field_name
+                    content[field] += value.chunk
+                    assert expected[field].startswith(content[field])
+                    if value.is_last_chunk:
+                        assert content[field] == expected[field]
+                elif isinstance(value, dspy.Prediction):
+                    prediction = value
+
+    assert content == expected
+    assert prediction is not None
+    assert prediction.summary == expected["summary"]
+    assert prediction.answer == expected["answer"]
+
+
+@pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_json_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
