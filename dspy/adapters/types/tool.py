@@ -18,6 +18,47 @@ if TYPE_CHECKING:
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
 
+def _union_python_types(types_: list[type]) -> type:
+    unique: list[type] = []
+    for t in types_:
+        if t is Any:
+            continue
+        if t not in unique:
+            unique.append(t)
+    if not unique:
+        return Any
+    result = unique[0]
+    for t in unique[1:]:
+        result |= t
+    return result
+
+
+def _python_type_from_json_schema(prop: dict[str, Any]) -> type:
+    """Map a JSON Schema type field to a Python type.
+
+    MCP and OpenAPI schemas commonly use union forms such as ``{"type": ["string", "null"]}``
+    or ``{"anyOf": [{"type": "integer"}, {"type": "null"}]}``. Those values are unhashable
+    lists, so a direct ``_TYPE_MAPPING.get(prop["type"])`` raises TypeError. Multi-type
+    unions such as ``{"type": ["string", "number"]}`` keep every non-null branch.
+    """
+    collected: list[type] = []
+    type_value = prop.get("type")
+    json_types = type_value if isinstance(type_value, list) else ([type_value] if type_value is not None else [])
+    for item in json_types:
+        if item == "null":
+            continue
+        if isinstance(item, str) and item in _TYPE_MAPPING:
+            collected.append(_TYPE_MAPPING[item])
+    for key in ("anyOf", "oneOf"):
+        for option in prop.get(key) or []:
+            if not isinstance(option, dict):
+                continue
+            mapped = _python_type_from_json_schema(option)
+            if mapped is not Any:
+                collected.append(mapped)
+    return _union_python_types(collected)
+
+
 class _MCPToolClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any: ...
 
@@ -570,7 +611,7 @@ def convert_input_schema_to_tool_args(
         if len(defs) > 0:
             prop = _resolve_json_schema_reference({"$defs": defs, **prop})
         args[name] = prop
-        arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
+        arg_types[name] = _python_type_from_json_schema(prop)
         arg_desc[name] = prop.get("description", "No description provided.")
         if name in required:
             arg_desc[name] += " (Required)"

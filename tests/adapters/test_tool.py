@@ -712,6 +712,48 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
 
 
 
+def test_tool_convert_input_schema_nullable_json_schema_types():
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "a name",
+                    "type": ["string", "null"],
+                },
+                "count": {
+                    "description": "a count",
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                },
+            },
+            "required": ["name"],
+        }
+    )
+    assert arg_types == {"name": str, "count": int}
+    assert args["name"]["type"] == ["string", "null"]
+    assert " (Required)" in arg_desc["name"]
+
+
+def test_tool_convert_input_schema_preserves_non_null_unions():
+    from pydantic import create_model
+
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "type": "object",
+            "properties": {
+                "value": {
+                    "description": "string or number",
+                    "type": ["string", "number"],
+                },
+            },
+        }
+    )
+    assert arg_types["value"] == str | float
+    wrapper = create_model("Wrapper", value=(arg_types["value"], ...))
+    assert wrapper.model_validate({"value": 3.5}).value == 3.5
+    assert wrapper.model_validate({"value": "ok"}).value == "ok"
+
+
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
