@@ -284,6 +284,30 @@ def test_tool_call_kwarg():
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
 
 
+def test_tool_schema_excludes_varargs_and_kwargs():
+    def fn(x: int, *args, y: str = "ok", **kwargs):
+        return (x, args, y, kwargs)
+
+    tool = Tool(fn)
+
+    assert "x" in tool.args
+    assert "y" in tool.args
+    assert "args" not in tool.args
+    assert "kwargs" not in tool.args
+    assert tool.has_kwargs is True
+
+    schema = tool.format_as_litellm_function_call()
+    properties = schema["function"]["parameters"]["properties"]
+    required = schema["function"]["parameters"]["required"]
+    assert "x" in properties
+    assert "y" in properties
+    assert "args" not in properties
+    assert "kwargs" not in properties
+    assert "x" in required
+    assert "y" not in required
+    assert "kwargs" not in required
+
+
 def test_tool_str():
     def add(x: int, y: int = 0) -> int:
         """Add two integers."""
