@@ -66,6 +66,14 @@ JSONRPC_APP_ERRORS = {
 }
 
 
+
+def _sandbox_error_detail(error_message: str, error_data: dict) -> str:
+    """Prefer exception args; Pyodide leaves SyntaxError.message blank."""
+    if not isinstance(error_data, dict):
+        return error_message
+    return error_data.get("args") or error_message
+
+
 def _canonicalize_path(path: PathLike | str) -> str:
     """Resolve symlinks so the path matches what Deno's permission check sees.
 
@@ -839,11 +847,12 @@ class PythonInterpreter:
                     self._raise_terminal_error(f"Malformed execution error data: {msg}")
                 error_type = error_data.get("type", "Error")
 
+                detail = _sandbox_error_detail(error_message, error_data)
                 if error_code == JSONRPC_APP_ERRORS["SyntaxError"]:
-                    raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
+                    raise SyntaxError(f"Invalid Python syntax. message: {detail}")
                 if error_code in JSONRPC_APP_ERRORS.values():
-                    raise CodeExecutionError(f"{error_type}: {error_data.get('args') or error_message}")
-                self._raise_terminal_error(f"{error_type}: {error_data.get('args') or error_message}")
+                    raise CodeExecutionError(f"{error_type}: {detail}")
+                self._raise_terminal_error(f"{error_type}: {detail}")
 
             # Unexpected message format - neither a recognized method nor a response
             self._raise_terminal_error(f"Unexpected message format from sandbox: {msg}")

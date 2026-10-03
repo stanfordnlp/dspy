@@ -361,15 +361,14 @@ while (true) {
         continue;
       }
 
-      // Get error args for other exception types
+      // Pyodide SyntaxError is a Python exception and its args hold the
+      // message, filename, lineno, and source line. error.message is blank
+      // for that type, so skipping SyntaxError drops the only useful detail.
       let errorArgs = [];
-      if (errorType !== "SyntaxError") {
-        // Only python exceptions have args.
-        const last_exception_args = pyodide.globals.get("last_exception_args");
-        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-        errorArgs = JSON.parse(last_exception_args()) || [];
-      }
+      const last_exception_args = pyodide.globals.get("last_exception_args");
+      // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
+      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+      errorArgs = JSON.parse(last_exception_args()) || [];
 
       // Map error type to JSON-RPC error code
       const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
