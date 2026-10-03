@@ -542,7 +542,11 @@ class Adapter:
                 else None
             )
 
-            user_content = self.format_user_message_content(signature, message)
+            # Preserve the format reminder from the original request for prompt-cache reuse.
+            # Output-only events must not acquire a synthetic user message containing just the reminder.
+            user_content = self.format_user_message_content(
+                signature, message, main_request=any(name in message for name in signature.input_fields)
+            )
             if user_content:
                 messages.append({"role": "user", "content": user_content})
 
