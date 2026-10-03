@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 from dspy.clients._litellm import get_litellm
@@ -24,7 +25,8 @@ class Embedder:
     For hosted models, simply pass the model name as a string (e.g., "openai/text-embedding-3-small"). The class will use
     litellm to handle the API calls and caching.
 
-    For custom embedding models, pass a callable function that:
+    For custom embedding models, pass a callable function (sync or async, an async callable is awaited by
+    `acall`) that:
     - Takes a list of strings as input.
     - Returns embeddings as either:
         - A 2D numpy array of float32 values
@@ -176,7 +178,10 @@ async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
         embedding_response = await _get_litellm().aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)
         return [data["embedding"] for data in embedding_response.data]
     elif callable(model):
-        return model(batch_inputs, **kwargs)
+        embeddings = model(batch_inputs, **kwargs)
+        if inspect.isawaitable(embeddings):
+            embeddings = await embeddings
+        return embeddings
     else:
         raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
 
