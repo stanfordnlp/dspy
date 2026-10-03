@@ -6,7 +6,6 @@ from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -15,6 +14,7 @@ from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.primitives.code_interpreter import CodeInterpreterError
+from dspy.primitives.repl_types import REPLHistory
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 from dspy.teleprompt.gepa.gepa_flex_utils import (
     code_reflective_records,
@@ -37,6 +37,16 @@ class LoggerAdapter:
 
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
+
+
+def format_history_for_reflection(history: History) -> str:
+    """Render a `dspy.History` as the `Context` string shown to the reflection LM."""
+    s = "```json\n"
+    for i, message in enumerate(history.messages):
+        s += f"  {i}: {message}\n"
+    s += "```"
+    return s
+
 
 ReflectiveExample = TypedDict(
     "ReflectiveExample",
@@ -135,7 +145,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
+
+        from dspy.teleprompt.gepa.instruction_proposal import InstructionProposer  # it imports this module
+
+        if custom_instruction_proposer is None:
+            custom_instruction_proposer = InstructionProposer()
         self.custom_instruction_proposer = custom_instruction_proposer
+        self._builtin_instruction_proposer = isinstance(custom_instruction_proposer, InstructionProposer)
         self.custom_code_proposer = custom_code_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
@@ -182,38 +198,29 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         if not components_to_update:
             return results
 
-        # A custom proposer overrides the default *instruction* proposer only.
-        if self.custom_instruction_proposer:
-            if code_keys and not self.custom_code_proposer and not self._warned_custom_proposer_skips_code:
-                logger.warning(
-                    "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
-                    "being optimized. The custom proposer handles instruction components only; the "
-                    "built-in code proposer rewrites the flex source.",
-                    len(code_keys),
-                )
-                self._warned_custom_proposer_skips_code = True
-            with dspy.context(lm=reflection_lm):
-                results.update(
-                    self.custom_instruction_proposer(
-                        candidate=candidate,
-                        reflective_dataset=reflective_dataset,
-                        components_to_update=components_to_update,
-                    )
-                )
-                return results
-
+        # Instruction components go to the instruction proposer. A custom one handles instruction
+        # components only, so warn when it would leave Flex code to the built-in code proposer.
+        if (
+            not self._builtin_instruction_proposer
+            and code_keys
+            and not self.custom_code_proposer
+            and not self._warned_custom_proposer_skips_code
+        ):
+            logger.warning(
+                "A custom instruction_proposer is set, but %d dspy.Flex code component(s) are "
+                "being optimized. The custom proposer handles instruction components only; the "
+                "built-in code proposer rewrites the flex source.",
+                len(code_keys),
+            )
+            self._warned_custom_proposer_skips_code = True
         with dspy.context(lm=reflection_lm):
-            for name in components_to_update:
-                base_instruction = candidate[name]
-                dataset_with_feedback = reflective_dataset[name]
-                results[name] = InstructionProposalSignature.run(
-                    lm=(lambda x: self.stripped_lm_call(x)[0]),
-                    input_dict={
-                        "current_instruction_doc": base_instruction,
-                        "dataset_with_feedback": dataset_with_feedback,
-                    },
-                )["new_instruction"]
-
+            results.update(
+                self.custom_instruction_proposer(
+                    candidate=candidate,
+                    reflective_dataset=reflective_dataset,
+                    components_to_update=components_to_update,
+                )
+            )
         return results
 
     def build_program(self, candidate: dict[str, str]):
@@ -414,19 +421,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         assert history_key_name is None
                         history_key_name = input_key
 
+                # The built-in proposer receives History and REPLHistory objects, so it can compact them
+                # and render them itself. Custom proposers receive the same strings as before.
                 if contains_history:
-                    s = "```json\n"
-                    for i, message in enumerate(inputs[history_key_name].messages):
-                        s += f"  {i}: {message}\n"
-                    s += "```"
-                    new_inputs["Context"] = s
+                    history = inputs[history_key_name]
+                    new_inputs["Context"] = (
+                        history if self._builtin_instruction_proposer else format_history_for_reflection(history)
+                    )
 
                 for input_key, input_val in inputs.items():
                     if contains_history and input_key == history_key_name:
                         continue
 
-                    if isinstance(input_val, Type) and self.custom_instruction_proposer is not None:
+                    if isinstance(input_val, Type):
                         # Keep original object - will be properly formatted when sent to reflection LM
+                        new_inputs[input_key] = input_val
+                    elif isinstance(input_val, REPLHistory) and self._builtin_instruction_proposer:
                         new_inputs[input_key] = input_val
                     else:
                         new_inputs[input_key] = str(input_val)
