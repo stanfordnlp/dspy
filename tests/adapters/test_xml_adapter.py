@@ -796,10 +796,7 @@ def test_xml_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_
                  "        Answer using all supplied context."},
      {"role": "user",
       "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "<image>\n"},
+                   "text": "<image>\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'

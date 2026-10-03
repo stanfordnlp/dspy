@@ -385,6 +385,53 @@ def test_chat_adapter_format_exact_messages_with_history():
     assert lm_kwargs == expected_lm_kwargs
 
 
+def test_chat_adapter_format_demos_exclude_history_field():
+    # Regression test: a signature with a `dspy.History` input field is stripped of that field before
+    # rendering the current input as native multiturn messages, but few-shot demos still had the raw
+    # field rendered as a `[[ ## history ## ]]` block. That block looks just like a real conversation
+    # turn, so the LM can mistake demos for prior turns of the actual conversation.
+    class HistorySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        HistorySignature,
+        [
+            {
+                "question": "What is the capital of France?",
+                "history": dspy.History(messages=[]),
+                "answer": "Paris",
+            }
+        ],
+        {"question": "What was my first question?", "history": dspy.History(messages=[])},
+    )
+
+    assert messages[1] == {"role": "user", "content": "[[ ## question ## ]]\nWhat is the capital of France?"}
+    assert "history" not in messages[1]["content"]
+    assert lm_kwargs == {}
+
+
+def test_chat_adapter_format_demos_skips_history_only_demo_instead_of_emitting_empty_turn():
+    # Regression test: when `history` is the *only* input field, stripping it before rendering demos (see
+    # test_chat_adapter_format_demos_exclude_history_field above) leaves nothing to render, which previously
+    # produced a contentless `{"role": "user", "content": ""}` turn. Skip such demos instead of emitting an
+    # empty turn.
+    class HistoryOnlySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.ChatAdapter(),
+        HistoryOnlySignature,
+        [{"history": dspy.History(messages=[{"question": "hi"}]), "answer": "hello"}],
+        {"history": dspy.History(messages=[])},
+    )
+
+    assert not any(m["content"] == "" for m in messages)
+    assert not any("hello" in m["content"] for m in messages)
+    assert lm_kwargs == {}
+
+
 def test_chat_adapter_format_exact_messages_with_list_value_for_string_input():
     class ListAsStringSignature(dspy.Signature):
         context: str = dspy.InputField()
@@ -639,10 +686,7 @@ def test_chat_adapter_format_exact_messages_with_history_demo_pydantic_tools_and
                  '        Answer using all supplied context.'},
      {"role": "user",
       "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+                   "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text",
                    "text": '\n'
@@ -1921,11 +1965,24 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  'In adhering to this structure, your objective is: \n'
                  '        Answer carefully using every available signal.'},
      {"role": "user",
-      "content": [{"type": "text",
-                   "text": "This is an example of the task, though some input or output fields are not "
-                           "supplied.\n"
-                           "\n"
-                           "[[ ## image ## ]]\n"},
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Incomplete example question"},
+     {"role": "assistant",
+      "content": '[[ ## answer ## ]]\n'
+                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
+                 '\n'
+                 '[[ ## verdict ## ]]\n'
+                 'Not supplied for this particular example. \n'
+                 '\n'
+                 '[[ ## confidence ## ]]\n'
+                 'Not supplied for this particular example.\n'
+                 '\n'
+                 '[[ ## completed ## ]]\n'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
                   {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
                   {"type": "text", "text": "\n\n[[ ## audio ## ]]\n"},
                   {"type": "input_audio", "input_audio": {"data": "REVNTw==", "format": "wav"}},
@@ -1965,23 +2022,6 @@ def test_chat_adapter_format_exact_messages_kitchen_sink():
                  '\n'
                  '[[ ## confidence ## ]]\n'
                  '0.9\n'
-                 '\n'
-                 '[[ ## completed ## ]]\n'},
-     {"role": "user",
-      "content": "This is an example of the task, though some input or output fields are not "
-                 "supplied.\n"
-                 "\n"
-                 "[[ ## question ## ]]\n"
-                 "Incomplete example question"},
-     {"role": "assistant",
-      "content": '[[ ## answer ## ]]\n'
-                 '{"answer": "Partial answer.", "sources": ["partial"]}\n'
-                 '\n'
-                 '[[ ## verdict ## ]]\n'
-                 'Not supplied for this particular example. \n'
-                 '\n'
-                 '[[ ## confidence ## ]]\n'
-                 'Not supplied for this particular example.\n'
                  '\n'
                  '[[ ## completed ## ]]\n'},
      {"role": "user",
