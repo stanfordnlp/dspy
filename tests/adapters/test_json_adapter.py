@@ -594,9 +594,7 @@ def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calli
                  "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
      {"role": "user",
       "content": "[[ ## question ## ]]\n"
-                 "Q?\n"
-                 "\n"
-                 "Respond with a JSON object in the following order of fields: ."}]
+                 "Q?"}]
     assert messages == expected_messages
     expected_lm_kwargs = {"tools": [{"type": "function",
                 "function": {"name": "search",
@@ -1717,3 +1715,84 @@ def test_missing_optional_output_fields_fall_back_to_defaults():
 
     with pytest.raises(AdapterParseError):
         adapter.parse(OptionalOutputSignature, '{"note": "present"}')
+
+
+class NativeToolsAndReasoningLM(dspy.utils.DummyLM):
+    @property
+    def supports_function_calling(self):
+        return True
+
+    @property
+    def supports_reasoning(self):
+        return True
+
+    @property
+    def supports_response_schema(self):
+        return True
+
+    @property
+    def supported_params(self):
+        return {"response_format"}
+
+
+class ReasoningAndToolCallsSignature(dspy.Signature):
+    question: str = dspy.InputField()
+    tools: list[dspy.Tool] = dspy.InputField()
+    next_thought: dspy.Reasoning = dspy.OutputField()
+    tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+
+def _lookup(query: str) -> str:
+    """Look up a fact."""
+    return query
+
+
+def test_json_adapter_omits_json_requirements_when_all_outputs_are_native():
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(use_native_function_calling=True),
+        ReasoningAndToolCallsSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(_lookup)]},
+        lm=NativeToolsAndReasoningLM([{}]),
+    )
+
+    assert not any("Respond with a JSON object" in message["content"] for message in messages)
+    assert "response_format" not in lm_kwargs
+    assert lm_kwargs["reasoning_effort"] == "low"
+    assert lm_kwargs["tools"][0]["function"]["name"] == "_lookup"
+
+
+def test_json_adapter_keeps_json_requirements_without_native_function_calling():
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(use_native_function_calling=False),
+        ReasoningAndToolCallsSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(_lookup)]},
+        lm=NativeToolsAndReasoningLM([{}]),
+    )
+
+    assert messages[-1]["content"].endswith(
+        "Respond with a JSON object in the following order of fields: `tool_calls` "
+        '(must be a JSON object like {"tool_calls": [{"name": "...", "args": {...}}]}).'
+    )
+    assert lm_kwargs["response_format"] == {"type": "json_object"}
+    assert "tools" not in lm_kwargs
+
+
+def test_json_adapter_response_format_excludes_native_reasoning_field():
+    class ReasoningAndAnswerSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(),
+        ReasoningAndAnswerSignature,
+        [],
+        {"question": "Q?"},
+        lm=NativeToolsAndReasoningLM([{}]),
+    )
+
+    assert messages[-1]["content"].endswith("Respond with a JSON object in the following order of fields: `answer`.")
+    schema = lm_kwargs["response_format"].model_json_schema()
+    assert list(schema["properties"]) == ["answer"]
