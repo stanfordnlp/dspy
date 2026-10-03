@@ -184,6 +184,14 @@ class SignatureMeta(type(BaseModel)):
         # Let Pydantic do its thing
         cls = super().__new__(mcs, signature_name, bases, namespace, **kwargs)
 
+        # Ensure all fields are declared with InputField or OutputField. This must run before
+        # any code below that reads `field.json_schema_extra` (e.g. via input_fields/output_fields),
+        # since a field whose name collides with a SignatureMeta property (e.g. `instructions`)
+        # gets a plain pydantic FieldInfo with json_schema_extra=None instead of the one from
+        # InputField()/OutputField() - which would otherwise surface as an opaque internal
+        # TypeError instead of this validation's clear message.
+        cls._validate_fields()
+
         # If we don't have instructions, it might be because we are a derived generic type.
         # In that case, we should inherit the instructions from the base class.
         if cls.__doc__ is None:
@@ -197,9 +205,6 @@ class SignatureMeta(type(BaseModel)):
         # In that case, we should default to the input/output format.
         if cls.__doc__ is None:
             cls.__doc__ = _default_instructions(cls)
-
-        # Ensure all fields are declared with InputField or OutputField
-        cls._validate_fields()
 
         # Ensure all fields have a prefix
         for name, field in cls.model_fields.items():
