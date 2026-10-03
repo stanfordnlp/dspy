@@ -240,10 +240,14 @@ def test_save_load_file_signature(sample_text_file):
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as temp_file:
+        temp_file_path = temp_file.name
+    try:
+        compiled_predictor.save(temp_file_path)
         loaded_predictor = dspy.Predict(signature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_file_path)
+    finally:
+        os.unlink(temp_file_path)
 
     loaded_predictor(document=dspy.File.from_file_id("file-test"))
     assert count_messages_with_file_pattern(lm.history[-1]["messages"]) == 2
