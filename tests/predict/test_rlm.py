@@ -479,7 +479,7 @@ class TestRLMInterpreterLifecycle:
         import json
 
         snapshot = Path(__file__).with_name("snapshots") / "rlm_python_interpreter_lm_request.json"
-        recorded = json.loads(snapshot.read_text())
+        recorded = json.loads(snapshot.read_text(encoding="utf-8"))
         expected = [{"role": message["role"], "content": "".join(part["text"] for part in message["parts"])}
                     for message in recorded["messages"]]
         assert lm.messages == expected

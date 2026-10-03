@@ -105,7 +105,8 @@ def write_redirects(site: Path, redirects: dict[str, str]) -> None:
         destination = site / route.lstrip("/") / "index.html"
         destination.parent.mkdir(parents=True, exist_ok=True)
         target_route = route_for_source(target.replace(".ipynb", ".md"))
-        relative = os.path.relpath(target_route.lstrip("/") or ".", route.lstrip("/") or ".")
+        # os.path.relpath uses the platform separator; URLs need POSIX.
+        relative = os.path.relpath(target_route.lstrip("/") or ".", route.lstrip("/") or ".").replace(os.sep, "/")
         if relative == ".":
             relative = "../" if route != "/" else "./"
         elif not relative.endswith("/"):
