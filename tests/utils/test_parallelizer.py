@@ -21,6 +21,13 @@ def test_worker_threads_independence():
 
 
 @pytest.mark.parametrize("num_threads", [1, 3])
+def test_cancelled_string_is_preserved_as_result(num_threads):
+    executor = ParallelExecutor(num_threads=num_threads, disable_progress_bar=True)
+
+    assert executor.execute(lambda item: item, ["cancelled", "completed"]) == ["cancelled", "completed"]
+
+
+@pytest.mark.parametrize("num_threads", [1, 3])
 def test_workers_inherit_active_callback_call_id(num_threads):
     executor = ParallelExecutor(num_threads=num_threads)
 
