@@ -9,7 +9,7 @@ repos:
         name: ruff (lint)
         types_or: [python, pyi]
         files: ^(dspy|tests)/.*\.py$
-        exclude: ^(dspy/__metadata__\.py|tests/reliability/.*\.py)$
+        exclude: ^(dspy/__metadata__\.py|dspy/_vendor/.*|tests/reliability/.*\.py)$
         args: [--fix-only]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
