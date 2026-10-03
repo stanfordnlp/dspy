@@ -243,3 +243,99 @@ def test_load_state_is_transactional():
         assert template.a.predict.demos == [], (
             "load_state partially mutated module before failing"
         )
+
+
+def test_module_deepcopy_preserves_callbacks():
+    """Regression test for issue #10547.
+
+    Module callbacks must be preserved across copy.deepcopy, module.deepcopy,
+    and module.reset_copy, while serialization (pickle / __getstate__) continues
+    to exclude callbacks.
+    """
+    import copy
+
+    import cloudpickle
+
+    from dspy.utils.callback import BaseCallback
+
+    class DummyCallback(BaseCallback):
+        pass
+
+    cb = DummyCallback()
+    mod = dspy.Predict("q -> a", callbacks=[cb])
+    mod.history = [{"fake": "history"}]
+
+    # 1. copy.deepcopy
+    copied1 = copy.deepcopy(mod)
+    assert copied1.callbacks == [cb]
+    assert copied1.callbacks is not mod.callbacks
+    assert copied1.history == []
+
+    # 2. mod.deepcopy()
+    copied2 = mod.deepcopy()
+    assert copied2.callbacks == [cb]
+    assert copied2.callbacks is not mod.callbacks
+    assert copied2.history == []
+
+    # 3. mod.reset_copy()
+    copied3 = mod.reset_copy()
+    assert copied3.callbacks == [cb]
+    assert copied3.callbacks is not mod.callbacks
+    assert copied3.history == []
+
+    # 4. Serialization (pickle / __getstate__) must not include callbacks or history
+
+    class Sig(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField()
+
+    class SerializableMod(dspy.Module):
+        def __init__(self, callbacks=None):
+            super().__init__(callbacks=callbacks)
+            self.cot = dspy.ChainOfThought(Sig)
+
+    smod = SerializableMod(callbacks=[cb])
+    state = smod.__getstate__()
+    assert "callbacks" not in state
+    assert "history" not in state
+
+    pickled = cloudpickle.loads(cloudpickle.dumps(smod))
+    assert pickled.callbacks == []
+    assert pickled.history == []
+
+
+def test_module_callbacks_fire_in_best_of_n_and_refine():
+    """Regression test for issue #10547.
+
+    Callbacks attached to a module must fire when the module is executed
+    inside BestOfN and Refine, both of which deep-copy the candidate module.
+    """
+    from dspy.utils.callback import BaseCallback
+
+    class CallTracker(BaseCallback):
+        def __init__(self):
+            self.started_modules = []
+
+        def on_module_start(self, call_id, instance, inputs):
+            self.started_modules.append(type(instance).__name__)
+
+    dspy.configure(lm=DummyLM([{"answer": "4"}] * 20))
+    tracker = CallTracker()
+    qa = dspy.Predict("question -> answer", callbacks=[tracker])
+
+    # Direct call fires callback
+    qa(question="2+2?")
+    assert "Predict" in tracker.started_modules
+
+    # BestOfN fires callback
+    tracker.started_modules.clear()
+    best_of_n = dspy.BestOfN(qa, N=2, reward_fn=lambda args, pred: 1.0, threshold=1.0)
+    best_of_n(question="2+2?")
+    assert "Predict" in tracker.started_modules
+
+    # Refine fires callback
+    tracker.started_modules.clear()
+    refine = dspy.Refine(qa, N=2, reward_fn=lambda args, pred: 1.0, threshold=1.0)
+    refine(question="2+2?")
+    assert "Predict" in tracker.started_modules
+

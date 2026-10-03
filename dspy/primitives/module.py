@@ -1,3 +1,4 @@
+import copy
 import logging
 import sys
 from typing import Any, TextIO
@@ -89,6 +90,24 @@ class Module(BaseModule, metaclass=ProgramMeta):
             self.history = []
         if not hasattr(self, "callbacks"):
             self.callbacks = []
+
+    def __deepcopy__(self, memo):
+        new_instance = self.__class__.__new__(self.__class__)
+        memo[id(self)] = new_instance
+        for attr, value in self.__dict__.items():
+            if attr == "callbacks":
+                setattr(new_instance, attr, list(value) if value is not None else [])
+            elif attr == "history":
+                setattr(new_instance, attr, [])
+            else:
+                try:
+                    setattr(new_instance, attr, copy.deepcopy(value, memo))
+                except Exception:
+                    try:
+                        setattr(new_instance, attr, copy.copy(value))
+                    except Exception:
+                        setattr(new_instance, attr, value)
+        return new_instance
 
     @with_callbacks
     def __call__(self, *args, **kwargs) -> Prediction:
