@@ -488,7 +488,7 @@ def test_stable_cleanup_preserves_existing_snapshot_and_alias_on_retry(tmp_path,
 @requires_mike
 @pytest.mark.parametrize(
     "fault",
-    ["missing-inventory", "malformed-inventory", "not-a-list", "aliased-candidate"],
+    ["missing-inventory", "malformed-inventory", "not-a-list", "aliased-candidate", "malformed-aliases"],
 )
 def test_stable_pruning_requires_inventory_and_unaliased_candidates(tmp_path, fault):
     from mike import git_utils
@@ -508,6 +508,8 @@ def test_stable_pruning_requires_inventory_and_unaliased_candidates(tmp_path, fa
     with working_directory(repository), git_utils.Commit("versioned-docs", "Damage pruning inventory") as commit:
         if fault == "aliased-candidate":
             inventory[0]["aliases"] = ["preview"]
+        elif fault == "malformed-aliases":
+            inventory[0]["aliases"] = ""
         if fault == "missing-inventory":
             commit.delete_files(["versions.json"])
         else:
@@ -518,6 +520,9 @@ def test_stable_pruning_requires_inventory_and_unaliased_candidates(tmp_path, fa
     with pytest.raises(RuntimeError, match=r"inventory|unexpectedly own aliases"):
         publish_site(**{**arguments, "identifier": "3.4.0", "aliases": ["3.4"]})
     assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == before
+    if fault == "malformed-aliases":
+        assert "beta" in branch_file(repository, "versioned-docs", "3.4.0b1/index.html")
+        assert json.loads(branch_file(repository, "versioned-docs", "versions.json")) == inventory
 
 
 @requires_mike

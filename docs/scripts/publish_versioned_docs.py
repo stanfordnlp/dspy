@@ -199,6 +199,8 @@ def release_inventory(repository: Path, branch: str):
         entries = json.loads(inventory)
         if not isinstance(entries, list):
             raise ValueError("expected a version inventory list")
+        if any(not isinstance(entry["aliases"], list) for entry in entries):
+            raise ValueError("expected an aliases list")
         return Versions.from_json(entries)
     except (TypeError, ValueError, KeyError) as error:
         raise RuntimeError(f"invalid Mike inventory on {branch}: {error}") from error
