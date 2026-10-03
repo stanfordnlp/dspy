@@ -174,10 +174,14 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as temp_file:
+        temp_file_path = temp_file.name
+    try:
+        compiled_predictor.save(temp_file_path)
         loaded_predictor = dspy.Predict(signature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_file_path)
+    finally:
+        os.unlink(temp_file_path)
 
     loaded_predictor(image=dspy.Image("https://example.com/dog.jpg"))
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 2
@@ -204,10 +208,14 @@ def test_save_load_complex_default_types():
     optimizer = dspy.teleprompt.LabeledFewShot(k=1)
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as temp_file:
+        temp_file_path = temp_file.name
+    try:
+        compiled_predictor.save(temp_file_path)
         loaded_predictor = dspy.Predict(ComplexTypeSignature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_file_path)
+    finally:
+        os.unlink(temp_file_path)
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
@@ -270,10 +278,14 @@ def test_save_load_complex_types(test_case):
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
     # Test save and load
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as temp_file:
+        temp_file_path = temp_file.name
+    try:
+        compiled_predictor.save(temp_file_path)
         loaded_predictor = dspy.Predict(signature_cls)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_file_path)
+    finally:
+        os.unlink(temp_file_path)
 
     # Run prediction
     result = loaded_predictor(**processed_input)
@@ -314,10 +326,14 @@ def test_save_load_pydantic_model():
     compiled_predictor = optimizer.compile(student=predictor, trainset=examples, sample=False)
 
     # Test save and load
-    with tempfile.NamedTemporaryFile(mode="w+", delete=True, suffix=".json") as temp_file:
-        compiled_predictor.save(temp_file.name)
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as temp_file:
+        temp_file_path = temp_file.name
+    try:
+        compiled_predictor.save(temp_file_path)
         loaded_predictor = dspy.Predict(PydanticSignature)
-        loaded_predictor.load(temp_file.name)
+        loaded_predictor.load(temp_file_path)
+    finally:
+        os.unlink(temp_file_path)
 
     # Run prediction
     result = loaded_predictor(model_input=model_input)
