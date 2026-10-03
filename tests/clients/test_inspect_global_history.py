@@ -125,6 +125,23 @@ def test_inspect_empty_history(capsys):
     assert isinstance(history, list)
 
 
+def test_inspect_history_n_zero_prints_no_entries():
+    """n=0 should print no entries. `history[-n:]` treats `-0` as `0`, which previously
+    returned the *entire* list instead of an empty slice, leaking every entry's content."""
+    out = StringIO()
+    history = [
+        {"messages": [{"role": "user", "content": f"query {i}"}], "outputs": ["a"], "timestamp": f"t{i}"}
+        for i in range(3)
+    ]
+
+    pretty_print_history(history, n=0, file=out)
+
+    text = out.getvalue()
+    for i in range(3):
+        assert f"query {i}" not in text
+        assert f"t{i}" not in text
+
+
 def test_inspect_history_n_larger_than_history(capsys):
     lm = DummyLM([{"response": "First"}, {"response": "Second"}])
     dspy.configure(lm=lm)
