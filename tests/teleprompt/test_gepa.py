@@ -40,6 +40,52 @@ def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=No
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
 
 
+def test_auto_budget_uses_configured_reflection_minibatch_size():
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        auto="light",
+        reflection_lm=DummyLM([]),
+        reflection_minibatch_size=3,
+        use_merge=False,
+    )
+    small = optimizer.auto_budget(
+        num_preds=2, num_candidates=6, valset_size=100, minibatch_size=optimizer.reflection_minibatch_size
+    )
+    optimizer.reflection_minibatch_size = 10
+    large = optimizer.auto_budget(
+        num_preds=2,
+        num_candidates=6,
+        valset_size=100,
+        minibatch_size=optimizer.reflection_minibatch_size,
+    )
+    assert large > small
+
+
+def test_compile_auto_budget_uses_default_when_reflection_minibatch_is_none(monkeypatch):
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        auto="light",
+        reflection_lm=DummyLM([]),
+        reflection_minibatch_size=None,
+        use_merge=False,
+    )
+    captured = {}
+
+    def capture_auto_budget(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("auto budget reached")
+
+    monkeypatch.setattr(optimizer, "auto_budget", capture_auto_budget)
+
+    with pytest.raises(RuntimeError, match="auto budget reached"):
+        optimizer.compile(
+            SimpleModule("input -> output"),
+            trainset=[Example(input="question", output="answer")],
+        )
+
+    assert captured["minibatch_size"] == 3
+
+
 def multi_objective_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     correct = float(example.output == prediction.output)
     return dspy.Prediction(
