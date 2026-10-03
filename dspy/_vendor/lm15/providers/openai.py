@@ -23,6 +23,7 @@ from ..errors import (
     TimeoutError,
     UnsupportedFeatureError,
     UnsupportedModelError,
+    is_pinned_model_not_found,
     canonical_error_code,
     map_http_error,
 )
@@ -37,6 +38,7 @@ from ..profiles import ProviderProfile, ResolvedOpenAIResponsesCompat, resolve_o
 from ..sse import SSEEvent
 from ..transports import TransportRequest
 from ..types import (
+    JsonObject,
     continuation_data,
     VideoGenerationRequest,
     VideoJobInfo,
@@ -109,6 +111,7 @@ from .base import (
     resolve_credential_value,
 )
 from .common import (
+    check_message_media,
     tool_result_error_text,
     tool_result_output_openai,
     iso_utc,
@@ -255,7 +258,30 @@ def _cache_common_payload(request: Request, payload: dict, cache_control: str, p
     swallows silently — Meta, live 2026-09-03).
     """
     cache_cfg = request.config.cache
-    if cache_cfg is None or cache_control not in ("openai", "openai_implicit"):
+    if cache_cfg is None:
+        return
+    if cache_control not in ("openai", "openai_implicit"):
+        # MAP-6 rule 7: a stored-cache resource on a provider without that
+        # tier RAISES. Dropping it would silently send the request without
+        # the prompt prefix the resource holds (MAP-13: refuse when a guess
+        # could hurt). Found 2026-09-24 by lm15-rs, which already refused.
+        if cache_cfg.resource is not None:
+            raise UnsupportedFeatureError(
+                f"{provider}: cache.resource is not supported — this provider has no stored-cache "
+                "tier; sending without it would drop the prompt prefix the resource holds",
+                provider=provider, feature="config.cache.resource",
+            )
+        # MAP-13: the key and the lifetime have no home on a server without
+        # OpenAI's cache fields; dropped and recorded (implicit caching, where
+        # the server has it, still applies).
+        if cache_cfg.key is not None:
+            adapt("config.cache.key", "dropped",
+                  "this server has no cache affinity field; implicit caching still applies",
+                  asked=cache_cfg.key, provider=provider)
+        if cache_cfg.retention == "long":
+            adapt("config.cache.retention", "dropped",
+                  "this server has no in-request cache lifetime knob; implicit caching still applies",
+                  asked="long", provider=provider)
         return
     if cache_control == "openai_implicit":
         if cache_cfg.mode != "off":
@@ -630,6 +656,8 @@ class OpenAILM(BaseProviderLM):
 
     def _error_detail(self, provider_code: str, message: str) -> ErrorDetail:
         cls = self._stream_error_code_map.get(provider_code, ProviderError)
+        if is_pinned_model_not_found(provider_code, message):  # MAP-15
+            cls = UnsupportedModelError
         return ErrorDetail(
             code=canonical_error_code(cls),
             message=message or provider_code or "provider error",
@@ -664,7 +692,7 @@ class OpenAILM(BaseProviderLM):
                 )
             if code in self._model_error_codes or (
                 status == 404 and self._is_model_error(msg, code, err_type)
-            ):
+            ) or is_pinned_model_not_found(provider_code, msg):  # MAP-15
                 return self._provider_error(
                     UnsupportedModelError,
                     msg,
@@ -868,6 +896,7 @@ class OpenAILM(BaseProviderLM):
         return "auto"
 
     def _payload(self, request: Request, stream: bool) -> dict[str, Any]:
+        check_message_media(request, dialect="openai", provider=self.provider)
         compat = self._compat(request)
         breakpoint_index = _cache_breakpoint_index(request, compat.cache_control)  # once: it may record
         payload: dict[str, Any] = {
@@ -1044,7 +1073,21 @@ class OpenAILM(BaseProviderLM):
         if self._codex:
             # Backend facts (live 2026-08-31): the Codex backend is
             # streaming-only, rejects store=true and every max-token knob,
-            # and expects instructions to be present.
+            # and expects instructions to be present.  An explicit cap or
+            # store=True is refused, never stripped: dropping a cap means
+            # unbounded spend (MAP-13 rule 4; Rust and R refuse the same).
+            if request.config.max_tokens is not None:
+                raise UnsupportedFeatureError(
+                    f"{self.provider}: config.max_tokens: this backend has no output cap; "
+                    "dropping it risks unbounded paid generation",
+                    provider=self.provider, feature="config.max_tokens",
+                )
+            if request.config.store is True:
+                raise UnsupportedFeatureError(
+                    f"{self.provider}: config.store: this backend cannot store a retrievable "
+                    "response; the program may depend on retrieval",
+                    provider=self.provider, feature="config.store",
+                )
             if self.access.system_prefix:
                 payload.setdefault("instructions", self.access.system_prefix)
             payload["store"] = False

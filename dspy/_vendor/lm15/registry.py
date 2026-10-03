@@ -472,6 +472,27 @@ _DEFINITIONS: tuple[ProviderDefinition, ...] = (
         console_url="https://platform.kimi.ai/console/api-keys",
         note="Moonshot AI Kimi over the Anthropic Messages wire (same key as `moonshotai`, bearer token; kimi-k3 only)",
     ),
+    _chat_bound(
+        _access.DEEPINFRA,
+        console_url="https://deepinfra.com/dash/api_keys",
+        note="DeepInfra open-model inference (Chat Completions dialect; models are vendor/name ids)",
+    ),
+    _chat_bound(
+        _access.TOGETHER,
+        console_url="https://api.together.ai/settings/projects/~current/api-keys",
+        note="Together AI open-model inference (Chat Completions dialect; gpt-oss refuses a forced tool choice client-side — "
+             "Together answers it with HTTP 500)",
+    ),
+    _chat_bound(
+        _access.FIREWORKS,
+        console_url="https://app.fireworks.ai/settings/users/api-keys",
+        note="Fireworks AI open-model inference (Chat Completions dialect; models are accounts/fireworks/models/<name> ids)",
+    ),
+    _chat_bound(
+        _access.PARASAIL,
+        console_url="https://www.saas.parasail.io/keys",
+        note="Parasail open-model inference (Chat Completions dialect; serverless models)",
+    ),
     _responses_bound(
         _access.META,
         compat="meta",

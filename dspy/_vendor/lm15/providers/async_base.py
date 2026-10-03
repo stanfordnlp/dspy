@@ -52,13 +52,12 @@ from .base import (
     BaseProviderLM, Credential, HttpResponse, _attach_error_metadata, _client_side_stop,
     _parse_reply, _reply_error_metadata, _reply_object, _stream_error_metadata,
 )
-from .claude_code import DEFAULT_CLAUDE_CODE_VERSION, ClaudeCodeLM
+from .claude_code import ClaudeCodeLM
 from .gemini import GeminiLM
 from .openai import OpenAILM
 from .openai_chat import OpenAIChatLM
 from .openai_codex import (
     DEFAULT_CODEX_BASE_URL,
-    DEFAULT_CODEX_CLIENT_VERSION,
     DEFAULT_CODEX_ORIGINATOR,
     OpenAICodexLM,
 )
@@ -853,7 +852,8 @@ class AsyncClaudeCodeLM(AsyncBaseProviderLM):
     transport: AsyncTransport = field(default_factory=default_async_transport)
     base_url: str = "https://api.anthropic.com/v1"
     api_version: str = "2023-06-01"
-    claude_code_version: str = DEFAULT_CLAUDE_CODE_VERSION
+    claude_code_version: str | None = None
+    settings: "Mapping[str, str] | None" = None
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     # Not constructor params on the sync sibling either (it is not a dataclass).
@@ -871,7 +871,9 @@ class AsyncClaudeCodeLM(AsyncBaseProviderLM):
             base_url=self.base_url,
             api_version=self.api_version,
             claude_code_version=self.claude_code_version,
+            settings=self.settings,
         )
+        self.claude_code_version = self._inner.claude_code_version
         self.api_key = self._inner.api_key  # static key or per-request credential provider (repr-suppressed)
 
     # Files are an API-key surface; the subscription credential does not
@@ -920,7 +922,8 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
     transport: AsyncTransport = field(default_factory=default_async_transport)
     base_url: str = DEFAULT_CODEX_BASE_URL
     originator: str = DEFAULT_CODEX_ORIGINATOR
-    client_version: str = DEFAULT_CODEX_CLIENT_VERSION
+    client_version: str | None = None
+    settings: "Mapping[str, str] | None" = None
     adaptations: AdaptationPolicy = field(default="note", kw_only=True)
 
     # Not constructor params on the sync sibling either (it is not a dataclass).
@@ -939,7 +942,9 @@ class AsyncOpenAICodexLM(AsyncBaseProviderLM):
             base_url=self.base_url,
             originator=self.originator,
             client_version=self.client_version,
+            settings=self.settings,
         )
+        self.client_version = self._inner.client_version
         self.api_key = self._inner.api_key  # static key or per-request credential provider (repr-suppressed)
         self.account_id = self._inner.account_id
 

@@ -14,7 +14,7 @@ needs the policy table and the dialect, not this class.
 from __future__ import annotations
 
 import os
-from typing import ClassVar
+from typing import ClassVar, Mapping
 
 from ..access import (  # noqa: F401
     DEFAULT_CODEX_BASE_URL,
@@ -43,18 +43,17 @@ class OpenAICodexLM(OpenAILM):
         transport: SyncTransport | None = None,
         base_url: str = DEFAULT_CODEX_BASE_URL,
         originator: str = DEFAULT_CODEX_ORIGINATOR,
-        client_version: str = DEFAULT_CODEX_CLIENT_VERSION,
+        client_version: str | None = None,
+        settings: "Mapping[str, str] | None" = None,
         adaptations: "AdaptationPolicy" = "note",
     ) -> None:
+        from .claude_code import merge_client_version
+
         self.originator = originator
-        self.client_version = client_version
+        settings = merge_client_version(settings, client_version, "client_version")
         policy = OPENAI_CODEX
         if originator != DEFAULT_CODEX_ORIGINATOR:
             policy = policy.with_headers({"originator": originator})
-        if client_version != DEFAULT_CODEX_CLIENT_VERSION:
-            from dataclasses import replace
-
-            policy = replace(policy, backend_options={**policy.backend_options, "client_version": client_version})
         super().__init__(
             api_key=api_key,
             transport=transport or default_transport(),
@@ -63,8 +62,10 @@ class OpenAICodexLM(OpenAILM):
             access=policy,
             credentials_path=auth_path,
             account_id=account_id,
+            settings=settings,
             adaptations=adaptations,
         )
+        self.client_version = (self.access or OPENAI_CODEX).backend_options["client_version"]
 
     @classmethod
     def from_codex_cli(
