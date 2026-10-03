@@ -72,6 +72,7 @@ def test_adds_navigation_title_only_when_a_page_has_no_heading(tmp_path):
 
 def test_notebook_conversion_preserves_python_pages(tmp_path):
     nbformat = pytest.importorskip("nbformat")
+    pytest.importorskip("nbconvert")
     notebook = nbformat.v4.new_notebook(cells=[nbformat.v4.new_markdown_cell("# Guide")])
     nbformat.write(notebook, tmp_path / "guide.ipynb")
     helper = tmp_path / "helper.py"
