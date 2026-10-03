@@ -5,6 +5,7 @@ from datetime import datetime
 import base64
 import json
 import os
+import re
 import struct
 import urllib.parse
 from dataclasses import dataclass, field, replace
@@ -120,15 +121,23 @@ GEMINI_PROVIDER_EXECUTED_PART_KEYS = {
     "codeExecutionResult",
 }
 
+def _normalize_gemini_model(model: str) -> str:
+    return re.sub(
+        r"^[a-z]{2,}\.(?=(?:gemini|gemma)-)",
+        "",
+        model.lower().rsplit("/", 1)[-1],
+    )
+
+
 def gemini_level_class(model: str) -> bool:
-    """True for the Gemini 3.x class: `thinkingLevel`, no full off (MAP-7 rule 10).
+    """True for the Gemini 3.x+ class: `thinkingLevel`, no full off (MAP-7 rule 10).
 
     Model-name table, receipted 2026-09-02: 2.5 models reject thinkingLevel,
-    3.x models take it; 3.7 Flash accepts thinkingBudget: 0 and still spends
+    3.x+ models take it; 3.7 Flash accepts thinkingBudget: 0 and still spends
     thinking tokens.  A table that rots; `extensions` overrides.
     """
-    lowered = model.lower()
-    return lowered.startswith("models/gemini-3") or lowered.startswith("gemini-3")
+    normalized = _normalize_gemini_model(model)
+    return bool(re.match(r"^gemini-([3-9]|\d{2,})(?:\.\d+|-|$)", normalized))
 
 
 
@@ -772,19 +781,25 @@ class GeminiLM(BaseProviderLM):
             generation_config.update(_response_format_to_gemini_config(fmt))
         if request.config.reasoning is not None:
             reasoning = request.config.reasoning
+            normalized_model = _normalize_gemini_model(request.model)
+            is_pro = "-pro" in normalized_model
+            was_off = reasoning.is_off
             level_class = gemini_level_class(request.model)
             if reasoning.is_off and level_class:
                 # MAP-13 (decision 2026-09-14 §4.2): the Gemini 3 class has no
                 # honoured off switch (thinkingBudget 0 accepted, 58 tokens
                 # still spent on 3.7 Flash, live 2026-09-02); the closest to
                 # "none" is the lowest level, and the spend shows in
-                # usage.reasoning_tokens.
+                # usage.reasoning_tokens. Pro models do not support "minimal".
+                min_level = "low" if is_pro else "minimal"
                 adapt("config.reasoning.effort", "substituted",
                       f"{request.model} cannot disable thinking (the Gemini 3 class honours no off switch); "
                       "the lowest level was sent and the thinking spend is visible in usage",
-                      asked="off", applied="minimal", provider=self.provider)
-                reasoning = replace(reasoning, effort="minimal")
-            if reasoning.is_off:
+                      asked="off", applied=min_level, provider=self.provider)
+                reasoning = replace(reasoning, effort=min_level)
+            if reasoning.is_off and is_pro:
+                generation_config["thinkingConfig"] = {"thinkingBudget": 128}
+            elif reasoning.is_off:
                 generation_config["thinkingConfig"] = {"thinkingBudget": 0}
             else:
                 if reasoning.summary in ("concise", "detailed"):
@@ -793,13 +808,23 @@ class GeminiLM(BaseProviderLM):
                           asked=reasoning.summary, applied="auto", provider=self.provider)
                     reasoning = replace(reasoning, summary="auto")
                 thinking: dict[str, Any] = {}
-                if reasoning.summary is not None:
-                    thinking["includeThoughts"] = True  # MAP-7 rule 7: only when asked
+                if not was_off and reasoning.summary != "none":
+                    thinking["includeThoughts"] = True
                 if reasoning.thinking_budget is not None:
                     thinking["thinkingBudget"] = reasoning.thinking_budget  # 3.x: accepted, docs warn
                 elif level_class:
                     effort = reasoning.effort
-                    if effort in ("xhigh", "max"):
+                    if effort == "minimal" and is_pro:
+                        adapt("config.reasoning.effort", "clamped",
+                              f"{request.model} does not support thinkingLevel 'minimal'; clamped to 'low'",
+                              asked=effort, applied="low", provider=self.provider)
+                        effort = "low"
+                    elif effort == "medium" and normalized_model in ("gemini-3-pro", "gemini-3-pro-preview"):
+                        adapt("config.reasoning.effort", "clamped",
+                              f"{request.model} does not support thinkingLevel 'medium'; clamped to 'high'",
+                              asked=effort, applied="high", provider=self.provider)
+                        effort = "high"
+                    elif effort in ("xhigh", "max"):
                         adapt("config.reasoning.effort", "clamped",
                               "the Gemini 3 class has thinkingLevel minimal|low|medium|high; 'high' is the ceiling",
                               asked=effort, applied="high", provider=self.provider)
@@ -1078,10 +1103,11 @@ class GeminiLM(BaseProviderLM):
                         yield StreamDeltaEvent(delta=ImageDelta(data=data, part_index=idx, media_type=mime))
             finish = candidate.get("finishReason")
 
+        usage = self._usage_from_payload(payload) if "usageMetadata" in payload else None
         if finish:
-            yield StreamEndEvent(finish_reason=_finish_reason(finish, has_tool_call=saw_tool), usage=self._usage_from_payload(payload), provider_data=payload)
-        elif not yielded_delta and "usageMetadata" in payload:
-            yield StreamEndEvent(finish_reason="stop", usage=self._usage_from_payload(payload), provider_data=payload)
+            yield StreamEndEvent(finish_reason=_finish_reason(finish, has_tool_call=saw_tool), usage=usage, provider_data=payload)
+        elif not yielded_delta and usage is not None:
+            yield StreamEndEvent(finish_reason=None, usage=usage, provider_data=payload)
 
     def _usage_from_payload(self, payload: dict[str, Any]) -> Usage:
         return _gemini_usage(payload.get("usageMetadata"), output_keys=("candidatesTokenCount", "responseTokenCount"))
@@ -1142,9 +1168,11 @@ class GeminiLM(BaseProviderLM):
                 raw = ws.recv()
                 events, turn_complete, usage = self._decode_live_completion_stream_events(raw)
                 acc_usage = Usage(
-                    input_tokens=max(acc_usage.input_tokens, usage.input_tokens),
-                    output_tokens=max(acc_usage.output_tokens, usage.output_tokens),
+                    input_tokens=max(acc_usage.input_tokens or 0, usage.input_tokens or 0),
+                    output_tokens=max(acc_usage.output_tokens or 0, usage.output_tokens or 0),
                     total_tokens=max(acc_usage.total_tokens or 0, usage.total_tokens or 0),
+                    cache_read_tokens=max(acc_usage.cache_read_tokens or 0, usage.cache_read_tokens or 0) or None,
+                    reasoning_tokens=max(acc_usage.reasoning_tokens or 0, usage.reasoning_tokens or 0) or None,
                 )
                 for event in events:
                     if event.type == "delta" and isinstance(event.delta, ToolCallDelta):
