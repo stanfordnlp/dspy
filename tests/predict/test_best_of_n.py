@@ -78,3 +78,37 @@ def test_refine_module_custom_fail_count():
     assert module_call_count[0] == 2, (
         "Module should have been called exactly 2 times, but was called %d times" % module_call_count[0]
     )
+
+
+def test_best_of_n_total_failure_raises_last_error():
+    lm = DummyLM([{"answer": "Brussels"}])
+    dspy.configure(lm=lm)
+
+    def always_raise(self, **kwargs):
+        raise ValueError("Deliberately failing")
+
+    predict = DummyModule("question -> answer", always_raise)
+
+    best_of_n = BestOfN(module=predict, N=1, reward_fn=lambda _, __: 1.0, threshold=0.0, fail_count=1)
+    with pytest.raises(ValueError, match="Deliberately failing"):
+        best_of_n(question="What is the capital of Belgium?")
+    assert best_of_n.fail_count == 1
+
+
+def test_best_of_n_zero_fail_count_raises_first_error():
+    lm = DummyLM([{"answer": "Brussels"}])
+    dspy.configure(lm=lm)
+    module_call_count = 0
+
+    def always_raise(self, **kwargs):
+        nonlocal module_call_count
+        module_call_count += 1
+        raise ValueError("Deliberately failing")
+
+    predict = DummyModule("question -> answer", always_raise)
+    best_of_n = BestOfN(module=predict, N=3, reward_fn=lambda _, __: 1.0, threshold=0.0, fail_count=0)
+
+    with pytest.raises(ValueError, match="Deliberately failing"):
+        best_of_n(question="What is the capital of Belgium?")
+
+    assert module_call_count == 1
