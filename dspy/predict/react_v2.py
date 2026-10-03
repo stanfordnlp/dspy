@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, get_args
 import pydantic
 
 import dspy
+from dspy.adapters.chat_adapter import field_header_pattern
 from dspy.adapters.types.tool import Tool, ToolCallResults, ToolCalls
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -22,6 +23,53 @@ _RESERVED_PREDICTION_KEYS = frozenset({"history", "termination_reason"})
 
 if TYPE_CHECKING:
     from dspy.signatures.signature import Signature
+
+
+def _recover_marker_wrapped_value(value: Any, field_name: str) -> Any:
+    """Recover a final output value that the model wrapped in ChatAdapter field markers.
+
+    `ChatAdapter` asks for `[[ ## field ## ]]`-delimited text while ReActV2 asks for the
+    final answer through the native `submit` tool. Some models satisfy both at once and
+    pass the marker scaffold as the argument, so the submitted value carries the planning
+    text instead of the answer.
+
+    When the scaffold names the field being submitted, or carries the value ahead of any
+    marker, that is what the model meant and it is recovered. When it carries only other
+    fields' markers there is no answer in it, so a `ValueError` is raised; the tool-call
+    loop reports that back to the model, which can then retry with a plain value.
+    """
+    if not isinstance(value, str) or "[[ ##" not in value:
+        return value
+
+    preamble: list[str] = []
+    sections: dict[str, list[str]] = {}
+    current = preamble
+    for line in value.splitlines():
+        # Match and slice the same string: `match.end()` is an offset into the
+        # stripped line, so slicing the raw one drops part of an indented marker
+        # into the recovered value.
+        stripped = line.strip()
+        match = field_header_pattern.match(stripped)
+        if match:
+            current = sections.setdefault(match.group(1), [])
+            remaining = stripped[match.end() :].strip()
+            if remaining:
+                current.append(remaining)
+            continue
+        current.append(line)
+
+    if field_name in sections:
+        return "\n".join(sections[field_name]).strip()
+
+    recovered = "\n".join(preamble).strip()
+    if recovered:
+        return recovered
+
+    raise ValueError(
+        f"`{field_name}` was submitted as `[[ ## ... ## ]]` field markers "
+        f"({', '.join(sorted(sections))}) instead of a value. Those markers structure the "
+        f"response's own output fields; call `submit` with the plain final value for `{field_name}`."
+    )
 
 
 @experimental
@@ -68,7 +116,7 @@ class ReActV2(Module):
             missing = [name for name in output_names if name not in kwargs]
             if missing:
                 raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
-            return {name: kwargs[name] for name in output_names}
+            return {name: _recover_marker_wrapped_value(kwargs[name], name) for name in output_names}
 
         args = {
             name: _json_schema_for_annotation(field.annotation)
@@ -106,6 +154,9 @@ class ReActV2(Module):
                 "Call tools when more information is needed.",
                 f"When the final answer is ready, call `submit` with {outputs}.",
                 f"The available tools are: {tool_names}.",
+                "The `[[ ## ... ## ]]` field markers only structure this response's own output fields "
+                "(e.g. `next_thought`); never include them inside a tool call's arguments. Tool arguments, "
+                "including `submit`'s, must contain plain final values, not planning text or markers.",
             ]
         ).strip()
 
