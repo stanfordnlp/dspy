@@ -181,7 +181,7 @@ def test_release_badge_uses_snapshot_version_without_changing_other_content(tmp_
     home = site / "index.html"
     home.write_text(
         '<div class="hp-hero-badge">\n<span></span>\nDSPy 3.4.0b1 &mdash; Historical blurb\n</div>'
-        '<p>Documentation example for DSPy 3.4.0b1</p>'
+        "<p>Documentation example for DSPy 3.4.0b1</p>"
     )
 
     set_release_badge_version(site, "3.3.1")
@@ -222,6 +222,13 @@ def test_delayed_older_patch_does_not_move_minor_redirect_backward(tmp_path):
     repository = make_repository(tmp_path)
     newest = make_site(tmp_path / "newest", "3.0.1")
     delayed = make_site(tmp_path / "delayed", "3.0.0")
+    publish_site(
+        repository=repository,
+        site=make_site(tmp_path / "beta", "3.0.0b1"),
+        identifier="3.0.0b1",
+        aliases=[],
+        package_source="workflow-wheel",
+    )
 
     for version, site in (("3.0.1", newest), ("3.0.0", delayed)):
         publish_site(
@@ -237,6 +244,12 @@ def test_delayed_older_patch_does_not_move_minor_redirect_backward(tmp_path):
     inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
     aliases = {entry["version"]: entry["aliases"] for entry in inventory}
     assert aliases == {"3.0.0": [], "3.0.1": ["3.0"]}
+    assert (
+        subprocess.run(
+            ["git", "cat-file", "-e", "versioned-docs:3.0.0b1"], cwd=repository, capture_output=True
+        ).returncode
+        != 0
+    )
 
 
 @requires_mike
@@ -364,3 +377,178 @@ def test_mike_removes_stale_unversioned_redirects(tmp_path):
         capture_output=True,
     )
     assert result.returncode != 0
+
+
+@requires_mike
+@pytest.mark.parametrize("branch", ["versioned-docs", "master"])
+def test_stable_publication_prunes_only_matching_prereleases_atomically(tmp_path, branch):
+    repository = make_repository(tmp_path)
+    superseded = ["3.4.0a1", "3.4.0b1", "3.4.0b12", "3.4.0rc2"]
+    preserved = ["current", "3.3.1", "3.3.0rc1", "3.4.1b1", "3.5.0b1", "3.4.00b1"]
+    for version in preserved + superseded:
+        publish_site(
+            repository=repository,
+            site=make_site(tmp_path / version, version),
+            identifier=version,
+            aliases=["3.3"] if version == "3.3.1" else [],
+            package_source="pypi-wheel",
+            branch=branch,
+        )
+    before = subprocess.check_output(["git", "rev-parse", branch], cwd=repository)
+    trees = {
+        version: subprocess.check_output(["git", "rev-parse", f"{branch}:{version}"], cwd=repository)
+        for version in preserved + ["3.3"]
+    }
+    inventory_before = json.loads(branch_file(repository, branch, "versions.json"))
+    arguments = {
+        "repository": repository,
+        "site": make_site(tmp_path / "stable", "stable"),
+        "identifier": "3.4.0",
+        "aliases": ["3.4", "latest"],
+        "package_source": "workflow-wheel",
+        "branch": branch,
+        "required_current_renderer": "zensical",
+    }
+
+    assert publish_site(**arguments)
+
+    assert subprocess.check_output(["git", "rev-parse", f"{branch}^"], cwd=repository) == before
+    assert "stable" in branch_file(repository, branch, "3.4.0/index.html")
+    assert "../3.4.0/" in branch_file(repository, branch, "3.4/index.html")
+    assert "../../3.4.0/guide/" in branch_file(repository, branch, "3.4/guide/index.html")
+    assert "../3.4.0/" in branch_file(repository, branch, "latest/index.html")
+    assert "../../3.4.0/guide/" in branch_file(repository, branch, "latest/guide/index.html")
+    inventory = json.loads(branch_file(repository, branch, "versions.json"))
+    assert set(next(entry for entry in inventory if entry["version"] == "3.4.0")["aliases"]) == {"3.4", "latest"}
+    assert [entry for entry in inventory if entry["version"] in preserved] == [
+        entry for entry in inventory_before if entry["version"] in preserved
+    ]
+    for version in superseded:
+        assert version not in {entry["version"] for entry in inventory}
+        assert (
+            subprocess.run(
+                ["git", "cat-file", "-e", f"{branch}:{version}"], cwd=repository, capture_output=True
+            ).returncode
+            != 0
+        )
+    for version, tree in trees.items():
+        assert subprocess.check_output(["git", "rev-parse", f"{branch}:{version}"], cwd=repository) == tree
+    after = subprocess.check_output(["git", "rev-parse", branch], cwd=repository)
+    assert not publish_site(**arguments)
+    assert subprocess.check_output(["git", "rev-parse", branch], cwd=repository) == after
+
+
+@requires_mike
+@pytest.mark.parametrize("newer_patch", [False, True])
+def test_stable_cleanup_preserves_existing_snapshot_and_alias_on_retry(tmp_path, newer_patch):
+    repository = make_repository(tmp_path)
+    site = make_site(tmp_path / "stable", "original")
+    arguments = {
+        "repository": repository,
+        "site": site,
+        "identifier": "3.4.0",
+        "aliases": ["3.4"],
+        "package_source": "workflow-wheel",
+    }
+    assert publish_site(**arguments)
+    if newer_patch:
+        publish_site(**{**arguments, "site": make_site(tmp_path / "newer", "newer"), "identifier": "3.4.1"})
+    # Model a deployment produced before pruning was introduced.
+    publish_site(**{**arguments, "site": make_site(tmp_path / "beta", "beta"), "identifier": "3.4.0b1", "aliases": []})
+    before = subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository)
+    stable_tree = subprocess.check_output(["git", "rev-parse", "versioned-docs:3.4.0"], cwd=repository)
+    alias_tree = subprocess.check_output(["git", "rev-parse", "versioned-docs:3.4"], cwd=repository)
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+
+    original = (site / "index.html").read_bytes()
+    (site / "index.html").write_text("different")
+    with pytest.raises(RuntimeError, match="immutable Mike snapshot"):
+        publish_site(**arguments)
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == before
+    (site / "index.html").write_bytes(original)
+
+    assert publish_site(**arguments)
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs^"], cwd=repository) == before
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs:3.4.0"], cwd=repository) == stable_tree
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs:3.4"], cwd=repository) == alias_tree
+    assert json.loads(branch_file(repository, "versioned-docs", "versions.json")) == [
+        entry for entry in inventory if entry["version"] != "3.4.0b1"
+    ]
+    assert (
+        subprocess.run(
+            ["git", "cat-file", "-e", "versioned-docs:3.4.0b1"], cwd=repository, capture_output=True
+        ).returncode
+        != 0
+    )
+    after = subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository)
+    assert not publish_site(**arguments)
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == after
+
+
+@requires_mike
+@pytest.mark.parametrize(
+    "fault",
+    ["missing-inventory", "malformed-inventory", "not-a-list", "aliased-candidate"],
+)
+def test_stable_pruning_requires_inventory_and_unaliased_candidates(tmp_path, fault):
+    from mike import git_utils
+
+    from docs.scripts.publish_versioned_docs import working_directory
+
+    repository = make_repository(tmp_path)
+    arguments = {
+        "repository": repository,
+        "site": make_site(tmp_path / "beta", "beta"),
+        "identifier": "3.4.0b1",
+        "aliases": [],
+        "package_source": "workflow-wheel",
+    }
+    publish_site(**arguments)
+    inventory = json.loads(branch_file(repository, "versioned-docs", "versions.json"))
+    with working_directory(repository), git_utils.Commit("versioned-docs", "Damage pruning inventory") as commit:
+        if fault == "aliased-candidate":
+            inventory[0]["aliases"] = ["preview"]
+        if fault == "missing-inventory":
+            commit.delete_files(["versions.json"])
+        else:
+            text = {"malformed-inventory": "{", "not-a-list": "{}"}.get(fault, json.dumps(inventory))
+            commit.add_file(git_utils.FileInfo("versions.json", text))
+    before = subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository)
+
+    with pytest.raises(RuntimeError, match=r"inventory|unexpectedly own aliases"):
+        publish_site(**{**arguments, "identifier": "3.4.0", "aliases": ["3.4"]})
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == before
+
+
+@requires_mike
+def test_stable_pruning_aborts_the_entire_commit_on_write_failure(tmp_path, monkeypatch):
+    from mike import git_utils
+
+    repository = make_repository(tmp_path)
+    arguments = {
+        "repository": repository,
+        "site": make_site(tmp_path / "beta", "beta"),
+        "identifier": "3.4.0b1",
+        "aliases": [],
+        "package_source": "workflow-wheel",
+    }
+    publish_site(**arguments)
+    before = subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository)
+    with pytest.raises(RuntimeError, match=r"missing index\.html"):
+        publish_site(**{**arguments, "identifier": "3.4.0", "site": tmp_path / "missing-site"})
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == before
+    add_file = git_utils.Commit.add_file
+
+    def fail_inventory_write(commit, file):
+        if file.path == "versions.json":
+            raise OSError("simulated inventory write failure")
+        add_file(commit, file)
+
+    stable = {**arguments, "identifier": "3.4.0", "aliases": ["3.4"]}
+    with monkeypatch.context() as patch:
+        patch.setattr(git_utils.Commit, "add_file", fail_inventory_write)
+        with pytest.raises(OSError, match="simulated inventory write failure"):
+            publish_site(**stable)
+    assert subprocess.check_output(["git", "rev-parse", "versioned-docs"], cwd=repository) == before
+    assert publish_site(**stable)
+    assert not publish_site(**stable)
