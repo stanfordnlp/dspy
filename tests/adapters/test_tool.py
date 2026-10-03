@@ -775,3 +775,32 @@ def test_tool_call_execute_with_local_functions():
             globals().pop("local_add", None)
 
     main()
+
+def test_tool_call_execute_with_tool_list_parses_pydantic_args():
+    """functions=[Tool(...)] must use Tool parsing, not the raw function."""
+
+    class Order(BaseModel):
+        sku: str
+        qty: int
+
+    def place_order(order: Order) -> str:
+        return f"ordered {order.qty} x {order.sku}"
+
+    tool = dspy.Tool(place_order)
+    args = {"order": {"sku": "A1", "qty": 2}}
+    assert tool(**args) == "ordered 2 x A1"
+    call = dspy.ToolCalls.from_dict_list([{"name": "place_order", "args": args}]).tool_calls[0]
+    assert call.execute(functions=[tool]) == "ordered 2 x A1"
+
+
+def test_tool_call_execute_with_tool_list_awaits_async_tools():
+    async def greet(name: str) -> str:
+        return f"hi {name}"
+
+    tool = dspy.Tool(greet)
+    call = dspy.ToolCalls.ToolCall(name="greet", args={"name": "Ada"})
+    with dspy.context(allow_tool_async_sync_conversion=True):
+        result = call.execute(functions=[tool])
+    assert result == "hi Ada"
+    assert not asyncio.iscoroutine(result)
+

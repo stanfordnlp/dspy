@@ -333,7 +333,10 @@ class ToolCalls(Type):
             elif isinstance(functions, list):
                 for tool in functions:
                     if tool.name == self.name:
-                        func = tool.func
+                        # Call the Tool so it coerces arguments and runs async
+                        # functions. tool.func skips both and returns a raw dict
+                        # or an un-awaited coroutine.
+                        func = tool
                         break
 
             if func is None:
