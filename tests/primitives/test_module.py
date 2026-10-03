@@ -339,3 +339,27 @@ def test_module_callbacks_fire_in_best_of_n_and_refine():
     refine(question="2+2?")
     assert "Predict" in tracker.started_modules
 
+
+def test_module_deepcopy_fallback_warning(caplog):
+    """When an attribute cannot be deep-copied, Module.__deepcopy__ warns callers
+
+    and falls back to shallow copy / reference.
+    """
+    import copy
+
+    class Uncopyable:
+        def __copy__(self):
+            raise TypeError("Cannot copy")
+
+        def __deepcopy__(self, memo):
+            raise TypeError("Cannot deepcopy")
+
+    mod = dspy.Predict("q -> a")
+    mod.uncopyable_attr = Uncopyable()
+
+    with caplog.at_level("WARNING"):
+        copied = copy.deepcopy(mod)
+
+    assert "Failed to deep copy attribute 'uncopyable_attr'" in caplog.text
+    assert copied.uncopyable_attr is mod.uncopyable_attr
+

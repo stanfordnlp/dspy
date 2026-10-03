@@ -103,6 +103,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 try:
                     setattr(new_instance, attr, copy.deepcopy(value, memo))
                 except Exception:
+                    logger.warning(
+                        f"Failed to deep copy attribute '{attr}' of {self.__class__.__name__}, "
+                        "falling back to shallow copy or reference copy."
+                    )
                     try:
                         setattr(new_instance, attr, copy.copy(value))
                     except Exception:
