@@ -84,8 +84,10 @@ class DataLoader(Dataset):
         if fields is None:
             fields = list(df.columns)
 
+        # Object dtype preserves individual values when iterrows combines numeric columns.
         return [
-            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
+            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+            for _, row in df.astype(object).iterrows()
         ]
 
     def from_json(
