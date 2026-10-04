@@ -460,3 +460,17 @@ def test_render_annotation_rejects_what_the_grammar_cannot_carry() -> None:
     # render time instead of producing a token that fails to parse back.
     with pytest.raises(ValueError):
         render_annotation(NotShared)
+
+
+def test_output_field_constraints_enforced_at_the_bridge() -> None:
+    """The bridge's parse_value call passes the full FieldInfo, so pydantic Field
+    constraints declared on an output field reject a violating sandbox result
+    instead of being silently dropped (the bare-annotation path ignored them)."""
+    class Constrained(dspy.Signature):
+        q: str = dspy.InputField()
+        a: str = dspy.OutputField(max_length=5)
+
+    program = Flex(Constrained, interpreter_factory=MockInterpreter)
+    with pytest.raises(CodeInterpreterError, match="not a valid"):
+        program._bridge._to_prediction({"a": "WAY_TOO_LONG"})
+    assert program._bridge._to_prediction({"a": "ok"}).a == "ok"
