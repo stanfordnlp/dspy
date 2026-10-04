@@ -18,7 +18,17 @@ buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
 sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+    if not sys.last_exc:
+        return None
+    args = sys.last_exc.args
+    try:
+        return json.dumps(args)
+    except TypeError:
+        # SyntaxError(object()) and similar must not kill the interpreter session.
+        try:
+            return json.dumps([repr(arg) for arg in args])
+        except Exception:
+            return None
 
 class _DSPyFinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
@@ -365,10 +375,18 @@ while (true) {
       // message, filename, lineno, and source line. error.message is blank
       // for that type, so skipping SyntaxError drops the only useful detail.
       let errorArgs = [];
-      const last_exception_args = pyodide.globals.get("last_exception_args");
-      // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-      errorArgs = JSON.parse(last_exception_args()) || [];
+      try {
+        const last_exception_args = pyodide.globals.get("last_exception_args");
+        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
+        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+        const rawArgs = last_exception_args();
+        errorArgs = rawArgs ? JSON.parse(rawArgs) : [];
+        if (!Array.isArray(errorArgs)) errorArgs = [errorArgs];
+      } catch (argsError) {
+        // Serialization failure must not skip the error response. Deno exiting
+        // here leaves the interpreter session unusable for later execute() calls.
+        errorArgs = [];
+      }
 
       // Map error type to JSON-RPC error code
       const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;

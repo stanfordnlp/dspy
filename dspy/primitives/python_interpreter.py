@@ -71,7 +71,14 @@ def _sandbox_error_detail(error_message: str, error_data: dict) -> str:
     """Prefer exception args; Pyodide leaves SyntaxError.message blank."""
     if not isinstance(error_data, dict):
         return error_message
-    return error_data.get("args") or error_message
+    args = error_data.get("args")
+    if isinstance(args, str) and args:
+        return args
+    if isinstance(args, list) and args:
+        rendered = ", ".join(str(arg) for arg in args if arg is not None)
+        if rendered:
+            return rendered
+    return error_message
 
 
 def _canonicalize_path(path: PathLike | str) -> str:
