@@ -199,6 +199,22 @@ def test_example_to_dict_with_history():
 
     # Verify JSON serialization works
     import json
+
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_with_inputs_unknown_keys_raise():
+    # a typo used to be silently accepted: inputs() returned an empty
+    # Example and labels() then contained every field, including inputs
+    ex = dspy.Example(question="Why?", answer="Because.")
+    with pytest.raises(ValueError, match="queston"):
+        ex.with_inputs("queston")
+    with pytest.raises(ValueError, match="Available fields"):
+        ex.with_inputs("question", "answr")
+
+    # valid keys still work
+    marked = ex.with_inputs("question")
+    assert marked.inputs().toDict() == {"question": "Why?"}
+    assert marked.labels().toDict() == {"answer": "Because."}
