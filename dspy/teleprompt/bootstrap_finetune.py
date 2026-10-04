@@ -247,6 +247,30 @@ def all_predictors_have_lms(program: Module) -> bool:
     return all(pred.lm for pred in program.predictors())
 
 
+def assert_all_predictors_have_lms(program: Module, role: str = "program") -> None:
+    """Raise ValueError if any predictor in the program has no LM set.
+
+    This is the asserting counterpart of ``all_predictors_have_lms``, for callers
+    that require every predictor to carry an LM before compiling. Calling the
+    predicate on its own validates nothing, since its result is easy to drop.
+
+    Args:
+        program: Program whose predictors should all have an LM set.
+        role: How to refer to the program in the error message, e.g. ``"student"``.
+
+    Raises:
+        ValueError: If at least one predictor has no LM set.
+    """
+    named = list(program.named_predictors())
+    missing = [name for name, pred in named if not pred.lm]
+    if missing:
+        raise ValueError(
+            f"The {role} program must have a language model set on every predictor, "
+            f"but these have none: {missing}. "
+            f"Call `{role}.set_lm(lm)` before compiling."
+        )
+
+
 def copy_program_with_lms(program: Module) -> Module:
     pred_lms = [pred.lm for pred in program.predictors()]
     program = program.deepcopy()
