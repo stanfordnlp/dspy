@@ -520,29 +520,62 @@ def _normalize_tool_call_dict(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_UNRESOLVED_REF = object()
+
+
 def _resolve_json_schema_reference(schema: dict) -> dict:
-    """Recursively resolve json model schema, expanding all references."""
+    """Recursively resolve json model schema, expanding all references.
 
-    # If there are no definitions to resolve, return the main schema
-    if "$defs" not in schema and "definitions" not in schema:
-        return schema
+    References are resolved as local JSON pointers (e.g. `#/$defs/Foo`, `#/definitions/Foo`,
+    `#/properties/foo`) against the document root. Cyclic references (e.g. from self-referential
+    pydantic models) are replaced with `{}` (the JSON Schema that accepts anything) instead of
+    recursing forever, and unresolvable references are left as-is instead of raising.
+    """
 
-    def resolve_refs(obj: Any) -> Any:
+    def lookup_ref(ref: str) -> Any:
+        if not ref.startswith("#"):
+            # Only local references can be resolved; leave remote ones untouched.
+            return _UNRESOLVED_REF
+        target: Any = schema
+        # Walk the JSON pointer segments from the document root, unescaping `~1` and `~0`.
+        for segment in [s.replace("~1", "/").replace("~0", "~") for s in ref[1:].split("/")[1:]]:
+            if isinstance(target, dict) and segment in target:
+                target = target[segment]
+            elif isinstance(target, list) and segment.isdigit() and int(segment) < len(target):
+                target = target[int(segment)]
+            else:
+                break
+        else:
+            return target
+        # Fall back to looking up the last path segment in `$defs`/`definitions`.
+        name = ref.split("/")[-1]
+        for definitions in (schema.get("$defs"), schema.get("definitions")):
+            if isinstance(definitions, dict) and name in definitions:
+                return definitions[name]
+        return _UNRESOLVED_REF
+
+    def resolve_refs(obj: Any, seen: frozenset[str]) -> Any:
         if not isinstance(obj, (dict, list)):
             return obj
         if isinstance(obj, dict):
-            if "$ref" in obj:
-                ref_path = obj["$ref"].split("/")[-1]
-                return resolve_refs(schema["$defs"][ref_path])
-            return {k: resolve_refs(v) for k, v in obj.items()}
+            ref = obj.get("$ref")
+            if isinstance(ref, str):
+                if ref in seen:
+                    # Cyclic reference: stop expanding and accept anything at this position.
+                    return {}
+                target = lookup_ref(ref)
+                if target is not _UNRESOLVED_REF:
+                    return resolve_refs(target, seen | {ref})
+            return {k: resolve_refs(v, seen) for k, v in obj.items()}
 
         # Must be a list
-        return [resolve_refs(item) for item in obj]
+        return [resolve_refs(item, seen) for item in obj]
 
     # Resolve all references in the main schema
-    resolved_schema = resolve_refs(schema)
-    # Remove the $defs key as it's no longer needed
+    resolved_schema = resolve_refs(schema, frozenset())
+    # Remove the definition keys as they are no longer needed
     resolved_schema.pop("$defs", None)
+    resolved_schema.pop("definitions", None)
     return resolved_schema
 
 
@@ -564,11 +597,12 @@ def convert_input_schema_to_tool_args(
 
     required = schema.get("required", [])
 
-    defs = schema.get("$defs", {})
+    # Resolve references against the full schema so that local pointers outside `$defs`
+    # (e.g. `#/definitions/...` or `#/properties/...`) resolve as well.
+    resolved_properties = _resolve_json_schema_reference(schema).get("properties", {})
 
     for name, prop in properties.items():
-        if len(defs) > 0:
-            prop = _resolve_json_schema_reference({"$defs": defs, **prop})
+        prop = resolved_properties.get(name, prop)
         args[name] = prop
         arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
         arg_desc[name] = prop.get("description", "No description provided.")
