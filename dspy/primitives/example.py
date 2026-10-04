@@ -1,4 +1,11 @@
+import logging
+
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# (class name, field name) pairs already reported by the shadowing warning.
+_WARNED_SHADOWED_FIELDS: set[tuple[str, str]] = set()
 
 
 class Example:
@@ -125,6 +132,24 @@ class Example:
         # Update with provided kwargs
         self._store.update(kwargs)
 
+        # Only str keys can collide with an attribute name; a dict passed as `base` may
+        # hold keys of any hashable type.
+        class_attributes = dir(type(self))
+        shadowed = sorted(
+            k for k in self._store if isinstance(k, str) and not k.startswith("_") and k in class_attributes
+        )
+        # Warn once per class and field name: copy(), without() and with_inputs() each
+        # build a new instance, and a legitimate field would otherwise warn on every one.
+        unreported = [k for k in shadowed if (type(self).__name__, k) not in _WARNED_SHADOWED_FIELDS]
+        if unreported:
+            _WARNED_SHADOWED_FIELDS.update((type(self).__name__, k) for k in unreported)
+            names = ", ".join(repr(k) for k in unreported)
+            logger.warning(
+                f"{type(self).__name__} field(s) {names} share a name with a method, so attribute "
+                f"access returns the method rather than the stored value. Use subscript access "
+                f"such as example[{unreported[0]!r}] to read them."
+            )
+
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
             raise AttributeError
@@ -133,7 +158,15 @@ class Example:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
-        if key.startswith("_") or key in dir(self.__class__):
+        if key.startswith("_"):
+            super().__setattr__(key, value)
+        elif "_store" in self.__dict__ and key in self._store:
+            # The field is already stored, so keep attribute and item access in
+            # sync even when its name shadows a method such as items() or get().
+            # Writing an instance attribute instead would leave ex.key and
+            # ex["key"] holding different values.
+            self._store[key] = value
+        elif key in dir(self.__class__):
             super().__setattr__(key, value)
         else:
             self._store[key] = value
