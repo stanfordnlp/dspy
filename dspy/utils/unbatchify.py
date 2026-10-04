@@ -26,6 +26,7 @@ class Unbatchify:
         self.max_wait_time = max_wait_time
         self.input_queue = queue.Queue()
         self.stop_event = threading.Event()
+        self._lifecycle_lock = threading.Lock()
         self.worker_thread = threading.Thread(target=self._worker)
         self.worker_thread.daemon = True  # Ensures thread exits when main program exits
         self.worker_thread.start()
@@ -41,12 +42,11 @@ class Unbatchify:
             The output corresponding to the input_item after processing through batch_fn.
         """
         future = Future()
-        self.input_queue.put((input_item, future))
-        try:
-            result = future.result()
-        except Exception as e:
-            raise e
-        return result
+        with self._lifecycle_lock:
+            if self.stop_event.is_set():
+                raise RuntimeError("Unbatchify is closed")
+            self.input_queue.put((input_item, future))
+        return future.result()
 
     def _worker(self):
         """
@@ -84,14 +84,13 @@ class Unbatchify:
             except queue.Empty:
                 break
 
-        print("Worker thread has been terminated.")
-
     def close(self):
         """
         Stops the worker thread and cleans up resources.
         """
-        if not self.stop_event.is_set():
+        with self._lifecycle_lock:
             self.stop_event.set()
+        if threading.current_thread() is not self.worker_thread:
             self.worker_thread.join()
 
     def __enter__(self):
