@@ -1,4 +1,4 @@
-from unittest.mock import patch
+﻿from unittest.mock import patch
 
 import pytest
 
@@ -7,7 +7,7 @@ from dspy.teleprompt import MIPROv2
 from dspy.utils.dummies import DummyLM
 
 
-class _SeedCaptured(Exception):
+class _SeedCapturedError(Exception):
     pass
 
 
@@ -18,8 +18,8 @@ def test_compile_seed_overrides_constructor_seed(compile_seed, expected):
         metric=lambda example, pred, trace=None: 1.0, prompt_model=lm, task_model=lm, seed=9
     )
 
-    with patch.object(MIPROv2, "_set_random_seeds", side_effect=_SeedCaptured) as set_seeds:
-        with pytest.raises(_SeedCaptured):
+    with patch.object(MIPROv2, "_set_random_seeds", side_effect=_SeedCapturedError) as set_seeds:
+        with pytest.raises(_SeedCapturedError):
             optimizer.compile(dspy.Predict("question -> answer"), trainset=[], seed=compile_seed)
 
     set_seeds.assert_called_once_with(expected)
