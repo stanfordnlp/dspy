@@ -15,11 +15,26 @@ from typing import Any
 
 _protocol_output = os.fdopen(os.dup(sys.__stdout__.fileno()), "w", encoding="utf-8")
 os.set_inheritable(_protocol_output.fileno(), False)
+# Read protocol messages from a private duplicate of stdin, then point fd 0 at os.devnull:
+# guest code (and anything it spawns) must not see the protocol pipe. On Windows this is
+# also what keeps guest subprocesses from hanging: a child that inherits the protocol pipe
+# as its stdin blocks behind our reader thread's pending readline() (synchronous pipe
+# handles serialize their operations), so subprocess.run() never returns.
+_protocol_input = os.fdopen(os.dup(sys.__stdin__.fileno()), "r", encoding="utf-8")
+os.set_inheritable(_protocol_input.fileno(), False)
 _worker_stdout, _worker_stderr = sys.stdout, sys.stderr
+# Guest print() goes through these text streams; without this, Windows translates "\n" to
+# "\r\n" on write and captured output differs by platform.
+for _stream in (_worker_stdout, _worker_stderr):
+    with contextlib.suppress(Exception):
+        _stream.reconfigure(newline="\n")
 _sink = os.open(os.devnull, os.O_WRONLY)
 os.dup2(_sink, 1)
 os.dup2(_sink, 2)
 os.close(_sink)
+_null_input = os.open(os.devnull, os.O_RDONLY)
+os.dup2(_null_input, 0)
+os.close(_null_input)
 _send_lock = threading.Lock()
 
 
@@ -98,7 +113,10 @@ class CapturedOutput:
         os.close(self.saved[0])
         os.close(self.saved[1])
         self.file.seek(0)
-        self.value = self.file.read().decode(errors="replace").rstrip("\n")
+        # The worker's text-mode stdout/stderr translate "\n" to os.linesep on write, so on
+        # Windows the captured bytes contain "\r\n". Normalize so callers see the same output
+        # on every platform and no stray "\r" survives the final rstrip.
+        self.value = self.file.read().decode(errors="replace").replace("\r\n", "\n").rstrip("\n")
         self.file.close()
 
 
@@ -198,7 +216,7 @@ def send(message: dict[str, Any]) -> None:
 
 
 def receive() -> dict[str, Any]:
-    line = sys.__stdin__.readline()
+    line = _protocol_input.readline()
     if not line:
         raise EOFError
     message = json.loads(line)

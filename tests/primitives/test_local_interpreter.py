@@ -40,6 +40,33 @@ def test_python_stdout_reassignment_does_not_break_later_capture():
         assert interpreter.execute("print('captured')") == "captured"
 
 
+def test_captured_output_uses_lf_regardless_of_platform_newline():
+    # Text-mode stdout writes os.linesep, so on Windows the captured bytes carry "\r\n";
+    # callers must still get "\n"-separated lines with no trailing "\r".
+    with dspy.LocalInterpreter() as interpreter:
+        assert interpreter.execute("print('a'); print('b')") == "a\nb"
+        assert interpreter.execute("import sys\n_ = sys.stdout.write('x\\r\\ny\\r\\n')") == "x\ny"
+
+
+def test_guest_stdin_is_isolated_from_the_protocol():
+    # Guest code must not be able to read protocol messages; fd 0 is os.devnull inside the
+    # worker. Isolating it is also what lets guest subprocesses run on Windows, where a child
+    # inheriting the protocol pipe as stdin blocks behind the worker's pending readline().
+    with dspy.LocalInterpreter() as interpreter:
+        assert interpreter.execute("import sys\nsys.stdin.read()") == ""
+        assert interpreter.execute("import os\nos.read(0, 10).decode()") == ""
+        started = time.monotonic()
+        assert (
+            interpreter.execute(
+                "import subprocess, sys\n"
+                "subprocess.run([sys.executable, '-c', 'print(7)'], capture_output=True, text=True).stdout.strip()"
+            )
+            == "7"
+        )
+        assert time.monotonic() - started < 10
+        assert interpreter.execute("6 * 7") == 42
+
+
 def test_background_thread_is_terminal_before_it_can_cross_executions():
     calls = []
     interpreter = dspy.LocalInterpreter(tools={"record": lambda *, value: calls.append(value)})
