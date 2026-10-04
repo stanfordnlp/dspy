@@ -287,6 +287,24 @@ def test_compile_names_the_predictors_missing_an_lm():
     assert "'qa'" not in str(excinfo.value)
 
 
+def test_error_message_warns_that_set_lm_overwrites():
+    """The advice must warn that set_lm replaces every predictor's LM.
+
+    Module.set_lm assigns to all named parameters, so recommending it bare
+    would silently drop LMs deliberately set on other predictors (flagged in
+    review on https://github.com/stanfordnlp/dspy/pull/10569).
+    """
+    optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())
+    student = SimpleModule("input -> output")
+
+    with pytest.raises(ValueError) as excinfo:
+        optimizer.compile(student, trainset=trainset, valset=valset, strategy="p")
+
+    message = str(excinfo.value)
+    assert "student.set_lm(lm)" in message
+    assert "overwrite" in message
+
+
 def test_compile_accepts_student_with_all_lms_set():
     """A student whose predictors all have an LM passes the check."""
     optimizer = BetterTogether(metric=simple_metric, p=SimpleOptimizer())

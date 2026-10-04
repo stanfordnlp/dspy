@@ -267,7 +267,8 @@ def assert_all_predictors_have_lms(program: Module, role: str = "program") -> No
         raise ValueError(
             f"The {role} program must have a language model set on every predictor, "
             f"but these have none: {missing}. "
-            f"Call `{role}.set_lm(lm)` before compiling."
+            f"Assign an LM to them; `{role}.set_lm(lm)` sets every predictor and "
+            f"overwrites LMs that are already set."
         )
 
 
