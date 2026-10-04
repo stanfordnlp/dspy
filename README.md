@@ -1,6 +1,11 @@
 <p align="center">
   <img align="center" src="docs/docs/static/img/dspy_logo.png" width="460px" />
 </p>
+
+<p align="center">
+  <b>English</b> · <a href="README.zh.md">简体中文</a>
+</p>
+
 <p align="left">
 
 
