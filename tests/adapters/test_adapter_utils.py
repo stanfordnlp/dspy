@@ -151,3 +151,13 @@ def test_parse_value_optional_closed_set_keeps_a_null_member():
     assert parse_value("null", Status | None) is Status.NULL
     assert parse_value("None", Literal["null", "set"] | None) is None
     assert parse_value("None", Status | None) is None
+
+
+def test_parse_value_optional_enum_keeps_null_as_none_for_a_none_valued_member():
+    # A member whose value is None is not a "null" spelling to preserve: JSON null stays None.
+    class Missing(enum.Enum):
+        NOTHING = None
+        SOMETHING = "something"
+
+    assert parse_value("null", Missing | None) is None
+    assert parse_value("something", Missing | None) is Missing.SOMETHING
