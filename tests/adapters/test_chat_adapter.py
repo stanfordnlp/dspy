@@ -3014,3 +3014,15 @@ def test_optional_type_syntax_missing_required_output_field_still_raises():
     with dspy.context(lm=DummyLM(responses), adapter=dspy.ChatAdapter()):
         with pytest.raises(AdapterParseError):
             dspy.Predict(OptionalSyntaxSignature)(question="anything")
+
+
+def test_chat_adapter_formats_pep604_union_like_typing_union():
+    class QA(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: int | None = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(QA, [], {"question": "How many?"})
+
+    assert "1. `answer` (Union[int, NoneType])" in messages[0]["content"]
+    assert "must be formatted as a valid Python Union[int, NoneType]" in messages[-1]["content"]
+    assert "UnionType" not in messages[0]["content"] + messages[-1]["content"]
